@@ -10,6 +10,8 @@ interface ClaudeAgentSdkModule {
   query: SdkQuery;
 }
 
+const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
+
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
@@ -52,7 +54,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         includePartialMessages: true,
         enableFileCheckpointing: true,
         settingSources: ["project"],
-        permissionMode: "default",
+        permissionMode: "acceptEdits",
+        allowedTools: [...defaultAllowedTools],
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
@@ -135,6 +138,10 @@ export function createAgentDefinitions(routes: readonly ResolvedModelRoute[]): R
 
 export function toSdkAgentModel(modelId?: string): string {
   return modelId?.trim() || "inherit";
+}
+
+export function getDefaultAllowedTools(): string[] {
+  return [...defaultAllowedTools];
 }
 
 export function mapSdkMessageToEvents(message: unknown, threadId: string): AgentEvent[] {

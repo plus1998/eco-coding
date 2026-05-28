@@ -3,6 +3,7 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   createAgentDefinitions,
   createCanUseTool,
+  getDefaultAllowedTools,
   mapSdkMessageToEvents,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
@@ -42,6 +43,10 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
   expect(toSdkAgentModel("claude-haiku")).toBe("claude-haiku");
   expect(toSdkAgentModel("qwen-coder-anthropic")).toBe("qwen-coder-anthropic");
   expect(toSdkAgentModel(undefined)).toBe("inherit");
+});
+
+test("includes Agent in default allowed tools", () => {
+  expect(getDefaultAllowedTools()).toContain("Agent");
 });
 
 test("creates native SDK subagent definitions", () => {
