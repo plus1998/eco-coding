@@ -22,5 +22,6 @@ packages/
   model-router/   Anthropic-compatible endpoint routing and checks
   persistence/    SQLite and keychain ports
   workspace/      Git worktree and diff workflow
+  approval/       Dangerous operation approval service
   terminal/       PTY session manager boundary
 ```
