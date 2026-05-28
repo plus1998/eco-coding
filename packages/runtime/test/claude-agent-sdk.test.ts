@@ -1,8 +1,13 @@
 import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import {
+  appendToPhaseTranscript,
+  buildAnalyzePhasePrompt,
+  buildExecutePhasePrompt,
+  buildPlanPhasePrompt,
   createAgentDefinitions,
   createCanUseTool,
+  createPhaseBoundaryEvent,
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
@@ -57,9 +62,61 @@ test("creates native SDK subagent definitions", () => {
   const definitions = createAgentDefinitions(routes);
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
-    description: expect.stringContaining("Implement code changes"),
+    description: expect.stringContaining("Execution phase only"),
     model: "qwen-coder-anthropic",
   });
+});
+
+test("builds phased orchestration prompts", () => {
+  const userPrompt = "Add rich text editor styles";
+  const analysis = "Need to extend styles.css";
+  const plan = "1. Read styles.css\n2. Add editor block";
+
+  expect(buildAnalyzePhasePrompt(userPrompt)).toContain("Phase 1 task");
+  expect(buildPlanPhasePrompt(userPrompt, analysis)).toContain(analysis);
+  expect(buildPlanPhasePrompt(userPrompt, analysis)).toContain("Phase 2 task");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Phase 3 task");
+});
+
+test("formats eco phase boundary events", () => {
+  const event = createPhaseBoundaryEvent("thr_1", "analyze", "【1/3】分析与推理");
+  expect(formatSdkPayloadMessage(event.payload)).toBe("【1/3】分析与推理");
+});
+
+test("appends stream deltas into phase transcript", () => {
+  let transcript = "";
+  transcript = appendToPhaseTranscript(
+    transcript,
+    {
+      id: "1",
+      threadId: "thr_1",
+      agentId: "a",
+      role: "planner",
+      type: "message.delta",
+      timestamp: "",
+      payload: {
+        type: "stream_event",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } },
+      },
+    },
+  );
+  transcript = appendToPhaseTranscript(
+    transcript,
+    {
+      id: "2",
+      threadId: "thr_1",
+      agentId: "a",
+      role: "planner",
+      type: "message.delta",
+      timestamp: "",
+      payload: {
+        type: "stream_event",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "lo" } },
+      },
+    },
+  );
+  expect(transcript).toBe("hello");
 });
 
 test("formats assistant, thinking, and stream payloads for UI output", () => {

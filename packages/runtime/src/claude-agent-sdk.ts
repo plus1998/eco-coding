@@ -11,11 +11,24 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
+const readOnlyTools = ["Read", "Glob", "Grep"] as const;
+
+const ecoBasePromptAppend = [
+  "You are running inside Eco Coding, an agent command center.",
+  "Work inside the provided isolated git worktree.",
+  "Do not assume edits are applied to the user's real workspace until diff approval completes.",
+].join("\n");
+
+export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
+
+export type EcoRunPhase = "analyze" | "plan" | "execute";
 
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
   maxTurns?: number;
+  /** Default: analyze_plan_execute (main model analyzes → plans → subagents execute). */
+  orchestration?: EcoOrchestrationMode;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
 }
@@ -38,12 +51,72 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    if (this.options.orchestration === "sdk_default") {
+      yield* this.runSingleSession(input, {
+        prompt: input.prompt,
+        permissionMode: "acceptEdits",
+        allowedTools: [...defaultAllowedTools],
+        phaseAppend: "",
+        includeAgents: true,
+      });
+      return;
+    }
+
+    yield* this.runAnalyzePlanExecute(input);
+  }
+
+  private async *runAnalyzePlanExecute(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield createPhaseBoundaryEvent(input.threadId, "analyze", "【1/3】分析与推理");
+    const analysis = yield* this.runSingleSession(input, {
+      prompt: buildAnalyzePhasePrompt(input.prompt),
+      permissionMode: "plan",
+      allowedTools: [...readOnlyTools],
+      phaseAppend: analyzePhaseSystemAppend,
+      includeAgents: false,
+    });
+    if (input.signal.aborted) {
+      return;
+    }
+
+    yield createPhaseBoundaryEvent(input.threadId, "plan", "【2/3】制定详细计划");
+    const plan = yield* this.runSingleSession(input, {
+      prompt: buildPlanPhasePrompt(input.prompt, analysis),
+      permissionMode: "plan",
+      allowedTools: [...readOnlyTools],
+      phaseAppend: planPhaseSystemAppend,
+      includeAgents: false,
+    });
+    if (input.signal.aborted) {
+      return;
+    }
+
+    yield createPhaseBoundaryEvent(input.threadId, "execute", "【3/3】子代理执行");
+    yield* this.runSingleSession(input, {
+      prompt: buildExecutePhasePrompt(input.prompt, analysis, plan),
+      permissionMode: "acceptEdits",
+      allowedTools: [...defaultAllowedTools],
+      phaseAppend: executePhaseSystemAppend,
+      includeAgents: true,
+    });
+  }
+
+  private async *runSingleSession(
+    input: AgentRuntimeRunInput,
+    phase: {
+      prompt: string;
+      permissionMode: "plan" | "acceptEdits";
+      allowedTools: string[];
+      phaseAppend: string;
+      includeAgents: boolean;
+    },
+  ): AsyncGenerator<AgentEvent, string> {
     const sdk = await this.loadSdk();
     const plannerRoute = findRoute(input.routes, "planner") ?? input.routes[0];
     if (!plannerRoute) {
       throw new Error("At least one model route is required to start Claude Agent SDK");
     }
 
+    const systemAppend = [ecoBasePromptAppend, phase.phaseAppend].filter(Boolean).join("\n\n");
     const queryOptions: Record<string, unknown> = {
       cwd: input.worktreePath,
       model: plannerRoute.primary.modelId,
@@ -51,19 +124,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       includePartialMessages: true,
       enableFileCheckpointing: true,
       settingSources: ["project"],
-      permissionMode: "acceptEdits",
-      allowedTools: [...defaultAllowedTools],
+      permissionMode: phase.permissionMode,
+      allowedTools: phase.allowedTools,
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: [
-          "You are running inside Eco Coding, an agent command center.",
-          "Work inside the provided isolated git worktree.",
-          "Do not assume edits are applied to the user's real workspace until diff approval completes.",
-        ].join("\n"),
+        append: systemAppend,
       },
       tools: { type: "preset", preset: "claude_code" },
-      agents: createAgentDefinitions(input.routes),
       canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
       env: {
         ANTHROPIC_API_KEY: this.options.apiKey,
@@ -72,26 +140,34 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       },
     };
 
+    if (phase.includeAgents) {
+      queryOptions.agents = createAgentDefinitions(input.routes);
+    }
+
     if (this.options.maxTurns !== undefined) {
       queryOptions.maxTurns = this.options.maxTurns;
     }
 
     const query = sdk.query({
-      prompt: input.prompt,
+      prompt: phase.prompt,
       options: queryOptions,
     });
 
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
 
+    let transcript = "";
     for await (const message of query) {
       for (const event of mapSdkMessageToEvents(message, input.threadId)) {
         yield event;
+        transcript = appendToPhaseTranscript(transcript, event);
       }
 
       if (input.signal.aborted) {
         break;
       }
     }
+
+    return transcript.trim();
   }
 
   private async loadSdk(): Promise<ClaudeAgentSdkModule> {
@@ -111,27 +187,28 @@ export function createAgentDefinitions(routes: readonly ResolvedModelRoute[]): R
 
   return {
     architect: {
-      description: "Analyze repository structure and propose implementation strategy.",
+      description:
+        "Execution phase only: inspect the repo and refine strategy when the approved plan needs structural guidance.",
       tools: ["Read", "Glob", "Grep"],
-      prompt: "Inspect the codebase and produce a concise implementation strategy.",
+      prompt: "Follow the approved plan. Inspect the codebase only when needed and return concise guidance.",
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
     },
     coder: {
-      description: "Implement code changes in the isolated worktree.",
+      description: "Execution phase only: implement approved plan steps with focused code edits in the worktree.",
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
-      prompt: "Make focused code changes, keep edits patch-based, and report changed files.",
+      prompt: "Implement the approved plan with patch-based edits. Report changed files.",
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
     },
     reviewer: {
-      description: "Review the produced diff for correctness, safety, and missing tests.",
+      description: "Execution phase only: review the diff for correctness, safety, and missing tests.",
       tools: ["Read", "Glob", "Grep", "Bash"],
-      prompt: "Review the diff and list blocking issues before approval.",
+      prompt: "Review changes against the approved plan. List blocking issues before completion.",
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
     },
     tester: {
-      description: "Run targeted tests and explain failures.",
+      description: "Execution phase only: run targeted tests and explain failures.",
       tools: ["Read", "Bash", "Glob", "Grep"],
-      prompt: "Run the narrowest useful tests and summarize failures with next actions.",
+      prompt: "Run the narrowest useful tests for the approved plan and summarize failures with next actions.",
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
     },
   };
@@ -143,6 +220,87 @@ export function toSdkAgentModel(modelId?: string): string {
 
 export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
+}
+
+const analyzePhaseSystemAppend = [
+  "Eco orchestration phase 1/3 — ANALYZE ONLY.",
+  "Use the main model to think step by step: clarify goals, constraints, risks, and what to inspect in the repo.",
+  "You may use Read, Glob, and Grep only.",
+  "Do NOT call the Agent tool. Do NOT modify files. Do NOT write a full implementation plan yet — analysis only.",
+].join("\n");
+
+const planPhaseSystemAppend = [
+  "Eco orchestration phase 2/3 — PLAN ONLY.",
+  "Using the analysis from phase 1, produce a detailed, ordered implementation plan.",
+  "Include concrete steps, files/areas to touch, verification, and rollback notes.",
+  "You may use Read, Glob, and Grep only.",
+  "Do NOT call the Agent tool. Do NOT modify files. Do NOT start implementation.",
+].join("\n");
+
+const executePhaseSystemAppend = [
+  "Eco orchestration phase 3/3 — EXECUTE.",
+  "The analysis and detailed plan are authoritative. Implement by delegating to subagents (architect, coder, reviewer, tester) via the Agent tool when appropriate.",
+  "Do not replan from scratch unless the plan is blocked; extend the plan minimally if discoveries require it.",
+].join("\n");
+
+export function buildAnalyzePhasePrompt(userPrompt: string): string {
+  return [
+    "User request:",
+    userPrompt.trim(),
+    "",
+    "Phase 1 task: Analyze and reason about this request. Explore the codebase if needed. Output your reasoning and findings only.",
+  ].join("\n");
+}
+
+export function buildPlanPhasePrompt(userPrompt: string, analysis: string): string {
+  return [
+    "User request:",
+    userPrompt.trim(),
+    "",
+    "Phase 1 analysis (completed):",
+    analysis.trim() || "(no analysis captured)",
+    "",
+    "Phase 2 task: Write a detailed implementation plan the execution phase must follow. Use clear numbered steps.",
+  ].join("\n");
+}
+
+export function buildExecutePhasePrompt(userPrompt: string, analysis: string, plan: string): string {
+  return [
+    "User request:",
+    userPrompt.trim(),
+    "",
+    "Phase 1 analysis:",
+    analysis.trim() || "(no analysis captured)",
+    "",
+    "Phase 2 plan (follow this):",
+    plan.trim() || "(no plan captured)",
+    "",
+    "Phase 3 task: Execute the plan. Use subagents for specialized work. Apply changes in the worktree.",
+  ].join("\n");
+}
+
+export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
+  return createAgentEvent({
+    id: `${threadId}:eco-phase-${phase}-${crypto.randomUUID()}`,
+    threadId,
+    agentId: "eco-orchestrator",
+    role: "planner",
+    type: "agent.started",
+    payload: { ecoPhase: phase, label },
+  });
+}
+
+export function appendToPhaseTranscript(transcript: string, event: AgentEvent): string {
+  const line = formatAgentEventLine(event);
+  if (!line) {
+    return transcript;
+  }
+
+  if (isStreamableAgentEventType(event.type) && isStreamPayload(event.payload)) {
+    return `${transcript}${line}`;
+  }
+
+  return transcript ? `${transcript}\n${line}` : line;
 }
 
 export function mapSdkMessageToEvents(message: unknown, threadId: string): AgentEvent[] {
@@ -460,6 +618,10 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
 
   if (!isRecord(payload)) {
     return null;
+  }
+
+  if (typeof payload.label === "string" && typeof payload.ecoPhase === "string") {
+    return payload.label.trim() || null;
   }
 
   if (payload.type === "assistant" && isRecord(payload.message)) {
