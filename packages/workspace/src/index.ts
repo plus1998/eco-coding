@@ -14,6 +14,12 @@ export interface FileWriteRequest {
   workspacePath: string;
 }
 
+export interface ShellCommandRequest {
+  command: string;
+  cwd: string;
+  workspacePath: string;
+}
+
 export interface PolicyDecision {
   action: ApprovalAction;
   riskLevel: ApprovalRiskLevel;
@@ -63,6 +69,28 @@ export function evaluateCommand(request: CommandRequest): PolicyDecision {
   }
 
   return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };
+}
+
+export function evaluateShellCommandText(request: ShellCommandRequest): PolicyDecision {
+  if (!isInsidePath(request.cwd, request.workspacePath)) {
+    return {
+      action: "deny",
+      riskLevel: "critical",
+      reason: "Command cwd is outside the workspace",
+    };
+  }
+
+  const decisions = request.command
+    .split(/\s*(?:&&|\|\||;|\|)\s*/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => evaluateCommand({
+      command: tokenizeShellSegment(segment),
+      cwd: request.cwd,
+      workspacePath: request.workspacePath,
+    }));
+
+  return pickStrictestDecision(decisions);
 }
 
 export function evaluateFileWrite(request: FileWriteRequest): PolicyDecision {
@@ -161,4 +189,31 @@ export class GitWorktreeService {
 export function isInsidePath(candidatePath: string, parentPath: string): boolean {
   const relativePath = path.relative(path.resolve(parentPath), path.resolve(candidatePath));
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function tokenizeShellSegment(segment: string): string[] {
+  return segment
+    .replace(/^\s*(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*/, "")
+    .split(/\s+/g)
+    .filter(Boolean);
+}
+
+function pickStrictestDecision(decisions: PolicyDecision[]): PolicyDecision {
+  if (decisions.length === 0) {
+    return { action: "deny", riskLevel: "high", reason: "Empty command is not allowed" };
+  }
+
+  const denied = decisions.find((decision) => decision.action === "deny");
+  if (denied) return denied;
+
+  const asks = decisions.filter((decision) => decision.action === "ask");
+  if (asks.length > 0) {
+    return asks.sort((left, right) => riskRank(right.riskLevel) - riskRank(left.riskLevel))[0];
+  }
+
+  return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };
+}
+
+function riskRank(riskLevel: ApprovalRiskLevel): number {
+  return { low: 0, medium: 1, high: 2, critical: 3 }[riskLevel];
 }

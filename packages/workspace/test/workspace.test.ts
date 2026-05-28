@@ -3,6 +3,7 @@ import {
   createWorktreePlan,
   evaluateCommand,
   evaluateFileWrite,
+  evaluateShellCommandText,
   GitWorktreeService,
   isInsidePath,
   type CommandRunner,
@@ -44,6 +45,20 @@ test("denies commands and writes outside the workspace", () => {
     filePath: "/etc/passwd",
     workspacePath: "/repo",
   }).action).toBe("deny");
+});
+
+test("evaluates compound shell commands conservatively", () => {
+  expect(evaluateShellCommandText({
+    command: "echo ok && rm -rf src",
+    cwd: "/repo",
+    workspacePath: "/repo",
+  }).action).toBe("ask");
+
+  expect(evaluateShellCommandText({
+    command: "NODE_ENV=test bun test | tee out.log",
+    cwd: "/repo",
+    workspacePath: "/repo",
+  }).action).toBe("allow");
 });
 
 test("builds stable worktree plans", () => {
