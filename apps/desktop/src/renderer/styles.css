@@ -308,6 +308,98 @@ button:not(:disabled) {
   color: #aaa;
 }
 
+.status-chip.awaiting_plan {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+}
+
+.status-chip.idle {
+  background: rgba(163, 163, 163, 0.15);
+  color: #d4d4d4;
+}
+
+.plan-approval {
+  margin-top: 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 12px;
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.plan-approval-header h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.plan-approval-header p {
+  margin: 0 0 12px;
+  color: #a3a3a3;
+  font-size: 13px;
+}
+
+.plan-approval-body {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #e5e5e5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.plan-approval-analysis {
+  margin-top: 12px;
+  color: #a3a3a3;
+  font-size: 13px;
+}
+
+.plan-approval-analysis pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #171717;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.plan-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.plan-button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.plan-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plan-button.secondary {
+  border: 1px solid #404040;
+  background: transparent;
+  color: #e5e5e5;
+}
+
+.plan-button.primary {
+  border: none;
+  background: #fbbf24;
+  color: #171717;
+}
+
 /* —— Run log (Claude Code style) —— */
 .run-log {
   display: flex;

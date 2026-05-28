@@ -39,6 +39,7 @@ export type AgentEventType =
   | "agent.started"
   | "agent.completed"
   | "agent.failed"
+  | "plan.ready"
   | "message.delta"
   | "tool.started"
   | "tool.completed"
@@ -49,6 +50,12 @@ export type AgentEventType =
   | "changeset.created"
   | "changeset.applied"
   | "usage.recorded";
+
+export interface PlanReadyPayload {
+  userPrompt: string;
+  analysis: string;
+  plan: string;
+}
 
 export interface AgentEvent<TPayload = unknown> {
   id: string;

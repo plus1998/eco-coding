@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { ThreadActivityLine, ThreadStatus, ThreadSummary } from "../shared/ipc";
+import type { ThreadActivityLine, ThreadPendingPlan, ThreadStatus, ThreadSummary } from "../shared/ipc";
 
 interface ThreadRow {
   id: string;
@@ -62,6 +62,18 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_created
         ON thread_activity(thread_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS thread_pending_plans (
+        thread_id TEXT PRIMARY KEY,
+        user_prompt TEXT NOT NULL,
+        analysis TEXT NOT NULL,
+        plan TEXT NOT NULL,
+        workspace_path TEXT NOT NULL,
+        worktree_path TEXT NOT NULL,
+        routes_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -89,6 +101,12 @@ export class ConversationStore {
         thread.createdAt,
         now,
       );
+  }
+
+  updateThreadPrompt(threadId: string, prompt: string): void {
+    this.db
+      .prepare(`UPDATE threads SET prompt = ?, updated_at = ? WHERE id = ?`)
+      .run(prompt, new Date().toISOString(), threadId);
   }
 
   updateThread(threadId: string, patch: Pick<ThreadSummary, "status" | "message">): void {
@@ -174,6 +192,71 @@ export class ConversationStore {
       message: row.message,
       stream: row.stream === 1,
     }));
+  }
+
+  savePendingPlan(plan: ThreadPendingPlan & { routesJson: string }): void {
+    this.db
+      .prepare(
+        `INSERT INTO thread_pending_plans (
+           thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           user_prompt = excluded.user_prompt,
+           analysis = excluded.analysis,
+           plan = excluded.plan,
+           workspace_path = excluded.workspace_path,
+           worktree_path = excluded.worktree_path,
+           routes_json = excluded.routes_json,
+           created_at = excluded.created_at`,
+      )
+      .run(
+        plan.threadId,
+        plan.userPrompt,
+        plan.analysis,
+        plan.plan,
+        plan.workspacePath,
+        plan.worktreePath,
+        plan.routesJson,
+        new Date().toISOString(),
+      );
+  }
+
+  getPendingPlan(threadId: string): (ThreadPendingPlan & { routesJson: string }) | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json
+         FROM thread_pending_plans
+         WHERE thread_id = ?`,
+      )
+      .get(threadId) as
+      | {
+          thread_id: string;
+          user_prompt: string;
+          analysis: string;
+          plan: string;
+          workspace_path: string;
+          worktree_path: string;
+          routes_json: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    return {
+      threadId: row.thread_id,
+      userPrompt: row.user_prompt,
+      analysis: row.analysis,
+      plan: row.plan,
+      workspacePath: row.workspace_path,
+      worktreePath: row.worktree_path,
+      routesJson: row.routes_json,
+    };
+  }
+
+  clearPendingPlan(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_pending_plans WHERE thread_id = ?`).run(threadId);
   }
 
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {

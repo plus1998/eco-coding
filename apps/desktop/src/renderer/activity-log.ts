@@ -116,8 +116,16 @@ function createProgressBlock(options: {
   const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
   const elapsedMs = Math.max(0, Date.now() - startedAt);
 
+  if (options.status === "awaiting_plan") {
+    return { kind: "progress", label: "计划待确认", running: false };
+  }
+
   if (options.status === "running" || options.status === "queued") {
     return { kind: "progress", label: "处理中…", running: true };
+  }
+
+  if (options.status === "idle") {
+    return { kind: "progress", label: "可继续对话", running: false };
   }
 
   if (options.status === "completed" || options.status === "failed" || options.status === "blocked") {

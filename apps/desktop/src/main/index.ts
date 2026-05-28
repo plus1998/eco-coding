@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { ClaudeAgentSdkDriver, formatAgentEventDisplay } from "@eco/runtime";
+import {
+  ClaudeAgentSdkDriver,
+  formatAgentEventDisplay,
+  type EcoPlanningContext,
+  type PlanReadyPayload,
+} from "@eco/runtime";
+import type { ResolvedModelRoute } from "../../../packages/model-router/src/index.ts";
 import {
   createWorktreePlan,
   GitWorktreeService,
@@ -19,12 +25,16 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type RoleRouteConfig,
+  type ThreadContinueRequest,
+  type ThreadContinueResult,
+  type ThreadLiveEvent,
+  type ThreadPendingPlan,
   type ThreadStartRequest,
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
-import { startAnthropicModelProxy } from "./anthropic-proxy";
+import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +47,14 @@ const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let conversationStore: ConversationStore;
+
+interface ActiveThreadRun {
+  controller: AbortController;
+  worktreePlan: WorktreePlan;
+  worktreeReady: boolean;
+}
+
+const activeRuns = new Map<string, ActiveThreadRun>();
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -150,10 +168,123 @@ function registerIpcHandlers(): void {
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
-      void runCodingThread(thread, workspace, runtimeConfig, prompt);
+      void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt);
     }
 
     return { thread };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadGetPendingPlan, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return undefined;
+    }
+    const pending = conversationStore.getPendingPlan(threadId);
+    if (!pending) {
+      return undefined;
+    }
+    return {
+      threadId: pending.threadId,
+      userPrompt: pending.userPrompt,
+      analysis: pending.analysis,
+      plan: pending.plan,
+      workspacePath: pending.workspacePath,
+      worktreePath: pending.worktreePath,
+    } satisfies ThreadPendingPlan;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (thread.status !== "awaiting_plan") {
+      throw new Error("This thread is not waiting for plan approval.");
+    }
+    if (activeRuns.has(threadId)) {
+      throw new Error("Thread is already running.");
+    }
+
+    const runtimeConfig = resolveRuntimeConfig(
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+    );
+    if (!runtimeConfig.ok) {
+      throw new Error(runtimeConfig.reason);
+    }
+
+    updateThread(threadId, {
+      status: "running",
+      message: "正在按计划执行…",
+    });
+    void runCodingThreadExecution(threadId, runtimeConfig);
+    return { thread: conversationStore.getThread(threadId) ?? thread };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadDismissPlan, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    await dismissPendingPlan(threadId, "已忽略计划。你可以继续在本对话中提问。");
+    return { thread: conversationStore.getThread(threadId) };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadContinue, async (_event, payload: ThreadContinueRequest) => {
+    const prompt = payload.prompt.trim();
+    if (!prompt) {
+      throw new Error("Message is required.");
+    }
+    const thread = conversationStore.getThread(payload.threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (thread.status === "running" || thread.status === "queued") {
+      throw new Error("Wait for the current run to finish.");
+    }
+    if (thread.status === "awaiting_plan") {
+      await dismissPendingPlan(payload.threadId, "已忽略原计划。");
+    }
+
+    const workspace = await ensureWorkspace(thread.workspacePath);
+    const runtimeConfig = resolveRuntimeConfig(
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+    );
+    if (!runtimeConfig.ok) {
+      throw new Error(runtimeConfig.reason);
+    }
+
+    conversationStore.updateThreadPrompt(payload.threadId, prompt);
+    updateThread(payload.threadId, {
+      status: "running",
+      message: "正在分析并制定计划…",
+    });
+
+    const updated: ThreadSummary = {
+      ...thread,
+      prompt,
+      status: "running",
+      message: "正在分析并制定计划…",
+    };
+    void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+    return { thread: updated } satisfies ThreadContinueResult;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return;
+    }
+    const active = activeRuns.get(threadId);
+    if (active) {
+      active.controller.abort("cancelled by user");
+      return;
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (thread?.status === "awaiting_plan") {
+      await dismissPendingPlan(threadId, "已取消。");
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => providerStore.getSettings().providers);
@@ -241,19 +372,20 @@ function promptToTitle(prompt: string): string {
   return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
 }
 
-async function runCodingThread(
+async function runCodingThreadPlanning(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
   runtimeConfig: RuntimeConfig,
   prompt: string,
 ): Promise<void> {
   const worktreePlan = createWorktreePlan(workspace.path, thread.id);
-  let worktreeReady = false;
+  const controller = new AbortController();
+  activeRuns.set(thread.id, { controller, worktreePlan, worktreeReady: false });
 
   try {
     await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
     await gitWorktrees.createWorktree(worktreePlan);
-    worktreeReady = true;
+    activeRuns.get(thread.id)!.worktreeReady = true;
     updateThread(thread.id, {
       message: `Isolated worktree ready: ${worktreePlan.worktreePath}`,
       status: "running",
@@ -264,6 +396,9 @@ async function runCodingThread(
       message: `Local model router ready: ${modelProxy.baseUrl}`,
       status: "running",
     });
+
+    const routes = buildDriverRoutes(modelProxy.routes);
+    let planCaptured = false;
 
     try {
       const driver = new ClaudeAgentSdkDriver({
@@ -276,21 +411,34 @@ async function runCodingThread(
         prompt,
         workspacePath: workspace.path,
         worktreePath: worktreePlan.worktreePath,
-        routes: modelProxy.routes.map((route) => ({
-          role: route.role,
-          primary: {
-            id: `${route.role}:${route.provider.id}`,
-            provider: "custom",
-            displayName: `${route.provider.name} / ${route.modelId}`,
-            baseUrl: route.provider.baseUrl,
-            modelId: route.aliasModelId,
-            capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
-            enabled: route.provider.enabled,
-          },
-          fallbacks: [],
-        })),
-        signal: new AbortController().signal,
+        routes,
+        signal: controller.signal,
       })) {
+        if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+          planCaptured = true;
+          conversationStore.savePendingPlan({
+            threadId: thread.id,
+            userPrompt: event.payload.userPrompt,
+            analysis: event.payload.analysis,
+            plan: event.payload.plan,
+            workspacePath: workspace.path,
+            worktreePath: worktreePlan.worktreePath,
+            routesJson: JSON.stringify(routes),
+          });
+          emitThreadEvent(
+            thread.id,
+            "thread.awaiting_plan",
+            "计划已生成，请确认是否执行。",
+            "planner",
+            false,
+            {
+              userPrompt: event.payload.userPrompt,
+              analysis: event.payload.analysis,
+              plan: event.payload.plan,
+            },
+          );
+        }
+
         const display = formatAgentEventDisplay(event);
         if (display) {
           emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
@@ -300,20 +448,163 @@ async function runCodingThread(
       await modelProxy.close();
     }
 
+    if (controller.signal.aborted) {
+      updateThread(thread.id, { status: "idle", message: "已取消。" });
+      await cleanupWorktreeForThread(thread.id);
+      return;
+    }
+
+    if (planCaptured) {
+      updateThread(thread.id, {
+        status: "awaiting_plan",
+        message: "等待你确认计划。",
+      });
+      return;
+    }
+
     updateThread(thread.id, {
-      status: "completed",
-      message: "Agent run completed.",
+      status: "failed",
+      message: "未能生成可执行的计划。",
     });
+    await cleanupWorktreeForThread(thread.id);
   } catch (error) {
     updateThread(thread.id, {
       status: "failed",
       message: errorMessage(error),
     });
+    await cleanupWorktreeForThread(thread.id);
   } finally {
-    if (worktreeReady) {
-      await removeIsolatedWorktree(worktreePlan, thread.id);
-    }
+    activeRuns.delete(thread.id);
   }
+}
+
+async function runCodingThreadExecution(threadId: string, runtimeConfig: RuntimeConfig): Promise<void> {
+  const pending = conversationStore.getPendingPlan(threadId);
+  const thread = conversationStore.getThread(threadId);
+  if (!pending || !thread) {
+    updateThread(threadId, { status: "failed", message: "执行失败：找不到待批准的计划。" });
+    return;
+  }
+
+  const routes = parseStoredRoutes(pending.routesJson);
+  const planning: EcoPlanningContext = {
+    userPrompt: pending.userPrompt,
+    analysis: pending.analysis,
+    plan: pending.plan,
+  };
+
+  const worktreePlan = createWorktreePlan(pending.workspacePath, threadId);
+  const controller = new AbortController();
+  activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
+
+  try {
+    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+    try {
+      const driver = new ClaudeAgentSdkDriver({
+        apiKey: modelProxy.apiKey,
+        baseUrl: modelProxy.baseUrl,
+      });
+
+      if (!driver.runExecution) {
+        throw new Error("Runtime driver does not support execution phase.");
+      }
+
+      for await (const event of driver.runExecution(
+        {
+          threadId,
+          prompt: pending.userPrompt,
+          workspacePath: pending.workspacePath,
+          worktreePath: pending.worktreePath,
+          routes,
+          signal: controller.signal,
+        },
+        planning,
+      )) {
+        const display = formatAgentEventDisplay(event);
+        if (display) {
+          emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
+        }
+      }
+    } finally {
+      await modelProxy.close();
+    }
+
+    if (controller.signal.aborted) {
+      updateThread(threadId, { status: "idle", message: "执行已取消。" });
+      return;
+    }
+
+    conversationStore.clearPendingPlan(threadId);
+    updateThread(threadId, {
+      status: "completed",
+      message: "执行完成。",
+    });
+  } catch (error) {
+    updateThread(threadId, {
+      status: "failed",
+      message: errorMessage(error),
+    });
+  } finally {
+    activeRuns.delete(threadId);
+    await cleanupWorktreeForThread(threadId);
+  }
+}
+
+async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
+  const active = activeRuns.get(threadId);
+  if (active) {
+    active.controller.abort("dismissed by user");
+  }
+  conversationStore.clearPendingPlan(threadId);
+  await cleanupWorktreeForThread(threadId);
+  updateThread(threadId, { status: "idle", message });
+  emitThreadEvent(threadId, "thread.idle", message, "system");
+}
+
+async function cleanupWorktreeForThread(threadId: string): Promise<void> {
+  const pending = conversationStore.getPendingPlan(threadId);
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
+  if (!workspacePath) {
+    return;
+  }
+  const plan = createWorktreePlan(workspacePath, threadId);
+  await removeIsolatedWorktree(plan, threadId);
+}
+
+function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): ResolvedModelRoute[] {
+  return routes.map((route) => ({
+    role: route.role,
+    primary: {
+      id: `${route.role}:${route.provider.id}`,
+      provider: "custom",
+      displayName: `${route.provider.name} / ${route.modelId}`,
+      baseUrl: route.provider.baseUrl,
+      modelId: route.aliasModelId,
+      capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
+      enabled: route.provider.enabled,
+    },
+    fallbacks: [],
+  }));
+}
+
+function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
+  const parsed = JSON.parse(routesJson) as ResolvedModelRoute[];
+  if (!Array.isArray(parsed)) {
+    throw new Error("Stored route configuration is invalid.");
+  }
+  return parsed;
+}
+
+function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "userPrompt" in payload &&
+    "analysis" in payload &&
+    "plan" in payload &&
+    typeof (payload as PlanReadyPayload).plan === "string"
+  );
 }
 
 async function removeIsolatedWorktree(plan: WorktreePlan, threadId: string): Promise<void> {
@@ -362,13 +653,14 @@ function emitThreadEvent(
   message: string,
   role: AgentRole | "system" | "thinking" | "tool" = "system",
   stream = false,
+  plan?: ThreadLiveEvent["plan"],
 ): void {
   const trimmed = message.trim();
-  if (!trimmed) {
+  if (!trimmed && !plan) {
     return;
   }
 
-  if (conversationStore.getThread(threadId)) {
+  if (conversationStore.getThread(threadId) && trimmed) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
       message: trimmed,
@@ -376,14 +668,19 @@ function emitThreadEvent(
     });
   }
 
+  const payload: ThreadLiveEvent = {
+    threadId,
+    type,
+    message: trimmed || "计划已就绪",
+    role,
+    stream,
+  };
+  if (plan) {
+    payload.plan = plan;
+  }
+
   BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
-      threadId,
-      type,
-      message: trimmed,
-      role,
-      stream,
-    });
+    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
 }
 

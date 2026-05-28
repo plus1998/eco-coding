@@ -21,11 +21,13 @@ import {
   type RoleRouteConfig,
   type ThreadActivityLine,
   type ThreadLiveEvent,
+  type ThreadPendingPlan,
   type ThreadStatus,
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { ActivityLogView } from "./ActivityLogView";
+import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
@@ -65,6 +67,8 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [planActionBusy, setPlanActionBusy] = useState(false);
+  const [pendingPlan, setPendingPlan] = useState<ThreadPendingPlan>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -111,6 +115,17 @@ function App() {
         ),
       );
 
+      if (event.plan && event.threadId) {
+        setPendingPlan({
+          threadId: event.threadId,
+          userPrompt: event.plan.userPrompt,
+          analysis: event.plan.analysis,
+          plan: event.plan.plan,
+          workspacePath: "",
+          worktreePath: "",
+        });
+      }
+
       appendActivityLine(event.threadId, {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role: event.role ?? "system",
@@ -135,6 +150,15 @@ function App() {
         [selectedThreadId]: lines,
       }));
     });
+
+    if (window.eco) {
+      void window.eco.getPendingPlan(selectedThreadId).then((plan) => {
+        if (cancelled) {
+          return;
+        }
+        setPendingPlan(plan);
+      });
+    }
 
     return () => {
       cancelled = true;
@@ -196,7 +220,12 @@ function App() {
     const provider = route ? providerById.get(route.providerId) : undefined;
     return Boolean(route?.modelId.trim() && provider?.enabled && provider.hasApiKey);
   });
-  const canStart = Boolean(currentProjectPath && prompt.trim() && routesReady && !isStarting);
+  const threadAcceptsInput =
+    !activeThread || activeThread.status === "idle" || activeThread.status === "completed";
+  const canSend = Boolean(
+    currentProjectPath && prompt.trim() && routesReady && !isStarting && !planActionBusy && threadAcceptsInput,
+  );
+  const showPlanApproval = activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
 
   const plannerModelLabel = useMemo(() => {
     const route = settings.routes.find((candidate) => candidate.role === "planner");
@@ -273,26 +302,38 @@ function App() {
     }
   }
 
-  async function startThread() {
-    if (!currentProjectPath || !window.eco) return;
+  async function sendComposerMessage() {
+    if (!currentProjectPath || !window.eco || !prompt.trim()) return;
     setError(undefined);
     setIsStarting(true);
     try {
-      const result = await window.eco.startThread({
-        workspacePath: currentProjectPath,
-        prompt,
-      });
-      setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
-      setSelectedThreadId(result.thread.id);
-      void window.eco.listThreadActivity(result.thread.id).then((lines) => {
-        setActivityByThread((current) => ({
-          ...current,
-          [result.thread.id]: lines,
-        }));
-      });
+      if (activeThread?.status === "idle") {
+        const result = await window.eco.continueThread({
+          threadId: activeThread.id,
+          prompt,
+        });
+        setThreads((current) =>
+          current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+        );
+        setPendingPlan(undefined);
+      } else {
+        const result = await window.eco.startThread({
+          workspacePath: currentProjectPath,
+          prompt,
+        });
+        setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
+        setSelectedThreadId(result.thread.id);
+        setPendingPlan(undefined);
+        void window.eco.listThreadActivity(result.thread.id).then((lines) => {
+          setActivityByThread((current) => ({
+            ...current,
+            [result.thread.id]: lines,
+          }));
+        });
+      }
       rememberProject({
-        path: result.thread.workspacePath,
-        name: pathToName(result.thread.workspacePath),
+        path: currentProjectPath,
+        name: pathToName(currentProjectPath),
         lastUsedAt: new Date().toISOString(),
       });
       setPrompt("");
@@ -300,6 +341,44 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsStarting(false);
+    }
+  }
+
+  async function approvePendingPlan() {
+    if (!activeThread || !window.eco) return;
+    setError(undefined);
+    setPlanActionBusy(true);
+    try {
+      const result = await window.eco.approvePlan(activeThread.id);
+      if (result.thread) {
+        setThreads((current) =>
+          current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
+        );
+      }
+      setPendingPlan(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setPlanActionBusy(false);
+    }
+  }
+
+  async function dismissPendingPlan() {
+    if (!activeThread || !window.eco) return;
+    setError(undefined);
+    setPlanActionBusy(true);
+    try {
+      const result = await window.eco.dismissPlan(activeThread.id);
+      if (result.thread) {
+        setThreads((current) =>
+          current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
+        );
+      }
+      setPendingPlan(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setPlanActionBusy(false);
     }
   }
 
@@ -374,7 +453,7 @@ function App() {
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (canStart) void startThread();
+      if (canSend) void sendComposerMessage();
     }
   }
 
@@ -461,6 +540,14 @@ function App() {
               )}
               <div className="activity-messages">
                 <ActivityLogView lines={activityLines} thread={activeThread} />
+                {showPlanApproval && pendingPlan && (
+                  <PlanApprovalPanel
+                    plan={pendingPlan}
+                    busy={planActionBusy}
+                    onApprove={approvePendingPlan}
+                    onDismiss={dismissPendingPlan}
+                  />
+                )}
                 <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
               </div>
             </div>
@@ -473,7 +560,14 @@ function App() {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={handleComposerKeyDown}
-              placeholder="尽管问"
+              placeholder={
+                activeThread?.status === "awaiting_plan"
+                  ? "请先确认或忽略上方计划"
+                  : activeThread?.status === "idle"
+                    ? "继续对话…"
+                    : "尽管问"
+              }
+              disabled={Boolean(activeThread && !threadAcceptsInput)}
               rows={2}
             />
             <div className="composer-toolbar">
@@ -491,8 +585,8 @@ function App() {
               <button
                 type="button"
                 className="send-button"
-                onClick={startThread}
-                disabled={!canStart}
+                onClick={sendComposerMessage}
+                disabled={!canSend}
                 aria-label="发送"
               >
                 {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
@@ -771,20 +865,19 @@ function App() {
 }
 
 function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
-  return (
-    typeof event === "object" &&
-    event !== null &&
-    "threadId" in event &&
-    typeof event.threadId === "string" &&
-    "message" in event &&
-    typeof event.message === "string"
-  );
+  if (typeof event !== "object" || event === null) {
+    return false;
+  }
+  const candidate = event as ThreadLiveEvent;
+  return typeof candidate.threadId === "string" && typeof candidate.message === "string";
 }
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {
   if (type === "thread.completed") return "completed";
   if (type === "thread.failed") return "failed";
   if (type === "thread.blocked") return "blocked";
+  if (type === "thread.awaiting_plan") return "awaiting_plan";
+  if (type === "thread.idle") return "idle";
   if (type === "thread.running" || type === "thread.started" || type === "thread.queued") {
     return "running";
   }

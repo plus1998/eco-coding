@@ -8,6 +8,10 @@ export const IPC_CHANNELS = {
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
   threadCancel: "thread:cancel",
+  threadApprovePlan: "thread:approve-plan",
+  threadDismissPlan: "thread:dismiss-plan",
+  threadContinue: "thread:continue",
+  threadGetPendingPlan: "thread:get-pending-plan",
   threadEventsSubscribe: "thread-events:subscribe",
   approvalResolve: "approval:resolve",
   modelProfilesList: "model-profiles:list",
@@ -75,7 +79,23 @@ export interface ModelSettingsSnapshot {
   routes: RoleRouteConfig[];
 }
 
-export type ThreadStatus = "queued" | "running" | "blocked" | "completed" | "failed";
+export type ThreadStatus =
+  | "queued"
+  | "running"
+  | "blocked"
+  | "awaiting_plan"
+  | "idle"
+  | "completed"
+  | "failed";
+
+export interface ThreadPendingPlan {
+  threadId: string;
+  userPrompt: string;
+  analysis: string;
+  plan: string;
+  workspacePath: string;
+  worktreePath: string;
+}
 
 export interface ThreadSummary {
   id: string;
@@ -96,12 +116,22 @@ export interface ThreadStartResult {
   thread: ThreadSummary;
 }
 
+export interface ThreadContinueRequest {
+  threadId: string;
+  prompt: string;
+}
+
+export interface ThreadContinueResult {
+  thread: ThreadSummary;
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
   message: string;
   role?: AgentRole | "system" | "thinking" | "tool";
   stream?: boolean;
+  plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
 }
 
 export interface ThreadActivityLine {

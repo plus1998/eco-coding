@@ -7,6 +7,9 @@ import {
   type ProviderConfigView,
   type RoleRouteConfig,
   type ThreadActivityLine,
+  type ThreadContinueRequest,
+  type ThreadContinueResult,
+  type ThreadPendingPlan,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSummary,
@@ -38,6 +41,18 @@ const api = {
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);
+  },
+  continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
+  },
+  getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);
+  },
+  approvePlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, threadId);
+  },
+  dismissPlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadDismissPlan, threadId);
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);

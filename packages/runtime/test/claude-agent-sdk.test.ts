@@ -8,6 +8,7 @@ import {
   createAgentDefinitions,
   createCanUseTool,
   createPhaseBoundaryEvent,
+  createPlanReadyEvent,
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
@@ -82,6 +83,16 @@ test("builds phased orchestration prompts", () => {
 test("formats eco phase boundary events", () => {
   const event = createPhaseBoundaryEvent("thr_1", "analyze", "【1/3】分析与推理");
   expect(formatSdkPayloadMessage(event.payload)).toBe("【1/3】分析与推理");
+});
+
+test("creates plan.ready event with transcript payload", () => {
+  const event = createPlanReadyEvent("thr_1", {
+    userPrompt: "Add styles",
+    analysis: "Need CSS",
+    plan: "1. Edit styles.css",
+  });
+  expect(event.type).toBe("plan.ready");
+  expect(formatAgentEventLine(event)).toBe("1. Edit styles.css");
 });
 
 test("appends stream deltas into phase transcript", () => {

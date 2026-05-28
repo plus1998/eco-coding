@@ -1,6 +1,12 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
-import { type AgentEvent, type AgentEventType, type AgentRole, createAgentEvent } from "../../shared/src";
-import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index";
+import {
+  type AgentEvent,
+  type AgentEventType,
+  type AgentRole,
+  type PlanReadyPayload,
+  createAgentEvent,
+} from "../../shared/src";
+import type { AgentRuntimeDriver, AgentRuntimeRunInput, EcoPlanningContext } from "./index";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -12,6 +18,8 @@ interface ClaudeAgentSdkModule {
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
 const readOnlyTools = ["Read", "Glob", "Grep"] as const;
+/** Read-only Eco phases: avoid Claude Code interactive plan mode (ExitPlanMode). */
+const readOnlyPermissionMode = "dontAsk" as const;
 
 const ecoBasePromptAppend = [
   "You are running inside Eco Coding, an agent command center.",
@@ -62,14 +70,28 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       return;
     }
 
-    yield* this.runAnalyzePlanExecute(input);
+    yield* this.runPlanning(input);
   }
 
-  private async *runAnalyzePlanExecute(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+  async *runExecution(
+    input: AgentRuntimeRunInput,
+    planning: EcoPlanningContext,
+  ): AsyncIterable<AgentEvent> {
+    yield createPhaseBoundaryEvent(input.threadId, "execute", "【3/3】子代理执行");
+    yield* this.runSingleSession(input, {
+      prompt: buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan),
+      permissionMode: "acceptEdits",
+      allowedTools: [...defaultAllowedTools],
+      phaseAppend: executePhaseSystemAppend,
+      includeAgents: true,
+    });
+  }
+
+  private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     yield createPhaseBoundaryEvent(input.threadId, "analyze", "【1/3】分析与推理");
     const analysis = yield* this.runSingleSession(input, {
       prompt: buildAnalyzePhasePrompt(input.prompt),
-      permissionMode: "plan",
+      permissionMode: readOnlyPermissionMode,
       allowedTools: [...readOnlyTools],
       phaseAppend: analyzePhaseSystemAppend,
       includeAgents: false,
@@ -81,7 +103,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【2/3】制定详细计划");
     const plan = yield* this.runSingleSession(input, {
       prompt: buildPlanPhasePrompt(input.prompt, analysis),
-      permissionMode: "plan",
+      permissionMode: readOnlyPermissionMode,
       allowedTools: [...readOnlyTools],
       phaseAppend: planPhaseSystemAppend,
       includeAgents: false,
@@ -90,13 +112,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       return;
     }
 
-    yield createPhaseBoundaryEvent(input.threadId, "execute", "【3/3】子代理执行");
-    yield* this.runSingleSession(input, {
-      prompt: buildExecutePhasePrompt(input.prompt, analysis, plan),
-      permissionMode: "acceptEdits",
-      allowedTools: [...defaultAllowedTools],
-      phaseAppend: executePhaseSystemAppend,
-      includeAgents: true,
+    yield createPlanReadyEvent(input.threadId, {
+      userPrompt: input.prompt,
+      analysis,
+      plan,
     });
   }
 
@@ -104,7 +123,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     phase: {
       prompt: string;
-      permissionMode: "plan" | "acceptEdits";
+      permissionMode: "dontAsk" | "acceptEdits";
       allowedTools: string[];
       phaseAppend: string;
       includeAgents: boolean;
@@ -231,10 +250,11 @@ const analyzePhaseSystemAppend = [
 
 const planPhaseSystemAppend = [
   "Eco orchestration phase 2/3 — PLAN ONLY.",
-  "Using the analysis from phase 1, produce a detailed, ordered implementation plan.",
+  "Using the analysis from phase 1, produce a detailed, ordered implementation plan in your final response.",
   "Include concrete steps, files/areas to touch, verification, and rollback notes.",
   "You may use Read, Glob, and Grep only.",
   "Do NOT call the Agent tool. Do NOT modify files. Do NOT start implementation.",
+  "Do NOT use ExitPlanMode or Claude Code plan mode tools — Eco will show your plan to the user for approval.",
 ].join("\n");
 
 const executePhaseSystemAppend = [
@@ -287,6 +307,17 @@ export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, l
     role: "planner",
     type: "agent.started",
     payload: { ecoPhase: phase, label },
+  });
+}
+
+export function createPlanReadyEvent(threadId: string, payload: PlanReadyPayload): AgentEvent {
+  return createAgentEvent({
+    id: `${threadId}:plan-ready-${crypto.randomUUID()}`,
+    threadId,
+    agentId: "eco-orchestrator",
+    role: "planner",
+    type: "plan.ready",
+    payload,
   });
 }
 
@@ -549,6 +580,10 @@ export function formatAgentEventLine(
 
   if (event.type === "usage.recorded") {
     return formatUsagePayload(event.payload);
+  }
+
+  if (event.type === "plan.ready" && isRecord(event.payload) && typeof event.payload.plan === "string") {
+    return event.payload.plan.trim() || null;
   }
 
   if (event.type === "tool.started" && isRecord(event.payload) && typeof event.payload.tool_name === "string") {
