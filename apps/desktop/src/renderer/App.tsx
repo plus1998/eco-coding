@@ -24,8 +24,18 @@ import {
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
+const tabs = [
+  { id: "threads", label: "Threads", icon: Activity },
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "git", label: "Git", icon: GitBranch },
+  { id: "terminal", label: "Terminal", icon: TerminalSquare },
+  { id: "models", label: "Models", icon: KeyRound },
+  { id: "approvals", label: "Approvals", icon: ShieldCheck },
+] as const;
+type TabId = (typeof tabs)[number]["id"];
 
 function App() {
+  const [activeTab, setActiveTab] = useState<TabId>("threads");
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
@@ -215,24 +225,19 @@ function App() {
           </div>
         </div>
         <nav>
-          <button type="button" className="active">
-            <Activity size={16} /> Threads
-          </button>
-          <button type="button">
-            <Bot size={16} /> Agents
-          </button>
-          <button type="button">
-            <GitBranch size={16} /> Git
-          </button>
-          <button type="button">
-            <TerminalSquare size={16} /> Terminal
-          </button>
-          <button type="button">
-            <KeyRound size={16} /> Models
-          </button>
-          <button type="button">
-            <ShieldCheck size={16} /> Approvals
-          </button>
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className={activeTab === tab.id ? "active" : undefined}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <Icon size={16} /> {tab.label}
+              </button>
+            );
+          })}
         </nav>
       </aside>
 
@@ -247,243 +252,300 @@ function App() {
           </button>
         </header>
 
-        <section className="launch-panel">
-          <div className="project-block">
-            <div className="section-heading">
-              <span>Project</span>
-              <small>{workspace?.isGitRepository ? "Git ready" : "required"}</small>
-            </div>
-            {workspace ? (
-              <div className="project-meta">
-                <strong>{workspace.path}</strong>
-                <span>
-                  {workspace.isGitRepository
-                    ? `${workspace.branch ?? "detached"} · ${workspace.dirtyFileCount} changed files`
-                    : "Not a Git repository"}
-                </span>
-                {workspace.packageManager && <small>{workspace.packageManager} workspace detected</small>}
+        {activeTab === "threads" && (
+          <>
+            <section className="launch-panel">
+              <div className="project-block">
+                <div className="section-heading">
+                  <span>Project</span>
+                  <small>{workspace?.isGitRepository ? "Git ready" : "required"}</small>
+                </div>
+                {workspace ? (
+                  <div className="project-meta">
+                    <strong>{workspace.path}</strong>
+                    <span>
+                      {workspace.isGitRepository
+                        ? `${workspace.branch ?? "detached"} · ${workspace.dirtyFileCount} changed files`
+                        : "Not a Git repository"}
+                    </span>
+                    {workspace.packageManager && <small>{workspace.packageManager} workspace detected</small>}
+                  </div>
+                ) : (
+                  <button type="button" className="open-large" onClick={openWorkspace} disabled={isOpening}>
+                    <FolderOpen size={18} /> Choose a local repository
+                  </button>
+                )}
               </div>
-            ) : (
-              <button type="button" className="open-large" onClick={openWorkspace} disabled={isOpening}>
-                <FolderOpen size={18} /> Choose a local repository
-              </button>
-            )}
-          </div>
 
-          <div className="task-block">
-            <div className="section-heading">
-              <span>New Coding Thread</span>
-              <small>planner to coder to review</small>
-            </div>
-            <textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="例如：修复登录页表单校验问题，并补充测试"
-            />
-            <div className="composer-actions">
-              {error && (
-                <p className="error-line">
-                  <AlertCircle size={15} /> {error}
-                </p>
+              <div className="task-block">
+                <div className="section-heading">
+                  <span>New Coding Thread</span>
+                  <small>planner to coder to review</small>
+                </div>
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder="例如：修复登录页表单校验问题，并补充测试"
+                />
+                <div className="composer-actions">
+                  {error && (
+                    <p className="error-line">
+                      <AlertCircle size={15} /> {error}
+                    </p>
+                  )}
+                  <button type="button" className="primary" onClick={startThread} disabled={!canStart}>
+                    {isStarting ? <Activity size={16} /> : <Send size={16} />}
+                    Start coding
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="thread-strip">
+              {threads.length > 0 ? (
+                threads.slice(0, 3).map((thread) => (
+                  <article key={thread.id} className="thread-card">
+                    <span>{thread.status}</span>
+                    <strong>{thread.title}</strong>
+                    <small>{thread.message}</small>
+                  </article>
+                ))
+              ) : (
+                <article className="thread-card empty-thread">
+                  <span>Ready</span>
+                  <strong>No threads yet</strong>
+                  <small>Open a repository, describe the task, then start coding.</small>
+                </article>
               )}
-              <button type="button" className="primary" onClick={startThread} disabled={!canStart}>
-                {isStarting ? <Activity size={16} /> : <Send size={16} />}
-                Start coding
+            </section>
+
+            <section className="main-grid">
+              <div className="timeline">
+                <div className="section-heading">
+                  <span>Timeline</span>
+                  <small>runtime events</small>
+                </div>
+                {timeline.map(([role, message]) => (
+                  <article className="event-row" key={`${role}-${message}`}>
+                    <div className="event-dot" />
+                    <div>
+                      <strong>{role}</strong>
+                      <p>{message}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <aside className="right-panel">
+                <div className="section-heading">
+                  <span>Agent Tree</span>
+                  <small>execution plan</small>
+                </div>
+                {agentRows.map((agent) => (
+                  <div className="agent-row" key={agent.role}>
+                    <div>
+                      <strong>{agent.role}</strong>
+                      <small>
+                        {agent.providerName} / {agent.modelId}
+                      </small>
+                    </div>
+                    <span>{agent.state}</span>
+                  </div>
+                ))}
+              </aside>
+            </section>
+          </>
+        )}
+
+        {activeTab === "models" && (
+          <section className="settings-panel">
+            <div className="section-heading">
+              <div>
+                <span>Model Providers</span>
+                <small>saved in local SQLite</small>
+              </div>
+              <button type="button" className="small-action" onClick={() => setProviderForm(providerToForm())}>
+                New provider
               </button>
             </div>
-          </div>
-        </section>
-
-        <section className="settings-panel">
-          <div className="section-heading">
-            <div>
-              <span>Model Providers</span>
-              <small>saved in local SQLite</small>
-            </div>
-            <button type="button" className="small-action" onClick={() => setProviderForm(providerToForm())}>
-              New provider
-            </button>
-          </div>
-          <div className="settings-grid">
-            <div className="provider-form">
-              <label>
-                Provider
-                <input
-                  value={providerForm.name}
-                  onChange={(event) =>
-                    setProviderForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder="OpenRouter / LiteLLM / Local gateway"
-                />
-              </label>
-              <label>
-                Anthropic baseURL
-                <input
-                  value={providerForm.baseUrl}
-                  onChange={(event) =>
-                    setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
-                  }
-                  placeholder="https://api.anthropic.com"
-                />
-              </label>
-              <label>
-                API key
-                <input
-                  value={providerForm.apiKey ?? ""}
-                  onChange={(event) =>
-                    setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
-                  }
-                  placeholder={providerForm.id ? "Leave blank to keep saved key" : "sk-..."}
-                  type="password"
-                />
-              </label>
-              <label>
-                Default model
-                <input
-                  value={providerForm.defaultModel}
-                  onChange={(event) =>
-                    setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
-                  }
-                  placeholder="sonnet / provider model id"
-                />
-              </label>
-              <label className="toggle-line">
-                <input
-                  checked={providerForm.enabled}
-                  onChange={(event) =>
-                    setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
-                  }
-                  type="checkbox"
-                />
-                Enabled
-              </label>
-              <button type="button" className="primary" onClick={saveProvider} disabled={isSavingSettings}>
-                Save provider
-              </button>
-            </div>
-
-            <div className="provider-list">
-              {settings.providers.map((provider) => (
-                <button
-                  type="button"
-                  key={provider.id}
-                  className={
-                    providerForm.id === provider.id ? "provider-item active-provider" : "provider-item"
-                  }
-                  onClick={() => setProviderForm(providerToForm(provider))}
-                >
-                  <strong>{provider.name}</strong>
-                  <span>{provider.baseUrl}</span>
-                  <small>
-                    {provider.defaultModel} ·{" "}
-                    {provider.hasApiKey ? `key ${provider.apiKeyPreview}` : "no key"}
-                  </small>
+            <div className="settings-grid">
+              <div className="provider-form">
+                <label>
+                  Provider
+                  <input
+                    value={providerForm.name}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="OpenRouter / LiteLLM / Local gateway"
+                  />
+                </label>
+                <label>
+                  Anthropic baseURL
+                  <input
+                    value={providerForm.baseUrl}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
+                    }
+                    placeholder="https://api.anthropic.com"
+                  />
+                </label>
+                <label>
+                  API key
+                  <input
+                    value={providerForm.apiKey ?? ""}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
+                    }
+                    placeholder={providerForm.id ? "Leave blank to keep saved key" : "sk-..."}
+                    type="password"
+                  />
+                </label>
+                <label>
+                  Default model
+                  <input
+                    value={providerForm.defaultModel}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
+                    }
+                    placeholder="sonnet / provider model id"
+                  />
+                </label>
+                <label className="toggle-line">
+                  <input
+                    checked={providerForm.enabled}
+                    onChange={(event) =>
+                      setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
+                    }
+                    type="checkbox"
+                  />
+                  Enabled
+                </label>
+                <button type="button" className="primary" onClick={saveProvider} disabled={isSavingSettings}>
+                  Save provider
                 </button>
+              </div>
+
+              <div className="provider-list">
+                {settings.providers.map((provider) => (
+                  <button
+                    type="button"
+                    key={provider.id}
+                    className={
+                      providerForm.id === provider.id ? "provider-item active-provider" : "provider-item"
+                    }
+                    onClick={() => setProviderForm(providerToForm(provider))}
+                  >
+                    <strong>{provider.name}</strong>
+                    <span>{provider.baseUrl}</span>
+                    <small>
+                      {provider.defaultModel} · {provider.hasApiKey ? `key ${provider.apiKeyPreview}` : "no key"}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="route-grid">
+              {AGENT_ROLES.map((role) => {
+                const route = settings.routes.find((candidate) => candidate.role === role);
+                return (
+                  <div className="route-row" key={role}>
+                    <strong>{role}</strong>
+                    <select
+                      value={route?.providerId ?? ""}
+                      onChange={(event) => updateRoute(role, { providerId: event.target.value })}
+                    >
+                      {settings.providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={route?.modelId ?? ""}
+                      onChange={(event) => updateRoute(role, { modelId: event.target.value })}
+                      placeholder="model id"
+                    />
+                  </div>
+                );
+              })}
+              <button type="button" className="save-routes" onClick={saveRoutes} disabled={isSavingSettings}>
+                Save role routes
+              </button>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "agents" && (
+          <section className="main-grid">
+            <div className="timeline">
+              <div className="section-heading">
+                <span>Timeline</span>
+                <small>runtime events</small>
+              </div>
+              {timeline.map(([role, message]) => (
+                <article className="event-row" key={`${role}-${message}`}>
+                  <div className="event-dot" />
+                  <div>
+                    <strong>{role}</strong>
+                    <p>{message}</p>
+                  </div>
+                </article>
               ))}
             </div>
-          </div>
 
-          <div className="route-grid">
-            {AGENT_ROLES.map((role) => {
-              const route = settings.routes.find((candidate) => candidate.role === role);
-              return (
-                <div className="route-row" key={role}>
-                  <strong>{role}</strong>
-                  <select
-                    value={route?.providerId ?? ""}
-                    onChange={(event) => updateRoute(role, { providerId: event.target.value })}
-                  >
-                    {settings.providers.map((provider) => (
-                      <option key={provider.id} value={provider.id}>
-                        {provider.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={route?.modelId ?? ""}
-                    onChange={(event) => updateRoute(role, { modelId: event.target.value })}
-                    placeholder="model id"
-                  />
-                </div>
-              );
-            })}
-            <button type="button" className="save-routes" onClick={saveRoutes} disabled={isSavingSettings}>
-              Save role routes
-            </button>
-          </div>
-        </section>
-
-        <section className="thread-strip">
-          {threads.length > 0 ? (
-            threads.slice(0, 3).map((thread) => (
-              <article key={thread.id} className="thread-card">
-                <span>{thread.status}</span>
-                <strong>{thread.title}</strong>
-                <small>{thread.message}</small>
-              </article>
-            ))
-          ) : (
-            <article className="thread-card empty-thread">
-              <span>Ready</span>
-              <strong>No threads yet</strong>
-              <small>Open a repository, describe the task, then start coding.</small>
-            </article>
-          )}
-        </section>
-
-        <section className="main-grid">
-          <div className="timeline">
-            <div className="section-heading">
-              <span>Timeline</span>
-              <small>runtime events</small>
-            </div>
-            {timeline.map(([role, message]) => (
-              <article className="event-row" key={`${role}-${message}`}>
-                <div className="event-dot" />
-                <div>
-                  <strong>{role}</strong>
-                  <p>{message}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <aside className="right-panel">
-            <div className="section-heading">
-              <span>Agent Tree</span>
-              <small>execution plan</small>
-            </div>
-            {agentRows.map((agent) => (
-              <div className="agent-row" key={agent.role}>
-                <div>
-                  <strong>{agent.role}</strong>
-                  <small>
-                    {agent.providerName} / {agent.modelId}
-                  </small>
-                </div>
-                <span>{agent.state}</span>
-              </div>
-            ))}
-
-            <div className="diff-box">
+            <aside className="right-panel">
               <div className="section-heading">
-                <span>Diff Review</span>
-                <small>after agent run</small>
+                <span>Agent Tree</span>
+                <small>execution plan</small>
               </div>
-              <pre>
-                {activeThread ? activeThread.message : "No changes yet. Start a coding thread first."}
-              </pre>
-              <div className="approval-actions">
-                <button type="button" disabled={!activeThread}>
-                  Reject
-                </button>
-                <button type="button" className="approve" disabled={!activeThread}>
-                  Apply
-                </button>
-              </div>
+              {agentRows.map((agent) => (
+                <div className="agent-row" key={agent.role}>
+                  <div>
+                    <strong>{agent.role}</strong>
+                    <small>
+                      {agent.providerName} / {agent.modelId}
+                    </small>
+                  </div>
+                  <span>{agent.state}</span>
+                </div>
+              ))}
+            </aside>
+          </section>
+        )}
+
+        {activeTab === "approvals" && (
+          <section className="right-panel">
+            <div className="section-heading">
+              <span>Diff Review</span>
+              <small>after agent run</small>
             </div>
-          </aside>
-        </section>
+            <pre>{activeThread ? activeThread.message : "No changes yet. Start a coding thread first."}</pre>
+            <div className="approval-actions">
+              <button type="button" disabled={!activeThread}>
+                Reject
+              </button>
+              <button type="button" className="approve" disabled={!activeThread}>
+                Apply
+              </button>
+            </div>
+          </section>
+        )}
+
+        {(activeTab === "git" || activeTab === "terminal") && (
+          <section className="right-panel">
+            <div className="section-heading">
+              <span>{activeTab === "git" ? "Git" : "Terminal"}</span>
+              <small>coming soon</small>
+            </div>
+            <p>
+              {activeTab === "git"
+                ? "Git workspace insights will be shown here."
+                : "Embedded terminal panel will be shown here."}
+            </p>
+          </section>
+        )}
       </section>
     </main>
   );
