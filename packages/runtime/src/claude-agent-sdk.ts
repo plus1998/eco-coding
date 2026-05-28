@@ -182,10 +182,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       },
       tools: { type: "preset", preset: "claude_code" },
       canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
-      env: {
-        ANTHROPIC_API_KEY: this.options.apiKey,
-        ANTHROPIC_BASE_URL: this.options.baseUrl,
-        CLAUDE_AGENT_SDK_CLIENT_APP: "eco-coding",
+      env: buildSdkProcessEnv({
+        apiKey: this.options.apiKey,
+        baseUrl: this.options.baseUrl,
+      }),
+      // Flag-layer settings override ~/.claude/settings.json env (user gateway URL).
+      settings: {
+        env: {
+          ANTHROPIC_API_KEY: this.options.apiKey,
+          ANTHROPIC_BASE_URL: this.options.baseUrl.replace(/\/+$/, ""),
+        },
       },
     };
 
@@ -271,6 +277,25 @@ export function toSdkAgentModel(modelId?: string): string {
   return modelId?.trim() || "inherit";
 }
 
+/** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
+export function buildSdkProcessEnv(options: {
+  apiKey: string;
+  baseUrl: string;
+}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      env[key] = value;
+    }
+  }
+  env.ANTHROPIC_API_KEY = options.apiKey;
+  env.ANTHROPIC_BASE_URL = options.baseUrl.replace(/\/+$/, "");
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = "eco-coding";
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  return env;
+}
+
 export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
 }
@@ -342,6 +367,28 @@ export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, l
     type: "agent.started",
     payload: { ecoPhase: phase, label },
   });
+}
+
+export function extractSdkRunFailure(payload: unknown): string | null {
+  if (!isRecord(payload) || payload.type !== "result") {
+    return null;
+  }
+  if (payload.subtype === "success") {
+    return null;
+  }
+
+  if (typeof payload.result === "string" && payload.result.trim()) {
+    return payload.result.trim();
+  }
+
+  if (Array.isArray(payload.errors)) {
+    const messages = payload.errors.filter((entry): entry is string => typeof entry === "string");
+    if (messages.length > 0) {
+      return messages.join("\n");
+    }
+  }
+
+  return `Agent run failed (${String(payload.subtype ?? "error")}).`;
 }
 
 export function createPlanReadyEvent(threadId: string, payload: PlanReadyPayload): AgentEvent {

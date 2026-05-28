@@ -9,12 +9,14 @@ import {
   createCanUseTool,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
+  extractSdkRunFailure,
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
   getDefaultAllowedTools,
   inferActivityRole,
   mapSdkMessageToEvents,
+  buildSdkProcessEnv,
   mergeAllowedTools,
   resolveSdkSessionOptions,
   toSdkAgentModel,
@@ -48,6 +50,36 @@ const routes: ResolvedModelRoute[] = [
     fallbacks: [],
   },
 ];
+
+test("buildSdkProcessEnv forces local router env over inherited Anthropic auth", () => {
+  const previous = {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+    ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+    PATH: process.env.PATH,
+  };
+  process.env.ANTHROPIC_API_KEY = "real-key";
+  process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+  process.env.ANTHROPIC_AUTH_TOKEN = "oauth-token";
+
+  try {
+    const env = buildSdkProcessEnv({
+      apiKey: "eco-local-model-router",
+      baseUrl: "http://127.0.0.1:36037/",
+    });
+    expect(env.ANTHROPIC_API_KEY).toBe("eco-local-model-router");
+    expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:36037");
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.PATH).toBe(previous.PATH);
+  } finally {
+    if (previous.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previous.ANTHROPIC_API_KEY;
+    if (previous.ANTHROPIC_BASE_URL === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = previous.ANTHROPIC_BASE_URL;
+    if (previous.ANTHROPIC_AUTH_TOKEN === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
+    else process.env.ANTHROPIC_AUTH_TOKEN = previous.ANTHROPIC_AUTH_TOKEN;
+  }
+});
 
 test("maps Claude family model ids to SDK subagent aliases", () => {
   expect(toSdkAgentModel("claude-opus-4")).toBe("claude-opus-4");
@@ -98,6 +130,17 @@ test("builds phased orchestration prompts", () => {
 test("formats eco phase boundary events", () => {
   const event = createPhaseBoundaryEvent("thr_1", "analyze", "【1/3】分析与推理");
   expect(formatSdkPayloadMessage(event.payload)).toBe("【1/3】分析与推理");
+});
+
+test("extracts SDK error results for execution rollback", () => {
+  expect(
+    extractSdkRunFailure({
+      type: "result",
+      subtype: "error",
+      result: "Claude Code returned an error result: model not found",
+    }),
+  ).toBe("Claude Code returned an error result: model not found");
+  expect(extractSdkRunFailure({ type: "result", subtype: "success", result: "ok" })).toBeNull();
 });
 
 test("creates plan.ready event with transcript payload", () => {

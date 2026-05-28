@@ -188,6 +188,18 @@ export class GitWorktreeService {
       .filter(Boolean);
   }
 
+  async discardWorktreeChanges(plan: WorktreePlan): Promise<void> {
+    const reset = await this.runner.run(["git", "reset", "--hard", "HEAD"], plan.worktreePath);
+    if (reset.exitCode !== 0) {
+      throw new Error(`Failed to reset worktree: ${reset.stderr || reset.stdout}`);
+    }
+
+    const clean = await this.runner.run(["git", "clean", "-fd"], plan.worktreePath);
+    if (clean.exitCode !== 0) {
+      throw new Error(`Failed to clean worktree: ${clean.stderr || clean.stdout}`);
+    }
+  }
+
   async applyApprovedDiff(plan: WorktreePlan): Promise<void> {
     const diff = await this.diff(plan);
     if (!diff.trim()) {

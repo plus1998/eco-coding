@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   ClaudeAgentSdkDriver,
+  extractSdkRunFailure,
   formatAgentEventDisplay,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
@@ -24,6 +25,7 @@ import {
   IPC_CHANNELS,
   isKnownIpcChannel,
   type McpServerConfigInput,
+  type ListUpstreamModelsRequest,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type RoleRouteConfig,
@@ -37,8 +39,10 @@ import {
 } from "../shared/ipc";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { listDiscoveredSkills } from "./skills-discovery";
+import { listProviderUpstreamModels } from "./provider-models";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -138,6 +142,13 @@ function registerIpcHandlers(): void {
     const provider = providerStore.saveProvider(payload);
     emitSettingsUpdated();
     return provider;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelProviderListModels, async (_event, payload: ListUpstreamModelsRequest) => {
+    if (!payload || typeof payload !== "object") {
+      return { ok: false, error: "Invalid models list request." } as const;
+    }
+    return listProviderUpstreamModels(providerStore, payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.modelRoutesSave, async (_event, payload: RoleRouteConfig[]) => {
@@ -423,12 +434,19 @@ async function runCodingThreadPlanning(
     });
 
     const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+    process.stderr.write(
+      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+    );
     updateThread(thread.id, {
       message: `Local model router ready: ${modelProxy.baseUrl}`,
       status: "running",
     });
 
     const routes = buildDriverRoutes(modelProxy.routes);
+    const plannerRoute = modelProxy.routes.find((route) => route.role === "planner");
+    process.stderr.write(
+      `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${modelProxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
+    );
     let planCaptured = false;
 
     try {
@@ -518,7 +536,6 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     return;
   }
 
-  const routes = parseStoredRoutes(pending.routesJson);
   const planning: EcoPlanningContext = {
     userPrompt: pending.userPrompt,
     analysis: pending.analysis,
@@ -529,8 +546,19 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
+  let executionFailure: string | undefined;
+
   try {
     const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+    process.stderr.write(
+      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+    );
+    const routes = buildDriverRoutes(modelProxy.routes);
+    conversationStore.savePendingPlan({
+      ...pending,
+      routesJson: JSON.stringify(routes),
+    });
+
     try {
       const driver = new ClaudeAgentSdkDriver({
         apiKey: modelProxy.apiKey,
@@ -553,6 +581,11 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
         },
         planning,
       )) {
+        const failure = extractSdkRunFailure(event.payload);
+        if (failure) {
+          executionFailure = failure;
+        }
+
         const display = formatAgentEventDisplay(event);
         if (display) {
           emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
@@ -563,7 +596,12 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     }
 
     if (controller.signal.aborted) {
-      updateThread(threadId, { status: "idle", message: "执行已取消。" });
+      await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。");
+      return;
+    }
+
+    if (executionFailure) {
+      await restoreAfterExecutionFailure(threadId, worktreePlan, executionFailure);
       return;
     }
 
@@ -572,15 +610,33 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
       status: "completed",
       message: "执行完成。",
     });
+    await cleanupWorktreeForThread(threadId);
   } catch (error) {
-    updateThread(threadId, {
-      status: "failed",
-      message: errorMessage(error),
-    });
+    await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error));
   } finally {
     activeRuns.delete(threadId);
-    await cleanupWorktreeForThread(threadId);
   }
+}
+
+async function restoreAfterExecutionFailure(
+  threadId: string,
+  worktreePlan: WorktreePlan,
+  reason: string,
+): Promise<void> {
+  try {
+    await gitWorktrees.discardWorktreeChanges(worktreePlan);
+    emitThreadEvent(threadId, "worktree.restored", "已回退隔离工作树中的未批准更改。", "system");
+  } catch (error) {
+    console.error("Failed to restore worktree after execution failure:", error);
+  }
+
+  const summary =
+    reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
+  updateThread(threadId, {
+    status: "awaiting_plan",
+    message: `执行失败，已回退更改。${summary}`,
+  });
+  emitThreadEvent(threadId, "thread.execution_failed", summary, "system");
 }
 
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
@@ -613,7 +669,8 @@ function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): Reso
       provider: "custom",
       displayName: `${route.provider.name} / ${route.modelId}`,
       baseUrl: route.provider.baseUrl,
-      modelId: route.aliasModelId,
+      // Real upstream id for Claude Code; local proxy accepts alias or modelId.
+      modelId: route.modelId,
       capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
       enabled: route.provider.enabled,
     },

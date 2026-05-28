@@ -108,6 +108,17 @@ export class ProviderStore {
     }));
   }
 
+  getProviderWithSecret(id: string): ProviderConfigSecret | undefined {
+    const row = this.getProviderRow(id);
+    if (!row) {
+      return undefined;
+    }
+    return {
+      ...providerRowToView(row),
+      apiKey: row.api_key,
+    };
+  }
+
   saveProvider(input: ProviderConfigInput): ProviderConfigView {
     validateProviderInput(input);
     const now = new Date().toISOString();

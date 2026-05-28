@@ -5,6 +5,8 @@ import {
   type McpServerConfigInput,
   type McpServerConfigView,
   type McpSettingsSnapshot,
+  type ListUpstreamModelsRequest,
+  type ListUpstreamModelsResult,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
@@ -39,6 +41,9 @@ const api = {
   },
   saveProvider(provider: ProviderConfigInput): Promise<ProviderConfigView> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderSave, provider);
+  },
+  listProviderModels(request: ListUpstreamModelsRequest): Promise<ListUpstreamModelsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelProviderListModels, request);
   },
   saveRoleRoutes(routes: RoleRouteConfig[]): Promise<RoleRouteConfig[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRoutesSave, routes);

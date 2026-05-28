@@ -12,11 +12,12 @@ if (!rendererAlreadyRunning) {
   await waitForRenderer();
 }
 
-start("./node_modules/.bin/electron", ["."], {
+start("./node_modules/.bin/electron", [".", "--enable-logging"], {
   name: "electron",
   env: {
     ...process.env,
     VITE_DEV_SERVER_URL: rendererUrl,
+    ELECTRON_ENABLE_LOGGING: "1",
   },
 });
 

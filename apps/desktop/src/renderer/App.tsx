@@ -21,9 +21,6 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type SkillsListResult,
-  type ProviderConfigInput,
-  type ProviderConfigView,
-  type RoleRouteConfig,
   type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadPendingPlan,
@@ -33,6 +30,7 @@ import {
 } from "../shared/ipc";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
+import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import "./styles.css";
@@ -71,13 +69,6 @@ function App() {
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
-  const [providerForm, setProviderForm] = useState<ProviderConfigInput>({
-    name: "Anthropic compatible",
-    baseUrl: "https://api.anthropic.com",
-    apiKey: "",
-    defaultModel: "sonnet",
-    enabled: true,
-  });
   const [prompt, setPrompt] = useState("");
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -111,7 +102,6 @@ function App() {
       setThreads(currentThreads);
       setSettings(modelSettings);
       setMcpSettings(mcp);
-      setProviderForm(providerToForm(modelSettings.providers[0]));
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -249,6 +239,7 @@ function App() {
     currentProjectPath && prompt.trim() && routesReady && !isStarting && !planActionBusy && threadAcceptsInput,
   );
   const showPlanApproval = activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
+  const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
 
   const plannerModelLabel = useMemo(() => {
     const route = settings.routes.find((candidate) => candidate.role === "planner");
@@ -405,22 +396,6 @@ function App() {
     }
   }
 
-  async function saveProvider() {
-    if (!window.eco) return;
-    setError(undefined);
-    setIsSavingSettings(true);
-    try {
-      const provider = await window.eco.saveProvider(providerForm);
-      const modelSettings = await window.eco.getModelSettings();
-      setSettings(modelSettings);
-      setProviderForm(providerToForm(provider));
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingSettings(false);
-    }
-  }
-
   async function refreshSkillsList(workspacePath?: string) {
     if (!window.eco) return;
     setIsLoadingSkills(true);
@@ -457,35 +432,6 @@ function App() {
     } finally {
       setIsSavingSettings(false);
     }
-  }
-
-  async function saveRoutes() {
-    if (!window.eco) return;
-    setError(undefined);
-    setIsSavingSettings(true);
-    try {
-      const routes = await window.eco.saveRoleRoutes(settings.routes);
-      setSettings((current) => ({ ...current, routes }));
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingSettings(false);
-    }
-  }
-
-  function updateRoute(role: AgentRole, patch: Partial<RoleRouteConfig>) {
-    setSettings((current) => {
-      const existingRoute = current.routes.find((route) => route.role === role);
-      const nextRoute: RoleRouteConfig = {
-        role,
-        providerId: patch.providerId ?? existingRoute?.providerId ?? current.providers[0]?.id ?? "",
-        modelId: patch.modelId ?? existingRoute?.modelId ?? current.providers[0]?.defaultModel ?? "",
-      };
-      return {
-        ...current,
-        routes: [...current.routes.filter((route) => route.role !== role), nextRoute],
-      };
-    });
   }
 
   function rememberProject(project: RecentProject) {
@@ -605,6 +551,7 @@ function App() {
                   <PlanApprovalPanel
                     plan={pendingPlan}
                     busy={planActionBusy}
+                    failureMessage={planFailureMessage}
                     onApprove={approvePendingPlan}
                     onDismiss={dismissPendingPlan}
                   />
@@ -733,165 +680,12 @@ function App() {
             )}
 
             {settingsSection === "models" && (
-              <>
-                <header className="settings-page-header">
-                  <h1>模型与路由</h1>
-                  <p className="settings-page-desc">
-                    配置模型 Provider 与各 Agent 角色的路由，保存在本地 SQLite。
-                  </p>
-                </header>
-
-                <section className="settings-section">
-                  <div className="settings-section-head">
-                    <span className="settings-section-label">Provider</span>
-                    <button
-                      type="button"
-                      className="settings-text-button"
-                      onClick={() => setProviderForm(providerToForm())}
-                    >
-                      + 添加 Provider
-                    </button>
-                  </div>
-                  <ul className="settings-rows">
-                    {settings.providers.length === 0 ? (
-                      <li className="settings-row settings-row-empty">尚未添加 Provider</li>
-                    ) : (
-                      settings.providers.map((provider) => (
-                        <li key={provider.id}>
-                          <button
-                            type="button"
-                            className={
-                              providerForm.id === provider.id
-                                ? "settings-row active"
-                                : "settings-row"
-                            }
-                            onClick={() => setProviderForm(providerToForm(provider))}
-                          >
-                            <div className="settings-row-main">
-                              <strong>{provider.name}</strong>
-                              <small>
-                                {provider.defaultModel}
-                                {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
-                              </small>
-                            </div>
-                            <span
-                              className={provider.enabled ? "settings-badge on" : "settings-badge"}
-                            >
-                              {provider.enabled ? "已启用" : "已禁用"}
-                            </span>
-                          </button>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-
-                  <div className="settings-editor-card">
-                    <h2 className="settings-editor-title">
-                      {providerForm.id ? "编辑 Provider" : "新建 Provider"}
-                    </h2>
-                    <div className="provider-form">
-                      <label>
-                        名称
-                        <input
-                          value={providerForm.name}
-                          onChange={(event) =>
-                            setProviderForm((current) => ({ ...current, name: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        baseURL
-                        <input
-                          value={providerForm.baseUrl}
-                          onChange={(event) =>
-                            setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        API key
-                        <input
-                          value={providerForm.apiKey ?? ""}
-                          onChange={(event) =>
-                            setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
-                          }
-                          placeholder={providerForm.id ? "留空则保留已保存的 Key" : "sk-..."}
-                          type="password"
-                        />
-                      </label>
-                      <label>
-                        默认模型
-                        <input
-                          value={providerForm.defaultModel}
-                          onChange={(event) =>
-                            setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
-                          }
-                        />
-                      </label>
-                      <label className="settings-toggle-row">
-                        <span>启用</span>
-                        <input
-                          checked={providerForm.enabled}
-                          onChange={(event) =>
-                            setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
-                          }
-                          type="checkbox"
-                          className="settings-toggle"
-                        />
-                      </label>
-                    </div>
-                    <button
-                      type="button"
-                      className="settings-primary-button"
-                      onClick={saveProvider}
-                      disabled={isSavingSettings}
-                    >
-                      保存 Provider
-                    </button>
-                  </div>
-                </section>
-
-                <section className="settings-section">
-                  <div className="settings-section-head">
-                    <span className="settings-section-label">角色路由</span>
-                    <button
-                      type="button"
-                      className="settings-text-button"
-                      onClick={saveRoutes}
-                      disabled={isSavingSettings}
-                    >
-                      保存
-                    </button>
-                  </div>
-                  <div className="settings-editor-card">
-                    <ul className="settings-route-list">
-                      {AGENT_ROLES.map((role) => {
-                        const route = settings.routes.find((candidate) => candidate.role === role);
-                        return (
-                          <li className="settings-route-row" key={role}>
-                            <span className="settings-route-role">{role}</span>
-                            <select
-                              value={route?.providerId ?? ""}
-                              onChange={(event) => updateRoute(role, { providerId: event.target.value })}
-                            >
-                              {settings.providers.map((provider) => (
-                                <option key={provider.id} value={provider.id}>
-                                  {provider.name}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              value={route?.modelId ?? ""}
-                              onChange={(event) => updateRoute(role, { modelId: event.target.value })}
-                              placeholder="model id"
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                </section>
-              </>
+              <ModelsSettingsPanel
+                settings={settings}
+                busy={isSavingSettings}
+                onSettingsChange={setSettings}
+                onSavingChange={setIsSavingSettings}
+              />
             )}
 
             {settingsSection === "git" && (
@@ -955,7 +749,7 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
   if (type === "thread.completed") return "completed";
   if (type === "thread.failed") return "failed";
   if (type === "thread.blocked") return "blocked";
-  if (type === "thread.awaiting_plan") return "awaiting_plan";
+  if (type === "thread.awaiting_plan" || type === "thread.execution_failed") return "awaiting_plan";
   if (type === "thread.idle") return "idle";
   if (type === "thread.running" || type === "thread.started" || type === "thread.queued") {
     return "running";
@@ -967,16 +761,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
-  const form: ProviderConfigInput = {
-    name: provider?.name ?? "Anthropic compatible",
-    baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
-    apiKey: "",
-    defaultModel: provider?.defaultModel ?? "sonnet",
-    enabled: provider?.enabled ?? true,
-  };
-  if (provider) form.id = provider.id;
-  return form;
+const planExecutionFailurePrefix = "执行失败，已回退更改。";
+
+function extractPlanFailureMessage(threadMessage: string): string | undefined {
+  if (!threadMessage.startsWith(planExecutionFailurePrefix)) {
+    return undefined;
+  }
+  const detail = threadMessage.slice(planExecutionFailurePrefix.length).trim();
+  return detail.length > 0 ? detail : undefined;
 }
 
 function pathToName(projectPath: string): string {

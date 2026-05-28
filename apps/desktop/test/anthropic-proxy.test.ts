@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   type AnthropicProxyResolvedRoute,
+  buildModelsListResponse,
   createModelAlias,
   resolveProxyRoute,
 } from "../src/main/anthropic-proxy";
@@ -18,6 +19,19 @@ test("resolves provider routes by local model alias", () => {
   expect(resolveProxyRoute([route], route.aliasModelId)).toEqual(route);
   expect(resolveProxyRoute([route], "qwen-coder")).toEqual(route);
   expect(resolveProxyRoute([route], "missing-model")).toBeUndefined();
+});
+
+test("lists alias and upstream model ids for SDK model discovery", () => {
+  const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
+  const route: AnthropicProxyResolvedRoute = {
+    role: "planner",
+    provider,
+    modelId: "qwen-planner",
+    aliasModelId: createModelAlias("planner", provider.id, "qwen-planner"),
+  };
+
+  const response = buildModelsListResponse([route]);
+  expect(response.data.map((entry) => entry.id)).toEqual([route.aliasModelId, route.modelId]);
 });
 
 function createProvider(id: string, name: string, apiKey: string): ProviderConfigSecret {

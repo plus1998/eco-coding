@@ -3,6 +3,7 @@ export const IPC_CHANNELS = {
   workspaceGetCurrent: "workspace:get-current",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
+  modelProviderListModels: "model-provider:list-models",
   modelRoutesSave: "model-routes:save",
   threadStart: "thread:start",
   threadList: "thread:list",
@@ -34,6 +35,7 @@ export type {
 } from "./mcp";
 
 export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
+export type { ListUpstreamModelsRequest, ListUpstreamModelsResult, UpstreamModelOption } from "./models";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 

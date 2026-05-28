@@ -106,6 +106,25 @@ test("creates a git worktree through an injectable runner", async () => {
   ]);
 });
 
+test("discards uncommitted worktree changes", async () => {
+  const calls: Array<{ command: string[]; cwd: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      calls.push({ command, cwd });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+  const service = new GitWorktreeService(runner);
+  const plan = createWorktreePlan("/repo", "thread:discard");
+
+  await service.discardWorktreeChanges(plan);
+
+  expect(calls).toEqual([
+    { command: ["git", "reset", "--hard", "HEAD"], cwd: plan.worktreePath },
+    { command: ["git", "clean", "-fd"], cwd: plan.worktreePath },
+  ]);
+});
+
 test("removes a git worktree and its branch", async () => {
   const calls: string[][] = [];
   const runner: CommandRunner = {
