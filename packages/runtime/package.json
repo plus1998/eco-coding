@@ -1,0 +1,9 @@
+{
+  "name": "@eco/runtime",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
