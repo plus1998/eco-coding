@@ -1,5 +1,8 @@
 export const IPC_CHANNELS = {
+  workspaceOpen: "workspace:open",
+  workspaceGetCurrent: "workspace:get-current",
   threadStart: "thread:start",
+  threadList: "thread:list",
   threadCancel: "thread:cancel",
   threadEventsSubscribe: "thread-events:subscribe",
   approvalResolve: "approval:resolve",
@@ -15,4 +18,40 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
 export function isKnownIpcChannel(channel: string): channel is IpcChannel {
   return Object.values(IPC_CHANNELS).includes(channel as IpcChannel);
+}
+
+export interface WorkspaceInfo {
+  path: string;
+  name: string;
+  isGitRepository: boolean;
+  gitRoot?: string;
+  branch?: string;
+  dirtyFileCount: number;
+  packageManager?: "bun" | "pnpm" | "yarn" | "npm";
+}
+
+export interface WorkspaceOpenResult {
+  canceled: boolean;
+  workspace?: WorkspaceInfo;
+}
+
+export type ThreadStatus = "queued" | "running" | "blocked" | "completed" | "failed";
+
+export interface ThreadSummary {
+  id: string;
+  title: string;
+  prompt: string;
+  workspacePath: string;
+  status: ThreadStatus;
+  createdAt: string;
+  message: string;
+}
+
+export interface ThreadStartRequest {
+  workspacePath: string;
+  prompt: string;
+}
+
+export interface ThreadStartResult {
+  thread: ThreadSummary;
 }

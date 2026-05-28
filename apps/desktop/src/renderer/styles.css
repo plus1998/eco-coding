@@ -17,6 +17,15 @@ button {
   font: inherit;
 }
 
+button:disabled,
+textarea:disabled {
+  opacity: 0.54;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 248px 1fr;
@@ -69,7 +78,8 @@ nav {
 
 nav button,
 .primary,
-.approval-actions button {
+.approval-actions button,
+.open-large {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -78,7 +88,6 @@ nav button,
   border-radius: 7px;
   color: #3d3931;
   background: transparent;
-  cursor: default;
 }
 
 nav button.active {
@@ -118,6 +127,83 @@ h1 {
   color: #fffaf0;
 }
 
+.launch-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.4fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.project-block,
+.task-block {
+  border: 1px solid rgba(37, 35, 31, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.92);
+  padding: 16px;
+}
+
+.project-meta {
+  display: grid;
+  gap: 8px;
+  min-height: 124px;
+}
+
+.project-meta strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.project-meta span,
+.project-meta small {
+  color: #756f64;
+}
+
+.open-large {
+  width: 100%;
+  min-height: 124px;
+  justify-content: center;
+  border: 1px dashed rgba(37, 35, 31, 0.24);
+  background: rgba(232, 225, 213, 0.54);
+  font-weight: 700;
+}
+
+.task-block textarea {
+  display: block;
+  width: 100%;
+  min-height: 124px;
+  resize: vertical;
+  border: 1px solid rgba(37, 35, 31, 0.16);
+  border-radius: 7px;
+  background: #fffdf8;
+  color: #25231f;
+  font: inherit;
+  line-height: 1.5;
+  padding: 13px 14px;
+}
+
+.task-block textarea:focus {
+  outline: 2px solid rgba(47, 125, 104, 0.22);
+  border-color: rgba(47, 125, 104, 0.55);
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.error-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: #a23d30;
+  font-size: 13px;
+}
+
 .thread-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -140,6 +226,10 @@ h1 {
   padding: 16px;
 }
 
+.empty-thread {
+  grid-column: span 3;
+}
+
 .thread-card span,
 .agent-row span {
   width: fit-content;
@@ -154,6 +244,14 @@ h1 {
 .section-heading small,
 .agent-row small {
   color: #80786b;
+}
+
+.thread-card small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
 }
 
 .main-grid {
@@ -255,8 +353,13 @@ pre {
 @media (max-width: 980px) {
   .shell,
   .main-grid,
-  .thread-strip {
+  .thread-strip,
+  .launch-panel {
     grid-template-columns: 1fr;
+  }
+
+  .empty-thread {
+    grid-column: auto;
   }
 
   .sidebar {
