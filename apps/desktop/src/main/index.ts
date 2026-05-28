@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { ClaudeAgentSdkDriver } from "@eco/runtime";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
   IPC_CHANNELS,
@@ -85,8 +86,8 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
-    const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY);
-    const status: ThreadSummary["status"] = hasApiKey ? "queued" : "blocked";
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const status: ThreadSummary["status"] = apiKey ? "running" : "blocked";
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
       title: promptToTitle(prompt),
@@ -94,19 +95,17 @@ function registerIpcHandlers(): void {
       workspacePath: workspace.path,
       status,
       createdAt: new Date().toISOString(),
-      message: hasApiKey
-        ? "Thread queued. Agent worker integration is ready to attach to the Claude Agent SDK runtime."
+      message: apiKey
+        ? "Creating isolated worktree and starting Claude Agent SDK."
         : "Missing ANTHROPIC_API_KEY. Configure an Anthropic-compatible key/base URL before the coding agent can run.",
     };
 
     threads.unshift(thread);
-    BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
-        threadId: thread.id,
-        type: status === "blocked" ? "thread.blocked" : "thread.queued",
-        message: thread.message,
-      });
-    });
+    emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
+
+    if (apiKey) {
+      void runCodingThread(thread, workspace, apiKey, prompt);
+    }
 
     return { thread };
   });
@@ -194,4 +193,103 @@ async function fileExists(filePath: string): Promise<boolean> {
 function promptToTitle(prompt: string): string {
   const firstLine = prompt.split("\n").find(Boolean)?.trim() ?? "New coding task";
   return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
+}
+
+async function runCodingThread(
+  thread: ThreadSummary,
+  workspace: WorkspaceInfo,
+  apiKey: string,
+  prompt: string,
+): Promise<void> {
+  try {
+    const worktreePath = await createIsolatedWorktree(workspace.path, thread.id);
+    updateThread(thread.id, {
+      message: `Isolated worktree ready: ${worktreePath}`,
+      status: "running",
+    });
+
+    const modelId = process.env.ANTHROPIC_MODEL ?? "sonnet";
+    const baseUrl = process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com";
+    const driver = new ClaudeAgentSdkDriver({
+      apiKey,
+      baseUrl,
+      maxTurns: Number(process.env.ECO_AGENT_MAX_TURNS ?? 24),
+    });
+
+    for await (const event of driver.run({
+      threadId: thread.id,
+      prompt,
+      workspacePath: workspace.path,
+      worktreePath,
+      routes: [
+        {
+          role: "planner",
+          primary: {
+            id: "planner",
+            provider: "custom",
+            displayName: modelId,
+            baseUrl,
+            modelId,
+            capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
+            enabled: true,
+          },
+          fallbacks: [],
+        },
+      ],
+      signal: new AbortController().signal,
+    })) {
+      emitThreadEvent(thread.id, event.type, summarizeRuntimeEvent(event.payload));
+    }
+
+    updateThread(thread.id, {
+      status: "completed",
+      message: "Agent run completed. Review the generated diff before applying changes.",
+    });
+  } catch (error) {
+    updateThread(thread.id, {
+      status: "failed",
+      message: errorMessage(error),
+    });
+  }
+}
+
+async function createIsolatedWorktree(workspacePath: string, threadId: string): Promise<string> {
+  const worktreePath = path.join(workspacePath, ".eco", "worktrees", threadId);
+  const branchName = `eco/${threadId}`;
+  await fs.mkdir(path.dirname(worktreePath), { recursive: true });
+  await execFileAsync("git", ["worktree", "add", "-B", branchName, worktreePath, "HEAD"], {
+    cwd: workspacePath,
+  });
+  return worktreePath;
+}
+
+function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
+  const thread = threads.find((candidate) => candidate.id === threadId);
+  if (!thread) return;
+
+  thread.status = patch.status;
+  thread.message = patch.message;
+  emitThreadEvent(threadId, `thread.${patch.status}`, patch.message);
+}
+
+function emitThreadEvent(threadId: string, type: string, message: string): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
+      threadId,
+      type,
+      message,
+    });
+  });
+}
+
+function summarizeRuntimeEvent(payload: unknown): string {
+  if (typeof payload === "string") return payload;
+  if (typeof payload === "object" && payload !== null && "message" in payload) {
+    return String(payload.message);
+  }
+  return "Agent runtime event received.";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

@@ -12,6 +12,7 @@
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs"
   },
   "dependencies": {
+    "@eco/runtime": "workspace:*",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.0.0",
     "framer-motion": "^12.0.0",
