@@ -5,6 +5,7 @@
     { "path": "packages/model-router" },
     { "path": "packages/persistence" },
     { "path": "packages/workspace" },
+    { "path": "packages/terminal" },
     { "path": "packages/runtime" },
     { "path": "apps/desktop" }
   ]
