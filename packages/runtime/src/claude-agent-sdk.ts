@@ -15,7 +15,22 @@ export interface ClaudeAgentSdkDriverOptions {
   baseUrl: string;
   maxTurns?: number;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
+  canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
 }
+
+export interface SdkToolPermissionRequest {
+  toolName: string;
+  input: Record<string, unknown>;
+  toolUseId: string;
+  agentId?: string;
+  blockedPath?: string;
+  decisionReason?: string;
+  signal: AbortSignal;
+}
+
+export type SdkToolPermissionDecision =
+  | { behavior: "allow"; updatedInput?: Record<string, unknown> }
+  | { behavior: "deny"; message: string; interrupt?: boolean };
 
 export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
@@ -49,6 +64,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         },
         tools: { type: "preset", preset: "claude_code" },
         agents: createAgentDefinitions(input.routes),
+        canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
         env: {
           ANTHROPIC_API_KEY: this.options.apiKey,
           ANTHROPIC_BASE_URL: this.options.baseUrl,
@@ -191,6 +207,35 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
     type: "message.delta",
     payload: message,
   })];
+}
+
+export function createCanUseTool(
+  handler: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>,
+): (toolName: string, input: Record<string, unknown>, options: Record<string, unknown>) => Promise<Record<string, unknown>> {
+  return async (toolName, input, options) => {
+    const decision = await handler({
+      toolName,
+      input,
+      toolUseId: typeof options.toolUseID === "string" ? options.toolUseID : crypto.randomUUID(),
+      agentId: typeof options.agentID === "string" ? options.agentID : undefined,
+      blockedPath: typeof options.blockedPath === "string" ? options.blockedPath : undefined,
+      decisionReason: typeof options.decisionReason === "string" ? options.decisionReason : undefined,
+      signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
+    });
+
+    if (decision.behavior === "allow") {
+      return {
+        behavior: "allow",
+        updatedInput: decision.updatedInput ?? input,
+      };
+    }
+
+    return {
+      behavior: "deny",
+      message: decision.message,
+      interrupt: decision.interrupt,
+    };
+  };
 }
 
 function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): ResolvedModelRoute | undefined {
