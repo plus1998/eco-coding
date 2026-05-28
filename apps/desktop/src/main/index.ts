@@ -23,6 +23,7 @@ import {
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy } from "./anthropic-proxy";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 
@@ -33,9 +34,9 @@ const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
 const gitWorktrees = new GitWorktreeService(gitRunner);
-const threads: ThreadSummary[] = [];
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
+let conversationStore: ConversationStore;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -61,7 +62,9 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  providerStore = await createProviderStore(path.join(app.getPath("userData"), "eco-coding.sqlite"));
+  const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
+  providerStore = await createProviderStore(dbPath);
+  conversationStore = await createConversationStore(dbPath);
   registerIpcHandlers();
   await createMainWindow();
 
@@ -96,7 +99,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
 
-  ipcMain.handle(IPC_CHANNELS.threadList, async () => threads);
+  ipcMain.handle(IPC_CHANNELS.threadList, async () => conversationStore.listThreads());
+
+  ipcMain.handle(IPC_CHANNELS.threadActivityList, async (_event, threadId: string) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return [];
+    }
+    return conversationStore.listActivityLines(threadId);
+  });
 
   ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
 
@@ -136,7 +146,7 @@ function registerIpcHandlers(): void {
         : runtimeConfig.reason,
     };
 
-    threads.unshift(thread);
+    conversationStore.saveThread(thread);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
@@ -338,11 +348,11 @@ async function runGitCommand(
 }
 
 function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
-  const thread = threads.find((candidate) => candidate.id === threadId);
-  if (!thread) return;
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
 
-  thread.status = patch.status;
-  thread.message = patch.message;
+  conversationStore.updateThread(threadId, patch);
   emitThreadEvent(threadId, `thread.${patch.status}`, patch.message, "system");
 }
 
@@ -356,6 +366,14 @@ function emitThreadEvent(
   const trimmed = message.trim();
   if (!trimmed) {
     return;
+  }
+
+  if (conversationStore.getThread(threadId)) {
+    conversationStore.appendActivityLine(threadId, {
+      role: String(role),
+      message: trimmed,
+      stream,
+    });
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

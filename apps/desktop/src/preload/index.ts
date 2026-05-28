@@ -6,6 +6,7 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type ThreadActivityLine,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSummary,
@@ -40,6 +41,9 @@ const api = {
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);
+  },
+  listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

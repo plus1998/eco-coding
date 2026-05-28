@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   modelRoutesSave: "model-routes:save",
   threadStart: "thread:start",
   threadList: "thread:list",
+  threadActivityList: "thread:activity-list",
   threadCancel: "thread:cancel",
   threadEventsSubscribe: "thread-events:subscribe",
   approvalResolve: "approval:resolve",
@@ -100,4 +101,12 @@ export interface ThreadLiveEvent {
   type: string;
   message: string;
   role?: AgentRole | "system" | "thinking" | "tool";
+  stream?: boolean;
+}
+
+export interface ThreadActivityLine {
+  id: string;
+  role: string;
+  message: string;
+  stream?: boolean;
 }

@@ -19,6 +19,7 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadStatus,
   type ThreadSummary,
@@ -42,12 +43,7 @@ const settingsSections = [
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
-interface ActivityLine {
-  id: string;
-  role: string;
-  message: string;
-  stream?: boolean;
-}
+type ActivityLine = ThreadActivityLine;
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -122,6 +118,27 @@ function App() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!selectedThreadId || !window.eco) {
+      return;
+    }
+
+    let cancelled = false;
+    void window.eco.listThreadActivity(selectedThreadId).then((lines) => {
+      if (cancelled) {
+        return;
+      }
+      setActivityByThread((current) => ({
+        ...current,
+        [selectedThreadId]: lines,
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(recentProjectsStorageKey);
@@ -266,16 +283,12 @@ function App() {
       });
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
-      setActivityByThread((current) => ({
-        ...current,
-        [result.thread.id]: [
-          {
-            id: `${result.thread.id}:start`,
-            role: "system",
-            message: result.thread.message,
-          },
-        ],
-      }));
+      void window.eco.listThreadActivity(result.thread.id).then((lines) => {
+        setActivityByThread((current) => ({
+          ...current,
+          [result.thread.id]: lines,
+        }));
+      });
       rememberProject({
         path: result.thread.workspacePath,
         name: pathToName(result.thread.workspacePath),
