@@ -155,6 +155,20 @@ export class GitWorktreeService {
     }
   }
 
+  async removeWorktree(plan: WorktreePlan): Promise<void> {
+    await this.ensureGitRepository(plan.workspacePath);
+
+    const removeResult = await this.runner.run(
+      ["git", "worktree", "remove", "--force", plan.worktreePath],
+      plan.workspacePath,
+    );
+    if (removeResult.exitCode !== 0) {
+      await this.runner.run(["git", "worktree", "prune"], plan.workspacePath);
+    }
+
+    await this.runner.run(["git", "branch", "-D", plan.branchName], plan.workspacePath);
+  }
+
   async diff(plan: WorktreePlan): Promise<string> {
     const result = await this.runner.run(["git", "diff", "--binary", "HEAD"], plan.worktreePath);
     if (result.exitCode !== 0) {

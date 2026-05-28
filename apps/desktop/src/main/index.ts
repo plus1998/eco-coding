@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { ClaudeAgentSdkDriver, formatAgentEventDisplay } from "@eco/runtime";
+import {
+  createWorktreePlan,
+  GitWorktreeService,
+  type CommandRunner,
+  type WorktreePlan,
+} from "@eco/workspace";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
   AGENT_ROLES,
@@ -23,6 +29,10 @@ import { createProviderStore, type ProviderConfigSecret, type ProviderStore } fr
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 const execFileAsync = promisify(execFile);
+const gitRunner: CommandRunner = {
+  run: runGitCommand,
+};
+const gitWorktrees = new GitWorktreeService(gitRunner);
 const threads: ThreadSummary[] = [];
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
@@ -227,10 +237,15 @@ async function runCodingThread(
   runtimeConfig: RuntimeConfig,
   prompt: string,
 ): Promise<void> {
+  const worktreePlan = createWorktreePlan(workspace.path, thread.id);
+  let worktreeReady = false;
+
   try {
-    const worktreePath = await createIsolatedWorktree(workspace.path, thread.id);
+    await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
+    await gitWorktrees.createWorktree(worktreePlan);
+    worktreeReady = true;
     updateThread(thread.id, {
-      message: `Isolated worktree ready: ${worktreePath}`,
+      message: `Isolated worktree ready: ${worktreePlan.worktreePath}`,
       status: "running",
     });
 
@@ -250,7 +265,7 @@ async function runCodingThread(
         threadId: thread.id,
         prompt,
         workspacePath: workspace.path,
-        worktreePath,
+        worktreePath: worktreePlan.worktreePath,
         routes: modelProxy.routes.map((route) => ({
           role: route.role,
           primary: {
@@ -277,24 +292,49 @@ async function runCodingThread(
 
     updateThread(thread.id, {
       status: "completed",
-      message: "Agent run completed. Review the generated diff before applying changes.",
+      message: "Agent run completed.",
     });
   } catch (error) {
     updateThread(thread.id, {
       status: "failed",
       message: errorMessage(error),
     });
+  } finally {
+    if (worktreeReady) {
+      await removeIsolatedWorktree(worktreePlan, thread.id);
+    }
   }
 }
 
-async function createIsolatedWorktree(workspacePath: string, threadId: string): Promise<string> {
-  const worktreePath = path.join(workspacePath, ".eco", "worktrees", threadId);
-  const branchName = `eco/${threadId}`;
-  await fs.mkdir(path.dirname(worktreePath), { recursive: true });
-  await execFileAsync("git", ["worktree", "add", "-B", branchName, worktreePath, "HEAD"], {
-    cwd: workspacePath,
-  });
-  return worktreePath;
+async function removeIsolatedWorktree(plan: WorktreePlan, threadId: string): Promise<void> {
+  try {
+    await gitWorktrees.removeWorktree(plan);
+    emitThreadEvent(threadId, "worktree.removed", "已清理隔离工作树。", "system");
+  } catch (error) {
+    console.error("Failed to remove worktree:", error);
+  }
+}
+
+async function runGitCommand(
+  command: string[],
+  cwd: string,
+  options?: { stdin?: string },
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command[0] ?? "git", command.slice(1), {
+      cwd,
+      input: options?.stdin,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { exitCode: 0, stdout: String(stdout), stderr: String(stderr) };
+  } catch (error) {
+    const failed = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    return {
+      exitCode: typeof failed.code === "number" ? failed.code : 1,
+      stdout: String(failed.stdout ?? ""),
+      stderr: String(failed.stderr ?? errorMessage(error)),
+    };
+  }
 }
 
 function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {

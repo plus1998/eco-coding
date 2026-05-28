@@ -106,6 +106,25 @@ test("creates a git worktree through an injectable runner", async () => {
   ]);
 });
 
+test("removes a git worktree and its branch", async () => {
+  const calls: string[][] = [];
+  const runner: CommandRunner = {
+    async run(command) {
+      calls.push(command);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  await service.removeWorktree(createWorktreePlan("/repo", "thr_1"));
+
+  expect(calls).toEqual([
+    ["git", "rev-parse", "--show-toplevel"],
+    ["git", "worktree", "remove", "--force", "/repo/.eco/worktrees/thr_1"],
+    ["git", "branch", "-D", "eco/thr_1"],
+  ]);
+});
+
 test("applies approved worktree diffs back to the target workspace", async () => {
   const calls: Array<{ command: string[]; cwd: string; stdin?: string }> = [];
   const runner: CommandRunner = {
