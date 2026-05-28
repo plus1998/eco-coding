@@ -25,7 +25,7 @@ async function createMainWindow(): Promise<void> {
   if (isDev) {
     await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
   } else {
-    await window.loadFile(path.join(__dirname, "../../index.html"));
+    await window.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 }
 

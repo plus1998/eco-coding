@@ -6,8 +6,10 @@
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "dev:electron": "electron .",
-    "build": "vite build && bun build src/main/index.ts --target=node --outdir dist/main && bun build src/preload/index.ts --target=node --outdir dist/preload"
+    "dev:electron": "bun run build:main && bun run build:preload && electron .",
+    "build": "vite build && bun run build:main && bun run build:preload",
+    "build:main": "bun build src/main/index.ts --target=node --external electron --outdir dist/main",
+    "build:preload": "bun build src/preload/index.ts --target=node --external electron --outdir dist/preload"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
