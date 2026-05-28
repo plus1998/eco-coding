@@ -208,7 +208,8 @@ function pickStrictestDecision(decisions: PolicyDecision[]): PolicyDecision {
 
   const asks = decisions.filter((decision) => decision.action === "ask");
   if (asks.length > 0) {
-    return asks.sort((left, right) => riskRank(right.riskLevel) - riskRank(left.riskLevel))[0];
+    const [strictest] = asks.sort((left, right) => riskRank(right.riskLevel) - riskRank(left.riskLevel));
+    return strictest!;
   }
 
   return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };

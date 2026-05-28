@@ -3,7 +3,7 @@
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist/types",
     "types": ["node"]
   },

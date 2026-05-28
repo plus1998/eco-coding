@@ -213,15 +213,17 @@ export function createCanUseTool(
   handler: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>,
 ): (toolName: string, input: Record<string, unknown>, options: Record<string, unknown>) => Promise<Record<string, unknown>> {
   return async (toolName, input, options) => {
-    const decision = await handler({
+    const request: SdkToolPermissionRequest = {
       toolName,
       input,
       toolUseId: typeof options.toolUseID === "string" ? options.toolUseID : crypto.randomUUID(),
-      agentId: typeof options.agentID === "string" ? options.agentID : undefined,
-      blockedPath: typeof options.blockedPath === "string" ? options.blockedPath : undefined,
-      decisionReason: typeof options.decisionReason === "string" ? options.decisionReason : undefined,
       signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
-    });
+    };
+    if (typeof options.agentID === "string") request.agentId = options.agentID;
+    if (typeof options.blockedPath === "string") request.blockedPath = options.blockedPath;
+    if (typeof options.decisionReason === "string") request.decisionReason = options.decisionReason;
+
+    const decision = await handler(request);
 
     if (decision.behavior === "allow") {
       return {
