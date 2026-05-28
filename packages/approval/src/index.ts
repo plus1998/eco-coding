@@ -1,6 +1,13 @@
 import type { ApprovalDecision, ApprovalRequest } from "../../shared/src";
 import type { EventStore } from "../../persistence/src";
-import { evaluateCommand, evaluateFileWrite, type CommandRequest, type FileWriteRequest } from "../../workspace/src";
+import {
+  evaluateCommand,
+  evaluateFileWrite,
+  evaluateShellCommandText,
+  type CommandRequest,
+  type FileWriteRequest,
+  type ShellCommandRequest,
+} from "../../workspace/src";
 
 export interface ApprovalServiceOptions {
   store: Pick<EventStore, "saveApproval">;
@@ -28,6 +35,26 @@ export class ApprovalService {
       riskLevel: decision.riskLevel,
       cwd: request.cwd,
       command: request.command,
+      reason: decision.reason,
+      decision: decision.action === "deny" ? "denied" : "pending",
+    });
+  }
+
+  async requestForShellCommand(
+    context: Pick<ApprovalRequest, "threadId" | "agentId">,
+    request: ShellCommandRequest,
+  ): Promise<ApprovalRequest | undefined> {
+    const decision = evaluateShellCommandText(request);
+    if (decision.action === "allow") {
+      return undefined;
+    }
+
+    return this.create({
+      ...context,
+      operation: request.command,
+      riskLevel: decision.riskLevel,
+      cwd: request.cwd,
+      command: ["sh", "-lc", request.command],
       reason: decision.reason,
       decision: decision.action === "deny" ? "denied" : "pending",
     });

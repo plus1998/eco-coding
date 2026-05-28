@@ -36,6 +36,37 @@ test("returns no approval for allowed commands", async () => {
   expect(approval).toBeUndefined();
 });
 
+test("creates approvals for risky shell command strings", async () => {
+  const service = new ApprovalService({
+    store: { async saveApproval() {} },
+    idFactory: () => "approval_1",
+  });
+
+  const approval = await service.requestForShellCommand(
+    { threadId: "thr_1", agentId: "coder" },
+    { command: "echo ok && rm -rf src", cwd: "/repo", workspacePath: "/repo" },
+  );
+
+  expect(approval).toMatchObject({
+    decision: "pending",
+    command: ["sh", "-lc", "echo ok && rm -rf src"],
+    riskLevel: "critical",
+  });
+});
+
+test("allows safe shell command strings without approval", async () => {
+  const service = new ApprovalService({
+    store: { async saveApproval() {} },
+  });
+
+  const approval = await service.requestForShellCommand(
+    { threadId: "thr_1", agentId: "tester" },
+    { command: "NODE_ENV=test bun test", cwd: "/repo", workspacePath: "/repo" },
+  );
+
+  expect(approval).toBeUndefined();
+});
+
 test("resolves pending approvals", async () => {
   const saved: ApprovalRequest[] = [];
   const service = new ApprovalService({
