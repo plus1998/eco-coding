@@ -7,6 +7,7 @@
     { "path": "packages/workspace" },
     { "path": "packages/terminal" },
     { "path": "packages/runtime" },
+    { "path": "packages/agent" },
     { "path": "apps/desktop" }
   ]
 }

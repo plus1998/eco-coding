@@ -18,6 +18,7 @@ apps/
 packages/
   shared/         Shared schemas and event contracts
   runtime/        Thread worker lifecycle and agent runtime boundary
+  agent/          Thread orchestration service
   model-router/   Anthropic-compatible endpoint routing and checks
   persistence/    SQLite and keychain ports
   workspace/      Git worktree and diff workflow
