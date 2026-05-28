@@ -74,3 +74,32 @@ test("creates a git worktree through an injectable runner", async () => {
     ["git", "worktree", "add", "-B", "eco/thr_1", "/repo/.eco/worktrees/thr_1", "HEAD"],
   ]);
 });
+
+test("applies approved worktree diffs back to the target workspace", async () => {
+  const calls: Array<{ command: string[]; cwd: string; stdin?: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd, options) {
+      calls.push({ command, cwd, stdin: options?.stdin });
+      if (command[1] === "diff" && command.includes("--binary")) {
+        return { exitCode: 0, stdout: "diff --git a/a.ts b/a.ts\n", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  await service.applyApprovedDiff(createWorktreePlan("/repo", "thr_1"));
+
+  expect(calls).toEqual([
+    {
+      command: ["git", "diff", "--binary", "HEAD"],
+      cwd: "/repo/.eco/worktrees/thr_1",
+      stdin: undefined,
+    },
+    {
+      command: ["git", "apply", "--whitespace=nowarn", "-"],
+      cwd: "/repo",
+      stdin: "diff --git a/a.ts b/a.ts\n",
+    },
+  ]);
+});

@@ -97,7 +97,11 @@ export function createWorktreePlan(workspacePath: string, threadId: string): Wor
 }
 
 export interface CommandRunner {
-  run(command: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }>;
+  run(
+    command: string[],
+    cwd: string,
+    options?: { stdin?: string },
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
 }
 
 export class GitWorktreeService {
@@ -127,6 +131,30 @@ export class GitWorktreeService {
       throw new Error(`Failed to produce diff: ${result.stderr || result.stdout}`);
     }
     return result.stdout;
+  }
+
+  async changedFiles(plan: WorktreePlan): Promise<string[]> {
+    const result = await this.runner.run(["git", "diff", "--name-only", "HEAD"], plan.worktreePath);
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to list changed files: ${result.stderr || result.stdout}`);
+    }
+    return result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+  }
+
+  async applyApprovedDiff(plan: WorktreePlan): Promise<void> {
+    const diff = await this.diff(plan);
+    if (!diff.trim()) {
+      return;
+    }
+
+    const result = await this.runner.run(
+      ["git", "apply", "--whitespace=nowarn", "-"],
+      plan.workspacePath,
+      { stdin: diff },
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to apply approved diff: ${result.stderr || result.stdout}`);
+    }
   }
 }
 
