@@ -483,153 +483,208 @@ function App() {
 
           <div className="settings-content">
             {settingsSection === "models" && (
-              <section className="settings-block">
-                <div className="settings-block-header">
-                  <div>
-                    <h3>模型与路由</h3>
-                    <p className="settings-desc">Provider 与各 Agent 角色模型，保存在本地 SQLite。</p>
+              <>
+                <header className="settings-page-header">
+                  <h1>模型与路由</h1>
+                  <p className="settings-page-desc">
+                    配置模型 Provider 与各 Agent 角色的路由，保存在本地 SQLite。
+                  </p>
+                </header>
+
+                <section className="settings-section">
+                  <div className="settings-section-head">
+                    <span className="settings-section-label">Provider</span>
+                    <button
+                      type="button"
+                      className="settings-text-button"
+                      onClick={() => setProviderForm(providerToForm())}
+                    >
+                      + 添加 Provider
+                    </button>
                   </div>
-                  <button type="button" className="small-action" onClick={() => setProviderForm(providerToForm())}>
-                    新建 Provider
-                  </button>
-                </div>
-                <div className="settings-grid">
-                  <div className="provider-form">
-                    <label>
-                      Provider
-                      <input
-                        value={providerForm.name}
-                        onChange={(event) =>
-                          setProviderForm((current) => ({ ...current, name: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      baseURL
-                      <input
-                        value={providerForm.baseUrl}
-                        onChange={(event) =>
-                          setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      API key
-                      <input
-                        value={providerForm.apiKey ?? ""}
-                        onChange={(event) =>
-                          setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
-                        }
-                        type="password"
-                      />
-                    </label>
-                    <label>
-                      默认模型
-                      <input
-                        value={providerForm.defaultModel}
-                        onChange={(event) =>
-                          setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <label className="toggle-line">
-                      <input
-                        checked={providerForm.enabled}
-                        onChange={(event) =>
-                          setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
-                        }
-                        type="checkbox"
-                      />
-                      启用
-                    </label>
-                    <button type="button" className="primary" onClick={saveProvider} disabled={isSavingSettings}>
+                  <ul className="settings-rows">
+                    {settings.providers.length === 0 ? (
+                      <li className="settings-row settings-row-empty">尚未添加 Provider</li>
+                    ) : (
+                      settings.providers.map((provider) => (
+                        <li key={provider.id}>
+                          <button
+                            type="button"
+                            className={
+                              providerForm.id === provider.id
+                                ? "settings-row active"
+                                : "settings-row"
+                            }
+                            onClick={() => setProviderForm(providerToForm(provider))}
+                          >
+                            <div className="settings-row-main">
+                              <strong>{provider.name}</strong>
+                              <small>
+                                {provider.defaultModel}
+                                {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
+                              </small>
+                            </div>
+                            <span
+                              className={provider.enabled ? "settings-badge on" : "settings-badge"}
+                            >
+                              {provider.enabled ? "已启用" : "已禁用"}
+                            </span>
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+
+                  <div className="settings-editor-card">
+                    <h2 className="settings-editor-title">
+                      {providerForm.id ? "编辑 Provider" : "新建 Provider"}
+                    </h2>
+                    <div className="provider-form">
+                      <label>
+                        名称
+                        <input
+                          value={providerForm.name}
+                          onChange={(event) =>
+                            setProviderForm((current) => ({ ...current, name: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        baseURL
+                        <input
+                          value={providerForm.baseUrl}
+                          onChange={(event) =>
+                            setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        API key
+                        <input
+                          value={providerForm.apiKey ?? ""}
+                          onChange={(event) =>
+                            setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
+                          }
+                          placeholder={providerForm.id ? "留空则保留已保存的 Key" : "sk-..."}
+                          type="password"
+                        />
+                      </label>
+                      <label>
+                        默认模型
+                        <input
+                          value={providerForm.defaultModel}
+                          onChange={(event) =>
+                            setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="settings-toggle-row">
+                        <span>启用</span>
+                        <input
+                          checked={providerForm.enabled}
+                          onChange={(event) =>
+                            setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
+                          }
+                          type="checkbox"
+                          className="settings-toggle"
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-primary-button"
+                      onClick={saveProvider}
+                      disabled={isSavingSettings}
+                    >
                       保存 Provider
                     </button>
                   </div>
+                </section>
 
-                  <div className="provider-list">
-                    {settings.providers.map((provider) => (
-                      <button
-                        type="button"
-                        key={provider.id}
-                        className={
-                          providerForm.id === provider.id ? "provider-item active-provider" : "provider-item"
-                        }
-                        onClick={() => setProviderForm(providerToForm(provider))}
-                      >
-                        <strong>{provider.name}</strong>
-                        <span>{provider.baseUrl}</span>
-                        <small>
-                          {provider.defaultModel} · {provider.hasApiKey ? "已配置 Key" : "无 Key"}
-                        </small>
-                      </button>
-                    ))}
+                <section className="settings-section">
+                  <div className="settings-section-head">
+                    <span className="settings-section-label">角色路由</span>
+                    <button
+                      type="button"
+                      className="settings-text-button"
+                      onClick={saveRoutes}
+                      disabled={isSavingSettings}
+                    >
+                      保存
+                    </button>
                   </div>
-                </div>
-
-                <h4 className="settings-subtitle">角色路由</h4>
-                <div className="route-grid">
-                  {AGENT_ROLES.map((role) => {
-                    const route = settings.routes.find((candidate) => candidate.role === role);
-                    return (
-                      <div className="route-row" key={role}>
-                        <strong>{role}</strong>
-                        <select
-                          value={route?.providerId ?? ""}
-                          onChange={(event) => updateRoute(role, { providerId: event.target.value })}
-                        >
-                          {settings.providers.map((provider) => (
-                            <option key={provider.id} value={provider.id}>
-                              {provider.name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={route?.modelId ?? ""}
-                          onChange={(event) => updateRoute(role, { modelId: event.target.value })}
-                          placeholder="model id"
-                        />
-                      </div>
-                    );
-                  })}
-                  <button type="button" className="save-routes" onClick={saveRoutes} disabled={isSavingSettings}>
-                    保存角色路由
-                  </button>
-                </div>
-              </section>
+                  <div className="settings-editor-card">
+                    <ul className="settings-route-list">
+                      {AGENT_ROLES.map((role) => {
+                        const route = settings.routes.find((candidate) => candidate.role === role);
+                        return (
+                          <li className="settings-route-row" key={role}>
+                            <span className="settings-route-role">{role}</span>
+                            <select
+                              value={route?.providerId ?? ""}
+                              onChange={(event) => updateRoute(role, { providerId: event.target.value })}
+                            >
+                              {settings.providers.map((provider) => (
+                                <option key={provider.id} value={provider.id}>
+                                  {provider.name}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={route?.modelId ?? ""}
+                              onChange={(event) => updateRoute(role, { modelId: event.target.value })}
+                              placeholder="model id"
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </section>
+              </>
             )}
 
             {settingsSection === "git" && (
-              <section className="settings-block">
-                <h3>Git</h3>
-                <p className="settings-desc">当前工作区 Git 状态（需先打开项目）。</p>
-                <div className="settings-card">
-                  {workspaceMatchesProject && workspace ? (
-                    <>
-                      <div className="info-row">
-                        <strong>路径</strong>
-                        <span>{workspace.path}</span>
-                      </div>
-                      <div className="info-row">
-                        <strong>分支</strong>
-                        <span>{workspace.isGitRepository ? (workspace.branch ?? "detached") : "非 Git 仓库"}</span>
-                      </div>
-                      <div className="info-row">
-                        <strong>未提交变更</strong>
-                        <span>{workspace.dirtyFileCount} 个文件</span>
-                      </div>
-                      {workspace.packageManager && (
-                        <div className="info-row">
-                          <strong>包管理器</strong>
-                          <span>{workspace.packageManager}</span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="settings-empty">请先在主界面打开一个 Git 项目。</p>
-                  )}
-                </div>
-              </section>
+              <>
+                <header className="settings-page-header">
+                  <h1>Git</h1>
+                  <p className="settings-page-desc">当前已打开项目的工作区 Git 状态。</p>
+                </header>
+
+                <section className="settings-section">
+                  <div className="settings-section-head">
+                    <span className="settings-section-label">工作区</span>
+                  </div>
+                  <div className="settings-editor-card">
+                    {workspaceMatchesProject && workspace ? (
+                      <ul className="settings-kv-list">
+                        <li>
+                          <span>路径</span>
+                          <strong>{workspace.path}</strong>
+                        </li>
+                        <li>
+                          <span>分支</span>
+                          <strong>
+                            {workspace.isGitRepository ? (workspace.branch ?? "detached") : "非 Git 仓库"}
+                          </strong>
+                        </li>
+                        <li>
+                          <span>未提交变更</span>
+                          <strong>{workspace.dirtyFileCount} 个文件</strong>
+                        </li>
+                        {workspace.packageManager && (
+                          <li>
+                            <span>包管理器</span>
+                            <strong>{workspace.packageManager}</strong>
+                          </li>
+                        )}
+                      </ul>
+                    ) : (
+                      <p className="settings-empty">请先在主界面打开一个 Git 项目。</p>
+                    )}
+                  </div>
+                </section>
+              </>
             )}
           </div>
         </div>
