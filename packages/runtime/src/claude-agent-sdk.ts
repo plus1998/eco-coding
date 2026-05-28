@@ -6,7 +6,12 @@ import {
   type PlanReadyPayload,
   createAgentEvent,
 } from "../../shared/src";
-import type { AgentRuntimeDriver, AgentRuntimeRunInput, EcoPlanningContext } from "./index";
+import type {
+  AgentRuntimeDriver,
+  AgentRuntimeRunInput,
+  EcoPlanningContext,
+  EcoSdkSessionOptions,
+} from "./index";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -20,6 +25,28 @@ const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "
 const readOnlyTools = ["Read", "Glob", "Grep"] as const;
 /** Read-only Eco phases: avoid Claude Code interactive plan mode (ExitPlanMode). */
 const readOnlyPermissionMode = "dontAsk" as const;
+const defaultSettingSources = ["user", "project"] as const;
+const defaultSkillsMode = "all" as const;
+
+export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
+  const merged = new Set(base);
+  for (const tool of session?.mcpAllowedTools ?? []) {
+    merged.add(tool);
+  }
+  return [...merged];
+}
+
+export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
+  settingSources: EcoSdkSessionOptions["settingSources"];
+  skills: EcoSdkSessionOptions["skills"];
+  mcpServers: Record<string, unknown>;
+} {
+  return {
+    settingSources: session?.settingSources ?? [...defaultSettingSources],
+    skills: session?.skills ?? defaultSkillsMode,
+    mcpServers: session?.mcpServers ?? {},
+  };
+}
 
 const ecoBasePromptAppend = [
   "You are running inside Eco Coding, an agent command center.",
@@ -136,15 +163,18 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const systemAppend = [ecoBasePromptAppend, phase.phaseAppend].filter(Boolean).join("\n\n");
+    const session = resolveSdkSessionOptions(input.sdkSession);
+    const allowedTools = mergeAllowedTools(phase.allowedTools, input.sdkSession);
     const queryOptions: Record<string, unknown> = {
       cwd: input.worktreePath,
       model: plannerRoute.primary.modelId,
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
       enableFileCheckpointing: true,
-      settingSources: ["project"],
+      settingSources: session.settingSources,
+      skills: session.skills,
       permissionMode: phase.permissionMode,
-      allowedTools: phase.allowedTools,
+      allowedTools,
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
@@ -158,6 +188,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         CLAUDE_AGENT_SDK_CLIENT_APP: "eco-coding",
       },
     };
+
+    if (Object.keys(session.mcpServers).length > 0) {
+      queryOptions.mcpServers = session.mcpServers;
+    }
 
     if (phase.includeAgents) {
       queryOptions.agents = createAgentDefinitions(input.routes);

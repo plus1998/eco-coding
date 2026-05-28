@@ -8,14 +8,19 @@ import {
   GitBranch,
   MessageSquarePlus,
   Settings2,
+  Plug,
   SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
   type AgentRole,
+  type McpServerConfigInput,
+  type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
+  type SkillsListResult,
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
@@ -27,6 +32,8 @@ import {
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { ActivityLogView } from "./ActivityLogView";
+import { McpSettingsPanel } from "./McpSettingsPanel";
+import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import "./styles.css";
 
@@ -41,8 +48,12 @@ interface RecentProject {
 
 const settingsSections = [
   { id: "models", label: "模型与路由", icon: SlidersHorizontal },
+  { id: "mcp", label: "MCP", icon: Plug },
+  { id: "skills", label: "Skills", icon: Sparkles },
   { id: "git", label: "Git", icon: GitBranch },
 ] as const;
+
+const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
@@ -57,6 +68,9 @@ function App() {
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
+  const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
+  const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
+  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>({
     name: "Anthropic compatible",
     baseUrl: "https://api.anthropic.com",
@@ -83,7 +97,8 @@ function App() {
       window.eco.getCurrentWorkspace(),
       window.eco.listThreads(),
       window.eco.getModelSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings]) => {
+      window.eco.getMcpSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -95,6 +110,7 @@ function App() {
       }
       setThreads(currentThreads);
       setSettings(modelSettings);
+      setMcpSettings(mcp);
       setProviderForm(providerToForm(modelSettings.providers[0]));
     });
 
@@ -210,6 +226,13 @@ function App() {
   );
   const activeThread = projectThreads.find((thread) => thread.id === selectedThreadId);
   const workspaceMatchesProject = workspace?.path === currentProjectPath;
+
+  useEffect(() => {
+    if (!settingsOpen || settingsSection !== "skills" || !window.eco) {
+      return;
+    }
+    void refreshSkillsList(currentProjectPath);
+  }, [settingsOpen, settingsSection, currentProjectPath]);
 
   const providerById = useMemo(
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
@@ -393,6 +416,44 @@ function App() {
       setProviderForm(providerToForm(provider));
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function refreshSkillsList(workspacePath?: string) {
+    if (!window.eco) return;
+    setIsLoadingSkills(true);
+    try {
+      const snapshot = await window.eco.listSkills(workspacePath);
+      setSkillsSnapshot(snapshot);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsLoadingSkills(false);
+    }
+  }
+
+  async function saveMcpServer(input: McpServerConfigInput) {
+    if (!window.eco) return;
+    setIsSavingSettings(true);
+    try {
+      const server = await window.eco.saveMcpServer(input);
+      const snapshot = await window.eco.getMcpSettings();
+      setMcpSettings(snapshot);
+      return server;
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function deleteMcpServer(serverId: string) {
+    if (!window.eco) return;
+    setIsSavingSettings(true);
+    try {
+      await window.eco.deleteMcpServer(serverId);
+      const snapshot = await window.eco.getMcpSettings();
+      setMcpSettings(snapshot);
     } finally {
       setIsSavingSettings(false);
     }
@@ -653,6 +714,24 @@ function App() {
           </aside>
 
           <div className="settings-content">
+            {settingsSection === "skills" && (
+              <SkillsSettingsPanel
+                snapshot={skillsSnapshot}
+                loading={isLoadingSkills}
+                workspaceLabel={currentProjectPath}
+                onRefresh={() => void refreshSkillsList(currentProjectPath)}
+              />
+            )}
+
+            {settingsSection === "mcp" && (
+              <McpSettingsPanel
+                servers={mcpSettings.servers}
+                busy={isSavingSettings}
+                onSave={saveMcpServer}
+                onDelete={deleteMcpServer}
+              />
+            )}
+
             {settingsSection === "models" && (
               <>
                 <header className="settings-page-header">

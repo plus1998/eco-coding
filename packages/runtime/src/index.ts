@@ -12,6 +12,16 @@ export interface ThreadStartRequest {
   worktree: WorktreePlan;
 }
 
+export type EcoSettingSource = "user" | "project" | "local";
+
+export interface EcoSdkSessionOptions {
+  /** Loads CLAUDE.md, rules, skills, hooks, and project .mcp.json */
+  settingSources?: EcoSettingSource[];
+  skills?: "all" | string[];
+  mcpServers?: Record<string, unknown>;
+  mcpAllowedTools?: string[];
+}
+
 export interface AgentRuntimeRunInput {
   threadId: string;
   prompt: string;
@@ -19,6 +29,7 @@ export interface AgentRuntimeRunInput {
   worktreePath: string;
   routes: ResolvedModelRoute[];
   signal: AbortSignal;
+  sdkSession?: EcoSdkSessionOptions;
 }
 
 export interface EcoPlanningContext {

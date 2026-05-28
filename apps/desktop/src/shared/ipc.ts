@@ -20,7 +20,20 @@ export const IPC_CHANNELS = {
   worktreeApply: "worktree:apply",
   terminalSpawn: "terminal:spawn",
   terminalInput: "terminal:input",
+  mcpSettingsGet: "mcp-settings:get",
+  mcpServerSave: "mcp-server:save",
+  mcpServerDelete: "mcp-server:delete",
+  skillsList: "skills:list",
 } as const;
+
+export type {
+  McpServerConfigInput,
+  McpServerConfigView,
+  McpSettingsSnapshot,
+  McpTransport,
+} from "./mcp";
+
+export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 

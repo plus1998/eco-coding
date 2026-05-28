@@ -2,10 +2,14 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   IPC_CHANNELS,
   type IpcChannel,
+  type McpServerConfigInput,
+  type McpServerConfigView,
+  type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type SkillsListResult,
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
@@ -38,6 +42,18 @@ const api = {
   },
   saveRoleRoutes(routes: RoleRouteConfig[]): Promise<RoleRouteConfig[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRoutesSave, routes);
+  },
+  getMcpSettings(): Promise<McpSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mcpSettingsGet);
+  },
+  saveMcpServer(server: McpServerConfigInput): Promise<McpServerConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mcpServerSave, server);
+  },
+  deleteMcpServer(serverId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mcpServerDelete, serverId);
+  },
+  listSkills(workspacePath?: string): Promise<SkillsListResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

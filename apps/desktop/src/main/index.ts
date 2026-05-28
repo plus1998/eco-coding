@@ -7,6 +7,7 @@ import {
   ClaudeAgentSdkDriver,
   formatAgentEventDisplay,
   type EcoPlanningContext,
+  type EcoSdkSessionOptions,
   type PlanReadyPayload,
 } from "@eco/runtime";
 import type { ResolvedModelRoute } from "../../../packages/model-router/src/index.ts";
@@ -22,6 +23,7 @@ import {
   type AgentRole,
   IPC_CHANNELS,
   isKnownIpcChannel,
+  type McpServerConfigInput,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type RoleRouteConfig,
@@ -35,6 +37,8 @@ import {
 } from "../shared/ipc";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import { createMcpStore, type McpStore } from "./mcp-store";
+import { listDiscoveredSkills } from "./skills-discovery";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +50,7 @@ const gitRunner: CommandRunner = {
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
+let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 
 interface ActiveThreadRun {
@@ -82,6 +87,7 @@ async function createMainWindow(): Promise<void> {
 app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
+  mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   registerIpcHandlers();
   await createMainWindow();
@@ -138,6 +144,31 @@ function registerIpcHandlers(): void {
     const routes = providerStore.saveRoleRoutes(payload);
     emitSettingsUpdated();
     return routes;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
+
+  ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload: McpServerConfigInput) => {
+    const server = mcpStore.saveServer(payload);
+    emitSettingsUpdated();
+    return server;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.skillsList, async (_event, workspacePath: unknown) => {
+    const pathToScan =
+      typeof workspacePath === "string" && workspacePath.trim()
+        ? workspacePath.trim()
+        : currentWorkspace?.path;
+    return listDiscoveredSkills(pathToScan);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.mcpServerDelete, async (_event, serverId: unknown) => {
+    if (typeof serverId !== "string" || !serverId.trim()) {
+      throw new Error("MCP server id is required.");
+    }
+    mcpStore.deleteServer(serverId);
+    emitSettingsUpdated();
+    return { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.threadStart, async (_event, payload: ThreadStartRequest) => {
@@ -413,6 +444,7 @@ async function runCodingThreadPlanning(
         worktreePath: worktreePlan.worktreePath,
         routes,
         signal: controller.signal,
+        sdkSession: buildSdkSessionOptions(),
       })) {
         if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
           planCaptured = true;
@@ -517,6 +549,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
           worktreePath: pending.worktreePath,
           routes,
           signal: controller.signal,
+          sdkSession: buildSdkSessionOptions(),
         },
         planning,
       )) {
@@ -594,6 +627,16 @@ function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
     throw new Error("Stored route configuration is invalid.");
   }
   return parsed;
+}
+
+function buildSdkSessionOptions(): EcoSdkSessionOptions {
+  const mcp = mcpStore.buildSdkConfig();
+  return {
+    settingSources: ["user", "project"],
+    skills: "all",
+    mcpServers: mcp.mcpServers,
+    mcpAllowedTools: mcp.allowedTools,
+  };
 }
 
 function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {

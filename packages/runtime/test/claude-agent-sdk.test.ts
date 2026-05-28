@@ -15,6 +15,8 @@ import {
   getDefaultAllowedTools,
   inferActivityRole,
   mapSdkMessageToEvents,
+  mergeAllowedTools,
+  resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
 
@@ -57,6 +59,19 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
 
 test("includes Agent in default allowed tools", () => {
   expect(getDefaultAllowedTools()).toContain("Agent");
+});
+
+test("merges MCP tool allowlist and defaults filesystem session options", () => {
+  expect(mergeAllowedTools(["Read", "Grep"], { mcpAllowedTools: ["mcp__github__*"] })).toEqual([
+    "Read",
+    "Grep",
+    "mcp__github__*",
+  ]);
+  expect(resolveSdkSessionOptions()).toEqual({
+    settingSources: ["user", "project"],
+    skills: "all",
+    mcpServers: {},
+  });
 });
 
 test("creates native SDK subagent definitions", () => {

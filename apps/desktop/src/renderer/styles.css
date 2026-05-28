@@ -400,6 +400,572 @@ button:not(:disabled) {
   color: #171717;
 }
 
+/* —— MCP settings (Codex-style) —— */
+.mcp-page-header {
+  margin-bottom: 28px;
+}
+
+.mcp-page-header h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.mcp-page-desc {
+  margin: 0;
+  color: #a3a3a3;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mcp-page-desc code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+}
+
+.mcp-learn-more {
+  margin-left: 4px;
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.mcp-learn-more:hover {
+  text-decoration: underline;
+}
+
+.mcp-list-error {
+  margin-bottom: 16px;
+}
+
+.mcp-list-section {
+  margin-top: 8px;
+}
+
+.mcp-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.mcp-list-toolbar-label {
+  color: #e5e5e5;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.mcp-add-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid #404040;
+  border-radius: 999px;
+  background: #262626;
+  color: #e5e5e5;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mcp-add-button:hover:not(:disabled) {
+  background: #333;
+}
+
+.mcp-add-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcp-list-empty {
+  margin: 0;
+  padding: 24px 16px;
+  border: 1px dashed #404040;
+  border-radius: 12px;
+  color: #737373;
+  font-size: 14px;
+  text-align: center;
+}
+
+.mcp-server-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-server-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #262626;
+}
+
+.mcp-server-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #f5f5f5;
+  word-break: break-all;
+}
+
+.mcp-server-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.mcp-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #a3a3a3;
+  cursor: pointer;
+}
+
+.mcp-icon-button:hover:not(:disabled) {
+  background: #333;
+  color: #e5e5e5;
+}
+
+.mcp-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcp-toggle {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.mcp-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mcp-toggle-track {
+  display: block;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: #404040;
+  transition: background 0.15s ease;
+}
+
+.mcp-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f5f5f5;
+  transition: transform 0.15s ease;
+}
+
+.mcp-toggle input:checked + .mcp-toggle-track {
+  background: #3b82f6;
+}
+
+.mcp-toggle input:checked + .mcp-toggle-track::after {
+  transform: translateX(18px);
+}
+
+.mcp-toggle input:disabled + .mcp-toggle-track {
+  opacity: 0.5;
+}
+
+.mcp-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.mcp-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #a3a3a3;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mcp-back-button:hover:not(:disabled) {
+  background: #262626;
+  color: #e5e5e5;
+}
+
+.mcp-uninstall-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 8px;
+  background: transparent;
+  color: #f87171;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mcp-uninstall-button:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.mcp-editor-title-block {
+  margin-bottom: 24px;
+}
+
+.mcp-editor-title-block h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.mcp-editor-hint {
+  margin: 0;
+  color: #737373;
+  font-size: 13px;
+}
+
+.mcp-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+}
+
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-field-label {
+  color: #a3a3a3;
+  font-size: 13px;
+}
+
+.mcp-field-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #171717;
+  color: #f5f5f5;
+  font-size: 14px;
+}
+
+.mcp-field-input:focus {
+  outline: none;
+  border-color: #525252;
+}
+
+.mcp-field-textarea {
+  resize: vertical;
+  min-height: 88px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.mcp-kv-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-kv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-env-row .mcp-env-key {
+  flex: 0 0 38%;
+  min-width: 120px;
+}
+
+.mcp-row-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #737373;
+  cursor: pointer;
+}
+
+.mcp-row-delete:hover {
+  background: #262626;
+  color: #f87171;
+}
+
+.mcp-inline-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: #a3a3a3;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mcp-inline-add:hover {
+  color: #e5e5e5;
+}
+
+.mcp-advanced {
+  color: #a3a3a3;
+  font-size: 13px;
+}
+
+.mcp-advanced summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.mcp-advanced[open] summary {
+  margin-bottom: 12px;
+}
+
+.mcp-save-button {
+  align-self: flex-start;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #e5e5e5;
+  color: #171717;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mcp-save-button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.mcp-save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcp-form textarea {
+  resize: vertical;
+  min-height: 72px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.settings-form-error {
+  margin: 0 0 12px;
+  color: #f87171;
+  font-size: 13px;
+}
+
+.settings-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.settings-danger-button {
+  padding: 8px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: #f87171;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-page-desc code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+}
+
+.settings-page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-page-meta {
+  margin: 8px 0 0;
+  color: #737373;
+  font-size: 13px;
+}
+
+.settings-page-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.settings-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #262626;
+  color: #e5e5e5;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.settings-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-icon-button .spinning {
+  animation: eco-spin 0.8s linear infinite;
+}
+
+@keyframes eco-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.settings-section-subtitle {
+  margin: 4px 0 0;
+  color: #737373;
+  font-size: 12px;
+}
+
+.settings-count-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #333;
+  color: #d4d4d4;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-empty-hint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #a3a3a3;
+  font-size: 13px;
+}
+
+.skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skill-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #1a1a1a;
+}
+
+.skill-card-icon {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+  color: #a78bfa;
+}
+
+.skill-card-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.skill-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skill-card-title-row strong {
+  font-size: 15px;
+}
+
+.skill-source-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.skill-source-badge.user {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.skill-source-badge.project {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+}
+
+.skill-card-description {
+  margin: 6px 0 8px;
+  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.skill-card-path {
+  display: block;
+  color: #737373;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
 /* —— Run log (Claude Code style) —— */
 .run-log {
   display: flex;
