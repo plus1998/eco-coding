@@ -25,6 +25,7 @@ import {
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { ActivityLogView } from "./ActivityLogView";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
@@ -459,21 +460,7 @@ function App() {
                 </header>
               )}
               <div className="activity-messages">
-              {activityLines.map((line) => (
-                <article
-                  className={
-                    line.role === "thinking"
-                      ? "activity-item activity-item-thinking"
-                      : line.role === "tool"
-                        ? "activity-item activity-item-tool"
-                        : "activity-item"
-                  }
-                  key={line.id}
-                >
-                  <span className="activity-role">{activityRoleLabel(line.role)}</span>
-                  <p>{line.message}</p>
-                </article>
-              ))}
+                <ActivityLogView lines={activityLines} thread={activeThread} />
                 <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
               </div>
             </div>
@@ -792,13 +779,6 @@ function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
     "message" in event &&
     typeof event.message === "string"
   );
-}
-
-function activityRoleLabel(role: string): string {
-  if (role === "thinking") return "思考";
-  if (role === "tool") return "工具";
-  if (role === "system") return "系统";
-  return role;
 }
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {

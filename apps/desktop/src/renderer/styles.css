@@ -308,51 +308,100 @@ button:not(:disabled) {
   color: #aaa;
 }
 
-.activity-item {
-  padding: 14px 0;
-  border-top: 1px solid #2f2f2f;
+/* —— Run log (Claude Code style) —— */
+.run-log {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.activity-item:first-of-type {
-  border-top: 0;
+.run-log-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  color: #a3a3a3;
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.activity-role {
-  display: block;
-  margin-bottom: 6px;
-  color: #8a8a8a;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.activity-item p {
-  margin: 0;
-  max-height: 240px;
-  overflow-y: auto;
+.run-log-progress:hover {
   color: #d4d4d4;
+}
+
+.run-log-progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #737373;
+}
+
+.run-log-progress-dot.running {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.2);
+}
+
+.run-log-chevron {
+  color: #737373;
+  transition: transform 0.15s ease;
+}
+
+.run-log-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.run-log-phase {
+  color: #8a8a8a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.run-log-narrative p {
+  margin: 0;
+  color: #e5e5e5;
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.activity-item-thinking .activity-role {
-  color: #a78bfa;
+.run-log-code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f0f0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
 }
 
-.activity-item-thinking p {
-  color: #c4b5fd;
+.run-log-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #a3a3a3;
+  animation: run-log-blink 1s step-end infinite;
+}
+
+@keyframes run-log-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.run-log-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #8a8a8a;
   font-size: 14px;
+  line-height: 1.4;
 }
 
-.activity-item-tool .activity-role {
-  color: #fbbf24;
-}
-
-.activity-item-tool p {
-  color: #e8d4a8;
-  font-size: 14px;
+.run-log-action-icon {
+  flex-shrink: 0;
+  color: #737373;
 }
 
 /* —— Composer —— */
