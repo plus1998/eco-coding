@@ -2,6 +2,8 @@ import type { AgentRole, AgentRoleRoute, ModelProfile } from "../../shared/src";
 import { resolveModelRoute, type ResolvedModelRoute } from "../../model-router/src";
 import type { RunningThread, ThreadStartRequest, ThreadSupervisor } from "../../runtime/src";
 import { createWorktreePlan, type GitWorktreeService, type WorktreePlan } from "../../workspace/src";
+import type { ApprovalService } from "../../approval/src";
+import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "../../runtime/src";
 
 export interface StartThreadInput {
   threadId: string;
@@ -59,4 +61,63 @@ export function resolveRoutes(
     }
     return resolution.route;
   });
+}
+
+export interface ApprovalBackedPermissionOptions {
+  approvalService: ApprovalService;
+  threadId: string;
+  workspacePath: string;
+  cwd: string;
+}
+
+export function createApprovalBackedPermissionHandler(options: ApprovalBackedPermissionOptions) {
+  return async (request: SdkToolPermissionRequest): Promise<SdkToolPermissionDecision> => {
+    const context = {
+      threadId: options.threadId,
+      agentId: request.agentId ?? "sdk",
+    };
+
+    if (request.toolName === "Bash" && typeof request.input.command === "string") {
+      const approval = await options.approvalService.requestForShellCommand(context, {
+        command: request.input.command,
+        cwd: options.cwd,
+        workspacePath: options.workspacePath,
+      });
+
+      if (approval) {
+        return {
+          behavior: "deny",
+          message: `Approval required: ${approval.reason}`,
+          interrupt: approval.decision === "pending",
+        };
+      }
+    }
+
+    const filePath = extractFilePath(request.input);
+    if ((request.toolName === "Write" || request.toolName === "Edit") && filePath) {
+      const approval = await options.approvalService.requestForFileWrite(context, {
+        filePath,
+        workspacePath: options.workspacePath,
+      });
+
+      if (approval) {
+        return {
+          behavior: "deny",
+          message: `Approval required: ${approval.reason}`,
+          interrupt: approval.decision === "pending",
+        };
+      }
+    }
+
+    return { behavior: "allow", updatedInput: request.input };
+  };
+}
+
+function extractFilePath(input: Record<string, unknown>): string | undefined {
+  for (const key of ["file_path", "filePath", "path"]) {
+    if (typeof input[key] === "string") {
+      return input[key];
+    }
+  }
+  return undefined;
 }

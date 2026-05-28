@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../shared" },
+    { "path": "../approval" },
     { "path": "../model-router" },
     { "path": "../runtime" },
     { "path": "../workspace" }
