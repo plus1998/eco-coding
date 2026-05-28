@@ -1,0 +1,7 @@
+[install]
+linker = "isolated"
+saveTextLockfile = true
+
+[test]
+root = "."
+timeout = 10000

@@ -1,0 +1,19 @@
+{
+  "name": "eco-coding",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bunx tsc -b",
+    "lint": "bunx biome check .",
+    "format": "bunx biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "typescript": "^5.9.0"
+  }
+}
