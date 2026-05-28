@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentRoleRoute, ModelProfile } from "../../shared/src";
-import { resolveModelRoute, runAnthropicConformanceCheck, type FetchLike } from "../src";
+import { resolveModelRoute, runAnthropicConformanceCheck, validateRouterConfig, type FetchLike } from "../src";
 
 const profiles: ModelProfile[] = [
   {
@@ -81,5 +81,19 @@ test("runs Anthropic-compatible conformance checks without leaking keys", async 
     "POST https://gateway.test/v1/messages",
     "POST https://gateway.test/v1/messages",
     "POST https://gateway.test/v1/messages/count_tokens",
+  ]);
+});
+
+test("validates router config references and Anthropic-compatible base URLs", () => {
+  const result = validateRouterConfig({
+    profiles: [{ ...profiles[0], baseUrl: "gateway.test", capabilities: ["streaming"] }],
+    routes: [{ ...routes[0], fallbackModelIds: ["missing"] }],
+  });
+
+  expect(result.ok).toBe(false);
+  expect(result.errors).toEqual([
+    "Model profile strong must use an HTTP(S) baseUrl",
+    "Model profile strong must declare messages_api capability",
+    "Route coder references missing fallback model missing",
   ]);
 });

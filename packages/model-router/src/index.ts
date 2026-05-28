@@ -12,6 +12,48 @@ export interface ResolvedModelRoute {
   fallbacks: ModelProfile[];
 }
 
+export interface RouterConfig {
+  profiles: ModelProfile[];
+  routes: AgentRoleRoute[];
+}
+
+export interface ConfigValidationResult {
+  ok: boolean;
+  errors: string[];
+}
+
+export function validateRouterConfig(config: RouterConfig): ConfigValidationResult {
+  const errors: string[] = [];
+  const profileIds = new Set<string>();
+
+  for (const profile of config.profiles) {
+    if (profileIds.has(profile.id)) {
+      errors.push(`Duplicate model profile id: ${profile.id}`);
+    }
+    profileIds.add(profile.id);
+
+    if (!profile.baseUrl.startsWith("http://") && !profile.baseUrl.startsWith("https://")) {
+      errors.push(`Model profile ${profile.id} must use an HTTP(S) baseUrl`);
+    }
+    if (!profile.capabilities.includes("messages_api")) {
+      errors.push(`Model profile ${profile.id} must declare messages_api capability`);
+    }
+  }
+
+  for (const route of config.routes) {
+    if (!profileIds.has(route.primaryModelId)) {
+      errors.push(`Route ${route.role} references missing primary model ${route.primaryModelId}`);
+    }
+    for (const fallbackModelId of route.fallbackModelIds) {
+      if (!profileIds.has(fallbackModelId)) {
+        errors.push(`Route ${route.role} references missing fallback model ${fallbackModelId}`);
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
 export interface RouteFailure {
   role: AgentRole;
   reason: string;

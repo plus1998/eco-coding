@@ -1,0 +1,36 @@
+{
+  "profiles": [
+    {
+      "id": "claude-sonnet",
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet",
+      "baseUrl": "https://api.anthropic.com",
+      "modelId": "claude-sonnet-4",
+      "capabilities": [
+        "messages_api",
+        "streaming",
+        "tool_use",
+        "subagent_compatible",
+        "count_tokens",
+        "cost_usage",
+        "long_context"
+      ],
+      "enabled": true,
+      "contextWindow": 200000
+    }
+  ],
+  "routes": [
+    {
+      "role": "planner",
+      "primaryModelId": "claude-sonnet",
+      "fallbackModelIds": [],
+      "requiredCapabilities": ["messages_api", "streaming", "tool_use"]
+    },
+    {
+      "role": "coder",
+      "primaryModelId": "claude-sonnet",
+      "fallbackModelIds": [],
+      "requiredCapabilities": ["messages_api", "streaming", "tool_use"]
+    }
+  ]
+}
