@@ -1,0 +1,265 @@
+:root {
+  font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+  color: #25231f;
+  background: #f6f2ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  border: 0;
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  min-height: 100vh;
+  background:
+    linear-gradient(90deg, rgba(37, 35, 31, 0.06) 1px, transparent 1px),
+    #f6f2ea;
+  background-size: 28px 28px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  padding: 28px 18px;
+  border-right: 1px solid rgba(37, 35, 31, 0.12);
+  background: rgba(251, 249, 245, 0.86);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid #25231f;
+  border-radius: 7px;
+  background: #d5f05b;
+  font-weight: 800;
+}
+
+.brand strong,
+.brand span {
+  display: block;
+}
+
+.brand span {
+  margin-top: 3px;
+  color: #767064;
+  font-size: 12px;
+}
+
+nav {
+  display: grid;
+  gap: 6px;
+}
+
+nav button,
+.primary,
+.approval-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 7px;
+  color: #3d3931;
+  background: transparent;
+  cursor: default;
+}
+
+nav button.active {
+  background: #25231f;
+  color: #fffaf0;
+}
+
+.workspace {
+  min-width: 0;
+  padding: 30px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.eyebrow {
+  color: #817969;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 5px 0 0;
+  font-size: 30px;
+  line-height: 1.12;
+}
+
+.primary {
+  background: #25231f;
+  color: #fffaf0;
+}
+
+.thread-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.thread-card,
+.timeline,
+.right-panel {
+  border: 1px solid rgba(37, 35, 31, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.thread-card {
+  display: grid;
+  gap: 8px;
+  min-height: 112px;
+  padding: 16px;
+}
+
+.thread-card span,
+.agent-row span {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e9edf1;
+  color: #4b5965;
+  font-size: 12px;
+}
+
+.thread-card small,
+.section-heading small,
+.agent-row small {
+  color: #80786b;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 18px;
+  align-items: start;
+}
+
+.timeline,
+.right-panel {
+  padding: 18px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.section-heading span {
+  font-weight: 800;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 12px;
+  min-height: 76px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(37, 35, 31, 0.09);
+}
+
+.event-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 99px;
+  background: #2f7d68;
+  box-shadow: 0 0 0 5px rgba(47, 125, 104, 0.12);
+}
+
+.event-row p {
+  margin: 6px 0 0;
+  color: #5e584e;
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid rgba(37, 35, 31, 0.09);
+}
+
+.agent-row strong,
+.agent-row small {
+  display: block;
+}
+
+.diff-box {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(37, 35, 31, 0.13);
+}
+
+pre {
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border-radius: 7px;
+  background: #1f2423;
+  color: #d5f05b;
+  font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+}
+
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.approval-actions button {
+  background: #e8e1d5;
+}
+
+.approval-actions .approve {
+  background: #2f7d68;
+  color: #fff;
+}
+
+@media (max-width: 980px) {
+  .shell,
+  .main-grid,
+  .thread-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(37, 35, 31, 0.12);
+  }
+}

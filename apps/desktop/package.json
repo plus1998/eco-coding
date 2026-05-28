@@ -1,0 +1,26 @@
+{
+  "name": "@eco/desktop",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:electron": "electron .",
+    "build": "vite build && bun build src/main/index.ts --target=node --outdir dist/main && bun build src/preload/index.ts --target=node --outdir dist/preload"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^37.0.0",
+    "framer-motion": "^12.0.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vite": "^7.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
