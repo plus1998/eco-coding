@@ -84,11 +84,13 @@ export function evaluateShellCommandText(request: ShellCommandRequest): PolicyDe
     .split(/\s*(?:&&|\|\||;|\|)\s*/g)
     .map((segment) => segment.trim())
     .filter(Boolean)
-    .map((segment) => evaluateCommand({
-      command: tokenizeShellSegment(segment),
-      cwd: request.cwd,
-      workspacePath: request.workspacePath,
-    }));
+    .map((segment) =>
+      evaluateCommand({
+        command: tokenizeShellSegment(segment),
+        cwd: request.cwd,
+        workspacePath: request.workspacePath,
+      }),
+    );
 
   return pickStrictestDecision(decisions);
 }
@@ -166,7 +168,10 @@ export class GitWorktreeService {
     if (result.exitCode !== 0) {
       throw new Error(`Failed to list changed files: ${result.stderr || result.stdout}`);
     }
-    return result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
   }
 
   async applyApprovedDiff(plan: WorktreePlan): Promise<void> {
@@ -175,11 +180,9 @@ export class GitWorktreeService {
       return;
     }
 
-    const result = await this.runner.run(
-      ["git", "apply", "--whitespace=nowarn", "-"],
-      plan.workspacePath,
-      { stdin: diff },
-    );
+    const result = await this.runner.run(["git", "apply", "--whitespace=nowarn", "-"], plan.workspacePath, {
+      stdin: diff,
+    });
     if (result.exitCode !== 0) {
       throw new Error(`Failed to apply approved diff: ${result.stderr || result.stdout}`);
     }
@@ -208,8 +211,9 @@ function pickStrictestDecision(decisions: PolicyDecision[]): PolicyDecision {
 
   const asks = decisions.filter((decision) => decision.action === "ask");
   if (asks.length > 0) {
-    const [strictest] = asks.sort((left, right) => riskRank(right.riskLevel) - riskRank(left.riskLevel));
-    return strictest!;
+    return asks.reduce((strictest, decision) =>
+      riskRank(decision.riskLevel) > riskRank(strictest.riskLevel) ? decision : strictest,
+    );
   }
 
   return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };

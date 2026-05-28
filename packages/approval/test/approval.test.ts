@@ -5,7 +5,11 @@ import { ApprovalService } from "../src";
 test("creates pending approvals for dangerous commands", async () => {
   const saved: ApprovalRequest[] = [];
   const service = new ApprovalService({
-    store: { async saveApproval(request) { saved.push(request); } },
+    store: {
+      async saveApproval(request) {
+        saved.push(request);
+      },
+    },
     idFactory: () => "approval_1",
     clock: () => "2026-01-01T00:00:00.000Z",
   });
@@ -70,9 +74,13 @@ test("allows safe shell command strings without approval", async () => {
 test("resolves pending approvals", async () => {
   const saved: ApprovalRequest[] = [];
   const service = new ApprovalService({
-    store: { async saveApproval(request) { saved.push(request); } },
+    store: {
+      async saveApproval(request) {
+        saved.push(request);
+      },
+    },
     idFactory: () => "approval_1",
-    clock: () => saved.length === 0 ? "2026-01-01T00:00:00.000Z" : "2026-01-01T00:01:00.000Z",
+    clock: () => (saved.length === 0 ? "2026-01-01T00:00:00.000Z" : "2026-01-01T00:01:00.000Z"),
   });
 
   await service.requestForFileWrite(

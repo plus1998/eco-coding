@@ -1,9 +1,14 @@
-import type { AgentRole, AgentRoleRoute, ModelProfile } from "../../shared/src";
-import { resolveModelRoute, type ResolvedModelRoute } from "../../model-router/src";
-import type { RunningThread, ThreadStartRequest, ThreadSupervisor } from "../../runtime/src";
-import { createWorktreePlan, type GitWorktreeService, type WorktreePlan } from "../../workspace/src";
 import type { ApprovalService } from "../../approval/src";
-import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "../../runtime/src";
+import { type ResolvedModelRoute, resolveModelRoute } from "../../model-router/src";
+import type {
+  RunningThread,
+  SdkToolPermissionDecision,
+  SdkToolPermissionRequest,
+  ThreadStartRequest,
+  ThreadSupervisor,
+} from "../../runtime/src";
+import type { AgentRole, AgentRoleRoute, ModelProfile } from "../../shared/src";
+import { createWorktreePlan, type GitWorktreeService, type WorktreePlan } from "../../workspace/src";
 
 export interface StartThreadInput {
   threadId: string;

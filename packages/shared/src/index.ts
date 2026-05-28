@@ -9,13 +9,7 @@ export type ModelCapability =
   | "cost_usage"
   | "long_context";
 
-export type ModelProviderKind =
-  | "anthropic"
-  | "litellm"
-  | "openrouter"
-  | "bedrock"
-  | "vertex"
-  | "custom";
+export type ModelProviderKind = "anthropic" | "litellm" | "openrouter" | "bedrock" | "vertex" | "custom";
 
 export interface ModelProfile {
   id: string;

@@ -21,9 +21,7 @@ button {
   display: grid;
   grid-template-columns: 248px 1fr;
   min-height: 100vh;
-  background:
-    linear-gradient(90deg, rgba(37, 35, 31, 0.06) 1px, transparent 1px),
-    #f6f2ea;
+  background: linear-gradient(90deg, rgba(37, 35, 31, 0.06) 1px, transparent 1px), #f6f2ea;
   background-size: 28px 28px;
 }
 
@@ -232,7 +230,10 @@ pre {
   border-radius: 7px;
   background: #1f2423;
   color: #d5f05b;
-  font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+  font:
+    12px / 1.55 "SFMono-Regular",
+    Consolas,
+    monospace;
 }
 
 .approval-actions {

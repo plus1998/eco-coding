@@ -34,12 +34,24 @@ function App() {
           </div>
         </div>
         <nav>
-          <button className="active"><Activity size={16} /> Threads</button>
-          <button><Bot size={16} /> Agents</button>
-          <button><GitBranch size={16} /> Git</button>
-          <button><TerminalSquare size={16} /> Terminal</button>
-          <button><KeyRound size={16} /> Models</button>
-          <button><ShieldCheck size={16} /> Approvals</button>
+          <button type="button" className="active">
+            <Activity size={16} /> Threads
+          </button>
+          <button type="button">
+            <Bot size={16} /> Agents
+          </button>
+          <button type="button">
+            <GitBranch size={16} /> Git
+          </button>
+          <button type="button">
+            <TerminalSquare size={16} /> Terminal
+          </button>
+          <button type="button">
+            <KeyRound size={16} /> Models
+          </button>
+          <button type="button">
+            <ShieldCheck size={16} /> Approvals
+          </button>
         </nav>
       </aside>
 
@@ -49,7 +61,9 @@ function App() {
             <span className="eyebrow">MVP runtime</span>
             <h1>Anthropic-compatible routing thread</h1>
           </div>
-          <button className="primary"><Play size={16} /> Start thread</button>
+          <button type="button" className="primary">
+            <Play size={16} /> Start thread
+          </button>
         </header>
 
         <section className="thread-strip">
@@ -101,8 +115,10 @@ function App() {
               </div>
               <pre>{`+ packages/model-router/src/index.ts\n+ endpoint conformance checks\n+ fallback capability gate`}</pre>
               <div className="approval-actions">
-                <button>Reject</button>
-                <button className="approve">Apply</button>
+                <button type="button">Reject</button>
+                <button type="button" className="approve">
+                  Apply
+                </button>
               </div>
             </div>
           </aside>

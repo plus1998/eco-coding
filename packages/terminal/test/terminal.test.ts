@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentEvent } from "../../shared/src";
-import { TerminalSessionManager, type TerminalProcess, type TerminalSpawnRequest } from "../src";
+import { type TerminalProcess, TerminalSessionManager, type TerminalSpawnRequest } from "../src";
 
 const request: TerminalSpawnRequest = {
   sessionId: "term_1",
@@ -32,9 +32,12 @@ class FakeProcess implements TerminalProcess {
 test("starts allowed terminal sessions and emits output events", () => {
   const events: AgentEvent[] = [];
   const process = new FakeProcess();
-  const manager = new TerminalSessionManager({
-    spawn: () => process,
-  }, (event) => events.push(event));
+  const manager = new TerminalSessionManager(
+    {
+      spawn: () => process,
+    },
+    (event) => events.push(event),
+  );
 
   const result = manager.start(request);
   expect(result.ok).toBe(true);
@@ -47,9 +50,12 @@ test("starts allowed terminal sessions and emits output events", () => {
 });
 
 test("blocks terminal sessions that require approval", () => {
-  const manager = new TerminalSessionManager({
-    spawn: () => new FakeProcess(),
-  }, () => {});
+  const manager = new TerminalSessionManager(
+    {
+      spawn: () => new FakeProcess(),
+    },
+    () => {},
+  );
 
   const result = manager.start({ ...request, command: ["rm", "-rf", "src"] });
   expect(result.ok).toBe(false);
@@ -60,9 +66,12 @@ test("blocks terminal sessions that require approval", () => {
 
 test("removes terminal sessions after exit", () => {
   const process = new FakeProcess();
-  const manager = new TerminalSessionManager({
-    spawn: () => process,
-  }, () => {});
+  const manager = new TerminalSessionManager(
+    {
+      spawn: () => process,
+    },
+    () => {},
+  );
 
   manager.start(request);
   expect(manager.get("term_1")).toBeDefined();

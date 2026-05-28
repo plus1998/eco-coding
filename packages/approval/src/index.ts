@@ -1,10 +1,10 @@
-import type { ApprovalDecision, ApprovalRequest } from "../../shared/src";
 import type { EventStore } from "../../persistence/src";
+import type { ApprovalDecision, ApprovalRequest } from "../../shared/src";
 import {
+  type CommandRequest,
   evaluateCommand,
   evaluateFileWrite,
   evaluateShellCommandText,
-  type CommandRequest,
   type FileWriteRequest,
   type ShellCommandRequest,
 } from "../../workspace/src";
@@ -80,7 +80,10 @@ export class ApprovalService {
     });
   }
 
-  async resolve(approvalId: string, decision: Exclude<ApprovalDecision, "pending">): Promise<ApprovalRequest> {
+  async resolve(
+    approvalId: string,
+    decision: Exclude<ApprovalDecision, "pending">,
+  ): Promise<ApprovalRequest> {
     const approval = this.approvals.get(approvalId);
     if (!approval) {
       throw new Error(`Approval ${approvalId} was not found`);

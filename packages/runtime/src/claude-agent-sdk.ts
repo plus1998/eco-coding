@@ -1,5 +1,5 @@
-import { createAgentEvent, type AgentEvent, type AgentRole } from "../../shared/src";
 import type { ResolvedModelRoute } from "../../model-router/src";
+import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -151,67 +151,81 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
   const role = inferRole(message);
 
   if (message.type === "system" && message.subtype === "init") {
-    return [createAgentEvent({
-      id: `${uuid}:init`,
-      threadId,
-      agentId: sessionId,
-      role,
-      type: "agent.started",
-      payload: message,
-    })];
+    return [
+      createAgentEvent({
+        id: `${uuid}:init`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "agent.started",
+        payload: message,
+      }),
+    ];
   }
 
   if (message.type === "assistant" || message.type === "stream_event") {
-    return [createAgentEvent({
-      id: `${uuid}:message`,
+    return [
+      createAgentEvent({
+        id: `${uuid}:message`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "message.delta",
+        payload: message,
+      }),
+    ];
+  }
+
+  if (message.type === "tool_progress") {
+    return [
+      createAgentEvent({
+        id: `${uuid}:tool-progress`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "tool.started",
+        payload: message,
+      }),
+    ];
+  }
+
+  if (message.type === "result") {
+    return [
+      createAgentEvent({
+        id: `${uuid}:usage`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "usage.recorded",
+        payload: {
+          totalCostUsd: message.total_cost_usd,
+          usage: message.usage,
+          modelUsage: message.modelUsage,
+          subtype: message.subtype,
+        },
+      }),
+    ];
+  }
+
+  return [
+    createAgentEvent({
+      id: `${uuid}:raw`,
       threadId,
       agentId: sessionId,
       role,
       type: "message.delta",
       payload: message,
-    })];
-  }
-
-  if (message.type === "tool_progress") {
-    return [createAgentEvent({
-      id: `${uuid}:tool-progress`,
-      threadId,
-      agentId: sessionId,
-      role,
-      type: "tool.started",
-      payload: message,
-    })];
-  }
-
-  if (message.type === "result") {
-    return [createAgentEvent({
-      id: `${uuid}:usage`,
-      threadId,
-      agentId: sessionId,
-      role,
-      type: "usage.recorded",
-      payload: {
-        totalCostUsd: message.total_cost_usd,
-        usage: message.usage,
-        modelUsage: message.modelUsage,
-        subtype: message.subtype,
-      },
-    })];
-  }
-
-  return [createAgentEvent({
-    id: `${uuid}:raw`,
-    threadId,
-    agentId: sessionId,
-    role,
-    type: "message.delta",
-    payload: message,
-  })];
+    }),
+  ];
 }
 
 export function createCanUseTool(
   handler: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>,
-): (toolName: string, input: Record<string, unknown>, options: Record<string, unknown>) => Promise<Record<string, unknown>> {
+): (
+  toolName: string,
+  input: Record<string, unknown>,
+  options: Record<string, unknown>,
+) => Promise<Record<string, unknown>> {
   return async (toolName, input, options) => {
     const request: SdkToolPermissionRequest = {
       toolName,

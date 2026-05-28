@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { IPC_CHANNELS, isKnownIpcChannel } from "../shared/ipc";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

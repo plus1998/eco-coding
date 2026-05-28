@@ -1,64 +1,80 @@
 import { expect, test } from "bun:test";
 import {
+  type CommandRunner,
   createWorktreePlan,
   evaluateCommand,
   evaluateFileWrite,
   evaluateShellCommandText,
   GitWorktreeService,
   isInsidePath,
-  type CommandRunner,
 } from "../src";
 
 test("requires approval for dangerous commands", () => {
-  expect(evaluateCommand({
-    command: ["rm", "-rf", "src"],
-    cwd: "/repo",
-    workspacePath: "/repo",
-  }).action).toBe("ask");
+  expect(
+    evaluateCommand({
+      command: ["rm", "-rf", "src"],
+      cwd: "/repo",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("ask");
 
-  expect(evaluateCommand({
-    command: ["git", "reset", "--hard"],
-    cwd: "/repo",
-    workspacePath: "/repo",
-  }).riskLevel).toBe("critical");
+  expect(
+    evaluateCommand({
+      command: ["git", "reset", "--hard"],
+      cwd: "/repo",
+      workspacePath: "/repo",
+    }).riskLevel,
+  ).toBe("critical");
 
-  expect(evaluateCommand({
-    command: ["pnpm", "add", "react"],
-    cwd: "/repo",
-    workspacePath: "/repo",
-  }).action).toBe("ask");
+  expect(
+    evaluateCommand({
+      command: ["pnpm", "add", "react"],
+      cwd: "/repo",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("ask");
 });
 
 test("denies commands and writes outside the workspace", () => {
-  expect(evaluateCommand({
-    command: ["ls"],
-    cwd: "/tmp",
-    workspacePath: "/repo",
-  }).action).toBe("deny");
+  expect(
+    evaluateCommand({
+      command: ["ls"],
+      cwd: "/tmp",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("deny");
 
-  expect(evaluateFileWrite({
-    filePath: "/repo/src/index.ts",
-    workspacePath: "/repo",
-  }).action).toBe("allow");
+  expect(
+    evaluateFileWrite({
+      filePath: "/repo/src/index.ts",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("allow");
 
-  expect(evaluateFileWrite({
-    filePath: "/etc/passwd",
-    workspacePath: "/repo",
-  }).action).toBe("deny");
+  expect(
+    evaluateFileWrite({
+      filePath: "/etc/passwd",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("deny");
 });
 
 test("evaluates compound shell commands conservatively", () => {
-  expect(evaluateShellCommandText({
-    command: "echo ok && rm -rf src",
-    cwd: "/repo",
-    workspacePath: "/repo",
-  }).action).toBe("ask");
+  expect(
+    evaluateShellCommandText({
+      command: "echo ok && rm -rf src",
+      cwd: "/repo",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("ask");
 
-  expect(evaluateShellCommandText({
-    command: "NODE_ENV=test bun test | tee out.log",
-    cwd: "/repo",
-    workspacePath: "/repo",
-  }).action).toBe("allow");
+  expect(
+    evaluateShellCommandText({
+      command: "NODE_ENV=test bun test | tee out.log",
+      cwd: "/repo",
+      workspacePath: "/repo",
+    }).action,
+  ).toBe("allow");
 });
 
 test("builds stable worktree plans", () => {

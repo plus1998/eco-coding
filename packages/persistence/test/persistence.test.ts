@@ -10,24 +10,28 @@ test("defines durable tables for thread event state", () => {
 
 test("stores thread events in timestamp order", async () => {
   const store = new InMemoryEventStore();
-  await store.appendEvent(createAgentEvent({
-    id: "evt_2",
-    threadId: "thr_1",
-    agentId: "agt_1",
-    role: "coder",
-    type: "tool.completed",
-    timestamp: "2026-01-01T00:00:02.000Z",
-    payload: {},
-  }));
-  await store.appendEvent(createAgentEvent({
-    id: "evt_1",
-    threadId: "thr_1",
-    agentId: "agt_1",
-    role: "coder",
-    type: "tool.started",
-    timestamp: "2026-01-01T00:00:01.000Z",
-    payload: {},
-  }));
+  await store.appendEvent(
+    createAgentEvent({
+      id: "evt_2",
+      threadId: "thr_1",
+      agentId: "agt_1",
+      role: "coder",
+      type: "tool.completed",
+      timestamp: "2026-01-01T00:00:02.000Z",
+      payload: {},
+    }),
+  );
+  await store.appendEvent(
+    createAgentEvent({
+      id: "evt_1",
+      threadId: "thr_1",
+      agentId: "agt_1",
+      role: "coder",
+      type: "tool.started",
+      timestamp: "2026-01-01T00:00:01.000Z",
+      payload: {},
+    }),
+  );
 
   const events = await store.listEvents("thr_1");
   expect(events.map((event) => event.id)).toEqual(["evt_1", "evt_2"]);

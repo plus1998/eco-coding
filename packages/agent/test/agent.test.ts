@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { AgentRoleRoute, ModelProfile } from "../../shared/src";
-import { InMemoryEventStore } from "../../persistence/src";
-import { ThreadSupervisor, type AgentRuntimeDriver } from "../../runtime/src";
 import { ApprovalService } from "../../approval/src";
-import { ThreadOrchestrator, createApprovalBackedPermissionHandler, resolveRoutes } from "../src";
+import { InMemoryEventStore } from "../../persistence/src";
+import { type AgentRuntimeDriver, ThreadSupervisor } from "../../runtime/src";
+import type { AgentRoleRoute, ModelProfile } from "../../shared/src";
+import { createApprovalBackedPermissionHandler, resolveRoutes, ThreadOrchestrator } from "../src";
 
 const profiles: ModelProfile[] = [
   {

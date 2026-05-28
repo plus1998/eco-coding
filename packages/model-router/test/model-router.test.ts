@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { AgentRoleRoute, ModelProfile } from "../../shared/src";
-import { resolveModelRoute, runAnthropicConformanceCheck, validateRouterConfig, type FetchLike } from "../src";
+import {
+  type FetchLike,
+  resolveModelRoute,
+  runAnthropicConformanceCheck,
+  validateRouterConfig,
+} from "../src";
 
 const profiles: ModelProfile[] = [
   {
@@ -43,11 +48,7 @@ test("resolves only models that satisfy route capabilities", () => {
 });
 
 test("fails fast when primary model is missing capabilities", () => {
-  const resolution = resolveModelRoute(
-    "coder",
-    [{ ...routes[0], primaryModelId: "cheap" }],
-    profiles,
-  );
+  const resolution = resolveModelRoute("coder", [{ ...routes[0], primaryModelId: "cheap" }], profiles);
 
   expect(resolution.ok).toBe(false);
 });
@@ -67,11 +68,15 @@ test("runs Anthropic-compatible conformance checks without leaking keys", async 
     });
   };
 
-  const result = await runAnthropicConformanceCheck(profiles[0], {
-    baseUrl: "https://gateway.test/",
-    apiKey: "secret",
-    modelId: "strong-model",
-  }, fetcher);
+  const result = await runAnthropicConformanceCheck(
+    profiles[0],
+    {
+      baseUrl: "https://gateway.test/",
+      apiKey: "secret",
+      modelId: "strong-model",
+    },
+    fetcher,
+  );
 
   expect(result.passed).toBe(true);
   expect(result.capabilities.count_tokens).toBe(true);

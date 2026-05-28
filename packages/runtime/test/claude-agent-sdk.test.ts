@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
-import { createAgentDefinitions, createCanUseTool, mapSdkMessageToEvents, toSdkAgentModel } from "../src/claude-agent-sdk";
+import {
+  createAgentDefinitions,
+  createCanUseTool,
+  mapSdkMessageToEvents,
+  toSdkAgentModel,
+} from "../src/claude-agent-sdk";
 
 const routes: ResolvedModelRoute[] = [
   {
@@ -48,15 +53,18 @@ test("creates native SDK subagent definitions", () => {
 });
 
 test("maps SDK result messages to usage events", () => {
-  const events = mapSdkMessageToEvents({
-    type: "result",
-    subtype: "success",
-    uuid: "sdk_1",
-    session_id: "session_1",
-    total_cost_usd: 0.12,
-    usage: { input_tokens: 10, output_tokens: 20 },
-    modelUsage: { "claude-opus-4": { input_tokens: 10 } },
-  }, "thr_1");
+  const events = mapSdkMessageToEvents(
+    {
+      type: "result",
+      subtype: "success",
+      uuid: "sdk_1",
+      session_id: "session_1",
+      total_cost_usd: 0.12,
+      usage: { input_tokens: 10, output_tokens: 20 },
+      modelUsage: { "claude-opus-4": { input_tokens: 10 } },
+    },
+    "thr_1",
+  );
 
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({
@@ -73,10 +81,14 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     return { behavior: "deny", message: "Approval required", interrupt: true };
   });
 
-  const decision = await canUseTool("Bash", { command: "rm -rf src" }, {
-    toolUseID: "tool_1",
-    signal: new AbortController().signal,
-  });
+  const decision = await canUseTool(
+    "Bash",
+    { command: "rm -rf src" },
+    {
+      toolUseID: "tool_1",
+      signal: new AbortController().signal,
+    },
+  );
 
   expect(decision).toEqual({
     behavior: "deny",

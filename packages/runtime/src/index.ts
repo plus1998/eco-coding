@@ -1,6 +1,6 @@
-import { createAgentEvent, type AgentEvent, type AgentRole } from "../../shared/src";
-import type { EventStore, ThreadRecord } from "../../persistence/src";
 import type { ResolvedModelRoute } from "../../model-router/src";
+import type { EventStore, ThreadRecord } from "../../persistence/src";
+import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
 
 export interface ThreadStartRequest {
@@ -83,14 +83,16 @@ export class ThreadSupervisor {
       updatedAt: now,
     });
 
-    await this.store.appendEvent(createAgentEvent({
-      id: `${request.threadId}:thread-started`,
-      threadId: request.threadId,
-      agentId: "system",
-      role: "planner",
-      type: "thread.started",
-      payload: { title: request.title, workspacePath: request.workspacePath },
-    }));
+    await this.store.appendEvent(
+      createAgentEvent({
+        id: `${request.threadId}:thread-started`,
+        threadId: request.threadId,
+        agentId: "system",
+        role: "planner",
+        type: "thread.started",
+        payload: { title: request.title, workspacePath: request.workspacePath },
+      }),
+    );
 
     try {
       for await (const event of this.driver.run({
@@ -110,14 +112,16 @@ export class ThreadSupervisor {
       const status: ThreadRecord["status"] = controller.signal.aborted ? "cancelled" : "completed";
       await this.finishThread(request, status, controller.signal.reason);
     } catch (error) {
-      await this.store.appendEvent(createAgentEvent({
-        id: `${request.threadId}:thread-failed`,
-        threadId: request.threadId,
-        agentId: "system",
-        role: "planner",
-        type: "thread.failed",
-        payload: { message: error instanceof Error ? error.message : String(error) },
-      }));
+      await this.store.appendEvent(
+        createAgentEvent({
+          id: `${request.threadId}:thread-failed`,
+          threadId: request.threadId,
+          agentId: "system",
+          role: "planner",
+          type: "thread.failed",
+          payload: { message: error instanceof Error ? error.message : String(error) },
+        }),
+      );
       await this.finishThread(request, "failed");
       throw error;
     }
@@ -139,22 +143,32 @@ export class ThreadSupervisor {
       updatedAt: now,
     });
 
-    await this.store.appendEvent(createAgentEvent({
-      id: `${request.threadId}:thread-${status}`,
-      threadId: request.threadId,
-      agentId: "system",
-      role: "planner",
-      type: status === "completed" ? "thread.completed" : status === "failed" ? "thread.failed" : "thread.completed",
-      payload: { status, reason },
-    }));
+    await this.store.appendEvent(
+      createAgentEvent({
+        id: `${request.threadId}:thread-${status}`,
+        threadId: request.threadId,
+        agentId: "system",
+        role: "planner",
+        type:
+          status === "completed"
+            ? "thread.completed"
+            : status === "failed"
+              ? "thread.failed"
+              : "thread.completed",
+        payload: { status, reason },
+      }),
+    );
   }
 }
 
 export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record<AgentRole, string> {
-  return routes.reduce((mapping, route) => {
-    mapping[route.role] = route.primary.modelId;
-    return mapping;
-  }, {} as Record<AgentRole, string>);
+  return routes.reduce(
+    (mapping, route) => {
+      mapping[route.role] = route.primary.modelId;
+      return mapping;
+    },
+    {} as Record<AgentRole, string>,
+  );
 }
 
 export * from "./claude-agent-sdk";

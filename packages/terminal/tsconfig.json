@@ -6,8 +6,5 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [
-    { "path": "../shared" },
-    { "path": "../workspace" }
-  ]
+  "references": [{ "path": "../shared" }, { "path": "../workspace" }]
 }

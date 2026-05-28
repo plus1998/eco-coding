@@ -1,4 +1,4 @@
-import { createAgentEvent, type AgentEvent } from "../../shared/src";
+import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import { evaluateCommand, type PolicyDecision } from "../../workspace/src";
 
 export interface TerminalSpawnRequest {
@@ -74,14 +74,16 @@ export class TerminalSessionManager {
     });
 
     process.onExit((exitCode, signal) => {
-      this.emit(createAgentEvent({
-        id: `${request.sessionId}:terminal-exit:${Date.now()}`,
-        threadId: request.threadId,
-        agentId: request.agentId,
-        role: "tester",
-        type: "tool.completed",
-        payload: { terminalSessionId: request.sessionId, exitCode, signal },
-      }));
+      this.emit(
+        createAgentEvent({
+          id: `${request.sessionId}:terminal-exit:${Date.now()}`,
+          threadId: request.threadId,
+          agentId: request.agentId,
+          role: "tester",
+          type: "tool.completed",
+          payload: { terminalSessionId: request.sessionId, exitCode, signal },
+        }),
+      );
       this.sessions.delete(request.sessionId);
     });
 
