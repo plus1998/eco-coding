@@ -337,6 +337,24 @@ button:not(:disabled) {
   word-break: break-word;
 }
 
+.activity-item-thinking .activity-role {
+  color: #a78bfa;
+}
+
+.activity-item-thinking p {
+  color: #c4b5fd;
+  font-size: 14px;
+}
+
+.activity-item-tool .activity-role {
+  color: #fbbf24;
+}
+
+.activity-item-tool p {
+  color: #e8d4a8;
+  font-size: 14px;
+}
+
 /* —— Composer —— */
 .codex-composer-wrap {
   flex-shrink: 0;

@@ -210,16 +210,72 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
     ];
   }
 
-  return [
-    createAgentEvent({
-      id: `${uuid}:raw`,
-      threadId,
-      agentId: sessionId,
-      role,
-      type: "message.delta",
-      payload: message,
-    }),
-  ];
+  if (message.type === "system") {
+    if (message.subtype === "thinking_tokens") {
+      return [];
+    }
+    if (
+      message.subtype === "status" ||
+      message.subtype === "task_started" ||
+      message.subtype === "task_progress" ||
+      message.subtype === "task_updated" ||
+      message.subtype === "notification" ||
+      message.subtype === "api_retry" ||
+      message.subtype === "permission_denied"
+    ) {
+      return [
+        createAgentEvent({
+          id: `${uuid}:system`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "agent.started",
+          payload: message,
+        }),
+      ];
+    }
+  }
+
+  if (message.type === "auth_status" && Array.isArray(message.output)) {
+    return [
+      createAgentEvent({
+        id: `${uuid}:auth`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "agent.started",
+        payload: message,
+      }),
+    ];
+  }
+
+  if (message.type === "tool_use_summary") {
+    return [
+      createAgentEvent({
+        id: `${uuid}:tool-summary`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "tool.completed",
+        payload: message,
+      }),
+    ];
+  }
+
+  if (formatSdkPayloadMessage(message)) {
+    return [
+      createAgentEvent({
+        id: `${uuid}:raw`,
+        threadId,
+        agentId: sessionId,
+        role,
+        type: "message.delta",
+        payload: message,
+      }),
+    ];
+  }
+
+  return [];
 }
 
 export function createCanUseTool(
@@ -262,6 +318,9 @@ function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): Reso
 }
 
 function inferRole(message: Record<string, unknown>): AgentRole {
+  if (typeof message.subagent_type === "string" && isAgentRole(message.subagent_type)) {
+    return message.subagent_type;
+  }
   if (typeof message.agent_type === "string" && isAgentRole(message.agent_type)) {
     return message.agent_type;
   }
@@ -276,6 +335,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export type ActivityDisplayRole = AgentRole | "system" | "thinking" | "tool";
+
+export interface AgentEventDisplay {
+  message: string;
+  role: ActivityDisplayRole;
+  stream: boolean;
+}
+
+export function formatAgentEventDisplay(
+  event: Pick<AgentEvent, "type" | "payload" | "role">,
+): AgentEventDisplay | null {
+  const message = formatAgentEventLine(event);
+  if (!message) {
+    return null;
+  }
+
+  return {
+    message,
+    role: inferActivityRole(event),
+    stream: isStreamableAgentEventType(event.type) && isStreamPayload(event.payload),
+  };
+}
+
 export function formatAgentEventLine(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): string | null {
@@ -285,7 +367,7 @@ export function formatAgentEventLine(
   }
 
   if (event.type === "agent.started") {
-    return "Agent session started.";
+    return formatSdkPayloadMessage(event.payload) ?? "Agent session started.";
   }
 
   if (event.type === "usage.recorded") {
@@ -296,7 +378,59 @@ export function formatAgentEventLine(
     return `Running tool: ${event.payload.tool_name}`;
   }
 
+  if (event.type === "tool.completed") {
+    return formatSdkPayloadMessage(event.payload);
+  }
+
   return null;
+}
+
+export function inferActivityRole(
+  event: Pick<AgentEvent, "type" | "payload" | "role">,
+): ActivityDisplayRole {
+  if (isThinkingPayload(event.payload)) {
+    return "thinking";
+  }
+
+  if (isRecord(event.payload)) {
+    if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
+      return "tool";
+    }
+    if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
+      return event.payload.subagent_type;
+    }
+  }
+
+  if (event.type === "tool.started" || event.type === "tool.completed") {
+    return "tool";
+  }
+
+  return event.role;
+}
+
+export function isThinkingPayload(payload: unknown): boolean {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  if (payload.type === "stream_event" && isRecord(payload.event)) {
+    const event = payload.event;
+    if (event.type === "content_block_delta" && isRecord(event.delta) && event.delta.type === "thinking_delta") {
+      return true;
+    }
+  }
+
+  if (payload.type === "assistant" && isRecord(payload.message) && Array.isArray(payload.message.content)) {
+    return payload.message.content.some(
+      (block) => isRecord(block) && block.type === "thinking" && typeof block.thinking === "string",
+    );
+  }
+
+  return false;
+}
+
+export function isStreamPayload(payload: unknown): boolean {
+  return isRecord(payload) && payload.type === "stream_event";
 }
 
 export function formatSdkPayloadMessage(payload: unknown): string | null {
@@ -331,10 +465,35 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
 
   if (payload.type === "system") {
     if (payload.subtype === "init") {
-      return "Claude Agent SDK session initialized.";
+      const model = typeof payload.model === "string" ? payload.model : "model";
+      return `Claude Agent SDK ready (${model}).`;
     }
     if (payload.subtype === "notification" && typeof payload.text === "string") {
       return payload.text.trim() || null;
+    }
+    if (payload.subtype === "status") {
+      if (payload.status === "requesting") {
+        return "Requesting model…";
+      }
+      if (payload.status === "compacting") {
+        return "Compacting context…";
+      }
+      return null;
+    }
+    if (payload.subtype === "task_started" && typeof payload.description === "string") {
+      return `Task started: ${payload.description}`;
+    }
+    if (payload.subtype === "task_progress") {
+      const description = typeof payload.description === "string" ? payload.description : "Task";
+      const tool = typeof payload.last_tool_name === "string" ? ` · ${payload.last_tool_name}` : "";
+      return `${description}${tool}`;
+    }
+    if (payload.subtype === "task_updated" && isRecord(payload.patch)) {
+      const status = payload.patch.status;
+      if (typeof status === "string") {
+        return `Task ${status}`;
+      }
+      return null;
     }
     if (payload.subtype === "api_retry") {
       const attempt = typeof payload.attempt === "number" ? payload.attempt : "?";
@@ -345,6 +504,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
       const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
       return `Permission denied for ${payload.tool_name}${reason}`;
     }
+  }
+
+  if (payload.type === "auth_status" && Array.isArray(payload.output)) {
+    const lines = payload.output.filter((line): line is string => typeof line === "string" && line.trim().length > 0);
+    return lines.length > 0 ? lines.join("\n") : null;
   }
 
   if (payload.type === "result") {
@@ -363,7 +527,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  return null;
+  return extractNestedText(payload);
 }
 
 function formatUsagePayload(payload: unknown): string | null {
@@ -394,8 +558,13 @@ function extractBetaMessageText(message: Record<string, unknown>): string | null
       parts.push(block.text);
       continue;
     }
+    if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+      parts.push(block.thinking);
+      continue;
+    }
     if (block.type === "tool_use" && typeof block.name === "string") {
-      parts.push(`[tool] ${block.name}`);
+      const input = isRecord(block.input) ? ` ${JSON.stringify(block.input)}` : "";
+      parts.push(`[tool] ${block.name}${input}`);
     }
   }
 
@@ -408,9 +577,72 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
       const text = event.delta.text;
       return text.length > 0 ? text : null;
     }
+    if (event.delta.type === "thinking_delta" && typeof event.delta.thinking === "string") {
+      const thinking = event.delta.thinking;
+      return thinking.length > 0 ? thinking : null;
+    }
     if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
       const partial = event.delta.partial_json.trim();
       return partial.length > 0 ? partial : null;
+    }
+  }
+
+  return null;
+}
+
+function extractNestedText(payload: Record<string, unknown>, depth = 0): string | null {
+  if (depth > 5) {
+    return null;
+  }
+
+  if (isRecord(payload.message)) {
+    const fromMessage = extractBetaMessageText(payload.message);
+    if (fromMessage) {
+      return fromMessage;
+    }
+  }
+
+  if (isRecord(payload.event)) {
+    const fromEvent = extractStreamEventText(payload.event);
+    if (fromEvent) {
+      return fromEvent;
+    }
+  }
+
+  if (typeof payload.text === "string" && payload.text.trim()) {
+    return payload.text.trim();
+  }
+
+  if (typeof payload.thinking === "string" && payload.thinking.trim()) {
+    return payload.thinking.trim();
+  }
+
+  if (typeof payload.description === "string" && payload.description.trim()) {
+    return payload.description.trim();
+  }
+
+  if (typeof payload.summary === "string" && payload.summary.trim()) {
+    return payload.summary.trim();
+  }
+
+  if (Array.isArray(payload.output)) {
+    const lines = payload.output.filter((line): line is string => typeof line === "string" && line.trim().length > 0);
+    if (lines.length > 0) {
+      return lines.join("\n");
+    }
+  }
+
+  for (const value of Object.values(payload)) {
+    if (typeof value === "string" && value.trim().length > 0 && value.length < 4000) {
+      if (/^[\s\S]*[a-zA-Z\u4e00-\u9fff][\s\S]*$/.test(value)) {
+        return value.trim();
+      }
+    }
+    if (isRecord(value)) {
+      const nested = extractNestedText(value, depth + 1);
+      if (nested) {
+        return nested;
+      }
     }
   }
 

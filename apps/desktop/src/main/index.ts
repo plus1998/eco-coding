@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { ClaudeAgentSdkDriver, formatAgentEventLine, isStreamableAgentEventType } from "@eco/runtime";
+import { ClaudeAgentSdkDriver, formatAgentEventDisplay } from "@eco/runtime";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
   AGENT_ROLES,
@@ -267,9 +267,9 @@ async function runCodingThread(
         })),
         signal: new AbortController().signal,
       })) {
-        const line = formatAgentEventLine(event);
-        if (line) {
-          emitThreadEvent(thread.id, event.type, line, event.role, isStreamableAgentEventType(event.type));
+        const display = formatAgentEventDisplay(event);
+        if (display) {
+          emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
         }
       }
     } finally {
@@ -311,7 +311,7 @@ function emitThreadEvent(
   threadId: string,
   type: string,
   message: string,
-  role: AgentRole | "system" = "system",
+  role: AgentRole | "system" | "thinking" | "tool" = "system",
   stream = false,
 ): void {
   const trimmed = message.trim();

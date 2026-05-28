@@ -99,5 +99,5 @@ export interface ThreadLiveEvent {
   threadId: string;
   type: string;
   message: string;
-  role?: AgentRole | "system";
+  role?: AgentRole | "system" | "thinking" | "tool";
 }

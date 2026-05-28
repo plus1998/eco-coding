@@ -3,9 +3,11 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   createAgentDefinitions,
   createCanUseTool,
+  formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
   getDefaultAllowedTools,
+  inferActivityRole,
   mapSdkMessageToEvents,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
@@ -60,7 +62,7 @@ test("creates native SDK subagent definitions", () => {
   });
 });
 
-test("formats assistant and stream payloads for UI output", () => {
+test("formats assistant, thinking, and stream payloads for UI output", () => {
   expect(
     formatSdkPayloadMessage({
       type: "assistant",
@@ -69,6 +71,15 @@ test("formats assistant and stream payloads for UI output", () => {
       },
     }),
   ).toBe("Hello from the agent.");
+
+  expect(
+    formatSdkPayloadMessage({
+      type: "assistant",
+      message: {
+        content: [{ type: "thinking", thinking: "Let me inspect the repo layout first." }],
+      },
+    }),
+  ).toBe("Let me inspect the repo layout first.");
 
   expect(
     formatSdkPayloadMessage({
@@ -81,12 +92,55 @@ test("formats assistant and stream payloads for UI output", () => {
   ).toBe("partial");
 
   expect(
-    formatAgentEventLine({
-      type: "tool.started",
-      role: "coder",
-      payload: { type: "tool_progress", tool_name: "Bash", elapsed_time_seconds: 1.2 },
+    formatSdkPayloadMessage({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        delta: { type: "thinking_delta", thinking: "Planning the patch…" },
+      },
     }),
-  ).toBe("Tool: Bash (1.2s)");
+  ).toBe("Planning the patch…");
+
+  const toolDisplay = formatAgentEventDisplay({
+    type: "tool.started",
+    role: "coder",
+    payload: { type: "tool_progress", tool_name: "Bash", elapsed_time_seconds: 1.2 },
+  });
+  expect(toolDisplay).toEqual({
+    message: "Tool: Bash (1.2s)",
+    role: "tool",
+    stream: false,
+  });
+
+  expect(
+    inferActivityRole({
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "thinking_delta", thinking: "hmm" },
+        },
+      },
+    }),
+  ).toBe("thinking");
+});
+
+test("ignores SDK messages without displayable text", () => {
+  expect(
+    mapSdkMessageToEvents(
+      {
+        type: "system",
+        subtype: "thinking_tokens",
+        estimated_tokens: 42,
+        estimated_tokens_delta: 3,
+        uuid: "sdk_2",
+        session_id: "session_1",
+      },
+      "thr_1",
+    ),
+  ).toEqual([]);
 });
 
 test("maps SDK result messages to usage events", () => {
