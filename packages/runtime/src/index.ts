@@ -156,3 +156,5 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
     return mapping;
   }, {} as Record<AgentRole, string>);
 }
+
+export * from "./claude-agent-sdk";
