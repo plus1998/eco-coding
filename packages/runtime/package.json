@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^1.0.0"
+    "@anthropic-ai/claude-agent-sdk": "^0.3.153"
   },
   "exports": {
     ".": "./src/index.ts"
