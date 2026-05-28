@@ -3,6 +3,8 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   createAgentDefinitions,
   createCanUseTool,
+  formatAgentEventLine,
+  formatSdkPayloadMessage,
   getDefaultAllowedTools,
   mapSdkMessageToEvents,
   toSdkAgentModel,
@@ -56,6 +58,35 @@ test("creates native SDK subagent definitions", () => {
     description: expect.stringContaining("Implement code changes"),
     model: "qwen-coder-anthropic",
   });
+});
+
+test("formats assistant and stream payloads for UI output", () => {
+  expect(
+    formatSdkPayloadMessage({
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "Hello from the agent." }],
+      },
+    }),
+  ).toBe("Hello from the agent.");
+
+  expect(
+    formatSdkPayloadMessage({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: "partial" },
+      },
+    }),
+  ).toBe("partial");
+
+  expect(
+    formatAgentEventLine({
+      type: "tool.started",
+      role: "coder",
+      payload: { type: "tool_progress", tool_name: "Bash", elapsed_time_seconds: 1.2 },
+    }),
+  ).toBe("Tool: Bash (1.2s)");
 });
 
 test("maps SDK result messages to usage events", () => {

@@ -1,5 +1,5 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
-import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
+import { type AgentEvent, type AgentEventType, type AgentRole, createAgentEvent } from "../../shared/src";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -274,4 +274,149 @@ function isAgentRole(value: string): value is AgentRole {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function formatAgentEventLine(
+  event: Pick<AgentEvent, "type" | "payload" | "role">,
+): string | null {
+  const fromPayload = formatSdkPayloadMessage(event.payload);
+  if (fromPayload) {
+    return fromPayload;
+  }
+
+  if (event.type === "agent.started") {
+    return "Agent session started.";
+  }
+
+  if (event.type === "usage.recorded") {
+    return formatUsagePayload(event.payload);
+  }
+
+  if (event.type === "tool.started" && isRecord(event.payload) && typeof event.payload.tool_name === "string") {
+    return `Running tool: ${event.payload.tool_name}`;
+  }
+
+  return null;
+}
+
+export function formatSdkPayloadMessage(payload: unknown): string | null {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  if (payload.type === "assistant" && isRecord(payload.message)) {
+    return extractBetaMessageText(payload.message);
+  }
+
+  if (payload.type === "stream_event" && isRecord(payload.event)) {
+    return extractStreamEventText(payload.event);
+  }
+
+  if (payload.type === "tool_progress" && typeof payload.tool_name === "string") {
+    const seconds =
+      typeof payload.elapsed_time_seconds === "number"
+        ? ` (${payload.elapsed_time_seconds.toFixed(1)}s)`
+        : "";
+    return `Tool: ${payload.tool_name}${seconds}`;
+  }
+
+  if (payload.type === "tool_use_summary" && typeof payload.summary === "string") {
+    return payload.summary.trim() || null;
+  }
+
+  if (payload.type === "system") {
+    if (payload.subtype === "init") {
+      return "Claude Agent SDK session initialized.";
+    }
+    if (payload.subtype === "notification" && typeof payload.text === "string") {
+      return payload.text.trim() || null;
+    }
+    if (payload.subtype === "api_retry") {
+      const attempt = typeof payload.attempt === "number" ? payload.attempt : "?";
+      const maxRetries = typeof payload.max_retries === "number" ? payload.max_retries : "?";
+      return `API retry ${attempt}/${maxRetries}…`;
+    }
+    if (payload.subtype === "permission_denied" && typeof payload.tool_name === "string") {
+      const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
+      return `Permission denied for ${payload.tool_name}${reason}`;
+    }
+  }
+
+  if (payload.type === "result") {
+    if (typeof payload.total_cost_usd === "number") {
+      return `Run finished (cost $${payload.total_cost_usd.toFixed(4)}).`;
+    }
+    return "Run finished.";
+  }
+
+  if (payload.type === "user") {
+    return null;
+  }
+
+  if (typeof payload.message === "string") {
+    const trimmed = payload.message.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  return null;
+}
+
+function formatUsagePayload(payload: unknown): string | null {
+  if (!isRecord(payload)) {
+    return "Usage recorded.";
+  }
+  if (typeof payload.totalCostUsd === "number") {
+    return `Usage recorded (cost $${payload.totalCostUsd.toFixed(4)}).`;
+  }
+  if (typeof payload.total_cost_usd === "number") {
+    return `Usage recorded (cost $${payload.total_cost_usd.toFixed(4)}).`;
+  }
+  return "Usage recorded.";
+}
+
+function extractBetaMessageText(message: Record<string, unknown>): string | null {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  for (const block of content) {
+    if (!isRecord(block)) {
+      continue;
+    }
+    if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+      parts.push(block.text);
+      continue;
+    }
+    if (block.type === "tool_use" && typeof block.name === "string") {
+      parts.push(`[tool] ${block.name}`);
+    }
+  }
+
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+function extractStreamEventText(event: Record<string, unknown>): string | null {
+  if (event.type === "content_block_delta" && isRecord(event.delta)) {
+    if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
+      const text = event.delta.text;
+      return text.length > 0 ? text : null;
+    }
+    if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
+      const partial = event.delta.partial_json.trim();
+      return partial.length > 0 ? partial : null;
+    }
+  }
+
+  return null;
+}
+
+export function isStreamableAgentEventType(type: AgentEventType): boolean {
+  return type === "message.delta";
 }

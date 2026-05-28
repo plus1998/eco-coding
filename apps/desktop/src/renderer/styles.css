@@ -224,11 +224,12 @@ button:not(:disabled) {
 
 .codex-main-scroll {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px 24px 24px;
+  padding: 24px 24px 16px;
 }
 
 .codex-hero {
@@ -242,15 +243,35 @@ button:not(:disabled) {
 }
 
 .activity-feed {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   width: 100%;
   max-width: 720px;
+  min-height: 0;
+}
+
+.activity-messages {
+  flex: 1;
+  min-height: 0;
+  max-height: min(560px, calc(100vh - var(--window-chrome-top) - 280px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.activity-scroll-anchor {
+  height: 1px;
+  flex-shrink: 0;
 }
 
 .activity-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .activity-header h2 {
@@ -307,10 +328,13 @@ button:not(:disabled) {
 
 .activity-item p {
   margin: 0;
+  max-height: 240px;
+  overflow-y: auto;
   color: #d4d4d4;
   font-size: 15px;
   line-height: 1.5;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* —— Composer —— */

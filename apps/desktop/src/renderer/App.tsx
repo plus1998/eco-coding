@@ -10,7 +10,7 @@ import {
   Settings2,
   SlidersHorizontal,
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
@@ -19,6 +19,8 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type ThreadLiveEvent,
+  type ThreadStatus,
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
@@ -39,6 +41,13 @@ const settingsSections = [
 ] as const;
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
+
+interface ActivityLine {
+  id: string;
+  role: string;
+  message: string;
+  stream?: boolean;
+}
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -61,7 +70,7 @@ function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
-  const [events, setEvents] = useState<Array<{ id: string; message: string }>>([]);
+  const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
 
   useEffect(() => {
     if (!window.eco) {
@@ -89,9 +98,28 @@ function App() {
     });
 
     return window.eco.onThreadEvent((event) => {
-      if (isThreadEvent(event)) {
-        setEvents((current) => [{ id: `${Date.now()}`, message: event.message }, ...current].slice(0, 20));
+      if (!isThreadLiveEvent(event) || event.threadId === "settings") {
+        return;
       }
+
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.id === event.threadId
+            ? {
+                ...thread,
+                message: event.message,
+                status: statusFromLiveEvent(event.type, thread.status),
+              }
+            : thread,
+        ),
+      );
+
+      appendActivityLine(event.threadId, {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: event.role ?? "system",
+        message: event.message,
+        stream: event.stream,
+      });
     });
   }, []);
 
@@ -158,19 +186,37 @@ function App() {
     return settings.providers[0]?.defaultModel ?? "model";
   }, [settings.providers, settings.routes]);
 
-  const timeline = useMemo(() => {
-    if (activeThread) {
-      const rows: Array<[string, string]> = [["Thread", activeThread.message]];
-      for (const event of events) {
-        rows.push(["System", event.message]);
+  const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const activityEndRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const end = activityEndRef.current;
+    if (!end) {
+      return;
+    }
+    const isStreaming = activityLines.at(-1)?.stream === true;
+    end.scrollIntoView({ block: "end", behavior: isStreaming ? "auto" : "smooth" });
+  }, [activityLines, activeThread?.id]);
+
+  function appendActivityLine(threadId: string, line: ActivityLine) {
+    setActivityByThread((current) => {
+      const previous = current[threadId] ?? [];
+      const last = previous[previous.length - 1];
+      if (line.stream && last?.stream && last.role === line.role) {
+        return {
+          ...current,
+          [threadId]: [
+            ...previous.slice(0, -1),
+            { ...last, message: `${last.message}${line.message}` },
+          ].slice(-300),
+        };
       }
-      return rows;
-    }
-    if (events.length > 0) {
-      return events.map((event) => ["System", event.message] as [string, string]);
-    }
-    return [];
-  }, [activeThread, events]);
+      return {
+        ...current,
+        [threadId]: [...previous, line].slice(-300),
+      };
+    });
+  }
 
   async function openWorkspace() {
     setError(undefined);
@@ -191,7 +237,7 @@ function App() {
           lastUsedAt: new Date().toISOString(),
         });
         setSelectedThreadId(undefined);
-        setEvents([{ id: `${Date.now()}`, message: `Opened ${result.workspace.path}` }]);
+        setActivityByThread({});
       }
     } catch (caught) {
       setError(errorMessage(caught));
@@ -211,6 +257,16 @@ function App() {
       });
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
+      setActivityByThread((current) => ({
+        ...current,
+        [result.thread.id]: [
+          {
+            id: `${result.thread.id}:start`,
+            role: "system",
+            message: result.thread.message,
+          },
+        ],
+      }));
       rememberProject({
         path: result.thread.workspacePath,
         name: pathToName(result.thread.workspacePath),
@@ -366,7 +422,7 @@ function App() {
 
       <section className="codex-main">
         <div className="codex-main-scroll">
-          {!activeThread && timeline.length === 0 ? (
+          {!activeThread && activityLines.length === 0 ? (
             <h1 className="codex-hero">
               {currentProjectPath
                 ? `我们应该在 ${currentProjectName} 中构建什么？`
@@ -380,12 +436,15 @@ function App() {
                   <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
                 </header>
               )}
-              {timeline.map(([role, message]) => (
-                <article className="activity-item" key={`${role}-${message.slice(0, 40)}`}>
-                  <span className="activity-role">{role}</span>
-                  <p>{message}</p>
-                </article>
-              ))}
+              <div className="activity-messages">
+                {activityLines.map((line) => (
+                  <article className="activity-item" key={line.id}>
+                    <span className="activity-role">{line.role}</span>
+                    <p>{line.message}</p>
+                  </article>
+                ))}
+                <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+              </div>
             </div>
           )}
         </div>
@@ -693,8 +752,25 @@ function App() {
   );
 }
 
-function isThreadEvent(event: unknown): event is { message: string } {
-  return typeof event === "object" && event !== null && "message" in event;
+function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
+  return (
+    typeof event === "object" &&
+    event !== null &&
+    "threadId" in event &&
+    typeof event.threadId === "string" &&
+    "message" in event &&
+    typeof event.message === "string"
+  );
+}
+
+function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {
+  if (type === "thread.completed") return "completed";
+  if (type === "thread.failed") return "failed";
+  if (type === "thread.blocked") return "blocked";
+  if (type === "thread.running" || type === "thread.started" || type === "thread.queued") {
+    return "running";
+  }
+  return fallback;
 }
 
 function errorMessage(error: unknown): string {

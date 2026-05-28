@@ -94,3 +94,10 @@ export interface ThreadStartRequest {
 export interface ThreadStartResult {
   thread: ThreadSummary;
 }
+
+export interface ThreadLiveEvent {
+  threadId: string;
+  type: string;
+  message: string;
+  role?: AgentRole | "system";
+}

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { ClaudeAgentSdkDriver } from "@eco/runtime";
+import { ClaudeAgentSdkDriver, formatAgentEventLine, isStreamableAgentEventType } from "@eco/runtime";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
   AGENT_ROLES,
@@ -267,7 +267,10 @@ async function runCodingThread(
         })),
         signal: new AbortController().signal,
       })) {
-        emitThreadEvent(thread.id, event.type, summarizeRuntimeEvent(event.payload));
+        const line = formatAgentEventLine(event);
+        if (line) {
+          emitThreadEvent(thread.id, event.type, line, event.role, isStreamableAgentEventType(event.type));
+        }
       }
     } finally {
       await modelProxy.close();
@@ -301,15 +304,28 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 
   thread.status = patch.status;
   thread.message = patch.message;
-  emitThreadEvent(threadId, `thread.${patch.status}`, patch.message);
+  emitThreadEvent(threadId, `thread.${patch.status}`, patch.message, "system");
 }
 
-function emitThreadEvent(threadId: string, type: string, message: string): void {
+function emitThreadEvent(
+  threadId: string,
+  type: string,
+  message: string,
+  role: AgentRole | "system" = "system",
+  stream = false,
+): void {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return;
+  }
+
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
       threadId,
       type,
-      message,
+      message: trimmed,
+      role,
+      stream,
     });
   });
 }
@@ -372,14 +388,6 @@ function resolveRuntimeConfig(
     ok: true,
     routes: routes.filter((route): route is RuntimeRoute => Boolean(route)),
   };
-}
-
-function summarizeRuntimeEvent(payload: unknown): string {
-  if (typeof payload === "string") return payload;
-  if (typeof payload === "object" && payload !== null && "message" in payload) {
-    return String(payload.message);
-  }
-  return "Agent runtime event received.";
 }
 
 function errorMessage(error: unknown): string {
