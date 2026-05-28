@@ -210,7 +210,7 @@ export function formatDuration(ms: number): string {
 }
 
 function isPhaseLine(message: string): boolean {
-  return /^【\d+\/3】/.test(message.trim());
+  return /^【\d+\/\d+】/.test(message.trim());
 }
 
 function shouldHideSystemLine(line: ThreadActivityLine): boolean {

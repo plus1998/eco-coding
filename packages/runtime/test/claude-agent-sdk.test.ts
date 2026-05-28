@@ -2,9 +2,8 @@ import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   appendToPhaseTranscript,
-  buildAnalyzePhasePrompt,
   buildExecutePhasePrompt,
-  buildPlanPhasePrompt,
+  buildPlanningPhasePrompt,
   createAgentDefinitions,
   createCanUseTool,
   createPhaseBoundaryEvent,
@@ -117,19 +116,17 @@ test("creates native SDK subagent definitions", () => {
 
 test("builds phased orchestration prompts", () => {
   const userPrompt = "Add rich text editor styles";
-  const analysis = "Need to extend styles.css";
-  const plan = "1. Read styles.css\n2. Add editor block";
+  const analysis = "## 分析结果\n\nNeed to extend styles.css";
+  const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildAnalyzePhasePrompt(userPrompt)).toContain("Phase 1 task");
-  expect(buildPlanPhasePrompt(userPrompt, analysis)).toContain(analysis);
-  expect(buildPlanPhasePrompt(userPrompt, analysis)).toContain("Phase 2 task");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Explore the repo");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Phase 3 task");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Execute the plan");
 });
 
 test("formats eco phase boundary events", () => {
-  const event = createPhaseBoundaryEvent("thr_1", "analyze", "【1/3】分析与推理");
-  expect(formatSdkPayloadMessage(event.payload)).toBe("【1/3】分析与推理");
+  const event = createPhaseBoundaryEvent("thr_1", "plan", "【1/2】分析与制定计划");
+  expect(formatSdkPayloadMessage(event.payload)).toBe("【1/2】分析与制定计划");
 });
 
 test("extracts SDK error results for execution rollback", () => {

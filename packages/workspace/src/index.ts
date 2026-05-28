@@ -170,7 +170,8 @@ export class GitWorktreeService {
   }
 
   async diff(plan: WorktreePlan): Promise<string> {
-    const result = await this.runner.run(["git", "diff", "--binary", "HEAD"], plan.worktreePath);
+    const baseSha = await this.resolveDiffBase(plan);
+    const result = await this.runner.run(["git", "diff", "--binary", baseSha], plan.worktreePath);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to produce diff: ${result.stderr || result.stdout}`);
     }
@@ -178,7 +179,8 @@ export class GitWorktreeService {
   }
 
   async changedFiles(plan: WorktreePlan): Promise<string[]> {
-    const result = await this.runner.run(["git", "diff", "--name-only", "HEAD"], plan.worktreePath);
+    const baseSha = await this.resolveDiffBase(plan);
+    const result = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to list changed files: ${result.stderr || result.stdout}`);
     }
@@ -186,6 +188,18 @@ export class GitWorktreeService {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
+  }
+
+  /** Diff base: merge point between workspace HEAD and the isolated branch (includes commits + dirty files). */
+  private async resolveDiffBase(plan: WorktreePlan): Promise<string> {
+    const mergeBase = await this.runner.run(
+      ["git", "merge-base", "HEAD", plan.branchName],
+      plan.workspacePath,
+    );
+    if (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) {
+      return mergeBase.stdout.trim();
+    }
+    return "HEAD";
   }
 
   async discardWorktreeChanges(plan: WorktreePlan): Promise<void> {

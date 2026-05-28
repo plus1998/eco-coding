@@ -9,6 +9,11 @@ test("accepts cumulative snapshots", () => {
   expect(mergeStreamText("No", "No markdown")).toBe("No markdown");
 });
 
+test("does not insert spaces between CJK stream chunks", () => {
+  expect(mergeStreamText("分析", "结果")).toBe("分析结果");
+  expect(mergeStreamText("##", "分析结果")).toBe("##分析结果");
+});
+
 test("inserts word boundary space when chunks omit it", () => {
   expect(mergeStreamText("Let me also", "check")).toBe("Let me also check");
   expect(mergeStreamText("No", "markdown")).toBe("No markdown");

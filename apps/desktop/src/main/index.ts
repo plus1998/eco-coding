@@ -606,10 +606,29 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     }
 
     conversationStore.clearPendingPlan(threadId);
-    updateThread(threadId, {
-      status: "completed",
-      message: "执行完成。",
-    });
+
+    try {
+      const files = await gitWorktrees.changedFiles(worktreePlan);
+      await gitWorktrees.applyApprovedDiff(worktreePlan);
+      const fileHint =
+        files.length > 0
+          ? `已合并 ${files.length} 个文件的更改到工作区（未自动提交）。`
+          : "执行完成，工作树内无相对基线的文件变更。";
+      updateThread(threadId, {
+        status: "completed",
+        message: fileHint,
+      });
+      emitThreadEvent(threadId, "worktree.applied", fileHint, "system");
+    } catch (applyError) {
+      const detail = errorMessage(applyError);
+      updateThread(threadId, {
+        status: "awaiting_plan",
+        message: `执行已完成，但未能合并到工作区：${detail}。更改仍保留在 ${worktreePlan.worktreePath}，可手动处理后再清理。`,
+      });
+      emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
+      return;
+    }
+
     await cleanupWorktreeForThread(threadId);
   } catch (error) {
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error));

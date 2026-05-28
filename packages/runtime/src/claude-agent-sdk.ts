@@ -12,6 +12,7 @@ import type {
   EcoPlanningContext,
   EcoSdkSessionOptions,
 } from "./index";
+import { extractPlanningDeliverables } from "./phase-deliverable";
 import { mergeStreamText } from "./stream-text";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -63,7 +64,7 @@ export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
   maxTurns?: number;
-  /** Default: analyze_plan_execute (main model analyzes → plans → subagents execute). */
+  /** Default: analyze_plan_execute (plan in one session → subagents execute). */
   orchestration?: EcoOrchestrationMode;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
@@ -105,7 +106,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     planning: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
-    yield createPhaseBoundaryEvent(input.threadId, "execute", "【3/3】子代理执行");
+    yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     yield* this.runSingleSession(input, {
       prompt: buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan),
       permissionMode: "acceptEdits",
@@ -116,29 +117,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    yield createPhaseBoundaryEvent(input.threadId, "analyze", "【1/3】分析与推理");
-    const analysis = yield* this.runSingleSession(input, {
-      prompt: buildAnalyzePhasePrompt(input.prompt),
+    yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
+    const planningTranscript = yield* this.runSingleSession(input, {
+      prompt: buildPlanningPhasePrompt(input.prompt),
       permissionMode: readOnlyPermissionMode,
       allowedTools: [...readOnlyTools],
-      phaseAppend: analyzePhaseSystemAppend,
+      phaseAppend: planningPhaseSystemAppend,
       includeAgents: false,
     });
     if (input.signal.aborted) {
       return;
     }
 
-    yield createPhaseBoundaryEvent(input.threadId, "plan", "【2/3】制定详细计划");
-    const plan = yield* this.runSingleSession(input, {
-      prompt: buildPlanPhasePrompt(input.prompt, analysis),
-      permissionMode: readOnlyPermissionMode,
-      allowedTools: [...readOnlyTools],
-      phaseAppend: planPhaseSystemAppend,
-      includeAgents: false,
-    });
-    if (input.signal.aborted) {
-      return;
-    }
+    const { analysis, plan } = extractPlanningDeliverables(planningTranscript);
 
     yield createPlanReadyEvent(input.threadId, {
       userPrompt: input.prompt,
@@ -301,47 +292,39 @@ export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
 }
 
-const analyzePhaseSystemAppend = [
-  "Eco orchestration phase 1/3 — ANALYZE ONLY.",
-  "Use the main model to think step by step: clarify goals, constraints, risks, and what to inspect in the repo.",
-  "You may use Read, Glob, and Grep only.",
-  "Do NOT call the Agent tool. Do NOT modify files. Do NOT write a full implementation plan yet — analysis only.",
-].join("\n");
-
-const planPhaseSystemAppend = [
-  "Eco orchestration phase 2/3 — PLAN ONLY.",
-  "Using the analysis from phase 1, produce a detailed, ordered implementation plan in your final response.",
-  "Include concrete steps, files/areas to touch, verification, and rollback notes.",
-  "You may use Read, Glob, and Grep only.",
+const planningPhaseSystemAppend = [
+  "Eco orchestration phase 1/2 — PLAN (read-only).",
+  "Explore the codebase with Read, Glob, and Grep as needed, then write the implementation plan in one pass.",
   "Do NOT call the Agent tool. Do NOT modify files. Do NOT start implementation.",
-  "Do NOT use ExitPlanMode or Claude Code plan mode tools — Eco will show your plan to the user for approval.",
+  "Do NOT use ExitPlanMode or Claude Code plan mode tools — Eco shows your plan for user approval.",
+  "Optional brief findings: ## Analysis Result (or ## 分析结果).",
+  "Required: ## Implementation Plan (or ## 实现计划) — only content from that heading is shown in the approval UI.",
+  "Include numbered steps, files/areas, verification, and rollback notes.",
 ].join("\n");
 
 const executePhaseSystemAppend = [
-  "Eco orchestration phase 3/3 — EXECUTE.",
+  "Eco orchestration phase 2/2 — EXECUTE.",
   "The analysis and detailed plan are authoritative. Implement by delegating to subagents (architect, coder, reviewer, tester) via the Agent tool when appropriate.",
   "Do not replan from scratch unless the plan is blocked; extend the plan minimally if discoveries require it.",
 ].join("\n");
 
-export function buildAnalyzePhasePrompt(userPrompt: string): string {
+export function buildPlanningPhasePrompt(userPrompt: string): string {
   return [
     "User request:",
     userPrompt.trim(),
     "",
-    "Phase 1 task: Analyze and reason about this request. Explore the codebase if needed. Output your reasoning and findings only.",
+    "Task: Explore the repo if needed, then produce a detailed implementation plan the execution phase must follow.",
   ].join("\n");
 }
 
-export function buildPlanPhasePrompt(userPrompt: string, analysis: string): string {
-  return [
-    "User request:",
-    userPrompt.trim(),
-    "",
-    "Phase 1 analysis (completed):",
-    analysis.trim() || "(no analysis captured)",
-    "",
-    "Phase 2 task: Write a detailed implementation plan the execution phase must follow. Use clear numbered steps.",
-  ].join("\n");
+/** @deprecated Use buildPlanningPhasePrompt — planning is a single session. */
+export function buildAnalyzePhasePrompt(userPrompt: string): string {
+  return buildPlanningPhasePrompt(userPrompt);
+}
+
+/** @deprecated Use buildPlanningPhasePrompt — planning is a single session. */
+export function buildPlanPhasePrompt(userPrompt: string, _analysis: string): string {
+  return buildPlanningPhasePrompt(userPrompt);
 }
 
 export function buildExecutePhasePrompt(userPrompt: string, analysis: string, plan: string): string {
@@ -349,13 +332,13 @@ export function buildExecutePhasePrompt(userPrompt: string, analysis: string, pl
     "User request:",
     userPrompt.trim(),
     "",
-    "Phase 1 analysis:",
+    "Planning analysis:",
     analysis.trim() || "(no analysis captured)",
     "",
-    "Phase 2 plan (follow this):",
+    "Approved plan (follow this):",
     plan.trim() || "(no plan captured)",
     "",
-    "Phase 3 task: Execute the plan. Use subagents for specialized work. Apply changes in the worktree.",
+    "Task: Execute the plan. Use subagents for specialized work. Apply changes in the worktree.",
   ].join("\n");
 }
 

@@ -145,10 +145,14 @@ test("removes a git worktree and its branch", async () => {
 });
 
 test("applies approved worktree diffs back to the target workspace", async () => {
+  const plan = createWorktreePlan("/repo", "thr_1");
   const calls: Array<{ command: string[]; cwd: string; stdin?: string }> = [];
   const runner: CommandRunner = {
     async run(command, cwd, options) {
       calls.push({ command, cwd, stdin: options?.stdin });
+      if (command[1] === "merge-base") {
+        return { exitCode: 0, stdout: "abc123\n", stderr: "" };
+      }
       if (command[1] === "diff" && command.includes("--binary")) {
         return { exitCode: 0, stdout: "diff --git a/a.ts b/a.ts\n", stderr: "" };
       }
@@ -157,11 +161,16 @@ test("applies approved worktree diffs back to the target workspace", async () =>
   };
 
   const service = new GitWorktreeService(runner);
-  await service.applyApprovedDiff(createWorktreePlan("/repo", "thr_1"));
+  await service.applyApprovedDiff(plan);
 
   expect(calls).toEqual([
     {
-      command: ["git", "diff", "--binary", "HEAD"],
+      command: ["git", "merge-base", "HEAD", plan.branchName],
+      cwd: "/repo",
+      stdin: undefined,
+    },
+    {
+      command: ["git", "diff", "--binary", "abc123"],
       cwd: "/repo/.eco/worktrees/thr_1",
       stdin: undefined,
     },

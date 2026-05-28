@@ -34,9 +34,6 @@ function needsWordSeparator(previous: string, incoming: string): boolean {
   if (/\s/u.test(last) || /\s/u.test(first)) {
     return false;
   }
-  return isWordChar(last) && isWordChar(first);
-}
-
-function isWordChar(char: string): boolean {
-  return /[\p{L}\p{N}]/u.test(char);
+  // Only fix missing spaces between Latin word chunks (not CJK or punctuation).
+  return /[A-Za-z0-9]/.test(last) && /[A-Za-z0-9]/.test(first);
 }
