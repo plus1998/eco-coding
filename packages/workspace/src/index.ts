@@ -215,8 +215,14 @@ export class GitWorktreeService {
   }
 
   async applyApprovedDiff(plan: WorktreePlan): Promise<void> {
+    const changedFiles = await this.changedFiles(plan);
     const diff = await this.diff(plan);
     if (!diff.trim()) {
+      if (changedFiles.length > 0) {
+        throw new Error(
+          `Worktree has ${changedFiles.length} changed file(s) but git diff was empty (${changedFiles.join(", ")}).`,
+        );
+      }
       return;
     }
 

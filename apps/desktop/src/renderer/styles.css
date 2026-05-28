@@ -358,6 +358,30 @@ button:not(:disabled) {
   color: #d4d4d4;
 }
 
+.worktree-apply-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong, #c9a227);
+  border-radius: 10px;
+  background: rgba(201, 162, 39, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.worktree-apply-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.worktree-apply-banner code {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .plan-approval {
   margin-top: 8px;
   padding: 16px 18px;

@@ -35,6 +35,8 @@ import {
   type ThreadPendingPlan,
   type ThreadStartRequest,
   type ThreadSummary,
+  type WorktreeApplyResult,
+  type WorktreeStatusResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
@@ -171,6 +173,20 @@ function registerIpcHandlers(): void {
         ? workspacePath.trim()
         : currentWorkspace?.path;
     return listDiscoveredSkills(pathToScan);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return getWorktreeStatus(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.worktreeApply, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return applyWorktreeForThread(threadId);
   });
 
   ipcMain.handle(IPC_CHANNELS.mcpServerDelete, async (_event, serverId: unknown) => {
@@ -542,7 +558,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     plan: pending.plan,
   };
 
-  const worktreePlan = createWorktreePlan(pending.workspacePath, threadId);
+  const worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
@@ -608,22 +624,16 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     conversationStore.clearPendingPlan(threadId);
 
     try {
-      const files = await gitWorktrees.changedFiles(worktreePlan);
-      await gitWorktrees.applyApprovedDiff(worktreePlan);
-      const fileHint =
-        files.length > 0
-          ? `已合并 ${files.length} 个文件的更改到工作区（未自动提交）。`
-          : "执行完成，工作树内无相对基线的文件变更。";
-      updateThread(threadId, {
-        status: "completed",
-        message: fileHint,
-      });
-      emitThreadEvent(threadId, "worktree.applied", fileHint, "system");
+      const { files, message } = await applyWorktreeChanges(worktreePlan);
+      updateThread(threadId, { status: "completed", message });
+      emitThreadEvent(threadId, "worktree.applied", message, "system");
+      process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
     } catch (applyError) {
       const detail = errorMessage(applyError);
+      process.stderr.write(`[eco] worktree apply failed: ${detail}\n`);
       updateThread(threadId, {
         status: "awaiting_plan",
-        message: `执行已完成，但未能合并到工作区：${detail}。更改仍保留在 ${worktreePlan.worktreePath}，可手动处理后再清理。`,
+        message: `执行已完成，但未能合并到工作区：${detail}。可点击「应用到工作区」重试，或手动处理 ${worktreePlan.worktreePath}。`,
       });
       emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
       return;
@@ -667,6 +677,76 @@ async function dismissPendingPlan(threadId: string, message: string): Promise<vo
   await cleanupWorktreeForThread(threadId);
   updateThread(threadId, { status: "idle", message });
   emitThreadEvent(threadId, "thread.idle", message, "system");
+}
+
+function resolveWorktreePlan(
+  workspacePath: string,
+  threadId: string,
+  worktreePath?: string,
+): WorktreePlan {
+  const plan = createWorktreePlan(workspacePath, threadId);
+  if (worktreePath?.trim()) {
+    return { ...plan, worktreePath: worktreePath.trim() };
+  }
+  return plan;
+}
+
+async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
+  const thread = conversationStore.getThread(threadId);
+  const pending = conversationStore.getPendingPlan(threadId);
+  const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
+  if (!workspacePath) {
+    return { exists: false, worktreePath: "", workspacePath: "", changedFiles: [] };
+  }
+
+  const plan = resolveWorktreePlan(
+    workspacePath,
+    threadId,
+    pending?.worktreePath,
+  );
+  const exists = await fileExists(plan.worktreePath);
+  if (!exists) {
+    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  }
+
+  try {
+    const changedFiles = await gitWorktrees.changedFiles(plan);
+    return { exists: true, worktreePath: plan.worktreePath, workspacePath, changedFiles };
+  } catch (error) {
+    console.error("Failed to read worktree status:", error);
+    return { exists: true, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  }
+}
+
+async function applyWorktreeChanges(plan: WorktreePlan): Promise<{ files: string[]; message: string }> {
+  if (!(await fileExists(plan.worktreePath))) {
+    throw new Error(`找不到隔离工作树：${plan.worktreePath}`);
+  }
+
+  const files = await gitWorktrees.changedFiles(plan);
+  if (files.length === 0) {
+    return { files: [], message: "执行完成，工作树内无相对基线的文件变更。" };
+  }
+
+  await gitWorktrees.applyApprovedDiff(plan);
+  return {
+    files,
+    message: `已合并 ${files.length} 个文件的更改到工作区（未自动提交）：${files.join(", ")}`,
+  };
+}
+
+async function applyWorktreeForThread(threadId: string): Promise<WorktreeApplyResult> {
+  const status = await getWorktreeStatus(threadId);
+  if (!status.exists) {
+    throw new Error("该对话没有可合并的隔离工作树。");
+  }
+
+  const plan = resolveWorktreePlan(status.workspacePath, threadId, status.worktreePath);
+  const { files, message } = await applyWorktreeChanges(plan);
+  await cleanupWorktreeForThread(threadId);
+  updateThread(threadId, { status: "completed", message });
+  emitThreadEvent(threadId, "worktree.applied", message, "system");
+  return { ok: true, files, message };
 }
 
 async function cleanupWorktreeForThread(threadId: string): Promise<void> {

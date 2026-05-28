@@ -170,6 +170,16 @@ test("applies approved worktree diffs back to the target workspace", async () =>
       stdin: undefined,
     },
     {
+      command: ["git", "diff", "--name-only", "abc123"],
+      cwd: "/repo/.eco/worktrees/thr_1",
+      stdin: undefined,
+    },
+    {
+      command: ["git", "merge-base", "HEAD", plan.branchName],
+      cwd: "/repo",
+      stdin: undefined,
+    },
+    {
       command: ["git", "diff", "--binary", "abc123"],
       cwd: "/repo/.eco/worktrees/thr_1",
       stdin: undefined,

@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   modelProfileSave: "model-profile:save",
   conformanceRun: "conformance:run",
   worktreeApply: "worktree:apply",
+  worktreeGetStatus: "worktree:get-status",
   terminalSpawn: "terminal:spawn",
   terminalInput: "terminal:input",
   mcpSettingsGet: "mcp-settings:get",
@@ -138,6 +139,19 @@ export interface ThreadContinueRequest {
 
 export interface ThreadContinueResult {
   thread: ThreadSummary;
+}
+
+export interface WorktreeStatusResult {
+  exists: boolean;
+  worktreePath: string;
+  workspacePath: string;
+  changedFiles: string[];
+}
+
+export interface WorktreeApplyResult {
+  ok: true;
+  files: string[];
+  message: string;
 }
 
 export interface ThreadLiveEvent {

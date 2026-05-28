@@ -19,6 +19,8 @@ import {
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSummary,
+  type WorktreeApplyResult,
+  type WorktreeStatusResult,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
 } from "../shared/ipc";
@@ -74,6 +76,12 @@ const api = {
   },
   dismissPlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadDismissPlan, threadId);
+  },
+  getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.worktreeGetStatus, threadId);
+  },
+  applyWorktree(threadId: string): Promise<WorktreeApplyResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.worktreeApply, threadId);
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);

@@ -6,6 +6,10 @@ const children = new Set();
 await run("bun", ["run", "build:main"]);
 await run("bun", ["run", "build:preload"]);
 
+console.error(
+  "[eco] 主进程仅在 dev 启动时编译一次；修改 apps/desktop/src/main 后请重启 bun run dev。",
+);
+
 const rendererAlreadyRunning = await isRendererReady();
 if (!rendererAlreadyRunning) {
   start("bun", ["run", "dev:renderer"], { name: "renderer" });

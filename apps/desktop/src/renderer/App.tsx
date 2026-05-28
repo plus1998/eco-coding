@@ -79,6 +79,11 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
+  const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
+    worktreePath: string;
+    changedFiles: string[];
+  }>();
+  const [worktreeApplyBusy, setWorktreeApplyBusy] = useState(false);
 
   useEffect(() => {
     if (!window.eco) {
@@ -218,6 +223,32 @@ function App() {
   );
   const activeThread = projectThreads.find((thread) => thread.id === selectedThreadId);
   const workspaceMatchesProject = workspace?.path === currentProjectPath;
+
+  useEffect(() => {
+    if (!activeThread?.id || !window.eco) {
+      setPendingWorktreeApply(undefined);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void window.eco.getWorktreeStatus(activeThread.id).then((status) => {
+      if (cancelled) {
+        return;
+      }
+      if (status.exists && status.changedFiles.length > 0) {
+        setPendingWorktreeApply({
+          worktreePath: status.worktreePath,
+          changedFiles: status.changedFiles,
+        });
+      } else {
+        setPendingWorktreeApply(undefined);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThread?.id, activeThread?.status, activeThread?.message]);
 
   useEffect(() => {
     if (!settingsOpen || settingsSection !== "skills" || !window.eco) {
@@ -406,6 +437,22 @@ function App() {
     }
   }
 
+  async function applyPendingWorktree() {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    setError(undefined);
+    setWorktreeApplyBusy(true);
+    try {
+      await window.eco.applyWorktree(activeThread.id);
+      setPendingWorktreeApply(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setWorktreeApplyBusy(false);
+    }
+  }
+
   async function refreshSkillsList(workspacePath?: string) {
     if (!window.eco) return;
     setIsLoadingSkills(true);
@@ -561,6 +608,22 @@ function App() {
                 </header>
               )}
               <div className="activity-messages">
+                {pendingWorktreeApply ? (
+                  <div className="worktree-apply-banner" role="status">
+                    <p>
+                      隔离工作树中仍有 {pendingWorktreeApply.changedFiles.length} 个文件未合并到主工作区：
+                      <code>{pendingWorktreeApply.changedFiles.join(", ")}</code>
+                    </p>
+                    <button
+                      type="button"
+                      className="plan-button primary"
+                      onClick={() => void applyPendingWorktree()}
+                      disabled={worktreeApplyBusy}
+                    >
+                      {worktreeApplyBusy ? "正在合并…" : "应用到工作区"}
+                    </button>
+                  </div>
+                ) : null}
                 <ActivityLogView lines={activityLines} thread={activeThread} />
                 {showPlanApproval && pendingPlan && (
                   <PlanApprovalPanel
