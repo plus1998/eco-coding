@@ -28,7 +28,9 @@ import {
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { formatSubagentLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
+import { resolveActiveSubagent } from "./activity-log";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -248,6 +250,10 @@ function App() {
   }, [settings.providers, settings.routes]);
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const activeSubagent = useMemo(
+    () => resolveActiveSubagent(activityLines, activeThread?.status),
+    [activityLines, activeThread?.status],
+  );
   const activityEndRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -272,12 +278,16 @@ function App() {
       ) {
         return current;
       }
-      if (line.stream && last?.stream && last.role === line.role) {
+      if (line.stream && last?.stream) {
         return {
           ...current,
           [threadId]: [
             ...previous.slice(0, -1),
-            { ...last, message: `${last.message}${line.message}` },
+            {
+              ...last,
+              role: line.role,
+              message: mergeStreamText(last.message, line.message),
+            },
           ].slice(-300),
         };
       }
@@ -542,7 +552,12 @@ function App() {
               {activeThread && (
                 <header className="activity-header">
                   <h2>{activeThread.title}</h2>
-                  <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
+                  <div className="activity-header-badges">
+                    {activeSubagent ? (
+                      <span className="subagent-chip">{formatSubagentLabel(activeSubagent)}</span>
+                    ) : null}
+                    <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
+                  </div>
                 </header>
               )}
               <div className="activity-messages">

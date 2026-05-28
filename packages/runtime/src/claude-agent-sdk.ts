@@ -12,6 +12,7 @@ import type {
   EcoPlanningContext,
   EcoSdkSessionOptions,
 } from "./index";
+import { mergeStreamText } from "./stream-text";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -409,7 +410,7 @@ export function appendToPhaseTranscript(transcript: string, event: AgentEvent): 
   }
 
   if (isStreamableAgentEventType(event.type) && isStreamPayload(event.payload)) {
-    return `${transcript}${line}`;
+    return mergeStreamText(transcript, line);
   }
 
   return transcript ? `${transcript}\n${line}` : line;
@@ -445,7 +446,11 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
         agentId: sessionId,
         role,
         type: "message.delta",
-        payload: message,
+        payload: {
+          ...message,
+          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+        },
       }),
     ];
   }
@@ -559,6 +564,13 @@ function mapAssistantMessageToEvents(
           type: "tool_use",
           tool_name: block.name,
           input: block.input,
+          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          ...(block.name === "Agent" &&
+            isRecord(block.input) &&
+            typeof block.input.subagent_type === "string" && {
+              subagent_type: block.input.subagent_type,
+            }),
         },
       }),
     );
@@ -695,6 +707,15 @@ export function inferActivityRole(
   }
 
   if (event.type === "tool.started" || event.type === "tool.completed") {
+    if (isRecord(event.payload) && event.payload.tool_name === "Agent" && isRecord(event.payload.input)) {
+      const subagent =
+        (typeof event.payload.input.subagent_type === "string" && event.payload.input.subagent_type) ||
+        (typeof event.payload.input.agent_type === "string" && event.payload.input.agent_type) ||
+        undefined;
+      if (subagent && isAgentRole(subagent)) {
+        return subagent;
+      }
+    }
     return "tool";
   }
 
@@ -749,7 +770,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_use" && typeof payload.tool_name === "string") {
-    const detail = formatToolInputSummary(payload.input);
+    const detail = formatToolInputSummary(payload.tool_name, payload.input);
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }
 
@@ -783,12 +804,14 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
       return null;
     }
     if (payload.subtype === "task_started" && typeof payload.description === "string") {
-      return `Task started: ${payload.description}`;
+      const agent = formatSubagentPrefix(payload);
+      return agent ? `${agent}任务开始: ${payload.description}` : `Task started: ${payload.description}`;
     }
     if (payload.subtype === "task_progress") {
       const description = typeof payload.description === "string" ? payload.description : "Task";
       const tool = typeof payload.last_tool_name === "string" ? ` · ${payload.last_tool_name}` : "";
-      return `${description}${tool}`;
+      const agent = formatSubagentPrefix(payload);
+      return agent ? `${agent}${description}${tool}` : `${description}${tool}`;
     }
     if (payload.subtype === "task_updated" && isRecord(payload.patch)) {
       const status = payload.patch.status;
@@ -865,7 +888,7 @@ function extractBetaMessageText(message: Record<string, unknown>): string | null
       continue;
     }
     if (block.type === "tool_use" && typeof block.name === "string") {
-      const detail = formatToolInputSummary(block.input);
+      const detail = formatToolInputSummary(block.name, block.input);
       parts.push(detail ? `[tool] ${block.name} · ${detail}` : `[tool] ${block.name}`);
     }
   }
@@ -888,9 +911,53 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
   return null;
 }
 
-function formatToolInputSummary(input: unknown): string | null {
+export const SUBAGENT_ROLES = ["architect", "coder", "reviewer", "tester"] as const;
+
+export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
+
+const SUBAGENT_ROLE_LABELS: Record<SubagentRole, string> = {
+  architect: "架构",
+  coder: "编码",
+  reviewer: "审查",
+  tester: "测试",
+};
+
+export function formatSubagentLabel(role: string): string {
+  if (isAgentRole(role) && role !== "planner") {
+    const label = SUBAGENT_ROLE_LABELS[role as SubagentRole];
+    return `${label} (${role})`;
+  }
+  return role;
+}
+
+export function isSubagentRole(role: string): role is SubagentRole {
+  return (SUBAGENT_ROLES as readonly string[]).includes(role);
+}
+
+function formatSubagentPrefix(payload: Record<string, unknown>): string | null {
+  const raw =
+    (typeof payload.subagent_type === "string" && payload.subagent_type) ||
+    (typeof payload.agent_type === "string" && payload.agent_type) ||
+    undefined;
+  if (!raw) {
+    return null;
+  }
+  return `【${formatSubagentLabel(raw)}】`;
+}
+
+function formatToolInputSummary(toolName: string, input: unknown): string | null {
   if (!isRecord(input)) {
     return null;
+  }
+
+  if (toolName === "Agent") {
+    const subagent =
+      (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
+      (typeof input.agent_type === "string" && input.agent_type.trim()) ||
+      undefined;
+    if (subagent) {
+      return formatSubagentLabel(subagent);
+    }
   }
 
   const filePath =

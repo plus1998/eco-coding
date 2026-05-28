@@ -242,6 +242,21 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     stream: false,
   });
 
+  const agentDisplay = formatAgentEventDisplay({
+    type: "tool.started",
+    role: "planner",
+    payload: {
+      type: "tool_use",
+      tool_name: "Agent",
+      input: { subagent_type: "coder", prompt: "Add markdown rendering" },
+    },
+  });
+  expect(agentDisplay).toEqual({
+    message: "Tool: Agent · 编码 (coder)",
+    role: "coder",
+    stream: false,
+  });
+
   expect(
     mapSdkMessageToEvents(
       {

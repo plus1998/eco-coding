@@ -26,3 +26,44 @@ test("groups narrative and compact tool summaries", () => {
     true,
   );
 });
+
+test("merges stream segments across roles without losing spaces", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "1", role: "thinking", message: "Let me also", stream: true },
+      { id: "2", role: "coder", message: "check the index.html", stream: true },
+      { id: "3", role: "coder", message: " to", stream: true },
+      { id: "4", role: "coder", message: "understand", stream: true },
+      { id: "5", role: "coder", message: "the", stream: true },
+      { id: "6", role: "coder", message: " build", stream: true },
+      { id: "7", role: "coder", message: "setup.", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const narrative = blocks.find((block) => block.kind === "narrative");
+  expect(narrative?.kind).toBe("narrative");
+  if (narrative?.kind !== "narrative") {
+    return;
+  }
+  expect(narrative.text).toBe("Let me also check the index.html to understand the build setup.");
+});
+
+test("shows active subagent while running", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "1", role: "planner", message: "【3/3】执行" },
+      {
+        id: "2",
+        role: "tool",
+        message: "Tool: Agent · 编码 (coder)",
+      },
+      { id: "3", role: "coder", message: "Checking package.json", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const progress = blocks.find((block) => block.kind === "progress");
+  expect(progress?.label).toContain("编码");
+  expect(progress?.activeSubagent).toBe("coder");
+});

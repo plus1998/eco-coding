@@ -1,6 +1,7 @@
 import { Bot, ChevronDown, FileSearch, Pencil, Search, Terminal } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
+import { formatSubagentLabel } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
   type ActivityActionIcon,
@@ -30,7 +31,9 @@ export function ActivityLogView({ lines, thread }: ActivityLogViewProps) {
 
 function RunLogBlock({ block }: { block: ActivityLogBlock }) {
   if (block.kind === "progress") {
-    return <RunLogProgress label={block.label} running={block.running} />;
+    return (
+      <RunLogProgress label={block.label} running={block.running} activeSubagent={block.activeSubagent} />
+    );
   }
   if (block.kind === "phase") {
     return <div className="run-log-phase">{block.label}</div>;
@@ -38,10 +41,18 @@ function RunLogBlock({ block }: { block: ActivityLogBlock }) {
   if (block.kind === "action") {
     return <RunLogAction icon={block.icon} label={block.label} />;
   }
-  return <RunLogNarrative text={block.text} streaming={block.streaming} />;
+  return <RunLogNarrative text={block.text} streaming={block.streaming} subagent={block.subagent} />;
 }
 
-function RunLogProgress({ label, running }: { label: string; running: boolean }) {
+function RunLogProgress({
+  label,
+  running,
+  activeSubagent,
+}: {
+  label: string;
+  running: boolean;
+  activeSubagent?: string;
+}) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -53,6 +64,9 @@ function RunLogProgress({ label, running }: { label: string; running: boolean })
     >
       <span className={`run-log-progress-dot${running ? " running" : ""}`} />
       <span>{label}</span>
+      {activeSubagent && running ? (
+        <span className="run-log-subagent-chip">{formatSubagentLabel(activeSubagent)}</span>
+      ) : null}
       <ChevronDown size={16} className={collapsed ? "run-log-chevron collapsed" : "run-log-chevron"} />
     </button>
   );
@@ -76,11 +90,22 @@ const actionIcons = {
   agent: Bot,
 } as const;
 
-function RunLogNarrative({ text, streaming }: { text: string; streaming?: boolean }) {
+function RunLogNarrative({
+  text,
+  streaming,
+  subagent,
+}: {
+  text: string;
+  streaming?: boolean;
+  subagent?: string;
+}) {
   const segments = splitNarrativeSegments(text);
 
   return (
     <div className="run-log-narrative">
+      {subagent ? (
+        <span className="run-log-subagent-badge">{formatSubagentLabel(subagent)}</span>
+      ) : null}
       <p>
         {segments.map((segment, index) =>
           segment.type === "code" ? (

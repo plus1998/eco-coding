@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
+import { mergeStreamText } from "@eco/runtime";
 import type { ThreadActivityLine, ThreadPendingPlan, ThreadStatus, ThreadSummary } from "../shared/ipc";
 
 interface ThreadRow {
@@ -148,8 +149,8 @@ export class ConversationStore {
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
     const last = this.getLastActivityLine(threadId);
-    if (line.stream && last?.stream && last.role === line.role) {
-      const merged = `${last.message}${line.message}`;
+    if (line.stream && last?.stream) {
+      const merged = mergeStreamText(last.message, line.message);
       this.db
         .prepare(`UPDATE thread_activity SET message = ? WHERE id = ?`)
         .run(merged, last.id);

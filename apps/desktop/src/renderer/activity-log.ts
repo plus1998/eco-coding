@@ -1,16 +1,19 @@
+import { formatSubagentLabel, isSubagentRole } from "@eco/runtime";
+import { mergeStreamText } from "@eco/runtime";
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityLogBlock =
-  | { kind: "progress"; label: string; running: boolean }
+  | { kind: "progress"; label: string; running: boolean; activeSubagent?: string }
   | { kind: "phase"; label: string }
-  | { kind: "narrative"; text: string; streaming?: boolean }
+  | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string };
 
 interface ParsedToolAction {
   tool: string;
   detail?: string;
+  subagent?: string;
   category: "read" | "search" | "edit" | "run" | "agent";
 }
 
@@ -34,13 +37,15 @@ export function buildActivityLogBlocks(
   options: { status?: ThreadStatus; createdAt?: string },
 ): ActivityLogBlock[] {
   const blocks: ActivityLogBlock[] = [];
+  const activeSubagent = resolveActiveSubagent(lines, options.status);
 
   if (lines.length > 0) {
-    blocks.push(createProgressBlock(options));
+    blocks.push(createProgressBlock(options, activeSubagent));
   }
 
   let narrative = "";
   let narrativeStreaming = false;
+  let narrativeSubagent: string | undefined;
   let pendingTools: ParsedToolAction[] = [];
 
   const flushNarrative = () => {
@@ -48,11 +53,24 @@ export function buildActivityLogBlocks(
     if (!text) {
       narrative = "";
       narrativeStreaming = false;
+      narrativeSubagent = undefined;
       return;
     }
-    blocks.push({ kind: "narrative", text, streaming: narrativeStreaming });
+    blocks.push({
+      kind: "narrative",
+      text,
+      streaming: narrativeStreaming,
+      ...(narrativeSubagent && { subagent: narrativeSubagent }),
+    });
     narrative = "";
     narrativeStreaming = false;
+    narrativeSubagent = undefined;
+  };
+
+  const noteNarrativeRole = (line: ThreadActivityLine) => {
+    if (isSubagentRole(line.role)) {
+      narrativeSubagent = line.role;
+    }
   };
 
   const flushTools = () => {
@@ -83,8 +101,9 @@ export function buildActivityLogBlocks(
 
     if (isNarrativeLine(line)) {
       flushTools();
+      noteNarrativeRole(line);
       if (line.stream) {
-        narrative += line.message;
+        narrative = mergeStreamText(narrative, line.message);
         narrativeStreaming = true;
       } else if (narrative) {
         narrative += `\n\n${line.message}`;
@@ -96,6 +115,7 @@ export function buildActivityLogBlocks(
 
     if (line.message.trim().length > 0) {
       flushTools();
+      noteNarrativeRole(line);
       if (narrative) {
         narrative += `\n\n${line.message}`;
       } else {
@@ -109,19 +129,63 @@ export function buildActivityLogBlocks(
   return blocks;
 }
 
-function createProgressBlock(options: {
-  status?: ThreadStatus;
-  createdAt?: string;
-}): ActivityLogBlock {
+export function resolveActiveSubagent(
+  lines: ThreadActivityLine[],
+  status?: ThreadStatus,
+): string | undefined {
+  if (status !== "running" && status !== "queued") {
+    return undefined;
+  }
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) {
+      continue;
+    }
+    if (isSubagentRole(line.role)) {
+      return line.role;
+    }
+    const tool = parseToolLine(line.message);
+    if (tool?.category === "agent" && tool.subagent) {
+      return tool.subagent;
+    }
+    if (line.message.includes("【") && line.message.includes("】")) {
+      const match = line.message.match(/【([^】]+)】/);
+      if (match?.[1]) {
+        const inner = match[1];
+        const roleMatch = inner.match(/\(([^)]+)\)\s*$/);
+        if (roleMatch?.[1]) {
+          return roleMatch[1];
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function createProgressBlock(
+  options: {
+    status?: ThreadStatus;
+    createdAt?: string;
+  },
+  activeSubagent?: string,
+): ActivityLogBlock {
   const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
   const elapsedMs = Math.max(0, Date.now() - startedAt);
+  const subagentSuffix = activeSubagent ? ` · ${formatSubagentLabel(activeSubagent)}` : "";
 
   if (options.status === "awaiting_plan") {
     return { kind: "progress", label: "计划待确认", running: false };
   }
 
   if (options.status === "running" || options.status === "queued") {
-    return { kind: "progress", label: "处理中…", running: true };
+    return {
+      kind: "progress",
+      label: `处理中${subagentSuffix}…`,
+      running: true,
+      activeSubagent,
+    };
   }
 
   if (options.status === "idle") {
@@ -187,9 +251,14 @@ function parseToolLine(message: string): ParsedToolAction | null {
 
   const tool = match[1] ?? "";
   const detail = match[2]?.trim();
+  const subagent =
+    tool === "Agent" && detail
+      ? detail.match(/\(([^)]+)\)\s*$/)?.[1] ?? detail.split(" ")[0]
+      : undefined;
   return {
     tool,
     detail,
+    subagent,
     category: categorizeTool(tool),
   };
 }
@@ -273,10 +342,15 @@ function summarizeToolActions(tools: ParsedToolAction[]): ActivityLogBlock[] {
   }
 
   if (agents.length > 0) {
+    const latest = agents[agents.length - 1];
+    const subagentLabel = latest?.subagent ? formatSubagentLabel(latest.subagent) : "子代理";
     blocks.push({
       kind: "action",
       icon: "agent",
-      label: agents.length === 1 ? "已调用 1 个子代理" : `已调用 ${agents.length} 个子代理`,
+      label:
+        agents.length === 1
+          ? `子代理 ${subagentLabel} 执行中`
+          : `已调用 ${agents.length} 个子代理（当前 ${subagentLabel}）`,
     });
   }
 
