@@ -1,0 +1,35 @@
+import { expect, test } from "bun:test";
+import {
+  type AnthropicProxyResolvedRoute,
+  createModelAlias,
+  resolveProxyRoute,
+} from "../src/main/anthropic-proxy";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
+
+test("resolves provider routes by local model alias", () => {
+  const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
+  const route: AnthropicProxyResolvedRoute = {
+    role: "coder",
+    provider,
+    modelId: "qwen-coder",
+    aliasModelId: createModelAlias("coder", provider.id, "qwen-coder"),
+  };
+
+  expect(resolveProxyRoute([route], route.aliasModelId)).toEqual(route);
+  expect(resolveProxyRoute([route], "qwen-coder")).toEqual(route);
+  expect(resolveProxyRoute([route], "missing-model")).toBeUndefined();
+});
+
+function createProvider(id: string, name: string, apiKey: string): ProviderConfigSecret {
+  return {
+    id,
+    name,
+    baseUrl: `https://${id}.example.com`,
+    defaultModel: "sonnet",
+    enabled: true,
+    hasApiKey: true,
+    createdAt: "2026-05-28T00:00:00.000Z",
+    updatedAt: "2026-05-28T00:00:00.000Z",
+    apiKey,
+  };
+}

@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   IPC_CHANNELS,
   type IpcChannel,
+  type ModelSettingsSnapshot,
+  type ProviderConfigInput,
+  type ProviderConfigView,
+  type RoleRouteConfig,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSummary,
@@ -21,6 +25,15 @@ const api = {
   },
   getCurrentWorkspace(): Promise<WorkspaceInfo | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetCurrent);
+  },
+  getModelSettings(): Promise<ModelSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);
+  },
+  saveProvider(provider: ProviderConfigInput): Promise<ProviderConfigView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelProviderSave, provider);
+  },
+  saveRoleRoutes(routes: RoleRouteConfig[]): Promise<RoleRouteConfig[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelRoutesSave, routes);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

@@ -37,10 +37,11 @@ const routes: ResolvedModelRoute[] = [
 ];
 
 test("maps Claude family model ids to SDK subagent aliases", () => {
-  expect(toSdkAgentModel("claude-opus-4")).toBe("opus");
-  expect(toSdkAgentModel("claude-sonnet")).toBe("sonnet");
-  expect(toSdkAgentModel("claude-haiku")).toBe("haiku");
-  expect(toSdkAgentModel("qwen-coder-anthropic")).toBe("inherit");
+  expect(toSdkAgentModel("claude-opus-4")).toBe("claude-opus-4");
+  expect(toSdkAgentModel("claude-sonnet")).toBe("claude-sonnet");
+  expect(toSdkAgentModel("claude-haiku")).toBe("claude-haiku");
+  expect(toSdkAgentModel("qwen-coder-anthropic")).toBe("qwen-coder-anthropic");
+  expect(toSdkAgentModel(undefined)).toBe("inherit");
 });
 
 test("creates native SDK subagent definitions", () => {
@@ -48,7 +49,7 @@ test("creates native SDK subagent definitions", () => {
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
     description: expect.stringContaining("Implement code changes"),
-    model: "inherit",
+    model: "qwen-coder-anthropic",
   });
 });
 

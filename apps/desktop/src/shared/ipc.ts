@@ -1,6 +1,9 @@
 export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
   workspaceGetCurrent: "workspace:get-current",
+  modelSettingsGet: "model-settings:get",
+  modelProviderSave: "model-provider:save",
+  modelRoutesSave: "model-routes:save",
   threadStart: "thread:start",
   threadList: "thread:list",
   threadCancel: "thread:cancel",
@@ -33,6 +36,42 @@ export interface WorkspaceInfo {
 export interface WorkspaceOpenResult {
   canceled: boolean;
   workspace?: WorkspaceInfo;
+}
+
+export const AGENT_ROLES = ["planner", "architect", "coder", "reviewer", "tester"] as const;
+
+export type AgentRole = (typeof AGENT_ROLES)[number];
+
+export interface ProviderConfigInput {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+  defaultModel: string;
+  enabled: boolean;
+}
+
+export interface ProviderConfigView {
+  id: string;
+  name: string;
+  baseUrl: string;
+  defaultModel: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+  apiKeyPreview?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RoleRouteConfig {
+  role: AgentRole;
+  providerId: string;
+  modelId: string;
+}
+
+export interface ModelSettingsSnapshot {
+  providers: ProviderConfigView[];
+  routes: RoleRouteConfig[];
 }
 
 export type ThreadStatus = "queued" | "running" | "blocked" | "completed" | "failed";

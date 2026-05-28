@@ -18,7 +18,9 @@ button {
 }
 
 button:disabled,
-textarea:disabled {
+textarea:disabled,
+input:disabled,
+select:disabled {
   opacity: 0.54;
 }
 
@@ -182,7 +184,10 @@ h1 {
   padding: 13px 14px;
 }
 
-.task-block textarea:focus {
+.task-block textarea:focus,
+.provider-form input:focus,
+.route-row input:focus,
+.route-row select:focus {
   outline: 2px solid rgba(47, 125, 104, 0.22);
   border-color: rgba(47, 125, 104, 0.55);
 }
@@ -202,6 +207,118 @@ h1 {
   margin: 0;
   color: #a23d30;
   font-size: 13px;
+}
+
+.settings-panel {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(37, 35, 31, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(280px, 0.75fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.provider-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.provider-form label,
+.route-row {
+  display: grid;
+  gap: 6px;
+  color: #625b50;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.provider-form input,
+.route-row input,
+.route-row select {
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid rgba(37, 35, 31, 0.16);
+  border-radius: 7px;
+  background: #fffdf8;
+  color: #25231f;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 10px;
+}
+
+.toggle-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-line input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.provider-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.provider-item {
+  display: grid;
+  gap: 5px;
+  min-height: 76px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 35, 31, 0.12);
+  border-radius: 7px;
+  background: #fffdf8;
+  text-align: left;
+}
+
+.provider-item span,
+.provider-item small {
+  overflow: hidden;
+  color: #80786b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-provider {
+  border-color: #2f7d68;
+  box-shadow: inset 3px 0 0 #2f7d68;
+}
+
+.route-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-row {
+  padding: 10px;
+  border: 1px solid rgba(37, 35, 31, 0.1);
+  border-radius: 7px;
+  background: rgba(246, 242, 234, 0.62);
+}
+
+.route-row strong {
+  color: #25231f;
+  font-size: 14px;
+}
+
+.save-routes {
+  min-height: 38px;
+  border-radius: 7px;
+  background: #2f7d68;
+  color: #fff;
+  font: inherit;
 }
 
 .thread-strip {
@@ -274,8 +391,25 @@ h1 {
   margin-bottom: 16px;
 }
 
+.section-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
 .section-heading span {
   font-weight: 800;
+}
+
+.small-action {
+  min-height: 30px;
+  border: 1px solid rgba(37, 35, 31, 0.14);
+  border-radius: 7px;
+  background: #fffdf8;
+  color: #3e4c45;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
 }
 
 .event-row {
@@ -354,7 +488,9 @@ pre {
   .shell,
   .main-grid,
   .thread-strip,
-  .launch-panel {
+  .launch-panel,
+  .settings-grid,
+  .route-grid {
     grid-template-columns: 1fr;
   }
 

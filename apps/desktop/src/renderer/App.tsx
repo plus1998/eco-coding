@@ -11,22 +11,35 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { ThreadSummary, WorkspaceInfo } from "../shared/ipc";
+import {
+  AGENT_ROLES,
+  type AgentRole,
+  type ModelSettingsSnapshot,
+  type ProviderConfigInput,
+  type ProviderConfigView,
+  type RoleRouteConfig,
+  type ThreadSummary,
+  type WorkspaceInfo,
+} from "../shared/ipc";
 import "./styles.css";
 
-const agents = [
-  ["planner", "Claude Agent SDK", "ready"],
-  ["architect", "subagent", "idle"],
-  ["coder", "isolated worktree", "idle"],
-  ["reviewer", "diff approval", "idle"],
-];
+const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
 
 function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
+  const [providerForm, setProviderForm] = useState<ProviderConfigInput>({
+    name: "Anthropic compatible",
+    baseUrl: "https://api.anthropic.com",
+    apiKey: "",
+    defaultModel: "sonnet",
+    enabled: true,
+  });
   const [prompt, setPrompt] = useState("");
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [events, setEvents] = useState<Array<{ id: string; message: string }>>([]);
 
@@ -36,12 +49,16 @@ function App() {
       return undefined;
     }
 
-    void Promise.all([window.eco.getCurrentWorkspace(), window.eco.listThreads()]).then(
-      ([currentWorkspace, currentThreads]) => {
-        setWorkspace(currentWorkspace);
-        setThreads(currentThreads);
-      },
-    );
+    void Promise.all([
+      window.eco.getCurrentWorkspace(),
+      window.eco.listThreads(),
+      window.eco.getModelSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings]) => {
+      setWorkspace(currentWorkspace);
+      setThreads(currentThreads);
+      setSettings(modelSettings);
+      setProviderForm(providerToForm(modelSettings.providers[0]));
+    });
 
     return window.eco.onThreadEvent((event) => {
       if (isThreadEvent(event)) {
@@ -51,7 +68,31 @@ function App() {
   }, []);
 
   const activeThread = threads[0];
-  const canStart = Boolean(workspace?.isGitRepository && prompt.trim() && !isStarting);
+  const providerById = useMemo(
+    () => new Map(settings.providers.map((provider) => [provider.id, provider])),
+    [settings.providers],
+  );
+  const routesReady = AGENT_ROLES.every((role) => {
+    const route = settings.routes.find((candidate) => candidate.role === role);
+    const provider = route ? providerById.get(route.providerId) : undefined;
+    return Boolean(route?.modelId.trim() && provider?.enabled && provider.hasApiKey);
+  });
+  const canStart = Boolean(workspace?.isGitRepository && prompt.trim() && routesReady && !isStarting);
+  const agentRows = useMemo(
+    () =>
+      AGENT_ROLES.map((role) => {
+        const route = settings.routes.find((candidate) => candidate.role === role);
+        const provider = route ? providerById.get(route.providerId) : undefined;
+        const state = getRouteState(route, provider);
+        return {
+          role,
+          providerName: provider?.name ?? "No provider",
+          modelId: route?.modelId ?? "No model",
+          state,
+        };
+      }),
+    [providerById, settings.routes],
+  );
 
   const timeline = useMemo(() => {
     if (events.length > 0) {
@@ -116,6 +157,51 @@ function App() {
     } finally {
       setIsStarting(false);
     }
+  }
+
+  async function saveProvider() {
+    if (!window.eco) return;
+    setError(undefined);
+    setIsSavingSettings(true);
+    try {
+      const provider = await window.eco.saveProvider(providerForm);
+      const modelSettings = await window.eco.getModelSettings();
+      setSettings(modelSettings);
+      setProviderForm(providerToForm(provider));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveRoutes() {
+    if (!window.eco) return;
+    setError(undefined);
+    setIsSavingSettings(true);
+    try {
+      const routes = await window.eco.saveRoleRoutes(settings.routes);
+      setSettings((current) => ({ ...current, routes }));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  function updateRoute(role: AgentRole, patch: Partial<RoleRouteConfig>) {
+    setSettings((current) => {
+      const existingRoute = current.routes.find((route) => route.role === role);
+      const nextRoute: RoleRouteConfig = {
+        role,
+        providerId: patch.providerId ?? existingRoute?.providerId ?? current.providers[0]?.id ?? "",
+        modelId: patch.modelId ?? existingRoute?.modelId ?? current.providers[0]?.defaultModel ?? "",
+      };
+      return {
+        ...current,
+        routes: [...current.routes.filter((route) => route.role !== role), nextRoute],
+      };
+    });
   }
 
   return (
@@ -208,6 +294,125 @@ function App() {
           </div>
         </section>
 
+        <section className="settings-panel">
+          <div className="section-heading">
+            <div>
+              <span>Model Providers</span>
+              <small>saved in local SQLite</small>
+            </div>
+            <button type="button" className="small-action" onClick={() => setProviderForm(providerToForm())}>
+              New provider
+            </button>
+          </div>
+          <div className="settings-grid">
+            <div className="provider-form">
+              <label>
+                Provider
+                <input
+                  value={providerForm.name}
+                  onChange={(event) =>
+                    setProviderForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  placeholder="OpenRouter / LiteLLM / Local gateway"
+                />
+              </label>
+              <label>
+                Anthropic baseURL
+                <input
+                  value={providerForm.baseUrl}
+                  onChange={(event) =>
+                    setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))
+                  }
+                  placeholder="https://api.anthropic.com"
+                />
+              </label>
+              <label>
+                API key
+                <input
+                  value={providerForm.apiKey ?? ""}
+                  onChange={(event) =>
+                    setProviderForm((current) => ({ ...current, apiKey: event.target.value }))
+                  }
+                  placeholder={providerForm.id ? "Leave blank to keep saved key" : "sk-..."}
+                  type="password"
+                />
+              </label>
+              <label>
+                Default model
+                <input
+                  value={providerForm.defaultModel}
+                  onChange={(event) =>
+                    setProviderForm((current) => ({ ...current, defaultModel: event.target.value }))
+                  }
+                  placeholder="sonnet / provider model id"
+                />
+              </label>
+              <label className="toggle-line">
+                <input
+                  checked={providerForm.enabled}
+                  onChange={(event) =>
+                    setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
+                  }
+                  type="checkbox"
+                />
+                Enabled
+              </label>
+              <button type="button" className="primary" onClick={saveProvider} disabled={isSavingSettings}>
+                Save provider
+              </button>
+            </div>
+
+            <div className="provider-list">
+              {settings.providers.map((provider) => (
+                <button
+                  type="button"
+                  key={provider.id}
+                  className={
+                    providerForm.id === provider.id ? "provider-item active-provider" : "provider-item"
+                  }
+                  onClick={() => setProviderForm(providerToForm(provider))}
+                >
+                  <strong>{provider.name}</strong>
+                  <span>{provider.baseUrl}</span>
+                  <small>
+                    {provider.defaultModel} ·{" "}
+                    {provider.hasApiKey ? `key ${provider.apiKeyPreview}` : "no key"}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="route-grid">
+            {AGENT_ROLES.map((role) => {
+              const route = settings.routes.find((candidate) => candidate.role === role);
+              return (
+                <div className="route-row" key={role}>
+                  <strong>{role}</strong>
+                  <select
+                    value={route?.providerId ?? ""}
+                    onChange={(event) => updateRoute(role, { providerId: event.target.value })}
+                  >
+                    {settings.providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={route?.modelId ?? ""}
+                    onChange={(event) => updateRoute(role, { modelId: event.target.value })}
+                    placeholder="model id"
+                  />
+                </div>
+              );
+            })}
+            <button type="button" className="save-routes" onClick={saveRoutes} disabled={isSavingSettings}>
+              Save role routes
+            </button>
+          </div>
+        </section>
+
         <section className="thread-strip">
           {threads.length > 0 ? (
             threads.slice(0, 3).map((thread) => (
@@ -248,13 +453,15 @@ function App() {
               <span>Agent Tree</span>
               <small>execution plan</small>
             </div>
-            {agents.map(([name, model, state]) => (
-              <div className="agent-row" key={name}>
+            {agentRows.map((agent) => (
+              <div className="agent-row" key={agent.role}>
                 <div>
-                  <strong>{name}</strong>
-                  <small>{model}</small>
+                  <strong>{agent.role}</strong>
+                  <small>
+                    {agent.providerName} / {agent.modelId}
+                  </small>
                 </div>
-                <span>{state}</span>
+                <span>{agent.state}</span>
               </div>
             ))}
 
@@ -288,6 +495,27 @@ function isThreadEvent(event: unknown): event is { message: string } {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
+  const form: ProviderConfigInput = {
+    name: provider?.name ?? "Anthropic compatible",
+    baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
+    apiKey: "",
+    defaultModel: provider?.defaultModel ?? "sonnet",
+    enabled: provider?.enabled ?? true,
+  };
+  if (provider) form.id = provider.id;
+  return form;
+}
+
+function getRouteState(route: RoleRouteConfig | undefined, provider: ProviderConfigView | undefined): string {
+  if (!route) return "missing";
+  if (!route.modelId.trim()) return "no model";
+  if (!provider) return "missing provider";
+  if (!provider.enabled) return "disabled";
+  if (!provider.hasApiKey) return "needs key";
+  return "ready";
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);

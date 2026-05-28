@@ -6,18 +6,26 @@ import { promisify } from "node:util";
 import { ClaudeAgentSdkDriver } from "@eco/runtime";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
+  AGENT_ROLES,
+  type AgentRole,
   IPC_CHANNELS,
   isKnownIpcChannel,
+  type ModelSettingsSnapshot,
+  type ProviderConfigInput,
+  type RoleRouteConfig,
   type ThreadStartRequest,
   type ThreadSummary,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { startAnthropicModelProxy } from "./anthropic-proxy";
+import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 const execFileAsync = promisify(execFile);
 const threads: ThreadSummary[] = [];
 let currentWorkspace: WorkspaceInfo | undefined;
+let providerStore: ProviderStore;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -43,6 +51,7 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  providerStore = await createProviderStore(path.join(app.getPath("userData"), "eco-coding.sqlite"));
   registerIpcHandlers();
   await createMainWindow();
 
@@ -79,6 +88,20 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.threadList, async () => threads);
 
+  ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
+
+  ipcMain.handle(IPC_CHANNELS.modelProviderSave, async (_event, payload: ProviderConfigInput) => {
+    const provider = providerStore.saveProvider(payload);
+    emitSettingsUpdated();
+    return provider;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelRoutesSave, async (_event, payload: RoleRouteConfig[]) => {
+    const routes = providerStore.saveRoleRoutes(payload);
+    emitSettingsUpdated();
+    return routes;
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadStart, async (_event, payload: ThreadStartRequest) => {
     const prompt = payload.prompt.trim();
     if (!prompt) {
@@ -86,8 +109,11 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const status: ThreadSummary["status"] = apiKey ? "running" : "blocked";
+    const runtimeConfig = resolveRuntimeConfig(
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+    );
+    const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
       title: promptToTitle(prompt),
@@ -95,22 +121,22 @@ function registerIpcHandlers(): void {
       workspacePath: workspace.path,
       status,
       createdAt: new Date().toISOString(),
-      message: apiKey
+      message: runtimeConfig.ok
         ? "Creating isolated worktree and starting Claude Agent SDK."
-        : "Missing ANTHROPIC_API_KEY. Configure an Anthropic-compatible key/base URL before the coding agent can run.",
+        : runtimeConfig.reason,
     };
 
     threads.unshift(thread);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
-    if (apiKey) {
-      void runCodingThread(thread, workspace, apiKey, prompt);
+    if (runtimeConfig.ok) {
+      void runCodingThread(thread, workspace, runtimeConfig, prompt);
     }
 
     return { thread };
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => []);
+  ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => providerStore.getSettings().providers);
 
   ipcMain.on("message", (event) => {
     if (!isKnownIpcChannel(event.type)) {
@@ -198,7 +224,7 @@ function promptToTitle(prompt: string): string {
 async function runCodingThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
-  apiKey: string,
+  runtimeConfig: RuntimeConfig,
   prompt: string,
 ): Promise<void> {
   try {
@@ -208,37 +234,43 @@ async function runCodingThread(
       status: "running",
     });
 
-    const modelId = process.env.ANTHROPIC_MODEL ?? "sonnet";
-    const baseUrl = process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com";
-    const driver = new ClaudeAgentSdkDriver({
-      apiKey,
-      baseUrl,
-      maxTurns: Number(process.env.ECO_AGENT_MAX_TURNS ?? 24),
+    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+    updateThread(thread.id, {
+      message: `Local model router ready: ${modelProxy.baseUrl}`,
+      status: "running",
     });
 
-    for await (const event of driver.run({
-      threadId: thread.id,
-      prompt,
-      workspacePath: workspace.path,
-      worktreePath,
-      routes: [
-        {
-          role: "planner",
+    try {
+      const driver = new ClaudeAgentSdkDriver({
+        apiKey: modelProxy.apiKey,
+        baseUrl: modelProxy.baseUrl,
+        maxTurns: 24,
+      });
+
+      for await (const event of driver.run({
+        threadId: thread.id,
+        prompt,
+        workspacePath: workspace.path,
+        worktreePath,
+        routes: modelProxy.routes.map((route) => ({
+          role: route.role,
           primary: {
-            id: "planner",
+            id: `${route.role}:${route.provider.id}`,
             provider: "custom",
-            displayName: modelId,
-            baseUrl,
-            modelId,
+            displayName: `${route.provider.name} / ${route.modelId}`,
+            baseUrl: route.provider.baseUrl,
+            modelId: route.aliasModelId,
             capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
-            enabled: true,
+            enabled: route.provider.enabled,
           },
           fallbacks: [],
-        },
-      ],
-      signal: new AbortController().signal,
-    })) {
-      emitThreadEvent(thread.id, event.type, summarizeRuntimeEvent(event.payload));
+        })),
+        signal: new AbortController().signal,
+      })) {
+        emitThreadEvent(thread.id, event.type, summarizeRuntimeEvent(event.payload));
+      }
+    } finally {
+      await modelProxy.close();
     }
 
     updateThread(thread.id, {
@@ -280,6 +312,66 @@ function emitThreadEvent(threadId: string, type: string, message: string): void 
       message,
     });
   });
+}
+
+function emitSettingsUpdated(): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
+      threadId: "settings",
+      type: "settings.updated",
+      message: "Model provider settings saved.",
+    });
+  });
+}
+
+interface RuntimeRoute {
+  role: AgentRole;
+  provider: ProviderConfigSecret;
+  modelId: string;
+}
+
+interface RuntimeConfig {
+  routes: RuntimeRoute[];
+}
+
+type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { ok: false; reason: string };
+
+function resolveRuntimeConfig(
+  settings: ModelSettingsSnapshot,
+  providersWithSecrets: ProviderConfigSecret[],
+): RuntimeConfigResolution {
+  const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
+  const routes = settings.routes.map((route): RuntimeRoute | undefined => {
+    const provider = providersById.get(route.providerId);
+    if (!provider) return undefined;
+    return { role: route.role, provider, modelId: route.modelId };
+  });
+
+  const missingRoute = settings.routes.find((route) => !providersById.has(route.providerId));
+  if (missingRoute) {
+    return { ok: false, reason: `Route ${missingRoute.role} references a missing provider.` };
+  }
+
+  for (const role of AGENT_ROLES) {
+    const route = routes.find((candidate): candidate is RuntimeRoute => candidate?.role === role);
+    if (!route) {
+      return { ok: false, reason: `Configure a ${role} route before starting a coding thread.` };
+    }
+    if (!route.modelId.trim()) {
+      return { ok: false, reason: `Model id is required for ${role}.` };
+    }
+    if (!route.provider.enabled) {
+      return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is disabled.` };
+    }
+    if (!route.provider.apiKey) {
+      return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is missing an API key.` };
+    }
+  }
+
+  return {
+    ok: true,
+    routes: routes.filter((route): route is RuntimeRoute => Boolean(route)),
+  };
 }
 
 function summarizeRuntimeEvent(payload: unknown): string {

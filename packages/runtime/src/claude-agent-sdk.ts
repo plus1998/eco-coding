@@ -133,12 +133,8 @@ export function createAgentDefinitions(routes: readonly ResolvedModelRoute[]): R
   };
 }
 
-export function toSdkAgentModel(modelId?: string): "opus" | "sonnet" | "haiku" | "inherit" {
-  const normalized = modelId?.toLowerCase() ?? "";
-  if (normalized.includes("opus")) return "opus";
-  if (normalized.includes("sonnet")) return "sonnet";
-  if (normalized.includes("haiku")) return "haiku";
-  return "inherit";
+export function toSdkAgentModel(modelId?: string): string {
+  return modelId?.trim() || "inherit";
 }
 
 export function mapSdkMessageToEvents(message: unknown, threadId: string): AgentEvent[] {
