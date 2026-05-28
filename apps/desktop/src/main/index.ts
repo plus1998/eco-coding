@@ -244,7 +244,6 @@ async function runCodingThread(
       const driver = new ClaudeAgentSdkDriver({
         apiKey: modelProxy.apiKey,
         baseUrl: modelProxy.baseUrl,
-        maxTurns: 24,
       });
 
       for await (const event of driver.run({

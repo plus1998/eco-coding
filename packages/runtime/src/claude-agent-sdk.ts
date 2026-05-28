@@ -44,36 +44,41 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       throw new Error("At least one model route is required to start Claude Agent SDK");
     }
 
+    const queryOptions: Record<string, unknown> = {
+      cwd: input.worktreePath,
+      model: plannerRoute.primary.modelId,
+      fallbackModel: plannerRoute.fallbacks[0]?.modelId,
+      includePartialMessages: true,
+      enableFileCheckpointing: true,
+      settingSources: ["project"],
+      permissionMode: "acceptEdits",
+      allowedTools: [...defaultAllowedTools],
+      systemPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        append: [
+          "You are running inside Eco Coding, an agent command center.",
+          "Work inside the provided isolated git worktree.",
+          "Do not assume edits are applied to the user's real workspace until diff approval completes.",
+        ].join("\n"),
+      },
+      tools: { type: "preset", preset: "claude_code" },
+      agents: createAgentDefinitions(input.routes),
+      canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
+      env: {
+        ANTHROPIC_API_KEY: this.options.apiKey,
+        ANTHROPIC_BASE_URL: this.options.baseUrl,
+        CLAUDE_AGENT_SDK_CLIENT_APP: "eco-coding",
+      },
+    };
+
+    if (this.options.maxTurns !== undefined) {
+      queryOptions.maxTurns = this.options.maxTurns;
+    }
+
     const query = sdk.query({
       prompt: input.prompt,
-      options: {
-        cwd: input.worktreePath,
-        model: plannerRoute.primary.modelId,
-        fallbackModel: plannerRoute.fallbacks[0]?.modelId,
-        maxTurns: this.options.maxTurns ?? 24,
-        includePartialMessages: true,
-        enableFileCheckpointing: true,
-        settingSources: ["project"],
-        permissionMode: "acceptEdits",
-        allowedTools: [...defaultAllowedTools],
-        systemPrompt: {
-          type: "preset",
-          preset: "claude_code",
-          append: [
-            "You are running inside Eco Coding, an agent command center.",
-            "Work inside the provided isolated git worktree.",
-            "Do not assume edits are applied to the user's real workspace until diff approval completes.",
-          ].join("\n"),
-        },
-        tools: { type: "preset", preset: "claude_code" },
-        agents: createAgentDefinitions(input.routes),
-        canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
-        env: {
-          ANTHROPIC_API_KEY: this.options.apiKey,
-          ANTHROPIC_BASE_URL: this.options.baseUrl,
-          CLAUDE_AGENT_SDK_CLIENT_APP: "eco-coding",
-        },
-      },
+      options: queryOptions,
     });
 
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
@@ -110,28 +115,24 @@ export function createAgentDefinitions(routes: readonly ResolvedModelRoute[]): R
       tools: ["Read", "Glob", "Grep"],
       prompt: "Inspect the codebase and produce a concise implementation strategy.",
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
-      maxTurns: 6,
     },
     coder: {
       description: "Implement code changes in the isolated worktree.",
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
       prompt: "Make focused code changes, keep edits patch-based, and report changed files.",
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
-      maxTurns: 16,
     },
     reviewer: {
       description: "Review the produced diff for correctness, safety, and missing tests.",
       tools: ["Read", "Glob", "Grep", "Bash"],
       prompt: "Review the diff and list blocking issues before approval.",
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
-      maxTurns: 8,
     },
     tester: {
       description: "Run targeted tests and explain failures.",
       tools: ["Read", "Bash", "Glob", "Grep"],
       prompt: "Run the narrowest useful tests and summarize failures with next actions.",
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
-      maxTurns: 8,
     },
   };
 }
@@ -166,10 +167,10 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
     ];
   }
 
-  if (message.type === "assistant" || message.type === "stream_event") {
+  if (message.type === "stream_event") {
     return [
       createAgentEvent({
-        id: `${uuid}:message`,
+        id: `${uuid}:stream`,
         threadId,
         agentId: sessionId,
         role,
@@ -179,17 +180,12 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
     ];
   }
 
+  if (message.type === "assistant") {
+    return mapAssistantMessageToEvents(message, threadId, sessionId, role, uuid);
+  }
+
   if (message.type === "tool_progress") {
-    return [
-      createAgentEvent({
-        id: `${uuid}:tool-progress`,
-        threadId,
-        agentId: sessionId,
-        role,
-        type: "tool.started",
-        payload: message,
-      }),
-    ];
+    return [];
   }
 
   if (message.type === "result") {
@@ -262,20 +258,43 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
     ];
   }
 
-  if (formatSdkPayloadMessage(message)) {
-    return [
+  return [];
+}
+
+function mapAssistantMessageToEvents(
+  message: Record<string, unknown>,
+  threadId: string,
+  sessionId: string,
+  role: AgentRole,
+  uuid: string,
+): AgentEvent[] {
+  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
+    return [];
+  }
+
+  const events: AgentEvent[] = [];
+  for (const [index, block] of message.message.content.entries()) {
+    if (!isRecord(block) || block.type !== "tool_use" || typeof block.name !== "string") {
+      continue;
+    }
+
+    events.push(
       createAgentEvent({
-        id: `${uuid}:raw`,
+        id: `${uuid}:tool:${index}`,
         threadId,
         agentId: sessionId,
         role,
-        type: "message.delta",
-        payload: message,
+        type: "tool.started",
+        payload: {
+          type: "tool_use",
+          tool_name: block.name,
+          input: block.input,
+        },
       }),
-    ];
+    );
   }
 
-  return [];
+  return events;
 }
 
 export function createCanUseTool(
@@ -451,6 +470,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return extractStreamEventText(payload.event);
   }
 
+  if (payload.type === "tool_use" && typeof payload.tool_name === "string") {
+    const detail = formatToolInputSummary(payload.input);
+    return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
+  }
+
   if (payload.type === "tool_progress" && typeof payload.tool_name === "string") {
     const seconds =
       typeof payload.elapsed_time_seconds === "number"
@@ -527,7 +551,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  return extractNestedText(payload);
+  return null;
 }
 
 function formatUsagePayload(payload: unknown): string | null {
@@ -563,8 +587,8 @@ function extractBetaMessageText(message: Record<string, unknown>): string | null
       continue;
     }
     if (block.type === "tool_use" && typeof block.name === "string") {
-      const input = isRecord(block.input) ? ` ${JSON.stringify(block.input)}` : "";
-      parts.push(`[tool] ${block.name}${input}`);
+      const detail = formatToolInputSummary(block.input);
+      parts.push(detail ? `[tool] ${block.name} · ${detail}` : `[tool] ${block.name}`);
     }
   }
 
@@ -581,72 +605,42 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
       const thinking = event.delta.thinking;
       return thinking.length > 0 ? thinking : null;
     }
-    if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
-      const partial = event.delta.partial_json.trim();
-      return partial.length > 0 ? partial : null;
-    }
   }
 
   return null;
 }
 
-function extractNestedText(payload: Record<string, unknown>, depth = 0): string | null {
-  if (depth > 5) {
+function formatToolInputSummary(input: unknown): string | null {
+  if (!isRecord(input)) {
     return null;
   }
 
-  if (isRecord(payload.message)) {
-    const fromMessage = extractBetaMessageText(payload.message);
-    if (fromMessage) {
-      return fromMessage;
-    }
+  const filePath =
+    typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : undefined;
+  if (filePath) {
+    return pathBasename(filePath);
   }
 
-  if (isRecord(payload.event)) {
-    const fromEvent = extractStreamEventText(payload.event);
-    if (fromEvent) {
-      return fromEvent;
-    }
+  if (typeof input.command === "string") {
+    const command = input.command.trim();
+    return command.length > 80 ? `${command.slice(0, 77)}…` : command;
   }
 
-  if (typeof payload.text === "string" && payload.text.trim()) {
-    return payload.text.trim();
-  }
-
-  if (typeof payload.thinking === "string" && payload.thinking.trim()) {
-    return payload.thinking.trim();
-  }
-
-  if (typeof payload.description === "string" && payload.description.trim()) {
-    return payload.description.trim();
-  }
-
-  if (typeof payload.summary === "string" && payload.summary.trim()) {
-    return payload.summary.trim();
-  }
-
-  if (Array.isArray(payload.output)) {
-    const lines = payload.output.filter((line): line is string => typeof line === "string" && line.trim().length > 0);
-    if (lines.length > 0) {
-      return lines.join("\n");
-    }
-  }
-
-  for (const value of Object.values(payload)) {
-    if (typeof value === "string" && value.trim().length > 0 && value.length < 4000) {
-      if (/^[\s\S]*[a-zA-Z\u4e00-\u9fff][\s\S]*$/.test(value)) {
-        return value.trim();
-      }
-    }
-    if (isRecord(value)) {
-      const nested = extractNestedText(value, depth + 1);
-      if (nested) {
-        return nested;
-      }
-    }
+  if (typeof input.pattern === "string") {
+    return input.pattern;
   }
 
   return null;
+}
+
+function pathBasename(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || filePath;
 }
 
 export function isStreamableAgentEventType(type: AgentEventType): boolean {

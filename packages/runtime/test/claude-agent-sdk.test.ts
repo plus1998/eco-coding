@@ -104,13 +104,34 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
   const toolDisplay = formatAgentEventDisplay({
     type: "tool.started",
     role: "coder",
-    payload: { type: "tool_progress", tool_name: "Bash", elapsed_time_seconds: 1.2 },
+    payload: {
+      type: "tool_use",
+      tool_name: "Read",
+      input: { file_path: "/tmp/project/src/styles.css" },
+    },
   });
   expect(toolDisplay).toEqual({
-    message: "Tool: Bash (1.2s)",
+    message: "Tool: Read · styles.css",
     role: "tool",
     stream: false,
   });
+
+  expect(
+    mapSdkMessageToEvents(
+      {
+        type: "assistant",
+        uuid: "sdk_3",
+        session_id: "session_1",
+        message: {
+          content: [
+            { type: "text", text: "Already streamed elsewhere." },
+            { type: "tool_use", name: "Read", input: { file_path: "/tmp/a.ts" } },
+          ],
+        },
+      },
+      "thr_1",
+    ),
+  ).toHaveLength(1);
 
   expect(
     inferActivityRole({

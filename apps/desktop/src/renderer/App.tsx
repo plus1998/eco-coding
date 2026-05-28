@@ -202,6 +202,15 @@ function App() {
     setActivityByThread((current) => {
       const previous = current[threadId] ?? [];
       const last = previous[previous.length - 1];
+      if (
+        last &&
+        !line.stream &&
+        last.role === line.role &&
+        last.message === line.message &&
+        last.stream !== true
+      ) {
+        return current;
+      }
       if (line.stream && last?.stream && last.role === line.role) {
         return {
           ...current,
