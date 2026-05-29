@@ -27,7 +27,14 @@ const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "
 const planningAllowedTools = ["Read", "Glob", "Grep", "AskUserQuestion"] as const;
 const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
-const defaultSkillsMode = "all" as const;
+const defaultSdkSkills = ["pdf", "docx"] as const;
+const agentSkillAssignments = {
+  planner: defaultSdkSkills,
+  architect: defaultSdkSkills,
+  coder: defaultSdkSkills,
+  reviewer: defaultSdkSkills,
+  tester: defaultSdkSkills,
+} satisfies Record<AgentRole, readonly string[]>;
 
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
   const merged = new Set(base);
@@ -44,9 +51,17 @@ export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
 } {
   return {
     settingSources: session?.settingSources ?? [...defaultSettingSources],
-    skills: session?.skills ?? defaultSkillsMode,
+    skills: session?.skills ?? getDefaultSdkSkills(),
     mcpServers: session?.mcpServers ?? {},
   };
+}
+
+export function getDefaultSdkSkills(): string[] {
+  return [...defaultSdkSkills];
+}
+
+export function getAgentSkills(role: AgentRole): string[] {
+  return [...agentSkillAssignments[role]];
 }
 
 const ecoBasePromptAppend = [
@@ -244,6 +259,7 @@ export function createPlanningAgentDefinitions(routes: readonly ResolvedModelRou
       description:
         "Planning phase only: optional read-only architecture review when the request needs early structural guidance. Do not produce coder task lists.",
       tools: ["Read", "Glob", "Grep"],
+      skills: getAgentSkills("architect"),
       prompt:
         "Review architecture implications for the user request. Return concise guidance only. Do not implement code or produce ## Coder Tasks.",
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
@@ -259,6 +275,7 @@ export function createExecutionAgentDefinitions(routes: readonly ResolvedModelRo
       description:
         "Use when the approved plan needs architecture decisions or multi-area work breakdown. Returns a structured task list for parallel coders. Skip for trivial single-scope changes.",
       tools: ["Read", "Glob", "Grep"],
+      skills: getAgentSkills("architect"),
       prompt: [
         "You are an architecture agent. Given the approved plan:",
         "1. Propose or refine architecture (modules, boundaries, risks).",
@@ -272,6 +289,7 @@ export function createExecutionAgentDefinitions(routes: readonly ResolvedModelRo
     coder: {
       description: "Executes exactly one subtask from the Planner delegation prompt.",
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+      skills: getAgentSkills("coder"),
       prompt: [
         "You are an execution agent. Implement only the single subtask in the delegation prompt.",
         "Report files changed and blockers. Do not spawn subagents.",
@@ -281,6 +299,7 @@ export function createExecutionAgentDefinitions(routes: readonly ResolvedModelRo
     reviewer: {
       description: "Pipeline step 4: review implementation against the approved plan after all coders finish.",
       tools: ["Read", "Glob", "Grep", "Bash"],
+      skills: getAgentSkills("reviewer"),
       prompt:
         "Review changes against the approved plan and architect task list. List blocking issues before testing.",
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
@@ -288,6 +307,7 @@ export function createExecutionAgentDefinitions(routes: readonly ResolvedModelRo
     tester: {
       description: "Pipeline step 5: run targeted tests after review.",
       tools: ["Read", "Bash", "Glob", "Grep"],
+      skills: getAgentSkills("tester"),
       prompt: "Run the narrowest useful tests for the approved plan and summarize failures with next actions.",
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
     },

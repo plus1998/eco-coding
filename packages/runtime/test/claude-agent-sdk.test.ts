@@ -14,7 +14,9 @@ import {
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
+  getAgentSkills,
   getDefaultAllowedTools,
+  getDefaultSdkSkills,
   inferActivityRole,
   mapSdkMessageToEvents,
   buildSdkProcessEnv,
@@ -103,9 +105,10 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
   ]);
   expect(resolveSdkSessionOptions()).toEqual({
     settingSources: ["user", "project"],
-    skills: "all",
+    skills: ["pdf", "docx"],
     mcpServers: {},
   });
+  expect(getDefaultSdkSkills()).toEqual(["pdf", "docx"]);
 });
 
 test("creates native SDK subagent definitions", () => {
@@ -113,8 +116,10 @@ test("creates native SDK subagent definitions", () => {
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
     description: expect.stringContaining("exactly one subtask"),
+    skills: ["pdf", "docx"],
     model: "qwen-coder-anthropic",
   });
+  expect(getAgentSkills("coder")).toEqual(["pdf", "docx"]);
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {

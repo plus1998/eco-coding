@@ -24,10 +24,10 @@ export function SkillsSettingsPanel({
           <div>
             <h1>Agent Skills</h1>
             <p className="settings-page-desc">
-              展示 Eco 在运行时通过 <code>settingSources: user, project</code> 与{" "}
-              <code>skills: all</code> 会自动发现的 Skills。将 Skill 目录放在{" "}
-              <code>~/.claude/skills/</code>（用户）或仓库 <code>.claude/skills/</code>（项目）下，每个
-              目录需包含 <code>SKILL.md</code>（含 <code>name</code>、<code>description</code> frontmatter）。
+              展示 Eco 可扫描的 Skills。运行时不再使用 <code>skills: all</code>，而是固定启用{" "}
+              <code>pdf</code>、<code>docx</code>，并在 Agent 定义中显式分配。将 Skill 目录放在{" "}
+              <code>~/.claude/skills/</code>（用户）或仓库 <code>.claude/skills</code>（项目）下，每个目录需包含{" "}
+              <code>SKILL.md</code>（含 <code>name</code>、<code>description</code> frontmatter）。
             </p>
           </div>
           <button

@@ -10,6 +10,7 @@ import {
   formatAgentEventDisplay,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
+  getDefaultSdkSkills,
   type PlanReadyPayload,
   type SdkToolPermissionRequest,
 } from "@eco/runtime";
@@ -867,7 +868,7 @@ function buildSdkSessionOptions(): EcoSdkSessionOptions {
   const mcp = mcpStore.buildSdkConfig();
   return {
     settingSources: ["user", "project"],
-    skills: "all",
+    skills: getDefaultSdkSkills(),
     mcpServers: mcp.mcpServers,
     mcpAllowedTools: mcp.allowedTools,
   };

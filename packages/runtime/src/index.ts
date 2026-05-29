@@ -17,7 +17,7 @@ export type EcoSettingSource = "user" | "project" | "local";
 export interface EcoSdkSessionOptions {
   /** Loads CLAUDE.md, rules, skills, hooks, and project .mcp.json */
   settingSources?: EcoSettingSource[];
-  skills?: "all" | string[];
+  skills?: string[];
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
 }
