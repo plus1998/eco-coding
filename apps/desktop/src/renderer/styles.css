@@ -2074,6 +2074,7 @@ button:not(:disabled) {
   min-height: 28px;
   max-height: 200px;
   resize: none;
+  overflow-y: hidden;
   border: 0;
   background: transparent;
   color: #f0f0f0;

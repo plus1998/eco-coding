@@ -444,6 +444,22 @@ function App() {
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
+  const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
+
+  function fitComposerHeight(textarea: HTMLTextAreaElement) {
+    textarea.style.height = "0px";
+    const next = Math.min(textarea.scrollHeight, COMPOSER_TEXTAREA_MAX_HEIGHT);
+    textarea.style.height = `${next}px`;
+    textarea.style.overflowY = textarea.scrollHeight > COMPOSER_TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
+  }
+
+  useLayoutEffect(() => {
+    const textarea = composerRef.current;
+    if (textarea) {
+      fitComposerHeight(textarea);
+    }
+  }, [prompt]);
+
   useLayoutEffect(() => {
     const end = activityEndRef.current;
     if (!end) {
@@ -790,6 +806,7 @@ function App() {
     queueMicrotask(() => {
       textarea.selectionStart = cursor;
       textarea.selectionEnd = cursor;
+      fitComposerHeight(textarea);
     });
   }
 
