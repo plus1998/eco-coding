@@ -8,6 +8,7 @@ import {
   createAgentDefinitions,
   createCanUseTool,
   createExecutionAgentDefinitions,
+  createPlanningAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
   executePhaseSystemAppend,
@@ -126,7 +127,7 @@ test("creates native SDK subagent definitions", () => {
   const definitions = createAgentDefinitions(routes, agentSkills);
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
-    description: expect.stringContaining("exactly one subtask"),
+    description: expect.stringContaining("## Coder Tasks"),
     skills: ["docx"],
     model: "qwen-coder-anthropic",
   });
@@ -140,6 +141,12 @@ test("execution architect prompt requires Coder Tasks section", () => {
   expect(definitions.architect).toMatchObject({
     prompt: expect.stringContaining("## Coder Tasks"),
   });
+  expect(definitions.coder).toMatchObject({
+    prompt: expect.stringContaining("Verification"),
+  });
+  expect(definitions.tester).toMatchObject({
+    prompt: expect.stringContaining("## Test Verdict"),
+  });
 });
 
 test("reviewer prompt limits scope to current worktree diff", () => {
@@ -148,8 +155,8 @@ test("reviewer prompt limits scope to current worktree diff", () => {
     description: expect.stringContaining("worktree"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
   });
-  expect(executePhaseSystemAppend).toContain("automatically prepends");
-  expect(executePhaseSystemAppend).toContain("injected file list");
+  expect(executePhaseSystemAppend).toContain("Eco prepends");
+  expect(executePhaseSystemAppend).toContain("changed file list");
 });
 
 test("builds phased orchestration prompts", () => {
@@ -158,20 +165,33 @@ test("builds phased orchestration prompts", () => {
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Agent(explore)");
   expect(planningPhaseSystemAppend).toContain("AskUserQuestion");
-  expect(planningPhaseSystemAppend).toContain("mandatory");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
+  expect(planningPhaseSystemAppend).toContain("Agent(explore)");
+  expect(executePhaseSystemAppend).toContain("TodoWrite");
   expect(executePhaseSystemAppend).toContain("Architect (conditional)");
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("pipeline step 1");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("system-reminder");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Pipeline step");
+});
+
+test("planning agents include read-only explore subagent", () => {
+  const definitions = createPlanningAgentDefinitions(routes);
+  expect(definitions.explore).toMatchObject({
+    description: expect.stringContaining("read-only"),
+    prompt: expect.stringContaining("Glob"),
+    tools: expect.arrayContaining(["Grep"]),
+  });
 });
 
 test("builds read-only question answering prompts", () => {
   expect(questionAnswerSystemAppend).toContain("ANSWER");
   expect(questionAnswerSystemAppend).toContain("read-only");
+  expect(questionAnswerSystemAppend).toContain("Agent(explore)");
   expect(questionAnswerSystemAppend).toContain("Do not create an implementation plan");
   expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("User question:");
+  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("Agent(explore)");
 });
 
 test("formats eco phase boundary events", () => {

@@ -15,6 +15,28 @@ import type {
 import { extractPlanningDeliverables } from "./phase-deliverable";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
+import {
+  ecoBasePromptAppend,
+  exploreAgentDescription,
+  exploreAgentPrompt,
+  planningPhaseSystemAppend,
+  buildPlanningPhasePrompt,
+  buildAnalyzePhasePrompt,
+  buildPlanPhasePrompt,
+  executePhaseSystemAppend,
+  buildExecutePhasePrompt,
+  questionAnswerSystemAppend,
+  buildQuestionAnswerPrompt,
+  reviewerAgentPrompt,
+  executionArchitectPrompt,
+  executionArchitectDescription,
+  executionCoderPrompt,
+  executionCoderDescription,
+  executionTesterPrompt,
+  executionTesterDescription,
+  planningArchitectPrompt,
+  planningArchitectDescription,
+} from "./prompts/index.js";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -25,8 +47,8 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
-const planningAllowedTools = ["Read", "Glob", "Grep", "AskUserQuestion"] as const;
-const questionAllowedTools = ["Read", "Glob", "Grep"] as const;
+const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion"] as const;
+const questionAllowedTools = ["Agent", "Read", "Glob", "Grep"] as const;
 const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
 
@@ -73,12 +95,6 @@ function agentDefinitionSkills(
   const skills = resolveAgentSkills(role, agentSkills);
   return skills.length > 0 ? { skills } : {};
 }
-
-const ecoBasePromptAppend = [
-  "You are running inside Eco Coding, an agent command center.",
-  "Work inside the provided isolated git worktree.",
-  "Do not assume edits are applied to the user's real workspace until diff approval completes.",
-].join("\n");
 
 export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
 
@@ -147,6 +163,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "default",
       allowedTools: [...questionAllowedTools],
       phaseAppend: questionAnswerSystemAppend,
+      agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
     });
   }
 
@@ -157,6 +174,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: planningPermissionMode,
       allowedTools: [...planningAllowedTools],
       phaseAppend: planningPhaseSystemAppend,
+      agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
     });
     if (input.signal.aborted) {
       return;
@@ -279,37 +297,45 @@ export function createPlanningAgentDefinitions(
   agentSkills?: Partial<Record<AgentRole, string[]>>,
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  const exploreTools = ["Read", "Glob", "Grep", "Bash"];
 
   return {
+    explore: {
+      description: exploreAgentDescription,
+      tools: exploreTools,
+      ...agentDefinitionSkills("planner", agentSkills),
+      prompt: exploreAgentPrompt,
+      model: toSdkAgentModel(routeByRole.get("planner")?.primary.modelId),
+    },
     architect: {
-      description:
-        "Planning phase only: optional read-only architecture review when the request needs early structural guidance. Do not produce coder task lists.",
+      description: planningArchitectDescription,
       tools: ["Read", "Glob", "Grep"],
       ...agentDefinitionSkills("architect", agentSkills),
-      prompt:
-        "Review architecture implications for the user request. Return concise guidance only. Do not implement code or produce ## Coder Tasks.",
+      prompt: planningArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
     },
   };
 }
 
-/** Reviewer subagent: scope limited to the current worktree delta (not main / full repo). */
-export const reviewerAgentPrompt = [
-  "You are a code reviewer. Review ONLY the changes introduced in this isolated worktree for the approved plan.",
-  "",
-  "Scope (mandatory):",
-  "1. If the delegation prompt includes \"## Changed files (this session)\", treat that list as the complete",
-  "   review surface (Eco injects it from the worktree). Otherwise run `git diff --name-only HEAD` once.",
-  "2. Do NOT run `git diff main`, `git diff master`,",
-  "   `git log` across unrelated history, or repo-wide audits unless a changed file truly requires one import hop.",
-  "3. Use Read/Grep only on changed files plus at most one directly related helper file if a blocker depends on it.",
-  "4. Ignore pre-existing issues in untouched files.",
-  "",
-  "Output (mandatory — then stop):",
-  "End with a section exactly titled \"## Review Verdict\" containing either PASS or BLOCKERS.",
-  "Under BLOCKERS, list numbered blocking issues tied to specific changed files/lines.",
-  "Do not spawn subagents. Do not implement fixes.",
-].join("\n");
+export function createQuestionAgentDefinitions(
+  routes: readonly ResolvedModelRoute[],
+  agentSkills?: Partial<Record<AgentRole, string[]>>,
+): Record<string, unknown> {
+  const routeByRole = new Map(routes.map((route) => [route.role, route]));
+
+  return {
+    explore: {
+      description: exploreAgentDescription,
+      tools: ["Read", "Glob", "Grep", "Bash"],
+      ...agentDefinitionSkills("planner", agentSkills),
+      prompt: exploreAgentPrompt,
+      model: toSdkAgentModel(routeByRole.get("planner")?.primary.modelId),
+    },
+  };
+}
+
+/** @deprecated Import from ./prompts/execution-agents.js */
+export { reviewerAgentPrompt };
 
 export function createExecutionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
@@ -319,28 +345,17 @@ export function createExecutionAgentDefinitions(
 
   return {
     architect: {
-      description:
-        "Use when the approved plan needs architecture decisions or multi-area work breakdown. Returns a structured task list for parallel coders. Skip for trivial single-scope changes.",
+      description: executionArchitectDescription,
       tools: ["Read", "Glob", "Grep"],
       ...agentDefinitionSkills("architect", agentSkills),
-      prompt: [
-        "You are an architecture agent. Given the approved plan:",
-        "1. Propose or refine architecture (modules, boundaries, risks).",
-        "2. Break work into independent coder subtasks (file/module boundaries, no overlap).",
-        '3. End with a section exactly titled "## Coder Tasks" containing a numbered list.',
-        "Each item: title, scope, files/areas, dependencies (if any), parallel_group (same letter = may run in parallel).",
-        "Do not implement code. Do not spawn subagents.",
-      ].join("\n"),
+      prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
     },
     coder: {
-      description: "Executes exactly one subtask from the Planner delegation prompt.",
+      description: executionCoderDescription,
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("coder", agentSkills),
-      prompt: [
-        "You are an execution agent. Implement only the single subtask in the delegation prompt.",
-        "Report files changed and blockers. Do not spawn subagents.",
-      ].join("\n"),
+      prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
     },
     reviewer: {
@@ -352,10 +367,10 @@ export function createExecutionAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
     },
     tester: {
-      description: "Pipeline step 5: run targeted tests after review.",
+      description: executionTesterDescription,
       tools: ["Read", "Bash", "Glob", "Grep"],
       ...agentDefinitionSkills("tester", agentSkills),
-      prompt: "Run the narrowest useful tests for the approved plan and summarize failures with next actions.",
+      prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
     },
   };
@@ -388,102 +403,16 @@ export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
 }
 
-export const planningPhaseSystemAppend = [
-  "Eco orchestration phase 1/2 — PLAN (read-only).",
-  "You are the planning agent (Planner). Your job is to:",
-  "1. Analyze the requirements.",
-  "2. Read relevant code and documentation (Read, Glob, Grep).",
-  "3. Resolve product/business ambiguity with AskUserQuestion BEFORE writing ## Implementation Plan.",
-  "4. Create a high-level implementation plan for human approval.",
-  "",
-  "AskUserQuestion rules (mandatory when any apply):",
-  "- Two or more valid product interpretations (e.g. 未建联 vs 售后未建联, export scope, partition rules).",
-  "- Code suggests conflicting definitions between UI labels, comments, and service logic.",
-  "- The user request omits a filter, export field, or scope that materially changes the outcome.",
-  "- Do NOT silently guess a business rule because you found one code path — ask.",
-  "- Provide 2–4 concrete options per question; set recommended: true on the best default when possible.",
-  "- You may include 1–3 questions in one AskUserQuestion call (questions array).",
-  "- Include a final option like “否，请说明希望如何调整” when users may reject all presets.",
-  "",
-  "Optional brief findings: ## Analysis Result (or ## 分析结果).",
-  "Required: ## Implementation Plan (or ## 实现计划) — high-level only; do NOT produce coder-level task splits here (that happens in execution).",
-  "Include goals, scope, risks, verification approach, and rollback notes.",
-  "Do NOT call Agent(coder), Agent(reviewer), or Agent(tester). Do NOT modify files. Do NOT use ExitPlanMode.",
-  "Coder-level breakdown happens in execution (Architect or Planner for small tasks).",
-].join("\n");
-
-export const executePhaseSystemAppend = [
-  "Eco orchestration phase 2/2 — EXECUTE.",
-  "You are the orchestrator (Planner). Follow this pipeline strictly:",
-  "",
-  "1. Architect (conditional): If the approved plan is NOT small/trivial, call Agent(architect) with the full plan and analysis.",
-  '   Wait for "## Coder Tasks". If small (single focused change), skip architect and derive the task list yourself.',
-  "",
-  '2. Task list: Parse "## Coder Tasks" (or your own list). Each item becomes one coder delegation.',
-  '   Before spawning coders, print the final section "## Coder Tasks" with the numbered tasks you will execute.',
-  "",
-  "3. Coders (parallel): For items with the same parallel_group or no dependencies, spawn multiple Agent(coder) calls in one turn.",
-  "",
-  "4. Reviewer: After all coders finish, call Agent(reviewer) with the approved plan and architect task list.",
-  "   Eco automatically prepends this session's changed file list from the worktree; add plan context only.",
-  "   Do not diff against main/master — reviewer must stay within the injected file list.",
-  "",
-  "5. Tester: After review, call Agent(tester).",
-  "",
-  "Never ask a subagent to spawn another subagent. You alone coordinate the pipeline.",
-  "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
-].join("\n");
-
-export const questionAnswerSystemAppend = [
-  "Eco orchestration — ANSWER (read-only).",
-  "Answer the user's question directly and concisely.",
-  "Use Read, Glob, or Grep only when repository context is needed.",
-  "Do not create an implementation plan, do not modify files, and do not call subagents.",
-].join("\n");
-
-export function buildPlanningPhasePrompt(userPrompt: string): string {
-  return [
-    "User request:",
-    userPrompt.trim(),
-    "",
-    "Task: Explore the repo (non-destructive). If you find ambiguous product rules or export/filter scope, call AskUserQuestion with concrete options before drafting the plan.",
-    "Then produce a high-level implementation plan for user approval. Do not implement or split coder-level tasks yet.",
-  ].join("\n");
-}
-
-/** @deprecated Use buildPlanningPhasePrompt — planning is a single session. */
-export function buildAnalyzePhasePrompt(userPrompt: string): string {
-  return buildPlanningPhasePrompt(userPrompt);
-}
-
-/** @deprecated Use buildPlanningPhasePrompt — planning is a single session. */
-export function buildPlanPhasePrompt(userPrompt: string, _analysis: string): string {
-  return buildPlanningPhasePrompt(userPrompt);
-}
-
-export function buildExecutePhasePrompt(userPrompt: string, analysis: string, plan: string): string {
-  return [
-    "User request:",
-    userPrompt.trim(),
-    "",
-    "Planning analysis:",
-    analysis.trim() || "(no analysis captured)",
-    "",
-    "Approved plan (follow this):",
-    plan.trim() || "(no plan captured)",
-    "",
-    "Task: Start at pipeline step 1 (Architect or skip for small scope), then parallel coders, reviewer, tester.",
-  ].join("\n");
-}
-
-export function buildQuestionAnswerPrompt(userPrompt: string): string {
-  return [
-    "User question:",
-    userPrompt.trim(),
-    "",
-    "Task: Answer the question. If repository context is needed, inspect files read-only first.",
-  ].join("\n");
-}
+export {
+  planningPhaseSystemAppend,
+  executePhaseSystemAppend,
+  questionAnswerSystemAppend,
+  buildPlanningPhasePrompt,
+  buildAnalyzePhasePrompt,
+  buildPlanPhasePrompt,
+  buildExecutePhasePrompt,
+  buildQuestionAnswerPrompt,
+};
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
   return createAgentEvent({
@@ -1095,7 +1024,8 @@ export const SUBAGENT_ROLES = ["architect", "coder", "reviewer", "tester"] as co
 
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
-const SUBAGENT_ROLE_LABELS: Record<SubagentRole, string> = {
+const SUBAGENT_ROLE_LABELS: Record<string, string> = {
+  explore: "探索",
   architect: "架构",
   coder: "编码",
   reviewer: "审查",
