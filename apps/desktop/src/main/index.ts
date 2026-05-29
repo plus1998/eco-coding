@@ -1140,6 +1140,7 @@ function createCoderTodoTracker(threadId: string): {
   let signature = todoListSignature(todos);
   let taskTranscript = "";
   let activeTodoId: string | undefined;
+  let autoTaskIndex = 0;
 
   const persist = (nextTodos: CoderTodoItem[]) => {
     const nextSignature = todoListSignature(nextTodos);
@@ -1179,10 +1180,24 @@ function createCoderTodoTracker(threadId: string): {
   };
 
   const startCoderTask = (prompt: string | undefined) => {
-    const target = findCoderTodoForPrompt(todos, prompt);
-    if (!target) {
-      return;
+    let target = findCoderTodoForPrompt(todos, prompt);
+    if (!target && typeof prompt === "string" && prompt.trim()) {
+      autoTaskIndex += 1;
+      const now = new Date().toISOString();
+      const title = prompt.trim().length > 120 ? `${prompt.trim().slice(0, 117)}...` : prompt.trim();
+      const created: CoderTodoItem = {
+        id: `${threadId}:coder-task:auto:${autoTaskIndex}`,
+        threadId,
+        title,
+        detail: prompt.trim(),
+        status: "pending",
+        position: todos.length,
+        updatedAt: now,
+      };
+      persist([...todos, created]);
+      target = created;
     }
+    if (!target) return;
 
     let nextTodos = todos;
     if (activeTodoId && activeTodoId !== target.id) {
