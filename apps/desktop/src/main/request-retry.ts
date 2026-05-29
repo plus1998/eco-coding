@@ -1,0 +1,122 @@
+/** Automatic retries after transient request / API failures. */
+export const REQUEST_AUTO_RETRY_MAX = 5;
+export const REQUEST_AUTO_RETRY_INTERVAL_MS = 5000;
+
+export type RequestAttemptResult =
+  | { ok: true }
+  | { ok: false; reason: string; aborted?: boolean };
+
+export function isRetryableRequestFailure(reason: string): boolean {
+  const text = reason.trim();
+  if (!text) {
+    return false;
+  }
+  const normalized = text.toLowerCase();
+  if (
+    normalized.includes("cancelled by user") ||
+    normalized.includes("cancelled") ||
+    text.includes("已取消") ||
+    text.includes("已停止")
+  ) {
+    return false;
+  }
+  if (text.includes("未能生成可执行的计划") || text.includes("找不到待批准的计划")) {
+    return false;
+  }
+  if (normalized.includes("permission denied") || text.includes("权限")) {
+    return false;
+  }
+
+  return (
+    normalized.includes("api error") ||
+    normalized.includes("malformed response") ||
+    normalized.includes("empty or malformed") ||
+    normalized.includes("claude code returned an error") ||
+    normalized.includes("agent run failed") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("econnrefused") ||
+    normalized.includes("etimedout") ||
+    normalized.includes("network") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("socket hang up") ||
+    normalized.includes("502") ||
+    normalized.includes("503") ||
+    normalized.includes("504") ||
+    normalized.includes("429") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("overloaded") ||
+    normalized.includes("bad gateway") ||
+    normalized.includes("service unavailable")
+  );
+}
+
+export function appendAutoRetryExhaustedHint(reason: string): string {
+  const hint = `（已自动重试 ${REQUEST_AUTO_RETRY_MAX} 次，可手动点击「重试此次请求」）`;
+  if (reason.includes("已自动重试")) {
+    return reason;
+  }
+  return `${reason}${hint}`;
+}
+
+export async function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return;
+  }
+  if (signal.aborted) {
+    throw new Error("cancelled by user");
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("cancelled by user"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function runWithRequestAutoRetry(
+  runOnce: () => Promise<RequestAttemptResult>,
+  options?: {
+    signal?: AbortSignal;
+    retryIntervalMs?: number;
+    onRetryScheduled?: (retryIndex: number, maxRetries: number, reason: string) => void;
+  },
+): Promise<RequestAttemptResult> {
+  const retryIntervalMs = options?.retryIntervalMs ?? REQUEST_AUTO_RETRY_INTERVAL_MS;
+  let lastReason = "请求失败";
+  const maxRetries = REQUEST_AUTO_RETRY_MAX;
+
+  for (let retry = 0; retry <= maxRetries; retry += 1) {
+    if (options?.signal?.aborted) {
+      return { ok: false, reason: "cancelled by user", aborted: true };
+    }
+
+    if (retry > 0) {
+      options?.onRetryScheduled?.(retry, maxRetries, lastReason);
+      try {
+        await sleepMs(retryIntervalMs, options?.signal);
+      } catch {
+        return { ok: false, reason: "cancelled by user", aborted: true };
+      }
+    }
+
+    const result = await runOnce();
+    if (result.ok || result.aborted) {
+      return result;
+    }
+
+    lastReason = result.reason;
+    const canRetry = retry < maxRetries && isRetryableRequestFailure(lastReason);
+    if (!canRetry) {
+      return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason) };
+    }
+  }
+
+  return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason) };
+}

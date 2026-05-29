@@ -267,7 +267,8 @@ export function formatDuration(ms: number): string {
 }
 
 function isPhaseLine(message: string): boolean {
-  return /^【\d+\/\d+】/.test(message.trim());
+  const trimmed = message.trim();
+  return /^【\d+\/\d+】/.test(trimmed) || /^【自动重试 \d+\/\d+】/.test(trimmed);
 }
 
 function shouldHideSystemLine(line: ThreadActivityLine): boolean {

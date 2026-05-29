@@ -7,6 +7,7 @@ import {
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
+  RefreshCw,
   RotateCcw,
   Settings2,
   Plug,
@@ -98,6 +99,7 @@ function App() {
   const [worktreeApplyBusy, setWorktreeApplyBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [retryBusy, setRetryBusy] = useState(false);
 
   useEffect(() => {
     if (!window.eco) {
@@ -180,6 +182,14 @@ function App() {
 
       if (event.type === "clarification.requested" && event.clarification) {
         setPendingClarification(event.clarification);
+      }
+
+      if (event.type === "thread.execution_failed" && window.eco) {
+        void window.eco.getPendingPlan(event.threadId).then((plan) => {
+          if (plan) {
+            setPendingPlan(plan);
+          }
+        });
       }
 
       appendActivityLine(event.threadId, {
@@ -340,6 +350,20 @@ function App() {
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
+  const canRetryThread = Boolean(
+    activeThread &&
+      routesReady &&
+      !isStarting &&
+      !planActionBusy &&
+      !clarificationBusy &&
+      !pendingClarification &&
+      !retryBusy &&
+      (activeThread.status === "failed" ||
+        activeThread.status === "blocked" ||
+        (activeThread.status === "awaiting_plan" &&
+          pendingPlan?.threadId === activeThread.id &&
+          Boolean(planFailureMessage))),
+  );
   const canStopThread =
     activeThread?.status === "running" ||
     activeThread?.status === "queued" ||
@@ -487,6 +511,26 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsStarting(false);
+    }
+  }
+
+  async function retryActiveThread() {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    setError(undefined);
+    setRetryBusy(true);
+    try {
+      const result = await window.eco.retryThread(activeThread.id);
+      if (result.thread) {
+        setThreads((current) =>
+          current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+        );
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setRetryBusy(false);
     }
   }
 
@@ -773,6 +817,18 @@ function App() {
                     ) : null}
                     <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
                     <div className="activity-header-actions">
+                      {canRetryThread ? (
+                        <button
+                          type="button"
+                          className="activity-icon-button"
+                          onClick={() => void retryActiveThread()}
+                          disabled={retryBusy}
+                          title="使用相同需求重试此次请求"
+                          aria-label="重试此次请求"
+                        >
+                          <RefreshCw size={15} className={retryBusy ? "spinning" : undefined} />
+                        </button>
+                      ) : null}
                       {canRollbackThread ? (
                         <button
                           type="button"
@@ -802,6 +858,26 @@ function App() {
                 </header>
               )}
               <div className="activity-messages">
+                {canRetryThread && !showPlanApproval && (planFailureMessage || activeThread?.status === "failed") ? (
+                  <div className="thread-retry-banner" role="alert">
+                    <div className="thread-retry-banner-body">
+                      <strong>此次请求失败</strong>
+                      {planFailureMessage ? <p>{planFailureMessage}</p> : <p>{activeThread?.message}</p>}
+                      <p className="thread-retry-banner-hint">
+                        工作区更改已回退（如有）。可重试同一需求；若仍出现 HTTP 200 空响应，请检查模型代理或上游
+                        API 配置。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="plan-button primary"
+                      onClick={() => void retryActiveThread()}
+                      disabled={retryBusy}
+                    >
+                      {retryBusy ? "正在重试…" : activeThread?.status === "awaiting_plan" ? "重试执行" : "重试此次请求"}
+                    </button>
+                  </div>
+                ) : null}
                 {pendingWorktreeApply ? (
                   <div className="worktree-apply-banner" role="status">
                     <p>
@@ -1045,7 +1121,13 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
   if (type === "thread.blocked") return "blocked";
   if (type === "thread.awaiting_plan" || type === "thread.execution_failed") return "awaiting_plan";
   if (type === "thread.idle" || type === "thread.execution_done") return "idle";
-  if (type === "thread.running" || type === "thread.started" || type === "thread.queued") {
+  if (
+    type === "thread.running" ||
+    type === "thread.started" ||
+    type === "thread.queued" ||
+    type === "thread.retry" ||
+    type === "thread.auto_retry"
+  ) {
     return "running";
   }
   return fallback;

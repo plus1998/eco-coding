@@ -13,6 +13,7 @@ export const IPC_CHANNELS = {
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
+  threadRetry: "thread:retry",
   threadGetPendingPlan: "thread:get-pending-plan",
   threadTodoList: "thread:todo-list",
   clarificationGetPending: "clarification:get-pending",
@@ -148,6 +149,10 @@ export interface ThreadContinueRequest {
 }
 
 export interface ThreadContinueResult {
+  thread: ThreadSummary;
+}
+
+export interface ThreadRetryResult {
   thread: ThreadSummary;
 }
 

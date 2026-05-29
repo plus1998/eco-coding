@@ -38,6 +38,7 @@ import {
   type CoderTodoStatus,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRetryResult,
   type ThreadLiveEvent,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
@@ -55,6 +56,11 @@ import {
   todoListSignature,
   updateCoderTodoStatus,
 } from "./coder-tasks";
+import {
+  REQUEST_AUTO_RETRY_INTERVAL_MS,
+  runWithRequestAutoRetry,
+  type RequestAttemptResult,
+} from "./request-retry";
 import { classifyThreadIntent } from "./thread-intent";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
@@ -446,6 +452,13 @@ function registerIpcHandlers(): void {
     return { thread: updated } satisfies ThreadContinueResult;
   });
 
+  ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return retryThread(threadId.trim());
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return;
@@ -573,6 +586,22 @@ function scheduleThreadTitleSummary(
     });
 }
 
+function runThreadRequestWithAutoRetry(
+  threadId: string,
+  signal: AbortSignal | undefined,
+  runOnce: () => Promise<RequestAttemptResult>,
+): Promise<RequestAttemptResult> {
+  return runWithRequestAutoRetry(runOnce, {
+    signal,
+    onRetryScheduled: (retryIndex, maxRetries, reason) => {
+      const short = reason.length > 100 ? `${reason.slice(0, 97)}…` : reason;
+      const message = `【自动重试 ${retryIndex}/${maxRetries}】${REQUEST_AUTO_RETRY_INTERVAL_MS / 1000} 秒后重试：${short}`;
+      emitThreadEvent(threadId, "thread.auto_retry", message, "system");
+      updateThread(threadId, { status: "running", message });
+    },
+  });
+}
+
 async function runQuestionThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
@@ -583,46 +612,68 @@ async function runQuestionThread(
   activeRuns.set(thread.id, { controller });
 
   try {
-    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
-    process.stderr.write(
-      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-    );
-    updateThread(thread.id, {
-      status: "running",
-      message: `Local model router ready: ${modelProxy.baseUrl}`,
+    const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      process.stderr.write(
+        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+      );
+      updateThread(thread.id, {
+        status: "running",
+        message: `Local model router ready: ${attemptProxy.baseUrl}`,
+      });
+      const routes = buildDriverRoutes(attemptProxy.routes);
+      try {
+        const driver = new ClaudeAgentSdkDriver({
+          apiKey: attemptProxy.apiKey,
+          baseUrl: attemptProxy.baseUrl,
+          canUseTool: createThreadCanUseTool(thread.id),
+        });
+        if (!driver.runQuestion) {
+          throw new Error("Runtime driver does not support question answering.");
+        }
+
+        let sdkFailure: string | undefined;
+        for await (const event of driver.runQuestion({
+          threadId: thread.id,
+          prompt,
+          workspacePath: workspace.path,
+          worktreePath: workspace.path,
+          routes,
+          signal: controller.signal,
+          sdkSession: buildSdkSessionOptions(),
+        })) {
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+          }
+          const display = formatAgentEventDisplay(event);
+          if (display) {
+            emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
+          }
+        }
+
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        if (sdkFailure) {
+          return { ok: false, reason: sdkFailure };
+        }
+        return { ok: true };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        return { ok: false, reason: errorMessage(error) };
+      } finally {
+        await attemptProxy.close();
+      }
     });
 
-    const routes = buildDriverRoutes(modelProxy.routes);
-    try {
-      const driver = new ClaudeAgentSdkDriver({
-        apiKey: modelProxy.apiKey,
-        baseUrl: modelProxy.baseUrl,
-        canUseTool: createThreadCanUseTool(thread.id),
-      });
-      if (!driver.runQuestion) {
-        throw new Error("Runtime driver does not support question answering.");
-      }
-
-      for await (const event of driver.runQuestion({
-        threadId: thread.id,
-        prompt,
-        workspacePath: workspace.path,
-        worktreePath: workspace.path,
-        routes,
-        signal: controller.signal,
-        sdkSession: buildSdkSessionOptions(),
-      })) {
-        const display = formatAgentEventDisplay(event);
-        if (display) {
-          emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
-        }
-      }
-    } finally {
-      await modelProxy.close();
-    }
-
-    if (controller.signal.aborted) {
+    if (outcome.aborted) {
       updateThread(thread.id, { status: "idle", message: "已停止回答。" });
+      return;
+    }
+    if (!outcome.ok) {
+      updateThread(thread.id, { status: "failed", message: outcome.reason });
       return;
     }
 
@@ -665,94 +716,116 @@ async function runCodingThreadPlanning(
       status: "running",
     });
 
-    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
-    process.stderr.write(
-      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-    );
-    updateThread(thread.id, {
-      message: `Local model router ready: ${modelProxy.baseUrl}`,
-      status: "running",
+    const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      process.stderr.write(
+        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+      );
+      updateThread(thread.id, {
+        message: `Local model router ready: ${attemptProxy.baseUrl}`,
+        status: "running",
+      });
+      const routes = buildDriverRoutes(attemptProxy.routes);
+      const plannerRoute = attemptProxy.routes.find((route) => route.role === "planner");
+      process.stderr.write(
+        `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${attemptProxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
+      );
+
+      try {
+        const driver = new ClaudeAgentSdkDriver({
+          apiKey: attemptProxy.apiKey,
+          baseUrl: attemptProxy.baseUrl,
+          canUseTool: createThreadCanUseTool(thread.id),
+        });
+
+        let sdkFailure: string | undefined;
+        let captured = false;
+
+        for await (const event of driver.run({
+          threadId: thread.id,
+          prompt,
+          workspacePath: workspace.path,
+          worktreePath: worktreePlan.worktreePath,
+          routes,
+          signal: controller.signal,
+          sdkSession: buildSdkSessionOptions(),
+        })) {
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+          }
+          if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+            captured = true;
+            conversationStore.savePendingPlan({
+              threadId: thread.id,
+              userPrompt: event.payload.userPrompt,
+              analysis: event.payload.analysis,
+              plan: event.payload.plan,
+              workspacePath: workspace.path,
+              worktreePath: worktreePlan.worktreePath,
+              routesJson: JSON.stringify(routes),
+            });
+            emitThreadEvent(
+              thread.id,
+              "thread.awaiting_plan",
+              "计划已生成，请确认是否执行。",
+              "planner",
+              false,
+              {
+                plan: {
+                  userPrompt: event.payload.userPrompt,
+                  analysis: event.payload.analysis,
+                  plan: event.payload.plan,
+                },
+              },
+            );
+          }
+
+          const display = formatAgentEventDisplay(event);
+          if (display) {
+            emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
+          }
+        }
+
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        if (sdkFailure) {
+          return { ok: false, reason: sdkFailure };
+        }
+        if (!captured) {
+          return { ok: false, reason: "未能生成可执行的计划。" };
+        }
+        return { ok: true };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        return { ok: false, reason: errorMessage(error) };
+      } finally {
+        await attemptProxy.close();
+      }
     });
 
-    const routes = buildDriverRoutes(modelProxy.routes);
-    const plannerRoute = modelProxy.routes.find((route) => route.role === "planner");
-    process.stderr.write(
-      `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${modelProxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
-    );
-    let planCaptured = false;
-
-    try {
-      const driver = new ClaudeAgentSdkDriver({
-        apiKey: modelProxy.apiKey,
-        baseUrl: modelProxy.baseUrl,
-        canUseTool: createThreadCanUseTool(thread.id),
-      });
-
-      for await (const event of driver.run({
-        threadId: thread.id,
-        prompt,
-        workspacePath: workspace.path,
-        worktreePath: worktreePlan.worktreePath,
-        routes,
-        signal: controller.signal,
-        sdkSession: buildSdkSessionOptions(),
-      })) {
-        if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-          planCaptured = true;
-          conversationStore.savePendingPlan({
-            threadId: thread.id,
-            userPrompt: event.payload.userPrompt,
-            analysis: event.payload.analysis,
-            plan: event.payload.plan,
-            workspacePath: workspace.path,
-            worktreePath: worktreePlan.worktreePath,
-            routesJson: JSON.stringify(routes),
-          });
-          emitThreadEvent(
-            thread.id,
-            "thread.awaiting_plan",
-            "计划已生成，请确认是否执行。",
-            "planner",
-            false,
-            {
-              plan: {
-                userPrompt: event.payload.userPrompt,
-                analysis: event.payload.analysis,
-                plan: event.payload.plan,
-              },
-            },
-          );
-        }
-
-        const display = formatAgentEventDisplay(event);
-        if (display) {
-          emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
-        }
-      }
-    } finally {
-      await modelProxy.close();
-    }
-
-    if (controller.signal.aborted) {
+    if (planningOutcome.aborted) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       updateThread(thread.id, { status: "idle", message: "已取消。" });
       await cleanupWorktreeForThread(thread.id);
       return;
     }
-
-    if (planCaptured) {
+    if (!planningOutcome.ok) {
+      cancelClarificationsForThread(thread.id, planningOutcome.reason);
       updateThread(thread.id, {
-        status: "awaiting_plan",
-        message: "等待你确认计划。",
+        status: "failed",
+        message: planningOutcome.reason,
       });
+      await cleanupWorktreeForThread(thread.id);
       return;
     }
 
     updateThread(thread.id, {
-      status: "failed",
-      message: "未能生成可执行的计划。",
+      status: "awaiting_plan",
+      message: "等待你确认计划。",
     });
-    await cleanupWorktreeForThread(thread.id);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     updateThread(thread.id, {
@@ -791,7 +864,6 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
-  let executionFailure: string | undefined;
   const todoTracker = createCoderTodoTracker(threadId);
   const executionPlan = {
     ...pending,
@@ -799,61 +871,74 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
   };
 
   try {
-    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
-    process.stderr.write(
-      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-    );
-    const routes = buildDriverRoutes(modelProxy.routes);
-    executionPlan.routesJson = JSON.stringify(routes);
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
-    try {
-      const driver = new ClaudeAgentSdkDriver({
-        apiKey: modelProxy.apiKey,
-        baseUrl: modelProxy.baseUrl,
-        canUseTool: createThreadCanUseTool(threadId),
-      });
+    const executionOutcome = await runThreadRequestWithAutoRetry(threadId, controller.signal, async () => {
+      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
+      executionPlan.routesJson = JSON.stringify(attemptRoutes);
+      try {
+        const driver = new ClaudeAgentSdkDriver({
+          apiKey: attemptProxy.apiKey,
+          baseUrl: attemptProxy.baseUrl,
+          canUseTool: createThreadCanUseTool(threadId),
+        });
 
-      if (!driver.runExecution) {
-        throw new Error("Runtime driver does not support execution phase.");
-      }
-
-      for await (const event of driver.runExecution(
-        {
-          threadId,
-          prompt: pending.userPrompt,
-          workspacePath: pending.workspacePath,
-          worktreePath: pending.worktreePath,
-          routes,
-          signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(),
-        },
-        planning,
-      )) {
-        if (event.type === "usage.recorded") {
-          executionFailure = extractSdkRunFailure(event.payload) ?? undefined;
+        if (!driver.runExecution) {
+          throw new Error("Runtime driver does not support execution phase.");
         }
 
-        const display = formatAgentEventDisplay(event);
-        todoTracker.observeEvent(event, display);
-        if (display) {
-          emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
-        }
-      }
-    } finally {
-      await modelProxy.close();
-    }
+        let sdkFailure: string | undefined;
+        for await (const event of driver.runExecution(
+          {
+            threadId,
+            prompt: pending.userPrompt,
+            workspacePath: pending.workspacePath,
+            worktreePath: pending.worktreePath,
+            routes: attemptRoutes,
+            signal: controller.signal,
+            sdkSession: buildSdkSessionOptions(),
+          },
+          planning,
+        )) {
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+          }
 
-    if (controller.signal.aborted) {
+          const display = formatAgentEventDisplay(event);
+          todoTracker.observeEvent(event, display);
+          if (display) {
+            emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
+          }
+        }
+
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        if (sdkFailure) {
+          return { ok: false, reason: sdkFailure };
+        }
+        return { ok: true };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        return { ok: false, reason: errorMessage(error) };
+      } finally {
+        await attemptProxy.close();
+      }
+    });
+
+    if (executionOutcome.aborted) {
       todoTracker.completeRunning("cancelled");
       await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。", executionPlan);
       return;
     }
 
-    if (executionFailure) {
+    if (!executionOutcome.ok) {
       todoTracker.completeRunning("blocked");
-      await restoreAfterExecutionFailure(threadId, worktreePlan, executionFailure, executionPlan);
+      await restoreAfterExecutionFailure(threadId, worktreePlan, executionOutcome.reason, executionPlan);
       return;
     }
 
@@ -895,6 +980,71 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
       });
     }
   }
+}
+
+async function retryThread(threadId: string): Promise<ThreadRetryResult> {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  if (activeRuns.has(threadId)) {
+    throw new Error("请等待当前运行结束后再重试。");
+  }
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("对话正在运行中。");
+  }
+
+  const runtimeConfig = resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+  );
+  if (!runtimeConfig.ok) {
+    throw new Error(runtimeConfig.reason);
+  }
+
+  const pending = conversationStore.getPendingPlan(threadId);
+  const prompt = thread.prompt.trim();
+  if (!prompt) {
+    throw new Error("没有可重试的需求内容。");
+  }
+
+  if (thread.status === "awaiting_plan" && pending) {
+    updateThread(threadId, { status: "running", message: "正在重试执行…" });
+    emitThreadEvent(threadId, "thread.retry", "正在重试执行计划…", "system");
+    void runCodingThreadExecution(threadId, runtimeConfig);
+    return { thread: conversationStore.getThread(threadId) ?? thread };
+  }
+
+  if (thread.status !== "failed" && thread.status !== "blocked") {
+    throw new Error("当前状态不支持重试，请发送新消息继续。");
+  }
+
+  const workspace = await ensureWorkspace(thread.workspacePath);
+  const intent = classifyThreadIntent(prompt);
+  conversationStore.clearCoderTodos(threadId);
+  updateThread(threadId, {
+    status: "running",
+    message: intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+  });
+  emitThreadEvent(
+    threadId,
+    "thread.retry",
+    intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+    "system",
+  );
+  emitTodoList(threadId, []);
+
+  const updated: ThreadSummary = {
+    ...thread,
+    status: "running",
+    message: intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+  };
+  if (intent === "question") {
+    void runQuestionThread(updated, workspace, runtimeConfig, prompt);
+  } else {
+    void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+  }
+  return { thread: updated };
 }
 
 async function restoreAfterExecutionFailure(

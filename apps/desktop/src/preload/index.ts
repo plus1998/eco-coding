@@ -20,6 +20,7 @@ import {
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRetryResult,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
   type ThreadStartRequest,
@@ -79,6 +80,9 @@ const api = {
   },
   continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
+  },
+  retryThread(threadId: string): Promise<ThreadRetryResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, threadId);
   },
   cancelThread(threadId: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadCancel, threadId);
