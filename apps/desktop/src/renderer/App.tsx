@@ -123,6 +123,17 @@ function App() {
         return;
       }
 
+      if (event.title) {
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId ? { ...thread, title: event.title ?? thread.title } : thread,
+          ),
+        );
+        if (event.type === "thread.title_updated") {
+          return;
+        }
+      }
+
       if (event.todoList) {
         setTodosByThread((current) => ({
           ...current,

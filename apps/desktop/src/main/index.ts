@@ -54,6 +54,7 @@ import {
   todoListSignature,
   updateCoderTodoStatus,
 } from "./coder-tasks";
+import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -246,7 +247,7 @@ function registerIpcHandlers(): void {
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
-      title: promptToTitle(prompt),
+      title: pendingThreadTitle,
       prompt,
       workspacePath: workspace.path,
       status,
@@ -258,6 +259,9 @@ function registerIpcHandlers(): void {
 
     conversationStore.saveThread(thread);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
+    if (runtimeConfig.ok) {
+      scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
+    }
 
     if (runtimeConfig.ok) {
       void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt);
@@ -388,15 +392,18 @@ function registerIpcHandlers(): void {
     }
 
     conversationStore.updateThreadPrompt(payload.threadId, prompt);
+    conversationStore.updateThreadTitle(payload.threadId, pendingThreadTitle);
     conversationStore.clearCoderTodos(payload.threadId);
     updateThread(payload.threadId, {
       status: "running",
       message: "正在分析并制定计划…",
     });
     emitTodoList(payload.threadId, []);
+    scheduleThreadTitleSummary(payload.threadId, prompt, runtimeConfig);
 
     const updated: ThreadSummary = {
       ...thread,
+      title: pendingThreadTitle,
       prompt,
       status: "running",
       message: "正在分析并制定计划…",
@@ -501,9 +508,27 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-function promptToTitle(prompt: string): string {
-  const firstLine = prompt.split("\n").find(Boolean)?.trim() ?? "New coding task";
-  return firstLine.length > 42 ? `${firstLine.slice(0, 39)}...` : firstLine;
+function scheduleThreadTitleSummary(
+  threadId: string,
+  prompt: string,
+  runtimeConfig: RuntimeConfig,
+): void {
+  void summarizeThreadTitleWithCoder(runtimeConfig.routes, prompt)
+    .then((title) => {
+      if (!title) {
+        return;
+      }
+      const thread = conversationStore.getThread(threadId);
+      if (!thread || thread.prompt !== prompt || thread.title === title) {
+        return;
+      }
+
+      conversationStore.updateThreadTitle(threadId, title);
+      emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
+    })
+    .catch((error) => {
+      process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
+    });
 }
 
 async function runCodingThreadPlanning(
@@ -1089,6 +1114,7 @@ function emitThreadEvent(
     plan?: ThreadLiveEvent["plan"];
     clarification?: ThreadLiveEvent["clarification"];
     todoList?: ThreadLiveEvent["todoList"];
+    title?: ThreadLiveEvent["title"];
   },
 ): void {
   const trimmed = message.trim();
@@ -1099,7 +1125,7 @@ function emitThreadEvent(
 
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
-  if (conversationStore.getThread(threadId) && displayMessage && !extras?.todoList) {
+  if (conversationStore.getThread(threadId) && displayMessage && !extras?.todoList && !extras?.title) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
       message: displayMessage,
@@ -1122,6 +1148,9 @@ function emitThreadEvent(
   }
   if (extras?.todoList) {
     payload.todoList = extras.todoList;
+  }
+  if (extras?.title) {
+    payload.title = extras.title;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

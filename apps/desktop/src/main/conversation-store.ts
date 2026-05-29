@@ -141,6 +141,12 @@ export class ConversationStore {
       .run(prompt, new Date().toISOString(), threadId);
   }
 
+  updateThreadTitle(threadId: string, title: string): void {
+    this.db
+      .prepare(`UPDATE threads SET title = ?, updated_at = ? WHERE id = ?`)
+      .run(title, new Date().toISOString(), threadId);
+  }
+
   updateThread(threadId: string, patch: Pick<ThreadSummary, "status" | "message">): void {
     this.db
       .prepare(

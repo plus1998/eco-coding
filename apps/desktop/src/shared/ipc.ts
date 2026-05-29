@@ -205,6 +205,7 @@ export interface ThreadLiveEvent {
   threadId: string;
   type: string;
   message: string;
+  title?: string;
   role?: AgentRole | "system" | "thinking" | "tool";
   stream?: boolean;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
