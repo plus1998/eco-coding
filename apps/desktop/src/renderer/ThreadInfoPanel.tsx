@@ -83,13 +83,17 @@ export function ThreadInfoPanel({
         </section>
       ) : null}
 
-      {todos.length > 0 ? (
+      {todos.length > 0 || threadStatus === "running" || threadStatus === "queued" ? (
         <section className="thread-info-section thread-info-todos">
           <h3 className="thread-info-heading">
             <ListTodo size={14} aria-hidden />
             任务列表
           </h3>
-          <CoderTodoPanel todos={todos} embedded />
+          {todos.length > 0 ? (
+            <CoderTodoPanel todos={todos} embedded />
+          ) : (
+            <p className="thread-info-muted thread-info-todos-empty">正在从执行计划解析任务…</p>
+          )}
         </section>
       ) : null}
     </aside>

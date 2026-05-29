@@ -10,7 +10,10 @@ import {
   createReviewerScopeToolHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
+  formatAgentEventLine,
   formatUsageBadge,
+  inferActivityRole,
+  isStreamPayload,
   estimateContextTokens,
   parseUsagePayload,
   type EcoPlanningContext,
@@ -56,6 +59,7 @@ import {
 } from "../shared/ipc";
 import {
   completeRunningCoderTodos,
+  extractCoderTasksFromActivity,
   extractCoderTasksFromText,
   findCoderTodoForPrompt,
   mergeCoderTodoItems,
@@ -188,7 +192,18 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
-    return conversationStore.listCoderTodos(threadId);
+    const stored = conversationStore.listCoderTodos(threadId);
+    if (stored.length > 0) {
+      return stored;
+    }
+    const activity = conversationStore.listActivityLines(threadId);
+    const drafts = extractCoderTasksFromActivity(activity);
+    if (drafts.length === 0) {
+      return stored;
+    }
+    const todos = mergeCoderTodoItems(threadId, drafts, stored);
+    conversationStore.replaceCoderTodos(threadId, todos);
+    return todos;
   });
 
   ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
@@ -1114,21 +1129,29 @@ function createCoderTodoTracker(threadId: string): {
     emitTodoList(threadId, todos);
   };
 
-  const collectTasks = (display: AgentEventDisplay) => {
-    if (display.role !== "planner" && display.role !== "architect") {
+  const appendTaskTranscript = (role: string, message: string, stream: boolean) => {
+    if (role !== "planner" && role !== "architect") {
+      return;
+    }
+    const trimmed = message.trim();
+    if (!trimmed) {
       return;
     }
 
-    taskTranscript = display.stream
-      ? mergeStreamText(taskTranscript, display.message)
+    taskTranscript = stream
+      ? mergeStreamText(taskTranscript, trimmed)
       : taskTranscript
-        ? `${taskTranscript}\n${display.message}`
-        : display.message;
+        ? `${taskTranscript}\n${trimmed}`
+        : trimmed;
 
     const drafts = extractCoderTasksFromText(taskTranscript);
     if (drafts.length > 0) {
       persist(mergeCoderTodoItems(threadId, drafts, todos));
     }
+  };
+
+  const collectTasks = (display: AgentEventDisplay) => {
+    appendTaskTranscript(String(display.role), display.message, display.stream);
   };
 
   const startCoderTask = (prompt: string | undefined) => {
@@ -1171,7 +1194,15 @@ function createCoderTodoTracker(threadId: string): {
       observeAgentTool(event);
       if (display) {
         collectTasks(display);
+        return;
       }
+      const line = formatAgentEventLine(event);
+      if (!line) {
+        return;
+      }
+      const role = inferActivityRole(event);
+      const stream = event.type === "message.delta" && isStreamPayload(event.payload);
+      appendTaskTranscript(String(role), line, stream);
     },
     completeRunning,
   };

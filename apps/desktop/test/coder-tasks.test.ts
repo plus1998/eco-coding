@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   completeRunningCoderTodos,
+  extractCoderTasksFromActivity,
   extractCoderTasksFromText,
   findCoderTodoForPrompt,
   mergeCoderTodoItems,
@@ -33,6 +34,40 @@ Check UI.
       detail: "title: Render todo panel\nscope: React UI\ndependencies: task 1",
     },
   ]);
+});
+
+test("extracts CoderTasks heading without space between words", () => {
+  const tasks = extractCoderTasksFromText(`
+##CoderTasks
+1. title: Enable flag flow
+   scope: service layer
+2. title: Update schedule filter
+`);
+
+  expect(tasks).toHaveLength(2);
+  expect(tasks[0]?.title).toBe("Enable flag flow");
+});
+
+test("extracts tasks when heading and first item share a line", () => {
+  const tasks = extractCoderTasksFromText(`
+##CoderTasks1. title: Inline heading task
+   scope: corp service
+`);
+
+  expect(tasks).toHaveLength(1);
+  expect(tasks[0]?.title).toBe("Inline heading task");
+});
+
+test("rehydrates tasks from planner activity lines", () => {
+  const tasks = extractCoderTasksFromActivity([
+    { role: "tool", message: "Tool: Read · foo.ts" },
+    {
+      role: "planner",
+      message: "## Coder Tasks\n1. title: Wire IPC\n   scope: preload",
+    },
+  ]);
+
+  expect(tasks[0]?.title).toBe("Wire IPC");
 });
 
 test("preserves todo status while replacing parsed task details", () => {

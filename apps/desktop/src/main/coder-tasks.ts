@@ -5,14 +5,23 @@ export interface CoderTaskDraft {
   detail: string;
 }
 
+const CODER_TASKS_HEADING =
+  /^#{1,6}\s*(?:Coder\s*Tasks|CoderTasks|编码任务|Coder任务)\s*(.*)$/i;
+
 export function extractCoderTasksFromText(text: string): CoderTaskDraft[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const headingIndex = lines.findIndex((line) => /^#{1,6}\s*Coder Tasks\b/i.test(line.trim()));
+  const headingIndex = lines.findIndex((line) => CODER_TASKS_HEADING.test(line.trim()));
   if (headingIndex < 0) {
     return [];
   }
 
   const sectionLines: string[] = [];
+  const headingMatch = lines[headingIndex]?.trim().match(CODER_TASKS_HEADING);
+  const inlineRemainder = headingMatch?.[1]?.trim();
+  if (inlineRemainder) {
+    sectionLines.push(inlineRemainder);
+  }
+
   for (const line of lines.slice(headingIndex + 1)) {
     if (/^#{1,6}\s+\S/.test(line.trim())) {
       break;
@@ -33,6 +42,16 @@ export function extractCoderTasksFromText(text: string): CoderTaskDraft[] {
       return title ? { title, detail } : undefined;
     })
     .filter((task): task is CoderTaskDraft => Boolean(task));
+}
+
+export function extractCoderTasksFromActivity(
+  lines: ReadonlyArray<{ role: string; message: string }>,
+): CoderTaskDraft[] {
+  const transcript = lines
+    .filter((line) => line.role === "planner" || line.role === "architect")
+    .map((line) => line.message)
+    .join("\n");
+  return extractCoderTasksFromText(transcript);
 }
 
 export function mergeCoderTodoItems(

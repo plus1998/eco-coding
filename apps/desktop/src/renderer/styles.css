@@ -1954,6 +1954,12 @@ button:not(:disabled) {
   padding: 0;
 }
 
+.thread-info-todos-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .coder-todo-embedded .coder-todo-list {
   margin: 0;
   padding: 0;
@@ -2751,8 +2757,16 @@ button:not(:disabled) {
 }
 
 @media (max-width: 900px) {
-  .shell {
+  .shell,
+  .shell.shell-with-info {
     grid-template-columns: 1fr;
+  }
+
+  .thread-info-panel {
+    min-height: auto;
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid #2e2e2e;
   }
 
   .codex-sidebar {
