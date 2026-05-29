@@ -1,6 +1,12 @@
 import { ChevronLeft, ChevronRight, Info } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
+import {
+  CLARIFICATION_CUSTOM_OPTION_LABEL,
+  isClarificationQuestionReady,
+  optionRequiresCustomExplanation,
+  resolveClarificationQuestionAnswer,
+} from "../shared/clarification";
 
 interface ClarificationPanelProps {
   request: ClarificationRequest;
@@ -14,16 +20,50 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
   const [questionIndex, setQuestionIndex] = useState(0);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [selections, setSelections] = useState<string[][]>(() => request.questions.map(() => []));
+  const [customTexts, setCustomTexts] = useState<string[]>(() => request.questions.map(() => ""));
+  const customInputRef = useRef<HTMLTextAreaElement>(null);
 
   const question = request.questions[questionIndex];
-  const optionCount = question?.options.length ?? 0;
+  const displayOptions = useMemo(() => {
+    if (!question) {
+      return [];
+    }
+    const hasCustomRow = question.options.some(
+      (option) => option.label === CLARIFICATION_CUSTOM_OPTION_LABEL,
+    );
+    if (hasCustomRow) {
+      return question.options;
+    }
+    return [
+      ...question.options,
+      { label: CLARIFICATION_CUSTOM_OPTION_LABEL, description: "在下方输入框填写你的说明" },
+    ];
+  }, [question]);
+
+  const optionCount = displayOptions.length;
 
   const recommendedIndex = useMemo(() => {
     if (!question) {
       return -1;
     }
-    return question.options.findIndex((option) => option.recommended);
-  }, [question]);
+    return displayOptions.findIndex((option) => option.recommended);
+  }, [question, displayOptions]);
+
+  const currentSelection = selections[questionIndex] ?? [];
+  const currentCustomText = customTexts[questionIndex] ?? "";
+  const questionReady = isClarificationQuestionReady(currentSelection, currentCustomText);
+  const showCustomInput = useMemo(() => {
+    if (!question) {
+      return false;
+    }
+    if (currentCustomText.trim()) {
+      return true;
+    }
+    if (currentSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
+      return true;
+    }
+    return currentSelection.some((label) => optionRequiresCustomExplanation(label));
+  }, [question, currentCustomText, currentSelection]);
 
   useEffect(() => {
     setHighlightIndex(recommendedIndex >= 0 ? recommendedIndex : 0);
@@ -34,7 +74,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       if ((current[questionIndex]?.length ?? 0) > 0) {
         return current;
       }
-      const recommended = question.options.find((option) => option.recommended);
+      const recommended = displayOptions.find((option) => option.recommended);
       if (!recommended) {
         return current;
       }
@@ -42,7 +82,14 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       next[questionIndex] = [recommended.label];
       return next;
     });
-  }, [questionIndex, question, recommendedIndex]);
+  }, [questionIndex, question, recommendedIndex, displayOptions]);
+
+  useEffect(() => {
+    if (!showCustomInput || busy) {
+      return;
+    }
+    customInputRef.current?.focus();
+  }, [showCustomInput, questionIndex, busy]);
 
   function selectOption(optionLabel: string) {
     if (!question) {
@@ -52,9 +99,15 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       const next = current.map((row) => [...row]);
       if (question.multiSelect) {
         const row = next[questionIndex] ?? [];
-        next[questionIndex] = row.includes(optionLabel)
-          ? row.filter((item) => item !== optionLabel)
-          : [...row, optionLabel];
+        if (optionLabel === CLARIFICATION_CUSTOM_OPTION_LABEL) {
+          next[questionIndex] = row.includes(optionLabel)
+            ? row.filter((item) => item !== optionLabel)
+            : [...row.filter((item) => item !== CLARIFICATION_CUSTOM_OPTION_LABEL), optionLabel];
+        } else {
+          next[questionIndex] = row.includes(optionLabel)
+            ? row.filter((item) => item !== optionLabel)
+            : [...row, optionLabel];
+        }
       } else {
         next[questionIndex] = [optionLabel];
       }
@@ -62,23 +115,27 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     });
   }
 
-  function submitAll(currentSelections: string[][]) {
-    onSubmit({ toolUseId: request.toolUseId, selections: currentSelections });
+  function buildFinalSelections(): string[][] {
+    return request.questions.map((_, index) =>
+      resolveClarificationQuestionAnswer(selections[index] ?? [], customTexts[index] ?? ""),
+    );
+  }
+
+  function submitAll() {
+    onSubmit({ toolUseId: request.toolUseId, selections: buildFinalSelections() });
   }
 
   function continueFlow() {
-    if (!question || (selections[questionIndex]?.length ?? 0) === 0) {
+    if (!question || !questionReady) {
       return;
     }
     if (questionIndex >= total - 1) {
-      submitAll(selections);
+      submitAll();
       return;
     }
     setQuestionIndex((index) => index + 1);
   }
 
-  const currentSelection = selections[questionIndex] ?? [];
-  const hasSelection = currentSelection.length > 0;
   const isLastQuestion = questionIndex >= total - 1;
 
   useEffect(() => {
@@ -86,9 +143,23 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       if (busy || !question) {
         return;
       }
+      const target = event.target as HTMLElement | null;
+      const inCustomField = target?.tagName === "TEXTAREA";
+
       if (event.key === "Escape") {
         event.preventDefault();
         onDismiss();
+        return;
+      }
+      if (inCustomField) {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && questionReady) {
+          event.preventDefault();
+          if (questionIndex >= total - 1) {
+            submitAll();
+          } else {
+            setQuestionIndex((index) => index + 1);
+          }
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -103,10 +174,11 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        const option = question.options[highlightIndex];
+        const option = displayOptions[highlightIndex];
         if (!option) {
           return;
         }
+        let nextSelection: string[] = [];
         setSelections((current) => {
           const next = current.map((row) => [...row]);
           if (question.multiSelect) {
@@ -117,22 +189,39 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
           } else {
             next[questionIndex] = [option.label];
           }
-          const ready = (next[questionIndex]?.length ?? 0) > 0;
-          if (ready) {
-            if (questionIndex >= total - 1) {
-              submitAll(next);
-            } else {
-              setQuestionIndex((index) => index + 1);
-            }
-          }
+          nextSelection = next[questionIndex] ?? [];
           return next;
         });
+        const readyAfterSelect = isClarificationQuestionReady(
+          nextSelection,
+          customTexts[questionIndex] ?? "",
+        );
+        if (!readyAfterSelect) {
+          return;
+        }
+        if (questionIndex >= total - 1) {
+          submitAll();
+        } else {
+          setQuestionIndex((index) => index + 1);
+        }
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, question, highlightIndex, optionCount, questionIndex, total, onDismiss, request.toolUseId]);
+  }, [
+    busy,
+    question,
+    highlightIndex,
+    optionCount,
+    questionIndex,
+    total,
+    onDismiss,
+    displayOptions,
+    questionReady,
+    selections,
+    customTexts,
+  ]);
 
   if (!question) {
     return null;
@@ -159,7 +248,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
             <button
               type="button"
               className="clarification-page-btn"
-              disabled={busy || questionIndex >= total - 1 || !hasSelection}
+              disabled={busy || questionIndex >= total - 1 || !questionReady}
               onClick={() => setQuestionIndex((index) => index + 1)}
               aria-label="下一题"
             >
@@ -170,7 +259,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
       </header>
 
       <ul className="clarification-option-list" role="listbox" aria-label="选项">
-        {question.options.map((option, optionIndex) => {
+        {displayOptions.map((option, optionIndex) => {
           const selected = currentSelection.includes(option.label);
           const highlighted = highlightIndex === optionIndex;
           return (
@@ -213,6 +302,33 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
         })}
       </ul>
 
+      <div className="clarification-custom">
+        <label className="clarification-custom-label" htmlFor={`clarification-custom-${request.toolUseId}`}>
+          自定义说明
+          {showCustomInput && !currentCustomText.trim() ? (
+            <span className="clarification-custom-required">（必填）</span>
+          ) : null}
+        </label>
+        <textarea
+          id={`clarification-custom-${request.toolUseId}`}
+          ref={customInputRef}
+          className="clarification-custom-input"
+          disabled={busy}
+          rows={3}
+          placeholder="在此输入你的说明；选择「请说明」类选项或「其他」时必须填写。也可不选预设项，直接输入。"
+          value={currentCustomText}
+          onChange={(event) => {
+            const value = event.target.value;
+            setCustomTexts((current) => {
+              const next = [...current];
+              next[questionIndex] = value;
+              return next;
+            });
+          }}
+        />
+        <p className="clarification-custom-hint">提交时将使用此处文字作为回答（不会提交「其他」字样本身）。</p>
+      </div>
+
       <footer className="clarification-footer">
         <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
           忽略 <kbd>ESC</kbd>
@@ -220,7 +336,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
         <button
           type="button"
           className="clarification-continue"
-          disabled={busy || !hasSelection}
+          disabled={busy || !questionReady}
           onClick={continueFlow}
         >
           {isLastQuestion ? "继续" : "下一题"} <kbd>↵</kbd>

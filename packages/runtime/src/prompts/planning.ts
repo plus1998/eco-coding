@@ -29,7 +29,7 @@ export const planningPhaseSystemAppend = [
   "- Do NOT silently guess a business rule because you found one code path — ask.",
   "- Provide 2–4 concrete options per question; set recommended: true on the best default when possible.",
   "- You may include 1–3 questions in one AskUserQuestion call (questions array).",
-  "- Include a final option like “否，请说明希望如何调整” when users may reject all presets.",
+  "- Include a final option like “否，请说明希望如何调整” when users may reject all presets (Eco shows a custom text field for the user’s explanation).",
   "",
   "# Plan deliverable (required structure)",
   "Optional: ## Analysis Result (or ## 分析结果) — brief findings with `path:line` references when useful.",

@@ -743,6 +743,58 @@ button:not(:disabled) {
   line-height: 1.35;
 }
 
+.clarification-custom {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #3a3a3a;
+}
+
+.clarification-custom-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e5e5e5;
+}
+
+.clarification-custom-required {
+  margin-left: 4px;
+  color: #fbbf24;
+  font-weight: 400;
+}
+
+.clarification-custom-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid #404040;
+  border-radius: 10px;
+  background: #1f1f1f;
+  color: #f5f5f5;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.clarification-custom-input:focus {
+  outline: none;
+  border-color: #737373;
+  box-shadow: 0 0 0 2px rgba(115, 115, 115, 0.25);
+}
+
+.clarification-custom-input:disabled {
+  opacity: 0.6;
+}
+
+.clarification-custom-hint {
+  margin: 8px 0 0;
+  color: #a3a3a3;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .clarification-info {
   flex-shrink: 0;
   margin-top: 2px;
