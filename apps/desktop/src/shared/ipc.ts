@@ -1,6 +1,7 @@
 export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
   workspaceGetCurrent: "workspace:get-current",
+  workspaceInspect: "workspace:inspect",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
   modelProviderListModels: "model-provider:list-models",

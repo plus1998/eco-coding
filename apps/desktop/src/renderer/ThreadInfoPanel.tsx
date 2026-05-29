@@ -38,11 +38,13 @@ export function ThreadInfoPanel({
               {projectLabel}
             </span>
           </li>
-          {workspace?.isGitRepository ? (
+          {workspace === undefined ? (
+            <li className="thread-info-muted">正在检测 Git…</li>
+          ) : workspace.isGitRepository ? (
             <li>
               <GitBranch size={14} aria-hidden />
               <span className="thread-info-value">
-                {gitBranch ?? "detached"}
+                {gitBranch ?? workspace.branch ?? "detached"}
                 {typeof dirtyFileCount === "number" && dirtyFileCount > 0
                   ? ` · ${dirtyFileCount} 处未提交`
                   : ""}

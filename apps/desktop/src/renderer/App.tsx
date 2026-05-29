@@ -71,6 +71,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("models");
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
+  const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
@@ -314,7 +315,23 @@ function App() {
     [currentProjectPath, threads],
   );
   const activeThread = projectThreads.find((thread) => thread.id === selectedThreadId);
-  const workspaceMatchesProject = workspace?.path === currentProjectPath;
+  useEffect(() => {
+    if (!currentProjectPath || !window.eco) {
+      setProjectWorkspace(undefined);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void window.eco.inspectWorkspace(currentProjectPath).then((info) => {
+      if (!cancelled) {
+        setProjectWorkspace(info);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectPath]);
 
   useEffect(() => {
     if (!activeThread?.id || !window.eco) {
@@ -1031,10 +1048,10 @@ function App() {
 
       {showThreadInfo && activeThread ? (
         <ThreadInfoPanel
-          workspace={workspaceMatchesProject ? workspace : undefined}
+          workspace={projectWorkspace}
           workspacePath={currentProjectPath}
-          gitBranch={workspaceMatchesProject ? workspace?.branch : undefined}
-          dirtyFileCount={workspaceMatchesProject ? workspace?.dirtyFileCount : undefined}
+          gitBranch={projectWorkspace?.branch}
+          dirtyFileCount={projectWorkspace?.dirtyFileCount}
           todos={coderTodos}
           threadStatus={activeThread.status}
           {...(pendingWorktreeApply && { pendingWorktreeApply })}
@@ -1112,31 +1129,35 @@ function App() {
                     <span className="settings-section-label">工作区</span>
                   </div>
                   <div className="settings-editor-card">
-                    {workspaceMatchesProject && workspace ? (
+                    {projectWorkspace ? (
                       <ul className="settings-kv-list">
                         <li>
                           <span>路径</span>
-                          <strong>{workspace.path}</strong>
+                          <strong>{projectWorkspace.path}</strong>
                         </li>
                         <li>
                           <span>分支</span>
                           <strong>
-                            {workspace.isGitRepository ? (workspace.branch ?? "detached") : "非 Git 仓库"}
+                            {projectWorkspace.isGitRepository
+                              ? (projectWorkspace.branch ?? "detached")
+                              : "非 Git 仓库"}
                           </strong>
                         </li>
                         <li>
                           <span>未提交变更</span>
-                          <strong>{workspace.dirtyFileCount} 个文件</strong>
+                          <strong>{projectWorkspace.dirtyFileCount} 个文件</strong>
                         </li>
-                        {workspace.packageManager && (
+                        {projectWorkspace.packageManager && (
                           <li>
                             <span>包管理器</span>
-                            <strong>{workspace.packageManager}</strong>
+                            <strong>{projectWorkspace.packageManager}</strong>
                           </li>
                         )}
                       </ul>
+                    ) : currentProjectPath ? (
+                      <p className="settings-empty">正在读取 Git 状态…</p>
                     ) : (
-                      <p className="settings-empty">请先在主界面打开一个 Git 项目。</p>
+                      <p className="settings-empty">请先在主界面打开一个项目。</p>
                     )}
                   </div>
                 </section>

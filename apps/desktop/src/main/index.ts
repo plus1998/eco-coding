@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import {
   ClaudeAgentSdkDriver,
   composeCanUseToolHandlers,
@@ -81,6 +80,7 @@ import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
+import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
@@ -94,7 +94,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
-const execFileAsync = promisify(execFile);
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
@@ -179,6 +178,13 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
+
+  ipcMain.handle(IPC_CHANNELS.workspaceInspect, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    return inspectWorkspace(workspacePath.trim());
+  });
 
   ipcMain.handle(IPC_CHANNELS.threadList, async () => conversationStore.listThreads());
 
@@ -536,52 +542,6 @@ async function ensureWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
   }
   currentWorkspace = workspace;
   return workspace;
-}
-
-async function inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
-  const gitRoot = await runGit(workspacePath, ["rev-parse", "--show-toplevel"]);
-  const branch = gitRoot.ok ? await runGit(workspacePath, ["branch", "--show-current"]) : undefined;
-  const status = gitRoot.ok ? await runGit(workspacePath, ["status", "--short"]) : undefined;
-
-  const workspace: WorkspaceInfo = {
-    path: workspacePath,
-    name: path.basename(workspacePath),
-    isGitRepository: gitRoot.ok,
-    dirtyFileCount: status?.ok ? status.stdout.split("\n").filter(Boolean).length : 0,
-  };
-
-  if (gitRoot.ok) workspace.gitRoot = gitRoot.stdout;
-  if (branch?.ok) workspace.branch = branch.stdout || "detached";
-
-  const packageManager = await detectPackageManager(workspacePath);
-  if (packageManager) workspace.packageManager = packageManager;
-
-  return workspace;
-}
-
-async function runGit(cwd: string, args: string[]): Promise<{ ok: true; stdout: string } | { ok: false }> {
-  try {
-    const { stdout } = await execFileAsync("git", args, { cwd });
-    return { ok: true, stdout: stdout.trim() };
-  } catch {
-    return { ok: false };
-  }
-}
-
-async function detectPackageManager(workspacePath: string): Promise<WorkspaceInfo["packageManager"]> {
-  const candidates: Array<[WorkspaceInfo["packageManager"], string]> = [
-    ["bun", "bun.lock"],
-    ["pnpm", "pnpm-lock.yaml"],
-    ["yarn", "yarn.lock"],
-    ["npm", "package-lock.json"],
-  ];
-
-  for (const [manager, fileName] of candidates) {
-    if (await fileExists(path.join(workspacePath, fileName))) {
-      return manager;
-    }
-  }
-  return undefined;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -1483,7 +1443,7 @@ async function runGitCommand(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = execFile(
-      command[0] ?? "git",
+      command[0] === "git" ? resolveGitExecutable() : (command[0] ?? resolveGitExecutable()),
       command.slice(1),
       { cwd, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
