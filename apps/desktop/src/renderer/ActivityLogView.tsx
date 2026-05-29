@@ -1,10 +1,13 @@
-import { Bot, Check, ChevronDown, Copy, FileSearch, Pencil, Reply, Search, Terminal } from "lucide-react";
+import { Bot, ChevronDown, Copy, FileSearch, Pencil, Reply, Search, Terminal } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
-import { formatSubagentLabel } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
+import type { ThreadUsageSnapshot } from "../shared/ipc";
 import {
   buildActivityLogBlocks,
+  formatDuration,
   type ActivityActionIcon,
+  type ActivityDetailBlock,
   type ActivityLogBlock,
   splitNarrativeSegments,
 } from "./activity-log";
@@ -13,9 +16,17 @@ interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
   thread?: ThreadSummary;
   onRestorePrompt?: (prompt: string) => void;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }
 
-export function ActivityLogView({ lines, thread, onRestorePrompt }: ActivityLogViewProps) {
+export function ActivityLogView({
+  lines,
+  thread,
+  onRestorePrompt,
+  modelByRole,
+  usageByRole,
+}: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
     if (lines.some((line) => line.role === "user") || !thread?.prompt.trim()) {
       return lines;
@@ -39,6 +50,8 @@ export function ActivityLogView({ lines, thread, onRestorePrompt }: ActivityLogV
           key={`${block.kind}-${index}`}
           block={block}
           {...(onRestorePrompt && { onRestorePrompt })}
+          {...(modelByRole && { modelByRole })}
+          {...(usageByRole && { usageByRole })}
         />
       ))}
     </div>
@@ -48,29 +61,99 @@ export function ActivityLogView({ lines, thread, onRestorePrompt }: ActivityLogV
 function RunLogBlock({
   block,
   onRestorePrompt,
+  modelByRole,
+  usageByRole,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
-  if (block.kind === "progress") {
+  if (block.kind === "user-prompt") {
+    return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
+  }
+  if (block.kind === "work-session") {
     return (
-      <RunLogProgress
-        label={block.label}
-        running={block.running}
-        {...(block.activeSubagent && { activeSubagent: block.activeSubagent })}
+      <WorkSessionBlock
+        block={block}
+        {...(modelByRole && { modelByRole })}
+        {...(usageByRole && { usageByRole })}
       />
     );
   }
+  if (block.kind === "assistant-message") {
+    return (
+      <AssistantMessageBlock
+        text={block.text}
+        {...(block.streaming !== undefined && { streaming: block.streaming })}
+        {...(block.subagent && { subagent: block.subagent })}
+        {...(modelByRole && { modelByRole })}
+        {...(usageByRole && { usageByRole })}
+      />
+    );
+  }
+  return null;
+}
+
+function WorkSessionBlock({
+  block,
+  modelByRole,
+  usageByRole,
+}: {
+  block: Extract<ActivityLogBlock, { kind: "work-session" }>;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
+}) {
+  const [expanded, setExpanded] = useState(!block.defaultCollapsed);
+  const activeLabel = block.activeSubagent
+    ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
+    : "";
+  const label = block.running
+    ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
+    : `已处理 ${formatDuration(block.durationMs)}`;
+
+  return (
+    <section className="work-session">
+      <button
+        type="button"
+        className="work-session-toggle"
+        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={expanded}
+        disabled={block.running && block.children.length === 0}
+      >
+        <span className={`work-session-dot${block.running ? " running" : ""}`} />
+        <span className="work-session-label">{label}</span>
+        {!block.running && block.children.length > 0 ? (
+          <ChevronDown size={16} className={expanded ? "work-session-chevron" : "work-session-chevron collapsed"} />
+        ) : null}
+      </button>
+      {expanded && block.children.length > 0 ? (
+        <div className="work-session-details">
+          {block.children.map((child, index) => (
+            <DetailBlock
+              key={`${child.kind}-${index}`}
+              block={child}
+              {...(modelByRole && { modelByRole })}
+              {...(usageByRole && { usageByRole })}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DetailBlock({
+  block,
+  modelByRole,
+  usageByRole,
+}: {
+  block: ActivityDetailBlock;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
+}) {
   if (block.kind === "phase") {
     return <div className="run-log-phase">{block.label}</div>;
-  }
-  if (block.kind === "user-prompt") {
-    return (
-      <UserPromptBlock
-        text={block.text}
-        {...(onRestorePrompt && { onRestorePrompt })}
-      />
-    );
   }
   if (block.kind === "action") {
     return <RunLogAction icon={block.icon} label={block.label} />;
@@ -80,6 +163,9 @@ function RunLogBlock({
       text={block.text}
       {...(block.streaming !== undefined && { streaming: block.streaming })}
       {...(block.subagent && { subagent: block.subagent })}
+      {...(modelByRole && { modelByRole })}
+      {...(usageByRole && { usageByRole })}
+      compact
     />
   );
 }
@@ -91,77 +177,47 @@ function UserPromptBlock({
   text: string;
   onRestorePrompt?: (prompt: string) => void;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyPrompt() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
     <article className="run-log-user-prompt">
-      <header className="run-log-user-prompt-head">
-        <span className="run-log-user-prompt-label">你的需求</span>
+      <pre className="run-log-user-prompt-body">{text}</pre>
+      {onRestorePrompt ? (
         <div className="run-log-user-prompt-actions">
           <button
             type="button"
             className="run-log-user-prompt-action"
-            onClick={() => void copyPrompt()}
-            aria-label="复制原文"
-            title="复制原文"
+            onClick={() => onRestorePrompt(text)}
+            aria-label="回到此节点"
+            title="填入输入框"
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? "已复制" : "复制"}
+            <Reply size={14} />
           </button>
-          {onRestorePrompt ? (
-            <button
-              type="button"
-              className="run-log-user-prompt-action"
-              onClick={() => onRestorePrompt(text)}
-              aria-label="回到此节点"
-              title="填入输入框，可编辑后重新发送"
-            >
-              <Reply size={14} />
-              回到此节点
-            </button>
-          ) : null}
         </div>
-      </header>
-      <pre className="run-log-user-prompt-body">{text}</pre>
+      ) : null}
     </article>
   );
 }
 
-function RunLogProgress({
-  label,
-  running,
-  activeSubagent,
+function AssistantMessageBlock({
+  text,
+  streaming,
+  subagent,
+  modelByRole,
+  usageByRole,
 }: {
-  label: string;
-  running: boolean;
-  activeSubagent?: string;
+  text: string;
+  streaming?: boolean;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-
   return (
-    <button
-      type="button"
-      className="run-log-progress"
-      onClick={() => setCollapsed((current) => !current)}
-      aria-expanded={!collapsed}
-    >
-      <span className={`run-log-progress-dot${running ? " running" : ""}`} />
-      <span>{label}</span>
-      {activeSubagent && running ? (
-        <span className="run-log-subagent-chip">{formatSubagentLabel(activeSubagent)}</span>
-      ) : null}
-      <ChevronDown size={16} className={collapsed ? "run-log-chevron collapsed" : "run-log-chevron"} />
-    </button>
+    <RunLogNarrative
+      text={text}
+      streaming={streaming}
+      subagent={subagent}
+      {...(modelByRole && { modelByRole })}
+      {...(usageByRole && { usageByRole })}
+    />
   );
 }
 
@@ -187,17 +243,36 @@ function RunLogNarrative({
   text,
   streaming,
   subagent,
+  compact,
+  modelByRole,
+  usageByRole,
 }: {
   text: string;
   streaming?: boolean;
   subagent?: string;
+  compact?: boolean;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
   const segments = splitNarrativeSegments(text);
+  const usage = subagent ? usageByRole?.[subagent] : undefined;
 
   return (
-    <div className="run-log-narrative">
+    <div className={compact ? "run-log-narrative compact" : "run-log-narrative"}>
       {subagent ? (
-        <span className="run-log-subagent-badge">{formatSubagentLabel(subagent)}</span>
+        <span className="run-log-subagent-badge">
+          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+          {usage ? (
+            <span className="run-log-usage-badge">
+              {formatUsageBadge({
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cacheReadTokens: usage.cacheReadTokens,
+                cacheCreationTokens: usage.cacheCreationTokens,
+              })}
+            </span>
+          ) : null}
+        </span>
       ) : null}
       <p>
         {segments.map((segment, index) =>
