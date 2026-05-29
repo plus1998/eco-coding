@@ -32,9 +32,10 @@ import {
   type ThreadPendingPlan,
   type ThreadStatus,
   type ThreadSummary,
+  type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { formatSubagentLabel, mergeStreamText } from "@eco/runtime";
+import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { resolveActiveSubagent } from "./activity-log";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -42,7 +43,7 @@ import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
-import { CoderTodoPanel } from "./CoderTodoPanel";
+import { ThreadInfoPanel } from "./ThreadInfoPanel";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
@@ -91,6 +92,8 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
+  const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
+  const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
     worktreePath: string;
@@ -182,6 +185,28 @@ function App() {
 
       if (event.type === "clarification.requested" && event.clarification) {
         setPendingClarification(event.clarification);
+      }
+
+      if (event.type === "thread.usage_updated" && event.usage) {
+        const roleKey = String(event.role ?? "planner");
+        setUsageByThread((current) => ({
+          ...current,
+          [event.threadId]: {
+            ...(current[event.threadId] ?? {}),
+            [roleKey]: event.usage!,
+          },
+        }));
+        const modelId = event.modelId ?? event.usage.modelId;
+        if (modelId) {
+          setModelByThread((current) => ({
+            ...current,
+            [event.threadId]: {
+              ...(current[event.threadId] ?? {}),
+              [roleKey]: modelId,
+            },
+          }));
+        }
+        return;
       }
 
       if (event.type === "thread.execution_failed" && window.eco) {
@@ -370,17 +395,48 @@ function App() {
     activeThread?.status === "awaiting_plan";
   const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
-  const plannerModelLabel = useMemo(() => {
-    const route = settings.routes.find((candidate) => candidate.role === "planner");
-    if (route?.modelId.trim()) return route.modelId;
-    return settings.providers[0]?.defaultModel ?? "model";
-  }, [settings.providers, settings.routes]);
-
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
+  const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
+  const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
   const activeSubagent = useMemo(
     () => resolveActiveSubagent(activityLines, activeThread?.status),
     [activityLines, activeThread?.status],
+  );
+  const activeSubagentLabel = useMemo(() => {
+    if (!activeSubagent) {
+      return undefined;
+    }
+    return formatRoleModelLabel(activeSubagent, threadModelByRole?.[activeSubagent]);
+  }, [activeSubagent, threadModelByRole]);
+  const contextKLabel = useMemo(() => {
+    if (!threadUsageByRole) {
+      return null;
+    }
+    const maxCtx = Object.values(threadUsageByRole).reduce(
+      (max, usage) => Math.max(max, usage.contextTokens),
+      0,
+    );
+    if (maxCtx <= 0) {
+      return null;
+    }
+    if (maxCtx < 1000) {
+      return "<1K";
+    }
+    return `${Math.round(maxCtx / 1000)}K`;
+  }, [threadUsageByRole]);
+  const agentModelLabels = useMemo(
+    () =>
+      AGENT_ROLES.map((role) => {
+        const route = settings.routes.find((candidate) => candidate.role === role);
+        const configured = route?.modelId.trim() || undefined;
+        const live = threadModelByRole?.[role];
+        return {
+          role,
+          label: formatRoleModelLabel(role, live ?? configured),
+        };
+      }),
+    [settings.routes, threadModelByRole],
   );
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -733,8 +789,10 @@ function App() {
     }
   }
 
+  const showThreadInfo = Boolean(activeThread);
+
   return (
-    <main className="shell">
+    <main className={showThreadInfo ? "shell shell-with-info" : "shell"}>
       <aside className="codex-sidebar">
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />
@@ -812,8 +870,8 @@ function App() {
                 <header className="activity-header">
                   <h2>{activeThread.title}</h2>
                   <div className="activity-header-badges">
-                    {activeSubagent ? (
-                      <span className="subagent-chip">{formatSubagentLabel(activeSubagent)}</span>
+                    {activeSubagentLabel ? (
+                      <span className="subagent-chip">{activeSubagentLabel}</span>
                     ) : null}
                     <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
                     <div className="activity-header-actions">
@@ -878,27 +936,12 @@ function App() {
                     </button>
                   </div>
                 ) : null}
-                {pendingWorktreeApply ? (
-                  <div className="worktree-apply-banner" role="status">
-                    <p>
-                      隔离工作树中仍有 {pendingWorktreeApply.changedFiles.length} 个文件未合并到主工作区：
-                      <code>{pendingWorktreeApply.changedFiles.join(", ")}</code>
-                    </p>
-                    <button
-                      type="button"
-                      className="plan-button primary"
-                      onClick={() => void applyPendingWorktree()}
-                      disabled={worktreeApplyBusy}
-                    >
-                      {worktreeApplyBusy ? "正在合并…" : "应用到工作区"}
-                    </button>
-                  </div>
-                ) : null}
-                <CoderTodoPanel todos={coderTodos} />
                 <ActivityLogView
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   onRestorePrompt={restorePrompt}
+                  {...(threadModelByRole && { modelByRole: threadModelByRole })}
+                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                 />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel
@@ -942,17 +985,23 @@ function App() {
               disabled={Boolean(activeThread && !threadAcceptsInput)}
               rows={2}
             />
+            {contextKLabel ? (
+              <span className="composer-context-k" title="当前上下文规模（估算）">
+                {contextKLabel}
+              </span>
+            ) : null}
             <div className="composer-toolbar">
               <button
                 type="button"
-                className="model-pill"
+                className="composer-settings-link"
                 onClick={() => {
                   setSettingsSection("models");
                   setSettingsOpen(true);
                 }}
                 title="在设置中配置模型"
               >
-                {plannerModelLabel}
+                <SlidersHorizontal size={16} />
+                模型设置
               </button>
               <button
                 type="button"
@@ -964,17 +1013,18 @@ function App() {
                 {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
               </button>
             </div>
+            <div className="composer-agent-models" aria-label="各 Agent 模型">
+              {agentModelLabels.map(({ role, label }) => (
+                <span key={role} className="composer-agent-model" title={label}>
+                  {label}
+                </span>
+              ))}
+            </div>
             <div className="composer-context">
               <span className="context-chip">
                 <Folder size={14} />
                 {currentProjectName}
               </span>
-              {workspaceMatchesProject && workspace?.isGitRepository && (
-                <span className="context-chip">
-                  <GitBranch size={14} />
-                  {workspace.branch ?? "detached"}
-                </span>
-              )}
             </div>
             {error && (
               <p className="composer-error">
@@ -1000,6 +1050,20 @@ function App() {
           </div>
         </div>
       </section>
+
+      {showThreadInfo && activeThread ? (
+        <ThreadInfoPanel
+          workspace={workspaceMatchesProject ? workspace : undefined}
+          workspacePath={currentProjectPath}
+          gitBranch={workspaceMatchesProject ? workspace?.branch : undefined}
+          dirtyFileCount={workspaceMatchesProject ? workspace?.dirtyFileCount : undefined}
+          todos={coderTodos}
+          threadStatus={activeThread.status}
+          {...(pendingWorktreeApply && { pendingWorktreeApply })}
+          onApplyWorktree={() => void applyPendingWorktree()}
+          worktreeApplyBusy={worktreeApplyBusy}
+        />
+      ) : null}
 
       {settingsOpen && (
         <div className="settings-page" role="dialog" aria-modal="true" aria-label="设置">
