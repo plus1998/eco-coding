@@ -163,6 +163,10 @@ function App() {
         ),
       );
 
+      if (event.type === "thread.plan_cleared" || event.type === "thread.completed") {
+        setPendingPlan(undefined);
+      }
+
       if (event.plan && event.threadId) {
         setPendingPlan({
           threadId: event.threadId,

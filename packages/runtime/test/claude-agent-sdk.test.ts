@@ -168,6 +168,27 @@ test("formats eco phase boundary events", () => {
   expect(formatSdkPayloadMessage(event.payload)).toBe("【1/2】分析与制定计划");
 });
 
+test("uses the last SDK result to decide execution success", () => {
+  const errorPayload = {
+    subtype: "error",
+    totalCostUsd: 0.1,
+    usage: { input_tokens: 1 },
+    result: "subagent failed",
+  };
+  const successPayload = {
+    subtype: "success",
+    totalCostUsd: 0.2,
+    usage: { input_tokens: 2 },
+  };
+
+  expect(extractSdkRunFailure(errorPayload)).toBe("subagent failed");
+  expect(extractSdkRunFailure(successPayload)).toBeNull();
+
+  let executionFailure: string | undefined = extractSdkRunFailure(errorPayload) ?? undefined;
+  executionFailure = extractSdkRunFailure(successPayload) ?? undefined;
+  expect(executionFailure).toBeUndefined();
+});
+
 test("extracts SDK error results for execution rollback", () => {
   expect(
     extractSdkRunFailure({
@@ -193,7 +214,7 @@ test("creates plan.ready event with transcript payload", () => {
     plan: "1. Edit styles.css",
   });
   expect(event.type).toBe("plan.ready");
-  expect(formatAgentEventLine(event)).toBe("1. Edit styles.css");
+  expect(formatAgentEventLine(event)).toBe("计划已生成，等待确认。");
 });
 
 test("appends stream deltas into phase transcript", () => {

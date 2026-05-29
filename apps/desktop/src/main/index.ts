@@ -790,6 +790,10 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
 
   let executionFailure: string | undefined;
   const todoTracker = createCoderTodoTracker(threadId);
+  const executionPlan = {
+    ...pending,
+    routesJson: pending.routesJson || "[]",
+  };
 
   try {
     const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
@@ -797,10 +801,9 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
       `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
     );
     const routes = buildDriverRoutes(modelProxy.routes);
-    conversationStore.savePendingPlan({
-      ...pending,
-      routesJson: JSON.stringify(routes),
-    });
+    executionPlan.routesJson = JSON.stringify(routes);
+    conversationStore.clearPendingPlan(threadId);
+    emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
     try {
       const driver = new ClaudeAgentSdkDriver({
@@ -825,9 +828,8 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
         },
         planning,
       )) {
-        const failure = extractSdkRunFailure(event.payload);
-        if (failure) {
-          executionFailure = failure;
+        if (event.type === "usage.recorded") {
+          executionFailure = extractSdkRunFailure(event.payload) ?? undefined;
         }
 
         const display = formatAgentEventDisplay(event);
@@ -842,17 +844,16 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
 
     if (controller.signal.aborted) {
       todoTracker.completeRunning("cancelled");
-      await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。");
+      await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。", executionPlan);
       return;
     }
 
     if (executionFailure) {
       todoTracker.completeRunning("blocked");
-      await restoreAfterExecutionFailure(threadId, worktreePlan, executionFailure);
+      await restoreAfterExecutionFailure(threadId, worktreePlan, executionFailure, executionPlan);
       return;
     }
 
-    conversationStore.clearPendingPlan(threadId);
     todoTracker.completeRunning("completed");
 
     updateThread(threadId, {
@@ -870,7 +871,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
       const detail = errorMessage(applyError);
       process.stderr.write(`[eco] worktree apply failed: ${detail}\n`);
       updateThread(threadId, {
-        status: "awaiting_plan",
+        status: "completed",
         message: `执行已完成，但未能合并到工作区：${detail}。可点击「应用到工作区」重试，或手动处理 ${worktreePlan.worktreePath}。`,
       });
       emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
@@ -880,7 +881,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     await cleanupWorktreeForThread(threadId);
   } catch (error) {
     todoTracker.completeRunning("blocked");
-    await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error));
+    await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     activeRuns.delete(threadId);
     const thread = conversationStore.getThread(threadId);
@@ -897,6 +898,7 @@ async function restoreAfterExecutionFailure(
   threadId: string,
   worktreePlan: WorktreePlan,
   reason: string,
+  pendingPlan?: ThreadPendingPlan & { routesJson: string },
 ): Promise<void> {
   try {
     await gitWorktrees.discardWorktreeChanges(worktreePlan);
@@ -905,13 +907,25 @@ async function restoreAfterExecutionFailure(
     console.error("Failed to restore worktree after execution failure:", error);
   }
 
+  if (pendingPlan) {
+    conversationStore.savePendingPlan(pendingPlan);
+  }
+
   const summary =
     reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
   updateThread(threadId, {
     status: "awaiting_plan",
     message: `执行失败，已回退更改。${summary}`,
   });
-  emitThreadEvent(threadId, "thread.execution_failed", summary, "system");
+  emitThreadEvent(threadId, "thread.execution_failed", summary, "system", false, {
+    ...(pendingPlan && {
+      plan: {
+        userPrompt: pendingPlan.userPrompt,
+        analysis: pendingPlan.analysis,
+        plan: pendingPlan.plan,
+      },
+    }),
+  });
 }
 
 function createCoderTodoTracker(threadId: string): {

@@ -793,8 +793,8 @@ export function formatAgentEventLine(
     return formatUsagePayload(event.payload);
   }
 
-  if (event.type === "plan.ready" && isRecord(event.payload) && typeof event.payload.plan === "string") {
-    return event.payload.plan.trim() || null;
+  if (event.type === "plan.ready") {
+    return "计划已生成，等待确认。";
   }
 
   if (event.type === "tool.started" && isRecord(event.payload) && typeof event.payload.tool_name === "string") {
