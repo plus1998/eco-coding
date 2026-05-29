@@ -148,18 +148,19 @@ export function serializeMcpEnvEntries(entries: Array<{ key: string; value: stri
 }
 
 export function mcpServerToInput(server: McpServerConfigView): McpServerConfigInput {
-  return {
+  const input: McpServerConfigInput = {
     id: server.id,
     name: server.name,
     transport: server.transport,
     enabled: server.enabled,
-    command: server.command,
     argsJson: server.argsJson,
     envJson: server.envJson,
-    url: server.url,
     headersJson: server.headersJson,
     allowedTools: server.allowedTools,
   };
+  if (server.command) input.command = server.command;
+  if (server.url) input.url = server.url;
+  return input;
 }
 
 function parseJsonStringArray(raw: string): string[] {

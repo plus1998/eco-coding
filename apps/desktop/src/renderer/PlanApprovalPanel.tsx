@@ -2,8 +2,8 @@ import type { ThreadPendingPlan } from "../shared/ipc";
 
 interface PlanApprovalPanelProps {
   plan: ThreadPendingPlan;
-  busy?: boolean;
-  failureMessage?: string;
+  busy?: boolean | undefined;
+  failureMessage?: string | undefined;
   onApprove: () => void;
   onDismiss: () => void;
 }

@@ -10,7 +10,7 @@ export async function listDiscoveredSkills(workspacePath?: string): Promise<Skil
     : [];
 
   return {
-    workspacePath,
+    ...(workspacePath && { workspacePath }),
     userSkills,
     projectSkills,
     scannedAt: new Date().toISOString(),

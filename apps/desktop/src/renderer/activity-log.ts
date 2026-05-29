@@ -222,7 +222,7 @@ function createProgressBlock(
       kind: "progress",
       label: `处理中${subagentSuffix}…`,
       running: true,
-      activeSubagent,
+      ...(activeSubagent && { activeSubagent }),
     };
   }
 
@@ -295,8 +295,8 @@ function parseToolLine(message: string): ParsedToolAction | null {
       : undefined;
   return {
     tool,
-    detail,
-    subagent,
+    ...(detail && { detail }),
+    ...(subagent && { subagent }),
     category: categorizeTool(tool),
   };
 }

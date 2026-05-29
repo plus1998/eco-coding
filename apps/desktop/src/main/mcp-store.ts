@@ -66,7 +66,7 @@ export class McpStore {
          FROM mcp_servers
          ORDER BY name ASC`,
       )
-      .all() as McpServerRow[];
+      .all() as unknown as McpServerRow[];
 
     return rows.map(rowToView);
   }
@@ -132,20 +132,21 @@ export class McpStore {
 }
 
 function rowToView(row: McpServerRow): McpServerConfigView {
-  return {
+  const view: McpServerConfigView = {
     id: row.id,
     name: row.name,
     transport: row.transport as McpServerConfigView["transport"],
     enabled: row.enabled === 1,
-    command: row.command ?? undefined,
     argsJson: row.args_json,
     envJson: row.env_json,
-    url: row.url ?? undefined,
     headersJson: row.headers_json,
     allowedTools: row.allowed_tools,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+  if (row.command) view.command = row.command;
+  if (row.url) view.url = row.url;
+  return view;
 }
 
 function createServerId(name: string): string {

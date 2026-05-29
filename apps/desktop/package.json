@@ -13,6 +13,7 @@
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs"
   },
   "dependencies": {
+    "@eco/model-router": "workspace:*",
     "@eco/runtime": "workspace:*",
     "@eco/workspace": "workspace:*",
     "@vitejs/plugin-react": "^5.0.0",

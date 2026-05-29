@@ -87,7 +87,12 @@ export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOptio
         : typeof item.name === "string"
           ? item.name
           : undefined;
-    models.push({ id: id.trim(), displayName: displayName?.trim() || undefined });
+    const option: UpstreamModelOption = { id: id.trim() };
+    const trimmedDisplayName = displayName?.trim();
+    if (trimmedDisplayName) {
+      option.displayName = trimmedDisplayName;
+    }
+    models.push(option);
   }
 
   return models;

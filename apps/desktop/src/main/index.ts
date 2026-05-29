@@ -15,7 +15,7 @@ import {
   type PlanReadyPayload,
   type SdkToolPermissionRequest,
 } from "@eco/runtime";
-import type { ResolvedModelRoute } from "../../../packages/model-router/src/index.ts";
+import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   createWorktreePlan,
   GitWorktreeService,
@@ -743,11 +743,11 @@ async function runCodingThreadPlanning(
   } finally {
     cancelClarificationsForThread(thread.id, "run finished");
     activeRuns.delete(thread.id);
-    const thread = conversationStore.getThread(thread.id);
-    if (thread?.status === "running") {
+    const currentThread = conversationStore.getThread(thread.id);
+    if (currentThread?.status === "running") {
       updateThread(thread.id, {
         status: "idle",
-        message: thread.message || "计划阶段已结束。",
+        message: currentThread.message || "计划阶段已结束。",
       });
     }
   }
@@ -1215,21 +1215,30 @@ async function runGitCommand(
   cwd: string,
   options?: { stdin?: string },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  try {
-    const { stdout, stderr } = await execFileAsync(command[0] ?? "git", command.slice(1), {
-      cwd,
-      input: options?.stdin,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return { exitCode: 0, stdout: String(stdout), stderr: String(stderr) };
-  } catch (error) {
-    const failed = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof failed.code === "number" ? failed.code : 1,
-      stdout: String(failed.stdout ?? ""),
-      stderr: String(failed.stderr ?? errorMessage(error)),
-    };
-  }
+  return new Promise((resolve) => {
+    const child = execFile(
+      command[0] ?? "git",
+      command.slice(1),
+      { cwd, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          const failed = error as NodeJS.ErrnoException & { code?: number };
+          resolve({
+            exitCode: typeof failed.code === "number" ? failed.code : 1,
+            stdout: String(stdout ?? ""),
+            stderr: String(stderr ?? errorMessage(error)),
+          });
+          return;
+        }
+        resolve({ exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
+    if (options?.stdin !== undefined) {
+      child.stdin?.end(options.stdin);
+    } else {
+      child.stdin?.end();
+    }
+  });
 }
 
 function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {

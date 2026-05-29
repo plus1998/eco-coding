@@ -11,7 +11,7 @@ import type { McpServerConfigInput, McpServerConfigView, McpTransport } from "..
 
 interface McpSettingsPanelProps {
   servers: McpServerConfigView[];
-  busy?: boolean;
+  busy?: boolean | undefined;
   onSave: (input: McpServerConfigInput) => Promise<void>;
   onDelete: (serverId: string) => Promise<void>;
 }
@@ -202,8 +202,8 @@ function McpServerEditor({
   setArgs: Dispatch<SetStateAction<string[]>>;
   envEntries: Array<{ key: string; value: string }>;
   setEnvEntries: Dispatch<SetStateAction<Array<{ key: string; value: string }>>>;
-  error?: string;
-  busy?: boolean;
+  error?: string | undefined;
+  busy?: boolean | undefined;
   onBack: () => void;
   onSave: () => void;
   onDelete: () => void;

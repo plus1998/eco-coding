@@ -6,10 +6,10 @@ interface ModelSelectFieldProps {
   value: string;
   onChange: (modelId: string) => void;
   models: readonly UpstreamModelOption[];
-  loading?: boolean;
-  error?: string;
-  disabled?: boolean;
-  onRefresh?: () => void;
+  loading?: boolean | undefined;
+  error?: string | undefined;
+  disabled?: boolean | undefined;
+  onRefresh?: (() => void) | undefined;
 }
 
 export function ModelSelectField({

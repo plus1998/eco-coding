@@ -179,7 +179,7 @@ function App() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role: event.role ?? "system",
         message: event.message,
-        stream: event.stream,
+        ...(event.stream !== undefined && { stream: event.stream }),
       });
     });
   }, []);
@@ -605,10 +605,9 @@ function App() {
     if (!window.eco) return;
     setIsSavingSettings(true);
     try {
-      const server = await window.eco.saveMcpServer(input);
+      await window.eco.saveMcpServer(input);
       const snapshot = await window.eco.getMcpSettings();
       setMcpSettings(snapshot);
-      return server;
     } finally {
       setIsSavingSettings(false);
     }
@@ -786,7 +785,7 @@ function App() {
                   </div>
                 ) : null}
                 <CoderTodoPanel todos={coderTodos} />
-                <ActivityLogView lines={activityLines} thread={activeThread} />
+                <ActivityLogView lines={activityLines} {...(activeThread && { thread: activeThread })} />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel
                     request={pendingClarification}
@@ -799,7 +798,7 @@ function App() {
                   <PlanApprovalPanel
                     plan={pendingPlan}
                     busy={planActionBusy}
-                    failureMessage={planFailureMessage}
+                    {...(planFailureMessage && { failureMessage: planFailureMessage })}
                     onApprove={approvePendingPlan}
                     onDismiss={dismissPendingPlan}
                   />
@@ -913,9 +912,9 @@ function App() {
           <div className="settings-content">
             {settingsSection === "skills" && (
               <SkillsSettingsPanel
-                snapshot={skillsSnapshot}
+                {...(skillsSnapshot && { snapshot: skillsSnapshot })}
                 loading={isLoadingSkills}
-                workspaceLabel={currentProjectPath}
+                {...(currentProjectPath && { workspaceLabel: currentProjectPath })}
                 onRefresh={() => void refreshSkillsList(currentProjectPath)}
               />
             )}

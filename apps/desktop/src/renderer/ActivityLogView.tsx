@@ -16,7 +16,11 @@ interface ActivityLogViewProps {
 
 export function ActivityLogView({ lines, thread }: ActivityLogViewProps) {
   const blocks = useMemo(
-    () => buildActivityLogBlocks(lines, { status: thread?.status, createdAt: thread?.createdAt }),
+    () =>
+      buildActivityLogBlocks(lines, {
+        ...(thread?.status && { status: thread.status }),
+        ...(thread?.createdAt && { createdAt: thread.createdAt }),
+      }),
     [lines, thread?.createdAt, thread?.status],
   );
 
@@ -32,7 +36,11 @@ export function ActivityLogView({ lines, thread }: ActivityLogViewProps) {
 function RunLogBlock({ block }: { block: ActivityLogBlock }) {
   if (block.kind === "progress") {
     return (
-      <RunLogProgress label={block.label} running={block.running} activeSubagent={block.activeSubagent} />
+      <RunLogProgress
+        label={block.label}
+        running={block.running}
+        {...(block.activeSubagent && { activeSubagent: block.activeSubagent })}
+      />
     );
   }
   if (block.kind === "phase") {
@@ -41,7 +49,13 @@ function RunLogBlock({ block }: { block: ActivityLogBlock }) {
   if (block.kind === "action") {
     return <RunLogAction icon={block.icon} label={block.label} />;
   }
-  return <RunLogNarrative text={block.text} streaming={block.streaming} subagent={block.subagent} />;
+  return (
+    <RunLogNarrative
+      text={block.text}
+      {...(block.streaming !== undefined && { streaming: block.streaming })}
+      {...(block.subagent && { subagent: block.subagent })}
+    />
+  );
 }
 
 function RunLogProgress({

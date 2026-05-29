@@ -195,7 +195,7 @@ export class ConversationStore {
          FROM threads
          ORDER BY updated_at DESC`,
       )
-      .all() as ThreadRow[];
+      .all() as unknown as ThreadRow[];
 
     return rows.map(rowToThread);
   }
@@ -229,7 +229,7 @@ export class ConversationStore {
       id: line.id ?? `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       role: line.role,
       message: line.message,
-      stream: line.stream,
+      ...(line.stream !== undefined && { stream: line.stream }),
     };
     this.db
       .prepare(
@@ -253,7 +253,7 @@ export class ConversationStore {
          WHERE thread_id = ?
          ORDER BY created_at ASC`,
       )
-      .all(threadId) as ActivityRow[];
+      .all(threadId) as unknown as ActivityRow[];
 
     return rows.map((row) => ({
       id: row.id,

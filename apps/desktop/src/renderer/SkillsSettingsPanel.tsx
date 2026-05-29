@@ -2,9 +2,9 @@ import { RefreshCw, Sparkles } from "lucide-react";
 import type { SkillInfo, SkillsListResult } from "../shared/skills";
 
 interface SkillsSettingsPanelProps {
-  snapshot?: SkillsListResult;
-  loading?: boolean;
-  workspaceLabel?: string;
+  snapshot?: SkillsListResult | undefined;
+  loading?: boolean | undefined;
+  workspaceLabel?: string | undefined;
   onRefresh: () => void;
 }
 

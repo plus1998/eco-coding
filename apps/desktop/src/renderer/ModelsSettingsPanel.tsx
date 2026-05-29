@@ -13,14 +13,14 @@ import { ModelSelectField } from "./ModelSelectField";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
-  busy?: boolean;
+  busy?: boolean | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
-  onSavingChange?: (saving: boolean) => void;
+  onSavingChange?: ((saving: boolean) => void) | undefined;
 }
 
 interface ModelsCacheEntry {
   models: UpstreamModelOption[];
-  error?: string;
+  error?: string | undefined;
 }
 
 const ROLE_LABELS: Record<AgentRole, string> = {
@@ -73,11 +73,12 @@ export function ModelsSettingsPanel({
       }
 
       try {
-        const result = await window.eco.listProviderModels({
-          providerId: target.id,
+        const request = {
           baseUrl: target.baseUrl,
-          apiKey: target.apiKey,
-        });
+          ...(target.id && { providerId: target.id }),
+          ...(target.apiKey && { apiKey: target.apiKey }),
+        };
+        const result = await window.eco.listProviderModels(request);
         if (!result.ok) {
           setModelsCache((current) => ({
             ...current,
