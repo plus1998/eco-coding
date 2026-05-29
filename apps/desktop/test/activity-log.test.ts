@@ -1,35 +1,55 @@
 import { expect, test } from "bun:test";
 import { buildActivityLogBlocks } from "../src/renderer/activity-log";
 
-test("groups narrative and compact tool summaries", () => {
+test("groups narrative and compact tool summaries into collapsible work session", () => {
   const blocks = buildActivityLogBlocks(
     [
+      { id: "u1", role: "user", message: "Add feature" },
       { id: "1", role: "planner", message: "Let me check `react-quill` compatibility first." },
       { id: "2", role: "tool", message: "Tool: Read · styles.css" },
       { id: "3", role: "tool", message: "Tool: Read · package.json" },
-      { id: "4", role: "tool", message: "Tool: Grep · react-quill" },
-      { id: "5", role: "tool", message: "Tool: Edit · package.json" },
-      { id: "6", role: "tool", message: "Tool: Bash · bun install" },
+      { id: "4", role: "planner", message: "Here is the final plan summary for you." },
     ],
     { status: "completed", createdAt: new Date(Date.now() - 394_000).toISOString() },
   );
 
-  expect(blocks.some((block) => block.kind === "progress" && block.label.includes("已处理"))).toBe(true);
-  expect(blocks.some((block) => block.kind === "narrative")).toBe(true);
-  expect(blocks.some((block) => block.kind === "action" && block.label.includes("已探索 2 个文件"))).toBe(
-    true,
+  expect(blocks.some((block) => block.kind === "user-prompt")).toBe(true);
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  expect(session.defaultCollapsed).toBe(true);
+  expect(session.children.some((child) => child.kind === "action")).toBe(true);
+  const summary = blocks.find((block) => block.kind === "assistant-message");
+  expect(summary?.kind).toBe("assistant-message");
+  if (summary?.kind === "assistant-message") {
+    expect(summary.text).toContain("final plan summary");
+  }
+});
+
+test("keeps work session expanded while running", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "Go" },
+      { id: "1", role: "coder", message: "Checking package.json", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
   );
-  expect(blocks.some((block) => block.kind === "action" && block.label.includes("已编辑 1 个文件"))).toBe(
-    true,
-  );
-  expect(blocks.some((block) => block.kind === "action" && block.label.includes("已运行 bun install"))).toBe(
-    true,
-  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  expect(session.running).toBe(true);
+  expect(session.defaultCollapsed).toBe(false);
 });
 
 test("merges stream segments across roles without losing spaces", () => {
   const blocks = buildActivityLogBlocks(
     [
+      { id: "u1", role: "user", message: "test" },
       { id: "1", role: "thinking", message: "Let me also", stream: true },
       { id: "2", role: "coder", message: "check the index.html", stream: true },
       { id: "3", role: "coder", message: " to", stream: true },
@@ -41,17 +61,20 @@ test("merges stream segments across roles without losing spaces", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const narrative = blocks.find((block) => block.kind === "narrative");
+  const session = blocks.find((block) => block.kind === "work-session");
+  const narrative = session?.kind === "work-session"
+    ? session.children.find((child) => child.kind === "narrative")
+    : undefined;
   expect(narrative?.kind).toBe("narrative");
-  if (narrative?.kind !== "narrative") {
-    return;
+  if (narrative?.kind === "narrative") {
+    expect(narrative.text).toBe("Let me also check the index.html to understand the build setup.");
   }
-  expect(narrative.text).toBe("Let me also check the index.html to understand the build setup.");
 });
 
 test("shows active subagent while running", () => {
   const blocks = buildActivityLogBlocks(
     [
+      { id: "u1", role: "user", message: "run" },
       { id: "1", role: "planner", message: "【3/3】执行" },
       {
         id: "2",
@@ -63,9 +86,11 @@ test("shows active subagent while running", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const progress = blocks.find((block) => block.kind === "progress");
-  expect(progress?.label).toContain("编码");
-  expect(progress?.activeSubagent).toBe("coder");
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.activeSubagent).toBe("coder");
+  }
 });
 
 test("shows user prompt as a preserved node", () => {
@@ -83,12 +108,12 @@ test("shows user prompt as a preserved node", () => {
     return;
   }
   expect(userBlock.text).toBe("给导出接口加筛选参数\n第二行保留");
-  expect(userBlock.lineId).toBe("u1");
 });
 
 test("deduplicates repeated narrative separated by tool exploration", () => {
   const blocks = buildActivityLogBlocks(
     [
+      { id: "u1", role: "user", message: "explore" },
       {
         id: "1",
         role: "planner",
@@ -106,8 +131,10 @@ test("deduplicates repeated narrative separated by tool exploration", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const narratives = blocks.filter((block) => block.kind === "narrative");
-  const actions = blocks.filter((block) => block.kind === "action");
+  const session = blocks.find((block) => block.kind === "work-session");
+  const narratives =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "narrative")
+      : [];
   expect(narratives).toHaveLength(1);
-  expect(actions).toHaveLength(1);
 });

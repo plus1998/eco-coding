@@ -4,12 +4,27 @@ import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
-export type ActivityLogBlock =
-  | { kind: "progress"; label: string; running: boolean; activeSubagent?: string }
+export type ActivityDetailBlock =
   | { kind: "phase"; label: string }
-  | { kind: "user-prompt"; text: string; lineId: string }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string };
+
+export type ActivityLogBlock =
+  | { kind: "user-prompt"; text: string; lineId: string }
+  | {
+      kind: "work-session";
+      durationMs: number;
+      running: boolean;
+      defaultCollapsed: boolean;
+      activeSubagent?: string;
+      children: ActivityDetailBlock[];
+    }
+  | {
+      kind: "assistant-message";
+      text: string;
+      streaming?: boolean;
+      subagent?: string;
+    };
 
 interface ParsedToolAction {
   tool: string;
@@ -33,20 +48,102 @@ const systemNoisePatterns = [
   /^Run finished/,
 ];
 
+const terminalStatuses = new Set<ThreadStatus>(["completed", "failed", "blocked", "idle", "awaiting_plan"]);
+
 export function buildActivityLogBlocks(
   lines: ThreadActivityLine[],
   options: { status?: ThreadStatus; createdAt?: string },
 ): ActivityLogBlock[] {
-  const blocks: ActivityLogBlock[] = [];
+  const segments = splitLinesIntoSegments(lines);
+  const isRunning = options.status === "running" || options.status === "queued";
+  const isTerminal = options.status ? terminalStatuses.has(options.status) : false;
+  const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
+  const durationMs = Math.max(0, Date.now() - startedAt);
   const activeSubagent = resolveActiveSubagent(lines, options.status);
-  let progressInserted = false;
 
-  const ensureProgress = () => {
-    if (progressInserted || lines.length === 0) {
-      return;
+  const output: ActivityLogBlock[] = [];
+
+  for (const segment of segments) {
+    for (const userLine of segment.userLines) {
+      const text = userLine.message.trim();
+      if (text) {
+        output.push({ kind: "user-prompt", text: userLine.message, lineId: userLine.id });
+      }
     }
-    blocks.push(createProgressBlock(options, activeSubagent));
-    progressInserted = true;
+
+    if (segment.details.length === 0) {
+      continue;
+    }
+
+    const { processBlocks, summaryBlock } = partitionSessionBlocks(segment.details, isTerminal && !isRunning);
+
+    if (isRunning && segment === segments[segments.length - 1]) {
+      output.push({
+        kind: "work-session",
+        durationMs,
+        running: true,
+        defaultCollapsed: false,
+        ...(activeSubagent && { activeSubagent }),
+        children: processBlocks,
+      });
+      if (summaryBlock) {
+        output.push({
+          kind: "assistant-message",
+          text: summaryBlock.text,
+          ...(summaryBlock.streaming !== undefined && { streaming: summaryBlock.streaming }),
+          ...(summaryBlock.subagent && { subagent: summaryBlock.subagent }),
+        });
+      }
+      continue;
+    }
+
+    if (processBlocks.length > 0) {
+      output.push({
+        kind: "work-session",
+        durationMs,
+        running: false,
+        defaultCollapsed: true,
+        children: processBlocks,
+      });
+    }
+
+    if (summaryBlock) {
+      output.push({
+        kind: "assistant-message",
+        text: summaryBlock.text,
+        ...(summaryBlock.streaming !== undefined && { streaming: summaryBlock.streaming }),
+        ...(summaryBlock.subagent && { subagent: summaryBlock.subagent }),
+      });
+    } else if (!isRunning && processBlocks.length === 0 && segment.details.length > 0) {
+      const last = segment.details[segment.details.length - 1];
+      if (last?.kind === "narrative") {
+        output.push({
+          kind: "assistant-message",
+          text: last.text,
+          ...(last.streaming !== undefined && { streaming: last.streaming }),
+          ...(last.subagent && { subagent: last.subagent }),
+        });
+      }
+    }
+  }
+
+  return output;
+}
+
+interface ActivitySegment {
+  userLines: ThreadActivityLine[];
+  details: ActivityDetailBlock[];
+}
+
+function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] {
+  const segments: ActivitySegment[] = [];
+  let current: ActivitySegment = { userLines: [], details: [] };
+
+  const pushSegment = () => {
+    if (current.userLines.length > 0 || current.details.length > 0) {
+      segments.push(current);
+    }
+    current = { userLines: [], details: [] };
   };
 
   let narrative = "";
@@ -73,7 +170,7 @@ export function buildActivityLogBlocks(
     if (recentNarratives.length > 6) {
       recentNarratives.shift();
     }
-    blocks.push({
+    current.details.push({
       kind: "narrative",
       text,
       streaming: narrativeStreaming,
@@ -92,7 +189,7 @@ export function buildActivityLogBlocks(
 
   const flushTools = () => {
     for (const action of summarizeToolActions(pendingTools)) {
-      blocks.push(action);
+      current.details.push(action);
     }
     pendingTools = [];
   };
@@ -101,19 +198,17 @@ export function buildActivityLogBlocks(
     if (line.role === "user") {
       flushNarrative();
       flushTools();
-      const text = line.message.trim();
-      if (text) {
-        blocks.push({ kind: "user-prompt", text: line.message, lineId: line.id });
+      if (current.details.length > 0) {
+        pushSegment();
       }
+      current.userLines.push(line);
       continue;
     }
-
-    ensureProgress();
 
     if (isPhaseLine(line.message)) {
       flushNarrative();
       flushTools();
-      blocks.push({ kind: "phase", label: line.message });
+      current.details.push({ kind: "phase", label: line.message });
       continue;
     }
 
@@ -155,8 +250,48 @@ export function buildActivityLogBlocks(
 
   flushNarrative();
   flushTools();
-  ensureProgress();
-  return blocks;
+  pushSegment();
+  return segments;
+}
+
+function partitionSessionBlocks(
+  details: ActivityDetailBlock[],
+  extractSummary: boolean,
+): { processBlocks: ActivityDetailBlock[]; summaryBlock?: ActivityDetailBlock & { kind: "narrative" } } {
+  if (!extractSummary || details.length === 0) {
+    return { processBlocks: details };
+  }
+
+  const lastNarrativeIndex = findLastNarrativeIndex(details);
+  if (lastNarrativeIndex < 0) {
+    return { processBlocks: details };
+  }
+
+  const last = details[lastNarrativeIndex];
+  if (last?.kind !== "narrative" || last.streaming) {
+    return { processBlocks: details };
+  }
+
+  const hasPriorContent = details.slice(0, lastNarrativeIndex).some(
+    (block) => block.kind === "action" || block.kind === "phase" || block.kind === "narrative",
+  );
+  if (!hasPriorContent && lastNarrativeIndex === details.length - 1) {
+    return { processBlocks: [], summaryBlock: last };
+  }
+
+  return {
+    processBlocks: details.slice(0, lastNarrativeIndex),
+    summaryBlock: last,
+  };
+}
+
+function findLastNarrativeIndex(details: ActivityDetailBlock[]): number {
+  for (let index = details.length - 1; index >= 0; index -= 1) {
+    if (details[index]?.kind === "narrative") {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function isRepeatedNarrative(text: string, recentNarratives: readonly string[]): boolean {
@@ -219,41 +354,6 @@ export function resolveActiveSubagent(
   }
 
   return undefined;
-}
-
-function createProgressBlock(
-  options: {
-    status?: ThreadStatus;
-    createdAt?: string;
-  },
-  activeSubagent?: string,
-): ActivityLogBlock {
-  const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
-  const elapsedMs = Math.max(0, Date.now() - startedAt);
-  const subagentSuffix = activeSubagent ? ` · ${formatSubagentLabel(activeSubagent)}` : "";
-
-  if (options.status === "awaiting_plan") {
-    return { kind: "progress", label: "计划待确认", running: false };
-  }
-
-  if (options.status === "running" || options.status === "queued") {
-    return {
-      kind: "progress",
-      label: `处理中${subagentSuffix}…`,
-      running: true,
-      ...(activeSubagent && { activeSubagent }),
-    };
-  }
-
-  if (options.status === "idle") {
-    return { kind: "progress", label: "可继续对话", running: false };
-  }
-
-  if (options.status === "completed" || options.status === "failed" || options.status === "blocked") {
-    return { kind: "progress", label: `已处理 ${formatDuration(elapsedMs)}`, running: false };
-  }
-
-  return { kind: "progress", label: `已处理 ${formatDuration(elapsedMs)}`, running: false };
 }
 
 export function formatDuration(ms: number): string {
@@ -337,7 +437,7 @@ function categorizeTool(tool: string): ParsedToolAction["category"] {
   return "read";
 }
 
-function summarizeToolActions(tools: ParsedToolAction[]): ActivityLogBlock[] {
+function summarizeToolActions(tools: ParsedToolAction[]): ActivityDetailBlock[] {
   if (tools.length === 0) {
     return [];
   }
@@ -348,7 +448,7 @@ function summarizeToolActions(tools: ParsedToolAction[]): ActivityLogBlock[] {
   const runs = tools.filter((tool) => tool.category === "run");
   const agents = tools.filter((tool) => tool.category === "agent");
 
-  const blocks: ActivityLogBlock[] = [];
+  const blocks: ActivityDetailBlock[] = [];
 
   if (searches.length > 0 && runs.length > 0 && reads.length === 0 && edits.length === 0) {
     blocks.push({
