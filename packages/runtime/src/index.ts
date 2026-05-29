@@ -39,6 +39,8 @@ export interface EcoPlanningContext {
   userPrompt: string;
   analysis: string;
   plan: string;
+  /** User edited plan/analysis in Eco UI before approving execution. */
+  planUserEdited?: boolean;
 }
 
 export interface AgentRuntimeDriver {

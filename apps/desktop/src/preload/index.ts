@@ -21,6 +21,7 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRetryResult,
+  type ThreadApprovePlanRequest,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
   type ThreadStartRequest,
@@ -108,8 +109,8 @@ const api = {
   dismissClarification(toolUseId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationDismiss, toolUseId);
   },
-  approvePlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, threadId);
+  approvePlan(request: ThreadApprovePlanRequest): Promise<{ thread?: ThreadSummary }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, request);
   },
   dismissPlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadDismissPlan, threadId);

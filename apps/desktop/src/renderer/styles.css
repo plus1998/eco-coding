@@ -900,6 +900,61 @@ button:not(:disabled) {
   font-size: 12px !important;
 }
 
+.plan-approval-edited-hint {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  color: #93c5fd;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plan-approval-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-approval-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a3a3a3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.plan-approval-editor {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #e5e5e5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.plan-approval-editor:focus {
+  outline: none;
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.plan-approval-editor:disabled {
+  opacity: 0.65;
+}
+
+.plan-approval-editor-compact {
+  margin-top: 8px;
+  min-height: 80px;
+}
+
 .plan-approval-body {
   margin: 0;
   padding: 12px;
@@ -928,6 +983,10 @@ button:not(:disabled) {
   background: #171717;
   white-space: pre-wrap;
   font-size: 12px;
+}
+
+.plan-approval-analysis .plan-approval-editor {
+  width: 100%;
 }
 
 .plan-approval-actions {

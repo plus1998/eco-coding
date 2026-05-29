@@ -605,12 +605,16 @@ function App() {
     }
   }
 
-  async function approvePendingPlan() {
+  async function approvePendingPlan(edits: { plan: string; analysis: string }) {
     if (!activeThread || !window.eco) return;
     setError(undefined);
     setPlanActionBusy(true);
     try {
-      const result = await window.eco.approvePlan(activeThread.id);
+      const result = await window.eco.approvePlan({
+        threadId: activeThread.id,
+        plan: edits.plan,
+        analysis: edits.analysis,
+      });
       if (result.thread) {
         setThreads((current) =>
           current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),

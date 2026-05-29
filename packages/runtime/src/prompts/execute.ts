@@ -40,8 +40,13 @@ export const executePhaseSystemAppend = [
   "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
 ].join("\n");
 
-export function buildExecutePhasePrompt(userPrompt: string, analysis: string, plan: string): string {
-  return [
+export function buildExecutePhasePrompt(
+  userPrompt: string,
+  analysis: string,
+  plan: string,
+  options?: { planUserEdited?: boolean },
+): string {
+  const lines = [
     executeBuildSwitchAppend,
     "",
     "User request:",
@@ -52,7 +57,21 @@ export function buildExecutePhasePrompt(userPrompt: string, analysis: string, pl
     "",
     "Approved plan (follow this):",
     plan.trim() || "(no plan captured)",
+  ];
+
+  if (options?.planUserEdited) {
+    lines.push(
+      "",
+      "<system-reminder>",
+      "The user edited this plan in Eco before approval. Treat the approved plan text as authoritative over any earlier planner draft.",
+      "</system-reminder>",
+    );
+  }
+
+  lines.push(
     "",
     "Task: Pipeline step 0–5 — TodoWrite after Coder Tasks, Architect (or skip per criteria), parallel coders, reviewer, tester.",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }

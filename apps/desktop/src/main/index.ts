@@ -71,10 +71,8 @@ import {
   type RequestAttemptResult,
 } from "./request-retry";
 import { classifyThreadIntent } from "./thread-intent";
-import {
-  buildAgentPromptWithContext,
-  isContinuableThreadStatus,
-} from "../shared/thread-continuation";
+import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../shared/thread-continuation";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
@@ -393,10 +391,8 @@ function registerIpcHandlers(): void {
     } satisfies ThreadPendingPlan;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, threadId: unknown) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
-      throw new Error("Thread id is required.");
-    }
+  ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, payload: unknown) => {
+    const { threadId, plan: editedPlan, analysis: editedAnalysis } = parseThreadApprovePlanPayload(payload);
     const thread = conversationStore.getThread(threadId);
     if (!thread) {
       throw new Error("Thread was not found.");
@@ -406,6 +402,27 @@ function registerIpcHandlers(): void {
     }
     if (activeRuns.has(threadId)) {
       throw new Error("Thread is already running.");
+    }
+
+    const pending = conversationStore.getPendingPlan(threadId);
+    if (!pending) {
+      throw new Error("找不到待批准的计划。");
+    }
+
+    const plan = editedPlan !== undefined ? editedPlan.trim() : pending.plan.trim();
+    const analysis = editedAnalysis !== undefined ? editedAnalysis.trim() : pending.analysis.trim();
+    if (!plan) {
+      throw new Error("计划内容不能为空。");
+    }
+
+    const planUserEdited = plan !== pending.plan.trim() || analysis !== pending.analysis.trim();
+    if (planUserEdited) {
+      conversationStore.savePendingPlan({
+        ...pending,
+        plan,
+        analysis,
+      });
+      emitThreadEvent(threadId, "thread.plan_updated", "已采用你编辑后的计划。", "planner", false);
     }
 
     const runtimeConfig = resolveRuntimeConfig(
@@ -418,9 +435,9 @@ function registerIpcHandlers(): void {
 
     updateThread(threadId, {
       status: "running",
-      message: "正在按计划执行…",
+      message: planUserEdited ? "正在按编辑后的计划执行…" : "正在按计划执行…",
     });
-    void runCodingThreadExecution(threadId, runtimeConfig);
+    void runCodingThreadExecution(threadId, runtimeConfig, { planUserEdited });
     return { thread: conversationStore.getThread(threadId) ?? thread };
   });
 
@@ -856,7 +873,11 @@ async function runCodingThreadPlanning(
   }
 }
 
-async function runCodingThreadExecution(threadId: string, runtimeConfig: RuntimeConfig): Promise<void> {
+async function runCodingThreadExecution(
+  threadId: string,
+  runtimeConfig: RuntimeConfig,
+  options?: { planUserEdited?: boolean },
+): Promise<void> {
   const pending = conversationStore.getPendingPlan(threadId);
   const thread = conversationStore.getThread(threadId);
   if (!pending || !thread) {
@@ -868,6 +889,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     userPrompt: pending.userPrompt,
     analysis: pending.analysis,
     plan: pending.plan,
+    ...(options?.planUserEdited ? { planUserEdited: true } : {}),
   };
 
   const worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);

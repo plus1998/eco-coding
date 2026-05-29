@@ -148,7 +148,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent> {
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     yield* this.runSingleSession(input, {
-      prompt: buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan),
+      prompt: buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
+        planUserEdited: planning.planUserEdited,
+      }),
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
       phaseAppend: executePhaseSystemAppend,

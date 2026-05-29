@@ -125,6 +125,13 @@ export interface ThreadPendingPlan {
   worktreePath: string;
 }
 
+/** Approve execution; optional plan/analysis override user edits before run. */
+export interface ThreadApprovePlanRequest {
+  threadId: string;
+  plan?: string;
+  analysis?: string;
+}
+
 export interface ThreadSummary {
   id: string;
   title: string;
