@@ -1,5 +1,5 @@
-import { Plus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, RefreshCw, Settings2, X } from "lucide-react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import type { UpstreamModelOption } from "../shared/models";
 import {
   AGENT_ROLES,
@@ -37,15 +37,15 @@ export function ModelsSettingsPanel({
   onSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
-  const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() =>
-    providerToForm(settings.providers[0]),
-  );
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
+  const [modalError, setModalError] = useState<string>();
 
-  const activeProviderId = providerForm.id ?? "__draft__";
-  const activeCache = modelsCache[activeProviderId];
+  const modalProviderId = providerForm.id ?? "__draft__";
+  const modalCache = modelsCache[modalProviderId];
 
   const refreshSettings = useCallback(async () => {
     if (!window.eco) {
@@ -53,13 +53,7 @@ export function ModelsSettingsPanel({
     }
     const snapshot = await window.eco.getModelSettings();
     onSettingsChange(snapshot);
-    if (providerForm.id) {
-      const saved = snapshot.providers.find((provider) => provider.id === providerForm.id);
-      if (saved) {
-        setProviderForm(providerToForm(saved));
-      }
-    }
-  }, [onSettingsChange, providerForm.id]);
+  }, [onSettingsChange]);
 
   const fetchModels = useCallback(
     async (target: ProviderConfigInput, options?: { silent?: boolean }) => {
@@ -69,7 +63,7 @@ export function ModelsSettingsPanel({
       const cacheKey = target.id ?? "__draft__";
       setLoadingProviderId(cacheKey);
       if (!options?.silent) {
-        setPanelError(undefined);
+        setModalError(undefined);
       }
 
       try {
@@ -85,7 +79,7 @@ export function ModelsSettingsPanel({
             [cacheKey]: { models: current[cacheKey]?.models ?? [], error: result.error },
           }));
           if (!options?.silent) {
-            setPanelError(result.error);
+            setModalError(result.error);
           }
           return;
         }
@@ -100,7 +94,7 @@ export function ModelsSettingsPanel({
           [cacheKey]: { models: current[cacheKey]?.models ?? [], error: message },
         }));
         if (!options?.silent) {
-          setPanelError(message);
+          setModalError(message);
         }
       } finally {
         setLoadingProviderId(null);
@@ -110,14 +104,7 @@ export function ModelsSettingsPanel({
   );
 
   useEffect(() => {
-    const provider = settings.providers.find((entry) => entry.id === providerForm.id) ?? settings.providers[0];
-    if (provider && provider.id !== providerForm.id) {
-      setProviderForm(providerToForm(provider));
-    }
-  }, [settings.providers, providerForm.id]);
-
-  useEffect(() => {
-    if (!providerForm.id) {
+    if (!providerModalOpen || !providerForm.id) {
       return;
     }
     const provider = settings.providers.find((entry) => entry.id === providerForm.id);
@@ -128,44 +115,79 @@ export function ModelsSettingsPanel({
       return;
     }
     void fetchModels(providerForm, { silent: true });
-  }, [providerForm.id, settings.providers, modelsCache, fetchModels]);
+  }, [providerModalOpen, providerForm, settings.providers, modelsCache, fetchModels]);
 
   const modelsForProvider = useCallback(
-    (providerId: string): UpstreamModelOption[] => {
-      if (providerId === activeProviderId) {
-        return activeCache?.models ?? [];
-      }
-      return modelsCache[providerId]?.models ?? [];
-    },
-    [activeCache?.models, activeProviderId, modelsCache],
+    (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
+    [modelsCache],
   );
 
   const modelsErrorForProvider = useCallback(
-    (providerId: string): string | undefined => {
-      if (providerId === activeProviderId) {
-        return activeCache?.error;
-      }
-      return modelsCache[providerId]?.error;
-    },
-    [activeCache?.error, activeProviderId, modelsCache],
+    (providerId: string): string | undefined => modelsCache[providerId]?.error,
+    [modelsCache],
   );
 
   const loadingForProvider = useCallback(
-    (providerId: string) => loadingProviderId === providerId || loadingProviderId === "__draft__",
+    (providerId: string) => loadingProviderId === providerId,
     [loadingProviderId],
   );
 
+  function openCreateProvider() {
+    setPanelError(undefined);
+    setModalError(undefined);
+    setProviderForm(providerToForm());
+    setProviderModalOpen(true);
+  }
+
+  function openEditProvider(provider: ProviderConfigView) {
+    setPanelError(undefined);
+    setModalError(undefined);
+    setProviderForm(providerToForm(provider));
+    setProviderModalOpen(true);
+  }
+
+  function closeProviderModal() {
+    setProviderModalOpen(false);
+    setModalError(undefined);
+    setProviderForm(providerToForm());
+  }
+
   async function saveProvider() {
+    if (!window.eco) {
+      return;
+    }
+    setModalError(undefined);
+    onSavingChange?.(true);
+    try {
+      const provider = await window.eco.saveProvider(providerForm);
+      await refreshSettings();
+      setModelsCache((current) => {
+        const draft = current.__draft__;
+        if (!draft) {
+          return current;
+        }
+        const next = { ...current };
+        next[provider.id] = draft;
+        delete next.__draft__;
+        return next;
+      });
+      closeProviderModal();
+    } catch (caught) {
+      setModalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function toggleProvider(provider: ProviderConfigView) {
     if (!window.eco) {
       return;
     }
     setPanelError(undefined);
     onSavingChange?.(true);
     try {
-      const provider = await window.eco.saveProvider(providerForm);
+      await window.eco.saveProvider({ ...providerToForm(provider), enabled: !provider.enabled });
       await refreshSettings();
-      setProviderForm(providerToForm(provider));
-      await fetchModels(providerToForm(provider));
     } catch (caught) {
       setPanelError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -218,15 +240,7 @@ export function ModelsSettingsPanel({
       <section className="mcp-list-section">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">Provider</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            disabled={busy}
-            onClick={() => {
-              setPanelError(undefined);
-              setProviderForm(providerToForm());
-            }}
-          >
+          <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
             <Plus size={16} />
             添加 Provider
           </button>
@@ -235,114 +249,43 @@ export function ModelsSettingsPanel({
         {providerOptions.length === 0 ? (
           <p className="mcp-list-empty">尚未添加 Provider</p>
         ) : (
-          <ul className="mcp-server-list models-provider-list">
+          <ul className="mcp-server-list">
             {providerOptions.map((provider) => (
-              <li key={provider.id}>
-                <button
-                  type="button"
-                  className={
-                    providerForm.id === provider.id ? "models-provider-row active" : "models-provider-row"
-                  }
-                  onClick={() => {
-                    setPanelError(undefined);
-                    setProviderForm(providerToForm(provider));
-                  }}
-                >
-                  <div className="models-provider-row-main">
-                    <span className="mcp-server-name">{provider.name}</span>
-                    <small>
-                      {provider.defaultModel}
-                      {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
-                    </small>
-                  </div>
+              <li key={provider.id} className="mcp-server-row models-provider-row">
+                <div className="models-provider-row-main">
+                  <span className="mcp-server-name">{provider.name}</span>
+                  <small>
+                    {provider.defaultModel}
+                    {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
+                  </small>
+                </div>
+                <div className="mcp-server-actions">
                   <span className={provider.enabled ? "models-provider-badge on" : "models-provider-badge"}>
                     {provider.enabled ? "已启用" : "已禁用"}
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    className="mcp-icon-button"
+                    onClick={() => openEditProvider(provider)}
+                    aria-label={`配置 ${provider.name}`}
+                    disabled={busy}
+                  >
+                    <Settings2 size={18} />
+                  </button>
+                  <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
+                    <input
+                      type="checkbox"
+                      checked={provider.enabled}
+                      disabled={busy}
+                      onChange={() => void toggleProvider(provider)}
+                    />
+                    <span className="mcp-toggle-track" aria-hidden />
+                  </label>
+                </div>
               </li>
             ))}
           </ul>
         )}
-      </section>
-
-      <section className="models-editor-section">
-        <div className="mcp-editor-title-block">
-          <h2 className="models-editor-title">{providerForm.id ? "编辑 Provider" : "新建 Provider"}</h2>
-        </div>
-
-        <div className="mcp-editor-form models-editor-form">
-          <label className="mcp-field">
-            <span className="mcp-field-label">名称</span>
-            <input
-              className="mcp-field-input"
-              value={providerForm.name}
-              onChange={(event) => setProviderForm((current) => ({ ...current, name: event.target.value }))}
-            />
-          </label>
-
-          <label className="mcp-field">
-            <span className="mcp-field-label">baseURL</span>
-            <input
-              className="mcp-field-input"
-              value={providerForm.baseUrl}
-              onChange={(event) => setProviderForm((current) => ({ ...current, baseUrl: event.target.value }))}
-            />
-          </label>
-
-          <label className="mcp-field">
-            <span className="mcp-field-label">API key</span>
-            <input
-              className="mcp-field-input"
-              type="password"
-              value={providerForm.apiKey ?? ""}
-              placeholder={providerForm.id ? "留空则保留已保存的 Key" : "sk-..."}
-              onChange={(event) => setProviderForm((current) => ({ ...current, apiKey: event.target.value }))}
-            />
-          </label>
-
-          <div className="mcp-field">
-            <div className="model-field-head">
-              <span className="mcp-field-label">默认模型</span>
-              <button
-                type="button"
-                className="model-inline-refresh"
-                disabled={busy || loadingForProvider(activeProviderId)}
-                onClick={() => void fetchModels(providerForm)}
-              >
-                <RefreshCw size={14} className={loadingForProvider(activeProviderId) ? "model-refresh-spin" : undefined} />
-                从上游刷新
-              </button>
-            </div>
-            <ModelSelectField
-              value={providerForm.defaultModel}
-              models={activeCache?.models ?? []}
-              loading={loadingForProvider(activeProviderId)}
-              error={activeCache?.error}
-              disabled={busy}
-              onRefresh={() => void fetchModels(providerForm)}
-              onChange={(modelId) => setProviderForm((current) => ({ ...current, defaultModel: modelId }))}
-            />
-          </div>
-
-          <label className="mcp-field models-toggle-field">
-            <span className="mcp-field-label">启用此 Provider</span>
-            <label className="mcp-toggle" title={providerForm.enabled ? "已启用" : "已禁用"}>
-              <input
-                type="checkbox"
-                checked={providerForm.enabled}
-                disabled={busy}
-                onChange={(event) =>
-                  setProviderForm((current) => ({ ...current, enabled: event.target.checked }))
-                }
-              />
-              <span className="mcp-toggle-track" aria-hidden />
-            </label>
-          </label>
-
-          <button type="button" className="mcp-save-button" disabled={busy} onClick={() => void saveProvider()}>
-            保存 Provider
-          </button>
-        </div>
       </section>
 
       <section className="mcp-list-section models-routes-section">
@@ -432,7 +375,149 @@ export function ModelsSettingsPanel({
           })}
         </ul>
       </section>
+
+      {providerModalOpen && (
+        <ProviderEditorModal
+          form={providerForm}
+          setForm={setProviderForm}
+          models={modalCache?.models ?? []}
+          modelsLoading={loadingForProvider(modalProviderId)}
+          modelsError={modalCache?.error}
+          error={modalError}
+          busy={busy}
+          onClose={closeProviderModal}
+          onSave={() => void saveProvider()}
+          onRefreshModels={() => void fetchModels(providerForm)}
+        />
+      )}
     </>
+  );
+}
+
+function ProviderEditorModal({
+  form,
+  setForm,
+  models,
+  modelsLoading,
+  modelsError,
+  error,
+  busy,
+  onClose,
+  onSave,
+  onRefreshModels,
+}: {
+  form: ProviderConfigInput;
+  setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
+  models: UpstreamModelOption[];
+  modelsLoading: boolean;
+  modelsError?: string | undefined;
+  error?: string | undefined;
+  busy?: boolean | undefined;
+  onClose: () => void;
+  onSave: () => void;
+  onRefreshModels: () => void;
+}) {
+  const isEditing = Boolean(form.id);
+  const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
+
+  return (
+    <div className="settings-modal-backdrop" onClick={onClose}>
+      <div
+        className="settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="provider-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="settings-modal-header">
+          <h2 id="provider-modal-title" className="settings-modal-title">
+            {title}
+          </h2>
+          <button type="button" className="mcp-icon-button" onClick={onClose} aria-label="关闭" disabled={busy}>
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="settings-modal-body mcp-editor-form models-editor-form">
+          <label className="mcp-field">
+            <span className="mcp-field-label">名称</span>
+            <input
+              className="mcp-field-input"
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+
+          <label className="mcp-field">
+            <span className="mcp-field-label">baseURL</span>
+            <input
+              className="mcp-field-input"
+              value={form.baseUrl}
+              onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+            />
+          </label>
+
+          <label className="mcp-field">
+            <span className="mcp-field-label">API key</span>
+            <input
+              className="mcp-field-input"
+              type="password"
+              value={form.apiKey ?? ""}
+              placeholder={form.id ? "留空则保留已保存的 Key" : "sk-..."}
+              onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
+            />
+          </label>
+
+          <div className="mcp-field">
+            <div className="model-field-head">
+              <span className="mcp-field-label">默认模型</span>
+              <button
+                type="button"
+                className="model-inline-refresh"
+                disabled={busy || modelsLoading}
+                onClick={onRefreshModels}
+              >
+                <RefreshCw size={14} className={modelsLoading ? "model-refresh-spin" : undefined} />
+                从上游刷新
+              </button>
+            </div>
+            <ModelSelectField
+              value={form.defaultModel}
+              models={models}
+              loading={modelsLoading}
+              error={modelsError}
+              disabled={busy}
+              onRefresh={onRefreshModels}
+              onChange={(modelId) => setForm((current) => ({ ...current, defaultModel: modelId }))}
+            />
+          </div>
+
+          <label className="mcp-field models-toggle-field">
+            <span className="mcp-field-label">启用此 Provider</span>
+            <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                disabled={busy}
+                onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              <span className="mcp-toggle-track" aria-hidden />
+            </label>
+          </label>
+
+          {error && <p className="settings-form-error">{error}</p>}
+        </div>
+
+        <footer className="settings-modal-footer">
+          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
+            取消
+          </button>
+          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+            保存
+          </button>
+        </footer>
+      </div>
+    </div>
   );
 }
 

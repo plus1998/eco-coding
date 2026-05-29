@@ -35,5 +35,25 @@ function needsWordSeparator(previous: string, incoming: string): boolean {
     return false;
   }
   // Only fix missing spaces between Latin word chunks (not CJK or punctuation).
-  return /[A-Za-z0-9]/.test(last) && /[A-Za-z0-9]/.test(first);
+  if (!/[A-Za-z0-9]/.test(last) || !/[A-Za-z0-9]/.test(first)) {
+    return false;
+  }
+  return !looksLikeIdentifierContinuation(previous, incoming);
+}
+
+function looksLikeIdentifierContinuation(previous: string, incoming: string): boolean {
+  const tail = previous.slice(Math.max(0, previous.length - 32));
+  if (/[a-z][A-Z]/u.test(tail)) {
+    return true;
+  }
+  if (/[A-Z]$/u.test(previous)) {
+    return true;
+  }
+  if (/[A-Z]/u.test(incoming)) {
+    return true;
+  }
+  if (incoming.length < 2 && /^[a-z0-9]+$/u.test(incoming)) {
+    return true;
+  }
+  return false;
 }
