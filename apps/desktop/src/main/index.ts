@@ -71,6 +71,11 @@ import {
   type RequestAttemptResult,
 } from "./request-retry";
 import { classifyThreadIntent } from "./thread-intent";
+import {
+  buildThreadTurnPrompt,
+  isContinuableThreadStatus,
+  shouldUseInterruptedWorktree,
+} from "../shared/thread-continuation";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
@@ -454,30 +459,42 @@ function registerIpcHandlers(): void {
     }
 
     const intent = classifyThreadIntent(prompt);
-    conversationStore.updateThreadPrompt(payload.threadId, prompt);
-    conversationStore.updateThreadTitle(payload.threadId, pendingThreadTitle);
-    conversationStore.clearCoderTodos(payload.threadId);
+    const turnPrompt = buildThreadTurnPrompt(thread.prompt, prompt);
+    const worktreePlan = createWorktreePlan(workspace.path, payload.threadId);
+    const worktreeExists = await fileExists(worktreePlan.worktreePath);
+    const hasPriorActivity = conversationStore.listActivityLines(payload.threadId).length > 0;
+    const useInterruptedWorktree = shouldUseInterruptedWorktree(worktreeExists, hasPriorActivity);
+
     updateThread(payload.threadId, {
       status: "running",
-      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
+      message:
+        intent === "question" || useInterruptedWorktree
+          ? "正在回答…"
+          : "正在分析并制定计划…",
     });
-    emitTodoList(payload.threadId, []);
-    scheduleThreadTitleSummary(payload.threadId, prompt, runtimeConfig);
     recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
       ...thread,
-      title: pendingThreadTitle,
-      prompt,
       status: "running",
-      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
+      message:
+        intent === "question" || useInterruptedWorktree
+          ? "正在回答…"
+          : "正在分析并制定计划…",
     };
-    if (intent === "question") {
-      void runQuestionThread(updated, workspace, runtimeConfig, prompt);
+
+    if (intent === "question" || useInterruptedWorktree) {
+      void runQuestionThread(
+        updated,
+        workspace,
+        runtimeConfig,
+        turnPrompt,
+        useInterruptedWorktree ? worktreePlan.worktreePath : undefined,
+      );
     } else {
-      void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+      void runCodingThreadPlanning(updated, workspace, runtimeConfig, turnPrompt, worktreePlan);
     }
-    return { thread: updated } satisfies ThreadContinueResult;
+    return { thread: conversationStore.getThread(payload.threadId) ?? updated } satisfies ThreadContinueResult;
   });
 
   ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, threadId: unknown) => {
@@ -597,9 +614,11 @@ async function runQuestionThread(
   workspace: WorkspaceInfo,
   runtimeConfig: RuntimeConfig,
   prompt: string,
+  worktreePath?: string,
 ): Promise<void> {
   const controller = new AbortController();
-  activeRuns.set(thread.id, { controller });
+  const cwd = worktreePath?.trim() || workspace.path;
+  activeRuns.set(thread.id, { controller, worktreePlan: createWorktreePlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
 
   try {
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
@@ -627,7 +646,7 @@ async function runQuestionThread(
           threadId: thread.id,
           prompt,
           workspacePath: workspace.path,
-          worktreePath: workspace.path,
+          worktreePath: cwd,
           routes,
           signal: controller.signal,
           sdkSession: buildSdkSessionOptions(),
@@ -694,14 +713,18 @@ async function runCodingThreadPlanning(
   workspace: WorkspaceInfo,
   runtimeConfig: RuntimeConfig,
   prompt: string,
+  existingWorktreePlan?: WorktreePlan,
 ): Promise<void> {
-  const worktreePlan = createWorktreePlan(workspace.path, thread.id);
+  const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
   const controller = new AbortController();
-  activeRuns.set(thread.id, { controller, worktreePlan, worktreeReady: false });
+  const worktreeExists = await fileExists(worktreePlan.worktreePath);
+  activeRuns.set(thread.id, { controller, worktreePlan, worktreeReady: worktreeExists });
 
   try {
     await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
-    await gitWorktrees.createWorktree(worktreePlan);
+    if (!worktreeExists) {
+      await gitWorktrees.createWorktree(worktreePlan);
+    }
     activeRuns.get(thread.id)!.worktreeReady = true;
     updateThread(thread.id, {
       message: `Isolated worktree ready: ${worktreePlan.worktreePath}`,
@@ -1054,7 +1077,7 @@ function recoverOrphanedRunningThreads(): void {
     }
     updateThread(thread.id, {
       status: "idle",
-      message: "应用已意外退出。若右侧有文件改动，可合并到工作区；否则可重试执行。",
+      message: "应用已意外退出。可在本对话继续发送消息；若右侧有改动可合并到工作区。",
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
   }

@@ -35,6 +35,7 @@ import {
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -375,8 +376,7 @@ function App() {
     const provider = route ? providerById.get(route.providerId) : undefined;
     return Boolean(route?.modelId.trim() && provider?.enabled && provider.hasApiKey);
   });
-  const threadAcceptsInput =
-    !activeThread || activeThread.status === "idle" || activeThread.status === "completed";
+  const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const canSend = Boolean(
     currentProjectPath &&
       prompt.trim() &&
@@ -531,7 +531,7 @@ function App() {
     setError(undefined);
     setIsStarting(true);
     try {
-      if (activeThread?.status === "idle") {
+      if (activeThread && isContinuableThreadStatus(activeThread.status)) {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt,
@@ -540,10 +540,6 @@ function App() {
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         setPendingPlan(undefined);
-        setTodosByThread((current) => ({
-          ...current,
-          [result.thread.id]: [],
-        }));
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
@@ -966,9 +962,11 @@ function App() {
                   ? "请先在上方回答问题"
                   : activeThread?.status === "awaiting_plan"
                     ? "请先确认或忽略上方计划"
-                    : activeThread?.status === "idle"
-                      ? "继续对话…"
-                      : "尽管问"
+                    : activeThread && isContinuableThreadStatus(activeThread.status)
+                      ? "继续当前对话…"
+                      : activeThread
+                        ? "当前对话不可发送"
+                        : "尽管问"
               }
               disabled={Boolean(activeThread && !threadAcceptsInput)}
               rows={1}
