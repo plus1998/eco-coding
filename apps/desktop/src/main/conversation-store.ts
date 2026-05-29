@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mergeStreamText } from "@eco/runtime";
+import { logSuspiciousActivityLines, repairActivityText } from "../shared/activity-text";
 import type {
   CoderTodoItem,
   CoderTodoStatus,
@@ -255,12 +256,18 @@ export class ConversationStore {
       )
       .all(threadId) as unknown as ActivityRow[];
 
-    return rows.map((row) => ({
-      id: row.id,
-      role: row.role,
-      message: row.message,
-      stream: row.stream === 1,
-    }));
+    const lines = rows.map((row) => {
+      const { text, repaired } = repairActivityText(row.message);
+      return {
+        id: row.id,
+        role: row.role,
+        message: repaired ? text : row.message,
+        stream: row.stream === 1,
+      };
+    });
+
+    logSuspiciousActivityLines(threadId, lines);
+    return lines;
   }
 
   savePendingPlan(plan: ThreadPendingPlan & { routesJson: string }): void {
