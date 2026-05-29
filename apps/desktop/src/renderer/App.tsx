@@ -359,6 +359,7 @@ function App() {
     [activityLines, activeThread?.status],
   );
   const activityEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
     const end = activityEndRef.current;
@@ -429,6 +430,14 @@ function App() {
     } finally {
       setIsOpening(false);
     }
+  }
+
+  function restorePrompt(text: string) {
+    setPrompt(text);
+    window.requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   }
 
   async function sendComposerMessage() {
@@ -810,7 +819,11 @@ function App() {
                   </div>
                 ) : null}
                 <CoderTodoPanel todos={coderTodos} />
-                <ActivityLogView lines={activityLines} {...(activeThread && { thread: activeThread })} />
+                <ActivityLogView
+                  lines={activityLines}
+                  {...(activeThread && { thread: activeThread })}
+                  onRestorePrompt={restorePrompt}
+                />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel
                     request={pendingClarification}
@@ -837,6 +850,7 @@ function App() {
         <div className="codex-composer-wrap">
           <div className="codex-composer">
             <textarea
+              ref={composerRef}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={handleComposerKeyDown}

@@ -219,7 +219,7 @@ export interface ThreadLiveEvent {
   type: string;
   message: string;
   title?: string;
-  role?: AgentRole | "system" | "thinking" | "tool";
+  role?: AgentRole | "system" | "thinking" | "tool" | "user";
   stream?: boolean;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;

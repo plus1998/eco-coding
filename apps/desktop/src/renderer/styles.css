@@ -1511,6 +1511,64 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
+.run-log-user-prompt {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid #404040;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.run-log-user-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.run-log-user-prompt-label {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.run-log-user-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.run-log-user-prompt-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  color: #d4d4d4;
+  font-size: 12px;
+}
+
+.run-log-user-prompt-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.run-log-user-prompt-body {
+  margin: 0;
+  color: #f5f5f5;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .run-log-narrative p {
   margin: 0;
   color: #e5e5e5;

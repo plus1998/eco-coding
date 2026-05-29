@@ -281,6 +281,7 @@ function registerIpcHandlers(): void {
     };
 
     conversationStore.saveThread(thread);
+    recordUserPrompt(thread.id, prompt);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
     if (runtimeConfig.ok) {
       scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
@@ -428,6 +429,7 @@ function registerIpcHandlers(): void {
     });
     emitTodoList(payload.threadId, []);
     scheduleThreadTitleSummary(payload.threadId, prompt, runtimeConfig);
+    recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
       ...thread,
@@ -1305,7 +1307,7 @@ function emitThreadEvent(
   threadId: string,
   type: string,
   message: string,
-  role: AgentRole | "system" | "thinking" | "tool" = "system",
+  role: AgentRole | "system" | "thinking" | "tool" | "user" = "system",
   stream = false,
   extras?: {
     plan?: ThreadLiveEvent["plan"];
@@ -1353,6 +1355,10 @@ function emitThreadEvent(
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
+}
+
+function recordUserPrompt(threadId: string, prompt: string): void {
+  emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
 }
 
 function createThreadCanUseTool(threadId: string): (request: SdkToolPermissionRequest) => Promise<{

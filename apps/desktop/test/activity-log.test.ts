@@ -68,6 +68,24 @@ test("shows active subagent while running", () => {
   expect(progress?.activeSubagent).toBe("coder");
 });
 
+test("shows user prompt as a preserved node", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "给导出接口加筛选参数\n第二行保留" },
+      { id: "2", role: "planner", message: "Let me inspect the repo." },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const userBlock = blocks.find((block) => block.kind === "user-prompt");
+  expect(userBlock?.kind).toBe("user-prompt");
+  if (userBlock?.kind !== "user-prompt") {
+    return;
+  }
+  expect(userBlock.text).toBe("给导出接口加筛选参数\n第二行保留");
+  expect(userBlock.lineId).toBe("u1");
+});
+
 test("deduplicates repeated narrative separated by tool exploration", () => {
   const blocks = buildActivityLogBlocks(
     [

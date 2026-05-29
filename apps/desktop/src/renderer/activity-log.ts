@@ -7,6 +7,7 @@ export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agen
 export type ActivityLogBlock =
   | { kind: "progress"; label: string; running: boolean; activeSubagent?: string }
   | { kind: "phase"; label: string }
+  | { kind: "user-prompt"; text: string; lineId: string }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string };
 
@@ -38,10 +39,15 @@ export function buildActivityLogBlocks(
 ): ActivityLogBlock[] {
   const blocks: ActivityLogBlock[] = [];
   const activeSubagent = resolveActiveSubagent(lines, options.status);
+  let progressInserted = false;
 
-  if (lines.length > 0) {
+  const ensureProgress = () => {
+    if (progressInserted || lines.length === 0) {
+      return;
+    }
     blocks.push(createProgressBlock(options, activeSubagent));
-  }
+    progressInserted = true;
+  };
 
   let narrative = "";
   let narrativeStreaming = false;
@@ -92,6 +98,18 @@ export function buildActivityLogBlocks(
   };
 
   for (const line of lines) {
+    if (line.role === "user") {
+      flushNarrative();
+      flushTools();
+      const text = line.message.trim();
+      if (text) {
+        blocks.push({ kind: "user-prompt", text: line.message, lineId: line.id });
+      }
+      continue;
+    }
+
+    ensureProgress();
+
     if (isPhaseLine(line.message)) {
       flushNarrative();
       flushTools();
@@ -137,6 +155,7 @@ export function buildActivityLogBlocks(
 
   flushNarrative();
   flushTools();
+  ensureProgress();
   return blocks;
 }
 
