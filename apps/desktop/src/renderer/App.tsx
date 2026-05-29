@@ -23,6 +23,7 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type SkillsListResult,
+  type AgentSkillAssignments,
   type ClarificationRequest,
   type CoderTodoItem,
   type ThreadActivityLine,
@@ -76,6 +77,8 @@ function App() {
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
+  const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
+  const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [isOpening, setIsOpening] = useState(false);
@@ -592,12 +595,30 @@ function App() {
     if (!window.eco) return;
     setIsLoadingSkills(true);
     try {
-      const snapshot = await window.eco.listSkills(workspacePath);
+      const [snapshot, assignments] = await Promise.all([
+        window.eco.listSkills(workspacePath),
+        window.eco.getAgentSkillsAssignments(),
+      ]);
       setSkillsSnapshot(snapshot);
+      setAgentSkillsAssignments(assignments);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setIsLoadingSkills(false);
+    }
+  }
+
+  async function saveAgentSkillsAssignments(assignments: AgentSkillAssignments) {
+    if (!window.eco) return;
+    setIsSavingAgentSkills(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveAgentSkillsAssignments(assignments);
+      setAgentSkillsAssignments(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingAgentSkills(false);
     }
   }
 
@@ -910,14 +931,20 @@ function App() {
           </aside>
 
           <div className="settings-content">
-            {settingsSection === "skills" && (
-              <SkillsSettingsPanel
-                {...(skillsSnapshot && { snapshot: skillsSnapshot })}
-                loading={isLoadingSkills}
-                {...(currentProjectPath && { workspaceLabel: currentProjectPath })}
-                onRefresh={() => void refreshSkillsList(currentProjectPath)}
-              />
-            )}
+            {settingsSection === "skills" &&
+              (agentSkillsAssignments ? (
+                <SkillsSettingsPanel
+                  {...(skillsSnapshot && { snapshot: skillsSnapshot })}
+                  assignments={agentSkillsAssignments}
+                  loading={isLoadingSkills}
+                  saving={isSavingAgentSkills}
+                  {...(currentProjectPath && { workspaceLabel: currentProjectPath })}
+                  onRefresh={() => void refreshSkillsList(currentProjectPath)}
+                  onSaveAssignments={saveAgentSkillsAssignments}
+                />
+              ) : (
+                <p className="settings-empty-hint">正在加载 Skills 配置…</p>
+              ))}
 
             {settingsSection === "mcp" && (
               <McpSettingsPanel

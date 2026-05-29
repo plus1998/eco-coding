@@ -17,7 +17,10 @@ export type EcoSettingSource = "user" | "project" | "local";
 export interface EcoSdkSessionOptions {
   /** Loads CLAUDE.md, rules, skills, hooks, and project .mcp.json */
   settingSources?: EcoSettingSource[];
+  /** Main session (Planner) skill directories to preload */
   skills?: string[];
+  /** Per-role skill directories for subagent definitions */
+  agentSkills?: Partial<Record<AgentRole, string[]>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
 }

@@ -15,15 +15,14 @@ import {
   formatAgentEventDisplay,
   formatAgentEventLine,
   formatSdkPayloadMessage,
-  getAgentSkills,
   getDefaultAllowedTools,
-  getDefaultSdkSkills,
   inferActivityRole,
   mapSdkMessageToEvents,
   buildSdkProcessEnv,
   mergeAllowedTools,
   planningPhaseSystemAppend,
   questionAnswerSystemAppend,
+  resolveAgentSkills,
   resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
@@ -107,21 +106,32 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
   ]);
   expect(resolveSdkSessionOptions()).toEqual({
     settingSources: ["user", "project"],
-    skills: ["pdf", "docx"],
+    skills: undefined,
     mcpServers: {},
   });
-  expect(getDefaultSdkSkills()).toEqual(["pdf", "docx"]);
+  expect(
+    resolveSdkSessionOptions({
+      agentSkills: { planner: ["pdf"], coder: ["docx", "lint"] },
+    }),
+  ).toEqual({
+    settingSources: ["user", "project"],
+    skills: ["pdf"],
+    mcpServers: {},
+  });
 });
 
 test("creates native SDK subagent definitions", () => {
-  const definitions = createAgentDefinitions(routes);
+  const agentSkills = { coder: ["docx"], architect: ["pdf"] };
+  const definitions = createAgentDefinitions(routes, agentSkills);
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
     description: expect.stringContaining("exactly one subtask"),
-    skills: ["pdf", "docx"],
+    skills: ["docx"],
     model: "qwen-coder-anthropic",
   });
-  expect(getAgentSkills("coder")).toEqual(["pdf", "docx"]);
+  expect(definitions.architect).toMatchObject({ skills: ["pdf"] });
+  expect(definitions.reviewer).not.toHaveProperty("skills");
+  expect(resolveAgentSkills("tester", agentSkills)).toEqual([]);
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {

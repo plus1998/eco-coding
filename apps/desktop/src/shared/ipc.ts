@@ -31,6 +31,8 @@ export const IPC_CHANNELS = {
   mcpServerSave: "mcp-server:save",
   mcpServerDelete: "mcp-server:delete",
   skillsList: "skills:list",
+  agentSkillsGet: "agent-skills:get",
+  agentSkillsSave: "agent-skills:save",
 } as const;
 
 export type {
@@ -41,6 +43,9 @@ export type {
 } from "./mcp";
 
 export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
+
+/** Skill directory names enabled per agent role at runtime (SDK skills preload). */
+export type AgentSkillAssignments = Record<AgentRole, string[]>;
 export type { ListUpstreamModelsRequest, ListUpstreamModelsResult, UpstreamModelOption } from "./models";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

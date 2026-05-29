@@ -12,6 +12,7 @@ import {
   type ProviderConfigView,
   type RoleRouteConfig,
   type SkillsListResult,
+  type AgentSkillAssignments,
   type ClarificationAnswers,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
@@ -66,6 +67,12 @@ const api = {
   },
   listSkills(workspacePath?: string): Promise<SkillsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);
+  },
+  getAgentSkillsAssignments(): Promise<AgentSkillAssignments> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsGet);
+  },
+  saveAgentSkillsAssignments(assignments: AgentSkillAssignments): Promise<AgentSkillAssignments> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsSave, assignments);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

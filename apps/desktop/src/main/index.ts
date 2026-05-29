@@ -10,7 +10,6 @@ import {
   formatAgentEventDisplay,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
-  getDefaultSdkSkills,
   mergeStreamText,
   type PlanReadyPayload,
   type SdkToolPermissionRequest,
@@ -33,6 +32,7 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type RoleRouteConfig,
+  type AgentSkillAssignments,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   type CoderTodoStatus,
@@ -63,6 +63,7 @@ import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
+import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import {
   buildAskUserQuestionUpdatedInput,
@@ -85,6 +86,7 @@ let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
+let agentSkillsStore: AgentSkillsStore;
 
 interface ActiveThreadRun {
   controller: AbortController;
@@ -125,6 +127,7 @@ app.whenReady().then(async () => {
   providerStore = await createProviderStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  agentSkillsStore = await createAgentSkillsStore(dbPath);
   registerIpcHandlers();
   await createMainWindow();
 
@@ -210,6 +213,20 @@ function registerIpcHandlers(): void {
         ? workspacePath.trim()
         : currentWorkspace?.path;
     return listDiscoveredSkills(pathToScan);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentSkillsGet, async () => agentSkillsStore.getAssignments());
+
+  ipcMain.handle(IPC_CHANNELS.agentSkillsSave, async (_event, payload: unknown) => {
+    if (!isAgentSkillAssignments(payload)) {
+      throw new Error("Invalid agent skills assignments.");
+    }
+    const pathToScan = currentWorkspace?.path;
+    const discovered = await listDiscoveredSkills(pathToScan);
+    const allowed = new Set(
+      [...discovered.userSkills, ...discovered.projectSkills].map((skill) => skill.name),
+    );
+    return agentSkillsStore.saveAssignments(payload, allowed);
   });
 
   ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
@@ -1182,12 +1199,25 @@ function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
 
 function buildSdkSessionOptions(): EcoSdkSessionOptions {
   const mcp = mcpStore.buildSdkConfig();
+  const assignments = agentSkillsStore.getAssignments();
   return {
     settingSources: ["user", "project"],
-    skills: getDefaultSdkSkills(),
+    skills: assignments.planner,
+    agentSkills: assignments,
     mcpServers: mcp.mcpServers,
     mcpAllowedTools: mcp.allowedTools,
   };
+}
+
+function isAgentSkillAssignments(value: unknown): value is AgentSkillAssignments {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return AGENT_ROLES.every((role) => {
+    const skills = record[role];
+    return Array.isArray(skills) && skills.every((entry) => typeof entry === "string");
+  });
 }
 
 function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {

@@ -1333,6 +1333,63 @@ button:not(:disabled) {
   font-size: 13px;
 }
 
+.agent-skills-hint {
+  margin-top: 10px;
+}
+
+.agent-skills-matrix-wrap {
+  overflow-x: auto;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #1a1a1a;
+}
+
+.agent-skills-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.agent-skills-matrix th,
+.agent-skills-matrix td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #2a2a2a;
+  vertical-align: middle;
+}
+
+.agent-skills-matrix thead th {
+  color: #a3a3a3;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.agent-skills-matrix thead th:first-child {
+  text-align: left;
+}
+
+.agent-skills-skill-cell {
+  text-align: left;
+  font-weight: 500;
+  color: #e5e5e5;
+}
+
+.agent-skills-skill-name {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.agent-skills-check-cell {
+  text-align: center;
+}
+
+.agent-skills-check-cell input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .skill-list {
   list-style: none;
   margin: 0;
