@@ -20,6 +20,7 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadPendingPlan,
+  type ThreadRollbackResult,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadSummary,
@@ -71,6 +72,12 @@ const api = {
   },
   continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
+  },
+  cancelThread(threadId: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadCancel, threadId);
+  },
+  rollbackToThread(threadId: string): Promise<ThreadRollbackResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRollbackTo, threadId);
   },
   getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);

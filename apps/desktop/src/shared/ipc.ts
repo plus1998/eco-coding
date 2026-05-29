@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
   threadCancel: "thread:cancel",
+  threadRollbackTo: "thread:rollback-to",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
@@ -143,6 +144,13 @@ export interface ThreadContinueRequest {
 
 export interface ThreadContinueResult {
   thread: ThreadSummary;
+}
+
+export interface ThreadRollbackResult {
+  ok: true;
+  revertedThreads: number;
+  files: string[];
+  message: string;
 }
 
 export type CoderTodoStatus = "pending" | "running" | "completed" | "blocked" | "cancelled";

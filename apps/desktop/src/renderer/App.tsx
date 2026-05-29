@@ -7,10 +7,12 @@ import {
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
+  RotateCcw,
   Settings2,
   Plug,
   SlidersHorizontal,
   Sparkles,
+  Square,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -91,6 +93,8 @@ function App() {
     changedFiles: string[];
   }>();
   const [worktreeApplyBusy, setWorktreeApplyBusy] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
 
   useEffect(() => {
     if (!window.eco) {
@@ -329,6 +333,11 @@ function App() {
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
+  const canStopThread =
+    activeThread?.status === "running" ||
+    activeThread?.status === "queued" ||
+    activeThread?.status === "awaiting_plan";
+  const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
   const plannerModelLabel = useMemo(() => {
     const route = settings.routes.find((candidate) => candidate.role === "planner");
@@ -547,6 +556,38 @@ function App() {
     }
   }
 
+  async function cancelActiveThread() {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    setError(undefined);
+    setCancelBusy(true);
+    try {
+      await window.eco.cancelThread(activeThread.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
+  async function rollbackToActiveThread() {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    setError(undefined);
+    setRollbackBusy(true);
+    try {
+      await window.eco.rollbackToThread(activeThread.id);
+      setThreads(await window.eco.listThreads());
+      setPendingWorktreeApply(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setRollbackBusy(false);
+    }
+  }
+
   async function refreshSkillsList(workspacePath?: string) {
     if (!window.eco) return;
     setIsLoadingSkills(true);
@@ -698,6 +739,32 @@ function App() {
                       <span className="subagent-chip">{formatSubagentLabel(activeSubagent)}</span>
                     ) : null}
                     <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
+                    <div className="activity-header-actions">
+                      {canRollbackThread ? (
+                        <button
+                          type="button"
+                          className="activity-icon-button"
+                          onClick={() => void rollbackToActiveThread()}
+                          disabled={rollbackBusy}
+                          title="撤销此对话之后的已应用变更"
+                          aria-label="回滚到此对话"
+                        >
+                          <RotateCcw size={15} className={rollbackBusy ? "spinning" : undefined} />
+                        </button>
+                      ) : null}
+                      {canStopThread ? (
+                        <button
+                          type="button"
+                          className="activity-icon-button danger"
+                          onClick={() => void cancelActiveThread()}
+                          disabled={cancelBusy}
+                          title="停止当前运行"
+                          aria-label="停止"
+                        >
+                          <Square size={14} />
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </header>
               )}

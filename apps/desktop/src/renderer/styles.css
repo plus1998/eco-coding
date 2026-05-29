@@ -302,6 +302,40 @@ button:not(:disabled) {
   margin-left: auto;
 }
 
+.activity-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.activity-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #262626;
+  color: #d4d4d4;
+}
+
+.activity-icon-button:hover:not(:disabled) {
+  background: #333;
+  color: #fff;
+}
+
+.activity-icon-button.danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+
+.activity-icon-button.danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
 .subagent-chip,
 .run-log-subagent-chip,
 .run-log-subagent-badge {
@@ -1264,6 +1298,7 @@ button:not(:disabled) {
 }
 
 .settings-icon-button .spinning,
+.activity-icon-button .spinning,
 .coder-todo-icon .spinning {
   animation: eco-spin 0.8s linear infinite;
 }

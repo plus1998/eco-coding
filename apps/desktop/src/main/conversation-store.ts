@@ -41,6 +41,24 @@ interface CoderTodoRow {
   updated_at: string;
 }
 
+export interface AppliedDiffRecord {
+  threadId: string;
+  workspacePath: string;
+  diff: string;
+  files: string[];
+  appliedAt: string;
+  rolledBackAt?: string;
+}
+
+interface AppliedDiffRow {
+  thread_id: string;
+  workspace_path: string;
+  diff: string;
+  files_json: string;
+  applied_at: string;
+  rolled_back_at: string | null;
+}
+
 export async function createConversationStore(dbPath: string): Promise<ConversationStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -106,6 +124,19 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_coder_todos_thread_position
         ON thread_coder_todos(thread_id, position);
+
+      CREATE TABLE IF NOT EXISTS thread_applied_diffs (
+        thread_id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        diff TEXT NOT NULL,
+        files_json TEXT NOT NULL,
+        applied_at TEXT NOT NULL,
+        rolled_back_at TEXT,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_applied_diffs_workspace_applied
+        ON thread_applied_diffs(workspace_path, applied_at);
     `);
   }
 
@@ -340,6 +371,54 @@ export class ConversationStore {
     this.db.prepare(`DELETE FROM thread_coder_todos WHERE thread_id = ?`).run(threadId);
   }
 
+  saveAppliedDiff(threadId: string, workspacePath: string, diff: string, files: string[]): AppliedDiffRecord {
+    const appliedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO thread_applied_diffs (thread_id, workspace_path, diff, files_json, applied_at, rolled_back_at)
+         VALUES (?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           workspace_path = excluded.workspace_path,
+           diff = excluded.diff,
+           files_json = excluded.files_json,
+           applied_at = excluded.applied_at,
+           rolled_back_at = NULL`,
+      )
+      .run(threadId, workspacePath, diff, JSON.stringify(files), appliedAt);
+    return { threadId, workspacePath, diff, files, appliedAt };
+  }
+
+  getAppliedDiff(threadId: string): AppliedDiffRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT thread_id, workspace_path, diff, files_json, applied_at, rolled_back_at
+         FROM thread_applied_diffs
+         WHERE thread_id = ?`,
+      )
+      .get(threadId) as AppliedDiffRow | undefined;
+    return row ? rowToAppliedDiff(row) : undefined;
+  }
+
+  listAppliedDiffsAfter(workspacePath: string, appliedAt: string): AppliedDiffRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, workspace_path, diff, files_json, applied_at, rolled_back_at
+         FROM thread_applied_diffs
+         WHERE workspace_path = ?
+           AND applied_at > ?
+           AND rolled_back_at IS NULL
+         ORDER BY applied_at DESC`,
+      )
+      .all(workspacePath, appliedAt) as unknown as AppliedDiffRow[];
+    return rows.map(rowToAppliedDiff);
+  }
+
+  markAppliedDiffRolledBack(threadId: string): void {
+    this.db
+      .prepare(`UPDATE thread_applied_diffs SET rolled_back_at = ? WHERE thread_id = ?`)
+      .run(new Date().toISOString(), threadId);
+  }
+
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
     const row = this.db
       .prepare(
@@ -374,6 +453,29 @@ function rowToCoderTodo(row: CoderTodoRow): CoderTodoItem {
     position: row.position,
     updatedAt: row.updated_at,
   };
+}
+
+function rowToAppliedDiff(row: AppliedDiffRow): AppliedDiffRecord {
+  return {
+    threadId: row.thread_id,
+    workspacePath: row.workspace_path,
+    diff: row.diff,
+    files: parseFilesJson(row.files_json),
+    appliedAt: row.applied_at,
+    ...(row.rolled_back_at && { rolledBackAt: row.rolled_back_at }),
+  };
+}
+
+function parseFilesJson(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((entry): entry is string => typeof entry === "string");
+    }
+  } catch {
+    return [];
+  }
+  return [];
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {

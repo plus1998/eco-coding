@@ -7,6 +7,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.modelProviderSave).toBe("model-provider:save");
   expect(IPC_CHANNELS.modelRoutesSave).toBe("model-routes:save");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
+  expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");
+  expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
   expect(IPC_CHANNELS.threadApprovePlan).toBe("thread:approve-plan");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
   expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
