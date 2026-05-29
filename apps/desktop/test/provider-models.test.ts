@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { parseUpstreamModelsPayload } from "../src/main/provider-models";
+import { buildModelsListUrl, parseUpstreamModelsPayload } from "../src/main/provider-models";
+
+describe("buildModelsListUrl", () => {
+  test("uses origin only and drops anthropic-style path suffix", () => {
+    expect(buildModelsListUrl("https://api.deepseek.com/anthropic")).toBe("https://api.deepseek.com/v1/models");
+    expect(buildModelsListUrl("https://api.deepseek.com/anthropic/")).toBe("https://api.deepseek.com/v1/models");
+  });
+
+  test("works for bare host and local proxy", () => {
+    expect(buildModelsListUrl("https://api.deepseek.com")).toBe("https://api.deepseek.com/v1/models");
+    expect(buildModelsListUrl("http://127.0.0.1:55302")).toBe("http://127.0.0.1:55302/v1/models");
+  });
+});
 
 describe("parseUpstreamModelsPayload", () => {
   test("parses Anthropic-style models list", () => {

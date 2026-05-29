@@ -15,11 +15,25 @@ export async function listProviderUpstreamModels(
   return fetchUpstreamModelsFromCredentials(resolved.baseUrl, resolved.apiKey);
 }
 
+/** OpenAI-style model discovery: always GET `{origin}/v1/models`, ignoring baseUrl path (e.g. `/anthropic`). */
+export function buildModelsListUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim();
+  if (!trimmed) {
+    return "/v1/models";
+  }
+  try {
+    const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    return `${parsed.origin}/v1/models`;
+  } catch {
+    return `${trimTrailingSlash(trimmed).replace(/\/[^/]*$/, "")}/v1/models`;
+  }
+}
+
 export async function fetchUpstreamModelsFromCredentials(
   baseUrl: string,
   apiKey: string,
 ): Promise<ListUpstreamModelsResult> {
-  const modelsUrl = `${trimTrailingSlash(baseUrl)}/v1/models`;
+  const modelsUrl = buildModelsListUrl(baseUrl);
 
   try {
     const response = await fetch(modelsUrl, {

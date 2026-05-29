@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
+  recoverOrphanedRunningThreads();
   registerIpcHandlers();
   await createMainWindow();
 
@@ -494,6 +495,14 @@ function registerIpcHandlers(): void {
     const thread = conversationStore.getThread(threadId);
     if (thread?.status === "awaiting_plan") {
       await dismissPendingPlan(threadId, "已取消。");
+      return;
+    }
+    if (thread?.status === "running" || thread?.status === "queued") {
+      updateThread(threadId, {
+        status: "idle",
+        message: "已停止。若隔离工作树仍有变更，可在右侧「应用到工作区」合并。",
+      });
+      emitThreadEvent(threadId, "thread.idle", "已停止。", "system");
     }
   });
 
@@ -1072,6 +1081,23 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
     void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
   }
   return { thread: updated };
+}
+
+/** After a crash, SQLite may still say running while activeRuns is empty. */
+function recoverOrphanedRunningThreads(): void {
+  for (const thread of conversationStore.listThreads()) {
+    if (thread.status !== "running" && thread.status !== "queued") {
+      continue;
+    }
+    if (activeRuns.has(thread.id)) {
+      continue;
+    }
+    updateThread(thread.id, {
+      status: "idle",
+      message: "应用已意外退出。若右侧有文件改动，可合并到工作区；否则可重试执行。",
+    });
+    emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
+  }
 }
 
 async function restoreAfterExecutionFailure(
