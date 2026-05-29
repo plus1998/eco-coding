@@ -164,10 +164,10 @@ test("builds phased orchestration prompts", () => {
   const analysis = "## 分析结果\n\nNeed to extend styles.css";
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Agent(explore)");
-  expect(planningPhaseSystemAppend).toContain("AskUserQuestion");
-  expect(planningPhaseSystemAppend).toContain("Agent(explore)");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("phases 1→2→3");
+  expect(planningPhaseSystemAppend).toContain("explore first, ask second");
+  expect(planningPhaseSystemAppend).toContain("Finalization rule");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Implementation Plan");
   expect(executePhaseSystemAppend).toContain("TodoWrite");
   expect(executePhaseSystemAppend).toContain("Architect (conditional)");
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");

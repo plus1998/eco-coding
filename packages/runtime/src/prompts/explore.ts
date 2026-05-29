@@ -1,7 +1,7 @@
 /** Read-only codebase exploration agent (aligned with OpenCode explore). */
 
 export const exploreAgentDescription =
-  'Fast read-only agent for exploring codebases. Use when you need to find files by patterns, search code for keywords, or answer "how does X work?" across the repo — not for a single known file path. When delegating, specify thoroughness: "quick", "medium", or "very thorough".';
+  'Planning-phase codebase exploration (read-only). Use BEFORE asking the user repo questions: map where behavior lives, entrypoints, and data flow. Not for a single known file — use Read/Grep instead. When delegating, include the user goal and thoroughness: "quick", "medium", or "very thorough".';
 
 export const exploreAgentPrompt = [
   "You are a file search and codebase exploration specialist.",

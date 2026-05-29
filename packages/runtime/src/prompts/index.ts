@@ -6,10 +6,13 @@ export {
 export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
 export {
   planningPhaseSystemAppend,
+  buildPlanningPhaseSystemAppend,
   buildPlanningPhasePrompt,
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
 } from "./planning.js";
+export { CODEX_PLAN_MODE_TEMPLATE, loadCodexPlanTemplate } from "./codex-plan-template.js";
+export { ecoPlanHarnessAdapter } from "./eco-plan-adapter.js";
 export {
   executePhaseSystemAppend,
   buildExecutePhasePrompt,
