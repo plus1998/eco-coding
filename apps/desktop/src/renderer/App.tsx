@@ -883,18 +883,6 @@ function App() {
                         <RotateCcw size={15} className={rollbackBusy ? "spinning" : undefined} />
                       </button>
                     ) : null}
-                    {canStopThread ? (
-                      <button
-                        type="button"
-                        className="activity-icon-button danger"
-                        onClick={() => void cancelActiveThread()}
-                        disabled={cancelBusy}
-                        title="停止当前运行"
-                        aria-label="停止"
-                      >
-                        <Square size={14} />
-                      </button>
-                    ) : null}
                   </div>
                 </header>
               )}
@@ -993,15 +981,28 @@ function App() {
                   {contextKLabel}
                 </span>
               ) : null}
-              <button
-                type="button"
-                className="send-button"
-                onClick={sendComposerMessage}
-                disabled={!canSend}
-                aria-label="发送"
-              >
-                {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
-              </button>
+              {canStopThread ? (
+                <button
+                  type="button"
+                  className="send-button stop"
+                  onClick={() => void cancelActiveThread()}
+                  disabled={cancelBusy}
+                  title="停止当前运行"
+                  aria-label="停止"
+                >
+                  {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="send-button"
+                  onClick={sendComposerMessage}
+                  disabled={!canSend}
+                  aria-label="发送"
+                >
+                  {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
+                </button>
+              )}
             </div>
             {error && (
               <p className="composer-error">
