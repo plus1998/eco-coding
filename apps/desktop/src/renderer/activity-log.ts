@@ -1,13 +1,24 @@
-import { formatSubagentLabel, isSubagentRole } from "@eco/runtime";
-import { mergeStreamText } from "@eco/runtime";
+import {
+  isSubagentRole,
+  mergeStreamText,
+  missionFromAgentToolDetail,
+  parseSubagentMissionMessage,
+  type SubagentMissionPayload,
+} from "@eco/runtime";
+import {
+  activityActionKey,
+  normalizeActivityActionLabel,
+  stripSubagentBracketPrefix,
+} from "../shared/activity-display";
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =
   | { kind: "phase"; label: string }
+  | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
-  | { kind: "action"; icon: ActivityActionIcon; label: string };
+  | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string };
 
 export type ActivityLogBlock =
   | { kind: "user-prompt"; text: string; lineId: string }
@@ -17,6 +28,7 @@ export type ActivityLogBlock =
       running: boolean;
       defaultCollapsed: boolean;
       activeSubagent?: string;
+      activeMissionSummary?: string;
       children: ActivityDetailBlock[];
     }
   | {
@@ -60,6 +72,7 @@ export function buildActivityLogBlocks(
   const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
   const durationMs = Math.max(0, Date.now() - startedAt);
   const activeSubagent = resolveActiveSubagent(lines, options.status);
+  const activeMissionSummary = resolveActiveMissionSummary(lines, activeSubagent);
 
   const output: ActivityLogBlock[] = [];
 
@@ -84,6 +97,7 @@ export function buildActivityLogBlocks(
         running: true,
         defaultCollapsed: false,
         ...(activeSubagent && { activeSubagent }),
+        ...(activeMissionSummary && { activeMissionSummary }),
         children: processBlocks,
       });
       if (summaryBlock) {
@@ -149,7 +163,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let narrative = "";
   let narrativeStreaming = false;
   let narrativeSubagent: string | undefined;
-  let pendingTools: ParsedToolAction[] = [];
+  let toolContextSubagent: string | undefined;
   const recentNarratives: string[] = [];
 
   const flushNarrative = () => {
@@ -187,17 +201,71 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
   };
 
-  const flushTools = () => {
-    for (const action of summarizeToolActions(pendingTools)) {
-      current.details.push(action);
+  const noteToolContext = (line: ThreadActivityLine) => {
+    if (isSubagentRole(line.role)) {
+      toolContextSubagent = line.role;
     }
-    pendingTools = [];
+  };
+
+  const pushSubagentMission = (mission: SubagentMissionPayload) => {
+    toolContextSubagent = mission.role;
+    const last = current.details[current.details.length - 1];
+    if (
+      last?.kind === "subagent-mission" &&
+      last.subagent === mission.role &&
+      last.summary === mission.summary
+    ) {
+      return;
+    }
+    current.details.push({
+      kind: "subagent-mission",
+      subagent: mission.role,
+      summary: mission.summary,
+      ...(mission.prompt && { prompt: mission.prompt }),
+    });
+  };
+
+  const pushToolAction = (tool: ParsedToolAction, line: ThreadActivityLine) => {
+    noteToolContext(line);
+    const subagent =
+      tool.subagent ?? (isSubagentRole(line.role) ? line.role : toolContextSubagent);
+    if (tool.tool === "Agent") {
+      if (subagent) {
+        toolContextSubagent = subagent;
+      }
+      const legacy = missionFromAgentToolDetail(tool.detail);
+      if (legacy && legacy.role) {
+        pushSubagentMission({
+          role: legacy.role,
+          summary: legacy.summary,
+          prompt: tool.detail ?? "",
+        });
+      }
+      if (tool.detail) {
+        return;
+      }
+    }
+    const label = normalizeActivityActionLabel(formatToolActionLabel(tool));
+    const last = current.details[current.details.length - 1];
+    const actionKey = activityActionKey(subagent, label);
+    if (
+      last?.kind === "action" &&
+      activityActionKey(last.subagent, last.label) === actionKey &&
+      tool.tool !== "Agent"
+    ) {
+      return;
+    }
+    current.details.push({
+      kind: "action",
+      icon: iconForToolCategory(tool.category),
+      label,
+      ...(subagent && { subagent }),
+    });
   };
 
   for (const line of lines) {
     if (line.role === "user") {
       flushNarrative();
-      flushTools();
       if (current.details.length > 0) {
         pushSegment();
       }
@@ -207,8 +275,36 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     if (isPhaseLine(line.message)) {
       flushNarrative();
-      flushTools();
       current.details.push({ kind: "phase", label: line.message });
+      continue;
+    }
+
+    const mission = parseSubagentMissionMessage(line.message);
+    if (mission) {
+      flushNarrative();
+      pushSubagentMission(mission);
+      continue;
+    }
+
+    if (isTaskActivityLine(line)) {
+      flushNarrative();
+      const label = normalizeActivityActionLabel(line.message);
+      const subagent = isSubagentRole(line.role)
+        ? line.role
+        : toolContextSubagent;
+      current.details.push({
+        kind: "action",
+        icon: "agent",
+        label,
+        ...(subagent && { subagent }),
+      });
+      continue;
+    }
+
+    const progressAction = parseProgressActionLine(line.message);
+    if (progressAction) {
+      flushNarrative();
+      pushToolAction(progressAction, line);
       continue;
     }
 
@@ -219,37 +315,36 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     const tool = parseToolLine(line.message);
     if (tool) {
       flushNarrative();
-      pendingTools.push(tool);
+      pushToolAction(tool, line);
       continue;
     }
 
     if (isNarrativeLine(line)) {
-      flushTools();
       noteNarrativeRole(line);
+      const text = line.stream ? line.message : stripSubagentBracketPrefix(line.message);
       if (line.stream) {
-        narrative = mergeStreamText(narrative, line.message);
+        narrative = mergeStreamText(narrative, text);
         narrativeStreaming = true;
       } else if (narrative) {
-        narrative += `\n\n${line.message}`;
+        narrative += `\n\n${text}`;
       } else {
-        narrative = line.message;
+        narrative = text;
       }
       continue;
     }
 
     if (line.message.trim().length > 0) {
-      flushTools();
       noteNarrativeRole(line);
+      const text = stripSubagentBracketPrefix(line.message);
       if (narrative) {
-        narrative += `\n\n${line.message}`;
+        narrative += `\n\n${text}`;
       } else {
-        narrative = line.message;
+        narrative = text;
       }
     }
   }
 
   flushNarrative();
-  flushTools();
   pushSegment();
   return segments;
 }
@@ -273,7 +368,11 @@ function partitionSessionBlocks(
   }
 
   const hasPriorContent = details.slice(0, lastNarrativeIndex).some(
-    (block) => block.kind === "action" || block.kind === "phase" || block.kind === "narrative",
+    (block) =>
+      block.kind === "action" ||
+      block.kind === "phase" ||
+      block.kind === "narrative" ||
+      block.kind === "subagent-mission",
   );
   if (!hasPriorContent && lastNarrativeIndex === details.length - 1) {
     return { processBlocks: [], summaryBlock: last };
@@ -319,6 +418,27 @@ function isRepeatedNarrative(text: string, recentNarratives: readonly string[]):
 
 function normalizeNarrative(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function resolveActiveMissionSummary(
+  lines: ThreadActivityLine[],
+  activeSubagent?: string,
+): string | undefined {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line) {
+      continue;
+    }
+    const mission = parseSubagentMissionMessage(line.message);
+    if (!mission) {
+      continue;
+    }
+    if (activeSubagent && mission.role !== activeSubagent) {
+      continue;
+    }
+    return mission.summary;
+  }
+  return undefined;
 }
 
 export function resolveActiveSubagent(
@@ -401,14 +521,32 @@ function isNarrativeLine(line: ThreadActivityLine): boolean {
   return ["planner", "architect", "coder", "reviewer", "tester", "system"].includes(line.role);
 }
 
+const KNOWN_SDK_TOOLS = new Set([
+  "Read",
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "Grep",
+  "Glob",
+  "Bash",
+  "Agent",
+  "TodoWrite",
+  "AskUserQuestion",
+]);
+
 function parseToolLine(message: string): ParsedToolAction | null {
-  const match = message.trim().match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+))?/);
+  const match = message
+    .trim()
+    .match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/);
   if (!match) {
     return null;
   }
 
   const tool = match[1] ?? "";
-  const detail = match[2]?.trim();
+  if (!KNOWN_SDK_TOOLS.has(tool)) {
+    return null;
+  }
+  const detail = match[2]?.trim() ?? match[3]?.trim();
   const subagent =
     tool === "Agent" && detail
       ? detail.match(/\(([^)]+)\)\s*$/)?.[1] ?? detail.split(" ")[0]
@@ -437,82 +575,83 @@ function categorizeTool(tool: string): ParsedToolAction["category"] {
   return "read";
 }
 
-function summarizeToolActions(tools: ParsedToolAction[]): ActivityDetailBlock[] {
-  if (tools.length === 0) {
-    return [];
+function isTaskActivityLine(line: ThreadActivityLine): boolean {
+  const trimmed = line.message.trim();
+  if (trimmed.startsWith("@mission ")) {
+    return false;
+  }
+  if (parseProgressActionLine(trimmed)) {
+    return false;
+  }
+  return (
+    trimmed.includes("任务开始:") ||
+    trimmed.startsWith("Task started:") ||
+    (trimmed.includes("Task ") && /pending|running|completed/i.test(trimmed))
+  );
+}
+
+function parseProgressActionLine(message: string): ParsedToolAction | null {
+  const stripped = stripSubagentBracketPrefix(message.trim());
+  if (!stripped) {
+    return null;
   }
 
-  const reads = tools.filter((tool) => tool.category === "read");
-  const searches = tools.filter((tool) => tool.category === "search");
-  const edits = tools.filter((tool) => tool.category === "edit");
-  const runs = tools.filter((tool) => tool.category === "run");
-  const agents = tools.filter((tool) => tool.category === "agent");
-
-  const blocks: ActivityDetailBlock[] = [];
-
-  if (searches.length > 0 && runs.length > 0 && reads.length === 0 && edits.length === 0) {
-    blocks.push({
-      kind: "action",
-      icon: "search",
-      label: `已探索 ${searches.length} 次搜索 · 已运行 ${runs.length} 条命令`,
-    });
-  } else {
-    if (searches.length > 0) {
-      blocks.push({
-        kind: "action",
-        icon: "search",
-        label: searches.length === 1 ? "已探索 1 次搜索" : `已探索 ${searches.length} 次搜索`,
-      });
-    }
-
-    const exploreCount = reads.length;
-    if (exploreCount > 0) {
-      blocks.push({
-        kind: "action",
-        icon: "file",
-        label: exploreCount === 1 ? "已探索 1 个文件" : `已探索 ${exploreCount} 个文件`,
-      });
-    }
+  const toolLine = parseToolLine(stripped.startsWith("Tool:") ? stripped : `Tool: ${stripped}`);
+  if (toolLine) {
+    return toolLine;
   }
 
-  if (edits.length > 0) {
-    blocks.push({
-      kind: "action",
-      icon: "edit",
-      label: edits.length === 1 ? "已编辑 1 个文件" : `已编辑 ${edits.length} 个文件`,
-    });
+  const normalized = normalizeActivityActionLabel(stripped);
+  const readMatch = normalized.match(/^读取 · (.+)$/);
+  if (readMatch) {
+    return { tool: "Read", detail: readMatch[1], category: "read" };
+  }
+  const editMatch = normalized.match(/^编辑 · (.+)$/);
+  if (editMatch) {
+    return { tool: "Edit", detail: editMatch[1], category: "edit" };
   }
 
-  if (runs.length > 0 && !(searches.length > 0 && reads.length === 0 && edits.length === 0)) {
-    if (runs.length === 1 && runs[0]?.detail) {
-      blocks.push({
-        kind: "action",
-        icon: "terminal",
-        label: `已运行 ${runs[0].detail}`,
-      });
-    } else {
-      blocks.push({
-        kind: "action",
-        icon: "terminal",
-        label: runs.length === 1 ? "已运行 1 条命令" : `已运行 ${runs.length} 条命令`,
-      });
-    }
-  }
+  return null;
+}
 
-  if (agents.length > 0) {
-    const latest = agents[agents.length - 1];
-    const subagentLabel = latest?.subagent ? formatSubagentLabel(latest.subagent) : "子代理";
-    blocks.push({
-      kind: "action",
-      icon: "agent",
-      label:
-        agents.length === 1
-          ? `子代理 ${subagentLabel} 执行中`
-          : `已调用 ${agents.length} 个子代理（当前 ${subagentLabel}）`,
-    });
-  }
+const TOOL_VERB_LABELS: Record<string, string> = {
+  Read: "读取",
+  Write: "写入",
+  Edit: "编辑",
+  MultiEdit: "编辑",
+  Grep: "搜索",
+  Glob: "查找",
+  Bash: "运行命令",
+  Agent: "调用",
+  TodoWrite: "更新任务",
+  AskUserQuestion: "澄清问题",
+};
 
-  return blocks;
+function formatToolActionLabel(tool: ParsedToolAction): string {
+  const verb = TOOL_VERB_LABELS[tool.tool] ?? tool.tool;
+  if (tool.tool === "Agent") {
+    return "启动子代理";
+  }
+  if (tool.detail) {
+    return `${verb} · ${tool.detail}`;
+  }
+  return verb;
+}
+
+function iconForToolCategory(category: ParsedToolAction["category"]): ActivityActionIcon {
+  if (category === "search") {
+    return "search";
+  }
+  if (category === "edit") {
+    return "edit";
+  }
+  if (category === "run") {
+    return "terminal";
+  }
+  if (category === "agent") {
+    return "agent";
+  }
+  return "file";
 }
 
 export function splitNarrativeSegments(text: string): Array<{ type: "text" | "code"; value: string }> {

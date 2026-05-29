@@ -260,7 +260,9 @@ button:not(:disabled) {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   background: var(--bg-main);
 }
 
@@ -274,13 +276,17 @@ button:not(:disabled) {
 }
 
 .codex-main-scroll {
-  flex: 1;
+  flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 24px 16px;
+  padding: 0 24px;
+}
+
+.codex-main-scroll:has(.codex-hero) {
+  justify-content: center;
 }
 
 .codex-hero {
@@ -295,17 +301,18 @@ button:not(:disabled) {
 
 .activity-feed {
   display: flex;
-  flex: 1;
+  flex: 1 1 0%;
   flex-direction: column;
   width: 100%;
   max-width: 720px;
   min-height: 0;
+  overflow: hidden;
+  align-self: stretch;
 }
 
 .activity-messages {
-  flex: 1;
+  flex: 1 1 0%;
   min-height: 0;
-  max-height: min(560px, calc(100vh - var(--window-chrome-top) - 280px));
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1675,6 +1682,17 @@ button:not(:disabled) {
 .work-session-label {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.work-session-mission {
+  color: #d4d4d4;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 
 .work-session-chevron {
@@ -1694,6 +1712,85 @@ button:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.work-session-preview {
+  margin: 4px 0 0 16px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid #333;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #8a8a8a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.work-session-preview li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-mission {
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.run-log-mission-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.run-log-mission-role {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.run-log-mission-tag {
+  color: #737373;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.run-log-mission-summary {
+  margin: 0;
+  color: #f0f0f0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.run-log-mission-details {
+  margin-top: 8px;
+  color: #a3a3a3;
+  font-size: 12px;
+}
+
+.run-log-mission-details summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.run-log-mission-prompt {
+  margin: 8px 0 0;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #d4d4d4;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .run-log-narrative.compact p {
@@ -1737,11 +1834,27 @@ button:not(:disabled) {
 
 .run-log-action {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #8a8a8a;
+  align-items: flex-start;
+  gap: 8px;
+  color: #c8c8c8;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+
+.run-log-action-role {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.run-log-action-label {
+  min-width: 0;
+  word-break: break-word;
 }
 
 .run-log-action-icon {
@@ -1848,10 +1961,10 @@ button:not(:disabled) {
 
 /* —— Composer —— */
 .codex-composer-wrap {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   display: flex;
   justify-content: center;
-  padding: 0 24px 28px;
+  padding: 8px 24px 16px;
 }
 
 .codex-composer {

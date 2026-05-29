@@ -26,6 +26,7 @@ import {
   resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
+import { parseSubagentMissionMessage } from "../src/agent-mission";
 
 const routes: ResolvedModelRoute[] = [
   {
@@ -302,7 +303,7 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
   });
   expect(toolDisplay).toEqual({
     message: "Tool: Read · styles.css",
-    role: "tool",
+    role: "coder",
     stream: false,
   });
 
@@ -328,11 +329,10 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
       input: { subagent_type: "coder", prompt: "Add markdown rendering" },
     },
   });
-  expect(agentDisplay).toEqual({
-    message: "Tool: Agent · 编码 (coder) · Add markdown rendering",
-    role: "coder",
-    stream: false,
-  });
+  expect(agentDisplay?.role).toBe("coder");
+  const mission = parseSubagentMissionMessage(agentDisplay?.message ?? "");
+  expect(mission?.role).toBe("coder");
+  expect(mission?.summary).toContain("markdown");
 
   expect(
     mapSdkMessageToEvents(

@@ -198,6 +198,13 @@ export * from "./claude-agent-sdk";
 export * from "./ask-user-question";
 export { mergeStreamText } from "./stream-text";
 export {
+  formatSubagentMissionMessage,
+  missionFromAgentToolDetail,
+  parseSubagentMissionMessage,
+  summarizeAgentObjective,
+  type SubagentMissionPayload,
+} from "./agent-mission";
+export {
   estimateContextTokens,
   formatRoleModelLabel,
   formatTokenCount,

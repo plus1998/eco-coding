@@ -102,12 +102,10 @@ export function formatRoleModelLabel(role: string, modelId?: string): string {
   };
   const base = roleLabels[role] ?? role;
   if (!modelId?.trim()) {
-    return role === "planner" || role === "architect" || role === "coder" || role === "reviewer" || role === "tester"
-      ? `${base} (${role})`
-      : base;
+    return base;
   }
   const shortModel = shortenModelId(modelId.trim());
-  return `${base} (${shortModel})`;
+  return `${base} · ${shortModel}`;
 }
 
 export function shortenModelId(modelId: string): string {

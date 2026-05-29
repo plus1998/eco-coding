@@ -1,0 +1,65 @@
+/** Normalize activity line text for display (strip redundant subagent prefixes). */
+
+const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
+
+const PROGRESS_PATTERNS: Array<{ pattern: RegExp; verb: string }> = [
+  { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i, verb: "读取" },
+  { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i, verb: "写入" },
+  { pattern: /^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$/i, verb: "编辑" },
+  { pattern: /^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$/i, verb: "搜索" },
+  { pattern: /^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$/i, verb: "运行命令" },
+];
+
+export function stripSubagentBracketPrefix(text: string): string {
+  return text.replace(SUBAGENT_BRACKET_PREFIX, "").trim();
+}
+
+export function pathBasename(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? filePath;
+}
+
+export function normalizeActivityActionLabel(raw: string): string {
+  let text = stripSubagentBracketPrefix(raw.trim());
+  if (!text) {
+    return raw.trim();
+  }
+
+  for (const { pattern, verb } of PROGRESS_PATTERNS) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return `${verb} · ${pathBasename(match[1].trim())}`;
+    }
+  }
+
+  const toolMatch = text.match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/);
+  if (toolMatch) {
+    const tool = toolMatch[1] ?? "";
+    const detail = toolMatch[2]?.trim() ?? toolMatch[3]?.trim();
+    const verb = TOOL_VERB_LABELS[tool] ?? tool;
+    if (detail) {
+      return `${verb} · ${detail}`;
+    }
+    return verb;
+  }
+
+  return text;
+}
+
+export function activityActionKey(subagent: string | undefined, label: string): string {
+  return `${subagent ?? ""}\0${normalizeActivityActionLabel(label)}`;
+}
+
+const TOOL_VERB_LABELS: Record<string, string> = {
+  Read: "读取",
+  Write: "写入",
+  Edit: "编辑",
+  MultiEdit: "编辑",
+  Grep: "搜索",
+  Glob: "查找",
+  Bash: "运行命令",
+  Agent: "调用",
+  TodoWrite: "更新任务",
+  AskUserQuestion: "澄清问题",
+};

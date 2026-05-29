@@ -122,7 +122,12 @@ function WorkSessionBlock({
         disabled={block.running && block.children.length === 0}
       >
         <span className={`work-session-dot${block.running ? " running" : ""}`} />
-        <span className="work-session-label">{label}</span>
+        <span className="work-session-label">
+          {label}
+          {block.activeMissionSummary ? (
+            <span className="work-session-mission">{block.activeMissionSummary}</span>
+          ) : null}
+        </span>
         {!block.running && block.children.length > 0 ? (
           <ChevronDown size={16} className={expanded ? "work-session-chevron" : "work-session-chevron collapsed"} />
         ) : null}
@@ -138,6 +143,23 @@ function WorkSessionBlock({
             />
           ))}
         </div>
+      ) : null}
+      {!expanded && !block.running && block.children.length > 0 ? (
+        <ul className="work-session-preview" aria-label="步骤摘要">
+          {block.children
+            .filter(
+              (child) =>
+                child.kind === "action" || child.kind === "phase" || child.kind === "subagent-mission",
+            )
+            .slice(-4)
+            .map((child, index) => (
+              <li key={`preview-${index}`}>
+                {child.kind === "subagent-mission"
+                  ? `${formatRoleModelLabel(child.subagent, modelByRole?.[child.subagent])}：${child.summary}`
+                  : child.label}
+              </li>
+            ))}
+        </ul>
       ) : null}
     </section>
   );
@@ -155,8 +177,25 @@ function DetailBlock({
   if (block.kind === "phase") {
     return <div className="run-log-phase">{block.label}</div>;
   }
+  if (block.kind === "subagent-mission") {
+    return (
+      <SubagentMissionBlock
+        subagent={block.subagent}
+        summary={block.summary}
+        prompt={block.prompt}
+        {...(modelByRole && { modelByRole })}
+      />
+    );
+  }
   if (block.kind === "action") {
-    return <RunLogAction icon={block.icon} label={block.label} />;
+    return (
+      <RunLogAction
+        icon={block.icon}
+        label={block.label}
+        {...(block.subagent && { subagent: block.subagent })}
+        {...(modelByRole && { modelByRole })}
+      />
+    );
   }
   return (
     <RunLogNarrative
@@ -221,12 +260,57 @@ function AssistantMessageBlock({
   );
 }
 
-function RunLogAction({ icon, label }: { icon: ActivityActionIcon; label: string }) {
+function SubagentMissionBlock({
+  subagent,
+  summary,
+  prompt,
+  modelByRole,
+}: {
+  subagent: string;
+  summary: string;
+  prompt?: string;
+  modelByRole?: Record<string, string>;
+}) {
+  const showPrompt = Boolean(prompt && prompt.trim() && prompt.trim() !== summary.trim());
+
+  return (
+    <div className="run-log-mission">
+      <div className="run-log-mission-head">
+        <span className="run-log-mission-role">
+          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+        </span>
+        <span className="run-log-mission-tag">任务目标</span>
+      </div>
+      <p className="run-log-mission-summary">{summary}</p>
+      {showPrompt ? (
+        <details className="run-log-mission-details">
+          <summary>查看完整任务说明</summary>
+          <pre className="run-log-mission-prompt">{prompt}</pre>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function RunLogAction({
+  icon,
+  label,
+  subagent,
+  modelByRole,
+}: {
+  icon: ActivityActionIcon;
+  label: string;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+}) {
   const Icon = actionIcons[icon];
   return (
     <div className="run-log-action">
+      {subagent ? (
+        <span className="run-log-action-role">{formatRoleModelLabel(subagent, modelByRole?.[subagent])}</span>
+      ) : null}
       <Icon size={16} className="run-log-action-icon" aria-hidden />
-      <span>{label}</span>
+      <span className="run-log-action-label">{label}</span>
     </div>
   );
 }

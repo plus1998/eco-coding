@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { formatSubagentMissionMessage } from "@eco/runtime";
 import { buildActivityLogBlocks } from "../src/renderer/activity-log";
 
 test("groups narrative and compact tool summaries into collapsible work session", () => {
@@ -20,7 +21,9 @@ test("groups narrative and compact tool summaries into collapsible work session"
     return;
   }
   expect(session.defaultCollapsed).toBe(true);
-  expect(session.children.some((child) => child.kind === "action")).toBe(true);
+  expect(session.children.some((child) => child.kind === "action" && child.label.includes("styles.css"))).toBe(
+    true,
+  );
   const summary = blocks.find((block) => block.kind === "assistant-message");
   expect(summary?.kind).toBe("assistant-message");
   if (summary?.kind === "assistant-message") {
@@ -108,6 +111,59 @@ test("shows user prompt as a preserved node", () => {
     return;
   }
   expect(userBlock.text).toBe("给导出接口加筛选参数\n第二行保留");
+});
+
+test("shows subagent mission before tool steps", () => {
+  const missionLine = formatSubagentMissionMessage(
+    "reviewer",
+    "Review code changes for the export API.\nFiles changed: src/api.ts",
+  );
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "reviewer", message: "Tool: Read · src/api.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const mission = session.children.find((child) => child.kind === "subagent-mission");
+  expect(mission?.kind).toBe("subagent-mission");
+  if (mission?.kind === "subagent-mission") {
+    expect(mission.subagent).toBe("reviewer");
+    expect(mission.summary).toContain("src/api.ts");
+  }
+  expect(session.activeMissionSummary).toContain("src/api.ts");
+});
+
+test("shows each subagent tool step with role and target", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "implement" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "coder", message: "Tool: Read · src/api.ts" },
+      { id: "3", role: "coder", message: "Tool: Edit · src/api.ts" },
+      { id: "4", role: "reviewer", message: "Tool: Read · src/api.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const actions = session.children.filter((child) => child.kind === "action");
+  expect(actions.length).toBeGreaterThanOrEqual(3);
+  const coderRead = actions.find(
+    (child) => child.kind === "action" && child.subagent === "coder" && child.label.includes("src/api.ts"),
+  );
+  expect(coderRead?.kind).toBe("action");
 });
 
 test("deduplicates repeated narrative separated by tool exploration", () => {
