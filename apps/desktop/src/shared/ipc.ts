@@ -13,6 +13,9 @@ export const IPC_CHANNELS = {
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
   threadGetPendingPlan: "thread:get-pending-plan",
+  clarificationGetPending: "clarification:get-pending",
+  clarificationSubmit: "clarification:submit",
+  clarificationDismiss: "clarification:dismiss",
   threadEventsSubscribe: "thread-events:subscribe",
   approvalResolve: "approval:resolve",
   modelProfilesList: "model-profiles:list",
@@ -154,6 +157,37 @@ export interface WorktreeApplyResult {
   message: string;
 }
 
+export interface ClarificationQuestionOption {
+  label: string;
+  description?: string;
+  /** Matches AskUserQuestion option hint; shown as （推荐） in UI */
+  recommended?: boolean;
+}
+
+export interface ClarificationQuestion {
+  question: string;
+  header?: string;
+  options: ClarificationQuestionOption[];
+  multiSelect?: boolean;
+}
+
+export interface ClarificationRequest {
+  toolUseId: string;
+  threadId: string;
+  questions: ClarificationQuestion[];
+}
+
+/** selections[i] = chosen option labels for question i */
+export interface ClarificationAnswers {
+  toolUseId: string;
+  selections: string[][];
+}
+
+export interface ClarificationSubmitPayload {
+  toolUseId: string;
+  selections: string[][];
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
@@ -161,6 +195,7 @@ export interface ThreadLiveEvent {
   role?: AgentRole | "system" | "thinking" | "tool";
   stream?: boolean;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
+  clarification?: ClarificationRequest;
 }
 
 export interface ThreadActivityLine {

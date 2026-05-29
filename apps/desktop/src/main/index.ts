@@ -5,11 +5,13 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   ClaudeAgentSdkDriver,
+  createAskUserQuestionHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
   type PlanReadyPayload,
+  type SdkToolPermissionRequest,
 } from "@eco/runtime";
 import type { ResolvedModelRoute } from "../../../packages/model-router/src/index.ts";
 import {
@@ -29,6 +31,7 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type RoleRouteConfig,
+  type ClarificationSubmitPayload,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadLiveEvent,
@@ -46,6 +49,15 @@ import { createMcpStore, type McpStore } from "./mcp-store";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
+import {
+  buildAskUserQuestionUpdatedInput,
+  buildIgnoredClarificationAnswers,
+  cancelClarificationsForThread,
+  getPendingClarificationByToolUseId,
+  getPendingClarificationForThread,
+  registerPendingClarification,
+  submitClarification,
+} from "./clarification-bridge";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
@@ -232,6 +244,45 @@ function registerIpcHandlers(): void {
     return { thread };
   });
 
+  ipcMain.handle(IPC_CHANNELS.clarificationGetPending, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return undefined;
+    }
+    return getPendingClarificationForThread(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clarificationDismiss, async (_event, toolUseId: unknown) => {
+    if (typeof toolUseId !== "string" || !toolUseId.trim()) {
+      throw new Error("Tool use id is required.");
+    }
+    const request = getPendingClarificationByToolUseId(toolUseId);
+    if (!request) {
+      throw new Error("No pending clarification for this tool use.");
+    }
+    const ok = submitClarification(toolUseId, buildIgnoredClarificationAnswers(request));
+    if (!ok) {
+      throw new Error("Failed to dismiss clarification.");
+    }
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clarificationSubmit, async (_event, payload: unknown) => {
+    if (!isClarificationSubmitPayload(payload)) {
+      throw new Error("Invalid clarification payload.");
+    }
+    if (!getPendingClarificationByToolUseId(payload.toolUseId)) {
+      throw new Error("No pending clarification for this tool use.");
+    }
+    const ok = submitClarification(payload.toolUseId, {
+      toolUseId: payload.toolUseId,
+      selections: payload.selections,
+    });
+    if (!ok) {
+      throw new Error("Failed to submit clarification.");
+    }
+    return { ok: true as const };
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadGetPendingPlan, async (_event, threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
@@ -336,6 +387,7 @@ function registerIpcHandlers(): void {
     }
     const active = activeRuns.get(threadId);
     if (active) {
+      cancelClarificationsForThread(threadId, "cancelled by user");
       active.controller.abort("cancelled by user");
       return;
     }
@@ -469,6 +521,7 @@ async function runCodingThreadPlanning(
       const driver = new ClaudeAgentSdkDriver({
         apiKey: modelProxy.apiKey,
         baseUrl: modelProxy.baseUrl,
+        canUseTool: createThreadCanUseTool(thread.id),
       });
 
       for await (const event of driver.run({
@@ -498,9 +551,11 @@ async function runCodingThreadPlanning(
             "planner",
             false,
             {
-              userPrompt: event.payload.userPrompt,
-              analysis: event.payload.analysis,
-              plan: event.payload.plan,
+              plan: {
+                userPrompt: event.payload.userPrompt,
+                analysis: event.payload.analysis,
+                plan: event.payload.plan,
+              },
             },
           );
         }
@@ -515,6 +570,7 @@ async function runCodingThreadPlanning(
     }
 
     if (controller.signal.aborted) {
+      cancelClarificationsForThread(thread.id, "cancelled by user");
       updateThread(thread.id, { status: "idle", message: "已取消。" });
       await cleanupWorktreeForThread(thread.id);
       return;
@@ -534,12 +590,14 @@ async function runCodingThreadPlanning(
     });
     await cleanupWorktreeForThread(thread.id);
   } catch (error) {
+    cancelClarificationsForThread(thread.id, errorMessage(error));
     updateThread(thread.id, {
       status: "failed",
       message: errorMessage(error),
     });
     await cleanupWorktreeForThread(thread.id);
   } finally {
+    cancelClarificationsForThread(thread.id, "run finished");
     activeRuns.delete(thread.id);
   }
 }
@@ -579,6 +637,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
       const driver = new ClaudeAgentSdkDriver({
         apiKey: modelProxy.apiKey,
         baseUrl: modelProxy.baseUrl,
+        canUseTool: createThreadCanUseTool(threadId),
       });
 
       if (!driver.runExecution) {
@@ -852,10 +911,13 @@ function emitThreadEvent(
   message: string,
   role: AgentRole | "system" | "thinking" | "tool" = "system",
   stream = false,
-  plan?: ThreadLiveEvent["plan"],
+  extras?: {
+    plan?: ThreadLiveEvent["plan"];
+    clarification?: ThreadLiveEvent["clarification"];
+  },
 ): void {
   const trimmed = message.trim();
-  if (!trimmed && !plan) {
+  if (!trimmed && !extras?.plan && !extras?.clarification) {
     return;
   }
 
@@ -874,13 +936,56 @@ function emitThreadEvent(
     role,
     stream,
   };
-  if (plan) {
-    payload.plan = plan;
+  if (extras?.plan) {
+    payload.plan = extras.plan;
+  }
+  if (extras?.clarification) {
+    payload.clarification = extras.clarification;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
+}
+
+function createThreadCanUseTool(threadId: string): (request: SdkToolPermissionRequest) => Promise<{
+  behavior: "allow";
+  updatedInput?: Record<string, unknown>;
+}> {
+  const askHandler = createAskUserQuestionHandler(async (parsed) => {
+    updateThread(threadId, { status: "running", message: "等待你的回答…" });
+    const clarificationRequest: ThreadLiveEvent["clarification"] = {
+      toolUseId: parsed.toolUseId,
+      threadId,
+      questions: parsed.questions,
+    };
+    emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
+      clarification: clarificationRequest,
+    });
+    const answers = await registerPendingClarification(threadId, parsed.toolUseId, parsed);
+    updateThread(threadId, { status: "running", message: "正在分析并制定计划…" });
+    return buildAskUserQuestionUpdatedInput(clarificationRequest, answers);
+  });
+
+  return async (request) => {
+    const decision = await askHandler(request);
+    if (decision.behavior === "deny") {
+      throw new Error(decision.message);
+    }
+    return decision;
+  };
+}
+
+function isClarificationSubmitPayload(value: unknown): value is ClarificationSubmitPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as ClarificationSubmitPayload;
+  return (
+    typeof payload.toolUseId === "string" &&
+    payload.toolUseId.trim().length > 0 &&
+    Array.isArray(payload.selections)
+  );
 }
 
 function emitSettingsUpdated(): void {

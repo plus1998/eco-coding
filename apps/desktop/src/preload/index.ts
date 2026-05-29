@@ -12,6 +12,9 @@ import {
   type ProviderConfigView,
   type RoleRouteConfig,
   type SkillsListResult,
+  type ClarificationAnswers,
+  type ClarificationRequest,
+  type ClarificationSubmitPayload,
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
@@ -70,6 +73,15 @@ const api = {
   },
   getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);
+  },
+  getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);
+  },
+  submitClarification(payload: ClarificationSubmitPayload): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clarificationSubmit, payload);
+  },
+  dismissClarification(toolUseId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.clarificationDismiss, toolUseId);
   },
   approvePlan(threadId: string): Promise<{ thread?: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, threadId);

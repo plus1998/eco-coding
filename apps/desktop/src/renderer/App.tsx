@@ -21,6 +21,7 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type SkillsListResult,
+  type ClarificationRequest,
   type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadPendingPlan,
@@ -34,6 +35,7 @@ import { resolveActiveSubagent } from "./activity-log";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import "./styles.css";
 
@@ -76,6 +78,8 @@ function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [planActionBusy, setPlanActionBusy] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<ThreadPendingPlan>();
+  const [pendingClarification, setPendingClarification] = useState<ClarificationRequest>();
+  const [clarificationBusy, setClarificationBusy] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -139,6 +143,10 @@ function App() {
         });
       }
 
+      if (event.type === "clarification.requested" && event.clarification) {
+        setPendingClarification(event.clarification);
+      }
+
       appendActivityLine(event.threadId, {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role: event.role ?? "system",
@@ -170,6 +178,12 @@ function App() {
           return;
         }
         setPendingPlan(plan);
+      });
+      void window.eco.getPendingClarification(selectedThreadId).then((clarification) => {
+        if (cancelled) {
+          return;
+        }
+        setPendingClarification(clarification);
       });
     }
 
@@ -269,9 +283,18 @@ function App() {
   const threadAcceptsInput =
     !activeThread || activeThread.status === "idle" || activeThread.status === "completed";
   const canSend = Boolean(
-    currentProjectPath && prompt.trim() && routesReady && !isStarting && !planActionBusy && threadAcceptsInput,
+    currentProjectPath &&
+      prompt.trim() &&
+      routesReady &&
+      !isStarting &&
+      !planActionBusy &&
+      !clarificationBusy &&
+      !pendingClarification &&
+      threadAcceptsInput,
   );
   const showPlanApproval = activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
+  const showClarification =
+    pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
 
   const plannerModelLabel = useMemo(() => {
@@ -415,6 +438,34 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setPlanActionBusy(false);
+    }
+  }
+
+  async function submitClarificationAnswers(answers: { toolUseId: string; selections: string[][] }) {
+    if (!window.eco) return;
+    setClarificationBusy(true);
+    setError(undefined);
+    try {
+      await window.eco.submitClarification(answers);
+      setPendingClarification(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setClarificationBusy(false);
+    }
+  }
+
+  async function dismissPendingClarification() {
+    if (!pendingClarification || !window.eco) return;
+    setClarificationBusy(true);
+    setError(undefined);
+    try {
+      await window.eco.dismissClarification(pendingClarification.toolUseId);
+      setPendingClarification(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setClarificationBusy(false);
     }
   }
 
@@ -625,6 +676,14 @@ function App() {
                   </div>
                 ) : null}
                 <ActivityLogView lines={activityLines} thread={activeThread} />
+                {showClarification && pendingClarification ? (
+                  <ClarificationPanel
+                    request={pendingClarification}
+                    busy={clarificationBusy}
+                    onSubmit={submitClarificationAnswers}
+                    onDismiss={() => void dismissPendingClarification()}
+                  />
+                ) : null}
                 {showPlanApproval && pendingPlan && (
                   <PlanApprovalPanel
                     plan={pendingPlan}
@@ -647,11 +706,13 @@ function App() {
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               placeholder={
-                activeThread?.status === "awaiting_plan"
-                  ? "请先确认或忽略上方计划"
-                  : activeThread?.status === "idle"
-                    ? "继续对话…"
-                    : "尽管问"
+                pendingClarification
+                  ? "请先在上方回答问题"
+                  : activeThread?.status === "awaiting_plan"
+                    ? "请先确认或忽略上方计划"
+                    : activeThread?.status === "idle"
+                      ? "继续对话…"
+                      : "尽管问"
               }
               disabled={Boolean(activeThread && !threadAcceptsInput)}
               rows={2}

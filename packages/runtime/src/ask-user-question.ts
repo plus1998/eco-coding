@@ -1,0 +1,115 @@
+import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./claude-agent-sdk";
+
+export interface SdkAskUserQuestionOption {
+  label: string;
+  description?: string;
+  recommended?: boolean;
+}
+
+export interface SdkAskUserQuestionItem {
+  question: string;
+  header?: string;
+  options: SdkAskUserQuestionOption[];
+  multiSelect?: boolean;
+}
+
+export interface SdkAskUserQuestionRequest {
+  questions: SdkAskUserQuestionItem[];
+  rawInput: Record<string, unknown>;
+}
+
+export type SdkToolPermissionHandler = (
+  request: SdkToolPermissionRequest,
+) => Promise<SdkToolPermissionDecision>;
+
+export function parseAskUserQuestionInput(input: Record<string, unknown>): SdkAskUserQuestionRequest {
+  const questions: SdkAskUserQuestionItem[] = [];
+  const raw = input.questions;
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const question = typeof entry.question === "string" ? entry.question.trim() : "";
+      if (!question) {
+        continue;
+      }
+      const options: SdkAskUserQuestionOption[] = [];
+      if (Array.isArray(entry.options)) {
+        for (const opt of entry.options) {
+          if (!isRecord(opt)) {
+            continue;
+          }
+          const label = typeof opt.label === "string" ? opt.label.trim() : "";
+          if (!label) {
+            continue;
+          }
+          options.push({
+            label,
+            ...(typeof opt.description === "string" && opt.description.trim()
+              ? { description: opt.description.trim() }
+              : {}),
+            ...(opt.recommended === true ? { recommended: true } : {}),
+          });
+        }
+      }
+      questions.push({
+        question,
+        ...(typeof entry.header === "string" && entry.header.trim() ? { header: entry.header.trim() } : {}),
+        options: options.length > 0 ? options : [{ label: "Continue" }],
+        ...(entry.multiSelect === true ? { multiSelect: true } : {}),
+      });
+    }
+  }
+
+  if (questions.length === 0 && typeof input.question === "string" && input.question.trim()) {
+    questions.push({
+      question: input.question.trim(),
+      options: [{ label: "OK" }],
+    });
+  }
+
+  return { questions, rawInput: input };
+}
+
+export function createAskUserQuestionHandler(
+  delegate: (request: SdkAskUserQuestionRequest & { toolUseId: string }) => Promise<Record<string, unknown>>,
+): SdkToolPermissionHandler {
+  return async (request) => {
+    if (request.toolName !== "AskUserQuestion") {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+
+    const parsed = parseAskUserQuestionInput(request.input);
+    const updatedInput = await delegate({
+      ...parsed,
+      toolUseId: request.toolUseId,
+    });
+    return { behavior: "allow", updatedInput };
+  };
+}
+
+export function composeCanUseToolHandlers(
+  ...handlers: SdkToolPermissionHandler[]
+): SdkToolPermissionHandler {
+  return async (request) => {
+    let decision: SdkToolPermissionDecision = { behavior: "allow", updatedInput: request.input };
+
+    for (const handler of handlers) {
+      decision = await handler(request);
+      if (decision.behavior === "deny") {
+        return decision;
+      }
+      if (request.toolName === "AskUserQuestion" && decision.updatedInput !== undefined) {
+        return decision;
+      }
+    }
+
+    return decision;
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

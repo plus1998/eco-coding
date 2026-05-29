@@ -19,7 +19,10 @@ export function PlanApprovalPanel({
     <section className="plan-approval" aria-label="实施计划">
       <header className="plan-approval-header">
         <h3>实施计划</h3>
-        <p>确认后将进入执行阶段并分配子代理（架构 / 编码 / 审查 / 测试）。</p>
+        <p>
+          确认后 Planner 将按流程执行：复杂需求先由 Architect 拆分任务，再并行 Coder 实现，最后 Reviewer
+          审查与 Tester 测试；简单需求将跳过 Architect。
+        </p>
       </header>
       {failureMessage && (
         <div className="plan-approval-error" role="alert">

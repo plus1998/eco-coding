@@ -6,8 +6,10 @@ import {
   buildPlanningPhasePrompt,
   createAgentDefinitions,
   createCanUseTool,
+  createExecutionAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
+  executePhaseSystemAppend,
   extractSdkRunFailure,
   formatAgentEventDisplay,
   formatAgentEventLine,
@@ -17,6 +19,7 @@ import {
   mapSdkMessageToEvents,
   buildSdkProcessEnv,
   mergeAllowedTools,
+  planningPhaseSystemAppend,
   resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
@@ -109,8 +112,15 @@ test("creates native SDK subagent definitions", () => {
   const definitions = createAgentDefinitions(routes);
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
-    description: expect.stringContaining("Execution phase only"),
+    description: expect.stringContaining("exactly one subtask"),
     model: "qwen-coder-anthropic",
+  });
+});
+
+test("execution architect prompt requires Coder Tasks section", () => {
+  const definitions = createExecutionAgentDefinitions(routes);
+  expect(definitions.architect).toMatchObject({
+    prompt: expect.stringContaining("## Coder Tasks"),
   });
 });
 
@@ -119,9 +129,14 @@ test("builds phased orchestration prompts", () => {
   const analysis = "## 分析结果\n\nNeed to extend styles.css";
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Explore the repo");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
+  expect(planningPhaseSystemAppend).toContain("AskUserQuestion");
+  expect(planningPhaseSystemAppend).toContain("mandatory");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
+  expect(executePhaseSystemAppend).toContain("Architect (conditional)");
+  expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Execute the plan");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("pipeline step 1");
 });
 
 test("formats eco phase boundary events", () => {
@@ -239,6 +254,19 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     stream: false,
   });
 
+  const askDisplay = formatAgentEventDisplay({
+    type: "tool.started",
+    role: "planner",
+    payload: {
+      type: "tool_use",
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [{ question: "导出未建联名单要按哪个建联口径筛选？", options: [{ label: "A" }] }],
+      },
+    },
+  });
+  expect(askDisplay?.message).toContain("导出未建联");
+
   const agentDisplay = formatAgentEventDisplay({
     type: "tool.started",
     role: "planner",
@@ -249,7 +277,7 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     },
   });
   expect(agentDisplay).toEqual({
-    message: "Tool: Agent · 编码 (coder)",
+    message: "Tool: Agent · 编码 (coder) · Add markdown rendering",
     role: "coder",
     stream: false,
   });

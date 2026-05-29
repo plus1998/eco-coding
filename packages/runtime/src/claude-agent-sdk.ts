@@ -24,9 +24,8 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
-const readOnlyTools = ["Read", "Glob", "Grep"] as const;
-/** Read-only Eco phases: avoid Claude Code interactive plan mode (ExitPlanMode). */
-const readOnlyPermissionMode = "dontAsk" as const;
+const planningAllowedTools = ["Read", "Glob", "Grep", "AskUserQuestion"] as const;
+const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
 const defaultSkillsMode = "all" as const;
 
@@ -94,7 +93,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         permissionMode: "acceptEdits",
         allowedTools: [...defaultAllowedTools],
         phaseAppend: "",
-        includeAgents: true,
+        agents: createExecutionAgentDefinitions(input.routes),
       });
       return;
     }
@@ -112,7 +111,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
       phaseAppend: executePhaseSystemAppend,
-      includeAgents: true,
+      agents: createExecutionAgentDefinitions(input.routes),
     });
   }
 
@@ -120,10 +119,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
     const planningTranscript = yield* this.runSingleSession(input, {
       prompt: buildPlanningPhasePrompt(input.prompt),
-      permissionMode: readOnlyPermissionMode,
-      allowedTools: [...readOnlyTools],
+      permissionMode: planningPermissionMode,
+      allowedTools: [...planningAllowedTools],
       phaseAppend: planningPhaseSystemAppend,
-      includeAgents: false,
     });
     if (input.signal.aborted) {
       return;
@@ -142,10 +140,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     phase: {
       prompt: string;
-      permissionMode: "dontAsk" | "acceptEdits";
+      permissionMode: "dontAsk" | "default" | "acceptEdits";
       allowedTools: string[];
       phaseAppend: string;
-      includeAgents: boolean;
+      agents?: Record<string, unknown>;
     },
   ): AsyncGenerator<AgentEvent, string> {
     const sdk = await this.loadSdk();
@@ -191,8 +189,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       queryOptions.mcpServers = session.mcpServers;
     }
 
-    if (phase.includeAgents) {
-      queryOptions.agents = createAgentDefinitions(input.routes);
+    if (phase.agents) {
+      queryOptions.agents = phase.agents;
     }
 
     if (this.options.maxTurns !== undefined) {
@@ -233,31 +231,62 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 }
 
+/** @deprecated Use createExecutionAgentDefinitions */
 export function createAgentDefinitions(routes: readonly ResolvedModelRoute[]): Record<string, unknown> {
+  return createExecutionAgentDefinitions(routes);
+}
+
+export function createPlanningAgentDefinitions(routes: readonly ResolvedModelRoute[]): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
 
   return {
     architect: {
       description:
-        "Execution phase only: inspect the repo and refine strategy when the approved plan needs structural guidance.",
+        "Planning phase only: optional read-only architecture review when the request needs early structural guidance. Do not produce coder task lists.",
       tools: ["Read", "Glob", "Grep"],
-      prompt: "Follow the approved plan. Inspect the codebase only when needed and return concise guidance.",
+      prompt:
+        "Review architecture implications for the user request. Return concise guidance only. Do not implement code or produce ## Coder Tasks.",
+      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
+    },
+  };
+}
+
+export function createExecutionAgentDefinitions(routes: readonly ResolvedModelRoute[]): Record<string, unknown> {
+  const routeByRole = new Map(routes.map((route) => [route.role, route]));
+
+  return {
+    architect: {
+      description:
+        "Use when the approved plan needs architecture decisions or multi-area work breakdown. Returns a structured task list for parallel coders. Skip for trivial single-scope changes.",
+      tools: ["Read", "Glob", "Grep"],
+      prompt: [
+        "You are an architecture agent. Given the approved plan:",
+        "1. Propose or refine architecture (modules, boundaries, risks).",
+        "2. Break work into independent coder subtasks (file/module boundaries, no overlap).",
+        '3. End with a section exactly titled "## Coder Tasks" containing a numbered list.',
+        "Each item: title, scope, files/areas, dependencies (if any), parallel_group (same letter = may run in parallel).",
+        "Do not implement code. Do not spawn subagents.",
+      ].join("\n"),
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
     },
     coder: {
-      description: "Execution phase only: implement approved plan steps with focused code edits in the worktree.",
+      description: "Executes exactly one subtask from the Planner delegation prompt.",
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
-      prompt: "Implement the approved plan with patch-based edits. Report changed files.",
+      prompt: [
+        "You are an execution agent. Implement only the single subtask in the delegation prompt.",
+        "Report files changed and blockers. Do not spawn subagents.",
+      ].join("\n"),
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
     },
     reviewer: {
-      description: "Execution phase only: review the diff for correctness, safety, and missing tests.",
+      description: "Pipeline step 4: review implementation against the approved plan after all coders finish.",
       tools: ["Read", "Glob", "Grep", "Bash"],
-      prompt: "Review changes against the approved plan. List blocking issues before completion.",
+      prompt:
+        "Review changes against the approved plan and architect task list. List blocking issues before testing.",
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
     },
     tester: {
-      description: "Execution phase only: run targeted tests and explain failures.",
+      description: "Pipeline step 5: run targeted tests after review.",
       tools: ["Read", "Bash", "Glob", "Grep"],
       prompt: "Run the narrowest useful tests for the approved plan and summarize failures with next actions.",
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
@@ -292,20 +321,47 @@ export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
 }
 
-const planningPhaseSystemAppend = [
+export const planningPhaseSystemAppend = [
   "Eco orchestration phase 1/2 — PLAN (read-only).",
-  "Explore the codebase with Read, Glob, and Grep as needed, then write the implementation plan in one pass.",
-  "Do NOT call the Agent tool. Do NOT modify files. Do NOT start implementation.",
-  "Do NOT use ExitPlanMode or Claude Code plan mode tools — Eco shows your plan for user approval.",
+  "You are the planning agent (Planner). Your job is to:",
+  "1. Analyze the requirements.",
+  "2. Read relevant code and documentation (Read, Glob, Grep).",
+  "3. Resolve product/business ambiguity with AskUserQuestion BEFORE writing ## Implementation Plan.",
+  "4. Create a high-level implementation plan for human approval.",
+  "",
+  "AskUserQuestion rules (mandatory when any apply):",
+  "- Two or more valid product interpretations (e.g. 未建联 vs 售后未建联, export scope, partition rules).",
+  "- Code suggests conflicting definitions between UI labels, comments, and service logic.",
+  "- The user request omits a filter, export field, or scope that materially changes the outcome.",
+  "- Do NOT silently guess a business rule because you found one code path — ask.",
+  "- Provide 2–4 concrete options per question; set recommended: true on the best default when possible.",
+  "- You may include 1–3 questions in one AskUserQuestion call (questions array).",
+  "- Include a final option like “否，请说明希望如何调整” when users may reject all presets.",
+  "",
   "Optional brief findings: ## Analysis Result (or ## 分析结果).",
-  "Required: ## Implementation Plan (or ## 实现计划) — only content from that heading is shown in the approval UI.",
-  "Include numbered steps, files/areas, verification, and rollback notes.",
+  "Required: ## Implementation Plan (or ## 实现计划) — high-level only; do NOT produce coder-level task splits here (that happens in execution).",
+  "Include goals, scope, risks, verification approach, and rollback notes.",
+  "Do NOT call Agent(coder), Agent(reviewer), or Agent(tester). Do NOT modify files. Do NOT use ExitPlanMode.",
+  "Coder-level breakdown happens in execution (Architect or Planner for small tasks).",
 ].join("\n");
 
-const executePhaseSystemAppend = [
+export const executePhaseSystemAppend = [
   "Eco orchestration phase 2/2 — EXECUTE.",
-  "The analysis and detailed plan are authoritative. Implement by delegating to subagents (architect, coder, reviewer, tester) via the Agent tool when appropriate.",
-  "Do not replan from scratch unless the plan is blocked; extend the plan minimally if discoveries require it.",
+  "You are the orchestrator (Planner). Follow this pipeline strictly:",
+  "",
+  "1. Architect (conditional): If the approved plan is NOT small/trivial, call Agent(architect) with the full plan and analysis.",
+  '   Wait for "## Coder Tasks". If small (single focused change), skip architect and derive the task list yourself.',
+  "",
+  '2. Task list: Parse "## Coder Tasks" (or your own list). Each item becomes one coder delegation.',
+  "",
+  "3. Coders (parallel): For items with the same parallel_group or no dependencies, spawn multiple Agent(coder) calls in one turn.",
+  "",
+  "4. Reviewer: After all coders finish, call Agent(reviewer) with the plan and change summary.",
+  "",
+  "5. Tester: After review, call Agent(tester).",
+  "",
+  "Never ask a subagent to spawn another subagent. You alone coordinate the pipeline.",
+  "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
 ].join("\n");
 
 export function buildPlanningPhasePrompt(userPrompt: string): string {
@@ -313,7 +369,8 @@ export function buildPlanningPhasePrompt(userPrompt: string): string {
     "User request:",
     userPrompt.trim(),
     "",
-    "Task: Explore the repo if needed, then produce a detailed implementation plan the execution phase must follow.",
+    "Task: Explore the repo (non-destructive). If you find ambiguous product rules or export/filter scope, call AskUserQuestion with concrete options before drafting the plan.",
+    "Then produce a high-level implementation plan for user approval. Do not implement or split coder-level tasks yet.",
   ].join("\n");
 }
 
@@ -338,7 +395,7 @@ export function buildExecutePhasePrompt(userPrompt: string, analysis: string, pl
     "Approved plan (follow this):",
     plan.trim() || "(no plan captured)",
     "",
-    "Task: Execute the plan. Use subagents for specialized work. Apply changes in the worktree.",
+    "Task: Start at pipeline step 1 (Architect or skip for small scope), then parallel coders, reviewer, tester.",
   ].join("\n");
 }
 
@@ -933,13 +990,34 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
     return null;
   }
 
+  if (toolName === "AskUserQuestion") {
+    if (!isRecord(input) || !Array.isArray(input.questions)) {
+      return "澄清问题";
+    }
+    const count = input.questions.length;
+    const first = input.questions[0];
+    if (isRecord(first) && typeof first.question === "string") {
+      const preview = first.question.trim();
+      const short = preview.length > 48 ? `${preview.slice(0, 45)}…` : preview;
+      return count > 1 ? `澄清 ${count} 个问题 · ${short}` : short;
+    }
+    return count > 1 ? `澄清 ${count} 个问题` : "澄清问题";
+  }
+
   if (toolName === "Agent") {
     const subagent =
       (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
       (typeof input.agent_type === "string" && input.agent_type.trim()) ||
       undefined;
     if (subagent) {
-      return formatSubagentLabel(subagent);
+      const label = formatSubagentLabel(subagent);
+      const taskPrompt =
+        typeof input.prompt === "string" && input.prompt.trim() ? input.prompt.trim() : "";
+      if (taskPrompt) {
+        const summary = taskPrompt.length > 60 ? `${taskPrompt.slice(0, 57)}…` : taskPrompt;
+        return `${label} · ${summary}`;
+      }
+      return label;
     }
   }
 
