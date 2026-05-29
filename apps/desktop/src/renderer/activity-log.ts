@@ -47,6 +47,7 @@ export function buildActivityLogBlocks(
   let narrativeStreaming = false;
   let narrativeSubagent: string | undefined;
   let pendingTools: ParsedToolAction[] = [];
+  const recentNarratives: string[] = [];
 
   const flushNarrative = () => {
     const text = narrative.trim();
@@ -55,6 +56,16 @@ export function buildActivityLogBlocks(
       narrativeStreaming = false;
       narrativeSubagent = undefined;
       return;
+    }
+    if (isRepeatedNarrative(text, recentNarratives)) {
+      narrative = "";
+      narrativeStreaming = false;
+      narrativeSubagent = undefined;
+      return;
+    }
+    recentNarratives.push(normalizeNarrative(text));
+    if (recentNarratives.length > 6) {
+      recentNarratives.shift();
     }
     blocks.push({
       kind: "narrative",
@@ -127,6 +138,33 @@ export function buildActivityLogBlocks(
   flushNarrative();
   flushTools();
   return blocks;
+}
+
+function isRepeatedNarrative(text: string, recentNarratives: readonly string[]): boolean {
+  const normalized = normalizeNarrative(text);
+  if (!normalized) {
+    return true;
+  }
+  const firstSentence = normalized.split(/[.!?。！？]/)[0]?.trim() ?? normalized;
+  const compactFirstSentence = firstSentence.replace(/\s+/g, "");
+
+  return recentNarratives.some((recent) => {
+    if (recent === normalized) {
+      return true;
+    }
+    const recentFirstSentence = recent.split(/[.!?。！？]/)[0]?.trim() ?? recent;
+    if (firstSentence.length >= 18 && recentFirstSentence === firstSentence) {
+      return true;
+    }
+    return (
+      compactFirstSentence.startsWith("nowihaveenoughcontext") &&
+      recentFirstSentence.replace(/\s+/g, "").startsWith("nowihaveenoughcontext")
+    );
+  });
+}
+
+function normalizeNarrative(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 export function resolveActiveSubagent(

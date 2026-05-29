@@ -67,3 +67,29 @@ test("shows active subagent while running", () => {
   expect(progress?.label).toContain("编码");
   expect(progress?.activeSubagent).toBe("coder");
 });
+
+test("deduplicates repeated narrative separated by tool exploration", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      {
+        id: "1",
+        role: "planner",
+        message:
+          "Now I have enough context. Let me read the cells data structure to understand the zone counts.",
+      },
+      { id: "2", role: "tool", message: "Tool: Grep · cells" },
+      {
+        id: "3",
+        role: "planner",
+        message:
+          "Now I have enough context. Let me look at the cells structure to understand the zone counts.",
+      },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const narratives = blocks.filter((block) => block.kind === "narrative");
+  const actions = blocks.filter((block) => block.kind === "action");
+  expect(narratives).toHaveLength(1);
+  expect(actions).toHaveLength(1);
+});
