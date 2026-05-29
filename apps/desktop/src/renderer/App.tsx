@@ -781,11 +781,31 @@ function App() {
     setError(undefined);
   }
 
+  function insertComposerNewline(textarea: HTMLTextAreaElement) {
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+    const next = `${prompt.slice(0, start)}\n${prompt.slice(end)}`;
+    setPrompt(next);
+    const cursor = start + 1;
+    queueMicrotask(() => {
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+    });
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      if (canSend) void sendComposerMessage();
+    if (event.key !== "Enter") {
+      return;
     }
+    if (event.shiftKey || event.metaKey || event.altKey) {
+      if (event.metaKey || event.altKey) {
+        event.preventDefault();
+        insertComposerNewline(event.currentTarget);
+      }
+      return;
+    }
+    event.preventDefault();
+    if (canSend) void sendComposerMessage();
   }
 
   const showThreadInfo = Boolean(activeThread);
