@@ -37,7 +37,6 @@ import {
 } from "../shared/ipc";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
-import { resolveActiveSubagent } from "./activity-log";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -399,16 +398,6 @@ function App() {
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
-  const activeSubagent = useMemo(
-    () => resolveActiveSubagent(activityLines, activeThread?.status),
-    [activityLines, activeThread?.status],
-  );
-  const activeSubagentLabel = useMemo(() => {
-    if (!activeSubagent) {
-      return undefined;
-    }
-    return formatRoleModelLabel(activeSubagent, threadModelByRole?.[activeSubagent]);
-  }, [activeSubagent, threadModelByRole]);
   const contextKLabel = useMemo(() => {
     if (!threadUsageByRole) {
       return null;
@@ -869,49 +858,43 @@ function App() {
               {activeThread && (
                 <header className="activity-header">
                   <h2>{activeThread.title}</h2>
-                  <div className="activity-header-badges">
-                    {activeSubagentLabel ? (
-                      <span className="subagent-chip">{activeSubagentLabel}</span>
+                  <div className="activity-header-actions">
+                    {canRetryThread ? (
+                      <button
+                        type="button"
+                        className="activity-icon-button"
+                        onClick={() => void retryActiveThread()}
+                        disabled={retryBusy}
+                        title="使用相同需求重试此次请求"
+                        aria-label="重试此次请求"
+                      >
+                        <RefreshCw size={15} className={retryBusy ? "spinning" : undefined} />
+                      </button>
                     ) : null}
-                    <span className={`status-chip ${activeThread.status}`}>{activeThread.status}</span>
-                    <div className="activity-header-actions">
-                      {canRetryThread ? (
-                        <button
-                          type="button"
-                          className="activity-icon-button"
-                          onClick={() => void retryActiveThread()}
-                          disabled={retryBusy}
-                          title="使用相同需求重试此次请求"
-                          aria-label="重试此次请求"
-                        >
-                          <RefreshCw size={15} className={retryBusy ? "spinning" : undefined} />
-                        </button>
-                      ) : null}
-                      {canRollbackThread ? (
-                        <button
-                          type="button"
-                          className="activity-icon-button"
-                          onClick={() => void rollbackToActiveThread()}
-                          disabled={rollbackBusy}
-                          title="撤销此对话之后的已应用变更"
-                          aria-label="回滚到此对话"
-                        >
-                          <RotateCcw size={15} className={rollbackBusy ? "spinning" : undefined} />
-                        </button>
-                      ) : null}
-                      {canStopThread ? (
-                        <button
-                          type="button"
-                          className="activity-icon-button danger"
-                          onClick={() => void cancelActiveThread()}
-                          disabled={cancelBusy}
-                          title="停止当前运行"
-                          aria-label="停止"
-                        >
-                          <Square size={14} />
-                        </button>
-                      ) : null}
-                    </div>
+                    {canRollbackThread ? (
+                      <button
+                        type="button"
+                        className="activity-icon-button"
+                        onClick={() => void rollbackToActiveThread()}
+                        disabled={rollbackBusy}
+                        title="撤销此对话之后的已应用变更"
+                        aria-label="回滚到此对话"
+                      >
+                        <RotateCcw size={15} className={rollbackBusy ? "spinning" : undefined} />
+                      </button>
+                    ) : null}
+                    {canStopThread ? (
+                      <button
+                        type="button"
+                        className="activity-icon-button danger"
+                        onClick={() => void cancelActiveThread()}
+                        disabled={cancelBusy}
+                        title="停止当前运行"
+                        aria-label="停止"
+                      >
+                        <Square size={14} />
+                      </button>
+                    ) : null}
                   </div>
                 </header>
               )}
@@ -983,14 +966,9 @@ function App() {
                       : "尽管问"
               }
               disabled={Boolean(activeThread && !threadAcceptsInput)}
-              rows={2}
+              rows={1}
             />
-            {contextKLabel ? (
-              <span className="composer-context-k" title="当前上下文规模（估算）">
-                {contextKLabel}
-              </span>
-            ) : null}
-            <div className="composer-toolbar">
+            <div className="composer-footer">
               <button
                 type="button"
                 className="composer-settings-link"
@@ -998,11 +976,23 @@ function App() {
                   setSettingsSection("models");
                   setSettingsOpen(true);
                 }}
-                title="在设置中配置模型"
+                title="模型设置"
+                aria-label="模型设置"
               >
                 <SlidersHorizontal size={16} />
-                模型设置
               </button>
+              <div className="composer-agent-models" aria-label="各 Agent 模型">
+                {agentModelLabels.map(({ role, label }) => (
+                  <span key={role} className="composer-agent-model" title={label}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+              {contextKLabel ? (
+                <span className="composer-context-k" title="当前上下文规模（估算）">
+                  {contextKLabel}
+                </span>
+              ) : null}
               <button
                 type="button"
                 className="send-button"
@@ -1012,19 +1002,6 @@ function App() {
               >
                 {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
               </button>
-            </div>
-            <div className="composer-agent-models" aria-label="各 Agent 模型">
-              {agentModelLabels.map(({ role, label }) => (
-                <span key={role} className="composer-agent-model" title={label}>
-                  {label}
-                </span>
-              ))}
-            </div>
-            <div className="composer-context">
-              <span className="context-chip">
-                <Folder size={14} />
-                {currentProjectName}
-              </span>
             </div>
             {error && (
               <p className="composer-error">
