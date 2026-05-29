@@ -599,6 +599,13 @@ async function runCodingThreadPlanning(
   } finally {
     cancelClarificationsForThread(thread.id, "run finished");
     activeRuns.delete(thread.id);
+    const thread = conversationStore.getThread(thread.id);
+    if (thread?.status === "running") {
+      updateThread(thread.id, {
+        status: "idle",
+        message: thread.message || "计划阶段已结束。",
+      });
+    }
   }
 }
 
@@ -682,6 +689,11 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
 
     conversationStore.clearPendingPlan(threadId);
 
+    updateThread(threadId, {
+      status: "idle",
+      message: "代理执行完成，正在合并工作树更改…",
+    });
+
     try {
       const { files, message } = await applyWorktreeChanges(worktreePlan);
       updateThread(threadId, { status: "completed", message });
@@ -703,6 +715,13 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error));
   } finally {
     activeRuns.delete(threadId);
+    const thread = conversationStore.getThread(threadId);
+    if (thread?.status === "running") {
+      updateThread(threadId, {
+        status: "idle",
+        message: thread.message || "执行已结束。",
+      });
+    }
   }
 }
 
@@ -917,14 +936,17 @@ function emitThreadEvent(
   },
 ): void {
   const trimmed = message.trim();
-  if (!trimmed && !extras?.plan && !extras?.clarification) {
+  const isThreadStatusEvent = type.startsWith("thread.");
+  if (!trimmed && !extras?.plan && !extras?.clarification && !isThreadStatusEvent) {
     return;
   }
 
-  if (conversationStore.getThread(threadId) && trimmed) {
+  const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
+
+  if (conversationStore.getThread(threadId) && displayMessage) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
-      message: trimmed,
+      message: displayMessage,
       stream,
     });
   }
@@ -932,7 +954,7 @@ function emitThreadEvent(
   const payload: ThreadLiveEvent = {
     threadId,
     type,
-    message: trimmed || "计划已就绪",
+    message: displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
     role,
     stream,
   };

@@ -411,9 +411,18 @@ export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, l
 }
 
 export function extractSdkRunFailure(payload: unknown): string | null {
-  if (!isRecord(payload) || payload.type !== "result") {
+  if (!isRecord(payload)) {
     return null;
   }
+
+  const isTerminalResult =
+    payload.type === "result" ||
+    (payloadHasSdkResultShape(payload) && typeof payload.subtype === "string");
+
+  if (!isTerminalResult) {
+    return null;
+  }
+
   if (payload.subtype === "success") {
     return null;
   }
@@ -430,6 +439,10 @@ export function extractSdkRunFailure(payload: unknown): string | null {
   }
 
   return `Agent run failed (${String(payload.subtype ?? "error")}).`;
+}
+
+function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
+  return "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload);
 }
 
 export function createPlanReadyEvent(threadId: string, payload: PlanReadyPayload): AgentEvent {

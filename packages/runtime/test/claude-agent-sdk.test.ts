@@ -153,6 +153,13 @@ test("extracts SDK error results for execution rollback", () => {
     }),
   ).toBe("Claude Code returned an error result: model not found");
   expect(extractSdkRunFailure({ type: "result", subtype: "success", result: "ok" })).toBeNull();
+  expect(
+    extractSdkRunFailure({
+      subtype: "error",
+      totalCostUsd: 0.1,
+      result: "model not found",
+    }),
+  ).toBe("model not found");
 });
 
 test("creates plan.ready event with transcript payload", () => {

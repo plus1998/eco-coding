@@ -889,7 +889,7 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
   if (type === "thread.failed") return "failed";
   if (type === "thread.blocked") return "blocked";
   if (type === "thread.awaiting_plan" || type === "thread.execution_failed") return "awaiting_plan";
-  if (type === "thread.idle") return "idle";
+  if (type === "thread.idle" || type === "thread.execution_done") return "idle";
   if (type === "thread.running" || type === "thread.started" || type === "thread.queued") {
     return "running";
   }
