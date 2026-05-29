@@ -196,6 +196,7 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
 export type { PlanReadyPayload } from "../../shared/src";
 export * from "./claude-agent-sdk";
 export * from "./ask-user-question";
+export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";
 export {
   formatSubagentMissionMessage,

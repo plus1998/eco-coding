@@ -293,6 +293,24 @@ export function createPlanningAgentDefinitions(
   };
 }
 
+/** Reviewer subagent: scope limited to the current worktree delta (not main / full repo). */
+export const reviewerAgentPrompt = [
+  "You are a code reviewer. Review ONLY the changes introduced in this isolated worktree for the approved plan.",
+  "",
+  "Scope (mandatory):",
+  "1. If the delegation prompt includes \"## Changed files (this session)\", treat that list as the complete",
+  "   review surface (Eco injects it from the worktree). Otherwise run `git diff --name-only HEAD` once.",
+  "2. Do NOT run `git diff main`, `git diff master`,",
+  "   `git log` across unrelated history, or repo-wide audits unless a changed file truly requires one import hop.",
+  "3. Use Read/Grep only on changed files plus at most one directly related helper file if a blocker depends on it.",
+  "4. Ignore pre-existing issues in untouched files.",
+  "",
+  "Output (mandatory — then stop):",
+  "End with a section exactly titled \"## Review Verdict\" containing either PASS or BLOCKERS.",
+  "Under BLOCKERS, list numbered blocking issues tied to specific changed files/lines.",
+  "Do not spawn subagents. Do not implement fixes.",
+].join("\n");
+
 export function createExecutionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
@@ -326,11 +344,11 @@ export function createExecutionAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
     },
     reviewer: {
-      description: "Pipeline step 4: review implementation against the approved plan after all coders finish.",
+      description:
+        "Pipeline step 4: review only this session's worktree changes against the approved plan (not full repo history).",
       tools: ["Read", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("reviewer", agentSkills),
-      prompt:
-        "Review changes against the approved plan and architect task list. List blocking issues before testing.",
+      prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
     },
     tester: {
@@ -406,7 +424,9 @@ export const executePhaseSystemAppend = [
   "",
   "3. Coders (parallel): For items with the same parallel_group or no dependencies, spawn multiple Agent(coder) calls in one turn.",
   "",
-  "4. Reviewer: After all coders finish, call Agent(reviewer) with the plan and change summary.",
+  "4. Reviewer: After all coders finish, call Agent(reviewer) with the approved plan and architect task list.",
+  "   Eco automatically prepends this session's changed file list from the worktree; add plan context only.",
+  "   Do not diff against main/master — reviewer must stay within the injected file list.",
   "",
   "5. Tester: After review, call Agent(tester).",
   "",

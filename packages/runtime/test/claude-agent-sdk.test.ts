@@ -142,6 +142,16 @@ test("execution architect prompt requires Coder Tasks section", () => {
   });
 });
 
+test("reviewer prompt limits scope to current worktree diff", () => {
+  const definitions = createExecutionAgentDefinitions(routes);
+  expect(definitions.reviewer).toMatchObject({
+    description: expect.stringContaining("worktree"),
+    prompt: expect.stringMatching(/git diff --name-only HEAD/),
+  });
+  expect(executePhaseSystemAppend).toContain("automatically prepends");
+  expect(executePhaseSystemAppend).toContain("injected file list");
+});
+
 test("builds phased orchestration prompts", () => {
   const userPrompt = "Add rich text editor styles";
   const analysis = "## 分析结果\n\nNeed to extend styles.css";

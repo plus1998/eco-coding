@@ -94,19 +94,22 @@ export function composeCanUseToolHandlers(
   ...handlers: SdkToolPermissionHandler[]
 ): SdkToolPermissionHandler {
   return async (request) => {
-    let decision: SdkToolPermissionDecision = { behavior: "allow", updatedInput: request.input };
+    let currentInput = request.input;
 
     for (const handler of handlers) {
-      decision = await handler(request);
+      const decision = await handler({ ...request, input: currentInput });
       if (decision.behavior === "deny") {
         return decision;
       }
-      if (request.toolName === "AskUserQuestion" && decision.updatedInput !== undefined) {
-        return decision;
+      if (decision.updatedInput !== undefined) {
+        currentInput = decision.updatedInput;
+      }
+      if (request.toolName === "AskUserQuestion") {
+        return { behavior: "allow", updatedInput: currentInput };
       }
     }
 
-    return decision;
+    return { behavior: "allow", updatedInput: currentInput };
   };
 }
 

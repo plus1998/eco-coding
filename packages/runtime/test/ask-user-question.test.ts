@@ -61,3 +61,25 @@ test("composeCanUseToolHandlers short-circuits on AskUserQuestion", async () => 
   expect(decision.behavior).toBe("allow");
   expect(decision.updatedInput).toEqual({ answered: true });
 });
+
+test("composeCanUseToolHandlers chains updated input across handlers", async () => {
+  const composed = composeCanUseToolHandlers(
+    async (request) => ({
+      behavior: "allow",
+      updatedInput: { ...request.input, step: 1 },
+    }),
+    async (request) => ({
+      behavior: "allow",
+      updatedInput: { ...request.input, step: 2 },
+    }),
+  );
+
+  const decision = await composed({
+    toolName: "Agent",
+    input: { subagent_type: "reviewer" },
+    toolUseId: "t2",
+    signal: new AbortController().signal,
+  });
+
+  expect(decision.updatedInput).toEqual({ subagent_type: "reviewer", step: 2 });
+});

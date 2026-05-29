@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   ClaudeAgentSdkDriver,
+  composeCanUseToolHandlers,
   createAskUserQuestionHandler,
+  createReviewerScopeToolHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
   formatUsageBadge,
@@ -1601,8 +1603,21 @@ function createThreadCanUseTool(threadId: string): (request: SdkToolPermissionRe
     );
   });
 
+  const reviewerScopeHandler = createReviewerScopeToolHandler(async () => {
+    const run = activeRuns.get(threadId);
+    if (!run?.worktreePlan) {
+      return [];
+    }
+    try {
+      return await gitWorktrees.changedFiles(run.worktreePlan);
+    } catch (error) {
+      console.error("Failed to list worktree files for reviewer scope:", error);
+      return [];
+    }
+  });
+
   return async (request) => {
-    const decision = await askHandler(request);
+    const decision = await composeCanUseToolHandlers(askHandler, reviewerScopeHandler)(request);
     if (decision.behavior === "deny") {
       throw new Error(decision.message);
     }
