@@ -219,6 +219,15 @@ export interface ClarificationSubmitPayload {
   selections: string[][];
 }
 
+export interface ThreadUsageSnapshot {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  contextTokens: number;
+  modelId?: string;
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
@@ -229,6 +238,8 @@ export interface ThreadLiveEvent {
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;
   todoList?: CoderTodoItem[];
+  usage?: ThreadUsageSnapshot;
+  modelId?: string;
 }
 
 export interface ThreadActivityLine {

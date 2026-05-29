@@ -8,6 +8,9 @@ import {
   createAskUserQuestionHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
+  formatUsageBadge,
+  estimateContextTokens,
+  parseUsagePayload,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
   mergeStreamText,
@@ -44,6 +47,7 @@ import {
   type ThreadRollbackResult,
   type ThreadStartRequest,
   type ThreadSummary,
+  type ThreadUsageSnapshot,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
   type WorkspaceInfo,
@@ -643,7 +647,9 @@ async function runQuestionThread(
           sdkSession: buildSdkSessionOptions(),
         })) {
           if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
+            continue;
           }
           const display = formatAgentEventDisplay(event);
           if (display) {
@@ -751,7 +757,9 @@ async function runCodingThreadPlanning(
           sdkSession: buildSdkSessionOptions(),
         })) {
           if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
+            continue;
           }
           if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
             captured = true;
@@ -903,7 +911,9 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
           planning,
         )) {
           if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? undefined;
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(threadId, event);
+            continue;
           }
 
           const display = formatAgentEventDisplay(event);
@@ -1453,6 +1463,38 @@ function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
   });
 }
 
+function usageSnapshotFromPayload(payload: unknown): ThreadUsageSnapshot | null {
+  const parsed = parseUsagePayload(payload);
+  if (!parsed) {
+    return null;
+  }
+  return {
+    inputTokens: parsed.inputTokens,
+    outputTokens: parsed.outputTokens,
+    cacheReadTokens: parsed.cacheReadTokens,
+    cacheCreationTokens: parsed.cacheCreationTokens,
+    contextTokens: estimateContextTokens(parsed),
+    ...(parsed.modelId && { modelId: parsed.modelId }),
+  };
+}
+
+function emitUsageFromDriverEvent(threadId: string, event: AgentEventLike): void {
+  if (event.type !== "usage.recorded") {
+    return;
+  }
+  const parsed = parseUsagePayload(event.payload);
+  const usage = usageSnapshotFromPayload(event.payload);
+  if (!parsed || !usage) {
+    return;
+  }
+  const role: AgentRole | "system" | "thinking" | "tool" | "user" =
+    event.role && event.role !== "system" ? event.role : "planner";
+  emitThreadEvent(threadId, "thread.usage_updated", formatUsageBadge(parsed), role, false, {
+    usage,
+    ...(usage.modelId && { modelId: usage.modelId }),
+  });
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
@@ -1464,17 +1506,26 @@ function emitThreadEvent(
     clarification?: ThreadLiveEvent["clarification"];
     todoList?: ThreadLiveEvent["todoList"];
     title?: ThreadLiveEvent["title"];
+    usage?: ThreadUsageSnapshot;
+    modelId?: string;
   },
 ): void {
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
-  if (!trimmed && !extras?.plan && !extras?.clarification && !isThreadStatusEvent) {
+  const isUsageEvent = type === "thread.usage_updated";
+  if (!trimmed && !extras?.plan && !extras?.clarification && !isThreadStatusEvent && !isUsageEvent) {
     return;
   }
 
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
-  if (conversationStore.getThread(threadId) && displayMessage && !extras?.todoList && !extras?.title) {
+  if (
+    conversationStore.getThread(threadId) &&
+    displayMessage &&
+    !extras?.todoList &&
+    !extras?.title &&
+    !isUsageEvent
+  ) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
       message: displayMessage,
@@ -1500,6 +1551,12 @@ function emitThreadEvent(
   }
   if (extras?.title) {
     payload.title = extras.title;
+  }
+  if (extras?.usage) {
+    payload.usage = extras.usage;
+  }
+  if (extras?.modelId) {
+    payload.modelId = extras.modelId;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

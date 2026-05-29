@@ -198,6 +198,16 @@ export * from "./claude-agent-sdk";
 export * from "./ask-user-question";
 export { mergeStreamText } from "./stream-text";
 export {
+  estimateContextTokens,
+  formatRoleModelLabel,
+  formatTokenCount,
+  formatUsageBadge,
+  mergeUsageTotals,
+  parseUsagePayload,
+  shortenModelId,
+  type ParsedUsage,
+} from "./usage";
+export {
   extractPhaseDeliverable,
   extractPlanningDeliverables,
   findPlanSectionStart,
