@@ -3,6 +3,8 @@ import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 
 interface CoderTodoPanelProps {
   todos: CoderTodoItem[];
+  /** Render inside sidebar without outer panel chrome */
+  embedded?: boolean;
 }
 
 const statusLabel: Record<CoderTodoStatus, string> = {
@@ -21,17 +23,12 @@ const statusIcon = {
   cancelled: Ban,
 } satisfies Record<CoderTodoStatus, typeof Circle>;
 
-export function CoderTodoPanel({ todos }: CoderTodoPanelProps) {
+export function CoderTodoPanel({ todos, embedded }: CoderTodoPanelProps) {
   if (todos.length === 0) {
     return null;
   }
 
-  return (
-    <section className="coder-todo-panel" aria-label="Coder TODO">
-      <header className="coder-todo-header">
-        <h3>Coder TODO</h3>
-        <span>{todos.length} 项</span>
-      </header>
+  const list = (
       <ol className="coder-todo-list">
         {todos.map((todo) => {
           const Icon = statusIcon[todo.status];
@@ -56,6 +53,19 @@ export function CoderTodoPanel({ todos }: CoderTodoPanelProps) {
           );
         })}
       </ol>
+  );
+
+  if (embedded) {
+    return <div className="coder-todo-embedded">{list}</div>;
+  }
+
+  return (
+    <section className="coder-todo-panel" aria-label="Coder TODO">
+      <header className="coder-todo-header">
+        <h3>Coder TODO</h3>
+        <span>{todos.length} 项</span>
+      </header>
+      {list}
     </section>
   );
 }
