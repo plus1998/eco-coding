@@ -69,6 +69,7 @@ import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
   cancelClarificationsForThread,
+  formatClarificationAnswersSummary,
   getPendingClarificationByToolUseId,
   getPendingClarificationForThread,
   registerPendingClarification,
@@ -1370,7 +1371,21 @@ function createThreadCanUseTool(threadId: string): (request: SdkToolPermissionRe
     });
     const answers = await registerPendingClarification(threadId, parsed.toolUseId, parsed);
     updateThread(threadId, { status: "running", message: "正在分析并制定计划…" });
-    return buildAskUserQuestionUpdatedInput(clarificationRequest, answers);
+    emitThreadEvent(
+      threadId,
+      "clarification.answered",
+      formatClarificationAnswersSummary(
+        { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
+        answers,
+      ),
+      "planner",
+      false,
+    );
+    return buildAskUserQuestionUpdatedInput(
+      { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
+      answers,
+      parsed.rawInput,
+    );
   });
 
   return async (request) => {
