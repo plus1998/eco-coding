@@ -25,6 +25,7 @@ interface ClaudeAgentSdkModule {
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
 const planningAllowedTools = ["Read", "Glob", "Grep", "AskUserQuestion"] as const;
+const questionAllowedTools = ["Read", "Glob", "Grep"] as const;
 const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
 const defaultSdkSkills = ["pdf", "docx"] as const;
@@ -72,7 +73,7 @@ const ecoBasePromptAppend = [
 
 export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
 
-export type EcoRunPhase = "analyze" | "plan" | "execute";
+export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
@@ -127,6 +128,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools: [...defaultAllowedTools],
       phaseAppend: executePhaseSystemAppend,
       agents: createExecutionAgentDefinitions(input.routes),
+    });
+  }
+
+  async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
+    yield* this.runSingleSession(input, {
+      prompt: buildQuestionAnswerPrompt(input.prompt),
+      permissionMode: "default",
+      allowedTools: [...questionAllowedTools],
+      phaseAppend: questionAnswerSystemAppend,
     });
   }
 
@@ -385,6 +396,13 @@ export const executePhaseSystemAppend = [
   "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
 ].join("\n");
 
+export const questionAnswerSystemAppend = [
+  "Eco orchestration — ANSWER (read-only).",
+  "Answer the user's question directly and concisely.",
+  "Use Read, Glob, or Grep only when repository context is needed.",
+  "Do not create an implementation plan, do not modify files, and do not call subagents.",
+].join("\n");
+
 export function buildPlanningPhasePrompt(userPrompt: string): string {
   return [
     "User request:",
@@ -417,6 +435,15 @@ export function buildExecutePhasePrompt(userPrompt: string, analysis: string, pl
     plan.trim() || "(no plan captured)",
     "",
     "Task: Start at pipeline step 1 (Architect or skip for small scope), then parallel coders, reviewer, tester.",
+  ].join("\n");
+}
+
+export function buildQuestionAnswerPrompt(userPrompt: string): string {
+  return [
+    "User question:",
+    userPrompt.trim(),
+    "",
+    "Task: Answer the question. If repository context is needed, inspect files read-only first.",
   ].join("\n");
 }
 

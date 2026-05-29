@@ -55,6 +55,7 @@ import {
   todoListSignature,
   updateCoderTodoStatus,
 } from "./coder-tasks";
+import { classifyThreadIntent } from "./thread-intent";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
@@ -87,8 +88,8 @@ let conversationStore: ConversationStore;
 
 interface ActiveThreadRun {
   controller: AbortController;
-  worktreePlan: WorktreePlan;
-  worktreeReady: boolean;
+  worktreePlan?: WorktreePlan;
+  worktreeReady?: boolean;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
@@ -245,6 +246,7 @@ function registerIpcHandlers(): void {
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
     );
+    const intent = classifyThreadIntent(prompt);
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
@@ -254,7 +256,9 @@ function registerIpcHandlers(): void {
       status,
       createdAt: new Date().toISOString(),
       message: runtimeConfig.ok
-        ? "Creating isolated worktree and starting Claude Agent SDK."
+        ? intent === "question"
+          ? "正在回答…"
+          : "Creating isolated worktree and starting Claude Agent SDK."
         : runtimeConfig.reason,
     };
 
@@ -265,7 +269,11 @@ function registerIpcHandlers(): void {
     }
 
     if (runtimeConfig.ok) {
-      void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt);
+      if (intent === "question") {
+        void runQuestionThread(thread, workspace, runtimeConfig, prompt);
+      } else {
+        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt);
+      }
     }
 
     return { thread };
@@ -392,12 +400,13 @@ function registerIpcHandlers(): void {
       throw new Error(runtimeConfig.reason);
     }
 
+    const intent = classifyThreadIntent(prompt);
     conversationStore.updateThreadPrompt(payload.threadId, prompt);
     conversationStore.updateThreadTitle(payload.threadId, pendingThreadTitle);
     conversationStore.clearCoderTodos(payload.threadId);
     updateThread(payload.threadId, {
       status: "running",
-      message: "正在分析并制定计划…",
+      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
     });
     emitTodoList(payload.threadId, []);
     scheduleThreadTitleSummary(payload.threadId, prompt, runtimeConfig);
@@ -407,9 +416,13 @@ function registerIpcHandlers(): void {
       title: pendingThreadTitle,
       prompt,
       status: "running",
-      message: "正在分析并制定计划…",
+      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
     };
-    void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+    if (intent === "question") {
+      void runQuestionThread(updated, workspace, runtimeConfig, prompt);
+    } else {
+      void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+    }
     return { thread: updated } satisfies ThreadContinueResult;
   });
 
@@ -538,6 +551,79 @@ function scheduleThreadTitleSummary(
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
     });
+}
+
+async function runQuestionThread(
+  thread: ThreadSummary,
+  workspace: WorkspaceInfo,
+  runtimeConfig: RuntimeConfig,
+  prompt: string,
+): Promise<void> {
+  const controller = new AbortController();
+  activeRuns.set(thread.id, { controller });
+
+  try {
+    const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+    process.stderr.write(
+      `[eco] 模型代理: ${modelProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+    );
+    updateThread(thread.id, {
+      status: "running",
+      message: `Local model router ready: ${modelProxy.baseUrl}`,
+    });
+
+    const routes = buildDriverRoutes(modelProxy.routes);
+    try {
+      const driver = new ClaudeAgentSdkDriver({
+        apiKey: modelProxy.apiKey,
+        baseUrl: modelProxy.baseUrl,
+        canUseTool: createThreadCanUseTool(thread.id),
+      });
+      if (!driver.runQuestion) {
+        throw new Error("Runtime driver does not support question answering.");
+      }
+
+      for await (const event of driver.runQuestion({
+        threadId: thread.id,
+        prompt,
+        workspacePath: workspace.path,
+        worktreePath: workspace.path,
+        routes,
+        signal: controller.signal,
+        sdkSession: buildSdkSessionOptions(),
+      })) {
+        const display = formatAgentEventDisplay(event);
+        if (display) {
+          emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
+        }
+      }
+    } finally {
+      await modelProxy.close();
+    }
+
+    if (controller.signal.aborted) {
+      updateThread(thread.id, { status: "idle", message: "已停止回答。" });
+      return;
+    }
+
+    updateThread(thread.id, { status: "completed", message: "回答完成。" });
+  } catch (error) {
+    cancelClarificationsForThread(thread.id, errorMessage(error));
+    updateThread(thread.id, {
+      status: "failed",
+      message: errorMessage(error),
+    });
+  } finally {
+    cancelClarificationsForThread(thread.id, "run finished");
+    activeRuns.delete(thread.id);
+    const currentThread = conversationStore.getThread(thread.id);
+    if (currentThread?.status === "running") {
+      updateThread(thread.id, {
+        status: "idle",
+        message: currentThread.message || "回答已结束。",
+      });
+    }
+  }
 }
 
 async function runCodingThreadPlanning(

@@ -41,6 +41,7 @@ export interface EcoPlanningContext {
 export interface AgentRuntimeDriver {
   run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runExecution?(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent>;
+  runQuestion?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
 }
 
 export interface RunningThread {

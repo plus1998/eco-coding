@@ -4,6 +4,7 @@ import {
   appendToPhaseTranscript,
   buildExecutePhasePrompt,
   buildPlanningPhasePrompt,
+  buildQuestionAnswerPrompt,
   createAgentDefinitions,
   createCanUseTool,
   createExecutionAgentDefinitions,
@@ -22,6 +23,7 @@ import {
   buildSdkProcessEnv,
   mergeAllowedTools,
   planningPhaseSystemAppend,
+  questionAnswerSystemAppend,
   resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
@@ -142,6 +144,13 @@ test("builds phased orchestration prompts", () => {
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("pipeline step 1");
+});
+
+test("builds read-only question answering prompts", () => {
+  expect(questionAnswerSystemAppend).toContain("ANSWER");
+  expect(questionAnswerSystemAppend).toContain("read-only");
+  expect(questionAnswerSystemAppend).toContain("Do not create an implementation plan");
+  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("User question:");
 });
 
 test("formats eco phase boundary events", () => {
