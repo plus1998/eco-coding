@@ -373,6 +373,7 @@ export const executePhaseSystemAppend = [
   '   Wait for "## Coder Tasks". If small (single focused change), skip architect and derive the task list yourself.',
   "",
   '2. Task list: Parse "## Coder Tasks" (or your own list). Each item becomes one coder delegation.',
+  '   Before spawning coders, print the final section "## Coder Tasks" with the numbered tasks you will execute.',
   "",
   "3. Coders (parallel): For items with the same parallel_group or no dependencies, spawn multiple Agent(coder) calls in one turn.",
   "",

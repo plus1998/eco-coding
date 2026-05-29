@@ -11,6 +11,7 @@ import {
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
   getDefaultSdkSkills,
+  mergeStreamText,
   type PlanReadyPayload,
   type SdkToolPermissionRequest,
 } from "@eco/runtime";
@@ -33,6 +34,8 @@ import {
   type ProviderConfigInput,
   type RoleRouteConfig,
   type ClarificationSubmitPayload,
+  type CoderTodoItem,
+  type CoderTodoStatus,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadLiveEvent,
@@ -43,6 +46,14 @@ import {
   type WorktreeStatusResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import {
+  completeRunningCoderTodos,
+  extractCoderTasksFromText,
+  findCoderTodoForPrompt,
+  mergeCoderTodoItems,
+  todoListSignature,
+  updateCoderTodoStatus,
+} from "./coder-tasks";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -79,6 +90,9 @@ interface ActiveThreadRun {
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
+
+type AgentEventLike = { type: string; payload: unknown; role: AgentRole };
+type AgentEventDisplay = NonNullable<ReturnType<typeof formatAgentEventDisplay>>;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -149,6 +163,13 @@ function registerIpcHandlers(): void {
       return [];
     }
     return conversationStore.listActivityLines(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return [];
+    }
+    return conversationStore.listCoderTodos(threadId);
   });
 
   ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
@@ -367,10 +388,12 @@ function registerIpcHandlers(): void {
     }
 
     conversationStore.updateThreadPrompt(payload.threadId, prompt);
+    conversationStore.clearCoderTodos(payload.threadId);
     updateThread(payload.threadId, {
       status: "running",
       message: "正在分析并制定计划…",
     });
+    emitTodoList(payload.threadId, []);
 
     const updated: ThreadSummary = {
       ...thread,
@@ -629,6 +652,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
   let executionFailure: string | undefined;
+  const todoTracker = createCoderTodoTracker(threadId);
 
   try {
     const modelProxy = await startAnthropicModelProxy(runtimeConfig.routes);
@@ -670,6 +694,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
         }
 
         const display = formatAgentEventDisplay(event);
+        todoTracker.observeEvent(event, display);
         if (display) {
           emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
         }
@@ -679,16 +704,19 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
     }
 
     if (controller.signal.aborted) {
+      todoTracker.completeRunning("cancelled");
       await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。");
       return;
     }
 
     if (executionFailure) {
+      todoTracker.completeRunning("blocked");
       await restoreAfterExecutionFailure(threadId, worktreePlan, executionFailure);
       return;
     }
 
     conversationStore.clearPendingPlan(threadId);
+    todoTracker.completeRunning("completed");
 
     updateThread(threadId, {
       status: "idle",
@@ -713,6 +741,7 @@ async function runCodingThreadExecution(threadId: string, runtimeConfig: Runtime
 
     await cleanupWorktreeForThread(threadId);
   } catch (error) {
+    todoTracker.completeRunning("blocked");
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error));
   } finally {
     activeRuns.delete(threadId);
@@ -745,6 +774,125 @@ async function restoreAfterExecutionFailure(
     message: `执行失败，已回退更改。${summary}`,
   });
   emitThreadEvent(threadId, "thread.execution_failed", summary, "system");
+}
+
+function createCoderTodoTracker(threadId: string): {
+  observeEvent: (event: AgentEventLike, display: AgentEventDisplay | null) => void;
+  completeRunning: (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => void;
+} {
+  let todos = conversationStore.listCoderTodos(threadId);
+  let signature = todoListSignature(todos);
+  let taskTranscript = "";
+  let activeTodoId: string | undefined;
+
+  const persist = (nextTodos: CoderTodoItem[]) => {
+    const nextSignature = todoListSignature(nextTodos);
+    if (nextSignature === signature) {
+      todos = nextTodos;
+      return;
+    }
+    todos = nextTodos;
+    signature = nextSignature;
+    conversationStore.replaceCoderTodos(threadId, todos);
+    emitTodoList(threadId, todos);
+  };
+
+  const collectTasks = (display: AgentEventDisplay) => {
+    if (display.role !== "planner" && display.role !== "architect") {
+      return;
+    }
+
+    taskTranscript = display.stream
+      ? mergeStreamText(taskTranscript, display.message)
+      : taskTranscript
+        ? `${taskTranscript}\n${display.message}`
+        : display.message;
+
+    const drafts = extractCoderTasksFromText(taskTranscript);
+    if (drafts.length > 0) {
+      persist(mergeCoderTodoItems(threadId, drafts, todos));
+    }
+  };
+
+  const startCoderTask = (prompt: string | undefined) => {
+    const target = findCoderTodoForPrompt(todos, prompt);
+    if (!target) {
+      return;
+    }
+
+    let nextTodos = todos;
+    if (activeTodoId && activeTodoId !== target.id) {
+      nextTodos = updateCoderTodoStatus(nextTodos, activeTodoId, "completed");
+    }
+    nextTodos = updateCoderTodoStatus(nextTodos, target.id, "running");
+    activeTodoId = target.id;
+    persist(nextTodos);
+  };
+
+  const completeRunning = (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => {
+    const nextTodos = completeRunningCoderTodos(todos, status);
+    activeTodoId = undefined;
+    persist(nextTodos);
+  };
+
+  const observeAgentTool = (event: AgentEventLike) => {
+    const request = extractAgentToolRequest(event);
+    if (!request) {
+      return;
+    }
+    if (request.role === "coder") {
+      startCoderTask(request.prompt);
+      return;
+    }
+    if (request.role === "reviewer" || request.role === "tester") {
+      completeRunning("completed");
+    }
+  };
+
+  return {
+    observeEvent(event, display) {
+      observeAgentTool(event);
+      if (display) {
+        collectTasks(display);
+      }
+    },
+    completeRunning,
+  };
+}
+
+function extractAgentToolRequest(event: AgentEventLike): { role: AgentRole; prompt?: string } | undefined {
+  if (event.type !== "tool.started" || !isRecord(event.payload)) {
+    return undefined;
+  }
+  if (event.payload.tool_name !== "Agent" || !isRecord(event.payload.input)) {
+    return undefined;
+  }
+
+  const input = event.payload.input;
+  const role =
+    readAgentRole(input.subagent_type) ??
+    readAgentRole(input.agent_type) ??
+    readAgentRole(event.payload.subagent_type) ??
+    readAgentRole(event.payload.agent_type);
+  if (!role) {
+    return undefined;
+  }
+
+  return {
+    role,
+    ...(typeof input.prompt === "string" && { prompt: input.prompt }),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readAgentRole(value: unknown): AgentRole | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return AGENT_ROLES.includes(value as AgentRole) ? (value as AgentRole) : undefined;
 }
 
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
@@ -925,6 +1073,12 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
   emitThreadEvent(threadId, `thread.${patch.status}`, patch.message, "system");
 }
 
+function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
+  emitThreadEvent(threadId, "thread.todos_updated", "TODO 已更新", "system", false, {
+    todoList,
+  });
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
@@ -934,6 +1088,7 @@ function emitThreadEvent(
   extras?: {
     plan?: ThreadLiveEvent["plan"];
     clarification?: ThreadLiveEvent["clarification"];
+    todoList?: ThreadLiveEvent["todoList"];
   },
 ): void {
   const trimmed = message.trim();
@@ -944,7 +1099,7 @@ function emitThreadEvent(
 
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
-  if (conversationStore.getThread(threadId) && displayMessage) {
+  if (conversationStore.getThread(threadId) && displayMessage && !extras?.todoList) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
       message: displayMessage,
@@ -964,6 +1119,9 @@ function emitThreadEvent(
   }
   if (extras?.clarification) {
     payload.clarification = extras.clarification;
+  }
+  if (extras?.todoList) {
+    payload.todoList = extras.todoList;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

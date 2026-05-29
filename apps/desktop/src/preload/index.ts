@@ -15,6 +15,7 @@ import {
   type ClarificationAnswers,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
+  type CoderTodoItem,
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
@@ -76,6 +77,9 @@ const api = {
   },
   getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);
+  },
+  listThreadTodos(threadId: string): Promise<CoderTodoItem[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadTodoList, threadId);
   },
   submitClarification(payload: ClarificationSubmitPayload): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationSubmit, payload);

@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mergeStreamText } from "@eco/runtime";
-import type { ThreadActivityLine, ThreadPendingPlan, ThreadStatus, ThreadSummary } from "../shared/ipc";
+import type {
+  CoderTodoItem,
+  CoderTodoStatus,
+  ThreadActivityLine,
+  ThreadPendingPlan,
+  ThreadStatus,
+  ThreadSummary,
+} from "../shared/ipc";
 
 interface ThreadRow {
   id: string;
@@ -22,6 +29,16 @@ interface ActivityRow {
   message: string;
   stream: number;
   created_at: string;
+}
+
+interface CoderTodoRow {
+  id: string;
+  thread_id: string;
+  title: string;
+  detail: string;
+  status: string;
+  position: number;
+  updated_at: string;
 }
 
 export async function createConversationStore(dbPath: string): Promise<ConversationStore> {
@@ -75,6 +92,20 @@ export class ConversationStore {
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS thread_coder_todos (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        status TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_coder_todos_thread_position
+        ON thread_coder_todos(thread_id, position);
     `);
   }
 
@@ -260,6 +291,49 @@ export class ConversationStore {
     this.db.prepare(`DELETE FROM thread_pending_plans WHERE thread_id = ?`).run(threadId);
   }
 
+  replaceCoderTodos(threadId: string, todos: CoderTodoItem[]): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare(`DELETE FROM thread_coder_todos WHERE thread_id = ?`).run(threadId);
+      const insert = this.db.prepare(
+        `INSERT INTO thread_coder_todos (id, thread_id, title, detail, status, position, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const todo of todos) {
+        insert.run(
+          todo.id,
+          threadId,
+          todo.title,
+          todo.detail,
+          todo.status,
+          todo.position,
+          todo.updatedAt,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listCoderTodos(threadId: string): CoderTodoItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, thread_id, title, detail, status, position, updated_at
+         FROM thread_coder_todos
+         WHERE thread_id = ?
+         ORDER BY position ASC`,
+      )
+      .all(threadId) as unknown as CoderTodoRow[];
+
+    return rows.map(rowToCoderTodo);
+  }
+
+  clearCoderTodos(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_coder_todos WHERE thread_id = ?`).run(threadId);
+  }
+
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
     const row = this.db
       .prepare(
@@ -282,6 +356,18 @@ export class ConversationStore {
       stream: row.stream === 1,
     };
   }
+}
+
+function rowToCoderTodo(row: CoderTodoRow): CoderTodoItem {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    title: row.title,
+    detail: row.detail,
+    status: row.status as CoderTodoStatus,
+    position: row.position,
+    updatedAt: row.updated_at,
+  };
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {

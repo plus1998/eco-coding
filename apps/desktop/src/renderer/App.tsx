@@ -22,6 +22,7 @@ import {
   type ModelSettingsSnapshot,
   type SkillsListResult,
   type ClarificationRequest,
+  type CoderTodoItem,
   type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadPendingPlan,
@@ -37,6 +38,7 @@ import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
+import { CoderTodoPanel } from "./CoderTodoPanel";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
@@ -83,6 +85,7 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
+  const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
     worktreePath: string;
     changedFiles: string[];
@@ -118,6 +121,16 @@ function App() {
     return window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {
         return;
+      }
+
+      if (event.todoList) {
+        setTodosByThread((current) => ({
+          ...current,
+          [event.threadId]: event.todoList ?? [],
+        }));
+        if (event.type === "thread.todos_updated") {
+          return;
+        }
       }
 
       setThreads((current) =>
@@ -184,6 +197,15 @@ function App() {
           return;
         }
         setPendingClarification(clarification);
+      });
+      void window.eco.listThreadTodos(selectedThreadId).then((todos) => {
+        if (cancelled) {
+          return;
+        }
+        setTodosByThread((current) => ({
+          ...current,
+          [selectedThreadId]: todos,
+        }));
       });
     }
 
@@ -304,6 +326,7 @@ function App() {
   }, [settings.providers, settings.routes]);
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const activeSubagent = useMemo(
     () => resolveActiveSubagent(activityLines, activeThread?.status),
     [activityLines, activeThread?.status],
@@ -372,6 +395,7 @@ function App() {
         });
         setSelectedThreadId(undefined);
         setActivityByThread({});
+        setTodosByThread({});
       }
     } catch (caught) {
       setError(errorMessage(caught));
@@ -394,6 +418,10 @@ function App() {
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         setPendingPlan(undefined);
+        setTodosByThread((current) => ({
+          ...current,
+          [result.thread.id]: [],
+        }));
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
@@ -402,6 +430,10 @@ function App() {
         setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
         setSelectedThreadId(result.thread.id);
         setPendingPlan(undefined);
+        setTodosByThread((current) => ({
+          ...current,
+          [result.thread.id]: [],
+        }));
         void window.eco.listThreadActivity(result.thread.id).then((lines) => {
           setActivityByThread((current) => ({
             ...current,
@@ -675,6 +707,7 @@ function App() {
                     </button>
                   </div>
                 ) : null}
+                <CoderTodoPanel todos={coderTodos} />
                 <ActivityLogView lines={activityLines} thread={activeThread} />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel

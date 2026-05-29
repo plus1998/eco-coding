@@ -382,6 +382,143 @@ button:not(:disabled) {
   word-break: break-all;
 }
 
+.coder-todo-panel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #262626;
+}
+
+.coder-todo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.coder-todo-header h3 {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.coder-todo-header span {
+  flex-shrink: 0;
+  color: #a3a3a3;
+  font-size: 12px;
+}
+
+.coder-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coder-todo-item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.coder-todo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: #a3a3a3;
+}
+
+.coder-todo-item.running .coder-todo-icon {
+  color: #fbbf24;
+}
+
+.coder-todo-item.completed .coder-todo-icon {
+  color: #4ade80;
+}
+
+.coder-todo-item.blocked .coder-todo-icon,
+.coder-todo-item.cancelled .coder-todo-icon {
+  color: #f87171;
+}
+
+.coder-todo-body {
+  min-width: 0;
+}
+
+.coder-todo-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.coder-todo-title-row strong {
+  flex: 1;
+  min-width: 0;
+  color: #e8e8e8;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.coder-todo-status {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #333;
+  color: #a3a3a3;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.coder-todo-status.running {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+.coder-todo-status.completed {
+  background: rgba(74, 222, 128, 0.14);
+  color: #86efac;
+}
+
+.coder-todo-status.blocked,
+.coder-todo-status.cancelled {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+.coder-todo-detail {
+  margin-top: 4px;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.coder-todo-detail summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.coder-todo-detail pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #c8c8c8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .clarification-panel.codex-style {
   margin-top: 10px;
   padding: 18px 20px 14px;
@@ -1126,7 +1263,8 @@ button:not(:disabled) {
   cursor: not-allowed;
 }
 
-.settings-icon-button .spinning {
+.settings-icon-button .spinning,
+.coder-todo-icon .spinning {
   animation: eco-spin 0.8s linear infinite;
 }
 

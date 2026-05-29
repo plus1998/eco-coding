@@ -13,6 +13,7 @@ export const IPC_CHANNELS = {
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
   threadGetPendingPlan: "thread:get-pending-plan",
+  threadTodoList: "thread:todo-list",
   clarificationGetPending: "clarification:get-pending",
   clarificationSubmit: "clarification:submit",
   clarificationDismiss: "clarification:dismiss",
@@ -144,6 +145,18 @@ export interface ThreadContinueResult {
   thread: ThreadSummary;
 }
 
+export type CoderTodoStatus = "pending" | "running" | "completed" | "blocked" | "cancelled";
+
+export interface CoderTodoItem {
+  id: string;
+  threadId: string;
+  title: string;
+  detail: string;
+  status: CoderTodoStatus;
+  position: number;
+  updatedAt: string;
+}
+
 export interface WorktreeStatusResult {
   exists: boolean;
   worktreePath: string;
@@ -196,6 +209,7 @@ export interface ThreadLiveEvent {
   stream?: boolean;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;
+  todoList?: CoderTodoItem[];
 }
 
 export interface ThreadActivityLine {
