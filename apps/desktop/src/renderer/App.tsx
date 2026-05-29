@@ -35,7 +35,7 @@ import {
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { isContinuableThreadStatus } from "../shared/thread-continuation";
+import { isContinuableThreadStatus, pickDisplayContextTokens } from "../shared/thread-continuation";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -419,17 +419,14 @@ function App() {
     if (!threadUsageByRole) {
       return null;
     }
-    const maxCtx = Object.values(threadUsageByRole).reduce(
-      (max, usage) => Math.max(max, usage.contextTokens),
-      0,
-    );
-    if (maxCtx <= 0) {
+    const ctx = pickDisplayContextTokens(threadUsageByRole);
+    if (ctx <= 0) {
       return null;
     }
-    if (maxCtx < 1000) {
+    if (ctx < 1000) {
       return "<1K";
     }
-    return `${Math.round(maxCtx / 1000)}K`;
+    return `${Math.round(ctx / 1000)}K`;
   }, [threadUsageByRole]);
   const agentModelLabels = useMemo(
     () =>
@@ -992,8 +989,11 @@ function App() {
                 ))}
               </div>
               {contextKLabel ? (
-                <span className="composer-context-k" title="当前上下文规模（估算）">
-                  {contextKLabel}
+                <span
+                  className="composer-context-k"
+                  title="最近一次 Planner 请求的输入 token（含缓存），不是整段对话累计；子代理会各自计费"
+                >
+                  输入≈{contextKLabel}
                 </span>
               ) : null}
               {canStopThread ? (

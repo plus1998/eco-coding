@@ -72,9 +72,8 @@ import {
 } from "./request-retry";
 import { classifyThreadIntent } from "./thread-intent";
 import {
-  buildThreadTurnPrompt,
+  buildAgentPromptWithContext,
   isContinuableThreadStatus,
-  shouldUseInterruptedWorktree,
 } from "../shared/thread-continuation";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
@@ -459,40 +458,34 @@ function registerIpcHandlers(): void {
     }
 
     const intent = classifyThreadIntent(prompt);
-    const turnPrompt = buildThreadTurnPrompt(thread.prompt, prompt);
+    const activityLines = conversationStore.listActivityLines(payload.threadId);
+    const agentPrompt = buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
     const worktreePlan = createWorktreePlan(workspace.path, payload.threadId);
     const worktreeExists = await fileExists(worktreePlan.worktreePath);
-    const hasPriorActivity = conversationStore.listActivityLines(payload.threadId).length > 0;
-    const useInterruptedWorktree = shouldUseInterruptedWorktree(worktreeExists, hasPriorActivity);
+    const worktreePath = worktreeExists ? worktreePlan.worktreePath : undefined;
 
     updateThread(payload.threadId, {
       status: "running",
-      message:
-        intent === "question" || useInterruptedWorktree
-          ? "正在回答…"
-          : "正在分析并制定计划…",
+      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
     });
     recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
       ...thread,
       status: "running",
-      message:
-        intent === "question" || useInterruptedWorktree
-          ? "正在回答…"
-          : "正在分析并制定计划…",
+      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
     };
 
-    if (intent === "question" || useInterruptedWorktree) {
-      void runQuestionThread(
+    if (intent === "question") {
+      void runQuestionThread(updated, workspace, runtimeConfig, agentPrompt, worktreePath);
+    } else {
+      void runCodingThreadPlanning(
         updated,
         workspace,
         runtimeConfig,
-        turnPrompt,
-        useInterruptedWorktree ? worktreePlan.worktreePath : undefined,
+        agentPrompt,
+        worktreeExists ? worktreePlan : undefined,
       );
-    } else {
-      void runCodingThreadPlanning(updated, workspace, runtimeConfig, turnPrompt, worktreePlan);
     }
     return { thread: conversationStore.getThread(payload.threadId) ?? updated } satisfies ThreadContinueResult;
   });
