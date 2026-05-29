@@ -170,6 +170,7 @@ test("builds phased orchestration prompts", () => {
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("Implementation Plan");
   expect(executePhaseSystemAppend).toContain("TodoWrite");
+  expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
   expect(executePhaseSystemAppend).toContain("Architect (conditional)");
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);

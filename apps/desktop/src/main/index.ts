@@ -65,6 +65,7 @@ import {
   todoListSignature,
   updateCoderTodoStatus,
 } from "./coder-tasks";
+import { coderTodosFromTodoWrite, parseTodoWriteToolInput } from "./todo-write";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   runWithRequestAutoRetry,
@@ -1141,6 +1142,7 @@ function createCoderTodoTracker(threadId: string): {
   let taskTranscript = "";
   let activeTodoId: string | undefined;
   let autoTaskIndex = 0;
+  let progressFromTodoWrite = false;
 
   const persist = (nextTodos: CoderTodoItem[]) => {
     const nextSignature = todoListSignature(nextTodos);
@@ -1154,7 +1156,21 @@ function createCoderTodoTracker(threadId: string): {
     emitTodoList(threadId, todos);
   };
 
+  const applyTodoWrite = (input: Record<string, unknown>) => {
+    const items = parseTodoWriteToolInput(input);
+    if (items.length === 0) {
+      return;
+    }
+    progressFromTodoWrite = true;
+    const next = coderTodosFromTodoWrite(threadId, items, todos);
+    activeTodoId = next.find((item) => item.status === "running")?.id;
+    persist(next);
+  };
+
   const appendTaskTranscript = (role: string, message: string, stream: boolean) => {
+    if (progressFromTodoWrite) {
+      return;
+    }
     if (role !== "planner" && role !== "architect") {
       return;
     }
@@ -1180,6 +1196,9 @@ function createCoderTodoTracker(threadId: string): {
   };
 
   const startCoderTask = (prompt: string | undefined) => {
+    if (progressFromTodoWrite) {
+      return;
+    }
     let target = findCoderTodoForPrompt(todos, prompt);
     if (!target && typeof prompt === "string" && prompt.trim()) {
       autoTaskIndex += 1;
@@ -1223,13 +1242,22 @@ function createCoderTodoTracker(threadId: string): {
       startCoderTask(request.prompt);
       return;
     }
-    if (request.role === "reviewer" || request.role === "tester") {
+    if (!progressFromTodoWrite && (request.role === "reviewer" || request.role === "tester")) {
       completeRunning("completed");
     }
   };
 
   return {
     observeEvent(event, display) {
+      if (
+        event.type === "tool.started" &&
+        isRecord(event.payload) &&
+        event.payload.tool_name === "TodoWrite" &&
+        isRecord(event.payload.input)
+      ) {
+        applyTodoWrite(event.payload.input);
+      }
+
       observeAgentTool(event);
       if (display) {
         collectTasks(display);

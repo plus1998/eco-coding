@@ -155,6 +155,6 @@ function stripMarkdown(value: string): string {
   return value.replace(/[`*_]/g, "").trim();
 }
 
-function normalizeTaskTitle(value: string): string {
+export function normalizeTaskTitle(value: string): string {
   return stripMarkdown(value).toLowerCase().replace(/\s+/g, " ").trim();
 }

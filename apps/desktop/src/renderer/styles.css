@@ -526,6 +526,30 @@ button:not(:disabled) {
   list-style: none;
 }
 
+.coder-todo-list-compact {
+  gap: 10px;
+}
+
+.coder-todo-list-compact .coder-todo-item {
+  grid-template-columns: 22px 1fr;
+  min-height: 28px;
+}
+
+.coder-todo-list-compact .coder-todo-title-row strong {
+  font-size: 14px;
+  font-weight: 400;
+  color: #e5e5e5;
+}
+
+.coder-todo-list-compact .coder-todo-item.completed .coder-todo-title-row strong {
+  color: #a3a3a3;
+}
+
+.coder-todo-list-compact .coder-todo-item.running .coder-todo-title-row strong {
+  color: #f5f5f5;
+  font-weight: 500;
+}
+
 .coder-todo-item {
   display: grid;
   grid-template-columns: 24px 1fr;

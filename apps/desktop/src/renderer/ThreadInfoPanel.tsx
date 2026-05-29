@@ -89,12 +89,12 @@ export function ThreadInfoPanel({
         <section className="thread-info-section thread-info-todos">
           <h3 className="thread-info-heading">
             <ListTodo size={14} aria-hidden />
-            任务列表
+            进度
           </h3>
           {todos.length > 0 ? (
-            <CoderTodoPanel todos={todos} embedded />
+            <CoderTodoPanel todos={todos} embedded compact />
           ) : (
-            <p className="thread-info-muted thread-info-todos-empty">正在从执行计划解析任务…</p>
+            <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 TodoWrite 更新进度…</p>
           )}
         </section>
       ) : null}
