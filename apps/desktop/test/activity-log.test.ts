@@ -49,7 +49,7 @@ test("keeps work session expanded while running", () => {
   expect(session.defaultCollapsed).toBe(false);
 });
 
-test("merges stream segments across roles without losing spaces", () => {
+test("keeps thinking separate from agent narrative streams", () => {
   const blocks = buildActivityLogBlocks(
     [
       { id: "u1", role: "user", message: "test" },
@@ -65,12 +65,40 @@ test("merges stream segments across roles without losing spaces", () => {
   );
 
   const session = blocks.find((block) => block.kind === "work-session");
-  const narrative = session?.kind === "work-session"
-    ? session.children.find((child) => child.kind === "narrative")
-    : undefined;
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const thinking = session.children.find((child) => child.kind === "thinking");
+  const narrative = session.children.find((child) => child.kind === "narrative");
+  expect(thinking?.kind).toBe("thinking");
+  if (thinking?.kind === "thinking") {
+    expect(thinking.text).toBe("Let me also");
+    expect(thinking.streaming).toBe(true);
+  }
   expect(narrative?.kind).toBe("narrative");
   if (narrative?.kind === "narrative") {
-    expect(narrative.text).toBe("Let me also check the index.html to understand the build setup.");
+    expect(narrative.text).toBe("check the index.html to understand the build setup.");
+  }
+});
+
+test("renders streaming thinking label even before first token", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "thinking", message: "", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const thinking = session?.kind === "work-session"
+    ? session.children.find((child) => child.kind === "thinking")
+    : undefined;
+  expect(thinking?.kind).toBe("thinking");
+  if (thinking?.kind === "thinking") {
+    expect(thinking.text).toBe("");
+    expect(thinking.streaming).toBe(true);
   }
 });
 

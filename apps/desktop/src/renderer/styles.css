@@ -1793,6 +1793,90 @@ button:not(:disabled) {
   word-break: break-word;
 }
 
+.run-log-thinking {
+  margin: 8px 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.run-log-thinking.streaming {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.run-log-thinking.empty .run-log-thinking-header {
+  cursor: default;
+}
+
+.run-log-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.run-log-thinking-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #737373;
+  letter-spacing: 0.02em;
+}
+
+.run-log-thinking.streaming .run-log-thinking-label {
+  color: #a3a3a3;
+}
+
+.run-log-thinking.streaming .run-log-thinking-label::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: #737373;
+  vertical-align: middle;
+  animation: run-log-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes run-log-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.run-log-thinking-chevron {
+  margin-left: auto;
+  color: #525252;
+  transition: transform 0.15s ease;
+}
+
+.run-log-thinking-chevron.open {
+  transform: rotate(180deg);
+}
+
+.run-log-thinking-body {
+  padding: 0 12px 10px;
+}
+
+.run-log-thinking-body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #8a8a8a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .run-log-narrative.compact p {
   font-size: 14px;
   color: #d4d4d4;

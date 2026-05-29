@@ -17,6 +17,7 @@ export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agen
 export type ActivityDetailBlock =
   | { kind: "phase"; label: string }
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string }
+  | { kind: "thinking"; text: string; streaming?: boolean }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string };
 
@@ -163,8 +164,31 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let narrative = "";
   let narrativeStreaming = false;
   let narrativeSubagent: string | undefined;
+  let thinking = "";
+  let thinkingStreaming = false;
   let toolContextSubagent: string | undefined;
   const recentNarratives: string[] = [];
+
+  const flushThinking = () => {
+    const text = thinking.trim();
+    if (!text && !thinkingStreaming) {
+      thinking = "";
+      thinkingStreaming = false;
+      return;
+    }
+    current.details.push({
+      kind: "thinking",
+      text,
+      streaming: thinkingStreaming,
+    });
+    thinking = "";
+    thinkingStreaming = false;
+  };
+
+  const flushTextBuffers = () => {
+    flushThinking();
+    flushNarrative();
+  };
 
   const flushNarrative = () => {
     const text = narrative.trim();
@@ -265,7 +289,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
   for (const line of lines) {
     if (line.role === "user") {
-      flushNarrative();
+      flushTextBuffers();
       if (current.details.length > 0) {
         pushSegment();
       }
@@ -274,20 +298,20 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
 
     if (isPhaseLine(line.message)) {
-      flushNarrative();
+      flushTextBuffers();
       current.details.push({ kind: "phase", label: line.message });
       continue;
     }
 
     const mission = parseSubagentMissionMessage(line.message);
     if (mission) {
-      flushNarrative();
+      flushTextBuffers();
       pushSubagentMission(mission);
       continue;
     }
 
     if (isTaskActivityLine(line)) {
-      flushNarrative();
+      flushTextBuffers();
       const label = normalizeActivityActionLabel(line.message);
       const subagent = isSubagentRole(line.role)
         ? line.role
@@ -303,7 +327,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const progressAction = parseProgressActionLine(line.message);
     if (progressAction) {
-      flushNarrative();
+      flushTextBuffers();
       pushToolAction(progressAction, line);
       continue;
     }
@@ -314,12 +338,27 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const tool = parseToolLine(line.message);
     if (tool) {
-      flushNarrative();
+      flushTextBuffers();
       pushToolAction(tool, line);
       continue;
     }
 
+    if (isThinkingLine(line)) {
+      flushNarrative();
+      const text = line.stream ? line.message : line.message.trim();
+      if (line.stream) {
+        thinking = mergeStreamText(thinking, text);
+        thinkingStreaming = true;
+      } else if (thinking) {
+        thinking += `\n\n${text}`;
+      } else {
+        thinking = text;
+      }
+      continue;
+    }
+
     if (isNarrativeLine(line)) {
+      flushThinking();
       noteNarrativeRole(line);
       const text = line.stream ? line.message : stripSubagentBracketPrefix(line.message);
       if (line.stream) {
@@ -334,6 +373,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
 
     if (line.message.trim().length > 0) {
+      flushThinking();
       noteNarrativeRole(line);
       const text = stripSubagentBracketPrefix(line.message);
       if (narrative) {
@@ -344,7 +384,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
   }
 
-  flushNarrative();
+  flushTextBuffers();
   pushSegment();
   return segments;
 }
@@ -372,6 +412,7 @@ function partitionSessionBlocks(
       block.kind === "action" ||
       block.kind === "phase" ||
       block.kind === "narrative" ||
+      block.kind === "thinking" ||
       block.kind === "subagent-mission",
   );
   if (!hasPriorContent && lastNarrativeIndex === details.length - 1) {
@@ -497,7 +538,7 @@ function shouldHideSystemLine(line: ThreadActivityLine): boolean {
   }
   const trimmed = line.message.trim();
   if (!trimmed) {
-    return true;
+    return line.role !== "thinking" || !line.stream;
   }
   if (isPhaseLine(trimmed)) {
     return false;
@@ -505,9 +546,13 @@ function shouldHideSystemLine(line: ThreadActivityLine): boolean {
   return systemNoisePatterns.some((pattern) => pattern.test(trimmed));
 }
 
+function isThinkingLine(line: ThreadActivityLine): boolean {
+  return line.role === "thinking";
+}
+
 function isNarrativeLine(line: ThreadActivityLine): boolean {
   if (line.role === "thinking") {
-    return true;
+    return false;
   }
   if (line.role === "tool") {
     return false;

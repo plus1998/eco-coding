@@ -197,6 +197,14 @@ function DetailBlock({
       />
     );
   }
+  if (block.kind === "thinking") {
+    return (
+      <ThinkingBlock
+        text={block.text}
+        {...(block.streaming !== undefined && { streaming: block.streaming })}
+      />
+    );
+  }
   return (
     <RunLogNarrative
       text={block.text}
@@ -206,6 +214,53 @@ function DetailBlock({
       {...(usageByRole && { usageByRole })}
       compact
     />
+  );
+}
+
+function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  const [collapsed, setCollapsed] = useState(true);
+  const hasBody = text.trim().length > 0;
+  const showBody = streaming || !collapsed;
+
+  return (
+    <div
+      className={[
+        "run-log-thinking",
+        streaming ? "streaming" : "",
+        !hasBody && streaming ? "empty" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <button
+        type="button"
+        className="run-log-thinking-header"
+        onClick={() => {
+          if (!streaming) {
+            setCollapsed((value) => !value);
+          }
+        }}
+        aria-expanded={showBody}
+        disabled={streaming && !hasBody}
+      >
+        <span className="run-log-thinking-label">Thinking</span>
+        {!streaming && hasBody ? (
+          <ChevronDown
+            size={14}
+            className={collapsed ? "run-log-thinking-chevron" : "run-log-thinking-chevron open"}
+            aria-hidden
+          />
+        ) : null}
+      </button>
+      {showBody && hasBody ? (
+        <div className="run-log-thinking-body">
+          <p>
+            {text}
+            {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
