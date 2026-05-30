@@ -1,8 +1,5 @@
-import { ecoCliToneAppend } from "./eco-common.js";
-
 export const questionAnswerSystemAppend = [
   "Eco orchestration — ANSWER (read-only).",
-  ecoCliToneAppend,
   "",
   "Answer the user's question directly and concisely.",
   "For broad codebase questions, use Agent(explore) with thoroughness quick|medium|very thorough.",

@@ -19,7 +19,6 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).not.toMatch(/`request_user_input`/);
   expect(append).toContain("## Implementation Plan");
   expect(append).toContain("Agent(explore)");
-  expect(append).toContain("isolated git worktree");
   expect(append).toContain("Eco Plan Mode turn order");
   expect(append).toContain("MUST NOT include `## Implementation Plan`");
 });

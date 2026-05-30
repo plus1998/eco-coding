@@ -118,6 +118,11 @@ export interface ClaudeAgentSdkDriverOptions {
   maxTurns?: number;
   /** Default: analyze_plan_execute (plan in one session → subagents execute). */
   orchestration?: EcoOrchestrationMode;
+  /**
+   * When true, move cwd/git/platform context out of the cached system prompt prefix
+   * so identical append text can share prompt cache across worktrees.
+   */
+  excludeDynamicSections?: boolean;
   /** When set, SDK CLI exports OTel to this local endpoint (eco-coding ingests for UI/logs). */
   otel?: EcoBuiltinOtelOptions;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
@@ -282,6 +287,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         type: "preset",
         preset: "claude_code",
         append: systemAppend,
+        ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
       },
       tools: { type: "preset", preset: "claude_code" },
       ...(this.options.hookContext

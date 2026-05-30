@@ -1,19 +1,9 @@
-/** Shared tone and environment rules (borrowed from OpenCode provider system prompts). */
+/** Eco product boundaries appended on top of the SDK `claude_code` preset (general coding tone/tools live in the preset). */
 
 export const ecoBasePromptAppend = [
   "You are running inside Eco Coding, an agent command center.",
   "Work inside the provided isolated git worktree.",
   "Do not assume edits are applied to the user's real workspace until diff approval completes.",
-].join("\n");
-
-export const ecoCliToneAppend = [
-  "# Tone and communication",
-  "- Be concise and direct; avoid filler preambles and postambles.",
-  "- Communicate with the user in text; use tools only for actions, not to relay messages.",
-  "- Prefer specialized tools over bash (Read instead of cat, etc.).",
-  "- When referencing code, use `file_path:line_number` when known.",
-  "- Call independent Read/Glob/Grep operations in parallel when possible.",
-  "- Avoid tiny repeated Read slices; read a meaningful window in one call.",
 ].join("\n");
 
 /** Injected when execution starts after human plan approval (OpenCode build-switch analogue). */

@@ -10,6 +10,17 @@ The first version focuses on a router-first command center:
 - SQLite event storage with secrets kept in the system keychain.
 - Git worktree based editing with diff approval before applying changes.
 
+## System prompt and project context
+
+Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: worktree isolation, plan/execute orchestration, and deliverable headings the UI parses.
+
+Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the opened workspace, not in Eco's code. The runtime loads them automatically via `settingSources: ["user", "project"]`:
+
+- **Project** — `CLAUDE.md` / `.claude/CLAUDE.md` in the workspace (including the isolated worktree cwd)
+- **User** — `~/.claude/CLAUDE.md` for personal defaults
+
+Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you need better prompt-cache reuse across threads with different worktree paths (trades slightly weaker in-system cwd emphasis for cache hits).
+
 ## Repository shape
 
 ```txt

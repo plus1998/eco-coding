@@ -1,5 +1,4 @@
 import { CODEX_PLAN_MODE_TEMPLATE } from "./codex-plan-template.js";
-import { ecoBasePromptAppend } from "./eco-common.js";
 
 /**
  * Minimal Eco harness mapping on top of the inlined Codex Plan Mode template.
@@ -8,8 +7,7 @@ import { ecoBasePromptAppend } from "./eco-common.js";
 export const ecoPlanHarnessAdapter = [
   "# Eco harness (minimal overrides — Codex Plan text above is authoritative)",
   "",
-  "You are running inside Eco Coding (phase 1/2 PLAN, read-only). Work in the isolated git worktree.",
-  "Edits are not applied to the user's real workspace until diff approval completes.",
+  "You are in Eco Coding phase 1/2 PLAN (read-only).",
   "",
   "## Tool name mapping",
   "- User clarifications: **`AskUserQuestion`** (Codex Plan Mode asking-questions section; same role).",
@@ -54,7 +52,7 @@ export const ecoPlanHarnessAdapter = [
 
 export function buildPlanningPhaseSystemAppend(): string {
   const codexPlan = CODEX_PLAN_MODE_TEMPLATE.replaceAll("request_user_input", "AskUserQuestion");
-  return [ecoBasePromptAppend, codexPlan, ecoPlanHarnessAdapter].join("\n\n");
+  return [codexPlan, ecoPlanHarnessAdapter].join("\n\n");
 }
 
 /** @deprecated Use buildPlanningPhaseSystemAppend */

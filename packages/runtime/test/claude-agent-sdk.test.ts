@@ -193,7 +193,7 @@ test("planning agents include read-only explore subagent", () => {
   const definitions = createPlanningAgentDefinitions(routes);
   expect(definitions.explore).toMatchObject({
     description: expect.stringContaining("read-only"),
-    prompt: expect.stringContaining("Glob"),
+    prompt: expect.stringContaining("read-only"),
     tools: expect.arrayContaining(["Grep"]),
   });
 });
@@ -640,4 +640,46 @@ test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
 
   expect(capturedOptions[0]?.resume).toBe("sess-resume-test");
   expect(events).toContain("session.captured");
+});
+
+test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    excludeDynamicSections: true,
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-cache-test",
+              uuid: "result-1",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runQuestion({
+    threadId: "thr_cache",
+    prompt: "What changed?",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree-a",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // drain
+  }
+
+  expect(capturedOptions[0]?.systemPrompt).toMatchObject({
+    type: "preset",
+    preset: "claude_code",
+    excludeDynamicSections: true,
+  });
 });

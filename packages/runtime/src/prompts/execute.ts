@@ -1,4 +1,4 @@
-import { ecoCliToneAppend, executeBuildSwitchAppend } from "./eco-common.js";
+import { executeBuildSwitchAppend } from "./eco-common.js";
 
 /** Skip Agent(architect) only when ALL apply (otherwise architect is mandatory). */
 export const architectSkipCriteria = [
@@ -10,7 +10,6 @@ export const architectSkipCriteria = [
 
 export const executePhaseSystemAppend = [
   "Eco orchestration phase 2/2 — EXECUTE.",
-  ecoCliToneAppend,
   executeBuildSwitchAppend,
   "",
   "You are the orchestrator (Planner). Follow this pipeline strictly:",
