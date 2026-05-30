@@ -6,7 +6,7 @@ export interface SubagentMissionPayload {
 
 const MISSION_PREFIX = "@mission ";
 
-const SUBAGENT_ROLES = ["architect", "coder", "reviewer", "tester"] as const;
+const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
 function isSubagentRole(role: string): role is SubagentRole {
@@ -14,6 +14,7 @@ function isSubagentRole(role: string): role is SubagentRole {
 }
 
 const ROLE_DEFAULT_SUMMARY: Record<SubagentRole, string> = {
+  explore: "只读探索代码库以收集上下文",
   architect: "根据计划梳理架构与实现方案",
   coder: "实现计划中的开发任务",
   reviewer: "审查本轮代码变更是否符合计划",

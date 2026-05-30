@@ -43,7 +43,7 @@ interface OtlpAnyValue {
   boolValue?: boolean;
 }
 
-const AGENT_ROLES = new Set(["planner", "architect", "coder", "reviewer", "tester"]);
+const AGENT_ROLES = new Set(["planner", "explore", "architect", "coder", "reviewer", "tester"]);
 
 export function parseOtelTracesPayload(
   payload: unknown,

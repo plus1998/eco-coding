@@ -30,6 +30,7 @@ interface ModelsCacheEntry {
 
 const ROLE_LABELS: Record<AgentRole, string> = {
   planner: "规划",
+  explore: "探索",
   architect: "架构",
   coder: "编码",
   reviewer: "审查",
@@ -360,7 +361,7 @@ export function ModelsSettingsPanel({
           <div className="models-section-intro">
             <h2 className="models-section-title">角色路由</h2>
             <p className="models-section-desc">
-              为规划、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
+              为规划、探索、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
             </p>
             <p className="models-section-meta">
               能力、上下文上限与参考单价来自 models.dev；未匹配时请自行确认模型规格。

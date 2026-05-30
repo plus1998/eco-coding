@@ -13,6 +13,7 @@ import {
   createCanUseTool,
   createExecutionAgentDefinitions,
   createPlanningAgentDefinitions,
+  createQuestionAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
   createSessionCapturedEvent,
@@ -45,6 +46,19 @@ const routes: ResolvedModelRoute[] = [
       displayName: "Opus",
       baseUrl: "https://gateway.test",
       modelId: "claude-opus-4",
+      capabilities: ["messages_api"],
+      enabled: true,
+    },
+    fallbacks: [],
+  },
+  {
+    role: "explore",
+    primary: {
+      id: "haiku",
+      provider: "anthropic",
+      displayName: "Haiku",
+      baseUrl: "https://gateway.test",
+      modelId: "claude-haiku-explore",
       capabilities: ["messages_api"],
       enabled: true,
     },
@@ -195,7 +209,27 @@ test("planning agents include read-only explore subagent", () => {
     description: expect.stringContaining("read-only"),
     prompt: expect.stringContaining("read-only"),
     tools: expect.arrayContaining(["Grep"]),
+    model: "claude-haiku-explore",
   });
+});
+
+test("question explore subagent uses explore route model", () => {
+  const definitions = createQuestionAgentDefinitions(routes);
+  expect(definitions.explore).toMatchObject({ model: "claude-haiku-explore" });
+});
+
+test("inferActivityRole maps Agent(explore) to explore", () => {
+  expect(
+    inferActivityRole({
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Agent",
+        input: { subagent_type: "explore", prompt: "Find auth middleware" },
+      },
+    }),
+  ).toBe("explore");
 });
 
 test("builds read-only question answering prompts", () => {

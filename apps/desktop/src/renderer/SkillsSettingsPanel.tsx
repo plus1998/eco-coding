@@ -15,6 +15,7 @@ interface SkillsSettingsPanelProps {
 
 const ROLE_LABELS: Record<AgentRole, string> = {
   planner: "规划 (Planner)",
+  explore: "探索 (Explore)",
   architect: "架构 (Architect)",
   coder: "编码 (Coder)",
   reviewer: "审查 (Reviewer)",

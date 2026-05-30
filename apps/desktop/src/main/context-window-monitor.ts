@@ -12,11 +12,11 @@ const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
 
 const SUBAGENT_ROLES: readonly AgentRole[] = [
+  "explore",
   "coder",
   "architect",
   "reviewer",
   "tester",
-  "thinking",
 ];
 
 export interface ContextMonitorSnapshot {

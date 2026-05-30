@@ -71,6 +71,7 @@ export class ProviderStore {
     `);
 
     this.migrateRoleRoutesThinkingEffort();
+    this.migrateExploreRoleRoute();
 
     if (this.listProviders().length === 0) {
       this.saveProvider({
@@ -210,6 +211,29 @@ export class ProviderStore {
       return;
     }
     this.db.exec("ALTER TABLE role_routes ADD COLUMN thinking_effort TEXT");
+  }
+
+  /** Seed explore route from planner on upgrade so existing installs keep the same effective model. */
+  private migrateExploreRoleRoute(): void {
+    const routes = this.listRoleRoutes();
+    if (routes.some((route) => route.role === "explore")) {
+      return;
+    }
+    const planner = routes.find((route) => route.role === "planner");
+    if (planner) {
+      this.saveRoleRoute({
+        role: "explore",
+        providerId: planner.providerId,
+        modelId: planner.modelId,
+        ...(planner.thinkingEffort && { thinkingEffort: planner.thinkingEffort }),
+      });
+      return;
+    }
+    this.saveRoleRoute({
+      role: "explore",
+      providerId: DEFAULT_PROVIDER_ID,
+      modelId: DEFAULT_MODEL,
+    });
   }
 
   private listProviderRows(): ProviderRow[] {

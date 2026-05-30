@@ -429,9 +429,9 @@ export function createPlanningAgentDefinitions(
     explore: {
       description: exploreAgentDescription,
       tools: exploreTools,
-      ...agentDefinitionSkills("planner", agentSkills),
+      ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("planner")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId),
     },
     architect: {
       description: planningArchitectDescription,
@@ -453,9 +453,9 @@ export function createQuestionAgentDefinitions(
     explore: {
       description: exploreAgentDescription,
       tools: ["Read", "Glob", "Grep", "Bash"],
-      ...agentDefinitionSkills("planner", agentSkills),
+      ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("planner")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId),
     },
   };
 }
@@ -1110,7 +1110,7 @@ function inferRole(message: Record<string, unknown>): AgentRole {
 }
 
 function isAgentRole(value: string): value is AgentRole {
-  return ["planner", "architect", "coder", "reviewer", "tester"].includes(value);
+  return ["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1496,7 +1496,7 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
   return null;
 }
 
-export const SUBAGENT_ROLES = ["architect", "coder", "reviewer", "tester"] as const;
+export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 

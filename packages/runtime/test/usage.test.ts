@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import {
   accumulateThreadCost,
   formatCostUsd,
+  formatRoleModelLabel,
   mergeUsageTotals,
   parseModelUsage,
   parseSdkContextUsage,
@@ -112,4 +113,9 @@ test("parseUsagePayload reads total_cost_usd from result payload", () => {
   });
   expect(parsed?.totalCostUsd).toBe(2.1695);
   expect(parsed?.inputTokens).toBe(1000);
+});
+
+test("formatRoleModelLabel uses Chinese label for explore", () => {
+  expect(formatRoleModelLabel("explore", "claude-opus-4-7")).toBe("探索 · claude-opus-4-7");
+  expect(formatRoleModelLabel("planner", "claude-opus-4-7")).toBe("规划 · claude-opus-4-7");
 });

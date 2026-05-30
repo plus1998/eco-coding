@@ -657,7 +657,7 @@ function isNarrativeLine(line: ThreadActivityLine): boolean {
   if (line.role === "system" && line.message.length < 120) {
     return false;
   }
-  return ["planner", "architect", "coder", "reviewer", "tester", "system"].includes(line.role);
+  return ["planner", "explore", "architect", "coder", "reviewer", "tester", "system"].includes(line.role);
 }
 
 const KNOWN_SDK_TOOLS = new Set([

@@ -22,6 +22,19 @@ test("resolves provider routes by local model alias", () => {
   expect(resolveProxyRoute([route], "missing-model")).toBeUndefined();
 });
 
+test("createModelAlias includes explore role", () => {
+  const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
+  const alias = createModelAlias("explore", provider.id, "qwen-explore");
+  expect(alias).toMatch(/^eco-explore-/);
+  const route: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "qwen-explore",
+    aliasModelId: alias,
+  };
+  expect(resolveProxyRoute([route], alias)).toEqual(route);
+});
+
 test("lists alias and upstream model ids for SDK model discovery", () => {
   const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
   const route: AnthropicProxyResolvedRoute = {

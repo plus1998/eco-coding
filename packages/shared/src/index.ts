@@ -1,4 +1,4 @@
-export type AgentRole = "planner" | "architect" | "coder" | "reviewer" | "tester";
+export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewer" | "tester";
 
 export type ModelCapability =
   | "messages_api"

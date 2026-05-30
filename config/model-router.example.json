@@ -27,6 +27,12 @@
       "requiredCapabilities": ["messages_api", "streaming", "tool_use"]
     },
     {
+      "role": "explore",
+      "primaryModelId": "claude-sonnet",
+      "fallbackModelIds": [],
+      "requiredCapabilities": ["messages_api", "streaming", "tool_use"]
+    },
+    {
       "role": "coder",
       "primaryModelId": "claude-sonnet",
       "fallbackModelIds": [],

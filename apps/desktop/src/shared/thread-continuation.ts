@@ -71,15 +71,17 @@ export function buildActivityContextForPrompt(
         ? "用户"
         : line.role === "planner"
           ? "规划"
-          : line.role === "architect"
-            ? "架构"
-            : line.role === "coder"
-              ? "编码"
-              : line.role === "reviewer"
-                ? "审查"
-                : line.role === "tester"
-                  ? "测试"
-                  : line.role;
+          : line.role === "explore"
+            ? "探索"
+            : line.role === "architect"
+              ? "架构"
+              : line.role === "coder"
+                ? "编码"
+                : line.role === "reviewer"
+                  ? "审查"
+                  : line.role === "tester"
+                    ? "测试"
+                    : line.role;
     entries.push(`[${roleLabel}] ${text}`);
   }
 

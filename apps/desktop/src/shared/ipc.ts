@@ -85,7 +85,7 @@ export interface WorkspaceOpenResult {
   workspace?: WorkspaceInfo;
 }
 
-export const AGENT_ROLES = ["planner", "architect", "coder", "reviewer", "tester"] as const;
+export const AGENT_ROLES = ["planner", "explore", "architect", "coder", "reviewer", "tester"] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
