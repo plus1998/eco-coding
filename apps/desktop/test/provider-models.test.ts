@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildMessagesUrl,
   buildModelsListUrl,
+  buildProviderTestRequestBody,
   parseUpstreamModelsPayload,
   testProviderConnection,
 } from "../src/main/provider-models";
@@ -60,6 +61,17 @@ describe("parseUpstreamModelsPayload", () => {
   });
 });
 
+describe("buildProviderTestRequestBody", () => {
+  test("disables thinking and allows enough tokens for a short reply", () => {
+    expect(buildProviderTestRequestBody("qwen3")).toEqual({
+      model: "qwen3",
+      max_tokens: 256,
+      messages: [{ role: "user", content: "hi" }],
+      thinking: { type: "disabled" },
+    });
+  });
+});
+
 describe("testProviderConnection", () => {
   test("requires default model", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
@@ -90,8 +102,9 @@ describe("testProviderConnection", () => {
       expect(url).toBe("https://api.example.com/v1/messages");
       expect(JSON.parse(String(init?.body))).toEqual({
         model: "claude-sonnet-4-6",
-        max_tokens: 32,
+        max_tokens: 256,
         messages: [{ role: "user", content: "hi" }],
+        thinking: { type: "disabled" },
       });
       return new Response(
         JSON.stringify({ content: [{ type: "text", text: "Hello! How can I help?" }] }),
@@ -106,5 +119,24 @@ describe("testProviderConnection", () => {
     );
 
     expect(result).toEqual({ ok: true, reply: "Hello! How can I help?" });
+  });
+
+  test("accepts thinking-only replies when text is absent", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          content: [{ type: "thinking", thinking: "The user said hi." }],
+        }),
+        { status: 200 },
+      );
+
+    const result = await testProviderConnection(
+      store,
+      { baseUrl: "https://api.example.com", defaultModel: "qwen3" },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "The user said hi." });
   });
 });
