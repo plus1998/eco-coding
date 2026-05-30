@@ -196,6 +196,7 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
 }
 
 export type { PlanReadyPayload } from "../../shared/src";
+export * from "./eco-sdk-hooks";
 export * from "./claude-agent-sdk";
 export {
   buildBuiltinOtelEnv,

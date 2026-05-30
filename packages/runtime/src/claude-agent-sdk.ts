@@ -17,6 +17,7 @@ import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
+import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
 import {
   ecoBasePromptAppend,
   exploreAgentDescription,
@@ -111,7 +112,8 @@ export interface ClaudeAgentSdkDriverOptions {
   /** When set, SDK CLI exports OTel to this local endpoint (eco-coding ingests for UI/logs). */
   otel?: EcoBuiltinOtelOptions;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
-  canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
+  /** SDK callback hooks context (AskUserQuestion, reviewer scope, task tracking, notifications). */
+  hookContext?: EcoHookContext;
 }
 
 export interface SdkToolPermissionRequest {
@@ -230,7 +232,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         append: systemAppend,
       },
       tools: { type: "preset", preset: "claude_code" },
-      canUseTool: this.options.canUseTool ? createCanUseTool(this.options.canUseTool) : undefined,
+      ...(this.options.hookContext
+        ? { hooks: buildEcoSdkHooks(this.options.hookContext) }
+        : {}),
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
@@ -689,15 +693,12 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
       return [];
     }
     if (
-      message.subtype === "task_started" ||
-      message.subtype === "task_updated" ||
       message.subtype === "task_progress"
     ) {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
     }
     if (
       message.subtype === "status" ||
-      message.subtype === "notification" ||
       message.subtype === "api_retry" ||
       message.subtype === "permission_denied"
     ) {

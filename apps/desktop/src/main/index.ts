@@ -4,9 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ClaudeAgentSdkDriver,
-  composeCanUseToolHandlers,
-  createAskUserQuestionHandler,
-  createReviewerScopeToolHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
   formatUsageBadge,
@@ -14,12 +11,13 @@ import {
   estimateContextTokens,
   parseModelUsage,
   parseUsagePayload,
+  type EcoHookContext,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
   type OtelActivityLine,
   type OtelUsageUpdate,
   type PlanReadyPayload,
-  type SdkToolPermissionRequest,
+  type SdkTodoUpdatedPayload,
 } from "@eco/runtime";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
@@ -889,10 +887,14 @@ async function runCodingThreadExecution(
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
+  const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
+  let stopTodosHandled = false;
+
   const todoTracker = createSdkTaskTracker(threadId, {
     listTodos: () => conversationStore.listCoderTodos(threadId),
     replaceTodos: (todos) => conversationStore.replaceCoderTodos(threadId, todos),
   }, emitTodoList);
+  const taskHookHandlers = todoTracker.createHookHandlers(() => stopStatusRef.current);
   const executionPlan = {
     ...pending,
     routesJson: pending.routesJson || "[]",
@@ -907,7 +909,16 @@ async function runCodingThreadExecution(
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
-        const driver = createSdkDriver(threadId, attemptProxy);
+        const driver = createSdkDriver(threadId, attemptProxy, {
+          taskTracker: {
+            ...taskHookHandlers,
+            onStop(status) {
+              stopTodosHandled = true;
+              taskHookHandlers.onStop(status);
+            },
+          },
+          getStopTodoStatus: () => stopStatusRef.current,
+        });
 
         if (!driver.runExecution) {
           throw new Error("Runtime driver does not support execution phase.");
@@ -931,7 +942,10 @@ async function runCodingThreadExecution(
             continue;
           }
 
-          todoTracker.observeEvent(event);
+          if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
+            todoTracker.handleTaskProgress(event.payload);
+          }
+
           emitSdkStreamActivity(threadId, event);
         }
 
@@ -953,18 +967,26 @@ async function runCodingThreadExecution(
     });
 
     if (executionOutcome.aborted) {
-      todoTracker.completeRunning("cancelled");
+      stopStatusRef.current = "cancelled";
+      if (!stopTodosHandled) {
+        taskHookHandlers.onStop("cancelled");
+      }
       await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。", executionPlan);
       return;
     }
 
     if (!executionOutcome.ok) {
-      todoTracker.completeRunning("blocked");
+      stopStatusRef.current = "blocked";
+      if (!stopTodosHandled) {
+        taskHookHandlers.onStop("blocked");
+      }
       await restoreAfterExecutionFailure(threadId, worktreePlan, executionOutcome.reason, executionPlan);
       return;
     }
 
-    todoTracker.completeRunning("completed");
+    if (!stopTodosHandled) {
+      taskHookHandlers.onStop("completed");
+    }
 
     updateThread(threadId, {
       status: "idle",
@@ -990,7 +1012,10 @@ async function runCodingThreadExecution(
 
     await cleanupWorktreeForThread(threadId);
   } catch (error) {
-    todoTracker.completeRunning("blocked");
+    stopStatusRef.current = "blocked";
+    if (!stopTodosHandled) {
+      taskHookHandlers.onStop("blocked");
+    }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     activeRuns.delete(threadId);
@@ -1290,6 +1315,7 @@ function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
 function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
+  hookContextExtras?: Partial<EcoHookContext>,
 ): ClaudeAgentSdkDriver {
   const endpoint = localOtelReceiver.getEndpoint();
   if (!endpoint) {
@@ -1298,7 +1324,10 @@ function createSdkDriver(
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
-    canUseTool: createThreadCanUseTool(threadId),
+    hookContext: {
+      ...createThreadHookContext(threadId),
+      ...hookContextExtras,
+    },
     otel: { endpoint, threadId },
   });
 }
@@ -1377,6 +1406,10 @@ function isAgentSkillAssignments(value: unknown): value is AgentSkillAssignments
     const skills = record[role];
     return Array.isArray(skills) && skills.every((entry) => typeof entry === "string");
   });
+}
+
+function isSdkTodoProgressPayload(payload: unknown): payload is SdkTodoUpdatedPayload {
+  return typeof payload === "object" && payload !== null && "sdkKind" in payload;
 }
 
 function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
@@ -1569,58 +1602,57 @@ function recordUserPrompt(threadId: string, prompt: string): void {
   emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
 }
 
-function createThreadCanUseTool(threadId: string): (request: SdkToolPermissionRequest) => Promise<{
-  behavior: "allow";
-  updatedInput?: Record<string, unknown>;
-}> {
-  const askHandler = createAskUserQuestionHandler(async (parsed) => {
-    updateThread(threadId, { status: "running", message: "等待你的回答…" });
-    const clarificationRequest: ThreadLiveEvent["clarification"] = {
-      toolUseId: parsed.toolUseId,
-      threadId,
-      questions: parsed.questions,
-    };
-    emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
-      clarification: clarificationRequest,
-    });
-    const answers = await registerPendingClarification(threadId, parsed.toolUseId, parsed);
-    updateThread(threadId, { status: "running", message: "正在分析并制定计划…" });
-    emitThreadEvent(
-      threadId,
-      "clarification.answered",
-      formatClarificationAnswersSummary(
+function createThreadHookContext(threadId: string): EcoHookContext {
+  return {
+    askUserQuestion: async (parsed) => {
+      updateThread(threadId, { status: "running", message: "等待你的回答…" });
+      const clarificationRequest: ThreadLiveEvent["clarification"] = {
+        toolUseId: parsed.toolUseId,
+        threadId,
+        questions: parsed.questions,
+      };
+      emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
+        clarification: clarificationRequest,
+      });
+      const answers = await registerPendingClarification(threadId, parsed.toolUseId, parsed);
+      updateThread(threadId, { status: "running", message: "正在分析并制定计划…" });
+      emitThreadEvent(
+        threadId,
+        "clarification.answered",
+        formatClarificationAnswersSummary(
+          { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
+          answers,
+        ),
+        "planner",
+        false,
+      );
+      return buildAskUserQuestionUpdatedInput(
         { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
         answers,
-      ),
-      "planner",
-      false,
-    );
-    return buildAskUserQuestionUpdatedInput(
-      { toolUseId: parsed.toolUseId, threadId, questions: parsed.questions },
-      answers,
-      parsed.rawInput,
-    );
-  });
-
-  const reviewerScopeHandler = createReviewerScopeToolHandler(async () => {
-    const run = activeRuns.get(threadId);
-    if (!run?.worktreePlan) {
-      return [];
-    }
-    try {
-      return await gitWorktrees.changedFiles(run.worktreePlan);
-    } catch (error) {
-      console.error("Failed to list worktree files for reviewer scope:", error);
-      return [];
-    }
-  });
-
-  return async (request) => {
-    const decision = await composeCanUseToolHandlers(askHandler, reviewerScopeHandler)(request);
-    if (decision.behavior === "deny") {
-      throw new Error(decision.message);
-    }
-    return decision;
+        parsed.rawInput,
+      );
+    },
+    resolveChangedFiles: async () => {
+      const run = activeRuns.get(threadId);
+      if (!run?.worktreePlan) {
+        return [];
+      }
+      try {
+        return await gitWorktrees.changedFiles(run.worktreePlan);
+      } catch (error) {
+        console.error("Failed to list worktree files for reviewer scope:", error);
+        return [];
+      }
+    },
+    onNotification: ({ message, notificationType }) => {
+      if (notificationType === "permission_prompt") {
+        updateThread(threadId, { status: "running", message: "等待工具权限确认…" });
+        return;
+      }
+      if (notificationType === "idle_prompt") {
+        updateThread(threadId, { status: "running", message: message.trim() || "Agent 等待输入…" });
+      }
+    },
   };
 }
 

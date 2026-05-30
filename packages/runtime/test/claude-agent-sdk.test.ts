@@ -483,7 +483,32 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   });
 });
 
-test("maps SDK task system messages to todo.updated events", () => {
+test("maps SDK task_progress system messages to todo.updated events", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+      last_tool_name: "Read",
+      uuid: "sdk_task_1",
+      session_id: "session_1",
+    },
+    "thr_1",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "todo.updated",
+    payload: {
+      sdkKind: "task_progress",
+      task_id: "task_abc",
+      description: "Inspecting auth module",
+    },
+  });
+});
+
+test("does not map task_started system messages (handled by SDK hooks)", () => {
   const events = mapSdkMessageToEvents(
     {
       type: "system",
@@ -496,15 +521,7 @@ test("maps SDK task system messages to todo.updated events", () => {
     "thr_1",
   );
 
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    type: "todo.updated",
-    payload: {
-      sdkKind: "task_started",
-      task_id: "task_abc",
-      description: "Review changes",
-    },
-  });
+  expect(events).toHaveLength(0);
 });
 
 test("formatAgentEventLine renders todo.updated task progress for activity", () => {

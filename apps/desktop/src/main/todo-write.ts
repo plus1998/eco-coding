@@ -1,7 +1,7 @@
 import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 import { normalizeTaskTitle } from "./coder-tasks.js";
 
-/** One item from Claude Code `TodoWrite` (Codex `update_plan` equivalent). */
+/** @deprecated Legacy TodoWrite path; execution uses TaskCreate/TaskUpdate via SDK PreToolUse hooks. */
 export interface TodoWriteItem {
   content: string;
   activeForm?: string;

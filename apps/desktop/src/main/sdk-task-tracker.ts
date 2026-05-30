@@ -1,4 +1,4 @@
-import type { SdkTodoUpdatedPayload } from "@eco/runtime";
+import type { EcoTaskTrackerHooks, SdkTodoUpdatedPayload } from "@eco/runtime";
 import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 import {
   completeRunningCoderTodos,
@@ -7,8 +7,6 @@ import {
   updateCoderTodoStatus,
 } from "./coder-tasks.js";
 import { coderTodosFromTodoWrite, parseTodoWriteToolInput } from "./todo-write.js";
-
-type AgentEventLike = { type: string; payload: unknown };
 
 export interface SdkTaskTrackerStore {
   listTodos(): CoderTodoItem[];
@@ -61,13 +59,14 @@ export function createSdkTaskTracker(
   store: SdkTaskTrackerStore,
   emitTodoList: (threadId: string, todos: CoderTodoItem[]) => void,
 ): {
-  observeEvent: (event: AgentEventLike) => void;
-  completeRunning: (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => void;
+  handleTaskProgress: (payload: SdkTodoUpdatedPayload) => void;
+  createHookHandlers: (getStopStatus?: () => "completed" | "blocked" | "cancelled") => EcoTaskTrackerHooks;
 } {
   let todos = store.listTodos();
   let signature = todoListSignature(todos);
   let positionCounter = todos.reduce((max, todo) => Math.max(max, todo.position + 1), 0);
   const sdkTaskIds = new Map<string, string>();
+  const subagentTodoLinks = new Map<string, string>();
   let progressFromSdk = false;
 
   const persist = (nextTodos: CoderTodoItem[]) => {
@@ -96,6 +95,7 @@ export function createSdkTaskTracker(
     }
     progressFromSdk = true;
     sdkTaskIds.clear();
+    subagentTodoLinks.clear();
     const next = coderTodosFromTodoWrite(threadId, items, todos);
     positionCounter = next.length;
     persist(next);
@@ -190,50 +190,27 @@ export function createSdkTaskTracker(
     );
   };
 
-  const applyTaskStarted = (payload: SdkTodoUpdatedPayload) => {
-    if (payload.skip_transcript) {
-      return;
-    }
+  const applyTaskCreated = (input: { taskId: string; subject: string; description?: string }) => {
     progressFromSdk = true;
-    const title = payload.description?.trim() || "Task";
-    const detail = payload.prompt?.trim() || payload.description?.trim() || title;
-    const todoId = `${threadId}:sdk-task:${payload.task_id}`;
-    linkSdkTask(payload.task_id, todoId);
-
-    if (payload.subagent_type) {
-      const match = findTodoByTitle(todos, title);
-      if (match) {
-        linkSdkTask(payload.task_id, match.id);
-        persist(updateCoderTodoStatus(todos, match.id, "running"));
-      }
+    const subject = input.subject.trim();
+    if (!subject) {
       return;
     }
-
-    const existing = todos.find((todo) => todo.id === todoId);
-    const now = new Date().toISOString();
+    const todoId = `${threadId}:sdk-task:${input.taskId}`;
+    linkSdkTask(input.taskId, todoId);
+    const existing = todos.find((todo) => todo.id === todoId) ?? findTodoByTitle(todos, subject);
     if (existing) {
-      persist(
-        todos.map((todo) =>
-          todo.id === todoId
-            ? {
-                ...todo,
-                title,
-                detail,
-                updatedAt: now,
-              }
-            : todo,
-        ),
-      );
+      linkSdkTask(input.taskId, existing.id);
       return;
     }
-
+    const now = new Date().toISOString();
     persist([
       ...todos,
       {
         id: todoId,
         threadId,
-        title,
-        detail,
+        title: subject,
+        detail: input.description?.trim() || subject,
         status: "pending",
         position: positionCounter++,
         updatedAt: now,
@@ -241,56 +218,53 @@ export function createSdkTaskTracker(
     ]);
   };
 
-  const applyTaskUpdated = (payload: SdkTodoUpdatedPayload) => {
+  const applyTaskCompleted = (input: { taskId: string; subject: string }) => {
     progressFromSdk = true;
-    const todoId = todoIdForSdkTask(payload.task_id) ?? `${threadId}:sdk-task:${payload.task_id}`;
-    linkSdkTask(payload.task_id, todoId);
-    const patch = payload.patch;
-    if (!patch) {
-      return;
-    }
-
-    const status = mapSdkTaskStatus(patch.status);
-    const now = new Date().toISOString();
+    const todoId = todoIdForSdkTask(input.taskId) ?? `${threadId}:sdk-task:${input.taskId}`;
+    linkSdkTask(input.taskId, todoId);
     const existing = todos.find((todo) => todo.id === todoId);
     if (!existing) {
-      if (patch.status === "deleted") {
-        return;
-      }
+      const subject = input.subject.trim() || "Task";
+      const now = new Date().toISOString();
       persist([
         ...todos,
         {
           id: todoId,
           threadId,
-          title: patch.description?.trim() || "Task",
-          detail: patch.description?.trim() || "Task",
-          status: status ?? "pending",
+          title: subject,
+          detail: subject,
+          status: "completed",
           position: positionCounter++,
           updatedAt: now,
         },
       ]);
       return;
     }
+    persist(updateCoderTodoStatus(todos, todoId, "completed"));
+  };
 
-    if (patch.status === "deleted") {
-      persist(todos.filter((todo) => todo.id !== todoId));
-      sdkTaskIds.delete(payload.task_id);
+  const applySubagentStart = (input: { agentId: string; agentType: string }) => {
+    progressFromSdk = true;
+    const pending = todos.find((todo) => todo.status === "pending");
+    if (!pending) {
       return;
     }
+    subagentTodoLinks.set(input.agentId, pending.id);
+    persist(updateCoderTodoStatus(todos, pending.id, "running"));
+  };
 
-    persist(
-      todos.map((todo) => {
-        if (todo.id !== todoId) {
-          return todo;
-        }
-        return {
-          ...todo,
-          ...(patch.description ? { detail: patch.description, title: patch.description } : {}),
-          ...(status ? { status } : {}),
-          updatedAt: now,
-        };
-      }),
-    );
+  const applySubagentStop = (input: { agentId: string; agentType: string }) => {
+    progressFromSdk = true;
+    const linkedTodoId = subagentTodoLinks.get(input.agentId);
+    if (linkedTodoId) {
+      persist(updateCoderTodoStatus(todos, linkedTodoId, "completed"));
+      subagentTodoLinks.delete(input.agentId);
+      return;
+    }
+    const running = todos.find((todo) => todo.status === "running");
+    if (running) {
+      persist(updateCoderTodoStatus(todos, running.id, "completed"));
+    }
   };
 
   const applyTaskProgress = (payload: SdkTodoUpdatedPayload) => {
@@ -319,54 +293,60 @@ export function createSdkTaskTracker(
     );
   };
 
-  const applySdkTodoUpdated = (payload: SdkTodoUpdatedPayload) => {
-    if (payload.sdkKind === "task_started") {
-      applyTaskStarted(payload);
+  const applySubagentTaskStarted = (payload: SdkTodoUpdatedPayload) => {
+    if (payload.skip_transcript || !payload.subagent_type) {
       return;
     }
-    if (payload.sdkKind === "task_updated") {
-      applyTaskUpdated(payload);
-      return;
-    }
-    if (payload.sdkKind === "task_progress") {
-      applyTaskProgress(payload);
+    progressFromSdk = true;
+    const title = payload.description?.trim() || "Task";
+    linkSdkTask(payload.task_id, `${threadId}:sdk-task:${payload.task_id}`);
+    const match = findTodoByTitle(todos, title);
+    if (match) {
+      linkSdkTask(payload.task_id, match.id);
+      persist(updateCoderTodoStatus(todos, match.id, "running"));
     }
   };
 
+  const completeRunning = (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => {
+    if (!progressFromSdk && todos.length === 0) {
+      return;
+    }
+    persist(completeRunningCoderTodos(todos, status));
+  };
+
   return {
-    observeEvent(event) {
-      if (event.type === "todo.updated" && isRecord(event.payload)) {
-        applySdkTodoUpdated(event.payload as SdkTodoUpdatedPayload);
+    handleTaskProgress(payload) {
+      if (payload.sdkKind === "task_progress") {
+        applyTaskProgress(payload);
         return;
       }
-
-      if (event.type !== "tool.started" || !isRecord(event.payload)) {
-        return;
-      }
-
-      const toolName = event.payload.tool_name;
-      const input = event.payload.input;
-      if (!isRecord(input)) {
-        return;
-      }
-
-      if (toolName === "TodoWrite") {
-        applyTodoWrite(input);
-        return;
-      }
-      if (toolName === "TaskCreate") {
-        applyTaskCreateTool(input);
-        return;
-      }
-      if (toolName === "TaskUpdate") {
-        applyTaskUpdateTool(input);
+      if (payload.sdkKind === "task_started") {
+        applySubagentTaskStarted(payload);
       }
     },
-    completeRunning(status) {
-      if (!progressFromSdk && todos.length === 0) {
-        return;
-      }
-      persist(completeRunningCoderTodos(todos, status));
+    createHookHandlers(getStopStatus) {
+      return {
+        onPreToolUse(toolName, input) {
+          if (toolName === "TodoWrite") {
+            applyTodoWrite(input);
+            return;
+          }
+          if (toolName === "TaskCreate") {
+            applyTaskCreateTool(input);
+            return;
+          }
+          if (toolName === "TaskUpdate") {
+            applyTaskUpdateTool(input);
+          }
+        },
+        onTaskCreated: applyTaskCreated,
+        onTaskCompleted: applyTaskCompleted,
+        onSubagentStart: applySubagentStart,
+        onSubagentStop: applySubagentStop,
+        onStop(status) {
+          completeRunning(getStopStatus?.() ?? status);
+        },
+      };
     },
   };
 }
