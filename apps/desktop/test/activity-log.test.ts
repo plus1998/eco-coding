@@ -223,6 +223,28 @@ test("deduplicates repeated narrative separated by tool exploration", () => {
   expect(narratives).toHaveLength(1);
 });
 
+test("collapses read progress and grep tool on the same file", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "explore" },
+      { id: "1", role: "explore", message: "Reading activityLinkGroupMessage.service.ts · Read" },
+      { id: "2", role: "tool", message: "Tool: Grep · activityLinkGroupMessage.service.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const actions =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "action")
+      : [];
+  expect(actions).toHaveLength(1);
+  expect(actions[0]?.kind).toBe("action");
+  if (actions[0]?.kind === "action") {
+    expect(actions[0].label).toBe("搜索 · activityLinkGroupMessage.service.ts");
+  }
+});
+
 test("hides usage cost lines even with subagent prefix", () => {
   const blocks = buildActivityLogBlocks(
     [

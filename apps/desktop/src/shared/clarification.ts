@@ -10,16 +10,15 @@ export function resolveClarificationQuestionAnswer(
   customText: string,
 ): string[] {
   const trimmed = customText.trim();
-  if (trimmed) {
+  if (selectedLabels.includes(CLARIFICATION_CUSTOM_OPTION_LABEL) && trimmed) {
     return [trimmed];
   }
   return selectedLabels.filter((label) => label !== CLARIFICATION_CUSTOM_OPTION_LABEL);
 }
 
 export function isClarificationQuestionReady(selectedLabels: string[], customText: string): boolean {
-  const trimmed = customText.trim();
-  if (trimmed) {
-    return true;
+  if (selectedLabels.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
+    return customText.trim().length > 0;
   }
   if (selectedLabels.length === 0) {
     return false;

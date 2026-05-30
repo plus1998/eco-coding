@@ -2012,6 +2012,105 @@ button:not(:disabled) {
   word-break: break-word;
 }
 
+.run-log-narrative.compact .run-log-narrative-body,
+.run-log-narrative.compact .markdown-content {
+  font-size: 14px;
+  color: #d4d4d4;
+}
+
+.run-log-narrative .run-log-narrative-body,
+.run-log-narrative .markdown-content {
+  margin: 0;
+  color: #e5e5e5;
+  font-size: 15px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content blockquote,
+.markdown-content pre {
+  margin: 0.65em 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  margin: 1em 0 0.45em;
+  color: #f5f5f5;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.markdown-content h1 {
+  font-size: 1.35em;
+}
+
+.markdown-content h2 {
+  font-size: 1.2em;
+}
+
+.markdown-content h3 {
+  font-size: 1.08em;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.35em;
+}
+
+.markdown-content li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-content blockquote {
+  padding-left: 12px;
+  border-left: 3px solid rgba(255, 255, 255, 0.18);
+  color: #c8c8c8;
+}
+
+.markdown-content a {
+  color: #7eb8ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-inline-code,
+.run-log-code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f0f0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.markdown-pre {
+  overflow-x: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.markdown-pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .run-log-narrative.compact p {
   font-size: 14px;
   color: #d4d4d4;
@@ -2024,15 +2123,6 @@ button:not(:disabled) {
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.run-log-code {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f0f0f0;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.92em;
 }
 
 .run-log-cursor {

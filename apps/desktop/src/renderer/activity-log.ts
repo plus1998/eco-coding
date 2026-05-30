@@ -283,6 +283,13 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     ) {
       return;
     }
+    if (last?.kind === "action") {
+      const replaced = replaceOverlappingToolAction(last, tool, label, subagent);
+      if (replaced) {
+        current.details[current.details.length - 1] = replaced;
+        return;
+      }
+    }
     current.details.push({
       kind: "action",
       icon: iconForToolCategory(tool.category),
@@ -337,6 +344,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
 
     if (shouldHideSystemLine(line)) {
+      continue;
+    }
+
+    if (isEphemeralToolStatusLine(line.message)) {
       continue;
     }
 
@@ -534,6 +545,44 @@ export function formatDuration(ms: number): string {
 function isPhaseLine(message: string): boolean {
   const trimmed = message.trim();
   return /^【\d+\/\d+】/.test(trimmed) || /^【自动重试 \d+\/\d+】/.test(trimmed);
+}
+
+function isEphemeralToolStatusLine(message: string): boolean {
+  return /^Running tool:/i.test(stripSubagentBracketPrefix(message.trim()));
+}
+
+function actionDetailFromLabel(label: string): string | undefined {
+  const separator = " · ";
+  const index = label.indexOf(separator);
+  return index >= 0 ? label.slice(index + separator.length) : undefined;
+}
+
+/** Progress hints like Read-before-Grep on the same file collapse to one row. */
+function replaceOverlappingToolAction(
+  prior: Extract<ActivityDetailBlock, { kind: "action" }>,
+  tool: ParsedToolAction,
+  nextLabel: string,
+  subagent?: string,
+): Extract<ActivityDetailBlock, { kind: "action" }> | null {
+  if (prior.subagent !== subagent) {
+    return null;
+  }
+  const priorDetail = actionDetailFromLabel(prior.label);
+  const nextDetail = actionDetailFromLabel(nextLabel) ?? tool.detail;
+  if (!priorDetail || !nextDetail || priorDetail !== nextDetail) {
+    return null;
+  }
+  const priorIsRead = prior.label.startsWith("读取 · ");
+  const nextIsSearch = tool.tool === "Grep" || tool.tool === "Glob";
+  if (priorIsRead && nextIsSearch) {
+    return {
+      kind: "action",
+      icon: iconForToolCategory(tool.category),
+      label: nextLabel,
+      ...(subagent && { subagent }),
+    };
+  }
+  return null;
 }
 
 function shouldHideSystemLine(line: ThreadActivityLine): boolean {

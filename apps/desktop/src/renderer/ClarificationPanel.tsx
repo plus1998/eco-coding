@@ -52,18 +52,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
   const currentSelection = selections[questionIndex] ?? [];
   const currentCustomText = customTexts[questionIndex] ?? "";
   const questionReady = isClarificationQuestionReady(currentSelection, currentCustomText);
-  const showCustomInput = useMemo(() => {
-    if (!question) {
-      return false;
-    }
-    if (currentCustomText.trim()) {
-      return true;
-    }
-    if (currentSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
-      return true;
-    }
-    return currentSelection.some((label) => optionRequiresCustomExplanation(label));
-  }, [question, currentCustomText, currentSelection]);
+  const showCustomInput = currentSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL);
 
   useEffect(() => {
     setHighlightIndex(recommendedIndex >= 0 ? recommendedIndex : 0);
@@ -302,32 +291,34 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
         })}
       </ul>
 
-      <div className="clarification-custom">
-        <label className="clarification-custom-label" htmlFor={`clarification-custom-${request.toolUseId}`}>
-          自定义说明
-          {showCustomInput && !currentCustomText.trim() ? (
-            <span className="clarification-custom-required">（必填）</span>
-          ) : null}
-        </label>
-        <textarea
-          id={`clarification-custom-${request.toolUseId}`}
-          ref={customInputRef}
-          className="clarification-custom-input"
-          disabled={busy}
-          rows={3}
-          placeholder="在此输入你的说明；选择「请说明」类选项或「其他」时必须填写。也可不选预设项，直接输入。"
-          value={currentCustomText}
-          onChange={(event) => {
-            const value = event.target.value;
-            setCustomTexts((current) => {
-              const next = [...current];
-              next[questionIndex] = value;
-              return next;
-            });
-          }}
-        />
-        <p className="clarification-custom-hint">提交时将使用此处文字作为回答（不会提交「其他」字样本身）。</p>
-      </div>
+      {showCustomInput ? (
+        <div className="clarification-custom">
+          <label className="clarification-custom-label" htmlFor={`clarification-custom-${request.toolUseId}`}>
+            自定义说明
+            {!currentCustomText.trim() ? (
+              <span className="clarification-custom-required">（必填）</span>
+            ) : null}
+          </label>
+          <textarea
+            id={`clarification-custom-${request.toolUseId}`}
+            ref={customInputRef}
+            className="clarification-custom-input"
+            disabled={busy}
+            rows={3}
+            placeholder="在此输入你的说明。"
+            value={currentCustomText}
+            onChange={(event) => {
+              const value = event.target.value;
+              setCustomTexts((current) => {
+                const next = [...current];
+                next[questionIndex] = value;
+                return next;
+              });
+            }}
+          />
+          <p className="clarification-custom-hint">提交时将使用此处文字作为回答（不会提交「其他」字样本身）。</p>
+        </div>
+      ) : null}
 
       <footer className="clarification-footer">
         <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>

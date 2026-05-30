@@ -9,8 +9,8 @@ import {
   type ActivityActionIcon,
   type ActivityDetailBlock,
   type ActivityLogBlock,
-  splitNarrativeSegments,
 } from "./activity-log";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
@@ -254,10 +254,8 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
       </button>
       {showBody && hasBody ? (
         <div className="run-log-thinking-body">
-          <p>
-            {text}
-            {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
-          </p>
+          <MarkdownContent text={text} />
+          {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
         </div>
       ) : null}
     </div>
@@ -336,7 +334,9 @@ function SubagentMissionBlock({
         </span>
         <span className="run-log-mission-tag">任务目标</span>
       </div>
-      <p className="run-log-mission-summary">{summary}</p>
+      <p className="run-log-mission-summary">
+        <MarkdownContent text={summary} />
+      </p>
       {showPrompt ? (
         <details className="run-log-mission-details">
           <summary>查看完整任务说明</summary>
@@ -393,7 +393,6 @@ function RunLogNarrative({
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
-  const segments = splitNarrativeSegments(text);
   const usage = subagent ? usageByRole?.[subagent] : undefined;
 
   return (
@@ -413,18 +412,10 @@ function RunLogNarrative({
           ) : null}
         </span>
       ) : null}
-      <p>
-        {segments.map((segment, index) =>
-          segment.type === "code" ? (
-            <code key={index} className="run-log-code">
-              {segment.value}
-            </code>
-          ) : (
-            <span key={index}>{segment.value}</span>
-          ),
-        )}
+      <div className="run-log-narrative-body">
+        <MarkdownContent text={text} />
         {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
-      </p>
+      </div>
     </div>
   );
 }
