@@ -210,7 +210,7 @@ async function loadUpstreamModelsForRoutes(
   const collected: UpstreamModelOption[] = [];
 
   for (const route of routes) {
-    if (!route.provider.enabled || !route.provider.apiKey || providersSeen.has(route.provider.id)) {
+    if (!route.provider.enabled || providersSeen.has(route.provider.id)) {
       continue;
     }
     providersSeen.add(route.provider.id);
@@ -430,8 +430,11 @@ function buildUpstreamHeaders(headers: IncomingHttpHeaders, apiKey: string): Hea
   }
   upstreamHeaders.set("content-type", "application/json");
   upstreamHeaders.set("anthropic-version", upstreamHeaders.get("anthropic-version") ?? ANTHROPIC_VERSION);
-  upstreamHeaders.set("x-api-key", apiKey);
-  upstreamHeaders.set("authorization", `Bearer ${apiKey}`);
+  const trimmedKey = apiKey.trim();
+  if (trimmedKey) {
+    upstreamHeaders.set("x-api-key", trimmedKey);
+    upstreamHeaders.set("authorization", `Bearer ${trimmedKey}`);
+  }
   return upstreamHeaders;
 }
 

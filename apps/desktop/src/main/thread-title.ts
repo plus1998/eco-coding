@@ -38,13 +38,17 @@ export async function summarizeThreadTitleWithCoder(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS);
   try {
+    const titleHeaders: Record<string, string> = {
+      "content-type": "application/json",
+      "anthropic-version": ANTHROPIC_VERSION,
+    };
+    const apiKey = coderRoute.provider.apiKey.trim();
+    if (apiKey) {
+      titleHeaders["x-api-key"] = apiKey;
+    }
     const response = await fetcher(`${trimTrailingSlash(coderRoute.provider.baseUrl)}/v1/messages`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "anthropic-version": ANTHROPIC_VERSION,
-        "x-api-key": coderRoute.provider.apiKey,
-      },
+      headers: titleHeaders,
       body: JSON.stringify({
         model: coderRoute.modelId,
         max_tokens: 48,

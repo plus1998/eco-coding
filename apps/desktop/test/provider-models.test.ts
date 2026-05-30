@@ -33,4 +33,11 @@ describe("parseUpstreamModelsPayload", () => {
     });
     expect(models).toEqual([{ id: "gpt-4o", displayName: undefined }]);
   });
+
+  test("parses Ollama native tags list", () => {
+    const models = parseUpstreamModelsPayload({
+      models: [{ name: "qwen2.5-coder:7b", model: "qwen2.5-coder:7b" }],
+    });
+    expect(models).toEqual([{ id: "qwen2.5-coder:7b", displayName: "qwen2.5-coder:7b" }]);
+  });
 });

@@ -455,7 +455,7 @@ function App() {
   const routesReady = AGENT_ROLES.every((role) => {
     const route = settings.routes.find((candidate) => candidate.role === role);
     const provider = route ? providerById.get(route.providerId) : undefined;
-    return Boolean(route?.modelId.trim() && provider?.enabled && provider.hasApiKey);
+    return Boolean(route?.modelId.trim() && provider?.enabled);
   });
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const plannerSupportsImages =
@@ -1124,7 +1124,7 @@ function App() {
             >
               设置
             </button>
-            中配置模型与 API Key
+            中配置模型（API Key 可选）
           </p>
         )}
       </div>

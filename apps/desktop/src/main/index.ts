@@ -2721,9 +2721,6 @@ function resolveRuntimeConfig(
     if (!route.provider.enabled) {
       return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is disabled.` };
     }
-    if (!route.provider.apiKey) {
-      return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is missing an API key.` };
-    }
   }
 
   return {

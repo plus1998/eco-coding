@@ -126,10 +126,6 @@ export function ModelsSettingsPanel({
     if (!providerModalOpen || !providerForm.id) {
       return;
     }
-    const provider = settings.providers.find((entry) => entry.id === providerForm.id);
-    if (!provider?.hasApiKey) {
-      return;
-    }
     if (modelsCache[providerForm.id]?.models.length) {
       return;
     }
@@ -475,7 +471,7 @@ export function ModelsSettingsPanel({
                           providerId: nextProviderId,
                           modelId: route?.modelId || provider?.defaultModel || "",
                         });
-                        if (provider?.hasApiKey && !modelsCache[nextProviderId]?.models.length) {
+                        if (provider && !modelsCache[nextProviderId]?.models.length) {
                           void fetchModels(providerToForm(provider), { silent: true });
                         }
                       }}
@@ -632,7 +628,7 @@ function ProviderEditorModal({
               className="mcp-field-input"
               type="password"
               value={form.apiKey ?? ""}
-              placeholder={form.id ? "留空则保留已保存的 Key" : "sk-..."}
+              placeholder={form.id ? "留空则保留已保存的 Key" : "可选，本地 Ollama 等可留空"}
               onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
             />
           </label>

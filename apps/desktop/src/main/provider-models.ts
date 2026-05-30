@@ -127,21 +127,15 @@ function resolveProviderCredentials(
       return { ok: false, error: `找不到 Provider：${request.providerId}` };
     }
     const resolvedBaseUrl = baseUrl || provider.baseUrl;
-    const resolvedApiKey = inlineApiKey || provider.apiKey;
-    if (!resolvedApiKey) {
-      return { ok: false, error: "请先填写并保存 API Key，或在刷新前临时输入 Key。" };
-    }
+    const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
     return { ok: true, baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey };
   }
 
   if (!baseUrl) {
     return { ok: false, error: "请先填写 baseURL。" };
   }
-  if (!inlineApiKey) {
-    return { ok: false, error: "新建 Provider 时请填写 API Key 后再拉取模型列表。" };
-  }
 
-  return { ok: true, baseUrl, apiKey: inlineApiKey };
+  return { ok: true, baseUrl, apiKey: inlineApiKey ?? "" };
 }
 
 function formatUpstreamError(status: number, raw: string): string {
@@ -163,12 +157,16 @@ function formatUpstreamError(status: number, raw: string): string {
 }
 
 function buildAnthropicHeaders(apiKey: string): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     accept: "application/json",
     "anthropic-version": ANTHROPIC_VERSION,
-    "x-api-key": apiKey,
-    authorization: `Bearer ${apiKey}`,
   };
+  const trimmedKey = apiKey.trim();
+  if (trimmedKey) {
+    headers["x-api-key"] = trimmedKey;
+    headers.authorization = `Bearer ${trimmedKey}`;
+  }
+  return headers;
 }
 
 function dedupeModels(models: UpstreamModelOption[]): UpstreamModelOption[] {
