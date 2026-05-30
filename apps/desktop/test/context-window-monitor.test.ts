@@ -35,6 +35,22 @@ test("markCompactCompleted resets occupancy and cooldown", async () => {
   expect(monitor.shouldCompact("t1")).toBe(false);
 });
 
+test("uses latest occupancy per role not historical max", async () => {
+  const monitor = new ContextWindowMonitor(mockCache());
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 500_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "planner" },
+  );
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 80_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "coder" },
+  );
+  expect(monitor.getSnapshot("t1")?.occupied).toBe(80_000);
+  expect(monitor.getSnapshot("t1")?.displayRole).toBe("coder");
+});
+
 test("dedupes assistant usage by messageId", async () => {
   const monitor = new ContextWindowMonitor(mockCache());
   await monitor.updateFromUsage(

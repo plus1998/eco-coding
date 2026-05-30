@@ -4,6 +4,7 @@ import {
   formatCostUsd,
   mergeUsageTotals,
   parseModelUsage,
+  parseSdkContextUsage,
   parseSdkUsageBilling,
   parseUsagePayload,
 } from "../src/usage";
@@ -48,6 +49,32 @@ test("mergeUsageTotals does not carry totalCostUsd", () => {
   );
   expect(merged.inputTokens).toBe(30);
   expect(merged.totalCostUsd).toBeUndefined();
+});
+
+test("parseSdkContextUsage uses session usage not sum of modelUsage", () => {
+  const usage = parseSdkContextUsage({
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 120_000,
+      cache_creation_input_tokens: 0,
+    },
+    modelUsage: {
+      "claude-sonnet-4-6": {
+        inputTokens: 80_000,
+        outputTokens: 50,
+        cacheReadInputTokens: 400_000,
+        cacheCreationInputTokens: 0,
+      },
+      "claude-haiku-4-5": {
+        inputTokens: 20_000,
+        outputTokens: 10,
+        cacheReadInputTokens: 300_000,
+        cacheCreationInputTokens: 0,
+      },
+    },
+  });
+  expect(usage?.cacheReadTokens).toBe(120_000);
 });
 
 test("parseSdkUsageBilling prefers modelUsage cache fields for billing", () => {

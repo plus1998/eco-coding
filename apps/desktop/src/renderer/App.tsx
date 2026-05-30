@@ -1179,6 +1179,7 @@ function App() {
 
       {showThreadInfo && activeThread ? (
         <ThreadInfoPanel
+          threadId={activeThread.id}
           workspace={projectWorkspace}
           workspacePath={currentProjectPath}
           gitBranch={projectWorkspace?.branch}

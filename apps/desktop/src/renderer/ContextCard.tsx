@@ -8,6 +8,7 @@ interface ContextCardProps {
   placeholder?: string;
   /** When false, hide the card if there is no snapshot yet. */
   showWhenEmpty?: boolean;
+  onDismiss?: () => void;
 }
 
 function formatContextK(value: number): string {
@@ -45,7 +46,12 @@ function formatOccupancyLabel(pct: number): string {
   return `${pct}% 已用`;
 }
 
-export function ContextCard({ context, placeholder, showWhenEmpty = true }: ContextCardProps) {
+export function ContextCard({
+  context,
+  placeholder,
+  showWhenEmpty = true,
+  onDismiss,
+}: ContextCardProps) {
   const [detailsOpen, setDetailsOpen] = useState(true);
 
   if (!context) {
@@ -69,15 +75,27 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true }: Cont
     <div className="context-card">
       <div className="context-card-header">
         <h4 className="context-card-title">Context</h4>
-        <button
-          type="button"
-          className="context-card-collapse"
-          onClick={() => setDetailsOpen((open) => !open)}
-          aria-expanded={detailsOpen}
-          aria-label={detailsOpen ? "折叠分项" : "展开分项"}
-        >
-          <X size={14} aria-hidden />
-        </button>
+        <div className="context-card-header-actions">
+          <button
+            type="button"
+            className="context-card-collapse"
+            onClick={() => setDetailsOpen((open) => !open)}
+            aria-expanded={detailsOpen}
+            aria-label={detailsOpen ? "折叠分项" : "展开分项"}
+          >
+            <span className="context-card-collapse-label">{detailsOpen ? "−" : "+"}</span>
+          </button>
+          {onDismiss ? (
+            <button
+              type="button"
+              className="context-card-dismiss"
+              onClick={onDismiss}
+              aria-label="关闭 Context"
+            >
+              <X size={14} aria-hidden />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="context-card-summary">

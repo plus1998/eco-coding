@@ -247,6 +247,7 @@ export {
   mergeModelUsages,
   mergeUsageTotals,
   parseModelUsage,
+  parseSdkContextUsage,
   parseSdkModelUsageBilling,
   parseSdkUsageBilling,
   parseUsagePayload,

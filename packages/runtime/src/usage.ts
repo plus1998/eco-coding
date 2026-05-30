@@ -98,6 +98,47 @@ export function parseSdkModelUsageBilling(payload: unknown): SdkModelUsageBillin
   return entries.length > 0 ? entries : null;
 }
 
+function hasBillableOrContextTokens(usage: ParsedUsage): boolean {
+  return (
+    usage.inputTokens > 0 ||
+    usage.outputTokens > 0 ||
+    usage.cacheReadTokens > 0 ||
+    usage.cacheCreationTokens > 0
+  );
+}
+
+/**
+ * Session context fill for the context meter (not billing totals).
+ * Uses top-level `usage` on SDK results; per-model entries are not summed.
+ */
+export function parseSdkContextUsage(payload: unknown): ParsedUsage | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const topLevel = parseUsagePayload(payload);
+  if (topLevel && hasBillableOrContextTokens(topLevel)) {
+    return topLevel;
+  }
+
+  const modelBillings = parseSdkModelUsageBilling(payload);
+  if (!modelBillings || modelBillings.length === 0) {
+    return topLevel;
+  }
+
+  let best: ParsedUsage | null = null;
+  let bestOccupancy = 0;
+  for (const entry of modelBillings) {
+    const occupancy =
+      entry.usage.inputTokens + entry.usage.cacheReadTokens + entry.usage.cacheCreationTokens;
+    if (occupancy >= bestOccupancy) {
+      bestOccupancy = occupancy;
+      best = entry.usage;
+    }
+  }
+  return best;
+}
+
 export function mergeModelUsages(usages: readonly ParsedUsage[]): ParsedUsage {
   return usages.reduce(
     (total, usage) => mergeUsageTotals(total, usage),
@@ -124,9 +165,12 @@ export function parseSdkUsageBilling(payload: unknown): {
         : undefined;
 
   if (modelBillings) {
+    const contextUsage =
+      parseSdkContextUsage(payload) ??
+      mergeModelUsages(modelBillings.map((entry) => entry.usage));
     return {
       models: modelBillings,
-      contextUsage: mergeModelUsages(modelBillings.map((entry) => entry.usage)),
+      contextUsage,
       ...(totalCostUsd !== undefined && { totalCostUsd }),
       authoritative: true,
     };

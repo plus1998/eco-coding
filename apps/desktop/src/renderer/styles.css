@@ -2219,15 +2219,170 @@ button:not(:disabled) {
 }
 
 .thread-info-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
   min-height: 100vh;
   max-height: 100vh;
-  overflow-y: auto;
-  padding: calc(var(--window-chrome-top) + 16px) 16px 24px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
   border-left: 1px solid #2e2e2e;
   background: #1a1a1a;
+}
+
+.thread-info-panel-scroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--window-chrome-top) + 16px) 16px 24px;
+}
+
+.thread-info-float-stack {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.thread-info-float-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.thread-info-float-reopen {
+  padding: 6px 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  background: #2b2b2b;
+  color: #d4d4d4;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.thread-info-float-reopen:hover {
+  background: #333;
+  color: #f5f5f5;
+}
+
+.thread-info-float-panel {
+  width: 100%;
+  pointer-events: auto;
+}
+
+.thread-info-float-panel .context-card {
+  margin-top: 0;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.thread-info-float-card {
+  padding: 12px 14px;
+  border: 1px solid #2e2e2e;
+  border-radius: 10px;
+  background: #222222;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.thread-info-float-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thread-info-float-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e5e5;
+  letter-spacing: 0.01em;
+}
+
+.thread-info-float-dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a3a3a3;
+}
+
+.thread-info-float-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e5e5;
+}
+
+.thread-info-billing-card .thread-info-billing-tokens {
+  margin-top: 0;
+}
+
+.thread-info-worktree-embed {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2e2e2e;
+}
+
+.thread-info-worktree-embed-title {
+  margin: 0 0 8px;
+  color: #a3a3a3;
+  font-size: 12px;
+}
+
+.context-card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.context-card-collapse-label {
+  display: inline-flex;
+  width: 14px;
+  align-items: center;
+  justify-content: center;
+  color: #a3a3a3;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.context-card-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a3a3a3;
+}
+
+.context-card-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e5e5;
 }
 
 .thread-info-section {
@@ -3424,6 +3579,10 @@ button:not(:disabled) {
     max-height: none;
     border-left: 0;
     border-top: 1px solid #2e2e2e;
+  }
+
+  .thread-info-panel-scroll {
+    max-height: 40vh;
   }
 
   .codex-sidebar {

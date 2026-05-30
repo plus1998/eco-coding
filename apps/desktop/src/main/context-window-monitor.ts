@@ -5,10 +5,19 @@ import {
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
+import type { AgentRole } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
+
+const SUBAGENT_ROLES: readonly AgentRole[] = [
+  "coder",
+  "architect",
+  "reviewer",
+  "tester",
+  "thinking",
+];
 
 export interface ContextMonitorSnapshot {
   occupied: number;
@@ -18,15 +27,22 @@ export interface ContextMonitorSnapshot {
   modelId?: string;
   limitsResolved: boolean;
   maxOutputTokens?: number;
+  /** Role whose occupancy is shown in the UI. */
+  displayRole?: AgentRole;
+}
+
+interface RoleOccupancyState {
+  occupied: number;
+  modelId?: string;
+  providerBaseUrl?: string;
 }
 
 interface ThreadMonitorState {
-  occupied: number;
+  byRole: Partial<Record<AgentRole, RoleOccupancyState>>;
+  displayRole: AgentRole;
   limit: number;
   limitsResolved: boolean;
   maxOutputTokens?: number;
-  modelId?: string;
-  providerBaseUrl?: string;
   seenMessageIds: Set<string>;
   compactInFlight: boolean;
   lastCompactAt: number;
@@ -40,9 +56,15 @@ export class ContextWindowMonitor {
   async updateFromUsage(
     threadId: string,
     usage: ParsedUsage,
-    options?: { modelId?: string; providerBaseUrl?: string; messageId?: string },
+    options?: {
+      role?: AgentRole;
+      modelId?: string;
+      providerBaseUrl?: string;
+      messageId?: string;
+    },
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
+    const role = options?.role ?? "planner";
     const occupancy = computeWindowOccupancy(usage);
 
     if (options?.messageId) {
@@ -52,18 +74,15 @@ export class ContextWindowMonitor {
       state.seenMessageIds.add(options.messageId);
     }
 
-    if (occupancy > state.occupied) {
-      state.occupied = occupancy;
-    }
+    const prev = state.byRole[role];
+    state.byRole[role] = {
+      occupied: occupancy,
+      modelId: options?.modelId ?? prev?.modelId,
+      providerBaseUrl: options?.providerBaseUrl ?? prev?.providerBaseUrl,
+    };
 
-    if (options?.modelId) {
-      state.modelId = options.modelId;
-    }
-    if (options?.providerBaseUrl) {
-      state.providerBaseUrl = options.providerBaseUrl;
-    }
-
-    await this.refreshLimit(state);
+    this.refreshDisplayRole(state);
+    await this.refreshLimitForDisplay(state);
     return this.toSnapshot(state);
   }
 
@@ -73,9 +92,13 @@ export class ContextWindowMonitor {
     providerBaseUrl: string,
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
-    state.modelId = modelId;
-    state.providerBaseUrl = providerBaseUrl;
-    await this.refreshLimit(state);
+    const role = state.displayRole;
+    state.byRole[role] = {
+      occupied: state.byRole[role]?.occupied ?? 0,
+      modelId,
+      providerBaseUrl,
+    };
+    await this.refreshLimitForDisplay(state);
     return this.toSnapshot(state);
   }
 
@@ -89,11 +112,19 @@ export class ContextWindowMonitor {
     state.compactInFlight = false;
     state.lastCompactAt = Date.now();
     state.seenMessageIds.clear();
-    if (postTokens !== undefined && Number.isFinite(postTokens)) {
-      state.occupied = postTokens;
-    } else {
-      state.occupied = Math.round(state.occupied * 0.5);
+    const planner = state.byRole.planner;
+    const nextOccupied =
+      postTokens !== undefined && Number.isFinite(postTokens)
+        ? postTokens
+        : Math.round((planner?.occupied ?? 0) * 0.5);
+    state.byRole.planner = {
+      ...planner,
+      occupied: nextOccupied,
+    };
+    for (const role of SUBAGENT_ROLES) {
+      delete state.byRole[role];
     }
+    this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }
 
@@ -112,6 +143,10 @@ export class ContextWindowMonitor {
     return this.toSnapshot(state);
   }
 
+  getRoleOccupancy(threadId: string, role: AgentRole): number {
+    return this.states.get(threadId)?.byRole[role]?.occupied ?? 0;
+  }
+
   shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
     const state = this.states.get(threadId);
     if (!state || state.compactInFlight) {
@@ -120,7 +155,8 @@ export class ContextWindowMonitor {
     if (Date.now() - state.lastCompactAt < COMPACT_COOLDOWN_MS) {
       return false;
     }
-    const { atThreshold } = computeOccupancyRatio(state.occupied, state.limit, threshold);
+    const occupied = this.displayOccupancy(state);
+    const { atThreshold } = computeOccupancyRatio(occupied, state.limit, threshold);
     return atThreshold;
   }
 
@@ -132,7 +168,8 @@ export class ContextWindowMonitor {
     let state = this.states.get(threadId);
     if (!state) {
       state = {
-        occupied: 0,
+        byRole: {},
+        displayRole: "planner",
         limit: DEFAULT_CONTEXT_LIMIT,
         limitsResolved: false,
         seenMessageIds: new Set(),
@@ -144,25 +181,54 @@ export class ContextWindowMonitor {
     return state;
   }
 
-  private async refreshLimit(state: ThreadMonitorState): Promise<void> {
-    if (!state.modelId || !state.providerBaseUrl) {
+  /** Prefer subagent session fill during execution; otherwise planner (main session). */
+  private refreshDisplayRole(state: ThreadMonitorState): void {
+    let subMax = 0;
+    let subRole: AgentRole | undefined;
+    for (const role of SUBAGENT_ROLES) {
+      const occupied = state.byRole[role]?.occupied ?? 0;
+      if (occupied > subMax) {
+        subMax = occupied;
+        subRole = role;
+      }
+    }
+    if (subRole && subMax > 0) {
+      state.displayRole = subRole;
       return;
     }
-    const resolved = await this.pricingCache.resolveContextLimit(state.providerBaseUrl, state.modelId);
+    state.displayRole = "planner";
+  }
+
+  private displayOccupancy(state: ThreadMonitorState): number {
+    return state.byRole[state.displayRole]?.occupied ?? 0;
+  }
+
+  private async refreshLimitForDisplay(state: ThreadMonitorState): Promise<void> {
+    const active = state.byRole[state.displayRole];
+    if (!active?.modelId || !active.providerBaseUrl) {
+      return;
+    }
+    const resolved = await this.pricingCache.resolveContextLimit(
+      active.providerBaseUrl,
+      active.modelId,
+    );
     state.limit = resolved.limit;
     state.limitsResolved = resolved.limitsResolved;
     state.maxOutputTokens = resolved.maxOutputTokens;
   }
 
   private toSnapshot(state: ThreadMonitorState): ContextMonitorSnapshot {
-    const { ratio } = computeOccupancyRatio(state.occupied, state.limit);
+    const active = state.byRole[state.displayRole];
+    const occupied = active?.occupied ?? 0;
+    const { ratio } = computeOccupancyRatio(occupied, state.limit);
     return {
-      occupied: state.occupied,
+      occupied,
       limit: state.limit,
       ratio,
-      occupancyPct: occupancyPercent(state.occupied, state.limit),
+      occupancyPct: occupancyPercent(occupied, state.limit),
       limitsResolved: state.limitsResolved,
-      ...(state.modelId && { modelId: state.modelId }),
+      displayRole: state.displayRole,
+      ...(active?.modelId && { modelId: active.modelId }),
       ...(state.maxOutputTokens !== undefined && { maxOutputTokens: state.maxOutputTokens }),
     };
   }

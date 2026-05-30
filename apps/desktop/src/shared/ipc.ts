@@ -267,6 +267,8 @@ export interface ThreadContextSnapshot {
   limit: number;
   occupancyPct: number;
   limitsResolved: boolean;
+  /** Which role's session fill is shown (planner vs subagent). */
+  displayRole?: AgentRole;
   segments: ContextBreakdownSegment[];
   updatedAt: number;
   /** @deprecated Use breakdownRefreshing. */

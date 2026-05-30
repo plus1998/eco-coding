@@ -1,4 +1,5 @@
-import { DollarSign, Folder, GitBranch, HardDrive, HelpCircle, ListTodo, Package } from "lucide-react";
+import { DollarSign, Folder, GitBranch, HardDrive, HelpCircle, ListTodo, Package, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type {
   CoderTodoItem,
@@ -22,6 +23,7 @@ export interface ThreadUsageSummary {
 }
 
 interface ThreadInfoPanelProps {
+  threadId?: string;
   workspace?: WorkspaceInfo;
   workspacePath?: string;
   gitBranch?: string;
@@ -76,7 +78,187 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
   );
 }
 
+function BillingFloatingCard({
+  billing,
+  threadStatus,
+  tokenBadge,
+  plannerLabel,
+  cacheCostSuffix,
+  showBilling,
+  onDismiss,
+}: {
+  billing?: ThreadBillingSnapshot;
+  threadStatus?: ThreadStatus;
+  tokenBadge: string | null;
+  plannerLabel: string;
+  cacheCostSuffix: ReturnType<typeof formatCacheCostSuffix>;
+  showBilling: boolean;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="thread-info-float-card thread-info-billing-card">
+      <div className="thread-info-float-card-header">
+        <h4 className="thread-info-float-card-title">
+          计费对比
+          <span
+            className="thread-info-help"
+            title="① OTel cost_usd 累计（Claude Code 内置价目，含缓存折扣）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价（input/output/cache 分项）节省 = ②−③"
+          >
+            <HelpCircle size={13} aria-hidden />
+          </span>
+        </h4>
+        <button type="button" className="thread-info-float-dismiss" onClick={onDismiss} aria-label="关闭计费对比">
+          <X size={14} aria-hidden />
+        </button>
+      </div>
+
+      {showBilling && tokenBadge ? (
+        <p
+          className="thread-info-billing-tokens"
+          title="↑ 输入 ↓ 输出 ⊙ 缓存 token（读+写合计）；线程累计，非单次请求"
+        >
+          {tokenBadge}
+          {cacheCostSuffix ? (
+            <>
+              {" · "}
+              <HardDrive size={12} className="thread-info-cache-icon" aria-hidden />
+              <span title={cacheCostSuffix.title}>{cacheCostSuffix.label}</span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {showBilling && billing ? (
+        <ul className="thread-info-billing-list">
+          <li title="Claude Code 内置价目估算，非权威账单">
+            <span>① SDK（OTel）</span>
+            <span>{formatCostUsd(billing.otelCostUsd)}</span>
+          </li>
+          <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
+            <span>② 全主模型（{plannerLabel}）</span>
+            <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
+          </li>
+          <li
+            className="thread-info-billing-eco"
+            title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）"
+          >
+            <span>③ 经济编程</span>
+            <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+          </li>
+          <li
+            className={billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"}
+            title="② − ③"
+          >
+            <span>
+              <DollarSign size={13} aria-hidden />
+              {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
+            </span>
+          </li>
+        </ul>
+      ) : (
+        <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
+      )}
+
+      {showBilling && billing && !billing.pricingResolved ? (
+        <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ThreadInfoFloatStack({
+  threadId,
+  showBillingSection,
+  billing,
+  threadStatus,
+  tokenBadge,
+  plannerLabel,
+  cacheCostSuffix,
+  showBilling,
+  context,
+  contextPlaceholder,
+}: {
+  threadId?: string;
+  showBillingSection: boolean;
+  billing?: ThreadBillingSnapshot;
+  threadStatus?: ThreadStatus;
+  tokenBadge: string | null;
+  plannerLabel: string;
+  cacheCostSuffix: ReturnType<typeof formatCacheCostSuffix>;
+  showBilling: boolean;
+  context?: ThreadContextSnapshot;
+  contextPlaceholder: string;
+}) {
+  const [billingOpen, setBillingOpen] = useState(true);
+  const [contextOpen, setContextOpen] = useState(true);
+
+  useEffect(() => {
+    setBillingOpen(true);
+    setContextOpen(true);
+  }, [threadId]);
+
+  const showBillingFloat = showBillingSection;
+  const showContextFloat = true;
+
+  if (!showBillingFloat && !showContextFloat) {
+    return null;
+  }
+
+  return (
+    <div className="thread-info-float-stack">
+      <div className="thread-info-float-pills">
+        {showBillingFloat && !billingOpen ? (
+          <button
+            type="button"
+            className="thread-info-float-reopen"
+            onClick={() => setBillingOpen(true)}
+            aria-label="显示计费对比"
+          >
+            计费
+          </button>
+        ) : null}
+        {showContextFloat && !contextOpen ? (
+          <button
+            type="button"
+            className="thread-info-float-reopen"
+            onClick={() => setContextOpen(true)}
+            aria-label="显示 Context"
+          >
+            Context
+          </button>
+        ) : null}
+      </div>
+
+      {showBillingFloat && billingOpen ? (
+        <div className="thread-info-float-panel">
+          <BillingFloatingCard
+            {...(billing !== undefined && { billing })}
+            {...(threadStatus !== undefined && { threadStatus })}
+            tokenBadge={tokenBadge}
+            plannerLabel={plannerLabel}
+            cacheCostSuffix={cacheCostSuffix}
+            showBilling={showBilling}
+            onDismiss={() => setBillingOpen(false)}
+          />
+        </div>
+      ) : null}
+
+      {showContextFloat && contextOpen ? (
+        <div className="thread-info-float-panel">
+          <ContextCard
+            {...(context !== undefined && { context })}
+            placeholder={contextPlaceholder}
+            showWhenEmpty
+            onDismiss={() => setContextOpen(false)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ThreadInfoPanel({
+  threadId,
   workspace,
   workspacePath,
   gitBranch,
@@ -103,148 +285,98 @@ export function ThreadInfoPanel({
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
+  const showProgress =
+    todos.length > 0 ||
+    threadStatus === "running" ||
+    threadStatus === "queued" ||
+    (pendingWorktreeApply?.changedFiles.length ?? 0) > 0;
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
-      <section className="thread-info-section">
-        <h3 className="thread-info-heading">工作区</h3>
-        <ul className="thread-info-list">
-          <li>
-            <Folder size={14} aria-hidden />
-            <span className="thread-info-value" title={workspacePath}>
-              {projectLabel}
-            </span>
-          </li>
-          {workspace === undefined ? (
-            <li className="thread-info-muted">正在检测 Git…</li>
-          ) : workspace.isGitRepository ? (
+      <div className="thread-info-panel-scroll">
+        <section className="thread-info-section">
+          <h3 className="thread-info-heading">工作区</h3>
+          <ul className="thread-info-list">
             <li>
-              <GitBranch size={14} aria-hidden />
-              <span className="thread-info-value">
-                {gitBranch ?? workspace.branch ?? "detached"}
-                {typeof dirtyFileCount === "number" && dirtyFileCount > 0
-                  ? ` · ${dirtyFileCount} 处未提交`
-                  : ""}
+              <Folder size={14} aria-hidden />
+              <span className="thread-info-value" title={workspacePath}>
+                {projectLabel}
               </span>
             </li>
-          ) : (
-            <li className="thread-info-muted">非 Git 仓库</li>
-          )}
-          {threadStatus ? (
-            <li>
-              <Package size={14} aria-hidden />
-              <span className="thread-info-value">状态：{threadStatus}</span>
-            </li>
-          ) : null}
-        </ul>
-        {showUsagePanels ? (
-          <ContextCard
-            context={usageSummary?.context}
-            placeholder={contextCardPlaceholder(threadStatus)}
-            showWhenEmpty
-          />
-        ) : null}
-      </section>
-
-      {showBillingSection ? (
-        <section className="thread-info-section thread-info-billing">
-          <h3 className="thread-info-heading">
-            计费对比
-            <span
-              className="thread-info-help"
-              title="① OTel cost_usd 累计（Claude Code 内置价目，含缓存折扣）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价（input/output/cache 分项）节省 = ②−③"
-            >
-              <HelpCircle size={13} aria-hidden />
-            </span>
-          </h3>
-          {showBilling && tokenBadge ? (
-            <p
-              className="thread-info-billing-tokens"
-              title="↑ 输入 ↓ 输出 ⊙ 缓存 token（读+写合计）；线程累计，非单次请求"
-            >
-              {tokenBadge}
-              {cacheCostSuffix ? (
-                <>
-                  {" · "}
-                  <HardDrive size={12} className="thread-info-cache-icon" aria-hidden />
-                  <span title={cacheCostSuffix.title}>{cacheCostSuffix.label}</span>
-                </>
-              ) : null}
-            </p>
-          ) : null}
-          {showBilling ? (
-            <ul className="thread-info-billing-list">
-              <li title="Claude Code 内置价目估算，非权威账单">
-                <span>① SDK（OTel）</span>
-                <span>{formatCostUsd(billing.otelCostUsd)}</span>
-              </li>
-              <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
-                <span>② 全主模型（{plannerLabel}）</span>
-                <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
-              </li>
-              <li
-                className="thread-info-billing-eco"
-                title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）"
-              >
-                <span>③ 经济编程</span>
-                <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
-              </li>
-              <li
-                className={
-                  billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"
-                }
-                title="② − ③"
-              >
-                <span>
-                  <DollarSign size={13} aria-hidden />
-                  {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
+            {workspace === undefined ? (
+              <li className="thread-info-muted">正在检测 Git…</li>
+            ) : workspace.isGitRepository ? (
+              <li>
+                <GitBranch size={14} aria-hidden />
+                <span className="thread-info-value">
+                  {gitBranch ?? workspace.branch ?? "detached"}
+                  {typeof dirtyFileCount === "number" && dirtyFileCount > 0
+                    ? ` · ${dirtyFileCount} 处未提交`
+                    : ""}
                 </span>
               </li>
-            </ul>
-          ) : (
-            <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
-          )}
-          {showBilling && !billing.pricingResolved ? (
-            <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
-          ) : null}
-        </section>
-      ) : null}
-
-      {pendingWorktreeApply && pendingWorktreeApply.changedFiles.length > 0 ? (
-        <section className="thread-info-section">
-          <h3 className="thread-info-heading">文件改动</h3>
-          <ul className="thread-info-file-list">
-            {pendingWorktreeApply.changedFiles.map((file) => (
-              <li key={file}>
-                <code>{file}</code>
+            ) : (
+              <li className="thread-info-muted">非 Git 仓库</li>
+            )}
+            {threadStatus ? (
+              <li>
+                <Package size={14} aria-hidden />
+                <span className="thread-info-value">状态：{threadStatus}</span>
               </li>
-            ))}
+            ) : null}
           </ul>
-          {onApplyWorktree ? (
-            <button
-              type="button"
-              className="plan-button primary thread-info-apply"
-              onClick={onApplyWorktree}
-              disabled={worktreeApplyBusy}
-            >
-              {worktreeApplyBusy ? "正在合并…" : "应用到工作区"}
-            </button>
-          ) : null}
         </section>
-      ) : null}
 
-      {todos.length > 0 || threadStatus === "running" || threadStatus === "queued" ? (
-        <section className="thread-info-section thread-info-todos">
-          <h3 className="thread-info-heading">
-            <ListTodo size={14} aria-hidden />
-            进度
-          </h3>
-          {todos.length > 0 ? (
-            <CoderTodoPanel todos={todos} embedded compact />
-          ) : (
-            <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 SDK Task 工具更新进度…</p>
-          )}
-        </section>
+        {showProgress ? (
+          <section className="thread-info-section thread-info-todos">
+            <h3 className="thread-info-heading">
+              <ListTodo size={14} aria-hidden />
+              进度
+            </h3>
+            {pendingWorktreeApply && pendingWorktreeApply.changedFiles.length > 0 ? (
+              <div className="thread-info-worktree-embed">
+                <p className="thread-info-worktree-embed-title">待合并 {pendingWorktreeApply.changedFiles.length} 个文件</p>
+                <ul className="thread-info-file-list">
+                  {pendingWorktreeApply.changedFiles.map((file) => (
+                    <li key={file}>
+                      <code>{file}</code>
+                    </li>
+                  ))}
+                </ul>
+                {onApplyWorktree ? (
+                  <button
+                    type="button"
+                    className="plan-button primary thread-info-apply"
+                    onClick={onApplyWorktree}
+                    disabled={worktreeApplyBusy}
+                  >
+                    {worktreeApplyBusy ? "正在合并…" : "应用到工作区"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {todos.length > 0 ? (
+              <CoderTodoPanel todos={todos} embedded compact />
+            ) : (
+              <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 SDK Task 工具更新进度…</p>
+            )}
+          </section>
+        ) : null}
+      </div>
+
+      {showUsagePanels ? (
+        <ThreadInfoFloatStack
+          {...(threadId !== undefined && { threadId })}
+          showBillingSection={showBillingSection}
+          {...(billing !== undefined && { billing })}
+          {...(threadStatus !== undefined && { threadStatus })}
+          tokenBadge={tokenBadge}
+          plannerLabel={plannerLabel}
+          cacheCostSuffix={cacheCostSuffix}
+          showBilling={showBilling}
+          {...(usageSummary?.context !== undefined && { context: usageSummary.context })}
+          contextPlaceholder={contextCardPlaceholder(threadStatus)}
+        />
       ) : null}
     </aside>
   );

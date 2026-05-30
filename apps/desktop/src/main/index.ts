@@ -1961,10 +1961,15 @@ async function processUsageBilling(input: {
 
   const monitorModelId = plannerRoute?.modelId ?? resolvedModelId;
   const monitorBaseUrl = plannerRoute?.provider.baseUrl;
-  if (monitorModelId && monitorBaseUrl) {
+  const monitorRole = input.role;
+  const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
+  const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
+  const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
+  if (monitorModelForRole && monitorBaseForRole) {
     await contextMonitor.updateFromUsage(input.threadId, delta, {
-      modelId: monitorModelId,
-      providerBaseUrl: monitorBaseUrl,
+      role: monitorRole,
+      modelId: monitorModelForRole,
+      providerBaseUrl: monitorBaseForRole,
       ...(input.messageId && { messageId: input.messageId }),
     });
   }
@@ -2139,7 +2144,17 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void 
       : undefined;
 
   if (!bundle.authoritative) {
-    void updateContextFromUsage(threadId, event.role as AgentRole, bundle.contextUsage, messageId).catch(
+    const modelId =
+      isRecord(event.payload) && typeof event.payload.model === "string"
+        ? event.payload.model
+        : bundle.models[0]?.modelId;
+    void updateContextFromUsage(
+      threadId,
+      event.role as AgentRole,
+      bundle.contextUsage,
+      messageId,
+      modelId,
+    ).catch(
       (error) => {
         process.stderr.write(`[eco] context usage update failed: ${errorMessage(error)}\n`);
       },
@@ -2162,16 +2177,18 @@ async function updateContextFromUsage(
   role: AgentRole,
   usage: ParsedUsage,
   messageId?: string,
+  modelId?: string,
 ): Promise<void> {
   await pricingCatalogReady;
   const settings = providerStore.getSettings();
   const providers = providerStore.listProvidersWithSecrets();
   const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
-  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
-  const monitorModelId = plannerRoute?.modelId;
-  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
+  const usageRoute = resolveUsageRoute(role, modelId, runtimeRoutes);
+  const monitorModelId = usageRoute?.modelId;
+  const monitorBaseUrl = usageRoute?.provider.baseUrl;
   if (monitorModelId && monitorBaseUrl) {
     await contextMonitor.updateFromUsage(threadId, usage, {
+      role,
       modelId: monitorModelId,
       providerBaseUrl: monitorBaseUrl,
       ...(messageId && { messageId }),
@@ -2229,12 +2246,16 @@ async function processSdkRunBilling(input: {
     }),
   );
 
-  const monitorModelId = plannerRoute?.modelId;
-  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
-  if (monitorModelId && monitorBaseUrl) {
-    await contextMonitor.updateFromUsage(input.threadId, input.bundle.contextUsage, {
-      modelId: monitorModelId,
-      providerBaseUrl: monitorBaseUrl,
+  for (const entry of input.bundle.models) {
+    const route = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
+    const contextRole = route?.role ?? input.role;
+    if (!route) {
+      continue;
+    }
+    await contextMonitor.updateFromUsage(input.threadId, entry.usage, {
+      role: contextRole,
+      modelId: route.modelId,
+      providerBaseUrl: route.provider.baseUrl,
     });
   }
 

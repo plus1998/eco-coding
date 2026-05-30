@@ -155,6 +155,7 @@ export class ContextSnapshotScheduler {
             const planner = routes.find((route) => route.role === "planner") ?? routes[0];
             if (usage && planner) {
               await this.options.monitor.updateFromUsage(threadId, usage, {
+                role: "planner",
                 modelId: planner.primary.modelId,
                 providerBaseUrl: planner.primary.baseUrl,
               });
