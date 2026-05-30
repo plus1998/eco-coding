@@ -85,6 +85,16 @@ button:not(:disabled) {
   grid-template-columns: 260px minmax(0, 1fr) min(300px, 30vw);
 }
 
+.shell.shell-with-info > .codex-main {
+  position: relative;
+  z-index: 0;
+}
+
+.shell.shell-with-info > .thread-info-panel {
+  position: relative;
+  z-index: 20;
+}
+
 /* —— Sidebar —— */
 .codex-sidebar {
   display: flex;
@@ -2226,7 +2236,7 @@ button:not(:disabled) {
   min-height: 100vh;
   max-height: 100vh;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   border-left: 1px solid #2e2e2e;
   background: #1a1a1a;
@@ -2247,7 +2257,7 @@ button:not(:disabled) {
   right: 12px;
   bottom: 12px;
   left: 12px;
-  z-index: 3;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2295,6 +2305,11 @@ button:not(:disabled) {
   border-radius: 10px;
   background: #222222;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  overflow: visible;
+}
+
+.thread-info-float-stack {
+  overflow: visible;
 }
 
 .thread-info-float-card-header {
@@ -2592,10 +2607,60 @@ button:not(:disabled) {
   padding-bottom: 4px;
 }
 
+.thread-info-help-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
 .thread-info-help {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: #737373;
   cursor: help;
+}
+
+.thread-info-help:hover,
+.thread-info-help:focus-visible {
+  color: #d4d4d4;
+}
+
+.thread-info-help-tooltip {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  left: auto;
+  z-index: 100;
+  width: min(248px, calc(30vw - 40px));
+  max-width: 248px;
+  padding: 10px 12px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #2b2b2b;
+  color: #e5e5e5;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%);
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.thread-info-help-wrap:hover .thread-info-help-tooltip,
+.thread-info-help-wrap:focus-within .thread-info-help-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .thread-info-billing-tokens {

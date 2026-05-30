@@ -100,11 +100,18 @@ function BillingFloatingCard({
       <div className="thread-info-float-card-header">
         <h4 className="thread-info-float-card-title">
           计费对比
-          <span
-            className="thread-info-help"
-            title="① OTel cost_usd 累计（Claude Code 内置价目，含缓存折扣）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价（input/output/cache 分项）节省 = ②−③"
-          >
-            <HelpCircle size={13} aria-hidden />
+          <span className="thread-info-help-wrap">
+            <button
+              type="button"
+              className="thread-info-help"
+              aria-describedby="thread-info-billing-help-tip"
+              aria-label="计费对比说明"
+            >
+              <HelpCircle size={13} aria-hidden />
+            </button>
+            <span id="thread-info-billing-help-tip" className="thread-info-help-tooltip" role="tooltip">
+              Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
+            </span>
           </span>
         </h4>
         <button type="button" className="thread-info-float-dismiss" onClick={onDismiss} aria-label="关闭计费对比">
