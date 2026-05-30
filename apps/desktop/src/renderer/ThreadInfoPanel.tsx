@@ -1,4 +1,4 @@
-import { DollarSign, Folder, GitBranch, HelpCircle, ListTodo, Package } from "lucide-react";
+import { DollarSign, Folder, GitBranch, HardDrive, HelpCircle, ListTodo, Package } from "lucide-react";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type {
   CoderTodoItem,
@@ -34,7 +34,10 @@ interface ThreadInfoPanelProps {
   worktreeApplyBusy?: boolean;
 }
 
-function formatCacheCostNote(billing: ThreadBillingSnapshot): string | null {
+function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
+  label: string;
+  title: string;
+} | null {
   const breakdown = billing.ecoCostBreakdown;
   const cacheRead = billing.totalTokens.cacheRead;
   const cacheCreation = billing.totalTokens.cacheCreation;
@@ -43,14 +46,17 @@ function formatCacheCostNote(billing: ThreadBillingSnapshot): string | null {
   }
   const cacheUsd = breakdown.cacheReadUsd + breakdown.cacheCreationUsd;
   const cachePct = billing.ecoCostUsd > 0 ? (cacheUsd / billing.ecoCostUsd) * 100 : 0;
-  const parts: string[] = [];
+  const detail: string[] = [];
   if (cacheRead > 0) {
-    parts.push(`读 ${formatTokenCount(cacheRead)}`);
+    detail.push(`读 ${formatTokenCount(cacheRead)}`);
   }
   if (cacheCreation > 0) {
-    parts.push(`写 ${formatTokenCount(cacheCreation)}`);
+    detail.push(`写 ${formatTokenCount(cacheCreation)}`);
   }
-  return `缓存 ${parts.join(" · ")} → ${formatCostUsd(cacheUsd)}（占 ${cachePct.toFixed(0)}%）`;
+  return {
+    label: `${formatCostUsd(cacheUsd)}（${cachePct.toFixed(0)}%）`,
+    title: `缓存费用（models.dev cache_read / cache_write）${detail.join(" · ")}`,
+  };
 }
 
 function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBillingSnapshot {
@@ -93,7 +99,7 @@ export function ThreadInfoPanel({
       })
     : null;
   const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? "主模型";
-  const cacheCostNote = billing ? formatCacheCostNote(billing) : null;
+  const cacheCostSuffix = billing ? formatCacheCostSuffix(billing) : null;
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
@@ -152,8 +158,18 @@ export function ThreadInfoPanel({
             </span>
           </h3>
           {showBilling && tokenBadge ? (
-            <p className="thread-info-billing-tokens" title="线程累计 token（非单次请求）">
-              编排 token · {tokenBadge}
+            <p
+              className="thread-info-billing-tokens"
+              title="↑ 输入 ↓ 输出 ⊙ 缓存 token（读+写合计）；线程累计，非单次请求"
+            >
+              {tokenBadge}
+              {cacheCostSuffix ? (
+                <>
+                  {" · "}
+                  <HardDrive size={12} className="thread-info-cache-icon" aria-hidden />
+                  <span title={cacheCostSuffix.title}>{cacheCostSuffix.label}</span>
+                </>
+              ) : null}
             </p>
           ) : null}
           {showBilling ? (
@@ -173,14 +189,6 @@ export function ThreadInfoPanel({
                 <span>③ 经济编程</span>
                 <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
               </li>
-              {cacheCostNote ? (
-                <li
-                  className="thread-info-billing-cache"
-                  title="缓存 token 按 models.dev cache_read / cache_write 单价计费"
-                >
-                  <span>{cacheCostNote}</span>
-                </li>
-              ) : null}
               <li
                 className={
                   billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"

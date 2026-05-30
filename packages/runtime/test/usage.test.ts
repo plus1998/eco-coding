@@ -4,6 +4,7 @@ import {
   formatCostUsd,
   mergeUsageTotals,
   parseModelUsage,
+  parseSdkUsageBilling,
   parseUsagePayload,
 } from "../src/usage";
 
@@ -47,6 +48,34 @@ test("mergeUsageTotals does not carry totalCostUsd", () => {
   );
   expect(merged.inputTokens).toBe(30);
   expect(merged.totalCostUsd).toBeUndefined();
+});
+
+test("parseSdkUsageBilling prefers modelUsage cache fields for billing", () => {
+  const bundle = parseSdkUsageBilling({
+    total_cost_usd: 0.18,
+    usage: { input_tokens: 33, output_tokens: 904, cache_read_input_tokens: 230827 },
+    modelUsage: {
+      "claude-sonnet-4-6": {
+        inputTokens: 39,
+        outputTokens: 904,
+        cacheReadInputTokens: 230827,
+        cacheCreationInputTokens: 53995,
+        costUSD: 0.18,
+      },
+    },
+  });
+  expect(bundle?.authoritative).toBe(true);
+  expect(bundle?.models[0]?.usage.cacheReadTokens).toBe(230827);
+  expect(bundle?.models[0]?.usage.cacheCreationTokens).toBe(53995);
+  expect(bundle?.contextUsage.cacheReadTokens).toBe(230827);
+});
+
+test("parseSdkUsageBilling marks assistant usage as non-authoritative", () => {
+  const bundle = parseSdkUsageBilling({
+    messageId: "msg_1",
+    usage: { input_tokens: 1200, output_tokens: 80 },
+  });
+  expect(bundle?.authoritative).toBe(false);
 });
 
 test("parseUsagePayload reads total_cost_usd from result payload", () => {

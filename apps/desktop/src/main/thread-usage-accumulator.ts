@@ -26,6 +26,22 @@ export interface RecordUsageInput {
   plannerModelLabel?: string;
 }
 
+export interface RecordRunUsageModel {
+  modelId: string;
+  usage: ParsedUsage;
+  actualRates: ModelCostRates | null;
+  plannerRates: ModelCostRates | null;
+}
+
+export interface RecordRunUsageInput {
+  threadId: string;
+  role: AgentRole;
+  requestKey: string;
+  models: RecordRunUsageModel[];
+  otelCostUsd?: number;
+  plannerModelLabel?: string;
+}
+
 export class ThreadUsageAccumulator {
   private readonly states = new Map<
     string,
@@ -88,6 +104,57 @@ export class ThreadUsageAccumulator {
     }
 
     return this.toSnapshot(state, input.plannerModelLabel);
+  }
+
+  /** Authoritative SDK result billing (modelUsage); deduped per run via requestKey. */
+  recordRunUsage(input: RecordRunUsageInput): ThreadBillingSnapshot {
+    const state = this.getOrCreateState(input.threadId);
+
+    if (state.seenRequestKeys.has(input.requestKey)) {
+      return this.toSnapshot(state, input.plannerModelLabel);
+    }
+    state.seenRequestKeys.add(input.requestKey);
+
+    if (input.otelCostUsd !== undefined && Number.isFinite(input.otelCostUsd)) {
+      state.otelCostUsd += input.otelCostUsd;
+    }
+
+    for (const model of input.models) {
+      const role = input.role;
+      const prevRole = state.byRole[role] ?? createEmptyUsage();
+      state.byRole[role] = mergeUsageTotals(prevRole, model.usage);
+      state.total = mergeUsageTotals(state.total, model.usage);
+
+      const billing = computeRequestBilling(model.usage, model.actualRates, model.plannerRates);
+      state.plannerTokenCostUsd += billing.plannerTokenCostUsd;
+      state.ecoCostUsd += billing.ecoCostUsd;
+      if (billing.ecoBreakdown) {
+        state.ecoCostBreakdown = mergeCostBreakdowns(state.ecoCostBreakdown, billing.ecoBreakdown);
+      }
+      if (billing.plannerBreakdown) {
+        state.plannerCostBreakdown = mergeCostBreakdowns(
+          state.plannerCostBreakdown,
+          billing.plannerBreakdown,
+        );
+      }
+      state.roleEcoCostUsd[role] = (state.roleEcoCostUsd[role] ?? 0) + billing.ecoCostUsd;
+      state.roleModelIds[role] = model.modelId;
+
+      if (!billing.pricingResolved) {
+        state.unresolvedCount += 1;
+        state.pricingResolved = false;
+      }
+    }
+
+    return this.toSnapshot(state, input.plannerModelLabel);
+  }
+
+  recordOtelCostOnly(threadId: string, otelCostUsd: number, plannerModelLabel?: string): ThreadBillingSnapshot {
+    const state = this.getOrCreateState(threadId);
+    if (Number.isFinite(otelCostUsd)) {
+      state.otelCostUsd += otelCostUsd;
+    }
+    return this.toSnapshot(state, plannerModelLabel);
   }
 
   getSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {

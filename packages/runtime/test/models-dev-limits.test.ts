@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseContextCommandResult } from "../src/context-breakdown";
+import { mergeBreakdownWithOccupancy, parseContextCommandResult } from "../src/context-breakdown";
 import {
   computeOccupancyRatio,
   computeWindowOccupancy,
@@ -64,4 +64,12 @@ test("parseContextCommandResult fallback conversation", () => {
   expect(segments).toHaveLength(1);
   expect(segments[0]?.key).toBe("conversation");
   expect(segments[0]?.tokens).toBe(50_000);
+});
+
+test("mergeBreakdownWithOccupancy adds unattributed gap", () => {
+  const segments = mergeBreakdownWithOccupancy(
+    [{ key: "conversation", label: "对话", tokens: 520_000, color: "#ea580c" }],
+    840_000,
+  );
+  expect(segments.find((s) => s.key === "unattributed")?.tokens).toBe(320_000);
 });

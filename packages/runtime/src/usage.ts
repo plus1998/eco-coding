@@ -73,6 +73,80 @@ export function mergeUsageTotals(current: ParsedUsage, incoming: ParsedUsage): P
   };
 }
 
+export interface SdkModelUsageBilling {
+  modelId: string;
+  usage: ParsedUsage;
+  sdkCostUsd?: number;
+}
+
+/** Authoritative per-model usage from SDK result `modelUsage`. */
+export function parseSdkModelUsageBilling(payload: unknown): SdkModelUsageBilling[] | null {
+  const modelUsage = parseModelUsage(payload);
+  if (!modelUsage) {
+    return null;
+  }
+  const entries = Object.entries(modelUsage).map(([modelId, entry]) => ({
+    modelId,
+    usage: {
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      cacheReadTokens: entry.cacheReadTokens,
+      cacheCreationTokens: entry.cacheCreationTokens,
+    },
+    ...(entry.costUsd !== undefined && { sdkCostUsd: entry.costUsd }),
+  }));
+  return entries.length > 0 ? entries : null;
+}
+
+export function mergeModelUsages(usages: readonly ParsedUsage[]): ParsedUsage {
+  return usages.reduce(
+    (total, usage) => mergeUsageTotals(total, usage),
+    { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+  );
+}
+
+export function parseSdkUsageBilling(payload: unknown): {
+  models: SdkModelUsageBilling[];
+  contextUsage: ParsedUsage;
+  totalCostUsd?: number;
+  authoritative: boolean;
+} | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const modelBillings = parseSdkModelUsageBilling(payload);
+  const totalCostUsd =
+    typeof payload.totalCostUsd === "number"
+      ? payload.totalCostUsd
+      : typeof payload.total_cost_usd === "number"
+        ? payload.total_cost_usd
+        : undefined;
+
+  if (modelBillings) {
+    return {
+      models: modelBillings,
+      contextUsage: mergeModelUsages(modelBillings.map((entry) => entry.usage)),
+      ...(totalCostUsd !== undefined && { totalCostUsd }),
+      authoritative: true,
+    };
+  }
+
+  const usage = parseUsagePayload(payload);
+  if (!usage) {
+    return null;
+  }
+
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
+  const modelId = usage.modelId ?? "unknown";
+  return {
+    models: [{ modelId, usage }],
+    contextUsage: usage,
+    ...(totalCostUsd !== undefined && { totalCostUsd }),
+    authoritative: !messageId,
+  };
+}
+
 export function parseModelUsage(payload: unknown): Record<string, ModelUsageEntry> | null {
   if (!isRecord(payload)) {
     return null;
@@ -138,6 +212,7 @@ export function formatTokenCount(value: number): string {
   return String(value);
 }
 
+/** Activity / billing badge: ↑ input, ↓ output, ⊙ cache (read + write tokens). */
 export function formatUsageBadge(usage: ParsedUsage): string {
   const parts = [
     `↑${formatTokenCount(usage.inputTokens)}`,

@@ -281,11 +281,12 @@ button:not(:disabled) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   padding: 0 24px;
 }
 
 .codex-main-scroll:has(.codex-hero) {
+  align-items: center;
   justify-content: center;
 }
 
@@ -304,14 +305,16 @@ button:not(:disabled) {
   flex: 1 1 0%;
   flex-direction: column;
   width: 100%;
-  max-width: 720px;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
-  align-self: stretch;
 }
 
 .activity-messages {
   flex: 1 1 0%;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1695,6 +1698,9 @@ button:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .run-log-progress {
@@ -1748,7 +1754,7 @@ button:not(:disabled) {
 
 .run-log-user-prompt-body {
   margin: 0;
-  max-width: min(85%, 560px);
+  max-width: 85%;
   padding: 12px 16px;
   border-radius: 16px 16px 4px 16px;
   background: #2a2a2a;
@@ -1787,6 +1793,9 @@ button:not(:disabled) {
 
 .work-session {
   margin: 0 0 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .work-session-toggle {
@@ -2045,6 +2054,12 @@ button:not(:disabled) {
   font-size: 15px;
   line-height: 1.65;
   word-break: break-word;
+}
+
+.markdown-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content > :first-child {
@@ -2348,9 +2363,19 @@ button:not(:disabled) {
   margin-bottom: 10px;
 }
 
+.context-card-bar-occupied {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+}
+
 .context-card-bar-segment {
   min-width: 2px;
   height: 100%;
+}
+
+.context-card-bar-segment-gap {
+  background: #78716c;
 }
 
 .context-card-bar-free {
@@ -2419,10 +2444,20 @@ button:not(:disabled) {
 }
 
 .thread-info-billing-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin: 0 0 10px;
   color: #737373;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.thread-info-cache-icon {
+  flex-shrink: 0;
+  color: #a3a3a3;
+  vertical-align: -2px;
 }
 
 .thread-info-billing-list {
@@ -2441,16 +2476,6 @@ button:not(:disabled) {
   gap: 12px;
   color: #a3a3a3;
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.thread-info-billing-cache {
-  color: #737373;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.thread-info-billing-cache span {
   font-variant-numeric: tabular-nums;
 }
 
@@ -2545,14 +2570,16 @@ button:not(:disabled) {
 .codex-composer-wrap {
   flex: 0 0 auto;
   display: flex;
-  justify-content: center;
+  width: 100%;
+  min-width: 0;
   padding: 8px 24px 16px;
 }
 
 .codex-composer {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  max-width: 100%;
+  min-width: 0;
   padding: 14px 16px 12px;
   border: 1px solid #3a3a3a;
   border-radius: 16px;

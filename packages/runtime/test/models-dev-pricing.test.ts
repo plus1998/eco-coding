@@ -31,6 +31,8 @@ test("lookupModelCostInCatalog exact match", () => {
   const result = lookupModelCostInCatalog(mockCatalog, "anthropic", "claude-sonnet-4-6");
   expect(result?.rates.input).toBe(3);
   expect(result?.rates.output).toBe(15);
+  expect(result?.rates.cacheRead).toBe(0.3);
+  expect(result?.rates.cacheWrite).toBe(3.75);
 });
 
 test("lookupModelCostInCatalog resolves sonnet alias", () => {

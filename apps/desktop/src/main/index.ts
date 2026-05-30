@@ -8,7 +8,9 @@ import {
   extractSdkRunFailure,
   formatUsageBadge,
   estimateContextTokens,
+  parseSdkUsageBilling,
   parseUsagePayload,
+  type ParsedUsage,
   type EcoHookContext,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
@@ -1863,6 +1865,16 @@ function emitOtelActivity(line: OtelActivityLine): void {
 }
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
+  if (activeRuns.has(usage.threadId)) {
+    if (usage.costUsd !== undefined) {
+      const billing = threadUsageAccumulator.recordOtelCostOnly(usage.threadId, usage.costUsd);
+      emitThreadEvent(usage.threadId, "thread.usage_updated", "SDK 费用更新", usage.role, false, {
+        billing,
+      });
+    }
+    return;
+  }
+
   void processUsageBilling({
     threadId: usage.threadId,
     role: normalizeBillingRole(usage.role),
@@ -2116,25 +2128,157 @@ function handleSdkContextSideEffects(
 }
 
 function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void {
-  const usage = parseUsagePayload(event.payload);
-  if (!usage) {
+  const bundle = parseSdkUsageBilling(event.payload);
+  if (!bundle) {
     return;
   }
+
   const messageId =
     isRecord(event.payload) && typeof event.payload.messageId === "string"
       ? event.payload.messageId
       : undefined;
-  void processUsageBilling({
+
+  if (!bundle.authoritative) {
+    void updateContextFromUsage(threadId, event.role as AgentRole, bundle.contextUsage, messageId).catch(
+      (error) => {
+        process.stderr.write(`[eco] context usage update failed: ${errorMessage(error)}\n`);
+      },
+    );
+    return;
+  }
+
+  void processSdkRunBilling({
     threadId,
     role: normalizeBillingRole(event.role as OtelUsageUpdate["role"]),
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheCreationTokens: usage.cacheCreationTokens,
-    ...(usage.totalCostUsd !== undefined && { otelCostUsd: usage.totalCostUsd }),
-    ...(usage.modelId && { modelId: usage.modelId }),
-    ...(messageId && { messageId }),
+    requestKey: `sdk-result:${event.id}`,
+    bundle,
+  }).catch((error) => {
+    process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
   });
+}
+
+async function updateContextFromUsage(
+  threadId: string,
+  role: AgentRole,
+  usage: ParsedUsage,
+  messageId?: string,
+): Promise<void> {
+  await pricingCatalogReady;
+  const settings = providerStore.getSettings();
+  const providers = providerStore.listProvidersWithSecrets();
+  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
+  const monitorModelId = plannerRoute?.modelId;
+  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
+  if (monitorModelId && monitorBaseUrl) {
+    await contextMonitor.updateFromUsage(threadId, usage, {
+      modelId: monitorModelId,
+      providerBaseUrl: monitorBaseUrl,
+      ...(messageId && { messageId }),
+    });
+  }
+  contextScheduler.emitLiveFromMonitor(threadId);
+  const worktreePath = resolveThreadWorktreePath(threadId);
+  if (worktreePath && !activeRuns.has(threadId)) {
+    const runtimeConfig = resolveRuntimeConfig(settings, providers);
+    if (runtimeConfig.ok) {
+      contextScheduler.scheduleBreakdownRefresh(
+        threadId,
+        buildDriverRoutesFromRuntime(runtimeConfig.routes),
+        worktreePath,
+      );
+    }
+  }
+}
+
+async function processSdkRunBilling(input: {
+  threadId: string;
+  role: AgentRole;
+  requestKey: string;
+  bundle: NonNullable<ReturnType<typeof parseSdkUsageBilling>>;
+}): Promise<void> {
+  await pricingCatalogReady;
+
+  const settings = providerStore.getSettings();
+  const providers = providerStore.listProvidersWithSecrets();
+  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
+  const plannerLookup = plannerRoute
+    ? await pricingCache.lookup(plannerRoute.provider.baseUrl, plannerRoute.modelId)
+    : null;
+  const plannerRates = plannerLookup?.rates ?? null;
+  const plannerModelLabel = buildPlannerModelLabel(
+    plannerRoute,
+    plannerLookup?.displayName ?? plannerRoute?.modelId,
+  );
+
+  const models = await Promise.all(
+    input.bundle.models.map(async (entry) => {
+      const usageRoute = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
+      const actualLookup = usageRoute
+        ? await pricingCache.lookup(usageRoute.provider.baseUrl, usageRoute.modelId)
+        : plannerRoute
+          ? await pricingCache.lookup(plannerRoute.provider.baseUrl, entry.modelId)
+          : null;
+      return {
+        modelId: entry.modelId,
+        usage: entry.usage,
+        actualRates: actualLookup?.rates ?? null,
+        plannerRates,
+      };
+    }),
+  );
+
+  const monitorModelId = plannerRoute?.modelId;
+  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
+  if (monitorModelId && monitorBaseUrl) {
+    await contextMonitor.updateFromUsage(input.threadId, input.bundle.contextUsage, {
+      modelId: monitorModelId,
+      providerBaseUrl: monitorBaseUrl,
+    });
+  }
+
+  const billing = threadUsageAccumulator.recordRunUsage({
+    threadId: input.threadId,
+    role: input.role,
+    requestKey: input.requestKey,
+    models,
+    ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
+    ...(plannerModelLabel && { plannerModelLabel }),
+  });
+
+  const monitorSnap = contextMonitor.getSnapshot(input.threadId);
+  const contextUsage = input.bundle.contextUsage;
+  const snapshot: ThreadUsageSnapshot = {
+    inputTokens: contextUsage.inputTokens,
+    outputTokens: contextUsage.outputTokens,
+    cacheReadTokens: contextUsage.cacheReadTokens,
+    cacheCreationTokens: contextUsage.cacheCreationTokens,
+    contextTokens: monitorSnap?.occupied ?? estimateContextTokens(contextUsage),
+    ...(monitorSnap && {
+      contextLimit: monitorSnap.limit,
+      occupancyPct: monitorSnap.occupancyPct,
+    }),
+  };
+
+  emitThreadEvent(
+    input.threadId,
+    "thread.usage_updated",
+    formatUsageBadge(contextUsage),
+    input.role,
+    false,
+    { usage: snapshot, totalCostUsd: billing.otelCostUsd, billing },
+  );
+
+  contextScheduler.emitLiveFromMonitor(input.threadId);
+  const worktreePath = resolveThreadWorktreePath(input.threadId);
+  if (worktreePath && !activeRuns.has(input.threadId)) {
+    contextScheduler.scheduleBreakdownRefresh(
+      input.threadId,
+      buildDriverRoutesFromRuntime(runtimeRoutes),
+      worktreePath,
+    );
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -5,7 +5,8 @@ export type ContextSegmentKey =
   | "skills"
   | "mcp"
   | "subagentDefinitions"
-  | "conversation";
+  | "conversation"
+  | "unattributed";
 
 export interface ContextBreakdownSegment {
   key: ContextSegmentKey;
@@ -22,6 +23,7 @@ export const CONTEXT_SEGMENT_COLORS: Record<ContextSegmentKey, string> = {
   mcp: "#e879f9",
   subagentDefinitions: "#60a5fa",
   conversation: "#ea580c",
+  unattributed: "#78716c",
 };
 
 export const CONTEXT_SEGMENT_LABELS: Record<ContextSegmentKey, string> = {
@@ -32,6 +34,7 @@ export const CONTEXT_SEGMENT_LABELS: Record<ContextSegmentKey, string> = {
   mcp: "MCP",
   subagentDefinitions: "子代理定义",
   conversation: "对话",
+  unattributed: "其他占用",
 };
 
 /** Maps English labels from Claude Code /context output to segment keys. */
@@ -138,6 +141,9 @@ export function mergeBreakdownWithOccupancy(
   const sum = segments.reduce((total, segment) => total + segment.tokens, 0);
   if (sum === 0 && occupied > 0) {
     return [segmentFromKey("conversation", occupied)];
+  }
+  if (occupied > sum) {
+    return [...segments, segmentFromKey("unattributed", occupied - sum)];
   }
   return segments;
 }

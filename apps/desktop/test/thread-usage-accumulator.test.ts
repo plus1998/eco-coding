@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 
-const sonnetRates = { input: 3, output: 15 };
-const haikuRates = { input: 0.8, output: 4 };
+const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
 
 test("ThreadUsageAccumulator tracks four billing metrics", () => {
   const accumulator = new ThreadUsageAccumulator();
@@ -44,4 +44,32 @@ test("ThreadUsageAccumulator deduplicates by requestKey", () => {
   const billing = accumulator.getSnapshot("t1");
   expect(billing?.otelCostUsd).toBe(0.01);
   expect(billing?.totalTokens.input).toBe(1000);
+});
+
+test("ThreadUsageAccumulator recordRunUsage bills cache at models.dev rates", () => {
+  const accumulator = new ThreadUsageAccumulator();
+  accumulator.recordRunUsage({
+    threadId: "t1",
+    role: "planner",
+    requestKey: "sdk-result:run-1",
+    models: [
+      {
+        modelId: "claude-sonnet-4-6",
+        usage: {
+          inputTokens: 39,
+          outputTokens: 904,
+          cacheReadTokens: 230_827,
+          cacheCreationTokens: 53_995,
+        },
+        actualRates: sonnetRates,
+        plannerRates: sonnetRates,
+      },
+    ],
+    otelCostUsd: 0.18,
+  });
+
+  const billing = accumulator.getSnapshot("t1");
+  expect(billing?.totalTokens.cacheRead).toBe(230_827);
+  expect(billing?.ecoCostBreakdown?.cacheReadUsd).toBeCloseTo(0.0692481, 4);
+  expect(billing?.otelCostUsd).toBe(0.18);
 });

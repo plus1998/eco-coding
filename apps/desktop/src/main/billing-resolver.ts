@@ -1,4 +1,4 @@
-import type { ModelCostRates } from "@eco/runtime";
+import { formatModelPricingLabel, type ModelCostRates } from "@eco/runtime";
 import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { AgentRole, ModelSettingsSnapshot, RoutePricingHint } from "../shared/ipc";
@@ -94,7 +94,7 @@ export async function lookupRoutePricingHints(
       modelId: route.modelId,
       providerName: route.provider.name,
       ...(lookup && {
-        pricingLabel: `$${lookup.rates.input}/M in · $${lookup.rates.output}/M out`,
+        pricingLabel: formatModelPricingLabel(lookup),
       }),
       pricingResolved: Boolean(lookup),
     });

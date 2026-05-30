@@ -60,8 +60,10 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true }: Cont
   }
 
   const visibleSegments = context.segments.filter((segment) => segment.tokens > 0);
+  const occupied = context.occupied;
+  const limit = context.limit;
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
-  const barTotal = Math.max(context.limit, segmentTotal, context.occupied);
+  const freeTokens = Math.max(limit - occupied, 0);
 
   return (
     <div className="context-card">
@@ -88,23 +90,30 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true }: Cont
       <div
         className="context-card-bar"
         role="img"
-        aria-label={`上下文已用 ${context.occupancyPct}%，约 ${formatContextK(context.occupied)} / ${formatContextK(context.limit)}`}
+        aria-label={`上下文已用 ${context.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
       >
-        {visibleSegments.map((segment) => (
-          <span
-            key={segment.key}
-            className="context-card-bar-segment"
-            style={{
-              flexGrow: segment.tokens,
-              backgroundColor: segment.color,
-            }}
-          />
-        ))}
-        {context.occupied < barTotal ? (
-          <span
-            className="context-card-bar-free"
-            style={{ flexGrow: Math.max(barTotal - segmentTotal, 0) }}
-          />
+        {occupied > 0 ? (
+          <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
+            {visibleSegments.map((segment) => (
+              <span
+                key={segment.key}
+                className="context-card-bar-segment"
+                style={{
+                  flexGrow: segment.tokens,
+                  backgroundColor: segment.color,
+                }}
+              />
+            ))}
+            {occupied > segmentTotal ? (
+              <span
+                className="context-card-bar-segment context-card-bar-segment-gap"
+                style={{ flexGrow: occupied - segmentTotal }}
+              />
+            ) : null}
+          </span>
+        ) : null}
+        {freeTokens > 0 ? (
+          <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} />
         ) : null}
       </div>
 

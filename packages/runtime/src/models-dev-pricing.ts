@@ -217,5 +217,13 @@ export async function fetchModelsDevCatalog(
 
 export function formatModelPricingLabel(lookup: ModelPricingLookup): string {
   const name = lookup.displayName ?? lookup.modelId;
-  return `${name} · $${lookup.rates.input}/$${lookup.rates.output} per M`;
+  const { input, output, cacheRead, cacheWrite } = lookup.rates;
+  const parts = [`$${input}/M in`, `$${output}/M out`];
+  if (cacheRead !== undefined) {
+    parts.push(`$${cacheRead}/M cache read`);
+  }
+  if (cacheWrite !== undefined) {
+    parts.push(`$${cacheWrite}/M cache write`);
+  }
+  return `${name} · ${parts.join(" · ")}`;
 }
