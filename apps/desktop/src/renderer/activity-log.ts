@@ -8,9 +8,12 @@ import {
 } from "@eco/runtime";
 import {
   activityActionKey,
+  isReconnectActivityMessage,
   normalizeActivityActionLabel,
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
+
+export { isReconnectActivityMessage };
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
 
@@ -194,6 +197,22 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
         current.details.splice(index, 1);
       }
     }
+  };
+
+  const upsertReconnectPhase = (label: string) => {
+    const block: ActivityDetailBlock = {
+      kind: "phase",
+      label,
+      reconnecting: true,
+    };
+    for (let index = current.details.length - 1; index >= 0; index -= 1) {
+      const child = current.details[index];
+      if (child?.kind === "phase" && child.reconnecting) {
+        current.details[index] = block;
+        return;
+      }
+    }
+    current.details.push(block);
   };
 
   const upsertModelRequest = (role?: string) => {
@@ -382,11 +401,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     if (isPhaseLine(line.message)) {
       flushTextBuffers();
-      current.details.push({
-        kind: "phase",
-        label: line.message,
-        ...(isReconnectActivityMessage(line.message) && { reconnecting: true }),
-      });
+      if (isReconnectActivityMessage(line.message)) {
+        upsertReconnectPhase(line.message);
+      } else {
+        current.details.push({ kind: "phase", label: line.message });
+      }
       continue;
     }
 
@@ -701,11 +720,6 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
-}
-
-export function isReconnectActivityMessage(message: string): boolean {
-  const trimmed = message.trim();
-  return /^【(?:自动重试|连接失败)/.test(trimmed);
 }
 
 function isPhaseLine(message: string): boolean {

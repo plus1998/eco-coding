@@ -2,6 +2,12 @@
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
 
+/** Auto-retry or upstream connection failure status — should replace prior line, not stack. */
+export function isReconnectActivityMessage(message: string): boolean {
+  const trimmed = message.trim();
+  return /^【(?:自动重试|连接失败)/.test(trimmed);
+}
+
 const PROGRESS_PATTERNS: Array<{ pattern: RegExp; verb: string }> = [
   { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i, verb: "读取" },
   { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i, verb: "写入" },

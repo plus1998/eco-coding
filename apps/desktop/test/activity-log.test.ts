@@ -287,8 +287,35 @@ test("shows reconnect phase for auto-retry and connection failure lines", () => 
     session?.kind === "work-session"
       ? session.children.filter((child) => child.kind === "phase")
       : [];
-  expect(phases).toHaveLength(2);
-  expect(phases.every((child) => child.kind === "phase" && child.reconnecting)).toBe(true);
+  expect(phases).toHaveLength(1);
+  expect(phases[0]?.kind).toBe("phase");
+  if (phases[0]?.kind === "phase") {
+    expect(phases[0].reconnecting).toBe(true);
+    expect(phases[0].label).toContain("自动重试 2/5");
+  }
+});
+
+test("collapses repeated auto-retry lines into one reconnect phase", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "system", message: "【自动重试 1/5】5 秒后重试：error A" },
+      { id: "2", role: "system", message: "【自动重试 2/5】5 秒后重试：error B" },
+      { id: "3", role: "system", message: "【自动重试 5/5】5 秒后重试：error C" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const phases =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "phase" && child.reconnecting)
+      : [];
+  expect(phases).toHaveLength(1);
+  if (phases[0]?.kind === "phase") {
+    expect(phases[0].label).toContain("自动重试 5/5");
+    expect(phases[0].label).toContain("error C");
+  }
 });
 
 test("shows model-request row for Requesting model status line", () => {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mergeStreamText } from "@eco/runtime";
+import { isReconnectActivityMessage } from "../shared/activity-display";
 import { logSuspiciousActivityLines, repairActivityText } from "../shared/activity-text";
 import type {
   CoderTodoItem,
@@ -360,6 +361,14 @@ export class ConversationStore {
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
     const last = this.getLastActivityLine(threadId);
+    if (isReconnectActivityMessage(line.message)) {
+      if (last && isReconnectActivityMessage(last.message)) {
+        this.db
+          .prepare(`UPDATE thread_activity SET message = ?, role = ? WHERE id = ?`)
+          .run(line.message, line.role, last.id);
+        return { ...last, message: line.message, role: line.role };
+      }
+    }
     if (!line.stream && last?.stream && last.role === line.role) {
       const merged = line.message.trim()
         ? mergeStreamText(last.message, line.message)

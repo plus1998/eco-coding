@@ -57,6 +57,7 @@ import {
   toPromptImageAttachments,
 } from "./composer-attachments";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
+import { isReconnectActivityMessage } from "../shared/activity-display";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
@@ -578,6 +579,29 @@ function App() {
       ...line,
       message: cleanedMessage,
     };
+    if (isReconnectActivityMessage(cleanedMessage)) {
+      setActivityByThread((current) => {
+        const previous = current[threadId] ?? [];
+        for (let index = previous.length - 1; index >= 0; index -= 1) {
+          const candidate = previous[index];
+          if (candidate && isReconnectActivityMessage(candidate.message)) {
+            return {
+              ...current,
+              [threadId]: [
+                ...previous.slice(0, index),
+                { ...candidate, message: cleanedMessage, role: normalizedLine.role },
+                ...previous.slice(index + 1),
+              ],
+            };
+          }
+        }
+        return {
+          ...current,
+          [threadId]: [...previous, normalizedLine].slice(-300),
+        };
+      });
+      return;
+    }
     setActivityByThread((current) => {
       const previous = current[threadId] ?? [];
       const last = previous[previous.length - 1];
