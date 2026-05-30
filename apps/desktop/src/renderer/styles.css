@@ -3584,6 +3584,42 @@ button:not(:disabled) {
   font-size: 13px;
 }
 
+.app-message {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  z-index: 1200;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border: 1px solid #3f6212;
+  border-radius: 10px;
+  background: rgba(23, 23, 23, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  color: #d9f99d;
+  font-size: 13px;
+  line-height: 1.45;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: app-message-in 160ms ease-out;
+}
+
+.app-message-error {
+  border-color: #7f1d1d;
+  color: #fecaca;
+}
+
+@keyframes app-message-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 .settings-field-hint {
   display: block;
   margin-top: 6px;

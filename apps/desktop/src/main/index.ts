@@ -43,6 +43,7 @@ import {
   isKnownIpcChannel,
   type McpServerConfigInput,
   type ListUpstreamModelsRequest,
+  type TestProviderConnectionRequest,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   getActiveRoutes,
@@ -118,7 +119,7 @@ import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
-import { listProviderUpstreamModels } from "./provider-models";
+import { listProviderUpstreamModels, testProviderConnection } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
@@ -342,6 +343,13 @@ function registerIpcHandlers(): void {
       return { ok: false, error: "Invalid models list request." } as const;
     }
     return listProviderUpstreamModels(providerStore, payload);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelProviderTest, async (_event, payload: TestProviderConnectionRequest) => {
+    if (!payload || typeof payload !== "object") {
+      return { ok: false, error: "Invalid provider test request." } as const;
+    }
+    return testProviderConnection(providerStore, payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.modelRouteProfileSave, async (_event, payload: RouteProfileInput) => {

@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   modelProviderSave: "model-provider:save",
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
+  modelProviderTest: "model-provider:test",
   modelRouteProfileSave: "model-route-profile:save",
   modelRouteProfileDelete: "model-route-profile:delete",
   modelRouteProfileSetActive: "model-route-profile:set-active",
@@ -59,7 +60,13 @@ export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
 
 /** Skill directory names enabled per agent role at runtime (SDK skills preload). */
 export type AgentSkillAssignments = Record<AgentRole, string[]>;
-export type { ListUpstreamModelsRequest, ListUpstreamModelsResult, UpstreamModelOption } from "./models";
+export type {
+  ListUpstreamModelsRequest,
+  ListUpstreamModelsResult,
+  TestProviderConnectionRequest,
+  TestProviderConnectionResult,
+  UpstreamModelOption,
+} from "./models";
 export type {
   SessionSyncSettingsInput,
   SessionSyncSettingsSnapshot,

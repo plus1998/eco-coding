@@ -7,6 +7,8 @@ import {
   type McpSettingsSnapshot,
   type ListUpstreamModelsRequest,
   type ListUpstreamModelsResult,
+  type TestProviderConnectionRequest,
+  type TestProviderConnectionResult,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
@@ -71,6 +73,9 @@ const api = {
   },
   listProviderModels(request: ListUpstreamModelsRequest): Promise<ListUpstreamModelsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderListModels, request);
+  },
+  testProviderConnection(request: TestProviderConnectionRequest): Promise<TestProviderConnectionResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelProviderTest, request);
   },
   saveRouteProfile(profile: RouteProfileInput): Promise<RouteProfileView> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileSave, profile);

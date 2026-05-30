@@ -19,6 +19,7 @@ import {
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { RoutePricingDisplay } from "./RoutePricingDisplay";
+import { AppMessage, formatDurationMs, type AppMessageKind } from "./AppMessage";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
@@ -71,6 +72,11 @@ export function ModelsSettingsPanel({
   const [pricingLoading, setPricingLoading] = useState(false);
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
+  const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
+  const [providerTestMessage, setProviderTestMessage] = useState<{
+    kind: AppMessageKind;
+    message: string;
+  }>();
 
   const modalProviderId = providerForm.id ?? "__draft__";
   const modalCache = modelsCache[modalProviderId];
@@ -250,6 +256,10 @@ export function ModelsSettingsPanel({
     setProviderModalOpen(true);
   }
 
+  function showProviderTestMessage(kind: AppMessageKind, message: string) {
+    setProviderTestMessage({ kind, message });
+  }
+
   function closeProviderModal() {
     setProviderModalOpen(false);
     setModalError(undefined);
@@ -351,6 +361,47 @@ export function ModelsSettingsPanel({
     }
   }
 
+  async function testProvider(target: ProviderConfigInput) {
+    if (!window.eco?.testProviderConnection) {
+      return;
+    }
+    const providerName = target.name.trim() || "Provider";
+    if (!target.baseUrl.trim()) {
+      showProviderTestMessage("error", "请先填写 baseURL。");
+      return;
+    }
+    if (!target.defaultModel.trim()) {
+      showProviderTestMessage("error", "请先选择默认模型。");
+      return;
+    }
+
+    const feedbackKey = target.id ?? "__draft__";
+    setTestingProviderKey(feedbackKey);
+
+    const startedAt = performance.now();
+    try {
+      const result = await window.eco.testProviderConnection({
+        baseUrl: target.baseUrl,
+        defaultModel: target.defaultModel,
+        ...(target.id && { providerId: target.id }),
+        ...(target.apiKey && { apiKey: target.apiKey }),
+      });
+      if (result.ok) {
+        const duration = formatDurationMs(performance.now() - startedAt);
+        showProviderTestMessage("success", `「${providerName}」测试成功，耗时 ${duration}`);
+      } else {
+        showProviderTestMessage("error", result.error ?? "测试失败。");
+      }
+    } catch (caught) {
+      showProviderTestMessage(
+        "error",
+        caught instanceof Error ? caught.message : String(caught),
+      );
+    } finally {
+      setTestingProviderKey(null);
+    }
+  }
+
   async function saveRouteProfile() {
     if (!window.eco) {
       return;
@@ -447,6 +498,14 @@ export function ModelsSettingsPanel({
 
   return (
     <>
+      {providerTestMessage && (
+        <AppMessage
+          kind={providerTestMessage.kind}
+          message={providerTestMessage.message}
+          onDismiss={() => setProviderTestMessage(undefined)}
+        />
+      )}
+
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
@@ -469,7 +528,9 @@ export function ModelsSettingsPanel({
           <p className="mcp-list-empty">尚未添加 Provider</p>
         ) : (
           <ul className="mcp-server-list">
-            {providerOptions.map((provider) => (
+            {providerOptions.map((provider) => {
+              const testing = testingProviderKey === provider.id;
+              return (
               <li key={provider.id} className="mcp-server-row models-provider-row">
                 <div className="models-provider-row-main">
                   <span className="mcp-server-name">{provider.name}</span>
@@ -482,6 +543,15 @@ export function ModelsSettingsPanel({
                   <span className={provider.enabled ? "models-provider-badge on" : "models-provider-badge"}>
                     {provider.enabled ? "已启用" : "已禁用"}
                   </span>
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || testing}
+                    onClick={() => void testProvider(providerToForm(provider))}
+                  >
+                    <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
+                    测试
+                  </button>
                   <button
                     type="button"
                     className="mcp-icon-button"
@@ -502,7 +572,8 @@ export function ModelsSettingsPanel({
                   </label>
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
       </section>
@@ -576,12 +647,14 @@ export function ModelsSettingsPanel({
           modelsLoading={loadingForProvider(modalProviderId)}
           modelsError={modalCache?.error}
           error={modalError}
+          testing={testingProviderKey === modalProviderId}
           busy={busy}
           canDelete={settings.providers.length > 1}
           onClose={closeProviderModal}
           onSave={() => void saveProvider()}
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
+          onTest={() => void testProvider(providerForm)}
         />
       )}
 
@@ -952,12 +1025,14 @@ function ProviderEditorModal({
   modelsLoading,
   modelsError,
   error,
+  testing,
   busy,
   canDelete,
   onClose,
   onSave,
   onDelete,
   onRefreshModels,
+  onTest,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
@@ -965,12 +1040,14 @@ function ProviderEditorModal({
   modelsLoading: boolean;
   modelsError?: string | undefined;
   error?: string | undefined;
+  testing?: boolean | undefined;
   busy?: boolean | undefined;
   canDelete: boolean;
   onClose: () => void;
   onSave: () => void;
   onDelete: () => void;
   onRefreshModels: () => void;
+  onTest: () => void;
 }) {
   const isEditing = Boolean(form.id);
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
@@ -1059,6 +1136,18 @@ function ProviderEditorModal({
               <span className="mcp-toggle-track" aria-hidden />
             </label>
           </label>
+
+          <div className="settings-editor-actions settings-form-actions">
+            <button
+              type="button"
+              className="settings-secondary-button"
+              disabled={busy || testing || !form.baseUrl.trim() || !form.defaultModel.trim()}
+              onClick={onTest}
+            >
+              <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
+              测试连接
+            </button>
+          </div>
 
           {error && <p className="settings-form-error">{error}</p>}
         </div>

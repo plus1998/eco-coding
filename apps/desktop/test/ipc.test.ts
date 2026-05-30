@@ -26,6 +26,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.sessionSyncSettingsGet).toBe("session-sync-settings:get");
   expect(IPC_CHANNELS.sessionSyncSettingsSave).toBe("session-sync-settings:save");
   expect(IPC_CHANNELS.sessionSyncTestConnection).toBe("session-sync:test-connection");
+  expect(IPC_CHANNELS.modelProviderTest).toBe("model-provider:test");
   expect(IPC_CHANNELS.billingRefreshPricing).toBe("billing:refresh-pricing");
   expect(IPC_CHANNELS.billingRoutePricing).toBe("billing:route-pricing");
   expect(IPC_CHANNELS.billingRouteCapabilities).toBe("billing:route-capabilities");

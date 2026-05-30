@@ -1,7 +1,14 @@
-import type { ListUpstreamModelsRequest, ListUpstreamModelsResult, UpstreamModelOption } from "../shared/models";
+import type {
+  ListUpstreamModelsRequest,
+  ListUpstreamModelsResult,
+  TestProviderConnectionRequest,
+  TestProviderConnectionResult,
+  UpstreamModelOption,
+} from "../shared/models";
 import type { ProviderStore } from "./provider-store";
 
 const ANTHROPIC_VERSION = "2023-06-01";
+const PROVIDER_TEST_TIMEOUT_MS = 30_000;
 
 export async function listProviderUpstreamModels(
   store: ProviderStore,
@@ -13,6 +20,74 @@ export async function listProviderUpstreamModels(
   }
 
   return fetchUpstreamModelsFromCredentials(resolved.baseUrl, resolved.apiKey);
+}
+
+export async function testProviderConnection(
+  store: ProviderStore,
+  request: TestProviderConnectionRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<TestProviderConnectionResult> {
+  const resolved = resolveProviderCredentials(store, request);
+  if (!resolved.ok) {
+    return resolved;
+  }
+
+  const modelId = request.defaultModel?.trim();
+  if (!modelId) {
+    return { ok: false, error: "请先选择默认模型。" };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
+  try {
+    const response = await fetcher(buildMessagesUrl(resolved.baseUrl), {
+      method: "POST",
+      headers: {
+        ...buildAnthropicHeaders(resolved.apiKey),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId,
+        max_tokens: 32,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+      signal: controller.signal,
+    });
+
+    const raw = await response.text();
+    if (!response.ok) {
+      return { ok: false, error: formatUpstreamError(response.status, raw) };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: false, error: "上游返回了非 JSON 响应。" };
+    }
+
+    const reply = extractAssistantReply(parsed);
+    if (!reply) {
+      return { ok: false, error: "上游未返回可识别的 assistant 文本。" };
+    }
+
+    return { ok: true, reply };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return { ok: false, error: "请求超时，请检查 baseURL 与网络。" };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Anthropic Messages API: POST `{baseUrl}/v1/messages` (preserves path suffix e.g. `/anthropic`). */
+export function buildMessagesUrl(baseUrl: string): string {
+  return `${trimTrailingSlash(baseUrl.trim())}/v1/messages`;
 }
 
 /** OpenAI-style model discovery: always GET `{origin}/v1/models`, ignoring baseUrl path (e.g. `/anthropic`). */
@@ -110,6 +185,24 @@ export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOptio
   }
 
   return models;
+}
+
+function extractAssistantReply(body: unknown): string | undefined {
+  if (!isRecord(body) || !Array.isArray(body.content)) {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+  for (const block of body.content) {
+    if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
+      const text = block.text.trim();
+      if (text) {
+        parts.push(text);
+      }
+    }
+  }
+
+  return parts.join("\n").trim() || undefined;
 }
 
 function resolveProviderCredentials(

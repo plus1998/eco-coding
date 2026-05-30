@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildModelsListUrl, parseUpstreamModelsPayload } from "../src/main/provider-models";
+import {
+  buildMessagesUrl,
+  buildModelsListUrl,
+  parseUpstreamModelsPayload,
+  testProviderConnection,
+} from "../src/main/provider-models";
+import type { ProviderStore } from "../src/main/provider-store";
 
 describe("buildModelsListUrl", () => {
   test("uses origin only and drops anthropic-style path suffix", () => {
@@ -10,6 +16,18 @@ describe("buildModelsListUrl", () => {
   test("works for bare host and local proxy", () => {
     expect(buildModelsListUrl("https://api.deepseek.com")).toBe("https://api.deepseek.com/v1/models");
     expect(buildModelsListUrl("http://127.0.0.1:55302")).toBe("http://127.0.0.1:55302/v1/models");
+  });
+});
+
+describe("buildMessagesUrl", () => {
+  test("preserves anthropic-style path suffix on baseURL", () => {
+    expect(buildMessagesUrl("https://api.deepseek.com/anthropic")).toBe(
+      "https://api.deepseek.com/anthropic/v1/messages",
+    );
+  });
+
+  test("works for bare host", () => {
+    expect(buildMessagesUrl("https://api.anthropic.com")).toBe("https://api.anthropic.com/v1/messages");
   });
 });
 
@@ -39,5 +57,54 @@ describe("parseUpstreamModelsPayload", () => {
       models: [{ name: "qwen2.5-coder:7b", model: "qwen2.5-coder:7b" }],
     });
     expect(models).toEqual([{ id: "qwen2.5-coder:7b", displayName: "qwen2.5-coder:7b" }]);
+  });
+});
+
+describe("testProviderConnection", () => {
+  test("requires default model", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const result = await testProviderConnection(store, {
+      baseUrl: "https://api.example.com",
+      defaultModel: "  ",
+    });
+    expect(result).toEqual({ ok: false, error: "请先选择默认模型。" });
+  });
+
+  test("returns upstream error details", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async () =>
+      new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 });
+
+    const result = await testProviderConnection(
+      store,
+      { baseUrl: "https://api.example.com", defaultModel: "claude-sonnet-4-6", apiKey: "bad" },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: false, error: "上游 401：invalid api key" });
+  });
+
+  test("succeeds when assistant text is returned", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async (url: string, init?: RequestInit) => {
+      expect(url).toBe("https://api.example.com/v1/messages");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: "claude-sonnet-4-6",
+        max_tokens: 32,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      return new Response(
+        JSON.stringify({ content: [{ type: "text", text: "Hello! How can I help?" }] }),
+        { status: 200 },
+      );
+    };
+
+    const result = await testProviderConnection(
+      store,
+      { baseUrl: "https://api.example.com", defaultModel: "claude-sonnet-4-6" },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "Hello! How can I help?" });
   });
 });
