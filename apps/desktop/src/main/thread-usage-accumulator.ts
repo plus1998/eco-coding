@@ -42,24 +42,41 @@ export interface RecordRunUsageInput {
   plannerModelLabel?: string;
 }
 
+type ThreadUsageAccumulatorState = {
+  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  total: ParsedUsage;
+  otelCostUsd: number;
+  plannerTokenCostUsd: number;
+  ecoCostUsd: number;
+  ecoCostBreakdown: TokenCostBreakdown;
+  plannerCostBreakdown: TokenCostBreakdown;
+  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
+  roleModelIds: Partial<Record<AgentRole, string>>;
+  seenRequestKeys: Set<string>;
+  pricingResolved: boolean;
+  unresolvedCount: number;
+  plannerModelLabel?: string;
+};
+
+/** JSON-serializable accumulator state for SQLite persistence. */
+export interface SerializedThreadUsageState {
+  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  total: ParsedUsage;
+  otelCostUsd: number;
+  plannerTokenCostUsd: number;
+  ecoCostUsd: number;
+  ecoCostBreakdown: TokenCostBreakdown;
+  plannerCostBreakdown: TokenCostBreakdown;
+  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
+  roleModelIds: Partial<Record<AgentRole, string>>;
+  seenRequestKeys: string[];
+  pricingResolved: boolean;
+  unresolvedCount: number;
+  plannerModelLabel?: string;
+}
+
 export class ThreadUsageAccumulator {
-  private readonly states = new Map<
-    string,
-    {
-      byRole: Partial<Record<AgentRole, ParsedUsage>>;
-      total: ParsedUsage;
-      otelCostUsd: number;
-      plannerTokenCostUsd: number;
-      ecoCostUsd: number;
-      ecoCostBreakdown: TokenCostBreakdown;
-      plannerCostBreakdown: TokenCostBreakdown;
-      roleEcoCostUsd: Partial<Record<AgentRole, number>>;
-      roleModelIds: Partial<Record<AgentRole, string>>;
-      seenRequestKeys: Set<string>;
-      pricingResolved: boolean;
-      unresolvedCount: number;
-    }
-  >();
+  private readonly states = new Map<string, ThreadUsageAccumulatorState>();
 
   recordUsage(input: RecordUsageInput): ThreadBillingSnapshot {
     const state = this.getOrCreateState(input.threadId);
@@ -101,6 +118,10 @@ export class ThreadUsageAccumulator {
     if (!billing.pricingResolved) {
       state.unresolvedCount += 1;
       state.pricingResolved = false;
+    }
+
+    if (input.plannerModelLabel) {
+      state.plannerModelLabel = input.plannerModelLabel;
     }
 
     return this.toSnapshot(state, input.plannerModelLabel);
@@ -146,6 +167,10 @@ export class ThreadUsageAccumulator {
       }
     }
 
+    if (input.plannerModelLabel) {
+      state.plannerModelLabel = input.plannerModelLabel;
+    }
+
     return this.toSnapshot(state, input.plannerModelLabel);
   }
 
@@ -167,6 +192,46 @@ export class ThreadUsageAccumulator {
 
   clear(threadId: string): void {
     this.states.delete(threadId);
+  }
+
+  serializeState(threadId: string): SerializedThreadUsageState | undefined {
+    const state = this.states.get(threadId);
+    if (!state) {
+      return undefined;
+    }
+    return {
+      byRole: state.byRole,
+      total: state.total,
+      otelCostUsd: state.otelCostUsd,
+      plannerTokenCostUsd: state.plannerTokenCostUsd,
+      ecoCostUsd: state.ecoCostUsd,
+      ecoCostBreakdown: state.ecoCostBreakdown,
+      plannerCostBreakdown: state.plannerCostBreakdown,
+      roleEcoCostUsd: state.roleEcoCostUsd,
+      roleModelIds: state.roleModelIds,
+      seenRequestKeys: [...state.seenRequestKeys],
+      pricingResolved: state.pricingResolved,
+      unresolvedCount: state.unresolvedCount,
+      ...(state.plannerModelLabel && { plannerModelLabel: state.plannerModelLabel }),
+    };
+  }
+
+  restoreState(threadId: string, data: SerializedThreadUsageState): void {
+    this.states.set(threadId, {
+      byRole: data.byRole,
+      total: data.total,
+      otelCostUsd: data.otelCostUsd,
+      plannerTokenCostUsd: data.plannerTokenCostUsd,
+      ecoCostUsd: data.ecoCostUsd,
+      ecoCostBreakdown: data.ecoCostBreakdown,
+      plannerCostBreakdown: data.plannerCostBreakdown,
+      roleEcoCostUsd: data.roleEcoCostUsd,
+      roleModelIds: data.roleModelIds,
+      seenRequestKeys: new Set(data.seenRequestKeys),
+      pricingResolved: data.pricingResolved,
+      unresolvedCount: data.unresolvedCount,
+      ...(data.plannerModelLabel && { plannerModelLabel: data.plannerModelLabel }),
+    });
   }
 
   private getOrCreateState(threadId: string) {
@@ -192,9 +257,10 @@ export class ThreadUsageAccumulator {
   }
 
   private toSnapshot(
-    state: NonNullable<ReturnType<typeof this.states.get>>,
+    state: ThreadUsageAccumulatorState,
     plannerModelLabel?: string,
   ): ThreadBillingSnapshot {
+    const label = plannerModelLabel ?? state.plannerModelLabel;
     const totals = computeThreadBillingTotals(
       state.otelCostUsd,
       state.plannerTokenCostUsd,
@@ -218,7 +284,7 @@ export class ThreadUsageAccumulator {
       ...totals,
       ecoCostBreakdown: state.ecoCostBreakdown,
       plannerCostBreakdown: state.plannerCostBreakdown,
-      ...(plannerModelLabel && { plannerModelLabel }),
+      ...(label && { plannerModelLabel: label }),
       pricingResolved: state.pricingResolved && state.unresolvedCount === 0,
       ...(Object.keys(byRole).length > 0 && { byRole }),
     };

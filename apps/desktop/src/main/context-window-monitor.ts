@@ -5,7 +5,7 @@ import {
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { AgentRole, ThreadContextSnapshot } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 const COMPACT_COOLDOWN_MS = 60_000;
@@ -162,6 +162,23 @@ export class ContextWindowMonitor {
 
   clearThread(threadId: string): void {
     this.states.delete(threadId);
+  }
+
+  /** Restore meter state after app restart (from persisted ThreadContextSnapshot). */
+  restoreFromContextSnapshot(threadId: string, snapshot: ThreadContextSnapshot): void {
+    const state = this.getOrCreateState(threadId);
+    const role = snapshot.displayRole ?? "planner";
+    state.displayRole = role;
+    state.limit = snapshot.limit;
+    state.limitsResolved = snapshot.limitsResolved;
+    if (snapshot.maxOutputTokens !== undefined) {
+      state.maxOutputTokens = snapshot.maxOutputTokens;
+    }
+    state.byRole[role] = {
+      occupied: snapshot.occupied,
+      ...(state.byRole[role]?.modelId && { modelId: state.byRole[role]!.modelId }),
+      ...(state.byRole[role]?.providerBaseUrl && { providerBaseUrl: state.byRole[role]!.providerBaseUrl }),
+    };
   }
 
   private getOrCreateState(threadId: string): ThreadMonitorState {

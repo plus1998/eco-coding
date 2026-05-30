@@ -46,6 +46,30 @@ test("ThreadUsageAccumulator deduplicates by requestKey", () => {
   expect(billing?.totalTokens.input).toBe(1000);
 });
 
+test("ThreadUsageAccumulator serialize and restore round-trip", () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+  accumulator.recordUsage({
+    threadId: "t1",
+    role: "planner",
+    delta: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    actualRates: sonnetRates,
+    plannerRates: sonnetRates,
+    requestKey: "run:1",
+    plannerModelLabel: "opus · Anthropic",
+  });
+
+  const serialized = accumulator.serializeState("t1");
+  expect(serialized).not.toBeUndefined();
+
+  const fresh = new ThreadUsageAccumulator();
+  fresh.restoreState("t1", serialized!);
+  const billing = fresh.getSnapshot("t1");
+  expect(billing?.otelCostUsd).toBe(0);
+  expect(billing?.totalTokens.input).toBe(1000);
+  expect(billing?.plannerModelLabel).toBe("opus · Anthropic");
+});
+
 test("ThreadUsageAccumulator recordRunUsage bills cache at models.dev rates", () => {
   const accumulator = new ThreadUsageAccumulator();
   accumulator.recordRunUsage({

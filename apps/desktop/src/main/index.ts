@@ -149,6 +149,7 @@ interface ActiveThreadRun {
 
 const activeRuns = new Map<string, ActiveThreadRun>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
+const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -224,6 +225,7 @@ app.whenReady().then(async () => {
       emitThreadEvent(threadId, "otel.activity", message, "system", false);
     },
   });
+  loadThreadMetricsFromStore();
   try {
     await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
   } catch (error) {
@@ -254,6 +256,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  flushAllThreadMetrics();
   void closeSdkSessionStore?.();
 });
 
@@ -1897,6 +1900,7 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
       emitThreadEvent(usage.threadId, "thread.usage_updated", "SDK 费用更新", usage.role, false, {
         billing,
       });
+      schedulePersistThreadMetrics(usage.threadId);
     }
     return;
   }
@@ -2042,6 +2046,7 @@ async function processUsageBilling(input: {
     ...(parsed.modelId && { modelId: parsed.modelId }),
   });
 
+  schedulePersistThreadMetrics(input.threadId);
   contextScheduler.emitLiveFromMonitor(input.threadId);
   const worktreePath = resolveThreadWorktreePath(input.threadId);
   if (worktreePath && !activeRuns.has(input.threadId)) {
@@ -2134,6 +2139,61 @@ function scheduleContextBreakdownRefresh(
 
 function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {
   emitThreadEvent(threadId, "thread.context_updated", "上下文已更新", "system", false, { context });
+  schedulePersistThreadMetrics(threadId);
+}
+
+function loadThreadMetricsFromStore(): void {
+  for (const record of conversationStore.listThreadMetrics()) {
+    if (record.accumulator) {
+      threadUsageAccumulator.restoreState(record.threadId, record.accumulator);
+    }
+    if (record.context) {
+      contextScheduler.restoreSnapshot(record.threadId, record.context);
+    }
+  }
+}
+
+function persistThreadMetricsNow(threadId: string): void {
+  const accumulator = threadUsageAccumulator.serializeState(threadId);
+  const context = contextScheduler.getDisplaySnapshot(threadId);
+  conversationStore.saveThreadMetrics(threadId, {
+    ...(accumulator && { accumulator }),
+    ...(context && { context }),
+  });
+}
+
+function schedulePersistThreadMetrics(threadId: string): void {
+  const existing = persistMetricsTimers.get(threadId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  persistMetricsTimers.set(
+    threadId,
+    setTimeout(() => {
+      persistMetricsTimers.delete(threadId);
+      persistThreadMetricsNow(threadId);
+    }, 400),
+  );
+}
+
+function flushAllThreadMetrics(): void {
+  for (const timer of persistMetricsTimers.values()) {
+    clearTimeout(timer);
+  }
+  persistMetricsTimers.clear();
+
+  const threadIds = new Set<string>();
+  for (const record of conversationStore.listThreadMetrics()) {
+    threadIds.add(record.threadId);
+  }
+  for (const thread of conversationStore.listThreads()) {
+    threadIds.add(thread.id);
+  }
+  for (const threadId of threadIds) {
+    if (threadUsageAccumulator.serializeState(threadId) || contextScheduler.getDisplaySnapshot(threadId)) {
+      persistThreadMetricsNow(threadId);
+    }
+  }
 }
 
 function handleSdkContextSideEffects(
@@ -2316,6 +2376,7 @@ async function processSdkRunBilling(input: {
     { usage: snapshot, totalCostUsd: billing.otelCostUsd, billing },
   );
 
+  schedulePersistThreadMetrics(input.threadId);
   contextScheduler.emitLiveFromMonitor(input.threadId);
   const worktreePath = resolveThreadWorktreePath(input.threadId);
   if (worktreePath && !activeRuns.has(input.threadId)) {

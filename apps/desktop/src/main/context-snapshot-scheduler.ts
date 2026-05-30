@@ -88,6 +88,14 @@ export class ContextSnapshotScheduler {
     return this.lastEmitted.get(threadId) ?? this.buildSnapshot(threadId);
   }
 
+  restoreSnapshot(threadId: string, snapshot: ThreadContextSnapshot): void {
+    this.lastEmitted.set(threadId, snapshot);
+    if (snapshot.segments.length > 0) {
+      this.lastSegments.set(threadId, snapshot.segments);
+    }
+    this.options.monitor.restoreFromContextSnapshot(threadId, snapshot);
+  }
+
   clearThread(threadId: string): void {
     const timer = this.timers.get(threadId);
     if (timer) {

@@ -7,10 +7,12 @@ import type {
   CoderTodoItem,
   CoderTodoStatus,
   ThreadActivityLine,
+  ThreadContextSnapshot,
   ThreadPendingPlan,
   ThreadStatus,
   ThreadSummary,
 } from "../shared/ipc";
+import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 
 interface ThreadRow {
   id: string;
@@ -56,6 +58,13 @@ export interface AppliedDiffRecord {
   files: string[];
   appliedAt: string;
   rolledBackAt?: string;
+}
+
+export interface ThreadMetricsRecord {
+  threadId: string;
+  accumulator?: SerializedThreadUsageState;
+  context?: ThreadContextSnapshot;
+  updatedAt: string;
 }
 
 interface AppliedDiffRow {
@@ -145,6 +154,14 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_applied_diffs_workspace_applied
         ON thread_applied_diffs(workspace_path, applied_at);
+
+      CREATE TABLE IF NOT EXISTS thread_metrics_snapshots (
+        thread_id TEXT PRIMARY KEY,
+        accumulator_json TEXT,
+        context_json TEXT,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
     `);
     this.migrateSchema();
   }
@@ -158,6 +175,82 @@ export class ConversationStore {
     if (!names.has("sdk_cwd")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN sdk_cwd TEXT`);
     }
+  }
+
+  saveThreadMetrics(
+    threadId: string,
+    input: {
+      accumulator?: SerializedThreadUsageState;
+      context?: ThreadContextSnapshot;
+    },
+  ): void {
+    const hasAccumulator = input.accumulator !== undefined;
+    const hasContext = input.context !== undefined;
+    if (!hasAccumulator && !hasContext) {
+      return;
+    }
+
+    const existing = this.getThreadMetrics(threadId);
+    const accumulatorJson = hasAccumulator
+      ? JSON.stringify(input.accumulator)
+      : (existing?.accumulator ? JSON.stringify(existing.accumulator) : null);
+    const contextJson = hasContext
+      ? JSON.stringify(input.context)
+      : (existing?.context ? JSON.stringify(existing.context) : null);
+
+    if (!accumulatorJson && !contextJson) {
+      return;
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO thread_metrics_snapshots (thread_id, accumulator_json, context_json, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           accumulator_json = COALESCE(excluded.accumulator_json, thread_metrics_snapshots.accumulator_json),
+           context_json = COALESCE(excluded.context_json, thread_metrics_snapshots.context_json),
+           updated_at = excluded.updated_at`,
+      )
+      .run(threadId, accumulatorJson, contextJson, new Date().toISOString());
+  }
+
+  getThreadMetrics(threadId: string): ThreadMetricsRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT thread_id, accumulator_json, context_json, updated_at
+         FROM thread_metrics_snapshots
+         WHERE thread_id = ?`,
+      )
+      .get(threadId) as
+      | {
+          thread_id: string;
+          accumulator_json: string | null;
+          context_json: string | null;
+          updated_at: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    return rowToThreadMetrics(row);
+  }
+
+  listThreadMetrics(): ThreadMetricsRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, accumulator_json, context_json, updated_at
+         FROM thread_metrics_snapshots`,
+      )
+      .all() as Array<{
+      thread_id: string;
+      accumulator_json: string | null;
+      context_json: string | null;
+      updated_at: string;
+    }>;
+
+    return rows.map((row) => rowToThreadMetrics(row)).filter((entry): entry is ThreadMetricsRecord => entry !== undefined);
   }
 
   saveThread(thread: ThreadSummary): void {
@@ -541,6 +634,43 @@ function parseFilesJson(value: string): string[] {
     return [];
   }
   return [];
+}
+
+function rowToThreadMetrics(row: {
+  thread_id: string;
+  accumulator_json: string | null;
+  context_json: string | null;
+  updated_at: string;
+}): ThreadMetricsRecord | undefined {
+  let accumulator: SerializedThreadUsageState | undefined;
+  let context: ThreadContextSnapshot | undefined;
+
+  if (row.accumulator_json) {
+    try {
+      accumulator = JSON.parse(row.accumulator_json) as SerializedThreadUsageState;
+    } catch {
+      accumulator = undefined;
+    }
+  }
+
+  if (row.context_json) {
+    try {
+      context = JSON.parse(row.context_json) as ThreadContextSnapshot;
+    } catch {
+      context = undefined;
+    }
+  }
+
+  if (!accumulator && !context) {
+    return undefined;
+  }
+
+  return {
+    threadId: row.thread_id,
+    updatedAt: row.updated_at,
+    ...(accumulator && { accumulator }),
+    ...(context && { context }),
+  };
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {
