@@ -253,7 +253,7 @@ export function ModelsSettingsPanel({
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
-          从上游 <code>GET /v1/models</code> 拉取可选模型，也支持手动填写 model id。配置保存在本地 SQLite。
+          配置上游 Provider，并为各 Agent 角色指定调用的模型。保存后，新启动的编码线程会按角色路由选用对应 Provider 与模型。
         </p>
       </header>
 
@@ -311,21 +311,33 @@ export function ModelsSettingsPanel({
       </section>
 
       <section className="mcp-list-section models-routes-section">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">角色路由</span>
-          <span className="models-pricing-toolbar-note">单价来自 models.dev</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            disabled={busy || pricingLoading}
-            onClick={() => void refreshRoutePricing()}
-          >
-            刷新单价
-          </button>
-          <button type="button" className="mcp-add-button" disabled={busy} onClick={() => void saveRoutes()}>
-            保存路由
-          </button>
-        </div>
+        <header className="models-section-header">
+          <div className="models-section-intro">
+            <h2 className="models-section-title">角色路由</h2>
+            <p className="models-section-desc">
+              为规划、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
+            </p>
+            <p className="models-section-meta">参考单价来自 models.dev，仅用于预估，不影响实际上游计费。</p>
+          </div>
+          <div className="models-section-actions">
+            <button
+              type="button"
+              className="models-section-button"
+              disabled={busy || pricingLoading}
+              onClick={() => void refreshRoutePricing()}
+            >
+              刷新单价
+            </button>
+            <button
+              type="button"
+              className="models-section-button models-section-button-primary"
+              disabled={busy}
+              onClick={() => void saveRoutes()}
+            >
+              保存路由
+            </button>
+          </div>
+        </header>
 
         <ul className="models-route-list">
           {AGENT_ROLES.map((role) => {
@@ -334,79 +346,66 @@ export function ModelsSettingsPanel({
             const routeModels = modelsForProvider(providerId);
             const routeLoading = loadingForProvider(providerId);
             const routeError = modelsErrorForProvider(providerId);
+            const pricing = routePricing[role];
 
             return (
               <li key={role} className="models-route-card">
                 <div className="models-route-card-head">
-                  <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                  <span className="models-route-role-id">{role}</span>
-                </div>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">Provider</span>
-                  <select
-                    className="mcp-field-input"
-                    value={providerId}
-                    disabled={busy}
-                    onChange={(event) => {
-                      const nextProviderId = event.target.value;
-                      const provider = settings.providers.find((entry) => entry.id === nextProviderId);
-                      updateRoute(role, {
-                        providerId: nextProviderId,
-                        modelId: route?.modelId || provider?.defaultModel || "",
-                      });
-                      if (provider?.hasApiKey && !modelsCache[nextProviderId]?.models.length) {
-                        void fetchModels(providerToForm(provider), { silent: true });
-                      }
-                    }}
-                  >
-                    {settings.providers.map((provider) => (
-                      <option key={provider.id} value={provider.id}>
-                        {provider.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="mcp-field">
-                  <div className="model-field-head">
-                    <span className="mcp-field-label">模型</span>
-                    {providerId && (
-                      <button
-                        type="button"
-                        className="model-inline-refresh"
-                        disabled={busy || routeLoading}
-                        onClick={() => {
-                          const provider = settings.providers.find((entry) => entry.id === providerId);
-                          if (provider) {
-                            void fetchModels(providerToForm(provider));
-                          }
-                        }}
-                      >
-                        <RefreshCw size={14} className={routeLoading ? "model-refresh-spin" : undefined} />
-                        刷新
-                      </button>
-                    )}
+                  <div className="models-route-card-identity">
+                    <span className="models-route-role">{ROLE_LABELS[role]}</span>
+                    <span className="models-route-role-id">{role}</span>
                   </div>
-                  <ModelSelectField
-                    value={route?.modelId ?? ""}
-                    models={routeModels}
-                    loading={routeLoading}
-                    error={routeError}
-                    disabled={busy || !providerId}
-                    onRefresh={() => {
-                      const provider = settings.providers.find((entry) => entry.id === providerId);
-                      if (provider) {
-                        void fetchModels(providerToForm(provider));
-                      }
-                    }}
-                    onChange={(modelId) => updateRoute(role, { modelId })}
-                  />
-                  {routePricing[role]?.pricingLabel ? (
-                    <p className="models-route-pricing">{routePricing[role]?.pricingLabel}</p>
-                  ) : routePricing[role] && !routePricing[role]?.pricingResolved ? (
-                    <p className="models-route-pricing models-route-pricing-unresolved">
-                      未匹配 models.dev 单价（请核对 model ID）
-                    </p>
+                  {pricing?.pricingLabel ? (
+                    <span className="models-route-pricing-badge">{pricing.pricingLabel}</span>
+                  ) : pricing && !pricing.pricingResolved ? (
+                    <span className="models-route-pricing-badge models-route-pricing-badge-unresolved">
+                      未匹配参考单价
+                    </span>
                   ) : null}
+                </div>
+                <div className="models-route-card-fields">
+                  <label className="mcp-field models-route-field">
+                    <span className="mcp-field-label">Provider</span>
+                    <select
+                      className="mcp-field-input"
+                      value={providerId}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const nextProviderId = event.target.value;
+                        const provider = settings.providers.find((entry) => entry.id === nextProviderId);
+                        updateRoute(role, {
+                          providerId: nextProviderId,
+                          modelId: route?.modelId || provider?.defaultModel || "",
+                        });
+                        if (provider?.hasApiKey && !modelsCache[nextProviderId]?.models.length) {
+                          void fetchModels(providerToForm(provider), { silent: true });
+                        }
+                      }}
+                    >
+                      {settings.providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="mcp-field models-route-field">
+                    <span className="mcp-field-label">模型</span>
+                    <ModelSelectField
+                      value={route?.modelId ?? ""}
+                      models={routeModels}
+                      loading={routeLoading}
+                      error={routeError}
+                      disabled={busy || !providerId}
+                      onRefresh={() => {
+                        const provider = settings.providers.find((entry) => entry.id === providerId);
+                        if (provider) {
+                          void fetchModels(providerToForm(provider));
+                        }
+                      }}
+                      onChange={(modelId) => updateRoute(role, { modelId })}
+                    />
+                  </div>
                 </div>
               </li>
             );

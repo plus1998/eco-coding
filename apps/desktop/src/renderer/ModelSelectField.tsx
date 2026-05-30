@@ -1,5 +1,5 @@
-import { RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, RefreshCw } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { UpstreamModelOption } from "../shared/models";
 
 interface ModelSelectFieldProps {
@@ -21,43 +21,102 @@ export function ModelSelectField({
   disabled,
   onRefresh,
 }: ModelSelectFieldProps) {
-  const modelIds = useMemo(() => new Set(models.map((model) => model.id)), [models]);
-  const valueInList = Boolean(value && modelIds.has(value));
-  const [manualMode, setManualMode] = useState(() => Boolean(value && !modelIds.has(value)));
+  const listboxId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+
+  const filteredModels = useMemo(() => {
+    const query = value.trim().toLowerCase();
+    if (!query) {
+      return models;
+    }
+    return models.filter((model) => {
+      const id = model.id.toLowerCase();
+      const name = model.displayName?.toLowerCase() ?? "";
+      return id.includes(query) || name.includes(query);
+    });
+  }, [models, value]);
 
   useEffect(() => {
-    if (value && models.length > 0 && !modelIds.has(value)) {
-      setManualMode(true);
+    if (!open) {
+      return;
     }
-  }, [value, models.length, modelIds]);
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
-  const selectValue = manualMode ? "__custom__" : valueInList ? value : "";
+  function toggleDropdown() {
+    if (disabled || loading) {
+      return;
+    }
+    setOpen((current) => {
+      const next = !current;
+      if (next && models.length === 0 && onRefresh) {
+        onRefresh();
+      }
+      return next;
+    });
+  }
+
+  function selectModel(modelId: string) {
+    onChange(modelId);
+    setOpen(false);
+    inputRef.current?.focus();
+  }
 
   return (
-    <div className="model-select-field">
-      <div className="model-select-row">
-        <select
-          className="mcp-field-input model-select-dropdown"
-          value={selectValue}
-          disabled={disabled || loading}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next === "__custom__") {
-              setManualMode(true);
-              return;
-            }
-            setManualMode(false);
-            onChange(next);
-          }}
-        >
-          <option value="">{loading ? "加载模型…" : "选择模型…"}</option>
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.displayName ? `${model.displayName} · ${model.id}` : model.id}
-            </option>
-          ))}
-          <option value="__custom__">手动输入 model id…</option>
-        </select>
+    <div className="model-select-field" ref={rootRef}>
+      <div className="model-combobox-row">
+        <div className={`model-combobox-input-wrap${open ? " is-open" : ""}`}>
+          <input
+            ref={inputRef}
+            type="text"
+            className="mcp-field-input model-combobox-input"
+            value={value}
+            disabled={disabled}
+            placeholder="输入或选择模型"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && !open) {
+                event.preventDefault();
+                setOpen(true);
+                if (models.length === 0 && onRefresh) {
+                  onRefresh();
+                }
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="model-combobox-toggle"
+            aria-label={open ? "收起模型列表" : "展开远程模型列表"}
+            aria-expanded={open}
+            aria-controls={listboxId}
+            disabled={disabled || loading}
+            onClick={toggleDropdown}
+          >
+            <ChevronDown size={16} className={open ? "model-combobox-chevron is-open" : "model-combobox-chevron"} />
+          </button>
+        </div>
         {onRefresh && (
           <button
             type="button"
@@ -70,23 +129,36 @@ export function ModelSelectField({
           </button>
         )}
       </div>
-      {manualMode && (
-        <input
-          className="mcp-field-input"
-          value={value}
-          disabled={disabled}
-          placeholder="例如 claude-opus-4-7"
-          onChange={(event) => onChange(event.target.value)}
-        />
+
+      {open && (
+        <ul id={listboxId} className="model-combobox-menu" role="listbox">
+          {loading ? (
+            <li className="model-combobox-menu-status">加载模型…</li>
+          ) : filteredModels.length > 0 ? (
+            filteredModels.map((model) => (
+              <li key={model.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={model.id === value}
+                  className={`model-combobox-option${model.id === value ? " is-selected" : ""}`}
+                  onClick={() => selectModel(model.id)}
+                >
+                  <span className="model-combobox-option-label">
+                    {model.displayName ? `${model.displayName} · ${model.id}` : model.id}
+                  </span>
+                </button>
+              </li>
+            ))
+          ) : models.length > 0 ? (
+            <li className="model-combobox-menu-status">没有匹配的模型</li>
+          ) : (
+            <li className="model-combobox-menu-status">暂无可用模型，请刷新列表或直接输入模型 ID</li>
+          )}
+        </ul>
       )}
-      {error ? (
-        <p className="model-select-hint error">{error}</p>
-      ) : (
-        !loading &&
-        models.length === 0 && (
-          <p className="model-select-hint">保存 API Key 后点击刷新；也可直接手动输入 model id。</p>
-        )
-      )}
+
+      {error ? <p className="model-select-hint error">{error}</p> : null}
     </div>
   );
 }
