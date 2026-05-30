@@ -6,12 +6,15 @@ import {
 } from "@eco/runtime";
 import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
-import type {
-  AgentRole,
-  ModelSettingsSnapshot,
-  RouteCapabilityHint,
-  RoutePricingHint,
-  ThinkingEffort,
+import {
+  getActiveRoutes,
+  type AgentRole,
+  type ModelSettingsSnapshot,
+  type ModelsDevMapping,
+  type RoleRouteConfig,
+  type RouteCapabilityHint,
+  type RoutePricingHint,
+  type ThinkingEffort,
 } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
@@ -20,6 +23,7 @@ export interface RuntimeRoute {
   provider: ProviderConfigSecret;
   modelId: string;
   thinkingEffort?: ThinkingEffort;
+  modelsDevMapping?: ModelsDevMapping;
 }
 
 export interface ResolvedUsageRoute {
@@ -140,9 +144,11 @@ export function buildPlannerModelLabel(
 export function resolveRuntimeRoutesFromSettings(
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): RuntimeRoute[] {
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
-  return settings.routes.flatMap((route) => {
+  const sourceRoutes = routesOverride ?? getActiveRoutes(settings);
+  return sourceRoutes.flatMap((route) => {
     const provider = providersById.get(route.providerId);
     if (!provider) {
       return [];
@@ -153,23 +159,59 @@ export function resolveRuntimeRoutesFromSettings(
         provider,
         modelId: route.modelId,
         ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+        ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
       },
     ];
   });
+}
+
+function formatModelsDevLabel(mapping: ModelsDevMapping, displayName?: string): string {
+  if (displayName?.trim()) {
+    return `${displayName.trim()} · ${mapping.providerKey}/${mapping.modelId}`;
+  }
+  return `${mapping.providerKey}/${mapping.modelId}`;
+}
+
+function resolvedMappingFromLookup(
+  lookup?: { providerKey: string; modelId: string; displayName?: string } | null,
+): { mapping: ModelsDevMapping; label: string } | undefined {
+  if (!lookup) {
+    return undefined;
+  }
+  const mapping = { providerKey: lookup.providerKey, modelId: lookup.modelId };
+  return {
+    mapping,
+    label: formatModelsDevLabel(mapping, lookup.displayName),
+  };
+}
+
+function routeLookupFromRuntime(route: RuntimeRoute) {
+  return {
+    baseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    ...(route.modelsDevMapping && { mapping: route.modelsDevMapping }),
+  };
 }
 
 export async function lookupRouteCapabilityHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<RouteCapabilityHint[]> {
-  const routes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const routes = resolveRuntimeRoutesFromSettings(settings, providers, routesOverride);
   const hints: RouteCapabilityHint[] = [];
 
   for (const route of routes) {
-    const lookup = await cache.lookupCapabilities(route.provider.baseUrl, route.modelId);
-    const limitsLookup = await cache.lookupLimits(route.provider.baseUrl, route.modelId);
+    const routeLookup = routeLookupFromRuntime(route);
+    const lookup = await cache.lookupCapabilitiesForRoute(routeLookup);
+    const limitsLookup = await cache.lookupLimitsForRoute(routeLookup);
+    const pricingLookup = await cache.lookupForRoute(routeLookup);
     const capabilities = lookup?.capabilities ?? unresolvedModelCapabilities();
+    const resolved =
+      resolvedMappingFromLookup(lookup) ??
+      resolvedMappingFromLookup(limitsLookup) ??
+      resolvedMappingFromLookup(pricingLookup);
     hints.push({
       role: route.role,
       modelId: route.modelId,
@@ -184,6 +226,17 @@ export async function lookupRouteCapabilityHints(
         }),
       }),
       contextLimitResolved: Boolean(limitsLookup),
+      ...(resolved && {
+        resolvedModelsDevMapping: resolved.mapping,
+        resolvedModelsDevLabel: resolved.label,
+      }),
+      ...(route.modelsDevMapping && {
+        modelsDevMapping: route.modelsDevMapping,
+        modelsDevLabel: formatModelsDevLabel(
+          route.modelsDevMapping,
+          lookup?.capabilities.displayName ?? limitsLookup?.displayName ?? pricingLookup?.displayName,
+        ),
+      }),
     });
   }
 
@@ -194,12 +247,13 @@ export async function lookupRoutePricingHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<RoutePricingHint[]> {
-  const routes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const routes = resolveRuntimeRoutesFromSettings(settings, providers, routesOverride);
   const hints: RoutePricingHint[] = [];
 
   for (const route of routes) {
-    const lookup = await cache.lookup(route.provider.baseUrl, route.modelId);
+    const lookup = await cache.lookupForRoute(routeLookupFromRuntime(route));
     const summary = lookup ? buildModelPricingSummary(lookup) : null;
     hints.push({
       role: route.role,
@@ -215,6 +269,10 @@ export async function lookupRoutePricingHints(
         pricingLabel: formatModelPricingLabel(lookup!),
       }),
       pricingResolved: Boolean(lookup),
+      ...(route.modelsDevMapping && {
+        modelsDevMapping: route.modelsDevMapping,
+        modelsDevLabel: formatModelsDevLabel(route.modelsDevMapping, lookup?.displayName),
+      }),
     });
   }
 

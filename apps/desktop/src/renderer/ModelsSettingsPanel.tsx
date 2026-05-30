@@ -11,9 +11,13 @@ import {
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RoleRouteConfig,
+  type RouteProfileInput,
+  type RouteProfileView,
+  type ModelsDevModelOption,
   type ThinkingEffort,
 } from "../shared/ipc";
 import { ModelSelectField } from "./ModelSelectField";
+import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { RoutePricingDisplay } from "./RoutePricingDisplay";
 
 interface ModelsSettingsPanelProps {
@@ -55,13 +59,18 @@ export function ModelsSettingsPanel({
 }: ModelsSettingsPanelProps) {
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
+  const [routeProfileModalOpen, setRouteProfileModalOpen] = useState(false);
+  const [routeProfileForm, setRouteProfileForm] = useState<RouteProfileInput>(() => createBlankRouteProfileForm());
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
   const [modalError, setModalError] = useState<string>();
+  const [routeProfileModalError, setRouteProfileModalError] = useState<string>();
   const [routePricing, setRoutePricing] = useState<Partial<Record<AgentRole, RoutePricingHint>>>({});
   const [routeCapabilities, setRouteCapabilities] = useState<Partial<Record<AgentRole, RouteCapabilityHint>>>({});
   const [pricingLoading, setPricingLoading] = useState(false);
+  const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
+  const [modelsDevLoading, setModelsDevLoading] = useState(false);
 
   const modalProviderId = providerForm.id ?? "__draft__";
   const modalCache = modelsCache[modalProviderId];
@@ -132,12 +141,27 @@ export function ModelsSettingsPanel({
     void fetchModels(providerForm, { silent: true });
   }, [providerModalOpen, providerForm, settings.providers, modelsCache, fetchModels]);
 
-  const refreshRouteCapabilities = useCallback(async () => {
+  useEffect(() => {
+    if (!routeProfileModalOpen) {
+      return;
+    }
+    for (const route of routeProfileForm.routes) {
+      if (!route.providerId || modelsCache[route.providerId]?.models.length) {
+        continue;
+      }
+      const provider = settings.providers.find((entry) => entry.id === route.providerId);
+      if (provider) {
+        void fetchModels(providerToForm(provider), { silent: true });
+      }
+    }
+  }, [routeProfileModalOpen, routeProfileForm.routes, settings.providers, modelsCache, fetchModels]);
+
+  const refreshRouteCapabilities = useCallback(async (routes?: RoleRouteConfig[]) => {
     if (!window.eco?.getRouteCapabilities) {
       return;
     }
     try {
-      const hints = await window.eco.getRouteCapabilities();
+      const hints = await window.eco.getRouteCapabilities(routes);
       setRouteCapabilities(
         Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
           Record<AgentRole, RouteCapabilityHint>
@@ -148,31 +172,49 @@ export function ModelsSettingsPanel({
     }
   }, []);
 
-  const refreshModelsDevCatalog = useCallback(async () => {
-    if (!window.eco?.getRoutePricing) {
-      return;
-    }
-    setPricingLoading(true);
-    setPanelError(undefined);
-    try {
-      if (window.eco.refreshPricingCatalog) {
-        await window.eco.refreshPricingCatalog();
+  const refreshModelsDevCatalog = useCallback(
+    async (routes?: RoleRouteConfig[]) => {
+      if (!window.eco?.getRoutePricing) {
+        return;
       }
-      const hints = await window.eco.getRoutePricing();
-      setRoutePricing(Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
-        Record<AgentRole, RoutePricingHint>
-      >);
-      await refreshRouteCapabilities();
-    } catch (caught) {
-      setPanelError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setPricingLoading(false);
-    }
-  }, [refreshRouteCapabilities]);
+      setPricingLoading(true);
+      setPanelError(undefined);
+      try {
+        if (window.eco.refreshPricingCatalog) {
+          await window.eco.refreshPricingCatalog();
+        }
+        const hints = await window.eco.getRoutePricing(routes);
+        setRoutePricing(Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
+          Record<AgentRole, RoutePricingHint>
+        >);
+        await refreshRouteCapabilities(routes);
+      } catch (caught) {
+        setPanelError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        setPricingLoading(false);
+      }
+    },
+    [refreshRouteCapabilities],
+  );
 
   useEffect(() => {
-    void refreshModelsDevCatalog();
-  }, [settings.routes, settings.providers, refreshModelsDevCatalog]);
+    if (!routeProfileModalOpen || !window.eco?.listModelsDevModels) {
+      return;
+    }
+    setModelsDevLoading(true);
+    void window.eco
+      .listModelsDevModels()
+      .then((options) => setModelsDevOptions(options))
+      .catch(() => setModelsDevOptions([]))
+      .finally(() => setModelsDevLoading(false));
+  }, [routeProfileModalOpen]);
+
+  useEffect(() => {
+    if (!routeProfileModalOpen) {
+      return;
+    }
+    void refreshModelsDevCatalog(routeProfileForm.routes);
+  }, [routeProfileModalOpen, routeProfileForm.routes, settings.providers, refreshModelsDevCatalog]);
 
   const modelsForProvider = useCallback(
     (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
@@ -207,6 +249,26 @@ export function ModelsSettingsPanel({
     setProviderModalOpen(false);
     setModalError(undefined);
     setProviderForm(providerToForm());
+  }
+
+  function openCreateRouteProfile() {
+    setPanelError(undefined);
+    setRouteProfileModalError(undefined);
+    setRouteProfileForm(createBlankRouteProfileForm(settings));
+    setRouteProfileModalOpen(true);
+  }
+
+  function openEditRouteProfile(profile: RouteProfileView) {
+    setPanelError(undefined);
+    setRouteProfileModalError(undefined);
+    setRouteProfileForm(routeProfileToForm(profile));
+    setRouteProfileModalOpen(true);
+  }
+
+  function closeRouteProfileModal() {
+    setRouteProfileModalOpen(false);
+    setRouteProfileModalError(undefined);
+    setRouteProfileForm(createBlankRouteProfileForm(settings));
   }
 
   async function saveProvider() {
@@ -284,15 +346,58 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function saveRoutes() {
+  async function saveRouteProfile() {
+    if (!window.eco) {
+      return;
+    }
+    setRouteProfileModalError(undefined);
+    onSavingChange?.(true);
+    try {
+      await window.eco.saveRouteProfile(routeProfileForm);
+      await refreshSettings();
+      closeRouteProfileModal();
+    } catch (caught) {
+      setRouteProfileModalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function deleteRouteProfile() {
+    if (!window.eco || !routeProfileForm.id) {
+      return;
+    }
+    if (settings.routeProfiles.length <= 1) {
+      setRouteProfileModalError("至少保留一套角色路由配置。");
+      return;
+    }
+    const profileName = routeProfileForm.name.trim() || "路由配置";
+    if (!window.confirm(`确定删除路由配置「${profileName}」？`)) {
+      return;
+    }
+
+    setRouteProfileModalError(undefined);
+    onSavingChange?.(true);
+    try {
+      await window.eco.deleteRouteProfile(routeProfileForm.id);
+      await refreshSettings();
+      closeRouteProfileModal();
+    } catch (caught) {
+      setRouteProfileModalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function activateRouteProfile(profileId: string) {
     if (!window.eco) {
       return;
     }
     setPanelError(undefined);
     onSavingChange?.(true);
     try {
-      const routes = await window.eco.saveRoleRoutes(settings.routes);
-      onSettingsChange({ ...settings, routes });
+      await window.eco.setActiveRouteProfile(profileId);
+      await refreshSettings();
     } catch (caught) {
       setPanelError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -300,23 +405,36 @@ export function ModelsSettingsPanel({
     }
   }
 
-  function updateRoute(role: AgentRole, patch: Partial<RoleRouteConfig>) {
-    const existingRoute = settings.routes.find((route) => route.role === role);
-    const nextRoute: RoleRouteConfig = {
-      role,
-      providerId: patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id ?? "",
-      modelId: patch.modelId ?? existingRoute?.modelId ?? settings.providers[0]?.defaultModel ?? "",
-    };
-    if ("thinkingEffort" in patch) {
-      if (patch.thinkingEffort) {
+  function updateRouteInForm(
+    role: AgentRole,
+    patch: Partial<RoleRouteConfig>,
+    options?: { clearThinkingEffort?: boolean; clearModelsDevMapping?: boolean },
+  ) {
+    setRouteProfileForm((current) => {
+      const existingRoute = current.routes.find((route) => route.role === role);
+      const nextRoute: RoleRouteConfig = {
+        role,
+        providerId: patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id ?? "",
+        modelId: patch.modelId ?? existingRoute?.modelId ?? settings.providers[0]?.defaultModel ?? "",
+      };
+      if (options?.clearThinkingEffort) {
+        // omit thinkingEffort
+      } else if (patch.thinkingEffort) {
         nextRoute.thinkingEffort = patch.thinkingEffort;
+      } else if (existingRoute?.thinkingEffort) {
+        nextRoute.thinkingEffort = existingRoute.thinkingEffort;
       }
-    } else if (existingRoute?.thinkingEffort) {
-      nextRoute.thinkingEffort = existingRoute.thinkingEffort;
-    }
-    onSettingsChange({
-      ...settings,
-      routes: [...settings.routes.filter((route) => route.role !== role), nextRoute],
+      if (options?.clearModelsDevMapping) {
+        // omit modelsDevMapping
+      } else if (patch.modelsDevMapping) {
+        nextRoute.modelsDevMapping = patch.modelsDevMapping;
+      } else if (existingRoute?.modelsDevMapping) {
+        nextRoute.modelsDevMapping = existingRoute.modelsDevMapping;
+      }
+      return {
+        ...current,
+        routes: [...current.routes.filter((route) => route.role !== role), nextRoute],
+      };
     });
   }
 
@@ -327,7 +445,7 @@ export function ModelsSettingsPanel({
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
-          配置上游 Provider，并为各 Agent 角色指定调用的模型。保存后，新启动的编码线程会按角色路由选用对应 Provider 与模型。
+          配置上游 Provider，并为各 Agent 角色指定调用的模型。保存后，新启动的编码线程会按当前启用的角色路由选用对应 Provider 与模型。
         </p>
       </header>
 
@@ -389,188 +507,60 @@ export function ModelsSettingsPanel({
           <div className="models-section-intro">
             <h2 className="models-section-title">角色路由</h2>
             <p className="models-section-desc">
-              为规划、探索、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
+              可保存多套角色路由配置，并选择其中一套作为当前启用。线程运行到对应角色时，会调用启用配置中的路线。
             </p>
             <p className="models-section-meta">
               能力、上下文上限与参考单价来自 models.dev；未匹配时请自行确认模型规格。
             </p>
           </div>
-          <div className="models-section-actions">
-            <button
-              type="button"
-              className="models-section-button"
-              disabled={busy || pricingLoading}
-              onClick={() => void refreshModelsDevCatalog()}
-            >
-              刷新 models.dev
-            </button>
-            <button
-              type="button"
-              className="models-section-button models-section-button-primary"
-              disabled={busy}
-              onClick={() => void saveRoutes()}
-            >
-              保存路由
-            </button>
-          </div>
         </header>
 
-        <ul className="models-route-list">
-          {AGENT_ROLES.map((role) => {
-            const route = settings.routes.find((candidate) => candidate.role === role);
-            const providerId = route?.providerId ?? settings.providers[0]?.id ?? "";
-            const routeModels = modelsForProvider(providerId);
-            const routeLoading = loadingForProvider(providerId);
-            const routeError = modelsErrorForProvider(providerId);
-            const pricing = routePricing[role];
-            const capability = routeCapabilities[role];
-            const effortDisabled =
-              capability?.capabilitiesResolved === true && capability.supportsReasoning === false;
+        <div className="mcp-list-toolbar">
+          <span className="mcp-list-toolbar-label">路由配置</span>
+          <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateRouteProfile}>
+            <Plus size={16} />
+            添加配置
+          </button>
+        </div>
 
-            return (
-              <li key={role} className="models-route-card">
-                <div className="models-route-card-head">
-                  <div className="models-route-card-identity">
-                    <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                    <span className="models-route-role-id">{role}</span>
-                    <span className="models-route-capability-badges">
-                      {capability?.capabilitiesResolved ? (
-                        <>
-                          {capability.supportsImageInput && (
-                            <span className="models-route-capability-badge" title="支持图片输入">
-                              视觉
-                            </span>
-                          )}
-                          {capability.supportsReasoning && (
-                            <span className="models-route-capability-badge" title="支持思考链">
-                              推理
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span
-                          className="models-route-capability-badge models-route-capability-badge-unresolved"
-                          title="未匹配 models.dev"
-                        >
-                          能力 ?
-                        </span>
-                      )}
-                      {route?.modelId ? (
-                        capability?.contextLimitResolved && capability.contextTokens ? (
-                          <span
-                            className="models-route-capability-badge"
-                            title={
-                              capability.maxOutputTokens
-                                ? `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens · 单次最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens`
-                                : `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens`
-                            }
-                          >
-                            上下文 {formatContextLimit(capability.contextTokens)}
-                          </span>
-                        ) : (
-                          <span
-                            className="models-route-capability-badge models-route-capability-badge-unresolved"
-                            title={`上下文上限未匹配 models.dev，按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()}（${formatContextLimit(DEFAULT_CONTEXT_LIMIT)}）估算`}
-                          >
-                            上下文 ~{formatContextLimit(DEFAULT_CONTEXT_LIMIT)}
-                          </span>
-                        )
-                      ) : null}
-                    </span>
-                  </div>
-                  {pricing?.rates ? (
-                    <RoutePricingDisplay
-                      rates={pricing.rates}
-                      {...(pricing.pricingLabel && { title: pricing.pricingLabel })}
-                    />
-                  ) : pricing && !pricing.pricingResolved ? (
-                    <span className="models-route-pricing-badge models-route-pricing-badge-unresolved">
-                      未匹配参考单价
-                    </span>
-                  ) : null}
+        {settings.routeProfiles.length === 0 ? (
+          <p className="mcp-list-empty">尚未添加角色路由配置</p>
+        ) : (
+          <ul className="mcp-server-list">
+            {settings.routeProfiles.map((profile) => (
+              <li key={profile.id} className="mcp-server-row models-route-profile-row">
+                <div className="models-provider-row-main">
+                  <span className="mcp-server-name">{profile.name}</span>
+                  <RouteProfilePreview profile={profile} />
                 </div>
-                <div className="models-route-card-fields">
-                  <label className="mcp-field models-route-field">
-                    <span className="mcp-field-label">Provider</span>
-                    <select
-                      className="mcp-field-input"
-                      value={providerId}
+                <div className="mcp-server-actions">
+                  <span className={profile.isActive ? "models-provider-badge on" : "models-provider-badge"}>
+                    {profile.isActive ? "当前启用" : "未启用"}
+                  </span>
+                  {!profile.isActive && (
+                    <button
+                      type="button"
+                      className="models-section-button"
                       disabled={busy}
-                      onChange={(event) => {
-                        const nextProviderId = event.target.value;
-                        const provider = settings.providers.find((entry) => entry.id === nextProviderId);
-                        updateRoute(role, {
-                          providerId: nextProviderId,
-                          modelId: route?.modelId || provider?.defaultModel || "",
-                        });
-                        if (provider && !modelsCache[nextProviderId]?.models.length) {
-                          void fetchModels(providerToForm(provider), { silent: true });
-                        }
-                      }}
+                      onClick={() => void activateRouteProfile(profile.id)}
                     >
-                      {settings.providers.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="mcp-field models-route-field">
-                    <span className="mcp-field-label">模型</span>
-                    <ModelSelectField
-                      value={route?.modelId ?? ""}
-                      models={routeModels}
-                      loading={routeLoading}
-                      error={routeError}
-                      disabled={busy || !providerId}
-                      onRefresh={() => {
-                        const provider = settings.providers.find((entry) => entry.id === providerId);
-                        if (provider) {
-                          void fetchModels(providerToForm(provider));
-                        }
-                      }}
-                      onChange={(modelId) => updateRoute(role, { modelId })}
-                    />
-                  </div>
-                  <label className="mcp-field models-route-field">
-                    <span className="mcp-field-label">思考链</span>
-                    <select
-                      className="mcp-field-input"
-                      value={route?.thinkingEffort ?? ""}
-                      disabled={busy || effortDisabled}
-                      title={
-                        effortDisabled
-                          ? "该模型在 models.dev 中标记为不支持推理"
-                          : capability && !capability.capabilitiesResolved
-                            ? "未匹配 models.dev，请自行确认"
-                            : undefined
-                      }
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        updateRoute(role, {
-                          thinkingEffort:
-                            value === "" ? undefined : (value as ThinkingEffort),
-                        });
-                      }}
-                    >
-                      {THINKING_EFFORT_OPTIONS.map((option) => (
-                        <option key={option.value || "default"} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {effortDisabled && (
-                      <span className="models-route-field-hint">该模型不支持推理</span>
-                    )}
-                    {capability && !capability.capabilitiesResolved && (
-                      <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
-                    )}
-                  </label>
+                      启用
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="mcp-icon-button"
+                    onClick={() => openEditRouteProfile(profile)}
+                    aria-label={`编辑 ${profile.name}`}
+                    disabled={busy}
+                  >
+                    <Settings2 size={18} />
+                  </button>
                 </div>
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        )}
       </section>
 
       {providerModalOpen && (
@@ -589,7 +579,364 @@ export function ModelsSettingsPanel({
           onRefreshModels={() => void fetchModels(providerForm)}
         />
       )}
+
+      {routeProfileModalOpen && (
+        <RouteProfileEditorModal
+          form={routeProfileForm}
+          setForm={setRouteProfileForm}
+          providers={settings.providers}
+          routePricing={routePricing}
+          routeCapabilities={routeCapabilities}
+          modelsDevOptions={modelsDevOptions}
+          modelsDevLoading={modelsDevLoading}
+          modelsForProvider={modelsForProvider}
+          modelsErrorForProvider={modelsErrorForProvider}
+          loadingForProvider={loadingForProvider}
+          error={routeProfileModalError}
+          busy={busy}
+          canDelete={settings.routeProfiles.length > 1}
+          pricingLoading={pricingLoading}
+          onClose={closeRouteProfileModal}
+          onSave={() => void saveRouteProfile()}
+          onDelete={() => void deleteRouteProfile()}
+          onRefreshModelsDev={() => void refreshModelsDevCatalog(routeProfileForm.routes)}
+          onUpdateRoute={updateRouteInForm}
+          onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
+        />
+      )}
     </>
+  );
+}
+
+function RouteProfileEditorModal({
+  form,
+  setForm,
+  providers,
+  routePricing,
+  routeCapabilities,
+  modelsDevOptions,
+  modelsDevLoading,
+  modelsForProvider,
+  modelsErrorForProvider,
+  loadingForProvider,
+  error,
+  busy,
+  canDelete,
+  pricingLoading,
+  onClose,
+  onSave,
+  onDelete,
+  onRefreshModelsDev,
+  onUpdateRoute,
+  onFetchModels,
+}: {
+  form: RouteProfileInput;
+  setForm: Dispatch<SetStateAction<RouteProfileInput>>;
+  providers: ProviderConfigView[];
+  routePricing: Partial<Record<AgentRole, RoutePricingHint>>;
+  routeCapabilities: Partial<Record<AgentRole, RouteCapabilityHint>>;
+  modelsDevOptions: ModelsDevModelOption[];
+  modelsDevLoading: boolean;
+  modelsForProvider: (providerId: string) => UpstreamModelOption[];
+  modelsErrorForProvider: (providerId: string) => string | undefined;
+  loadingForProvider: (providerId: string) => boolean;
+  error?: string | undefined;
+  busy?: boolean | undefined;
+  canDelete: boolean;
+  pricingLoading: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onRefreshModelsDev: () => void;
+  onUpdateRoute: (
+    role: AgentRole,
+    patch: Partial<RoleRouteConfig>,
+    options?: { clearThinkingEffort?: boolean; clearModelsDevMapping?: boolean },
+  ) => void;
+  onFetchModels: (provider: ProviderConfigView) => void;
+}) {
+  const isEditing = Boolean(form.id);
+  const title = isEditing ? `编辑 ${form.name.trim() || "路由配置"}` : "新建路由配置";
+
+  return (
+    <div className="settings-modal-backdrop" onClick={onClose}>
+      <div
+        className="settings-modal settings-modal-route-profile"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="route-profile-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="settings-modal-header">
+          <h2 id="route-profile-modal-title" className="settings-modal-title">
+            {title}
+          </h2>
+          <button type="button" className="mcp-icon-button" onClick={onClose} aria-label="关闭" disabled={busy}>
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="settings-modal-body">
+          <div className="models-route-profile-form">
+            <div className="models-route-profile-meta">
+              <label className="mcp-field">
+                <span className="mcp-field-label">配置名称</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.name}
+                  disabled={busy}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                />
+              </label>
+
+              <label className="mcp-field models-toggle-field">
+                <span className="mcp-field-label">保存后立即启用</span>
+                <label className="mcp-toggle" title={form.isActive ? "启用" : "不启用"}>
+                  <input
+                    type="checkbox"
+                    checked={form.isActive ?? false}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, isActive: event.target.checked }))
+                    }
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+            </div>
+
+            <section className="models-route-profile-section">
+              <div className="models-route-profile-section-head">
+                <h3 className="models-route-profile-section-title">各角色模型</h3>
+                <button
+                  type="button"
+                  className="models-section-button"
+                  disabled={busy || pricingLoading}
+                  onClick={onRefreshModelsDev}
+                >
+                  刷新 models.dev
+                </button>
+              </div>
+
+              <ul className="models-route-list models-route-list-modal">
+            {AGENT_ROLES.map((role) => {
+              const route = form.routes.find((candidate) => candidate.role === role);
+              const providerId = route?.providerId ?? providers[0]?.id ?? "";
+              const routeModels = modelsForProvider(providerId);
+              const routeLoading = loadingForProvider(providerId);
+              const routeError = modelsErrorForProvider(providerId);
+              const pricing = routePricing[role];
+              const capability = routeCapabilities[role];
+              const effortDisabled =
+                capability?.capabilitiesResolved === true && capability.supportsReasoning === false;
+
+              return (
+                <li key={role} className="models-route-card models-route-card-modal">
+                  <div className="models-route-card-head">
+                    <div className="models-route-card-identity">
+                      <span className="models-route-role">{ROLE_LABELS[role]}</span>
+                      <span className="models-route-role-id">{role}</span>
+                    </div>
+                    <div className="models-route-card-meta">
+                      {pricing?.rates ? (
+                        <RoutePricingDisplay
+                          rates={pricing.rates}
+                          {...(pricing.pricingLabel && { title: pricing.pricingLabel })}
+                        />
+                      ) : pricing && !pricing.pricingResolved ? (
+                        <span className="models-route-pricing-badge models-route-pricing-badge-unresolved">
+                          未匹配参考单价
+                        </span>
+                      ) : null}
+                      <div className="models-route-capability-badges">
+                        {capability?.capabilitiesResolved ? (
+                          <>
+                            {capability.supportsImageInput && (
+                              <span className="models-route-capability-badge" title="支持图片输入">
+                                视觉
+                              </span>
+                            )}
+                            {capability.supportsReasoning && (
+                              <span className="models-route-capability-badge" title="支持思考链">
+                                推理
+                              </span>
+                            )}
+                          </>
+                        ) : !route?.modelsDevMapping ? (
+                          <span
+                            className="models-route-capability-badge models-route-capability-badge-unresolved"
+                            title="未匹配 models.dev"
+                          >
+                            能力 ?
+                          </span>
+                        ) : null}
+                          {route?.modelsDevMapping && (
+                            <span className="models-route-capability-badge" title={capability?.modelsDevLabel}>
+                              手动映射
+                            </span>
+                          )}
+                        {route?.modelId ? (
+                          capability?.contextLimitResolved && capability.contextTokens ? (
+                            <span
+                              className="models-route-capability-badge"
+                              title={
+                                capability.maxOutputTokens
+                                  ? `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens · 单次最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens`
+                                  : `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens`
+                              }
+                            >
+                              上下文 {formatContextLimit(capability.contextTokens)}
+                            </span>
+                          ) : (
+                            <span
+                              className="models-route-capability-badge models-route-capability-badge-unresolved"
+                              title={`上下文上限未匹配 models.dev，按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()}（${formatContextLimit(DEFAULT_CONTEXT_LIMIT)}）估算`}
+                            >
+                              上下文 ~{formatContextLimit(DEFAULT_CONTEXT_LIMIT)}
+                            </span>
+                          )
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="models-route-card-fields">
+                    <label className="mcp-field models-route-field">
+                      <span className="mcp-field-label">Provider</span>
+                      <select
+                        className="mcp-field-input"
+                        value={providerId}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const nextProviderId = event.target.value;
+                          const provider = providers.find((entry) => entry.id === nextProviderId);
+                          onUpdateRoute(role, {
+                            providerId: nextProviderId,
+                            modelId: route?.modelId || provider?.defaultModel || "",
+                          });
+                          if (provider) {
+                            onFetchModels(provider);
+                          }
+                        }}
+                      >
+                        {providers.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="mcp-field models-route-field">
+                      <span className="mcp-field-label">模型</span>
+                      <ModelSelectField
+                        value={route?.modelId ?? ""}
+                        models={routeModels}
+                        loading={routeLoading}
+                        error={routeError}
+                        disabled={busy || !providerId}
+                        onRefresh={() => {
+                          const provider = providers.find((entry) => entry.id === providerId);
+                          if (provider) {
+                            onFetchModels(provider);
+                          }
+                        }}
+                        onChange={(modelId) => onUpdateRoute(role, { modelId })}
+                      />
+                    </div>
+                    <label className="mcp-field models-route-field models-route-field-thinking">
+                      <span className="mcp-field-label">思考链</span>
+                      <select
+                        className="mcp-field-input"
+                        value={route?.thinkingEffort ?? ""}
+                        disabled={busy || effortDisabled}
+                        title={
+                          effortDisabled
+                            ? "该模型在 models.dev 中标记为不支持推理"
+                            : capability && !capability.capabilitiesResolved
+                              ? "未匹配 models.dev，请自行确认"
+                              : undefined
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (value === "") {
+                            onUpdateRoute(role, {}, { clearThinkingEffort: true });
+                            return;
+                          }
+                          onUpdateRoute(role, { thinkingEffort: value as ThinkingEffort });
+                        }}
+                      >
+                        {THINKING_EFFORT_OPTIONS.map((option) => (
+                          <option key={option.value || "default"} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      {effortDisabled && (
+                        <span className="models-route-field-hint">该模型不支持推理</span>
+                      )}
+                      {capability && !capability.capabilitiesResolved && !route?.modelsDevMapping && (
+                        <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
+                      )}
+                    </label>
+                    <div className="mcp-field models-route-field models-route-field-mapping">
+                      <span className="mcp-field-label">models.dev 映射</span>
+                      <ModelsDevModelSelectField
+                        value={route?.modelsDevMapping}
+                        options={modelsDevOptions}
+                        loading={modelsDevLoading || pricingLoading}
+                        disabled={busy}
+                        autoResolved={
+                          route?.modelsDevMapping
+                            ? true
+                            : capability?.capabilitiesResolved || pricing?.pricingResolved
+                        }
+                        autoResolvedMapping={capability?.resolvedModelsDevMapping}
+                        autoResolvedLabel={capability?.resolvedModelsDevLabel}
+                        onChange={(mapping) => {
+                          if (mapping) {
+                            onUpdateRoute(role, { modelsDevMapping: mapping });
+                            return;
+                          }
+                          onUpdateRoute(role, {}, { clearModelsDevMapping: true });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+            </section>
+
+            {error && <p className="settings-form-error">{error}</p>}
+          </div>
+        </div>
+
+        <footer className="settings-modal-footer settings-modal-footer-split">
+          {isEditing ? (
+            <button
+              type="button"
+              className="mcp-uninstall-button"
+              onClick={onDelete}
+              disabled={busy || !canDelete}
+              title={canDelete ? undefined : "至少保留一套角色路由配置"}
+            >
+              <Trash2 size={16} />
+              删除
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="settings-modal-footer-actions">
+            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
+              取消
+            </button>
+            <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+              保存
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
   );
 }
 
@@ -740,6 +1087,33 @@ function ProviderEditorModal({
   );
 }
 
+function RouteProfilePreview({ profile }: { profile: RouteProfileView }) {
+  return (
+    <div className="models-route-profile-preview">
+      {AGENT_ROLES.map((role) => {
+        const route = profile.routes.find((candidate) => candidate.role === role);
+        const modelId = route?.modelId.trim();
+        return (
+          <div key={role} className="models-route-profile-preview-item">
+            <span className="models-route-profile-preview-role">{ROLE_LABELS[role]}</span>
+            <span className="models-route-profile-preview-model" title={modelId || "未配置"}>
+              {modelId ? formatModelPreview(modelId) : "—"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatModelPreview(modelId: string): string {
+  const normalized = modelId.includes("/") ? (modelId.split("/").pop() ?? modelId) : modelId;
+  if (normalized.length <= 22) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
+}
+
 function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
   const form: ProviderConfigInput = {
     name: provider?.name ?? "Anthropic compatible",
@@ -752,4 +1126,26 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     form.id = provider.id;
   }
   return form;
+}
+
+function createBlankRouteProfileForm(settings?: ModelSettingsSnapshot): RouteProfileInput {
+  const defaultProvider = settings?.providers[0];
+  return {
+    name: "",
+    isActive: false,
+    routes: AGENT_ROLES.map((role) => ({
+      role,
+      providerId: defaultProvider?.id ?? "",
+      modelId: defaultProvider?.defaultModel ?? "",
+    })),
+  };
+}
+
+function routeProfileToForm(profile: RouteProfileView): RouteProfileInput {
+  return {
+    id: profile.id,
+    name: profile.name,
+    isActive: profile.isActive,
+    routes: profile.routes.map((route) => ({ ...route })),
+  };
 }

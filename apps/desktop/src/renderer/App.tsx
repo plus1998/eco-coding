@@ -21,6 +21,7 @@ import { type ClipboardEvent, type KeyboardEvent, useEffect, useLayoutEffect, us
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
+  getActiveRoutes,
   type AgentRole,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
@@ -62,7 +63,7 @@ import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
 import "./styles.css";
 
-const emptySettings: ModelSettingsSnapshot = { providers: [], routes: [] };
+const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
 const recentProjectsStorageKey = "eco.recent-projects";
 
 interface RecentProject {
@@ -446,14 +447,15 @@ function App() {
     void window.eco.getRouteCapabilities().then((hints) => {
       setPlannerCapability(hints.find((hint) => hint.role === "planner"));
     });
-  }, [settings.routes, settings.providers]);
+  }, [settings.routeProfiles, settings.providers]);
 
+  const activeRoutes = useMemo(() => getActiveRoutes(settings), [settings]);
   const providerById = useMemo(
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
     [settings.providers],
   );
   const routesReady = AGENT_ROLES.every((role) => {
-    const route = settings.routes.find((candidate) => candidate.role === role);
+    const route = activeRoutes.find((candidate) => candidate.role === role);
     const provider = route ? providerById.get(route.providerId) : undefined;
     return Boolean(route?.modelId.trim() && provider?.enabled);
   });
@@ -513,7 +515,7 @@ function App() {
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
-        const route = settings.routes.find((candidate) => candidate.role === role);
+        const route = activeRoutes.find((candidate) => candidate.role === role);
         const configured = route?.modelId.trim() || undefined;
         const live = threadModelByRole?.[role];
         return {
@@ -521,7 +523,7 @@ function App() {
           label: formatRoleModelLabel(role, live ?? configured),
         };
       }),
-    [settings.routes, threadModelByRole],
+    [activeRoutes, threadModelByRole],
   );
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);

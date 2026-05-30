@@ -5,7 +5,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
   expect(IPC_CHANNELS.modelSettingsGet).toBe("model-settings:get");
   expect(IPC_CHANNELS.modelProviderSave).toBe("model-provider:save");
-  expect(IPC_CHANNELS.modelRoutesSave).toBe("model-routes:save");
+  expect(IPC_CHANNELS.modelRouteProfileSave).toBe("model-route-profile:save");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");
   expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
@@ -29,6 +29,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.billingRefreshPricing).toBe("billing:refresh-pricing");
   expect(IPC_CHANNELS.billingRoutePricing).toBe("billing:route-pricing");
   expect(IPC_CHANNELS.billingRouteCapabilities).toBe("billing:route-capabilities");
+  expect(IPC_CHANNELS.billingModelsDevList).toBe("billing:models-dev-list");
   expect(IPC_CHANNELS.approvalResolve).toBe("approval:resolve");
   expect(IPC_CHANNELS.conformanceRun).toBe("conformance:run");
 });

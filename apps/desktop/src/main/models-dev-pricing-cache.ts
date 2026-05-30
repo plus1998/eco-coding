@@ -2,8 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_CONTEXT_LIMIT,
+  extractCapabilitiesFromModelEntry,
+  extractLimitsFromModelEntry,
   fetchModelsDevCatalog,
+  findModelEntryByKey,
+  listModelsDevCatalogOptions,
   lookupModelCapabilitiesInCatalog,
+  lookupModelCostByKey,
   lookupModelCostInCatalog,
   lookupModelLimitsInCatalog,
   resolveProviderKeyFromBaseUrl,
@@ -11,13 +16,21 @@ import {
   type ModelLimitsLookup,
   type ModelPricingLookup,
   type ModelsDevCatalog,
+  type ModelsDevCatalogModelOption,
 } from "@eco/runtime";
+import type { ModelsDevMapping } from "../shared/ipc";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface ModelsDevPricingCacheOptions {
   cachePath: string;
   fetchImpl?: typeof fetch;
+}
+
+export interface ModelsDevRouteLookup {
+  baseUrl: string;
+  modelId: string;
+  mapping?: ModelsDevMapping;
 }
 
 export class ModelsDevPricingCache {
@@ -48,10 +61,27 @@ export class ModelsDevPricingCache {
     return this.getCatalog();
   }
 
+  async listModelOptions(): Promise<ModelsDevCatalogModelOption[]> {
+    const catalog = await this.getCatalog();
+    return listModelsDevCatalogOptions(catalog);
+  }
+
   async lookup(baseUrl: string, modelId: string): Promise<ModelPricingLookup | null> {
     const catalog = await this.getCatalog();
     const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
     return lookupModelCostInCatalog(catalog, providerHint, modelId);
+  }
+
+  async lookupByKey(providerKey: string, modelId: string): Promise<ModelPricingLookup | null> {
+    const catalog = await this.getCatalog();
+    return lookupModelCostByKey(catalog, providerKey, modelId);
+  }
+
+  async lookupForRoute(input: ModelsDevRouteLookup): Promise<ModelPricingLookup | null> {
+    if (input.mapping?.providerKey && input.mapping.modelId) {
+      return this.lookupByKey(input.mapping.providerKey, input.mapping.modelId);
+    }
+    return this.lookup(input.baseUrl, input.modelId);
   }
 
   async lookupLimits(baseUrl: string, modelId: string): Promise<ModelLimitsLookup | null> {
@@ -60,18 +90,70 @@ export class ModelsDevPricingCache {
     return lookupModelLimitsInCatalog(catalog, providerHint, modelId);
   }
 
+  async lookupLimitsByKey(providerKey: string, modelId: string): Promise<ModelLimitsLookup | null> {
+    const catalog = await this.getCatalog();
+    const found = findModelEntryByKey(catalog, providerKey, modelId);
+    if (!found) {
+      return null;
+    }
+    const limits = extractLimitsFromModelEntry(found.entry);
+    if (!limits) {
+      return null;
+    }
+    return {
+      providerKey: found.providerKey,
+      modelId: found.entry.id,
+      limits,
+      ...(found.entry.name && { displayName: found.entry.name }),
+    };
+  }
+
+  async lookupLimitsForRoute(input: ModelsDevRouteLookup): Promise<ModelLimitsLookup | null> {
+    if (input.mapping?.providerKey && input.mapping.modelId) {
+      return this.lookupLimitsByKey(input.mapping.providerKey, input.mapping.modelId);
+    }
+    return this.lookupLimits(input.baseUrl, input.modelId);
+  }
+
   async lookupCapabilities(baseUrl: string, modelId: string): Promise<ModelCapabilitiesLookup | null> {
     const catalog = await this.getCatalog();
     const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
     return lookupModelCapabilitiesInCatalog(catalog, providerHint, modelId);
   }
 
-  async resolveContextLimit(baseUrl: string, modelId: string): Promise<{
+  async lookupCapabilitiesByKey(
+    providerKey: string,
+    modelId: string,
+  ): Promise<ModelCapabilitiesLookup | null> {
+    const catalog = await this.getCatalog();
+    const found = findModelEntryByKey(catalog, providerKey, modelId);
+    if (!found) {
+      return null;
+    }
+    return {
+      providerKey: found.providerKey,
+      modelId: found.entry.id,
+      capabilities: extractCapabilitiesFromModelEntry(found.entry),
+    };
+  }
+
+  async lookupCapabilitiesForRoute(input: ModelsDevRouteLookup): Promise<ModelCapabilitiesLookup | null> {
+    if (input.mapping?.providerKey && input.mapping.modelId) {
+      return this.lookupCapabilitiesByKey(input.mapping.providerKey, input.mapping.modelId);
+    }
+    return this.lookupCapabilities(input.baseUrl, input.modelId);
+  }
+
+  async resolveContextLimit(
+    baseUrl: string,
+    modelId: string,
+    mapping?: ModelsDevMapping,
+  ): Promise<{
     limit: number;
     maxOutputTokens?: number;
     limitsResolved: boolean;
   }> {
-    const lookup = await this.lookupLimits(baseUrl, modelId);
+    const lookup = await this.lookupLimitsForRoute({ baseUrl, modelId, ...(mapping && { mapping }) });
     if (lookup) {
       return {
         limit: lookup.limits.contextTokens,
@@ -120,7 +202,7 @@ export class ModelsDevPricingCache {
         return { catalog: parsed.catalog, fetchedAt: parsed.fetchedAt };
       }
     } catch {
-      // no cache yet
+      return null;
     }
     return null;
   }

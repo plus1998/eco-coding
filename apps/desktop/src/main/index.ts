@@ -45,7 +45,9 @@ import {
   type ListUpstreamModelsRequest,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
+  getActiveRoutes,
   type RoleRouteConfig,
+  type RouteProfileInput,
   type AgentSkillAssignments,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -336,10 +338,33 @@ function registerIpcHandlers(): void {
     return listProviderUpstreamModels(providerStore, payload);
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelRoutesSave, async (_event, payload: RoleRouteConfig[]) => {
-    const routes = providerStore.saveRoleRoutes(payload);
+  ipcMain.handle(IPC_CHANNELS.modelRouteProfileSave, async (_event, payload: RouteProfileInput) => {
+    const profile = providerStore.saveRouteProfile(payload);
     emitSettingsUpdated();
-    return routes;
+    return profile;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelRouteProfileDelete, async (_event, profileId: unknown) => {
+    if (typeof profileId !== "string" || !profileId.trim()) {
+      throw new Error("Route profile id is required.");
+    }
+    providerStore.deleteRouteProfile(profileId.trim());
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelRouteProfileSetActive, async (_event, profileId: unknown) => {
+    if (typeof profileId !== "string" || !profileId.trim()) {
+      throw new Error("Route profile id is required.");
+    }
+    const profile = providerStore.setActiveRouteProfile(profileId.trim());
+    emitSettingsUpdated();
+    return profile;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {
+    await pricingCatalogReady;
+    return pricingCache.listModelOptions();
   });
 
   ipcMain.handle(IPC_CHANNELS.billingRefreshPricing, async () => {
@@ -347,23 +372,31 @@ function registerIpcHandlers(): void {
     return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
   });
 
-  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async () => {
+  ipcMain.handle(
+    IPC_CHANNELS.billingRoutePricing,
+    async (_event, routesOverride?: RoleRouteConfig[]) => {
     await pricingCatalogReady;
     return lookupRoutePricingHints(
       pricingCache,
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
+      routesOverride,
     );
-  });
+  },
+  );
 
-  ipcMain.handle(IPC_CHANNELS.billingRouteCapabilities, async () => {
+  ipcMain.handle(
+    IPC_CHANNELS.billingRouteCapabilities,
+    async (_event, routesOverride?: RoleRouteConfig[]) => {
     await pricingCatalogReady;
     return lookupRouteCapabilityHints(
       pricingCache,
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
+      routesOverride,
     );
-  });
+  },
+  );
 
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
 
@@ -1976,10 +2009,20 @@ async function processUsageBilling(input: {
   const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
 
   const actualLookup = usageRoute
-    ? await pricingCache.lookup(usageRoute.provider.baseUrl, usageRoute.modelId)
+    ? await pricingCache.lookupForRoute({
+        baseUrl: usageRoute.provider.baseUrl,
+        modelId: usageRoute.modelId,
+        ...(runtimeRoutes.find((route) => route.role === usageRoute.role)?.modelsDevMapping && {
+          mapping: runtimeRoutes.find((route) => route.role === usageRoute.role)!.modelsDevMapping,
+        }),
+      })
     : null;
   const plannerLookup = plannerRoute
-    ? await pricingCache.lookup(plannerRoute.provider.baseUrl, plannerRoute.modelId)
+    ? await pricingCache.lookupForRoute({
+        baseUrl: plannerRoute.provider.baseUrl,
+        modelId: plannerRoute.modelId,
+        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
+      })
     : null;
 
   const requestKey = buildUsageRequestKey({
@@ -2009,6 +2052,7 @@ async function processUsageBilling(input: {
       role: monitorRole,
       modelId: monitorModelForRole,
       providerBaseUrl: monitorBaseForRole,
+      ...(monitorRoute?.modelsDevMapping && { modelsDevMapping: monitorRoute.modelsDevMapping }),
       ...(input.messageId && { messageId: input.messageId }),
     });
   }
@@ -2287,6 +2331,7 @@ async function updateContextFromUsage(
       role,
       modelId: monitorModelId,
       providerBaseUrl: monitorBaseUrl,
+      ...(usageRoute?.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
       ...(messageId && { messageId }),
     });
   }
@@ -2317,7 +2362,11 @@ async function processSdkRunBilling(input: {
   const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
   const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
   const plannerLookup = plannerRoute
-    ? await pricingCache.lookup(plannerRoute.provider.baseUrl, plannerRoute.modelId)
+    ? await pricingCache.lookupForRoute({
+        baseUrl: plannerRoute.provider.baseUrl,
+        modelId: plannerRoute.modelId,
+        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
+      })
     : null;
   const plannerRates = plannerLookup?.rates ?? null;
   const plannerModelLabel = buildPlannerModelLabel(
@@ -2329,7 +2378,13 @@ async function processSdkRunBilling(input: {
     input.bundle.models.map(async (entry) => {
       const usageRoute = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
       const actualLookup = usageRoute
-        ? await pricingCache.lookup(usageRoute.provider.baseUrl, usageRoute.modelId)
+        ? await pricingCache.lookupForRoute({
+            baseUrl: usageRoute.provider.baseUrl,
+            modelId: usageRoute.modelId,
+            ...(runtimeRoutes.find((route) => route.role === usageRoute.role)?.modelsDevMapping && {
+              mapping: runtimeRoutes.find((route) => route.role === usageRoute.role)!.modelsDevMapping,
+            }),
+          })
         : null;
       return {
         modelId: entry.modelId,
@@ -2350,6 +2405,9 @@ async function processSdkRunBilling(input: {
       role: contextRole,
       modelId: route.modelId,
       providerBaseUrl: route.provider.baseUrl,
+      ...(runtimeRoutes.find((candidate) => candidate.role === route.role)?.modelsDevMapping && {
+        modelsDevMapping: runtimeRoutes.find((candidate) => candidate.role === route.role)!.modelsDevMapping,
+      }),
     });
   }
 
@@ -2703,7 +2761,8 @@ function resolveRuntimeConfig(
   providersWithSecrets: ProviderConfigSecret[],
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
-  const routes = settings.routes.map((route): RuntimeRoute | undefined => {
+  const activeRoutes = getActiveRoutes(settings);
+  const routes = activeRoutes.map((route): RuntimeRoute | undefined => {
     const provider = providersById.get(route.providerId);
     if (!provider) return undefined;
     return {
@@ -2711,10 +2770,11 @@ function resolveRuntimeConfig(
       provider,
       modelId: route.modelId,
       ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+      ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
     };
   });
 
-  const missingRoute = settings.routes.find((route) => !providersById.has(route.providerId));
+  const missingRoute = activeRoutes.find((route) => !providersById.has(route.providerId));
   if (missingRoute) {
     return { ok: false, reason: `Route ${missingRoute.role} references a missing provider.` };
   }

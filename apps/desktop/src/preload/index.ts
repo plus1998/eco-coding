@@ -12,6 +12,9 @@ import {
   type ProviderConfigView,
   type RouteCapabilityHint,
   type RoutePricingHint,
+  type ModelsDevModelOption,
+  type ModelsDevMapping,
+  type RouteProfileView,
   type RoleRouteConfig,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
@@ -69,14 +72,23 @@ const api = {
   listProviderModels(request: ListUpstreamModelsRequest): Promise<ListUpstreamModelsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderListModels, request);
   },
-  saveRoleRoutes(routes: RoleRouteConfig[]): Promise<RoleRouteConfig[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.modelRoutesSave, routes);
+  saveRouteProfile(profile: RouteProfileInput): Promise<RouteProfileView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileSave, profile);
   },
-  getRoutePricing(): Promise<RoutePricingHint[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing);
+  deleteRouteProfile(profileId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileDelete, profileId);
   },
-  getRouteCapabilities(): Promise<RouteCapabilityHint[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.billingRouteCapabilities);
+  setActiveRouteProfile(profileId: string): Promise<RouteProfileView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileSetActive, profileId);
+  },
+  getRoutePricing(routes?: RoleRouteConfig[]): Promise<RoutePricingHint[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing, routes);
+  },
+  getRouteCapabilities(routes?: RoleRouteConfig[]): Promise<RouteCapabilityHint[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingRouteCapabilities, routes);
+  },
+  listModelsDevModels(): Promise<ModelsDevModelOption[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingModelsDevList);
   },
   refreshPricingCatalog(): Promise<{ ok: true; cachedAt: number }> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRefreshPricing);

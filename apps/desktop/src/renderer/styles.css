@@ -3743,6 +3743,213 @@ button:not(:disabled) {
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
 }
 
+.settings-modal-route-profile {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(92vh, 900px);
+}
+
+.settings-modal-route-profile .settings-modal-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #333;
+}
+
+.settings-modal-route-profile .settings-modal-footer {
+  padding-top: 16px;
+  border-top: 1px solid #333;
+}
+
+.models-route-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.models-route-profile-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.models-route-profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.models-route-profile-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #333;
+}
+
+.models-route-profile-section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+
+.models-route-list-modal {
+  gap: 8px;
+}
+
+.models-route-card-modal {
+  padding: 12px 14px;
+  gap: 10px;
+  background: #1a1a1a;
+  border-color: #2e2e2e;
+}
+
+.models-route-card-modal .models-route-card-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.models-route-card-modal .models-route-card-identity {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.models-route-card-modal .models-route-card-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.models-route-card-modal .models-route-pricing {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: none;
+}
+
+.models-route-card-modal .models-route-pricing-row {
+  display: contents;
+}
+
+.models-route-card-modal .models-route-capability-badges {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: 0;
+}
+
+@media (max-width: 520px) {
+  .models-route-card-modal .models-route-card-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .models-route-card-modal .models-route-card-meta {
+    align-items: flex-start;
+    margin-left: 0;
+  }
+
+  .models-route-card-modal .models-route-pricing,
+  .models-route-card-modal .models-route-capability-badges {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+.models-route-list-modal .models-route-card-fields {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 10px 12px;
+}
+
+.models-route-list-modal .models-route-field-thinking {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .models-route-profile-meta {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .models-route-list-modal .models-route-card-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.models-route-profile-row {
+  align-items: flex-start;
+}
+
+.models-route-profile-row .models-provider-row-main {
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+}
+
+.models-route-profile-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.models-route-profile-preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.models-route-profile-preview-role {
+  font-size: 11px;
+  color: #737373;
+}
+
+.models-route-profile-preview-model {
+  font-size: 12px;
+  color: #d4d4d4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.models-route-list-modal .models-route-field-mapping {
+  grid-column: 1 / -1;
+}
+
+.models-dev-select-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #737373;
+}
+
+.models-dev-select-hint.unresolved {
+  color: #fbbf24;
+}
+
+.models-dev-select-auto {
+  color: #d4d4d4;
+}
+
+@media (max-width: 720px) {
+  .models-route-profile-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .settings-modal-header {
   display: flex;
   align-items: center;

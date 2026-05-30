@@ -5,7 +5,7 @@ import {
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
-import type { AgentRole, ThreadContextSnapshot } from "../shared/ipc";
+import type { AgentRole, ModelsDevMapping } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 const COMPACT_COOLDOWN_MS = 60_000;
@@ -35,6 +35,7 @@ interface RoleOccupancyState {
   occupied: number;
   modelId?: string;
   providerBaseUrl?: string;
+  modelsDevMapping?: ModelsDevMapping;
 }
 
 interface ThreadMonitorState {
@@ -60,6 +61,7 @@ export class ContextWindowMonitor {
       role?: AgentRole;
       modelId?: string;
       providerBaseUrl?: string;
+      modelsDevMapping?: ModelsDevMapping;
       messageId?: string;
     },
   ): Promise<ContextMonitorSnapshot> {
@@ -79,6 +81,7 @@ export class ContextWindowMonitor {
       occupied: occupancy,
       modelId: options?.modelId ?? prev?.modelId,
       providerBaseUrl: options?.providerBaseUrl ?? prev?.providerBaseUrl,
+      modelsDevMapping: options?.modelsDevMapping ?? prev?.modelsDevMapping,
     };
 
     this.refreshDisplayRole(state);
@@ -228,6 +231,7 @@ export class ContextWindowMonitor {
     const resolved = await this.pricingCache.resolveContextLimit(
       active.providerBaseUrl,
       active.modelId,
+      active.modelsDevMapping,
     );
     state.limit = resolved.limit;
     state.limitsResolved = resolved.limitsResolved;

@@ -6,7 +6,9 @@ export const IPC_CHANNELS = {
   modelProviderSave: "model-provider:save",
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
-  modelRoutesSave: "model-routes:save",
+  modelRouteProfileSave: "model-route-profile:save",
+  modelRouteProfileDelete: "model-route-profile:delete",
+  modelRouteProfileSetActive: "model-route-profile:set-active",
   threadStart: "thread:start",
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
@@ -43,6 +45,7 @@ export const IPC_CHANNELS = {
   billingRefreshPricing: "billing:refresh-pricing",
   billingRoutePricing: "billing:route-pricing",
   billingRouteCapabilities: "billing:route-capabilities",
+  billingModelsDevList: "billing:models-dev-list",
 } as const;
 
 export type {
@@ -113,11 +116,33 @@ export interface ProviderConfigView {
 
 export type ThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
 
+export interface ModelsDevMapping {
+  providerKey: string;
+  modelId: string;
+}
+
 export interface RoleRouteConfig {
   role: AgentRole;
   providerId: string;
   modelId: string;
   thinkingEffort?: ThinkingEffort;
+  modelsDevMapping?: ModelsDevMapping;
+}
+
+export interface RouteProfileView {
+  id: string;
+  name: string;
+  isActive: boolean;
+  routes: RoleRouteConfig[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RouteProfileInput {
+  id?: string;
+  name: string;
+  routes: RoleRouteConfig[];
+  isActive?: boolean;
 }
 
 export interface PromptImageAttachment {
@@ -128,7 +153,17 @@ export interface PromptImageAttachment {
 
 export interface ModelSettingsSnapshot {
   providers: ProviderConfigView[];
-  routes: RoleRouteConfig[];
+  routeProfiles: RouteProfileView[];
+}
+
+export function getActiveRouteProfile(
+  settings: ModelSettingsSnapshot,
+): RouteProfileView | undefined {
+  return settings.routeProfiles.find((profile) => profile.isActive) ?? settings.routeProfiles[0];
+}
+
+export function getActiveRoutes(settings: ModelSettingsSnapshot): RoleRouteConfig[] {
+  return getActiveRouteProfile(settings)?.routes ?? [];
 }
 
 export type ThreadStatus =
@@ -382,6 +417,17 @@ export interface RouteCapabilityHint {
   contextTokens?: number;
   maxOutputTokens?: number;
   contextLimitResolved: boolean;
+  modelsDevMapping?: ModelsDevMapping;
+  modelsDevLabel?: string;
+  /** 自动匹配命中的 models.dev 模型（非手动映射） */
+  resolvedModelsDevMapping?: ModelsDevMapping;
+  resolvedModelsDevLabel?: string;
+}
+
+export interface ModelsDevModelOption {
+  providerKey: string;
+  modelId: string;
+  displayName: string;
 }
 
 export interface ThreadLiveEvent {

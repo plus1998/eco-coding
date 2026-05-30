@@ -191,6 +191,71 @@ function buildPricingLookup(
   };
 }
 
+export function findModelEntryByKey(
+  catalog: ModelsDevCatalog,
+  providerKey: string,
+  modelId: string,
+): { providerKey: string; entry: ModelsDevModelEntry } | null {
+  const provider = catalog[providerKey];
+  if (!provider) {
+    return null;
+  }
+  const exact = provider.models[modelId];
+  if (exact) {
+    return { providerKey, entry: exact };
+  }
+  const lower = modelId.trim().toLowerCase();
+  if (!lower) {
+    return null;
+  }
+  for (const entry of Object.values(provider.models)) {
+    if (entry.id.toLowerCase() === lower) {
+      return { providerKey, entry };
+    }
+  }
+  return null;
+}
+
+export function lookupModelCostByKey(
+  catalog: ModelsDevCatalog,
+  providerKey: string,
+  modelId: string,
+): ModelPricingLookup | null {
+  const found = findModelEntryByKey(catalog, providerKey, modelId);
+  if (!found) {
+    return null;
+  }
+  const matched = matchFromEntry(found.entry);
+  if (!matched) {
+    return null;
+  }
+  return buildPricingLookup(found.providerKey, matched);
+}
+
+export interface ModelsDevCatalogModelOption {
+  providerKey: string;
+  modelId: string;
+  displayName: string;
+}
+
+export function listModelsDevCatalogOptions(catalog: ModelsDevCatalog): ModelsDevCatalogModelOption[] {
+  const options: ModelsDevCatalogModelOption[] = [];
+  for (const [providerKey, provider] of Object.entries(catalog)) {
+    for (const entry of Object.values(provider.models)) {
+      options.push({
+        providerKey,
+        modelId: entry.id,
+        displayName: entry.name?.trim() || entry.id,
+      });
+    }
+  }
+  return options.sort((left, right) => {
+    const leftLabel = `${left.providerKey}/${left.displayName}`;
+    const rightLabel = `${right.providerKey}/${right.displayName}`;
+    return leftLabel.localeCompare(rightLabel);
+  });
+}
+
 function matchFromEntry(entry: ModelsDevModelEntry): {
   modelId: string;
   rates: ModelCostRates;
