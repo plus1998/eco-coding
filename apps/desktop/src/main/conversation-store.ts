@@ -267,6 +267,15 @@ export class ConversationStore {
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
     const last = this.getLastActivityLine(threadId);
+    if (!line.stream && last?.stream && last.role === line.role) {
+      const merged = line.message.trim()
+        ? mergeStreamText(last.message, line.message)
+        : last.message;
+      this.db
+        .prepare(`UPDATE thread_activity SET message = ?, stream = 0 WHERE id = ?`)
+        .run(merged, last.id);
+      return { ...last, message: merged, stream: false };
+    }
     if (line.stream && last?.stream) {
       const merged = mergeStreamText(last.message, line.message);
       this.db

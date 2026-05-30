@@ -512,6 +512,18 @@ function App() {
       ) {
         return current;
       }
+      if (!line.stream && last?.stream && last.role === line.role) {
+        const merged = line.message.trim()
+          ? mergeStreamText(last.message, line.message)
+          : last.message;
+        return {
+          ...current,
+          [threadId]: [
+            ...previous.slice(0, -1),
+            { ...last, message: merged, stream: false },
+          ].slice(-300),
+        };
+      }
       if (line.stream && last?.stream) {
         return {
           ...current,

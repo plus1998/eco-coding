@@ -18,6 +18,12 @@ import { extractPlanningDeliverables } from "./phase-deliverable";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
+import {
+  createSdkStreamContext,
+  mapStreamEventToEvents,
+  type SdkStreamContext,
+  slimStreamEventMessage,
+} from "./sdk-stream-events.js";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
 import {
@@ -321,6 +327,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     let transcript = "";
     let sessionCaptured = false;
+    const streamCtx = createSdkStreamContext();
     for await (const message of query) {
       if (!sessionCaptured && isSdkInitMessage(message)) {
         const sessionId = readSdkSessionId(message);
@@ -330,7 +337,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
       }
 
-      for (const event of mapSdkMessageToEvents(message, input.threadId)) {
+      for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
       }
@@ -718,7 +725,11 @@ function mapTaskSystemMessageToEvents(
   ];
 }
 
-export function mapSdkMessageToEvents(message: unknown, threadId: string): AgentEvent[] {
+export function mapSdkMessageToEvents(
+  message: unknown,
+  threadId: string,
+  streamCtx?: SdkStreamContext,
+): AgentEvent[] {
   if (!isRecord(message)) {
     return [];
   }
@@ -741,6 +752,11 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
   }
 
   if (message.type === "stream_event") {
+    const ctx = streamCtx ?? createSdkStreamContext();
+    const streamEvents = mapStreamEventToEvents(message, threadId, sessionId, role, uuid, ctx);
+    if (streamEvents.length > 0) {
+      return streamEvents;
+    }
     return [
       createAgentEvent({
         id: `${uuid}:stream`,
@@ -748,17 +764,13 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
         agentId: sessionId,
         role,
         type: "message.delta",
-        payload: {
-          ...message,
-          ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
-          ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
-        },
+        payload: slimStreamEventMessage(message),
       }),
     ];
   }
 
   if (message.type === "assistant") {
-    return mapAssistantMessageToEvents(message, threadId, sessionId, role, uuid);
+    return mapAssistantMessageToEvents(message, threadId, sessionId, role, uuid, streamCtx);
   }
 
   if (message.type === "tool_progress") {
@@ -805,6 +817,24 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
       message.subtype === "task_progress"
     ) {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
+    }
+    if (message.subtype === "compact_boundary") {
+      return [
+        createAgentEvent({
+          id: `${uuid}:compact`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "agent.started",
+          payload: {
+            type: "system",
+            subtype: "compact_boundary",
+            ...(typeof message.compacted_summary === "string" && {
+              compacted_summary: message.compacted_summary,
+            }),
+          },
+        }),
+      ];
     }
     if (
       message.subtype === "status" ||
@@ -859,6 +889,7 @@ function mapAssistantMessageToEvents(
   sessionId: string,
   role: AgentRole,
   uuid: string,
+  streamCtx?: SdkStreamContext,
 ): AgentEvent[] {
   if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
     return [];
@@ -867,6 +898,11 @@ function mapAssistantMessageToEvents(
   const events: AgentEvent[] = [];
   for (const [index, block] of message.message.content.entries()) {
     if (!isRecord(block) || block.type !== "tool_use" || typeof block.name !== "string") {
+      continue;
+    }
+
+    const toolUseId = typeof block.id === "string" ? block.id : undefined;
+    if (toolUseId && streamCtx?.emittedToolUseIds.has(toolUseId)) {
       continue;
     }
 
@@ -881,6 +917,10 @@ function mapAssistantMessageToEvents(
           type: "tool_use",
           tool_name: block.name,
           input: block.input,
+          ...(toolUseId && { tool_use_id: toolUseId }),
+          ...(typeof message.parent_tool_use_id === "string" && {
+            parent_tool_use_id: message.parent_tool_use_id,
+          }),
           ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
           ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
           ...(block.name === "Agent" &&
@@ -964,15 +1004,26 @@ export interface AgentEventDisplay {
 export function formatAgentEventDisplay(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): AgentEventDisplay | null {
+  if (isRecord(event.payload) && event.payload.type === "eco_stream" && event.payload.streamPlaceholder) {
+    return {
+      message: "",
+      role: inferActivityRole(event),
+      stream: true,
+    };
+  }
+
   const message = formatAgentEventLine(event);
-  if (!message) {
+  if (!message && !(isRecord(event.payload) && event.payload.type === "eco_stream" && event.payload.streamFinalize)) {
     return null;
   }
 
+  const finalize =
+    isRecord(event.payload) && event.payload.type === "eco_stream" && event.payload.streamFinalize === true;
+
   return {
-    message,
+    message: message ?? "",
     role: inferActivityRole(event),
-    stream: isStreamableAgentEventType(event.type) && isStreamPayload(event.payload),
+    stream: finalize ? false : isStreamableAgentEventType(event.type) && isStreamPayload(event.payload),
   };
 }
 
@@ -1036,8 +1087,29 @@ export function inferActivityRole(
     if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
       return "tool";
     }
+    if (event.payload.type === "tool_use") {
+      if (event.payload.tool_name === "Agent" && isRecord(event.payload.input)) {
+        const subagent =
+          (typeof event.payload.input.subagent_type === "string" && event.payload.input.subagent_type) ||
+          (typeof event.payload.input.agent_type === "string" && event.payload.input.agent_type) ||
+          undefined;
+        if (subagent && isAgentRole(subagent)) {
+          return subagent;
+        }
+      }
+      if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
+        return event.payload.subagent_type;
+      }
+      if (isSubagentRole(event.role) || (isAgentRole(event.role) && event.role !== "planner")) {
+        return event.role;
+      }
+      return "tool";
+    }
     if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
       return event.payload.subagent_type;
+    }
+    if (typeof event.payload.agent_type === "string" && isAgentRole(event.payload.agent_type)) {
+      return event.payload.agent_type;
     }
   }
 
@@ -1079,6 +1151,10 @@ export function isThinkingPayload(payload: unknown): boolean {
     return false;
   }
 
+  if (payload.type === "eco_stream" && payload.blockKind === "thinking") {
+    return true;
+  }
+
   if (payload.type === "stream_event" && isRecord(payload.event)) {
     const event = payload.event;
     if (event.type === "content_block_delta" && isRecord(event.delta) && event.delta.type === "thinking_delta") {
@@ -1096,7 +1172,13 @@ export function isThinkingPayload(payload: unknown): boolean {
 }
 
 export function isStreamPayload(payload: unknown): boolean {
-  return isRecord(payload) && payload.type === "stream_event";
+  if (!isRecord(payload)) {
+    return false;
+  }
+  if (payload.type === "eco_stream") {
+    return !payload.streamFinalize;
+  }
+  return payload.type === "stream_event";
 }
 
 export function formatSdkPayloadMessage(payload: unknown): string | null {
@@ -1115,6 +1197,16 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
 
   if (payload.type === "assistant" && isRecord(payload.message)) {
     return extractBetaMessageText(payload.message);
+  }
+
+  if (payload.type === "eco_stream") {
+    if (payload.streamPlaceholder || payload.streamFinalize) {
+      return null;
+    }
+    if (typeof payload.text === "string" && payload.text.length > 0) {
+      return payload.text;
+    }
+    return null;
   }
 
   if (payload.type === "stream_event" && isRecord(payload.event)) {
@@ -1160,6 +1252,9 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
         return "Compacting context…";
       }
       return null;
+    }
+    if (payload.subtype === "compact_boundary") {
+      return "Compacting context…";
     }
     if (payload.subtype === "task_started" && typeof payload.description === "string") {
       const subagent =
@@ -1394,3 +1489,10 @@ function pathBasename(filePath: string): string {
 export function isStreamableAgentEventType(type: AgentEventType): boolean {
   return type === "message.delta";
 }
+
+export {
+  createSdkStreamContext,
+  isEcoStreamFinalize,
+  isEcoStreamPlaceholder,
+  type SdkStreamContext,
+} from "./sdk-stream-events.js";

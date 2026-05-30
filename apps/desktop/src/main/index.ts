@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   ClaudeAgentSdkDriver,
   extractSdkRunFailure,
-  formatAgentEventDisplay,
   formatUsageBadge,
   estimateContextTokens,
   parseUsagePayload,
@@ -98,6 +97,7 @@ import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
+import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
@@ -135,6 +135,7 @@ interface ActiveThreadRun {
 
 const activeRuns = new Map<string, ActiveThreadRun>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
+const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
 
@@ -812,6 +813,7 @@ async function runQuestionThread(
     });
   } finally {
     cancelClarificationsForThread(thread.id, "run finished");
+    sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -975,6 +977,7 @@ async function runCodingThreadPlanning(
     await cleanupWorktreeForThread(thread.id);
   } finally {
     cancelClarificationsForThread(thread.id, "run finished");
+    sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -1145,6 +1148,7 @@ async function runCodingThreadExecution(
     }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
+    sdkStreamBridge.resetThread(threadId);
     activeRuns.delete(threadId);
     const thread = conversationStore.getThread(threadId);
     if (thread?.status === "running") {
@@ -1757,6 +1761,7 @@ async function runThreadContinuation(
     updateThread(thread.id, { status: "failed", message: errorMessage(error) });
   } finally {
     cancelClarificationsForThread(thread.id, "run finished");
+    sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -1768,19 +1773,17 @@ async function runThreadContinuation(
   }
 }
 
-/** OTel does not stream assistant text; keep SDK message.delta for narrative only. */
+/** OTel does not stream assistant text; SDK drives narrative, tool, and todo activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
-  if (event.type !== "message.delta" && event.type !== "todo.updated") {
-    return;
-  }
-  const display = formatAgentEventDisplay(event);
-  if (!display) {
-    return;
-  }
-  emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
+  sdkStreamBridge.handleEvent(threadId, event, (id, type, message, role, stream) => {
+    emitThreadEvent(id, type, message, role as AgentRole | "system" | "thinking" | "tool" | "user", stream);
+  });
 }
 
 function emitOtelActivity(line: OtelActivityLine): void {
+  if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
+    return;
+  }
   emitThreadEvent(line.threadId, "otel.activity", line.message, line.role, line.stream ?? false);
 }
 
@@ -2043,7 +2046,15 @@ function emitThreadEvent(
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
-  if (!trimmed && !extras?.plan && !extras?.clarification && !isThreadStatusEvent && !isUsageEvent) {
+  const allowEmptyStream = stream && trimmed.length === 0;
+  if (
+    !trimmed &&
+    !allowEmptyStream &&
+    !extras?.plan &&
+    !extras?.clarification &&
+    !isThreadStatusEvent &&
+    !isUsageEvent
+  ) {
     return;
   }
 
@@ -2051,7 +2062,7 @@ function emitThreadEvent(
 
   if (
     conversationStore.getThread(threadId) &&
-    displayMessage &&
+    (displayMessage || allowEmptyStream) &&
     !extras?.todoList &&
     !extras?.title &&
     !isUsageEvent
