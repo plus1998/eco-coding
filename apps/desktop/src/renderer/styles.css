@@ -1027,6 +1027,12 @@ button:not(:disabled) {
   width: 100%;
 }
 
+.thread-info-billing-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .plan-approval-actions {
   display: flex;
   justify-content: flex-end;

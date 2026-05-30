@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   threadContinue: "thread:continue",
   threadRetry: "thread:retry",
   threadGetPendingPlan: "thread:get-pending-plan",
+  threadGetUsageSnapshot: "thread:get-usage-snapshot",
   threadTodoList: "thread:todo-list",
   clarificationGetPending: "clarification:get-pending",
   clarificationSubmit: "clarification:submit",
@@ -328,6 +329,11 @@ export interface ThreadBillingSnapshot {
       }
     >
   >;
+}
+
+export interface ThreadUsageSnapshotResult {
+  billing?: ThreadBillingSnapshot;
+  context?: ThreadContextSnapshot;
 }
 
 export interface RoutePricingHint {

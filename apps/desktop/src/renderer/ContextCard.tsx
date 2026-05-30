@@ -6,6 +6,8 @@ import type { ThreadContextSnapshot } from "../shared/ipc";
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
   placeholder?: string;
+  /** When false, hide the card if there is no snapshot yet. */
+  showWhenEmpty?: boolean;
 }
 
 function formatContextK(value: number): string {
@@ -43,13 +45,16 @@ function formatOccupancyLabel(pct: number): string {
   return `${pct}% 已用`;
 }
 
-export function ContextCard({ context, placeholder }: ContextCardProps) {
+export function ContextCard({ context, placeholder, showWhenEmpty = true }: ContextCardProps) {
   const [detailsOpen, setDetailsOpen] = useState(true);
 
   if (!context) {
+    if (!showWhenEmpty) {
+      return null;
+    }
     return (
       <div className="context-card context-card-empty">
-        <p className="context-card-placeholder">{placeholder ?? "上下文 — 启动对话后显示"}</p>
+        <p className="context-card-placeholder">{placeholder ?? "上下文 — 有模型请求后显示"}</p>
       </div>
     );
   }

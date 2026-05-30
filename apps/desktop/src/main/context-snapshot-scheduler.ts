@@ -36,6 +36,7 @@ export interface ContextSnapshotSchedulerOptions {
 export class ContextSnapshotScheduler {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly lastSegments = new Map<string, ThreadContextSnapshot["segments"]>();
+  private readonly lastEmitted = new Map<string, ThreadContextSnapshot>();
   private refreshInFlight = new Set<string>();
 
   constructor(private readonly options: ContextSnapshotSchedulerOptions) {}
@@ -64,12 +65,40 @@ export class ContextSnapshotScheduler {
   }
 
   emitFromMonitor(threadId: string, stale = false): void {
-    const monitorSnap = this.options.monitor.getSnapshot(threadId);
-    if (!monitorSnap) {
+    const snapshot = this.buildSnapshotFromMonitor(threadId, stale);
+    if (!snapshot) {
       return;
     }
+    this.lastEmitted.set(threadId, snapshot);
+    this.options.emitContext(threadId, snapshot);
+  }
+
+  /** Latest context card for UI hydration (monitor + last /context breakdown). */
+  getDisplaySnapshot(threadId: string): ThreadContextSnapshot | undefined {
+    return this.lastEmitted.get(threadId) ?? this.buildSnapshotFromMonitor(threadId);
+  }
+
+  clearThread(threadId: string): void {
+    const timer = this.timers.get(threadId);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(threadId);
+    }
+    this.lastSegments.delete(threadId);
+    this.lastEmitted.delete(threadId);
+    this.options.monitor.clearThread(threadId);
+  }
+
+  private buildSnapshotFromMonitor(
+    threadId: string,
+    stale = false,
+  ): ThreadContextSnapshot | undefined {
+    const monitorSnap = this.options.monitor.getSnapshot(threadId);
+    if (!monitorSnap || monitorSnap.occupied <= 0) {
+      return undefined;
+    }
     const segments = this.lastSegments.get(threadId) ?? [];
-    this.options.emitContext(threadId, {
+    return {
       occupied: monitorSnap.occupied,
       limit: monitorSnap.limit,
       occupancyPct: monitorSnap.occupancyPct,
@@ -83,17 +112,7 @@ export class ContextSnapshotScheduler {
       updatedAt: Date.now(),
       ...(stale && { stale: true }),
       ...(monitorSnap.maxOutputTokens !== undefined && { maxOutputTokens: monitorSnap.maxOutputTokens }),
-    });
-  }
-
-  clearThread(threadId: string): void {
-    const timer = this.timers.get(threadId);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(threadId);
-    }
-    this.lastSegments.delete(threadId);
-    this.options.monitor.clearThread(threadId);
+    };
   }
 
   async ensureHeadroom(

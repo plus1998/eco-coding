@@ -29,6 +29,7 @@ import {
   type ThreadRetryResult,
   type ThreadApprovePlanRequest,
   type ThreadPendingPlan,
+  type ThreadUsageSnapshotResult,
   type ThreadRollbackResult,
   type ThreadStartRequest,
   type ThreadStartResult,
@@ -119,6 +120,9 @@ const api = {
   },
   getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);
+  },
+  getThreadUsageSnapshot(threadId: string): Promise<ThreadUsageSnapshotResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadGetUsageSnapshot, threadId);
   },
   getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);

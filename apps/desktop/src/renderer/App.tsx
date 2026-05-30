@@ -40,7 +40,8 @@ import {
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { isContinuableThreadStatus, isUsageNoiseMessage, pickDisplayContextTokens } from "../shared/thread-continuation";
+import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
+import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
@@ -268,6 +269,8 @@ function App() {
     });
   }, []);
 
+  const selectedThreadStatus = threads.find((thread) => thread.id === selectedThreadId)?.status;
+
   useEffect(() => {
     if (!selectedThreadId || !window.eco) {
       return;
@@ -306,12 +309,29 @@ function App() {
           [selectedThreadId]: todos,
         }));
       });
+      void window.eco.getThreadUsageSnapshot(selectedThreadId).then((snapshot) => {
+        if (cancelled) {
+          return;
+        }
+        if (snapshot.billing) {
+          setBillingByThread((current) => ({
+            ...current,
+            [selectedThreadId]: snapshot.billing!,
+          }));
+        }
+        if (snapshot.context) {
+          setContextByThread((current) => ({
+            ...current,
+            [selectedThreadId]: snapshot.context!,
+          }));
+        }
+      });
     }
 
     return () => {
       cancelled = true;
     };
-  }, [selectedThreadId]);
+  }, [selectedThreadId, selectedThreadStatus]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(recentProjectsStorageKey);
@@ -460,17 +480,11 @@ function App() {
     if (!activeThread) {
       return undefined;
     }
-    const contextTokens = threadUsageByRole ? pickDisplayContextTokens(threadUsageByRole) : 0;
-    const billing = billingByThread[activeThread.id];
-    const context = contextByThread[activeThread.id];
-    if (!billing && contextTokens <= 0 && !context) {
-      return undefined;
-    }
-    return {
-      ...(billing && { billing }),
-      ...(context && { context }),
-      ...(contextTokens > 0 && { contextTokens }),
-    };
+    return buildThreadUsageSummary({
+      billing: billingByThread[activeThread.id],
+      context: contextByThread[activeThread.id],
+      usageByRole: threadUsageByRole,
+    });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const agentModelLabels = useMemo(
     () =>
@@ -1171,7 +1185,7 @@ function App() {
           dirtyFileCount={projectWorkspace?.dirtyFileCount}
           todos={coderTodos}
           threadStatus={activeThread.status}
-          {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+          usageSummary={threadUsageSummary}
           {...(pendingWorktreeApply && { pendingWorktreeApply })}
           onApplyWorktree={() => void applyPendingWorktree()}
           worktreeApplyBusy={worktreeApplyBusy}

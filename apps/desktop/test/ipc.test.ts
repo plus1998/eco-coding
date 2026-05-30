@@ -10,6 +10,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");
   expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
   expect(IPC_CHANNELS.threadApprovePlan).toBe("thread:approve-plan");
+  expect(IPC_CHANNELS.threadGetUsageSnapshot).toBe("thread:get-usage-snapshot");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
   expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
   expect(IPC_CHANNELS.threadRetry).toBe("thread:retry");

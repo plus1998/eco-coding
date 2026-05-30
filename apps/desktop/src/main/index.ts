@@ -61,6 +61,7 @@ import {
   type ThreadStartRequest,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type ThreadUsageSnapshotResult,
   type ThreadContextSnapshot,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
@@ -493,6 +494,20 @@ function registerIpcHandlers(): void {
       throw new Error("Failed to submit clarification.");
     }
     return { ok: true as const };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadGetUsageSnapshot, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return {} satisfies ThreadUsageSnapshotResult;
+    }
+    const id = threadId.trim();
+    requestThreadContextRefresh(id, false);
+    const billing = threadUsageAccumulator.getSnapshot(id);
+    const context = contextScheduler.getDisplaySnapshot(id);
+    return {
+      ...(billing && { billing }),
+      ...(context && { context }),
+    } satisfies ThreadUsageSnapshotResult;
   });
 
   ipcMain.handle(IPC_CHANNELS.threadGetPendingPlan, async (_event, threadId: unknown) => {
@@ -999,6 +1014,7 @@ async function runCodingThreadPlanning(
       status: "awaiting_plan",
       message: "等待你确认计划。",
     });
+    requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     updateThread(thread.id, {
@@ -1795,6 +1811,7 @@ async function runThreadContinuation(
           status: "awaiting_plan",
           message: "等待你确认计划。",
         });
+        requestThreadContextRefresh(thread.id, true);
       } else {
         updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
       }
@@ -2031,6 +2048,18 @@ function finishRunContextRefresh(threadId: string): void {
   if (worktreePath) {
     scheduleContextRefresh(threadId, worktreePath, true);
   }
+}
+
+function requestThreadContextRefresh(threadId: string, immediate = true): void {
+  const worktreePath =
+    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
+    conversationStore.getSdkSession(threadId)?.cwd ??
+    conversationStore.getPendingPlan(threadId)?.worktreePath;
+  if (!worktreePath) {
+    contextScheduler.emitFromMonitor(threadId);
+    return;
+  }
+  scheduleContextRefresh(threadId, worktreePath, immediate);
 }
 
 function scheduleContextRefresh(threadId: string, worktreePath: string, immediate = false): void {

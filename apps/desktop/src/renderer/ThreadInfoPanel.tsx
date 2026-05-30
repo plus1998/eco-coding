@@ -8,6 +8,11 @@ import type {
   WorkspaceInfo,
 } from "../shared/ipc";
 import { CoderTodoPanel } from "./CoderTodoPanel";
+import {
+  billingEmptyHint,
+  contextCardPlaceholder,
+  shouldShowThreadUsagePanels,
+} from "../shared/thread-usage-summary";
 import { ContextCard } from "./ContextCard";
 
 export interface ThreadUsageSummary {
@@ -89,6 +94,9 @@ export function ThreadInfoPanel({
     : null;
   const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? "主模型";
   const cacheCostNote = billing ? formatCacheCostNote(billing) : null;
+  const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
+  const showBilling = hasBillingData(billing);
+  const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -123,10 +131,16 @@ export function ThreadInfoPanel({
             </li>
           ) : null}
         </ul>
-        <ContextCard context={usageSummary?.context} />
+        {showUsagePanels ? (
+          <ContextCard
+            context={usageSummary?.context}
+            placeholder={contextCardPlaceholder(threadStatus)}
+            showWhenEmpty
+          />
+        ) : null}
       </section>
 
-      {hasBillingData(billing) ? (
+      {showBillingSection ? (
         <section className="thread-info-section thread-info-billing">
           <h3 className="thread-info-heading">
             计费对比
@@ -137,42 +151,52 @@ export function ThreadInfoPanel({
               <HelpCircle size={13} aria-hidden />
             </span>
           </h3>
-          {tokenBadge ? (
+          {showBilling && tokenBadge ? (
             <p className="thread-info-billing-tokens" title="线程累计 token（非单次请求）">
               编排 token · {tokenBadge}
             </p>
           ) : null}
-          <ul className="thread-info-billing-list">
-            <li title="Claude Code 内置价目估算，非权威账单">
-              <span>① SDK（OTel）</span>
-              <span>{formatCostUsd(billing.otelCostUsd)}</span>
-            </li>
-            <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
-              <span>② 全主模型（{plannerLabel}）</span>
-              <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
-            </li>
-            <li className="thread-info-billing-eco" title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）">
-              <span>③ 经济编程</span>
-              <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
-            </li>
-            {cacheCostNote ? (
-              <li className="thread-info-billing-cache" title="缓存 token 按 models.dev cache_read / cache_write 单价计费">
-                <span>{cacheCostNote}</span>
+          {showBilling ? (
+            <ul className="thread-info-billing-list">
+              <li title="Claude Code 内置价目估算，非权威账单">
+                <span>① SDK（OTel）</span>
+                <span>{formatCostUsd(billing.otelCostUsd)}</span>
               </li>
-            ) : null}
-            <li
-              className={
-                billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"
-              }
-              title="② − ③"
-            >
-              <span>
-                <DollarSign size={13} aria-hidden />
-                {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
-              </span>
-            </li>
-          </ul>
-          {!billing.pricingResolved ? (
+              <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
+                <span>② 全主模型（{plannerLabel}）</span>
+                <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
+              </li>
+              <li
+                className="thread-info-billing-eco"
+                title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）"
+              >
+                <span>③ 经济编程</span>
+                <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+              </li>
+              {cacheCostNote ? (
+                <li
+                  className="thread-info-billing-cache"
+                  title="缓存 token 按 models.dev cache_read / cache_write 单价计费"
+                >
+                  <span>{cacheCostNote}</span>
+                </li>
+              ) : null}
+              <li
+                className={
+                  billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"
+                }
+                title="② − ③"
+              >
+                <span>
+                  <DollarSign size={13} aria-hidden />
+                  {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
+                </span>
+              </li>
+            </ul>
+          ) : (
+            <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
+          )}
+          {showBilling && !billing.pricingResolved ? (
             <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
           ) : null}
         </section>
