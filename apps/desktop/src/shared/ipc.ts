@@ -35,8 +35,6 @@ export const IPC_CHANNELS = {
   skillsList: "skills:list",
   agentSkillsGet: "agent-skills:get",
   agentSkillsSave: "agent-skills:save",
-  telemetrySettingsGet: "telemetry-settings:get",
-  telemetrySettingsSave: "telemetry-settings:save",
 } as const;
 
 export type {
@@ -47,7 +45,6 @@ export type {
 } from "./mcp";
 
 export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
-export type { TelemetrySettingsInput, TelemetrySettingsSnapshot } from "./telemetry";
 
 /** Skill directory names enabled per agent role at runtime (SDK skills preload). */
 export type AgentSkillAssignments = Record<AgentRole, string[]>;

@@ -1,58 +1,96 @@
 import { expect, test } from "bun:test";
-import {
-  buildOtelEnvVars,
-  defaultEcoTelemetrySettings,
-  mergeResourceAttributes,
-} from "../src/otel-env";
+import { parseOtelLogsPayload, parseOtelTracesPayload } from "../src/otel-activity";
+import { buildBuiltinOtelEnv } from "../src/otel-env";
 import { buildSdkProcessEnv } from "../src/claude-agent-sdk";
 
-test("buildOtelEnvVars returns empty when disabled", () => {
-  expect(buildOtelEnvVars({ settings: defaultEcoTelemetrySettings() })).toEqual({});
-});
-
-test("buildOtelEnvVars sets OTLP exporters when enabled", () => {
-  const env = buildOtelEnvVars({
-    settings: {
-      ...defaultEcoTelemetrySettings(),
-      enabled: true,
-      endpoint: "http://collector.example.com:4318/",
-      headers: "Authorization=Bearer secret",
-    },
-    threadId: "thread-abc",
+test("buildBuiltinOtelEnv targets local JSON OTLP receiver", () => {
+  const env = buildBuiltinOtelEnv({
+    endpoint: "http://127.0.0.1:4318",
+    threadId: "thread-1",
   });
-
   expect(env.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
-  expect(env.CLAUDE_CODE_ENHANCED_TELEMETRY_BETA).toBe("1");
-  expect(env.OTEL_TRACES_EXPORTER).toBe("otlp");
-  expect(env.OTEL_METRICS_EXPORTER).toBe("otlp");
-  expect(env.OTEL_LOGS_EXPORTER).toBe("otlp");
-  expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://collector.example.com:4318");
-  expect(env.OTEL_EXPORTER_OTLP_HEADERS).toBe("Authorization=Bearer secret");
-  expect(env.OTEL_TRACES_EXPORT_INTERVAL).toBe("1000");
-  expect(env.OTEL_SERVICE_NAME).toBe("eco-coding");
-  expect(env.OTEL_RESOURCE_ATTRIBUTES).toContain("thread.id=thread-abc");
-  expect(env.OTEL_RESOURCE_ATTRIBUTES).toContain("eco.client=eco-coding");
+  expect(env.OTEL_EXPORTER_OTLP_PROTOCOL).toBe("http/json");
+  expect(env.OTEL_LOG_TOOL_DETAILS).toBe("1");
+  expect(env.OTEL_RESOURCE_ATTRIBUTES).toContain("thread.id=thread-1");
 });
 
-test("mergeResourceAttributes preserves existing keys", () => {
-  const merged = mergeResourceAttributes("deployment.environment=prod", {
-    "thread.id": "t1",
+test("parseOtelTracesPayload maps llm_request failures", () => {
+  const lines = parseOtelTracesPayload({
+    resourceSpans: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t1" } }],
+        },
+        scopeSpans: [
+          {
+            spans: [
+              {
+                name: "claude_code.llm_request",
+                endTimeUnixNano: "1000",
+                attributes: [
+                  { key: "success", value: { stringValue: "false" } },
+                  { key: "error", value: { stringValue: "rate limited" } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
   });
-  expect(merged).toContain("deployment.environment=prod");
-  expect(merged).toContain("thread.id=t1");
+  expect(lines[0]?.message).toBe("rate limited");
 });
 
-test("buildSdkProcessEnv merges telemetry env for SDK child process", () => {
+test("parseOtelLogsPayload maps tool_result and api_request usage", () => {
+  const { lines, usage } = parseOtelLogsPayload({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t2" } }],
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "tool_name", value: { stringValue: "Bash" } },
+                  { key: "success", value: { stringValue: "true" } },
+                  { key: "duration_ms", value: { intValue: "800" } },
+                  {
+                    key: "tool_parameters",
+                    value: { stringValue: '{"full_command":"npm test"}' },
+                  },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "api_request" } },
+                  { key: "model", value: { stringValue: "claude-sonnet-4" } },
+                  { key: "input_tokens", value: { intValue: "100" } },
+                  { key: "output_tokens", value: { intValue: "50" } },
+                  { key: "cost_usd", value: { doubleValue: 0.002 } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(lines[0]?.message).toBe("Tool: Bash · npm test (0.8s)");
+  expect(usage[0]?.inputTokens).toBe(100);
+  expect(usage[0]?.outputTokens).toBe(50);
+  expect(usage[0]?.costUsd).toBe(0.002);
+});
+
+test("buildSdkProcessEnv merges builtin otel env", () => {
   const env = buildSdkProcessEnv({
     apiKey: "router-key",
     baseUrl: "http://127.0.0.1:36037/",
-    telemetry: {
-      ...defaultEcoTelemetrySettings(),
-      enabled: true,
-    },
-    threadId: "run-1",
+    otel: { endpoint: "http://127.0.0.1:4318", threadId: "run-1" },
   });
-  expect(env.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
+  expect(env.OTEL_EXPORTER_OTLP_PROTOCOL).toBe("http/json");
   expect(env.ANTHROPIC_API_KEY).toBe("router-key");
-  expect(env.OTEL_RESOURCE_ATTRIBUTES).toContain("thread.id=run-1");
 });

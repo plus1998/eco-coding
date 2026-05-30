@@ -20,6 +20,8 @@ import {
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
   mergeStreamText,
+  type OtelActivityLine,
+  type OtelUsageUpdate,
   type PlanReadyPayload,
   type SdkToolPermissionRequest,
 } from "@eco/runtime";
@@ -55,7 +57,6 @@ import {
   type ThreadStartRequest,
   type ThreadSummary,
   type ThreadUsageSnapshot,
-  type TelemetrySettingsInput,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
   type WorkspaceInfo,
@@ -83,7 +84,7 @@ import { createConversationStore, type ConversationStore } from "./conversation-
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
-import { createTelemetryStore, type TelemetryStore } from "./telemetry-store";
+import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
@@ -109,7 +110,6 @@ const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let mcpStore: McpStore;
-let telemetryStore: TelemetryStore;
 let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
 
@@ -152,9 +152,12 @@ app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
-  telemetryStore = await createTelemetryStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
+  await localOtelReceiver.start({
+    onActivity: emitOtelActivity,
+    onUsage: emitOtelUsage,
+  });
   recoverOrphanedRunningThreads();
   registerIpcHandlers();
   await createMainWindow();
@@ -246,17 +249,6 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
-
-  ipcMain.handle(IPC_CHANNELS.telemetrySettingsGet, async () => telemetryStore.getSettings());
-
-  ipcMain.handle(IPC_CHANNELS.telemetrySettingsSave, async (_event, payload: unknown) => {
-    if (!payload || typeof payload !== "object") {
-      throw new Error("Invalid telemetry settings.");
-    }
-    const saved = telemetryStore.saveSettings(payload as TelemetrySettingsInput);
-    emitSettingsUpdated();
-    return saved;
-  });
 
   ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload: McpServerConfigInput) => {
     const server = mcpStore.saveServer(payload);
@@ -677,13 +669,9 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
-          const display = formatAgentEventDisplay(event);
-          if (display) {
-            emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
-          }
+          emitSdkStreamActivity(thread.id, event);
         }
 
         if (controller.signal.aborted) {
@@ -788,7 +776,6 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
@@ -822,10 +809,12 @@ async function runCodingThreadPlanning(
             });
           }
 
-          const display = formatAgentEventDisplay(event);
-          if (display) {
-            emitThreadEvent(thread.id, event.type, display.message, display.role, display.stream);
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            continue;
           }
+
+          emitSdkStreamActivity(thread.id, event);
         }
 
         if (controller.signal.aborted) {
@@ -947,15 +936,12 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(threadId, event);
             continue;
           }
 
           const display = formatAgentEventDisplay(event);
           todoTracker.observeEvent(event, display);
-          if (display) {
-            emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
-          }
+          emitSdkStreamActivity(threadId, event);
         }
 
         if (controller.signal.aborted) {
@@ -1487,17 +1473,68 @@ function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
 ): ClaudeAgentSdkDriver {
-  const telemetry = telemetryStore.getSettings();
-  if (telemetry.enabled) {
-    process.stderr.write(
-      `[eco] OTel 导出已启用 → ${telemetry.endpoint} (thread.id=${threadId})\n`,
-    );
+  const endpoint = localOtelReceiver.getEndpoint();
+  if (!endpoint) {
+    throw new Error("Local OTel receiver is not ready.");
   }
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
     canUseTool: createThreadCanUseTool(threadId),
-    telemetry,
+    otel: { endpoint, threadId },
+  });
+}
+
+/** OTel does not stream assistant text; keep SDK message.delta for narrative only. */
+function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
+  if (event.type !== "message.delta") {
+    return;
+  }
+  const display = formatAgentEventDisplay(event);
+  if (!display) {
+    return;
+  }
+  emitThreadEvent(threadId, event.type, display.message, display.role, display.stream);
+}
+
+function emitOtelActivity(line: OtelActivityLine): void {
+  emitThreadEvent(line.threadId, "otel.activity", line.message, line.role, line.stream ?? false);
+}
+
+function emitOtelUsage(usage: OtelUsageUpdate): void {
+  const role =
+    usage.role === "system" || usage.role === "thinking" || usage.role === "tool"
+      ? "planner"
+      : usage.role;
+
+  let totalCostUsd = threadTotalCostUsd.get(usage.threadId) ?? 0;
+  if (usage.costUsd !== undefined) {
+    totalCostUsd = accumulateThreadCost(totalCostUsd, usage.costUsd);
+    threadTotalCostUsd.set(usage.threadId, totalCostUsd);
+  }
+
+  const parsed = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+    ...(usage.costUsd !== undefined && { totalCostUsd: usage.costUsd }),
+    ...(usage.modelId && { modelId: usage.modelId }),
+  };
+
+  const snapshot: ThreadUsageSnapshot = {
+    inputTokens: parsed.inputTokens,
+    outputTokens: parsed.outputTokens,
+    cacheReadTokens: parsed.cacheReadTokens,
+    cacheCreationTokens: parsed.cacheCreationTokens,
+    contextTokens: estimateContextTokens(parsed),
+    ...(parsed.modelId && { modelId: parsed.modelId }),
+  };
+
+  emitThreadEvent(usage.threadId, "thread.usage_updated", formatUsageBadge(parsed), role, false, {
+    usage: snapshot,
+    totalCostUsd,
+    ...(parsed.modelId && { modelId: parsed.modelId }),
   });
 }
 

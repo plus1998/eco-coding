@@ -16,7 +16,7 @@ import { extractPlanningDeliverables } from "./phase-deliverable";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
-import { buildOtelEnvVars, type EcoTelemetrySettings } from "./otel-env";
+import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import {
   ecoBasePromptAppend,
   exploreAgentDescription,
@@ -108,8 +108,8 @@ export interface ClaudeAgentSdkDriverOptions {
   maxTurns?: number;
   /** Default: analyze_plan_execute (plan in one session → subagents execute). */
   orchestration?: EcoOrchestrationMode;
-  /** OpenTelemetry export via Claude Code CLI (see buildOtelEnvVars). */
-  telemetry?: EcoTelemetrySettings;
+  /** When set, SDK CLI exports OTel to this local endpoint (eco-coding ingests for UI/logs). */
+  otel?: EcoBuiltinOtelOptions;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
 }
@@ -234,8 +234,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
-        telemetry: this.options.telemetry,
-        threadId: input.threadId,
+        ...(this.options.otel
+          ? { otel: { ...this.options.otel, threadId: input.threadId } }
+          : {}),
       }),
       // Flag-layer settings override ~/.claude/settings.json env (user gateway URL).
       settings: {
@@ -391,8 +392,7 @@ export function toSdkAgentModel(modelId?: string): string {
 export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
-  telemetry?: EcoTelemetrySettings;
-  threadId?: string;
+  otel?: EcoBuiltinOtelOptions;
 }
 
 /** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
@@ -407,13 +407,8 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
   env.ANTHROPIC_BASE_URL = options.baseUrl.replace(/\/+$/, "");
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "eco-coding";
 
-  if (options.telemetry) {
-    const otel = buildOtelEnvVars({
-      settings: options.telemetry,
-      threadId: options.threadId,
-      inheritedResourceAttributes: env.OTEL_RESOURCE_ATTRIBUTES,
-    });
-    Object.assign(env, otel);
+  if (options.otel) {
+    Object.assign(env, buildBuiltinOtelEnv(options.otel));
   }
 
   delete env.ANTHROPIC_AUTH_TOKEN;
