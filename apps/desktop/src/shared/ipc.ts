@@ -269,7 +269,10 @@ export interface ThreadContextSnapshot {
   limitsResolved: boolean;
   segments: ContextBreakdownSegment[];
   updatedAt: number;
+  /** @deprecated Use breakdownRefreshing. */
   stale?: boolean;
+  /** True while Eco runs `/context` to refresh segment breakdown (meter stays live). */
+  breakdownRefreshing?: boolean;
   maxOutputTokens?: number;
 }
 

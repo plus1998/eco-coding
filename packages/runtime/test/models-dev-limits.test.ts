@@ -28,7 +28,7 @@ test("lookupModelLimitsInCatalog exact match", () => {
   expect(result?.limits.maxOutputTokens).toBe(64000);
 });
 
-test("computeWindowOccupancy includes input output and cache", () => {
+test("computeWindowOccupancy uses input and cache only", () => {
   expect(
     computeWindowOccupancy({
       inputTokens: 1000,
@@ -36,7 +36,7 @@ test("computeWindowOccupancy includes input output and cache", () => {
       cacheReadTokens: 200,
       cacheCreationTokens: 100,
     }),
-  ).toBe(1800);
+  ).toBe(1300);
 });
 
 test("computeOccupancyRatio at threshold", () => {

@@ -37,35 +37,14 @@ export class ContextSnapshotScheduler {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly lastSegments = new Map<string, ThreadContextSnapshot["segments"]>();
   private readonly lastEmitted = new Map<string, ThreadContextSnapshot>();
+  private readonly breakdownInFlight = new Set<string>();
   private refreshInFlight = new Set<string>();
 
   constructor(private readonly options: ContextSnapshotSchedulerOptions) {}
 
-  scheduleRefresh(
-    threadId: string,
-    routes: readonly ResolvedModelRoute[],
-    worktreePath: string,
-    immediate = false,
-  ): void {
-    const existing = this.timers.get(threadId);
-    if (existing) {
-      clearTimeout(existing);
-    }
-
-    if (immediate) {
-      void this.refreshNow(threadId, routes, worktreePath);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      this.timers.delete(threadId);
-      void this.refreshNow(threadId, routes, worktreePath);
-    }, REFRESH_DEBOUNCE_MS);
-    this.timers.set(threadId, timer);
-  }
-
-  emitFromMonitor(threadId: string, stale = false): void {
-    const snapshot = this.buildSnapshotFromMonitor(threadId, stale);
+  /** Real-time meter from usage / monitor — never marked stale. */
+  emitLiveFromMonitor(threadId: string): void {
+    const snapshot = this.buildSnapshot(threadId, { breakdownRefreshing: false });
     if (!snapshot) {
       return;
     }
@@ -73,9 +52,40 @@ export class ContextSnapshotScheduler {
     this.options.emitContext(threadId, snapshot);
   }
 
-  /** Latest context card for UI hydration (monitor + last /context breakdown). */
+  scheduleBreakdownRefresh(
+    threadId: string,
+    routes: readonly ResolvedModelRoute[],
+    worktreePath: string,
+    immediate = false,
+  ): void {
+    if (this.options.isThreadRunning(threadId)) {
+      return;
+    }
+
+    const existing = this.timers.get(threadId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    if (immediate) {
+      void this.refreshBreakdownNow(threadId, routes, worktreePath);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.timers.delete(threadId);
+      void this.refreshBreakdownNow(threadId, routes, worktreePath);
+    }, REFRESH_DEBOUNCE_MS);
+    this.timers.set(threadId, timer);
+  }
+
+  /** @deprecated Use emitLiveFromMonitor; kept for call sites being migrated. */
+  emitFromMonitor(threadId: string, _stale = false): void {
+    this.emitLiveFromMonitor(threadId);
+  }
+
   getDisplaySnapshot(threadId: string): ThreadContextSnapshot | undefined {
-    return this.lastEmitted.get(threadId) ?? this.buildSnapshotFromMonitor(threadId);
+    return this.lastEmitted.get(threadId) ?? this.buildSnapshot(threadId);
   }
 
   clearThread(threadId: string): void {
@@ -86,33 +96,8 @@ export class ContextSnapshotScheduler {
     }
     this.lastSegments.delete(threadId);
     this.lastEmitted.delete(threadId);
+    this.breakdownInFlight.delete(threadId);
     this.options.monitor.clearThread(threadId);
-  }
-
-  private buildSnapshotFromMonitor(
-    threadId: string,
-    stale = false,
-  ): ThreadContextSnapshot | undefined {
-    const monitorSnap = this.options.monitor.getSnapshot(threadId);
-    if (!monitorSnap || monitorSnap.occupied <= 0) {
-      return undefined;
-    }
-    const segments = this.lastSegments.get(threadId) ?? [];
-    return {
-      occupied: monitorSnap.occupied,
-      limit: monitorSnap.limit,
-      occupancyPct: monitorSnap.occupancyPct,
-      limitsResolved: monitorSnap.limitsResolved,
-      segments: mergeBreakdownWithOccupancy(segments, monitorSnap.occupied).map((segment) => ({
-        key: segment.key,
-        label: segment.label,
-        tokens: segment.tokens,
-        color: segment.color,
-      })),
-      updatedAt: Date.now(),
-      ...(stale && { stale: true }),
-      ...(monitorSnap.maxOutputTokens !== undefined && { maxOutputTokens: monitorSnap.maxOutputTokens }),
-    };
   }
 
   async ensureHeadroom(
@@ -182,8 +167,8 @@ export class ContextSnapshotScheduler {
         }
 
         this.options.monitor.markCompactCompleted(threadId, postTokens);
-        this.emitFromMonitor(threadId);
-        this.scheduleRefresh(threadId, routes, worktreePath, true);
+        this.emitLiveFromMonitor(threadId);
+        this.scheduleBreakdownRefresh(threadId, routes, worktreePath, true);
       });
     } catch (error) {
       process.stderr.write(
@@ -192,13 +177,40 @@ export class ContextSnapshotScheduler {
     }
   }
 
-  private async refreshNow(
+  private buildSnapshot(
+    threadId: string,
+    options?: { breakdownRefreshing?: boolean },
+  ): ThreadContextSnapshot | undefined {
+    const monitorSnap = this.options.monitor.getSnapshot(threadId);
+    if (!monitorSnap || monitorSnap.occupied <= 0) {
+      return undefined;
+    }
+    const segments = this.lastSegments.get(threadId) ?? [];
+    const breakdownRefreshing =
+      options?.breakdownRefreshing ?? this.breakdownInFlight.has(threadId);
+    return {
+      occupied: monitorSnap.occupied,
+      limit: monitorSnap.limit,
+      occupancyPct: monitorSnap.occupancyPct,
+      limitsResolved: monitorSnap.limitsResolved,
+      segments: mergeBreakdownWithOccupancy(segments, monitorSnap.occupied).map((segment) => ({
+        key: segment.key,
+        label: segment.label,
+        tokens: segment.tokens,
+        color: segment.color,
+      })),
+      updatedAt: Date.now(),
+      ...(breakdownRefreshing && { breakdownRefreshing: true }),
+      ...(monitorSnap.maxOutputTokens !== undefined && { maxOutputTokens: monitorSnap.maxOutputTokens }),
+    };
+  }
+
+  private async refreshBreakdownNow(
     threadId: string,
     routes: readonly ResolvedModelRoute[],
     worktreePath: string,
   ): Promise<void> {
     if (this.options.isThreadRunning(threadId)) {
-      this.emitFromMonitor(threadId, true);
       return;
     }
 
@@ -208,16 +220,22 @@ export class ContextSnapshotScheduler {
 
     const resume = this.options.getResume(threadId, worktreePath);
     if (!resume?.resumeSessionId) {
+      this.emitLiveFromMonitor(threadId);
       return;
     }
 
     this.refreshInFlight.add(threadId);
+    this.breakdownInFlight.add(threadId);
+    const pending = this.buildSnapshot(threadId, { breakdownRefreshing: true });
+    if (pending) {
+      this.lastEmitted.set(threadId, pending);
+      this.options.emitContext(threadId, pending);
+    }
 
     try {
       await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
         const routes = driverRoutes;
         if (!driver.contextSnapshot) {
-          this.emitFromMonitor(threadId);
           return;
         }
 
@@ -248,23 +266,24 @@ export class ContextSnapshotScheduler {
         }
 
         if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "context")) {
-          this.emitFromMonitor(threadId);
           return;
         }
 
         const monitorSnap = this.options.monitor.getSnapshot(threadId);
         const occupied = monitorSnap?.occupied ?? 0;
         const segments = parseContextCommandResult(contextText, occupied);
-        this.lastSegments.set(threadId, segments);
-        this.emitFromMonitor(threadId);
+        if (segments.length > 0) {
+          this.lastSegments.set(threadId, segments);
+        }
       });
     } catch (error) {
       process.stderr.write(
         `[eco] context snapshot failed: ${error instanceof Error ? error.message : String(error)}\n`,
       );
-      this.emitFromMonitor(threadId);
     } finally {
       this.refreshInFlight.delete(threadId);
+      this.breakdownInFlight.delete(threadId);
+      this.emitLiveFromMonitor(threadId);
     }
   }
 }

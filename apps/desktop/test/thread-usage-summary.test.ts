@@ -46,6 +46,7 @@ test("buildThreadUsageSummary always includes context when tokens known", () => 
 });
 
 test("contextCardPlaceholder differs for awaiting_plan vs idle", () => {
-  expect(contextCardPlaceholder("awaiting_plan")).toContain("同步");
+  expect(contextCardPlaceholder("awaiting_plan")).toContain("计划");
+  expect(contextCardPlaceholder("running")).toContain("模型响应");
   expect(contextCardPlaceholder("completed")).toContain("暂无");
 });

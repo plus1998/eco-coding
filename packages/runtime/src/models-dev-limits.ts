@@ -180,13 +180,12 @@ function findModelEntry(provider: ModelsDevProviderEntry, modelId: string): Mode
   return undefined;
 }
 
+/**
+ * Context window fill for a single API turn (Claude Code / OpenCode style).
+ * Uses input + cache tokens only — output does not count toward the context limit.
+ */
 export function computeWindowOccupancy(usage: ParsedUsage): number {
-  return (
-    usage.inputTokens +
-    usage.outputTokens +
-    usage.cacheReadTokens +
-    usage.cacheCreationTokens
-  );
+  return usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
 }
 
 export function computeOccupancyRatio(

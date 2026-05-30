@@ -108,7 +108,9 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true }: Cont
         ) : null}
       </div>
 
-      {context.stale ? <p className="context-card-stale">分项数据运行中，稍后刷新…</p> : null}
+      {context.breakdownRefreshing ? (
+        <p className="context-card-stale">正在拉取分项明细…</p>
+      ) : null}
 
       {detailsOpen ? (
         <ul className="context-card-breakdown">

@@ -857,10 +857,11 @@ async function runQuestionThread(
       message: errorMessage(error),
     });
   } finally {
-    finishRunContextRefresh(thread.id);
+    const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
+    afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
       updateThread(thread.id, {
@@ -1023,10 +1024,11 @@ async function runCodingThreadPlanning(
     });
     await cleanupWorktreeForThread(thread.id);
   } finally {
-    finishRunContextRefresh(thread.id);
+    const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
+    afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
       updateThread(thread.id, {
@@ -1199,9 +1201,9 @@ async function runCodingThreadExecution(
     }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
-    finishRunContextRefresh(threadId);
     sdkStreamBridge.resetThread(threadId);
     activeRuns.delete(threadId);
+    afterRunContextRefresh(threadId, worktreePlan.worktreePath);
     const thread = conversationStore.getThread(threadId);
     if (thread?.status === "running") {
       updateThread(threadId, {
@@ -1824,10 +1826,11 @@ async function runThreadContinuation(
     taskHookHandlers?.onStop("blocked");
     updateThread(thread.id, { status: "failed", message: errorMessage(error) });
   } finally {
-    finishRunContextRefresh(thread.id);
+    const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
+    afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
       updateThread(thread.id, {
@@ -1996,12 +1999,10 @@ async function processUsageBilling(input: {
     ...(parsed.modelId && { modelId: parsed.modelId }),
   });
 
-  contextScheduler.emitFromMonitor(input.threadId, activeRuns.has(input.threadId));
-  const worktreePath =
-    activeRuns.get(input.threadId)?.worktreePlan?.worktreePath ??
-    conversationStore.getSdkSession(input.threadId)?.cwd;
-  if (worktreePath) {
-    contextScheduler.scheduleRefresh(
+  contextScheduler.emitLiveFromMonitor(input.threadId);
+  const worktreePath = resolveThreadWorktreePath(input.threadId);
+  if (worktreePath && !activeRuns.has(input.threadId)) {
+    contextScheduler.scheduleBreakdownRefresh(
       input.threadId,
       buildDriverRoutesFromRuntime(runtimeRoutes),
       worktreePath,
@@ -2041,28 +2042,37 @@ async function ensureContextHeadroom(
   await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
 }
 
-function finishRunContextRefresh(threadId: string): void {
-  const worktreePath =
+function resolveThreadWorktreePath(threadId: string): string | undefined {
+  return (
     activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
-    conversationStore.getSdkSession(threadId)?.cwd;
-  if (worktreePath) {
-    scheduleContextRefresh(threadId, worktreePath, true);
+    conversationStore.getSdkSession(threadId)?.cwd ??
+    conversationStore.getPendingPlan(threadId)?.worktreePath
+  );
+}
+
+/** Call after activeRuns.delete so /context breakdown is not blocked as "still running". */
+function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
+  contextScheduler.emitLiveFromMonitor(threadId);
+  const path = worktreePath ?? resolveThreadWorktreePath(threadId);
+  if (path) {
+    scheduleContextBreakdownRefresh(threadId, path, true);
   }
 }
 
 function requestThreadContextRefresh(threadId: string, immediate = true): void {
-  const worktreePath =
-    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
-    conversationStore.getSdkSession(threadId)?.cwd ??
-    conversationStore.getPendingPlan(threadId)?.worktreePath;
+  contextScheduler.emitLiveFromMonitor(threadId);
+  const worktreePath = resolveThreadWorktreePath(threadId);
   if (!worktreePath) {
-    contextScheduler.emitFromMonitor(threadId);
     return;
   }
-  scheduleContextRefresh(threadId, worktreePath, immediate);
+  scheduleContextBreakdownRefresh(threadId, worktreePath, immediate);
 }
 
-function scheduleContextRefresh(threadId: string, worktreePath: string, immediate = false): void {
+function scheduleContextBreakdownRefresh(
+  threadId: string,
+  worktreePath: string,
+  immediate = false,
+): void {
   const runtimeConfig = resolveRuntimeConfig(
     providerStore.getSettings(),
     providerStore.listProvidersWithSecrets(),
@@ -2070,7 +2080,7 @@ function scheduleContextRefresh(threadId: string, worktreePath: string, immediat
   if (!runtimeConfig.ok) {
     return;
   }
-  contextScheduler.scheduleRefresh(
+  contextScheduler.scheduleBreakdownRefresh(
     threadId,
     buildDriverRoutesFromRuntime(runtimeConfig.routes),
     worktreePath,
@@ -2094,9 +2104,9 @@ function handleSdkContextSideEffects(
   if (payload.subtype === "compact_boundary") {
     const postTokens = extractCompactPostTokens(payload);
     contextMonitor.markCompactCompleted(threadId, postTokens);
-    contextScheduler.emitFromMonitor(threadId);
+    contextScheduler.emitLiveFromMonitor(threadId);
     if (worktreePath) {
-      scheduleContextRefresh(threadId, worktreePath, true);
+      scheduleContextBreakdownRefresh(threadId, worktreePath, true);
     }
     return;
   }

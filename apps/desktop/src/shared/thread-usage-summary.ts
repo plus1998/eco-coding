@@ -89,10 +89,10 @@ export function shouldShowThreadUsagePanels(status?: ThreadStatus): boolean {
 
 export function contextCardPlaceholder(status?: ThreadStatus): string {
   if (status === "running" || status === "queued") {
-    return "上下文统计中…";
+    return "用量随每轮模型响应更新";
   }
   if (status === "awaiting_plan") {
-    return "正在同步上下文窗口…";
+    return "计划阶段用量将随模型响应更新";
   }
   if (
     status === "completed" ||
