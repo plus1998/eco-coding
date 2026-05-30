@@ -1776,9 +1776,22 @@ button:not(:disabled) {
   margin: 0 0 20px;
 }
 
+.run-log-user-prompt-content {
+  max-width: 85%;
+  min-width: 0;
+}
+
+.run-log-user-prompt-body-wrap {
+  position: relative;
+}
+
+.run-log-user-prompt-body-wrap.collapsed .run-log-user-prompt-body {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
 .run-log-user-prompt-body {
   margin: 0;
-  max-width: 85%;
   padding: 12px 16px;
   border-radius: 16px 16px 4px 16px;
   background: #2a2a2a;
@@ -1789,6 +1802,43 @@ button:not(:disabled) {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.run-log-user-prompt-body.collapsed {
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.run-log-user-prompt-fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 56px;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  background: linear-gradient(to bottom, rgba(42, 42, 42, 0), #2a2a2a 72%);
+  pointer-events: none;
+}
+
+.run-log-user-prompt-expand {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6px 16px 2px;
+  border: 0;
+  border-radius: 0 0 4px 16px;
+  background: #2a2a2a;
+  color: #a3a3a3;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+}
+
+.run-log-user-prompt-expand:hover {
+  color: #e5e5e5;
 }
 
 .run-log-user-prompt-actions {

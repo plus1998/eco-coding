@@ -1,5 +1,5 @@
 import { Bot, ChevronDown, Copy, FileSearch, Pencil, Reply, Search, Terminal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
 import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
 import type { ThreadUsageSnapshot } from "../shared/ipc";
@@ -269,9 +269,64 @@ function UserPromptBlock({
   text: string;
   onRestorePrompt?: (prompt: string) => void;
 }) {
+  const bodyRef = useRef<HTMLPreElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canToggle, setCanToggle] = useState(false);
+
+  useLayoutEffect(() => {
+    setCanToggle(false);
+    const body = bodyRef.current;
+    if (!body || expanded) {
+      return;
+    }
+
+    const measure = () => {
+      if (body.scrollHeight > body.clientHeight + 1) {
+        setCanToggle(true);
+      }
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+
   return (
     <article className="run-log-user-prompt">
-      <pre className="run-log-user-prompt-body">{text}</pre>
+      <div className="run-log-user-prompt-content">
+        <div
+          className={[
+            "run-log-user-prompt-body-wrap",
+            !expanded ? "collapsed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <pre
+            ref={bodyRef}
+            className={[
+              "run-log-user-prompt-body",
+              !expanded ? "collapsed" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {text}
+          </pre>
+          {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
+        </div>
+        {canToggle ? (
+          <button
+            type="button"
+            className="run-log-user-prompt-expand"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+          >
+            {expanded ? "收起" : "展开全文"}
+          </button>
+        ) : null}
+      </div>
       {onRestorePrompt ? (
         <div className="run-log-user-prompt-actions">
           <button
