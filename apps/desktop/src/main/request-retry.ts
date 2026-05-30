@@ -50,6 +50,28 @@ export function isRetryableRequestFailure(reason: string): boolean {
   );
 }
 
+export function formatUserFacingRequestError(reason: string): string {
+  const text = reason.trim();
+  if (!text) {
+    return "请求失败，请稍后重试。";
+  }
+
+  const normalized = text.toLowerCase();
+  if (normalized.includes("fetch failed")) {
+    return "无法连接上游模型 API（网络错误或地址不可达）。请检查 Provider 的 Base URL、网络与 API Key。";
+  }
+  if (
+    normalized.includes("econnrefused") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("etimedout") ||
+    normalized.includes("socket hang up")
+  ) {
+    return "连接上游模型 API 失败。请检查网络与 Provider 配置。";
+  }
+
+  return text;
+}
+
 export function appendAutoRetryExhaustedHint(reason: string): string {
   const hint = `（已自动重试 ${REQUEST_AUTO_RETRY_MAX} 次，可手动点击「重试此次请求」）`;
   if (reason.includes("已自动重试")) {

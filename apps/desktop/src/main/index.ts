@@ -63,6 +63,7 @@ import {
   type ThreadPendingPlan,
   type ThreadRollbackResult,
   type ThreadStartRequest,
+  type ThreadStatus,
   type PromptImageAttachment,
   type ThinkingEffort,
   type ThreadSummary,
@@ -80,11 +81,16 @@ import {
 import { createSdkTaskTracker } from "./sdk-task-tracker";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
+  formatUserFacingRequestError,
   runWithRequestAutoRetry,
   type RequestAttemptResult,
 } from "./request-retry";
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import {
+  buildPlanExecutionFailureMessage,
+  planExecutionFailurePrefix,
+} from "../shared/thread-failure-message";
 import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../shared/thread-continuation";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
@@ -1401,11 +1407,13 @@ async function restoreAfterExecutionFailure(
     conversationStore.savePendingPlan(pendingPlan);
   }
 
+  const formattedReason = formatUserFacingRequestError(reason);
   const summary =
-    reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
+    formattedReason.length > 240 ? `${formattedReason.slice(0, 237)}…` : formattedReason;
+  const failureMessage = buildPlanExecutionFailureMessage(summary);
   updateThread(threadId, {
     status: "awaiting_plan",
-    message: `执行失败，已回退更改。${summary}`,
+    message: failureMessage,
   });
   emitThreadEvent(threadId, "thread.execution_failed", summary, "system", false, {
     ...(pendingPlan && {
@@ -2537,13 +2545,25 @@ async function runGitCommand(
   });
 }
 
+function normalizeThreadMessage(status: ThreadStatus, message: string): string {
+  if (status === "failed") {
+    return formatUserFacingRequestError(message);
+  }
+  if (message.startsWith(planExecutionFailurePrefix)) {
+    const detail = message.slice(planExecutionFailurePrefix.length);
+    return buildPlanExecutionFailureMessage(formatUserFacingRequestError(detail));
+  }
+  return message;
+}
+
 function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
   if (!conversationStore.getThread(threadId)) {
     return;
   }
 
-  conversationStore.updateThread(threadId, patch);
-  emitThreadEvent(threadId, `thread.${patch.status}`, patch.message, "system");
+  const message = normalizeThreadMessage(patch.status, patch.message);
+  conversationStore.updateThread(threadId, { ...patch, message });
+  emitThreadEvent(threadId, `thread.${patch.status}`, message, "system");
 }
 
 function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {

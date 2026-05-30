@@ -45,6 +45,12 @@ import {
 } from "../shared/ipc";
 import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
 import {
+  extractPlanFailureMessage,
+  resolveRetryBannerDetail,
+  resolveThreadMessageFromLiveEvent,
+  shouldUpdateThreadSummaryFromLiveEvent,
+} from "../shared/thread-failure-message";
+import {
   COMPOSER_MAX_IMAGES,
   type ComposerImageAttachment,
   readImageFileAsAttachment,
@@ -193,17 +199,19 @@ function App() {
         }
       }
 
-      setThreads((current) =>
-        current.map((thread) =>
-          thread.id === event.threadId
-            ? {
-                ...thread,
-                message: event.message,
-                status: statusFromLiveEvent(event.type, thread.status),
-              }
-            : thread,
-        ),
-      );
+      if (shouldUpdateThreadSummaryFromLiveEvent(event.type)) {
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? {
+                  ...thread,
+                  message: resolveThreadMessageFromLiveEvent(event.type, event.message),
+                  status: statusFromLiveEvent(event.type, thread.status),
+                }
+              : thread,
+          ),
+        );
+      }
 
       if (event.type === "thread.plan_cleared" || event.type === "thread.completed") {
         setPendingPlan(undefined);
@@ -478,6 +486,9 @@ function App() {
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
+  const retryBannerDetail = activeThread
+    ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
+    : undefined;
   const canRetryThread = Boolean(
     activeThread &&
       routesReady &&
@@ -1247,7 +1258,7 @@ function App() {
                   <div className="thread-retry-banner" role="alert">
                     <div className="thread-retry-banner-body">
                       <strong>此次请求失败</strong>
-                      {planFailureMessage ? <p>{planFailureMessage}</p> : <p>{activeThread?.message}</p>}
+                      <p>{retryBannerDetail}</p>
                       <p className="thread-retry-banner-hint">
                         工作区更改已回退（如有）。可重试同一需求；若仍出现 HTTP 200 空响应，请检查模型代理或上游
                         API 配置。
@@ -1459,16 +1470,6 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-const planExecutionFailurePrefix = "执行失败，已回退更改。";
-
-function extractPlanFailureMessage(threadMessage: string): string | undefined {
-  if (!threadMessage.startsWith(planExecutionFailurePrefix)) {
-    return undefined;
-  }
-  const detail = threadMessage.slice(planExecutionFailurePrefix.length).trim();
-  return detail.length > 0 ? detail : undefined;
 }
 
 function pathToName(projectPath: string): string {
