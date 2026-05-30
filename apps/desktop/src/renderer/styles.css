@@ -1553,7 +1553,8 @@ button:not(:disabled) {
 
 .settings-icon-button .spinning,
 .activity-icon-button .spinning,
-.coder-todo-icon .spinning {
+.coder-todo-icon .spinning,
+.run-log-reconnect-icon.spinning {
   animation: eco-spin 0.8s linear infinite;
 }
 
@@ -1766,6 +1767,26 @@ button:not(:disabled) {
   color: #8a8a8a;
   font-size: 13px;
   font-weight: 500;
+}
+
+.run-log-reconnect {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.run-log-reconnect-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #fbbf24;
 }
 
 .run-log-user-prompt {
@@ -2070,7 +2091,7 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
-.run-log-thinking.streaming .run-log-thinking-label::after {
+.run-log-thinking.streaming.empty .run-log-thinking-label::after {
   content: "";
   display: inline-block;
   width: 5px;
@@ -2080,6 +2101,49 @@ button:not(:disabled) {
   background: #737373;
   vertical-align: middle;
   animation: run-log-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.run-log-request-timing {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #737373;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-log-request-timing.done {
+  color: #a3a3a3;
+}
+
+.work-session-label .run-log-request-timing {
+  display: block;
+  margin-left: 0;
+  margin-top: 2px;
+}
+
+.run-log-agent-request {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.run-log-agent-request-icon {
+  flex-shrink: 0;
+  color: #737373;
+}
+
+.run-log-agent-request-label {
+  font-size: 13px;
+  color: #a3a3a3;
+}
+
+.run-log-subagent-badge .run-log-request-timing {
+  margin-left: 6px;
 }
 
 @keyframes run-log-thinking-pulse {

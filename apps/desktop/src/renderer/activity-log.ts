@@ -17,8 +17,10 @@ import { isUsageNoiseMessage } from "../shared/thread-continuation";
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =
-  | { kind: "phase"; label: string }
+  | { kind: "phase"; label: string; reconnecting?: boolean }
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string }
+  | { kind: "model-request"; role?: string }
+  | { kind: "agent-request"; subagent?: string }
   | { kind: "thinking"; text: string; streaming?: boolean }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string };
@@ -32,6 +34,7 @@ export type ActivityLogBlock =
       defaultCollapsed: boolean;
       activeSubagent?: string;
       activeMissionSummary?: string;
+      awaitingFirstToken?: boolean;
       children: ActivityDetailBlock[];
     }
   | {
@@ -56,7 +59,6 @@ const systemNoisePatterns = [
   /^Agent session started/i,
   /^Agent run completed/i,
   /^已清理隔离工作树/,
-  /^Requesting model/,
   /^Compacting context/,
   /^API retry /,
   /^Usage recorded/,
@@ -90,12 +92,23 @@ export function buildActivityLogBlocks(
     }
 
     if (segment.details.length === 0) {
+      if (isRunning && segment === segments[segments.length - 1]) {
+        output.push({
+          kind: "work-session",
+          durationMs,
+          running: true,
+          defaultCollapsed: false,
+          awaitingFirstToken: true,
+          children: [{ kind: "model-request" }],
+        });
+      }
       continue;
     }
 
     const { processBlocks, summaryBlock } = partitionSessionBlocks(segment.details, isTerminal && !isRunning);
 
     if (isRunning && segment === segments[segments.length - 1]) {
+      const awaitingFirstToken = sessionAwaitingFirstToken(processBlocks, activeSubagent);
       output.push({
         kind: "work-session",
         durationMs,
@@ -103,6 +116,7 @@ export function buildActivityLogBlocks(
         defaultCollapsed: false,
         ...(activeSubagent && { activeSubagent }),
         ...(activeMissionSummary && { activeMissionSummary }),
+        ...(awaitingFirstToken && { awaitingFirstToken }),
         children: processBlocks,
       });
       if (summaryBlock) {
@@ -173,12 +187,47 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let toolContextSubagent: string | undefined;
   const recentNarratives: string[] = [];
 
+  const removePendingRequestBlocks = () => {
+    for (let index = current.details.length - 1; index >= 0; index -= 1) {
+      const kind = current.details[index]?.kind;
+      if (kind === "agent-request" || kind === "model-request") {
+        current.details.splice(index, 1);
+      }
+    }
+  };
+
+  const upsertModelRequest = (role?: string) => {
+    const last = current.details[current.details.length - 1];
+    if (last?.kind === "model-request" && last.role === role) {
+      return;
+    }
+    removePendingRequestBlocks();
+    current.details.push({
+      kind: "model-request",
+      ...(role && { role }),
+    });
+  };
+
+  const upsertAgentRequest = (subagent?: string) => {
+    const last = current.details[current.details.length - 1];
+    if (last?.kind === "agent-request" && last.subagent === subagent) {
+      return;
+    }
+    current.details.push({
+      kind: "agent-request",
+      ...(subagent && { subagent }),
+    });
+  };
+
   const flushThinking = () => {
     const text = stripActivityStatusNoise(thinking.trim());
     if (!text && !thinkingStreaming) {
       thinking = "";
       thinkingStreaming = false;
       return;
+    }
+    if (text) {
+      removePendingRequestBlocks();
     }
     current.details.push({
       kind: "thinking",
@@ -202,6 +251,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       narrativeSubagent = undefined;
       return;
     }
+    removePendingRequestBlocks();
     text = stripActivityStatusNoise(text);
     if (!text) {
       narrative = "";
@@ -277,6 +327,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       if (subagent) {
         toolContextSubagent = subagent;
       }
+      if (isAgentElapsedProgressLine(line.message)) {
+        upsertAgentRequest(subagent ?? toolContextSubagent);
+        return;
+      }
       const legacy = missionFromAgentToolDetail(tool.detail);
       if (legacy && legacy.role) {
         pushSubagentMission({
@@ -288,6 +342,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       if (tool.detail || subagent || legacy) {
         return;
       }
+      upsertAgentRequest(subagent ?? toolContextSubagent);
       return;
     }
     const label = normalizeActivityActionLabel(formatToolActionLabel(tool));
@@ -327,7 +382,20 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     if (isPhaseLine(line.message)) {
       flushTextBuffers();
-      current.details.push({ kind: "phase", label: line.message });
+      current.details.push({
+        kind: "phase",
+        label: line.message,
+        ...(isReconnectActivityMessage(line.message) && { reconnecting: true }),
+      });
+      continue;
+    }
+
+    if (isModelRequestLine(line.message)) {
+      flushTextBuffers();
+      const role = line.role !== "system" && line.role !== "user" && line.role !== "tool"
+        ? line.role
+        : undefined;
+      upsertModelRequest(role);
       continue;
     }
 
@@ -573,6 +641,58 @@ export function resolveActiveSubagent(
   return undefined;
 }
 
+/** True when the session is waiting for the first model token (thinking, text, or subagent output). */
+export function sessionAwaitingFirstToken(
+  children: readonly ActivityDetailBlock[],
+  activeSubagent?: string,
+): boolean {
+  if (children.length === 0) {
+    return false;
+  }
+
+  const last = children[children.length - 1];
+  if (last?.kind === "agent-request" || last?.kind === "model-request") {
+    return true;
+  }
+  if (
+    (last?.kind === "thinking" || last?.kind === "narrative") &&
+    last.streaming &&
+    !last.text.trim()
+  ) {
+    return true;
+  }
+
+  if (!activeSubagent) {
+    return false;
+  }
+
+  let missionIndex = -1;
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    const block = children[index];
+    if (block?.kind === "subagent-mission" && block.subagent === activeSubagent) {
+      missionIndex = index;
+      break;
+    }
+  }
+  if (missionIndex < 0) {
+    return false;
+  }
+
+  const afterMission = children.slice(missionIndex + 1);
+  return !afterMission.some(
+    (block) =>
+      (block.kind === "thinking" || block.kind === "narrative") && block.text.trim().length > 0,
+  );
+}
+
+export function isAgentElapsedProgressLine(message: string): boolean {
+  return /^Tool:\s*Agent\s+\(\d+(?:\.\d+)?s\)\s*$/i.test(stripSubagentBracketPrefix(message.trim()));
+}
+
+export function isModelRequestLine(message: string): boolean {
+  return /^Requesting model/i.test(stripSubagentBracketPrefix(message.trim()));
+}
+
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(1, Math.round(ms / 1000));
   if (totalSeconds < 60) {
@@ -583,9 +703,18 @@ export function formatDuration(ms: number): string {
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+export function isReconnectActivityMessage(message: string): boolean {
+  const trimmed = message.trim();
+  return /^【(?:自动重试|连接失败)/.test(trimmed);
+}
+
 function isPhaseLine(message: string): boolean {
   const trimmed = message.trim();
-  return /^【\d+\/\d+】/.test(trimmed) || /^【自动重试 \d+\/\d+】/.test(trimmed);
+  return (
+    /^【\d+\/\d+】/.test(trimmed) ||
+    /^【自动重试 \d+\/\d+】/.test(trimmed) ||
+    /^【连接失败】/.test(trimmed)
+  );
 }
 
 function isEphemeralToolStatusLine(message: string): boolean {

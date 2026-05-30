@@ -276,7 +276,12 @@ function App() {
         });
       }
 
-      if (event.type.startsWith("thread.") && event.type !== "thread.user_prompt") {
+      if (
+        event.type.startsWith("thread.") &&
+        event.type !== "thread.user_prompt" &&
+        event.type !== "thread.auto_retry" &&
+        event.type !== "thread.retry"
+      ) {
         return;
       }
 

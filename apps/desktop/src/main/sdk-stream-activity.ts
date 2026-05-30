@@ -1,7 +1,9 @@
 import {
   formatAgentEventDisplay,
+  formatAgentEventLine,
   isEcoStreamFinalize,
   isEcoStreamPlaceholder,
+  isUpstreamStatusActivityMessage,
   mergeStreamText,
   type AgentEvent,
 } from "@eco/runtime";
@@ -111,6 +113,20 @@ export class SdkStreamActivityBridge {
 
     if (event.type === "tool.started") {
       this.noteSdkToolActivity(threadId, event.payload);
+    }
+
+    if (event.type === "agent.started") {
+      const statusMessage = formatAgentEventLine(event);
+      if (!isUpstreamStatusActivityMessage(statusMessage)) {
+        return;
+      }
+      const display = formatAgentEventDisplay(event);
+      if (!display?.message) {
+        return;
+      }
+      this.flushPending(threadId, emit);
+      emit(threadId, event.type, display.message, String(display.role), false);
+      return;
     }
 
     const allowed =

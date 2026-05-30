@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { formatSubagentMissionMessage } from "@eco/runtime";
-import { buildActivityLogBlocks } from "../src/renderer/activity-log";
+import {
+  buildActivityLogBlocks,
+  isAgentElapsedProgressLine,
+  isModelRequestLine,
+  isReconnectActivityMessage,
+  sessionAwaitingFirstToken,
+} from "../src/renderer/activity-log";
 
 test("groups narrative and compact tool summaries into collapsible work session", () => {
   const blocks = buildActivityLogBlocks(
@@ -261,6 +267,116 @@ test("hides usage cost lines even with subagent prefix", () => {
   expect(blocks.some((block) => block.kind === "assistant-message" && block.text.includes("plan outline"))).toBe(
     true,
   );
+});
+
+test("shows reconnect phase for auto-retry and connection failure lines", () => {
+  expect(isReconnectActivityMessage("【自动重试 1/5】5 秒后重试：fetch failed")).toBe(true);
+  expect(isReconnectActivityMessage("【连接失败】无法连接上游")).toBe(true);
+
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "system", message: "【连接失败】无法连接上游模型 API。" },
+      { id: "2", role: "system", message: "【自动重试 2/5】5 秒后重试：fetch failed" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const phases =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "phase")
+      : [];
+  expect(phases).toHaveLength(2);
+  expect(phases.every((child) => child.kind === "phase" && child.reconnecting)).toBe(true);
+});
+
+test("shows model-request row for Requesting model status line", () => {
+  expect(isModelRequestLine("Requesting model…")).toBe(true);
+
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "hi" },
+      { id: "1", role: "planner", message: "Requesting model…" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.children.some((child) => child.kind === "model-request")).toBe(true);
+    expect(session.awaitingFirstToken).toBe(true);
+  }
+});
+
+test("shows placeholder work session while running with no activity yet", () => {
+  const blocks = buildActivityLogBlocks(
+    [{ id: "u1", role: "user", message: "go" }],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.awaitingFirstToken).toBe(true);
+    expect(session.children[0]?.kind).toBe("model-request");
+  }
+});
+
+test("marks session awaiting first token for empty streaming thinking", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "thinking", message: "", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.awaitingFirstToken).toBe(true);
+    expect(sessionAwaitingFirstToken(session.children)).toBe(true);
+  }
+});
+
+test("shows agent-request row while subagent has no output yet", () => {
+  expect(isAgentElapsedProgressLine("Tool: Agent (12.3s)")).toBe(true);
+
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "tool", message: "Tool: Agent (4.2s)" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.children.some((child) => child.kind === "agent-request")).toBe(true);
+    expect(session.awaitingFirstToken).toBe(true);
+  }
+});
+
+test("clears awaiting once subagent streams narrative", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "coder", message: "Starting", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.children.some((child) => child.kind === "agent-request")).toBe(false);
+    expect(session.awaitingFirstToken).toBeUndefined();
+  }
 });
 
 test("does not treat tool elapsed duration as subagent role", () => {

@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
       if (!runtimeConfig.ok) {
         return;
       }
-      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
       try {
         const driver = createSdkDriver(threadId, attemptProxy);
@@ -870,7 +870,7 @@ async function runQuestionThread(
 
   try {
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -982,7 +982,7 @@ async function runCodingThreadPlanning(
     });
 
     const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -1165,7 +1165,7 @@ async function runCodingThreadExecution(
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
     const executionOutcome = await runThreadRequestWithAutoRetry(threadId, controller.signal, async () => {
-      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
@@ -1744,7 +1744,7 @@ async function runThreadContinuation(
     }
 
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
       const routes = buildDriverRoutes(attemptProxy.routes);
       const resume = resolveResumeOptions(thread.id, worktreePlan.worktreePath);
       if (!resume) {
@@ -2619,7 +2619,7 @@ function emitThreadEvent(
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
   const persistActivityLine =
-    !isThreadStatusEvent &&
+    (!isThreadStatusEvent || type === "thread.auto_retry" || type === "thread.retry") &&
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&
@@ -2775,12 +2775,31 @@ interface RuntimeConfig {
 
 type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { ok: false; reason: string };
 
+function emitUpstreamModelRequestActivity(threadId: string, role: AgentRole): void {
+  emitThreadEvent(threadId, "otel.activity", "Requesting model…", role, false);
+}
+
+function emitUpstreamConnectionErrorActivity(threadId: string, role: AgentRole, error: string): void {
+  const detail = formatUserFacingRequestError(error);
+  emitThreadEvent(threadId, "otel.activity", `【连接失败】${detail}`, role, false);
+}
+
 function startRuntimeProxy(
   routes: RuntimeRoute[],
   attachments?: PromptImageAttachment[],
+  threadId?: string,
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
-  const options: AnthropicProxyStartOptions | undefined =
-    attachments && attachments.length > 0 ? { pendingImages: attachments } : undefined;
+  const options: AnthropicProxyStartOptions = {
+    ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
+    ...(threadId && {
+      onMessagesRequest: ({ role }) => {
+        emitUpstreamModelRequestActivity(threadId, role);
+      },
+      onUpstreamConnectionError: ({ role, error }) => {
+        emitUpstreamConnectionErrorActivity(threadId, role, error);
+      },
+    }),
+  };
   return startAnthropicModelProxy(routes, options);
 }
 

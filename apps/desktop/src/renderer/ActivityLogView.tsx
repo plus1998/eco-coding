@@ -1,8 +1,9 @@
-import { Bot, ChevronDown, Copy, FileSearch, Pencil, Reply, Search, Terminal } from "lucide-react";
+import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Terminal } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
 import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
 import type { ThreadUsageSnapshot } from "../shared/ipc";
+import { formatDurationMs } from "./AppMessage";
 import {
   buildActivityLogBlocks,
   formatDuration,
@@ -11,6 +12,7 @@ import {
   type ActivityLogBlock,
 } from "./activity-log";
 import { MarkdownContent } from "./MarkdownContent";
+import { useStreamRequestTiming } from "./useStreamRequestTiming";
 
 interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
@@ -108,6 +110,11 @@ function WorkSessionBlock({
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
     : "";
+  const sessionTiming = useStreamRequestTiming(
+    block.running && Boolean(block.awaitingFirstToken),
+    block.running && !block.awaitingFirstToken,
+  );
+
   const label = block.running
     ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
     : `已处理 ${formatDuration(block.durationMs)}`;
@@ -119,11 +126,12 @@ function WorkSessionBlock({
         className="work-session-toggle"
         onClick={() => setExpanded((current) => !current)}
         aria-expanded={expanded}
-        disabled={block.running && block.children.length === 0}
+        disabled={block.running && block.children.length === 0 && !block.awaitingFirstToken}
       >
         <span className={`work-session-dot${block.running ? " running" : ""}`} />
         <span className="work-session-label">
           {label}
+          {block.running ? <RequestTimingBadge timing={sessionTiming} /> : null}
           {block.activeMissionSummary ? (
             <span className="work-session-mission">{block.activeMissionSummary}</span>
           ) : null}
@@ -175,7 +183,7 @@ function DetailBlock({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
   if (block.kind === "phase") {
-    return <div className="run-log-phase">{block.label}</div>;
+    return <PhaseBlock label={block.label} {...(block.reconnecting && { reconnecting: block.reconnecting })} />;
   }
   if (block.kind === "subagent-mission") {
     return (
@@ -183,6 +191,22 @@ function DetailBlock({
         subagent={block.subagent}
         summary={block.summary}
         prompt={block.prompt}
+        {...(modelByRole && { modelByRole })}
+      />
+    );
+  }
+  if (block.kind === "model-request") {
+    return (
+      <ModelRequestBlock
+        {...(block.role && { role: block.role })}
+        {...(modelByRole && { modelByRole })}
+      />
+    );
+  }
+  if (block.kind === "agent-request") {
+    return (
+      <AgentRequestBlock
+        {...(block.subagent && { subagent: block.subagent })}
         {...(modelByRole && { modelByRole })}
       />
     );
@@ -217,10 +241,45 @@ function DetailBlock({
   );
 }
 
+function PhaseBlock({ label, reconnecting }: { label: string; reconnecting?: boolean }) {
+  if (reconnecting) {
+    return (
+      <div className="run-log-phase run-log-reconnect" role="status" aria-live="polite">
+        <RefreshCw size={14} className="run-log-reconnect-icon spinning" aria-hidden />
+        <span>{label}</span>
+      </div>
+    );
+  }
+  return <div className="run-log-phase">{label}</div>;
+}
+
+function RequestTimingBadge({
+  timing,
+}: {
+  timing: ReturnType<typeof useStreamRequestTiming>;
+}) {
+  if (timing.phase === "idle") {
+    return null;
+  }
+  if (timing.phase === "waiting") {
+    return (
+      <span className="run-log-request-timing" aria-live="polite">
+        等待 {formatDurationMs(timing.waitingMs)}
+      </span>
+    );
+  }
+  return (
+    <span className="run-log-request-timing done" aria-live="polite">
+      首 token {formatDurationMs(timing.ttftMs ?? 0)}
+    </span>
+  );
+}
+
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [collapsed, setCollapsed] = useState(true);
   const hasBody = text.trim().length > 0;
   const showBody = streaming || !collapsed;
+  const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
 
   return (
     <div
@@ -244,6 +303,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         disabled={streaming && !hasBody}
       >
         <span className="run-log-thinking-label">Thinking</span>
+        <RequestTimingBadge timing={timing} />
         {!streaming && hasBody ? (
           <ChevronDown
             size={14}
@@ -368,6 +428,48 @@ function AssistantMessageBlock({
   );
 }
 
+function ModelRequestBlock({
+  role,
+  modelByRole,
+}: {
+  role?: string;
+  modelByRole?: Record<string, string>;
+}) {
+  const timing = useStreamRequestTiming(true, false);
+  const roleLabel = role ? formatRoleModelLabel(role, modelByRole?.[role]) : "模型";
+
+  return (
+    <div className="run-log-agent-request run-log-model-request">
+      <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
+      <span className="run-log-agent-request-label">
+        {roleLabel} 请求中
+        <RequestTimingBadge timing={timing} />
+      </span>
+    </div>
+  );
+}
+
+function AgentRequestBlock({
+  subagent,
+  modelByRole,
+}: {
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+}) {
+  const timing = useStreamRequestTiming(true, false);
+  const roleLabel = subagent ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : "子代理";
+
+  return (
+    <div className="run-log-agent-request">
+      <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
+      <span className="run-log-agent-request-label">
+        {roleLabel} 请求中
+        <RequestTimingBadge timing={timing} />
+      </span>
+    </div>
+  );
+}
+
 function SubagentMissionBlock({
   subagent,
   summary,
@@ -449,12 +551,15 @@ function RunLogNarrative({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
   const usage = subagent ? usageByRole?.[subagent] : undefined;
+  const hasBody = text.trim().length > 0;
+  const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
 
   return (
     <div className={compact ? "run-log-narrative compact" : "run-log-narrative"}>
       {subagent ? (
         <span className="run-log-subagent-badge">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+          {streaming ? <RequestTimingBadge timing={timing} /> : null}
           {usage ? (
             <span className="run-log-usage-badge">
               {formatUsageBadge({
@@ -466,6 +571,8 @@ function RunLogNarrative({
             </span>
           ) : null}
         </span>
+      ) : streaming ? (
+        <RequestTimingBadge timing={timing} />
       ) : null}
       <div className="run-log-narrative-body">
         <MarkdownContent text={text} />

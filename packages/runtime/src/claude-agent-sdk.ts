@@ -1125,6 +1125,14 @@ export interface AgentEventDisplay {
   stream: boolean;
 }
 
+/** SDK / proxy status lines that should appear in the activity log while waiting on the model. */
+export function isUpstreamStatusActivityMessage(message: string | null | undefined): boolean {
+  if (!message?.trim()) {
+    return false;
+  }
+  return /^(?:Requesting model|Compacting context|API retry )/i.test(message.trim());
+}
+
 export function formatAgentEventDisplay(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): AgentEventDisplay | null {

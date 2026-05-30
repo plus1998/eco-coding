@@ -20,8 +20,22 @@ export interface AnthropicProxyRoute {
   thinkingEffort?: ThinkingEffort;
 }
 
+export interface AnthropicProxyMessagesRequestInfo {
+  role: AgentRole;
+  modelId: string;
+}
+
+export interface AnthropicProxyUpstreamErrorInfo {
+  role: AgentRole;
+  error: string;
+}
+
 export interface AnthropicProxyStartOptions {
   pendingImages?: readonly PromptImageAttachment[];
+  /** Fires when the local proxy forwards a streaming Messages API call upstream. */
+  onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
+  /** Fires when the upstream fetch fails before a response body is returned. */
+  onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void;
 }
 
 export interface AnthropicProxyResolvedRoute extends AnthropicProxyRoute {
@@ -44,6 +58,8 @@ export async function startAnthropicModelProxy(
   routes: readonly AnthropicProxyRoute[],
   options?: AnthropicProxyStartOptions,
 ): Promise<StartedAnthropicProxy> {
+  const onMessagesRequest = options?.onMessagesRequest;
+  const onUpstreamConnectionError = options?.onUpstreamConnectionError;
   const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
     role: route.role,
     provider: route.provider,
@@ -110,7 +126,15 @@ export async function startAnthropicModelProxy(
 
       applyThinkingToMessagesBody(body, route.thinkingEffort);
 
-      await forwardAnthropicRequest(request, response, route, body, requestedModel);
+      await forwardAnthropicRequest(
+        request,
+        response,
+        route,
+        body,
+        requestedModel,
+        onMessagesRequest,
+        onUpstreamConnectionError,
+      );
     } catch (error) {
       logUpstream("handler-error", { error: errorMessage(error) });
       writeJson(response, 500, { error: errorMessage(error) });
@@ -351,10 +375,16 @@ async function forwardAnthropicRequest(
   route: AnthropicProxyResolvedRoute,
   body: Record<string, unknown>,
   requestedModel?: string,
+  onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void,
+  onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void,
 ): Promise<void> {
   const upstreamUrl = `${trimTrailingSlash(route.provider.baseUrl)}${request.url ?? ""}`;
   const requestPayload = JSON.stringify(body);
   const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+
+  if (onMessagesRequest && isMessagesPath(request.url) && body.stream === true) {
+    onMessagesRequest({ role: route.role, modelId: route.modelId });
+  }
 
   logUpstream("request", {
     route: {
@@ -373,11 +403,20 @@ async function forwardAnthropicRequest(
     body: parseJsonForLog(requestPayload),
   });
 
-  const upstreamResponse = await fetch(upstreamUrl, {
-    method: "POST",
-    headers: upstreamHeaders,
-    body: requestPayload,
-  });
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: upstreamHeaders,
+      body: requestPayload,
+    });
+  } catch (error) {
+    const fetchError = errorMessage(error);
+    if (onUpstreamConnectionError && isMessagesPath(request.url)) {
+      onUpstreamConnectionError({ role: route.role, error: fetchError });
+    }
+    throw error;
+  }
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
