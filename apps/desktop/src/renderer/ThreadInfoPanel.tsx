@@ -1,12 +1,11 @@
-import { DollarSign, Folder, GitBranch, Layers, ListTodo, Package } from "lucide-react";
-import { formatCostUsd, formatUsageBadge } from "@eco/runtime";
-import type { CoderTodoItem, ThreadStatus, ThreadUsageSnapshot, WorkspaceInfo } from "../shared/ipc";
+import { DollarSign, Folder, GitBranch, HelpCircle, Layers, ListTodo, Package } from "lucide-react";
+import { formatCostUsd, formatSavingsLine, formatUsageBadge } from "@eco/runtime";
+import type { CoderTodoItem, ThreadBillingSnapshot, ThreadStatus, WorkspaceInfo } from "../shared/ipc";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 
 export interface ThreadUsageSummary {
-  totalCostUsd?: number;
+  billing?: ThreadBillingSnapshot;
   contextTokens?: number;
-  plannerUsage?: ThreadUsageSnapshot;
 }
 
 interface ThreadInfoPanelProps {
@@ -32,6 +31,23 @@ function formatContextLabel(contextTokens: number): string | null {
   return `~${Math.round(contextTokens / 1000)}K`;
 }
 
+function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBillingSnapshot {
+  if (!billing) {
+    return false;
+  }
+  const total =
+    billing.totalTokens.input +
+    billing.totalTokens.output +
+    billing.totalTokens.cacheRead +
+    billing.totalTokens.cacheCreation;
+  return (
+    total > 0 ||
+    billing.otelCostUsd > 0 ||
+    billing.plannerTokenCostUsd > 0 ||
+    billing.ecoCostUsd > 0
+  );
+}
+
 export function ThreadInfoPanel({
   workspace,
   workspacePath,
@@ -45,16 +61,18 @@ export function ThreadInfoPanel({
   worktreeApplyBusy,
 }: ThreadInfoPanelProps) {
   const projectLabel = workspacePath?.split("/").filter(Boolean).pop() ?? workspace?.name ?? "未打开项目";
+  const billing = usageSummary?.billing;
   const contextLabel =
     usageSummary?.contextTokens !== undefined ? formatContextLabel(usageSummary.contextTokens) : null;
-  const tokenBadge = usageSummary?.plannerUsage
+  const tokenBadge = billing
     ? formatUsageBadge({
-        inputTokens: usageSummary.plannerUsage.inputTokens,
-        outputTokens: usageSummary.plannerUsage.outputTokens,
-        cacheReadTokens: usageSummary.plannerUsage.cacheReadTokens,
-        cacheCreationTokens: usageSummary.plannerUsage.cacheCreationTokens,
+        inputTokens: billing.totalTokens.input,
+        outputTokens: billing.totalTokens.output,
+        cacheReadTokens: billing.totalTokens.cacheRead,
+        cacheCreationTokens: billing.totalTokens.cacheCreation,
       })
     : null;
+  const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? "主模型";
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -88,18 +106,57 @@ export function ThreadInfoPanel({
               <span className="thread-info-value">状态：{threadStatus}</span>
             </li>
           ) : null}
-          {usageSummary?.totalCostUsd !== undefined && usageSummary.totalCostUsd > 0 ? (
-            <li className="thread-info-cost">
-              <DollarSign size={14} aria-hidden />
-              <span
-                className="thread-info-value"
-                title="Claude Agent SDK 客户端估算，非权威账单。多轮 query() 累计。"
-              >
-                累计 {formatCostUsd(usageSummary.totalCostUsd)}
+        </ul>
+      </section>
+
+      {hasBillingData(billing) ? (
+        <section className="thread-info-section thread-info-billing">
+          <h3 className="thread-info-heading">
+            计费对比
+            <span
+              className="thread-info-help"
+              title="① SDK（OTel cost_usd 累计）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价 ④ ②−③"
+            >
+              <HelpCircle size={13} aria-hidden />
+            </span>
+          </h3>
+          {tokenBadge ? (
+            <p className="thread-info-billing-tokens" title="线程累计 token（非单次请求）">
+              编排 token · {tokenBadge}
+            </p>
+          ) : null}
+          <ul className="thread-info-billing-list">
+            <li title="Claude Code 内置价目估算，非权威账单">
+              <span>① SDK（OTel）</span>
+              <span>{formatCostUsd(billing.otelCostUsd)}</span>
+            </li>
+            <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
+              <span>② 全主模型（{plannerLabel}）</span>
+              <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
+            </li>
+            <li className="thread-info-billing-eco" title="OTel token × 各 role 实际 models.dev 单价">
+              <span>③ 经济编程</span>
+              <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
+            </li>
+            <li
+              className={
+                billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"
+              }
+              title="② − ③"
+            >
+              <span>
+                <DollarSign size={13} aria-hidden />
+                ④ {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
               </span>
             </li>
+          </ul>
+          {!billing.pricingResolved ? (
+            <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
           ) : null}
-          {contextLabel ? (
+        </section>
+      ) : contextLabel ? (
+        <section className="thread-info-section">
+          <ul className="thread-info-list">
             <li className="thread-info-usage">
               <Layers size={14} aria-hidden />
               <span
@@ -107,17 +164,11 @@ export function ThreadInfoPanel({
                 title="Planner 最近一次请求的输入 token（含缓存读/写），非整段对话累计"
               >
                 已用上下文 {contextLabel}
-                {tokenBadge ? (
-                  <span className="thread-info-token-badge" title="输入↑ 输出↓ 缓存⊙">
-                    {" "}
-                    · {tokenBadge}
-                  </span>
-                ) : null}
               </span>
             </li>
-          ) : null}
-        </ul>
-      </section>
+          </ul>
+        </section>
+      ) : null}
 
       {pendingWorktreeApply && pendingWorktreeApply.changedFiles.length > 0 ? (
         <section className="thread-info-section">

@@ -34,6 +34,7 @@ import {
   type ThreadLiveEvent,
   type ThreadPendingPlan,
   type ThreadStatus,
+  type ThreadBillingSnapshot,
   type ThreadSummary,
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
@@ -110,7 +111,7 @@ function App() {
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
-  const [totalCostByThread, setTotalCostByThread] = useState<Record<string, number>>({});
+  const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
@@ -216,10 +217,10 @@ function App() {
             [roleKey]: event.usage!,
           },
         }));
-        if (event.totalCostUsd !== undefined) {
-          setTotalCostByThread((current) => ({
+        if (event.billing) {
+          setBillingByThread((current) => ({
             ...current,
-            [event.threadId]: event.totalCostUsd!,
+            [event.threadId]: event.billing!,
           }));
         }
         const modelId = event.modelId ?? event.usage.modelId;
@@ -445,17 +446,15 @@ function App() {
       return undefined;
     }
     const contextTokens = threadUsageByRole ? pickDisplayContextTokens(threadUsageByRole) : 0;
-    const totalCostUsd = totalCostByThread[activeThread.id];
-    const plannerUsage = threadUsageByRole?.planner;
-    if (!totalCostUsd && contextTokens <= 0) {
+    const billing = billingByThread[activeThread.id];
+    if (!billing && contextTokens <= 0) {
       return undefined;
     }
     return {
-      ...(totalCostUsd !== undefined && totalCostUsd > 0 && { totalCostUsd }),
+      ...(billing && { billing }),
       ...(contextTokens > 0 && { contextTokens }),
-      ...(plannerUsage && { plannerUsage }),
     };
-  }, [activeThread, threadUsageByRole, totalCostByThread]);
+  }, [activeThread, threadUsageByRole, billingByThread]);
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {

@@ -38,6 +38,8 @@ export const IPC_CHANNELS = {
   sessionSyncSettingsGet: "session-sync-settings:get",
   sessionSyncSettingsSave: "session-sync-settings:save",
   sessionSyncTestConnection: "session-sync:test-connection",
+  billingRefreshPricing: "billing:refresh-pricing",
+  billingRoutePricing: "billing:route-pricing",
 } as const;
 
 export type {
@@ -258,6 +260,43 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
+export interface ThreadBillingSnapshot {
+  totalTokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+  };
+  otelCostUsd: number;
+  plannerTokenCostUsd: number;
+  ecoCostUsd: number;
+  savedUsd: number;
+  savedPct: number;
+  plannerModelLabel?: string;
+  pricingResolved: boolean;
+  byRole?: Partial<
+    Record<
+      AgentRole,
+      {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+        ecoCostUsd: number;
+        modelId?: string;
+      }
+    >
+  >;
+}
+
+export interface RoutePricingHint {
+  role: AgentRole;
+  modelId: string;
+  providerName: string;
+  pricingLabel?: string;
+  pricingResolved: boolean;
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
@@ -273,6 +312,7 @@ export interface ThreadLiveEvent {
   /** Cumulative SDK-estimated cost across all query() calls in this thread. */
   totalCostUsd?: number;
   modelUsage?: Record<string, ThreadModelUsageEntry>;
+  billing?: ThreadBillingSnapshot;
 }
 
 export interface ThreadActivityLine {

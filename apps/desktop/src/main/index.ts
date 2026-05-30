@@ -7,9 +7,7 @@ import {
   extractSdkRunFailure,
   formatAgentEventDisplay,
   formatUsageBadge,
-  accumulateThreadCost,
   estimateContextTokens,
-  parseModelUsage,
   parseUsagePayload,
   type EcoHookContext,
   type EcoPlanningContext,
@@ -20,6 +18,7 @@ import {
   type PlanReadyPayload,
   type SdkTodoUpdatedPayload,
   type SessionCapturedPayload,
+  type AgentEvent,
 } from "@eco/runtime";
 import {
   createRedisSessionStore,
@@ -55,6 +54,7 @@ import {
   type ThreadContinueResult,
   type ThreadRetryResult,
   type ThreadLiveEvent,
+  type ThreadBillingSnapshot,
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
@@ -82,6 +82,17 @@ import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-titl
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import {
+  buildPlannerModelLabel,
+  lookupRoutePricingHints,
+  resolveRuntimeRoutesFromSettings,
+  resolveUsageRoute,
+} from "./billing-resolver";
+import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import {
+  buildUsageRequestKey,
+  ThreadUsageAccumulator,
+} from "./thread-usage-accumulator";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
@@ -123,9 +134,11 @@ interface ActiveThreadRun {
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
-const threadTotalCostUsd = new Map<string, number>();
+const threadUsageAccumulator = new ThreadUsageAccumulator();
+let pricingCache: ModelsDevPricingCache;
+let pricingCatalogReady: Promise<void> = Promise.resolve();
 
-type AgentEventLike = { type: string; payload: unknown; role: AgentRole };
+type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role">;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -157,6 +170,15 @@ app.whenReady().then(async () => {
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
+  pricingCache = new ModelsDevPricingCache({
+    cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
+  });
+  pricingCatalogReady = pricingCache.getCatalog().then(
+    () => {},
+    (error) => {
+      process.stderr.write(`[eco] models.dev pricing cache init failed: ${errorMessage(error)}\n`);
+    },
+  );
   try {
     await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
   } catch (error) {
@@ -261,6 +283,20 @@ function registerIpcHandlers(): void {
     const routes = providerStore.saveRoleRoutes(payload);
     emitSettingsUpdated();
     return routes;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.billingRefreshPricing, async () => {
+    await pricingCache.refresh();
+    return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async () => {
+    await pricingCatalogReady;
+    return lookupRoutePricingHints(
+      pricingCache,
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
@@ -733,6 +769,7 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -845,6 +882,7 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -881,6 +919,7 @@ async function runCodingThreadPlanning(
 
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
 
@@ -1024,6 +1063,7 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
 
@@ -1608,6 +1648,7 @@ async function runThreadContinuation(
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -1744,24 +1785,107 @@ function emitOtelActivity(line: OtelActivityLine): void {
 }
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
-  const role =
-    usage.role === "system" || usage.role === "thinking" || usage.role === "tool"
-      ? "planner"
-      : usage.role;
-
-  let totalCostUsd = threadTotalCostUsd.get(usage.threadId) ?? 0;
-  if (usage.costUsd !== undefined) {
-    totalCostUsd = accumulateThreadCost(totalCostUsd, usage.costUsd);
-    threadTotalCostUsd.set(usage.threadId, totalCostUsd);
-  }
-
-  const parsed = {
+  void processUsageBilling({
+    threadId: usage.threadId,
+    role: normalizeBillingRole(usage.role),
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens ?? 0,
     cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-    ...(usage.costUsd !== undefined && { totalCostUsd: usage.costUsd }),
+    ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
     ...(usage.modelId && { modelId: usage.modelId }),
+  }).catch((error) => {
+    process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
+  });
+}
+
+function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
+  if (role === "system" || role === "thinking" || role === "tool") {
+    return "planner";
+  }
+  if (AGENT_ROLES.includes(role as AgentRole)) {
+    return role as AgentRole;
+  }
+  return "planner";
+}
+
+async function processUsageBilling(input: {
+  threadId: string;
+  role: AgentRole;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  otelCostUsd?: number;
+  modelId?: string;
+}): Promise<void> {
+  await pricingCatalogReady;
+
+  const delta = {
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheReadTokens: input.cacheReadTokens,
+    cacheCreationTokens: input.cacheCreationTokens,
+    ...(input.modelId && { modelId: input.modelId }),
+  };
+
+  if (
+    delta.inputTokens === 0 &&
+    delta.outputTokens === 0 &&
+    delta.cacheReadTokens === 0 &&
+    delta.cacheCreationTokens === 0 &&
+    input.otelCostUsd === undefined
+  ) {
+    return;
+  }
+
+  const settings = providerStore.getSettings();
+  const providers = providerStore.listProvidersWithSecrets();
+  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const usageRoute = resolveUsageRoute(input.role, input.modelId, runtimeRoutes);
+  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
+
+  const actualLookup = usageRoute
+    ? await pricingCache.lookup(usageRoute.provider.baseUrl, usageRoute.modelId)
+    : null;
+  const plannerLookup = plannerRoute
+    ? await pricingCache.lookup(plannerRoute.provider.baseUrl, plannerRoute.modelId)
+    : null;
+
+  const requestKey = buildUsageRequestKey({
+    role: input.role,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    cacheReadTokens: input.cacheReadTokens,
+    cacheCreationTokens: input.cacheCreationTokens,
+    ...(input.modelId && { modelId: input.modelId }),
+  });
+
+  const plannerModelLabel = buildPlannerModelLabel(
+    plannerRoute,
+    plannerLookup?.displayName ?? plannerRoute?.modelId,
+  );
+
+  const resolvedModelId = usageRoute?.modelId ?? input.modelId;
+
+  const billing = threadUsageAccumulator.recordUsage({
+    threadId: input.threadId,
+    role: input.role,
+    delta,
+    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+    actualRates: actualLookup?.rates ?? null,
+    plannerRates: plannerLookup?.rates ?? null,
+    ...(resolvedModelId && { modelId: resolvedModelId }),
+    requestKey,
+    ...(plannerModelLabel && { plannerModelLabel }),
+  });
+
+  const parsed = {
+    inputTokens: delta.inputTokens,
+    outputTokens: delta.outputTokens,
+    cacheReadTokens: delta.cacheReadTokens,
+    cacheCreationTokens: delta.cacheCreationTokens,
+    ...(input.modelId && { modelId: input.modelId }),
   };
 
   const snapshot: ThreadUsageSnapshot = {
@@ -1773,9 +1897,10 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
     ...(parsed.modelId && { modelId: parsed.modelId }),
   };
 
-  emitThreadEvent(usage.threadId, "thread.usage_updated", formatUsageBadge(parsed), role, false, {
+  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(parsed), input.role, false, {
     usage: snapshot,
-    totalCostUsd,
+    totalCostUsd: billing.otelCostUsd,
+    billing,
     ...(parsed.modelId && { modelId: parsed.modelId }),
   });
 }
@@ -1873,46 +1998,27 @@ function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
   });
 }
 
-function usageSnapshotFromPayload(payload: unknown): ThreadUsageSnapshot | null {
-  const parsed = parseUsagePayload(payload);
-  if (!parsed) {
-    return null;
-  }
-  return {
-    inputTokens: parsed.inputTokens,
-    outputTokens: parsed.outputTokens,
-    cacheReadTokens: parsed.cacheReadTokens,
-    cacheCreationTokens: parsed.cacheCreationTokens,
-    contextTokens: estimateContextTokens(parsed),
-    ...(parsed.modelId && { modelId: parsed.modelId }),
-  };
-}
-
 function emitUsageFromDriverEvent(threadId: string, event: AgentEventLike): void {
   if (event.type !== "usage.recorded") {
     return;
   }
   const parsed = parseUsagePayload(event.payload);
-  const usage = usageSnapshotFromPayload(event.payload);
-  if (!parsed || !usage) {
+  if (!parsed) {
     return;
   }
-  const role: AgentRole | "system" | "thinking" | "tool" | "user" =
-    event.role && event.role !== "system" ? event.role : "planner";
+  const role: AgentRole =
+    event.role && AGENT_ROLES.includes(event.role) ? event.role : "planner";
 
-  let totalCostUsd = threadTotalCostUsd.get(threadId) ?? 0;
-  if (parsed.totalCostUsd !== undefined) {
-    totalCostUsd = accumulateThreadCost(totalCostUsd, parsed.totalCostUsd);
-    threadTotalCostUsd.set(threadId, totalCostUsd);
-  }
-
-  const modelUsage = parseModelUsage(event.payload) ?? undefined;
-
-  emitThreadEvent(threadId, "thread.usage_updated", formatUsageBadge(parsed), role, false, {
-    usage,
-    totalCostUsd,
-    ...(modelUsage && { modelUsage }),
-    ...(usage.modelId && { modelId: usage.modelId }),
+  void processUsageBilling({
+    threadId,
+    role,
+    inputTokens: parsed.inputTokens,
+    outputTokens: parsed.outputTokens,
+    cacheReadTokens: parsed.cacheReadTokens,
+    cacheCreationTokens: parsed.cacheCreationTokens,
+    ...(parsed.modelId && { modelId: parsed.modelId }),
+  }).catch((error) => {
+    process.stderr.write(`[eco] sdk usage billing failed: ${errorMessage(error)}\n`);
   });
 }
 
@@ -1931,6 +2037,7 @@ function emitThreadEvent(
     modelId?: string;
     totalCostUsd?: number;
     modelUsage?: Record<string, ThreadModelUsageEntry>;
+    billing?: ThreadBillingSnapshot;
   },
 ): void {
   const trimmed = message.trim();
@@ -1986,6 +2093,9 @@ function emitThreadEvent(
   }
   if (extras?.modelUsage) {
     payload.modelUsage = extras.modelUsage;
+  }
+  if (extras?.billing) {
+    payload.billing = extras.billing;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

@@ -10,6 +10,7 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
+  type RoutePricingHint,
   type RoleRouteConfig,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
@@ -65,6 +66,12 @@ const api = {
   },
   saveRoleRoutes(routes: RoleRouteConfig[]): Promise<RoleRouteConfig[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRoutesSave, routes);
+  },
+  getRoutePricing(): Promise<RoutePricingHint[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing);
+  },
+  refreshPricingCatalog(): Promise<{ ok: true; cachedAt: number }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingRefreshPricing);
   },
   getMcpSettings(): Promise<McpSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.mcpSettingsGet);

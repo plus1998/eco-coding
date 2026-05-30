@@ -207,7 +207,7 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
   );
 }
 
-export type { PlanReadyPayload, SessionCapturedPayload } from "../../shared/src";
+export type { PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
 export * from "./eco-sdk-hooks";
 export * from "./claude-agent-sdk";
 export {
@@ -247,6 +247,28 @@ export {
   type ModelUsageEntry,
   type ParsedUsage,
 } from "./usage";
+export {
+  computeRequestBilling,
+  computeSavings,
+  computeThreadBillingTotals,
+  estimateCostFromTokens,
+  formatSavingsLine,
+  formatSavingsPct,
+  tokenTotalsFromUsage,
+  type ModelCostRates,
+  type RequestBillingDelta,
+  type ThreadBillingTotals,
+  type TokenTotals,
+} from "./billing";
+export {
+  fetchModelsDevCatalog,
+  formatModelPricingLabel,
+  lookupModelCostInCatalog,
+  parseModelsDevCatalog,
+  resolveProviderKeyFromBaseUrl,
+  type ModelPricingLookup,
+  type ModelsDevCatalog,
+} from "./models-dev-pricing";
 export {
   extractPhaseDeliverable,
   extractPlanningDeliverables,

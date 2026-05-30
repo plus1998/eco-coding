@@ -7,6 +7,7 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
+  type RoutePricingHint,
   type RoleRouteConfig,
 } from "../shared/ipc";
 import { ModelSelectField } from "./ModelSelectField";
@@ -43,6 +44,8 @@ export function ModelsSettingsPanel({
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
   const [modalError, setModalError] = useState<string>();
+  const [routePricing, setRoutePricing] = useState<Partial<Record<AgentRole, RoutePricingHint>>>({});
+  const [pricingLoading, setPricingLoading] = useState(false);
 
   const modalProviderId = providerForm.id ?? "__draft__";
   const modalCache = modelsCache[modalProviderId];
@@ -116,6 +119,25 @@ export function ModelsSettingsPanel({
     }
     void fetchModels(providerForm, { silent: true });
   }, [providerModalOpen, providerForm, settings.providers, modelsCache, fetchModels]);
+
+  const refreshRoutePricing = useCallback(async () => {
+    if (!window.eco?.getRoutePricing) {
+      return;
+    }
+    setPricingLoading(true);
+    try {
+      const hints = await window.eco.getRoutePricing();
+      setRoutePricing(Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
+        Record<AgentRole, RoutePricingHint>
+      >);
+    } finally {
+      setPricingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRoutePricing();
+  }, [settings.routes, settings.providers, refreshRoutePricing]);
 
   const modelsForProvider = useCallback(
     (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
@@ -291,6 +313,15 @@ export function ModelsSettingsPanel({
       <section className="mcp-list-section models-routes-section">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">角色路由</span>
+          <span className="models-pricing-toolbar-note">单价来自 models.dev</span>
+          <button
+            type="button"
+            className="mcp-add-button"
+            disabled={busy || pricingLoading}
+            onClick={() => void refreshRoutePricing()}
+          >
+            刷新单价
+          </button>
           <button type="button" className="mcp-add-button" disabled={busy} onClick={() => void saveRoutes()}>
             保存路由
           </button>
@@ -369,6 +400,13 @@ export function ModelsSettingsPanel({
                     }}
                     onChange={(modelId) => updateRoute(role, { modelId })}
                   />
+                  {routePricing[role]?.pricingLabel ? (
+                    <p className="models-route-pricing">{routePricing[role]?.pricingLabel}</p>
+                  ) : routePricing[role] && !routePricing[role]?.pricingResolved ? (
+                    <p className="models-route-pricing models-route-pricing-unresolved">
+                      未匹配 models.dev 单价（请核对 model ID）
+                    </p>
+                  ) : null}
                 </div>
               </li>
             );

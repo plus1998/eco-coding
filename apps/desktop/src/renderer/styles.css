@@ -2154,6 +2154,89 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
+.thread-info-billing {
+  padding-bottom: 4px;
+}
+
+.thread-info-help {
+  display: inline-flex;
+  color: #737373;
+  cursor: help;
+}
+
+.thread-info-billing-tokens {
+  margin: 0 0 10px;
+  color: #737373;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-info-billing-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.thread-info-billing-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #a3a3a3;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-info-billing-eco {
+  color: #e5e5e5;
+}
+
+.thread-info-billing-eco strong {
+  color: #86efac;
+  font-weight: 600;
+}
+
+.thread-info-billing-saved {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #2e2e2e;
+  color: #86efac;
+  font-weight: 500;
+}
+
+.thread-info-billing-over {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #2e2e2e;
+  color: #fca5a5;
+}
+
+.thread-info-billing-warning {
+  margin: 10px 0 0;
+  color: #fbbf24;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.models-route-pricing {
+  margin: 6px 0 0;
+  color: #737373;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.models-route-pricing-unresolved {
+  color: #fbbf24;
+}
+
+.models-pricing-toolbar-note {
+  color: #737373;
+  font-size: 12px;
+}
+
 .thread-info-token-badge {
   color: #737373;
   font-size: 12px;
