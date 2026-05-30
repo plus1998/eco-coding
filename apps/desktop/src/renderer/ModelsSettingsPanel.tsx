@@ -1,5 +1,5 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit } from "@eco/runtime";
-import { Plus, RefreshCw, Settings2, X } from "lucide-react";
+import { Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import type { UpstreamModelOption } from "../shared/models";
 import {
@@ -226,6 +226,38 @@ export function ModelsSettingsPanel({
         const next = { ...current };
         next[provider.id] = draft;
         delete next.__draft__;
+        return next;
+      });
+      closeProviderModal();
+    } catch (caught) {
+      setModalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function deleteProvider() {
+    if (!window.eco || !providerForm.id) {
+      return;
+    }
+    if (settings.providers.length <= 1) {
+      setModalError("至少保留一个 Provider。");
+      return;
+    }
+    const providerName = providerForm.name.trim() || "Provider";
+    if (!window.confirm(`确定删除 Provider「${providerName}」？引用它的角色路由将改用到其他 Provider。`)) {
+      return;
+    }
+
+    const deletedId = providerForm.id;
+    setModalError(undefined);
+    onSavingChange?.(true);
+    try {
+      await window.eco.deleteProvider(deletedId);
+      await refreshSettings();
+      setModelsCache((current) => {
+        const next = { ...current };
+        delete next[deletedId];
         return next;
       });
       closeProviderModal();
@@ -550,8 +582,10 @@ export function ModelsSettingsPanel({
           modelsError={modalCache?.error}
           error={modalError}
           busy={busy}
+          canDelete={settings.providers.length > 1}
           onClose={closeProviderModal}
           onSave={() => void saveProvider()}
+          onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
         />
       )}
@@ -567,8 +601,10 @@ function ProviderEditorModal({
   modelsError,
   error,
   busy,
+  canDelete,
   onClose,
   onSave,
+  onDelete,
   onRefreshModels,
 }: {
   form: ProviderConfigInput;
@@ -578,8 +614,10 @@ function ProviderEditorModal({
   modelsError?: string | undefined;
   error?: string | undefined;
   busy?: boolean | undefined;
+  canDelete: boolean;
   onClose: () => void;
   onSave: () => void;
+  onDelete: () => void;
   onRefreshModels: () => void;
 }) {
   const isEditing = Boolean(form.id);
@@ -673,13 +711,29 @@ function ProviderEditorModal({
           {error && <p className="settings-form-error">{error}</p>}
         </div>
 
-        <footer className="settings-modal-footer">
-          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            取消
-          </button>
-          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-            保存
-          </button>
+        <footer className="settings-modal-footer settings-modal-footer-split">
+          {isEditing ? (
+            <button
+              type="button"
+              className="mcp-uninstall-button"
+              onClick={onDelete}
+              disabled={busy || !canDelete}
+              title={canDelete ? undefined : "至少保留一个 Provider"}
+            >
+              <Trash2 size={16} />
+              删除
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="settings-modal-footer-actions">
+            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
+              取消
+            </button>
+            <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+              保存
+            </button>
+          </div>
         </footer>
       </div>
     </div>

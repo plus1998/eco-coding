@@ -3771,6 +3771,16 @@ button:not(:disabled) {
   padding: 0 20px 20px;
 }
 
+.settings-modal-footer-split {
+  justify-content: space-between;
+}
+
+.settings-modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .settings-modal-cancel {
   padding: 8px 14px;
   border: none;

@@ -63,6 +63,9 @@ const api = {
   saveProvider(provider: ProviderConfigInput): Promise<ProviderConfigView> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderSave, provider);
   },
+  deleteProvider(providerId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelProviderDelete, providerId);
+  },
   listProviderModels(request: ListUpstreamModelsRequest): Promise<ListUpstreamModelsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderListModels, request);
   },

@@ -320,6 +320,15 @@ function registerIpcHandlers(): void {
     return provider;
   });
 
+  ipcMain.handle(IPC_CHANNELS.modelProviderDelete, async (_event, providerId: unknown) => {
+    if (typeof providerId !== "string" || !providerId.trim()) {
+      throw new Error("Provider id is required.");
+    }
+    providerStore.deleteProvider(providerId.trim());
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
   ipcMain.handle(IPC_CHANNELS.modelProviderListModels, async (_event, payload: ListUpstreamModelsRequest) => {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid models list request." } as const;

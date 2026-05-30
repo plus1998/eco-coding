@@ -160,6 +160,35 @@ export class ProviderStore {
     return providerRowToView(this.getProviderRow(id) ?? fail(`Provider ${id} was not saved`));
   }
 
+  deleteProvider(id: string): void {
+    const providers = this.listProviderRows();
+    if (providers.length <= 1) {
+      throw new Error("至少保留一个 Provider。");
+    }
+    if (!this.getProviderRow(id)) {
+      throw new Error(`找不到 Provider：${id}`);
+    }
+
+    const fallback = providers.find((provider) => provider.id !== id);
+    if (!fallback) {
+      throw new Error("至少保留一个 Provider。");
+    }
+
+    for (const route of this.listRoleRoutes()) {
+      if (route.providerId !== id) {
+        continue;
+      }
+      this.saveRoleRoute({
+        role: route.role,
+        providerId: fallback.id,
+        modelId: fallback.default_model,
+        ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+      });
+    }
+
+    this.db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
+  }
+
   listRoleRoutes(): RoleRouteConfig[] {
     return this.db
       .prepare("SELECT role, provider_id, model_id, thinking_effort FROM role_routes ORDER BY role")

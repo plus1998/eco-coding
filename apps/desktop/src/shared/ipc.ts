@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
   workspaceInspect: "workspace:inspect",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
+  modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
   modelRoutesSave: "model-routes:save",
   threadStart: "thread:start",
