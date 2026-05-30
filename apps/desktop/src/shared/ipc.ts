@@ -353,10 +353,20 @@ export interface ThreadUsageSnapshotResult {
   context?: ThreadContextSnapshot;
 }
 
+export interface RoutePricingRates {
+  inputPerM: number;
+  outputPerM: number;
+  cacheReadPerM?: number;
+  cacheWritePerM?: number;
+}
+
 export interface RoutePricingHint {
   role: AgentRole;
   modelId: string;
   providerName: string;
+  /** models.dev 参考单价（每百万 token，USD） */
+  rates?: RoutePricingRates;
+  /** 完整说明，用于悬停提示 */
   pricingLabel?: string;
   pricingResolved: boolean;
 }

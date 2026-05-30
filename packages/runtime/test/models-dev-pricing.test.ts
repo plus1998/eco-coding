@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import {
+  buildModelPricingSummary,
   expandModelLookupCandidates,
+  formatModelPricingLabel,
+  formatRatePerMillion,
   lookupModelCostInCatalog,
   parseModelsDevCatalog,
   resolveProviderKeyFromBaseUrl,
@@ -73,6 +76,27 @@ const openRouterCatalog = parseModelsDevCatalog({
       },
     },
   },
+});
+
+test("formatRatePerMillion compacts USD display", () => {
+  expect(formatRatePerMillion(5)).toBe("$5");
+  expect(formatRatePerMillion(0.5)).toBe("$0.5");
+  expect(formatRatePerMillion(6.25)).toBe("$6.25");
+});
+
+test("formatModelPricingLabel uses Chinese segments", () => {
+  const lookup = lookupModelCostInCatalog(mockCatalog, "anthropic", "claude-sonnet-4-6");
+  expect(lookup).not.toBeNull();
+  const label = formatModelPricingLabel(lookup!);
+  expect(label).toContain("输入 $3/M");
+  expect(label).toContain("缓存读 $0.3/M");
+});
+
+test("buildModelPricingSummary extracts rates", () => {
+  const lookup = lookupModelCostInCatalog(mockCatalog, "anthropic", "claude-sonnet-4-6");
+  const summary = buildModelPricingSummary(lookup!);
+  expect(summary.inputPerM).toBe(3);
+  expect(summary.cacheWritePerM).toBe(3.75);
 });
 
 test("lookupModelLimitsInCatalog resolves hyphenated id on openrouter", () => {

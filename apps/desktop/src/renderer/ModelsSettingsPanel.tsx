@@ -14,6 +14,7 @@ import {
   type ThinkingEffort,
 } from "../shared/ipc";
 import { ModelSelectField } from "./ModelSelectField";
+import { RoutePricingDisplay } from "./RoutePricingDisplay";
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
@@ -448,8 +449,11 @@ export function ModelsSettingsPanel({
                       ) : null}
                     </span>
                   </div>
-                  {pricing?.pricingLabel ? (
-                    <span className="models-route-pricing-badge">{pricing.pricingLabel}</span>
+                  {pricing?.rates ? (
+                    <RoutePricingDisplay
+                      rates={pricing.rates}
+                      {...(pricing.pricingLabel && { title: pricing.pricingLabel })}
+                    />
                   ) : pricing && !pricing.pricingResolved ? (
                     <span className="models-route-pricing-badge models-route-pricing-badge-unresolved">
                       未匹配参考单价
@@ -498,26 +502,6 @@ export function ModelsSettingsPanel({
                       }}
                       onChange={(modelId) => updateRoute(role, { modelId })}
                     />
-                    {route?.modelId ? (
-                      capability?.contextLimitResolved && capability.contextTokens ? (
-                        <span
-                          className="models-route-field-hint"
-                          title={`${capability.contextTokens.toLocaleString()} tokens${capability.maxOutputTokens ? ` · 最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens` : ""}`}
-                        >
-                          上下文上限 {formatContextLimit(capability.contextTokens)}
-                          {capability.maxOutputTokens
-                            ? ` · 最大输出 ${formatContextLimit(capability.maxOutputTokens)}`
-                            : null}
-                        </span>
-                      ) : (
-                        <span
-                          className="models-route-field-hint"
-                          title={`本地 catalog 未命中（与网站搜索不同：需匹配 Provider baseURL + 模型 ID）。可点「刷新 models.dev」拉取最新 api.json；运行时按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()} tokens 估算`}
-                        >
-                          上下文上限未匹配本地 catalog，按 {formatContextLimit(DEFAULT_CONTEXT_LIMIT)} 估算
-                        </span>
-                      )
-                    ) : null}
                   </div>
                   <label className="mcp-field models-route-field">
                     <span className="mcp-field-label">思考链</span>

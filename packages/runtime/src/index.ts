@@ -274,13 +274,16 @@ export {
   type TokenTotals,
 } from "./billing";
 export {
+  buildModelPricingSummary,
   expandModelLookupCandidates,
   fetchModelsDevCatalog,
   formatModelPricingLabel,
+  formatRatePerMillion,
   lookupModelCostInCatalog,
   parseModelsDevCatalog,
   resolveProviderKeyFromBaseUrl,
   type ModelPricingLookup,
+  type ModelPricingSummary,
   type ModelsDevCatalog,
   type ModelsDevModelEntry,
 } from "./models-dev-pricing";

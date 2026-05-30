@@ -274,15 +274,51 @@ export async function fetchModelsDevCatalog(
   return parseModelsDevCatalog(payload);
 }
 
-export function formatModelPricingLabel(lookup: ModelPricingLookup): string {
-  const name = lookup.displayName ?? lookup.modelId;
+export interface ModelPricingSummary {
+  modelLabel: string;
+  inputPerM: number;
+  outputPerM: number;
+  cacheReadPerM?: number;
+  cacheWritePerM?: number;
+}
+
+/** Compact USD rate for per-million token display (e.g. $5, $0.5, $6.25). */
+export function formatRatePerMillion(usd: number): string {
+  if (!Number.isFinite(usd)) {
+    return "$?";
+  }
+  const text =
+    usd >= 10
+      ? usd.toFixed(0)
+      : Number.isInteger(usd)
+        ? String(usd)
+        : usd.toFixed(2).replace(/\.?0+$/, "");
+  return `$${text}`;
+}
+
+export function buildModelPricingSummary(lookup: ModelPricingLookup): ModelPricingSummary {
   const { input, output, cacheRead, cacheWrite } = lookup.rates;
-  const parts = [`$${input}/M in`, `$${output}/M out`];
-  if (cacheRead !== undefined) {
-    parts.push(`$${cacheRead}/M cache read`);
+  return {
+    modelLabel: lookup.displayName ?? lookup.modelId,
+    inputPerM: input,
+    outputPerM: output,
+    ...(cacheRead !== undefined && { cacheReadPerM: cacheRead }),
+    ...(cacheWrite !== undefined && { cacheWritePerM: cacheWrite }),
+  };
+}
+
+/** Plain-text summary for tooltips and logs. */
+export function formatModelPricingLabel(lookup: ModelPricingLookup): string {
+  const summary = buildModelPricingSummary(lookup);
+  const parts = [
+    `输入 ${formatRatePerMillion(summary.inputPerM)}/M`,
+    `输出 ${formatRatePerMillion(summary.outputPerM)}/M`,
+  ];
+  if (summary.cacheReadPerM !== undefined) {
+    parts.push(`缓存读 ${formatRatePerMillion(summary.cacheReadPerM)}/M`);
   }
-  if (cacheWrite !== undefined) {
-    parts.push(`$${cacheWrite}/M cache write`);
+  if (summary.cacheWritePerM !== undefined) {
+    parts.push(`缓存写 ${formatRatePerMillion(summary.cacheWritePerM)}/M`);
   }
-  return `${name} · ${parts.join(" · ")}`;
+  return `${summary.modelLabel} · ${parts.join(" · ")}`;
 }

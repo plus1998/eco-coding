@@ -1,4 +1,5 @@
 import {
+  buildModelPricingSummary,
   formatModelPricingLabel,
   unresolvedModelCapabilities,
   type ModelCostRates,
@@ -199,12 +200,19 @@ export async function lookupRoutePricingHints(
 
   for (const route of routes) {
     const lookup = await cache.lookup(route.provider.baseUrl, route.modelId);
+    const summary = lookup ? buildModelPricingSummary(lookup) : null;
     hints.push({
       role: route.role,
       modelId: route.modelId,
       providerName: route.provider.name,
-      ...(lookup && {
-        pricingLabel: formatModelPricingLabel(lookup),
+      ...(summary && {
+        rates: {
+          inputPerM: summary.inputPerM,
+          outputPerM: summary.outputPerM,
+          ...(summary.cacheReadPerM !== undefined && { cacheReadPerM: summary.cacheReadPerM }),
+          ...(summary.cacheWritePerM !== undefined && { cacheWritePerM: summary.cacheWritePerM }),
+        },
+        pricingLabel: formatModelPricingLabel(lookup!),
       }),
       pricingResolved: Boolean(lookup),
     });
