@@ -17,6 +17,8 @@ import {
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  type TelemetrySettingsInput,
+  type TelemetrySettingsSnapshot,
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
@@ -78,6 +80,12 @@ const api = {
   },
   saveAgentSkillsAssignments(assignments: AgentSkillAssignments): Promise<AgentSkillAssignments> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsSave, assignments);
+  },
+  getTelemetrySettings(): Promise<TelemetrySettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.telemetrySettingsGet);
+  },
+  saveTelemetrySettings(settings: TelemetrySettingsInput): Promise<TelemetrySettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.telemetrySettingsSave, settings);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

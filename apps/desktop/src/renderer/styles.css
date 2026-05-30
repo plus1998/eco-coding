@@ -2582,6 +2582,26 @@ button:not(:disabled) {
   background: var(--bg-elevated);
 }
 
+.telemetry-form {
+  margin-bottom: 12px;
+}
+
+.telemetry-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.telemetry-hint code {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1a1a1a;
+  font-size: 11px;
+  overflow-x: auto;
+}
+
 .settings-editor-title {
   margin: 0 0 16px;
   font-size: 15px;

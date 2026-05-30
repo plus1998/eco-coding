@@ -55,6 +55,7 @@ import {
   type ThreadStartRequest,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type TelemetrySettingsInput,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
   type WorkspaceInfo,
@@ -82,6 +83,7 @@ import { createConversationStore, type ConversationStore } from "./conversation-
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
+import { createTelemetryStore, type TelemetryStore } from "./telemetry-store";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels } from "./provider-models";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
@@ -107,6 +109,7 @@ const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let mcpStore: McpStore;
+let telemetryStore: TelemetryStore;
 let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
 
@@ -149,6 +152,7 @@ app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
+  telemetryStore = await createTelemetryStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
   recoverOrphanedRunningThreads();
@@ -242,6 +246,17 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
+
+  ipcMain.handle(IPC_CHANNELS.telemetrySettingsGet, async () => telemetryStore.getSettings());
+
+  ipcMain.handle(IPC_CHANNELS.telemetrySettingsSave, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid telemetry settings.");
+    }
+    const saved = telemetryStore.saveSettings(payload as TelemetrySettingsInput);
+    emitSettingsUpdated();
+    return saved;
+  });
 
   ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload: McpServerConfigInput) => {
     const server = mcpStore.saveServer(payload);
@@ -645,11 +660,7 @@ async function runQuestionThread(
       });
       const routes = buildDriverRoutes(attemptProxy.routes);
       try {
-        const driver = new ClaudeAgentSdkDriver({
-          apiKey: attemptProxy.apiKey,
-          baseUrl: attemptProxy.baseUrl,
-          canUseTool: createThreadCanUseTool(thread.id),
-        });
+        const driver = createSdkDriver(thread.id, attemptProxy);
         if (!driver.runQuestion) {
           throw new Error("Runtime driver does not support question answering.");
         }
@@ -761,11 +772,7 @@ async function runCodingThreadPlanning(
       );
 
       try {
-        const driver = new ClaudeAgentSdkDriver({
-          apiKey: attemptProxy.apiKey,
-          baseUrl: attemptProxy.baseUrl,
-          canUseTool: createThreadCanUseTool(thread.id),
-        });
+        const driver = createSdkDriver(thread.id, attemptProxy);
 
         let sdkFailure: string | undefined;
         let captured = false;
@@ -919,11 +926,7 @@ async function runCodingThreadExecution(
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
-        const driver = new ClaudeAgentSdkDriver({
-          apiKey: attemptProxy.apiKey,
-          baseUrl: attemptProxy.baseUrl,
-          canUseTool: createThreadCanUseTool(threadId),
-        });
+        const driver = createSdkDriver(threadId, attemptProxy);
 
         if (!driver.runExecution) {
           throw new Error("Runtime driver does not support execution phase.");
@@ -1478,6 +1481,24 @@ function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
     throw new Error("Stored route configuration is invalid.");
   }
   return parsed;
+}
+
+function createSdkDriver(
+  threadId: string,
+  proxy: { apiKey: string; baseUrl: string },
+): ClaudeAgentSdkDriver {
+  const telemetry = telemetryStore.getSettings();
+  if (telemetry.enabled) {
+    process.stderr.write(
+      `[eco] OTel 导出已启用 → ${telemetry.endpoint} (thread.id=${threadId})\n`,
+    );
+  }
+  return new ClaudeAgentSdkDriver({
+    apiKey: proxy.apiKey,
+    baseUrl: proxy.baseUrl,
+    canUseTool: createThreadCanUseTool(threadId),
+    telemetry,
+  });
 }
 
 function buildSdkSessionOptions(): EcoSdkSessionOptions {

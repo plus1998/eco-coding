@@ -16,6 +16,7 @@ import { extractPlanningDeliverables } from "./phase-deliverable";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
+import { buildOtelEnvVars, type EcoTelemetrySettings } from "./otel-env";
 import {
   ecoBasePromptAppend,
   exploreAgentDescription,
@@ -107,6 +108,8 @@ export interface ClaudeAgentSdkDriverOptions {
   maxTurns?: number;
   /** Default: analyze_plan_execute (plan in one session → subagents execute). */
   orchestration?: EcoOrchestrationMode;
+  /** OpenTelemetry export via Claude Code CLI (see buildOtelEnvVars). */
+  telemetry?: EcoTelemetrySettings;
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   canUseTool?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
 }
@@ -231,6 +234,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
+        telemetry: this.options.telemetry,
+        threadId: input.threadId,
       }),
       // Flag-layer settings override ~/.claude/settings.json env (user gateway URL).
       settings: {
@@ -383,11 +388,15 @@ export function toSdkAgentModel(modelId?: string): string {
   return modelId?.trim() || "inherit";
 }
 
-/** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
-export function buildSdkProcessEnv(options: {
+export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
-}): Record<string, string> {
+  telemetry?: EcoTelemetrySettings;
+  threadId?: string;
+}
+
+/** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
+export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (typeof value === "string") {
@@ -397,6 +406,16 @@ export function buildSdkProcessEnv(options: {
   env.ANTHROPIC_API_KEY = options.apiKey;
   env.ANTHROPIC_BASE_URL = options.baseUrl.replace(/\/+$/, "");
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "eco-coding";
+
+  if (options.telemetry) {
+    const otel = buildOtelEnvVars({
+      settings: options.telemetry,
+      threadId: options.threadId,
+      inheritedResourceAttributes: env.OTEL_RESOURCE_ATTRIBUTES,
+    });
+    Object.assign(env, otel);
+  }
+
   delete env.ANTHROPIC_AUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
   return env;

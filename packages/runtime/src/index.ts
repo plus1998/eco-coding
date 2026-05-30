@@ -197,6 +197,13 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
 
 export type { PlanReadyPayload } from "../../shared/src";
 export * from "./claude-agent-sdk";
+export {
+  buildOtelEnvVars,
+  defaultEcoTelemetrySettings,
+  mergeResourceAttributes,
+  type BuildOtelEnvInput,
+  type EcoTelemetrySettings,
+} from "./otel-env";
 export * from "./ask-user-question";
 export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";

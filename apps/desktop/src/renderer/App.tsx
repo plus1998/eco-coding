@@ -33,14 +33,17 @@ import {
   type ThreadStatus,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type TelemetrySettingsSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { emptyTelemetrySettings } from "../shared/telemetry";
 import { isContinuableThreadStatus, isUsageNoiseMessage, pickDisplayContextTokens } from "../shared/thread-continuation";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { TelemetrySettingsPanel } from "./TelemetrySettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
@@ -57,12 +60,14 @@ interface RecentProject {
 
 const settingsSections = [
   { id: "models", label: "模型与路由", icon: SlidersHorizontal },
+  { id: "telemetry", label: "Agent 监测", icon: Activity },
   { id: "mcp", label: "MCP", icon: Plug },
   { id: "skills", label: "Skills", icon: Sparkles },
   { id: "git", label: "Git", icon: GitBranch },
 ] as const;
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
+const emptyTelemetrySettingsSnapshot: TelemetrySettingsSnapshot = emptyTelemetrySettings();
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
@@ -79,6 +84,9 @@ function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
+  const [telemetrySettings, setTelemetrySettings] = useState<TelemetrySettingsSnapshot>(
+    emptyTelemetrySettingsSnapshot,
+  );
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
@@ -117,7 +125,8 @@ function App() {
       window.eco.listThreads(),
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp]) => {
+      window.eco.getTelemetrySettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, telemetry]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -130,6 +139,7 @@ function App() {
       setThreads(currentThreads);
       setSettings(modelSettings);
       setMcpSettings(mcp);
+      setTelemetrySettings(telemetry);
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -791,6 +801,17 @@ function App() {
     }
   }
 
+  async function saveTelemetrySettings(input: TelemetrySettingsSnapshot) {
+    if (!window.eco) return;
+    setIsSavingSettings(true);
+    try {
+      const saved = await window.eco.saveTelemetrySettings(input);
+      setTelemetrySettings(saved);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   function rememberProject(project: RecentProject) {
     setRecentProjects((current) => {
       const next = [project, ...current.filter((item) => item.path !== project.path)].slice(0, 12);
@@ -1143,6 +1164,14 @@ function App() {
               ) : (
                 <p className="settings-empty-hint">正在加载 Skills 配置…</p>
               ))}
+
+            {settingsSection === "telemetry" && (
+              <TelemetrySettingsPanel
+                settings={telemetrySettings}
+                busy={isSavingSettings}
+                onSave={saveTelemetrySettings}
+              />
+            )}
 
             {settingsSection === "mcp" && (
               <McpSettingsPanel
