@@ -76,54 +76,58 @@ export function SessionSyncSettingsPanel({
           <span className="settings-section-label">Redis 远程同步</span>
         </div>
 
-        <div className="settings-editor-card provider-form">
-          <label className="settings-toggle-row">
-            <span>启用 Redis 同步</span>
-            <input
-              type="checkbox"
-              checked={form.redisEnabled}
-              disabled={busy}
-              onChange={(event) => setForm((current) => ({ ...current, redisEnabled: event.target.checked }))}
-            />
-          </label>
+        <div className="settings-editor-card">
+          <div className="settings-form">
+            <label className="settings-toggle-row">
+              <span>启用 Redis 同步</span>
+              <input
+                type="checkbox"
+                checked={form.redisEnabled}
+                disabled={busy}
+                onChange={(event) => setForm((current) => ({ ...current, redisEnabled: event.target.checked }))}
+              />
+            </label>
 
-          <label>
-            <span>Redis URL</span>
-            <input
-              type="text"
-              value={form.redisUrl}
-              disabled={busy || !form.redisEnabled}
-              placeholder="redis://127.0.0.1:6379"
-              onChange={(event) => setForm((current) => ({ ...current, redisUrl: event.target.value }))}
-            />
-          </label>
+            <label className="settings-form-field">
+              <span className="settings-form-label">Redis URL</span>
+              <input
+                className="settings-form-input"
+                type="text"
+                value={form.redisUrl}
+                disabled={busy || !form.redisEnabled}
+                placeholder="redis://127.0.0.1:6379"
+                onChange={(event) => setForm((current) => ({ ...current, redisUrl: event.target.value }))}
+              />
+            </label>
 
-          <label>
-            <span>密码（可选）</span>
-            <input
-              type="password"
-              value={form.redisPassword ?? ""}
-              disabled={busy || !form.redisEnabled}
-              placeholder={settings.hasRedisPassword ? "留空则保留已保存的密码" : "无密码可留空"}
-              onChange={(event) => setForm((current) => ({ ...current, redisPassword: event.target.value }))}
-            />
-            {settings.redisPasswordPreview && (
-              <small className="settings-field-hint">已保存：{settings.redisPasswordPreview}</small>
-            )}
-          </label>
+            <label className="settings-form-field">
+              <span className="settings-form-label">Key 前缀</span>
+              <input
+                className="settings-form-input"
+                type="text"
+                value={form.keyPrefix}
+                disabled={busy || !form.redisEnabled}
+                placeholder="eco-sessions"
+                onChange={(event) => setForm((current) => ({ ...current, keyPrefix: event.target.value }))}
+              />
+            </label>
 
-          <label>
-            <span>Key 前缀</span>
-            <input
-              type="text"
-              value={form.keyPrefix}
-              disabled={busy || !form.redisEnabled}
-              placeholder="eco-sessions"
-              onChange={(event) => setForm((current) => ({ ...current, keyPrefix: event.target.value }))}
-            />
-          </label>
+            <label className="settings-form-field">
+              <span className="settings-form-label">密码（可选）</span>
+              <input
+                className="settings-form-input"
+                type="password"
+                value={form.redisPassword ?? ""}
+                disabled={busy || !form.redisEnabled}
+                placeholder={settings.hasRedisPassword ? "留空则保留已保存的密码" : "无密码可留空"}
+                onChange={(event) => setForm((current) => ({ ...current, redisPassword: event.target.value }))}
+              />
+              {settings.redisPasswordPreview && (
+                <small className="settings-field-hint">已保存：{settings.redisPasswordPreview}</small>
+              )}
+            </label>
 
-          <div className="settings-editor-actions">
+            <div className="settings-editor-actions settings-form-actions">
             <button
               type="button"
               className="settings-secondary-button"
@@ -137,6 +141,7 @@ export function SessionSyncSettingsPanel({
               <Database size={16} />
               保存
             </button>
+            </div>
           </div>
         </div>
       </section>

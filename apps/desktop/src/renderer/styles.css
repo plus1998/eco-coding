@@ -3217,6 +3217,61 @@ button:not(:disabled) {
   color: #f0f0f0;
 }
 
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+}
+
+.settings-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-form-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-form-input,
+.provider-form input,
+.settings-route-row input,
+.settings-route-row select {
+  box-sizing: border-box;
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #1f1f1f;
+  color: #f0f0f0;
+  font: inherit;
+  font-size: 14px;
+  padding: 0 10px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.settings-form-input:focus,
+.provider-form input:focus,
+.settings-route-row input:focus,
+.settings-route-row select:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.25);
+  border-color: #555;
+}
+
+.settings-form-input:disabled,
+.provider-form input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-form-actions {
+  margin-top: 4px;
+}
+
 .provider-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3232,34 +3287,22 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
-.provider-form input,
-.settings-route-row input,
-.settings-route-row select {
-  min-height: 36px;
-  width: 100%;
-  border: 1px solid #404040;
-  border-radius: 8px;
-  background: #1f1f1f;
-  color: #f0f0f0;
-  font: inherit;
-  font-size: 14px;
-  padding: 0 10px;
-}
-
-.provider-form input:focus,
-.settings-route-row input:focus,
-.settings-route-row select:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.25);
-  border-color: #555;
-}
-
 .settings-toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  grid-column: 1 / -1;
   color: #e8e8e8;
   font-size: 14px;
+}
+
+.settings-form .settings-toggle-row {
+  max-width: none;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #383838;
+}
+
+.provider-form .settings-toggle-row {
+  grid-column: 1 / -1;
 }
 
 .settings-toggle {
