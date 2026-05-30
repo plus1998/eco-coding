@@ -3,6 +3,7 @@ import {
   formatSubagentMissionMessage,
   parseSubagentMissionMessage,
   summarizeAgentObjective,
+  missionFromAgentToolDetail,
 } from "../src/agent-mission";
 
 test("summarizes reviewer objective from changed files", () => {
@@ -19,4 +20,9 @@ test("round-trips mission messages", () => {
   expect(parsed?.role).toBe("reviewer");
   expect(parsed?.summary.length).toBeGreaterThan(0);
   expect(parsed?.prompt).toContain("src/api.ts");
+});
+
+test("ignores elapsed duration in agent tool detail", () => {
+  expect(missionFromAgentToolDetail("(32.5s)")).toBeNull();
+  expect(missionFromAgentToolDetail("32.5s")).toBeNull();
 });

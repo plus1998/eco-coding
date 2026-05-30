@@ -240,3 +240,36 @@ test("hides usage cost lines even with subagent prefix", () => {
     true,
   );
 });
+
+test("does not treat tool elapsed duration as subagent role", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "tool", message: "Tool: Agent (32.5s)" },
+      { id: "3", role: "coder", message: "Tool: TodoWrite (0.0s)" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  expect(session.activeSubagent).toBe("coder");
+  const mission = session.children.find((child) => child.kind === "subagent-mission");
+  expect(mission?.kind).toBe("subagent-mission");
+  if (mission?.kind === "subagent-mission") {
+    expect(mission.subagent).toBe("coder");
+    expect(mission.summary).not.toContain("32.5s");
+  }
+  const todoAction = session.children.find(
+    (child) => child.kind === "action" && child.label.includes("更新任务"),
+  );
+  expect(todoAction?.kind).toBe("action");
+  if (todoAction?.kind === "action") {
+    expect(todoAction.subagent).toBe("coder");
+    expect(todoAction.label).toBe("更新任务");
+  }
+});

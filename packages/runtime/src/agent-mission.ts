@@ -119,15 +119,24 @@ const CHINESE_ROLE_TO_ID: Record<string, string> = {
   测试: "tester",
 };
 
+/** Matches tool progress elapsed suffixes like `(32.5s)` or bare `32.5s`. */
+export function isToolElapsedDuration(value: string): boolean {
+  const trimmed = value.trim();
+  return /^\(\d+(?:\.\d+)?s\)$/.test(trimmed) || /^\d+(?:\.\d+)?s$/.test(trimmed);
+}
+
 export function missionFromAgentToolDetail(
   detail: string | undefined,
 ): { role: string; summary: string } | null {
-  if (!detail?.trim()) {
+  if (!detail?.trim() || isToolElapsedDuration(detail)) {
     return null;
   }
   const legacyRole = detail.match(/\(([^)]+)\)\s*(?:·\s*(.+))?$/);
   if (legacyRole?.[1]) {
     const role = legacyRole[1].trim();
+    if (isToolElapsedDuration(role)) {
+      return null;
+    }
     const rest = legacyRole[2]?.trim();
     return {
       role,

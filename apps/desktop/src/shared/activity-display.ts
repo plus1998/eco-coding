@@ -36,7 +36,12 @@ export function normalizeActivityActionLabel(raw: string): string {
   const toolMatch = text.match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/);
   if (toolMatch) {
     const tool = toolMatch[1] ?? "";
-    const detail = toolMatch[2]?.trim() ?? toolMatch[3]?.trim();
+    let detail = toolMatch[2]?.trim() ?? toolMatch[3]?.trim();
+    if (detail && /^\(\d+(?:\.\d+)?s\)$/.test(detail)) {
+      detail = undefined;
+    } else if (detail) {
+      detail = detail.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim() || undefined;
+    }
     const verb = TOOL_VERB_LABELS[tool] ?? tool;
     if (detail) {
       return `${verb} · ${detail}`;

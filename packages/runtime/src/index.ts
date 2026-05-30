@@ -227,6 +227,7 @@ export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";
 export {
   formatSubagentMissionMessage,
+  isToolElapsedDuration,
   missionFromAgentToolDetail,
   parseSubagentMissionMessage,
   summarizeAgentObjective,

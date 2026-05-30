@@ -1,5 +1,6 @@
 import {
   isSubagentRole,
+  isToolElapsedDuration,
   mergeStreamText,
   missionFromAgentToolDetail,
   parseSubagentMissionMessage,
@@ -267,9 +268,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
           prompt: tool.detail ?? "",
         });
       }
-      if (tool.detail) {
+      if (tool.detail || subagent || legacy) {
         return;
       }
+      return;
     }
     const label = normalizeActivityActionLabel(formatToolActionLabel(tool));
     const last = current.details[current.details.length - 1];
@@ -509,7 +511,7 @@ export function resolveActiveSubagent(
       if (match?.[1]) {
         const inner = match[1];
         const roleMatch = inner.match(/\(([^)]+)\)\s*$/);
-        if (roleMatch?.[1]) {
+        if (roleMatch?.[1] && !isToolElapsedDuration(roleMatch[1])) {
           return roleMatch[1];
         }
       }
@@ -597,11 +599,19 @@ function parseToolLine(message: string): ParsedToolAction | null {
   if (!KNOWN_SDK_TOOLS.has(tool)) {
     return null;
   }
-  const detail = match[2]?.trim() ?? match[3]?.trim();
-  const subagent =
+  let detail = match[2]?.trim() ?? match[3]?.trim();
+  if (detail && isToolElapsedDuration(detail)) {
+    detail = undefined;
+  } else if (detail) {
+    const withoutDuration = detail.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim();
+    detail = withoutDuration || undefined;
+  }
+  const rawSubagent =
     tool === "Agent" && detail
       ? detail.match(/\(([^)]+)\)\s*$/)?.[1] ?? detail.split(" ")[0]
       : undefined;
+  const subagent =
+    rawSubagent && !isToolElapsedDuration(rawSubagent) ? rawSubagent : undefined;
   return {
     tool,
     ...(detail && { detail }),
