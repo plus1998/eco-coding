@@ -1374,13 +1374,12 @@ async function applyWorktreeChanges(
     throw new Error(`找不到隔离工作树：${plan.worktreePath}`);
   }
 
-  const files = await gitWorktrees.changedFiles(plan);
+  const { files, diff } = await gitWorktrees.collectWorktreeChanges(plan);
   if (files.length === 0) {
     return { files: [], diff: "", message: "执行完成，工作树内无相对基线的文件变更。" };
   }
 
-  const diff = await gitWorktrees.diff(plan);
-  await gitWorktrees.applyApprovedDiff(plan);
+  await gitWorktrees.applyWorktreeDiff(plan, diff, files);
   return {
     files,
     diff,

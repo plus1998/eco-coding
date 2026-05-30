@@ -169,17 +169,42 @@ export class GitWorktreeService {
     await this.runner.run(["git", "branch", "-D", plan.branchName], plan.workspacePath);
   }
 
-  async diff(plan: WorktreePlan): Promise<string> {
+  async collectWorktreeChanges(plan: WorktreePlan): Promise<{ files: string[]; diff: string }> {
+    await this.stageWorktreeChanges(plan);
     const baseSha = await this.resolveDiffBase(plan);
-    const result = await this.runner.run(["git", "diff", "--binary", baseSha], plan.worktreePath);
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to produce diff: ${result.stderr || result.stdout}`);
+
+    const nameResult = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
+    if (nameResult.exitCode !== 0) {
+      throw new Error(`Failed to list changed files: ${nameResult.stderr || nameResult.stdout}`);
     }
-    return result.stdout;
+    const files = nameResult.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const diffResult = await this.runner.run(["git", "diff", "--binary", baseSha], plan.worktreePath);
+    if (diffResult.exitCode !== 0) {
+      throw new Error(`Failed to produce diff: ${diffResult.stderr || diffResult.stdout}`);
+    }
+
+    return { files, diff: diffResult.stdout };
+  }
+
+  async diff(plan: WorktreePlan): Promise<string> {
+    const { diff } = await this.collectWorktreeChanges(plan);
+    return diff;
   }
 
   async changedFiles(plan: WorktreePlan): Promise<string[]> {
     const baseSha = await this.resolveDiffBase(plan);
+    const [tracked, untracked] = await Promise.all([
+      this.listTrackedChangedFiles(plan, baseSha),
+      this.listUntrackedFiles(plan),
+    ]);
+    return [...new Set([...tracked, ...untracked])];
+  }
+
+  private async listTrackedChangedFiles(plan: WorktreePlan, baseSha: string): Promise<string[]> {
     const result = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to list changed files: ${result.stderr || result.stdout}`);
@@ -188,6 +213,28 @@ export class GitWorktreeService {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
+  }
+
+  private async listUntrackedFiles(plan: WorktreePlan): Promise<string[]> {
+    const result = await this.runner.run(
+      ["git", "ls-files", "--others", "--exclude-standard"],
+      plan.worktreePath,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to list untracked files: ${result.stderr || result.stdout}`);
+    }
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  /** Stage agent edits (including new untracked files) so diff/apply can merge them. */
+  private async stageWorktreeChanges(plan: WorktreePlan): Promise<void> {
+    const result = await this.runner.run(["git", "add", "-A"], plan.worktreePath);
+    if (result.exitCode !== 0) {
+      throw new Error(`Failed to stage worktree changes: ${result.stderr || result.stdout}`);
+    }
   }
 
   /** Diff base: merge point between workspace HEAD and the isolated branch (includes commits + dirty files). */
@@ -215,8 +262,15 @@ export class GitWorktreeService {
   }
 
   async applyApprovedDiff(plan: WorktreePlan): Promise<void> {
-    const changedFiles = await this.changedFiles(plan);
-    const diff = await this.diff(plan);
+    const { files: changedFiles, diff } = await this.collectWorktreeChanges(plan);
+    await this.applyWorktreeDiff(plan, diff, changedFiles);
+  }
+
+  async applyWorktreeDiff(
+    plan: WorktreePlan,
+    diff: string,
+    changedFiles: readonly string[] = [],
+  ): Promise<void> {
     if (!diff.trim()) {
       if (changedFiles.length > 0) {
         throw new Error(

@@ -156,6 +156,9 @@ test("applies approved worktree diffs back to the target workspace", async () =>
       if (command[1] === "diff" && command.includes("--binary")) {
         return { exitCode: 0, stdout: "diff --git a/a.ts b/a.ts\n", stderr: "" };
       }
+      if (command[1] === "diff" && command.includes("--name-only")) {
+        return { exitCode: 0, stdout: "a.ts\n", stderr: "" };
+      }
       return { exitCode: 0, stdout: "", stderr: "" };
     },
   };
@@ -165,6 +168,11 @@ test("applies approved worktree diffs back to the target workspace", async () =>
 
   expect(calls).toEqual([
     {
+      command: ["git", "add", "-A"],
+      cwd: "/repo/.eco/worktrees/thr_1",
+      stdin: undefined,
+    },
+    {
       command: ["git", "merge-base", "HEAD", plan.branchName],
       cwd: "/repo",
       stdin: undefined,
@@ -172,11 +180,6 @@ test("applies approved worktree diffs back to the target workspace", async () =>
     {
       command: ["git", "diff", "--name-only", "abc123"],
       cwd: "/repo/.eco/worktrees/thr_1",
-      stdin: undefined,
-    },
-    {
-      command: ["git", "merge-base", "HEAD", plan.branchName],
-      cwd: "/repo",
       stdin: undefined,
     },
     {
@@ -190,4 +193,64 @@ test("applies approved worktree diffs back to the target workspace", async () =>
       stdin: "diff --git a/a.ts b/a.ts\n",
     },
   ]);
+});
+
+test("changedFiles includes untracked new files without staging", async () => {
+  const plan = createWorktreePlan("/repo", "thr_status");
+  const calls: Array<{ command: string[]; cwd: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      calls.push({ command, cwd });
+      if (command[1] === "merge-base") {
+        return { exitCode: 0, stdout: "base123\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--name-only")) {
+        return { exitCode: 0, stdout: "existing.ts\n", stderr: "" };
+      }
+      if (command[1] === "ls-files") {
+        return { exitCode: 0, stdout: "src/new.ts\n", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  const files = await service.changedFiles(plan);
+
+  expect(files).toEqual(["existing.ts", "src/new.ts"]);
+  expect(calls.some((call) => call.command[1] === "add")).toBe(false);
+});
+
+test("collectWorktreeChanges stages untracked files before diffing", async () => {
+  const plan = createWorktreePlan("/repo", "thr_new");
+  const calls: Array<{ command: string[]; cwd: string }> = [];
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      calls.push({ command, cwd });
+      if (command[1] === "merge-base") {
+        return { exitCode: 0, stdout: "base123\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--name-only")) {
+        return { exitCode: 0, stdout: "src/new.ts\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--binary")) {
+        return {
+          exitCode: 0,
+          stdout: "diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644\n",
+          stderr: "",
+        };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  const { files, diff } = await service.collectWorktreeChanges(plan);
+
+  expect(files).toEqual(["src/new.ts"]);
+  expect(diff).toContain("new file mode 100644");
+  expect(calls[0]).toEqual({
+    command: ["git", "add", "-A"],
+    cwd: plan.worktreePath,
+  });
 });
