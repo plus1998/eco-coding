@@ -1,3 +1,4 @@
+import { executeCoreGoalAppend } from "./eco-common.js";
 import { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
 
 export const reviewerAgentPrompt = [
@@ -49,6 +50,7 @@ export const executionArchitectDescription = [
 
 export const executionCoderPrompt = [
   "You are an execution agent. Implement only the single subtask in the delegation prompt.",
+  executeCoreGoalAppend,
   "",
   "Before coding: confirm scope and files from the prompt; do not expand scope.",
   "After coding: run the narrowest verification command specified in the prompt (or project-standard test/lint for touched files).",

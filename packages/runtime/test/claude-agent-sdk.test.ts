@@ -163,7 +163,7 @@ test("execution architect prompt requires Coder Tasks section", () => {
     prompt: expect.stringContaining("## Coder Tasks"),
   });
   expect(definitions.coder).toMatchObject({
-    prompt: expect.stringContaining("Verification"),
+    prompt: expect.stringMatching(/runnable, verified code/),
   });
   expect(definitions.tester).toMatchObject({
     prompt: expect.stringContaining("## Test Verdict"),
@@ -178,6 +178,7 @@ test("reviewer prompt limits scope to current worktree diff", () => {
   });
   expect(executePhaseSystemAppend).toContain("Eco prepends");
   expect(executePhaseSystemAppend).toContain("changed file list");
+  expect(executePhaseSystemAppend).toMatch(/runnable, verified code/);
 });
 
 test("builds phased orchestration prompts", () => {

@@ -1,4 +1,8 @@
-export { ecoBasePromptAppend, executeBuildSwitchAppend } from "./eco-common.js";
+export {
+  ecoBasePromptAppend,
+  executeBuildSwitchAppend,
+  executeCoreGoalAppend,
+} from "./eco-common.js";
 export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
 export {
   planningPhaseSystemAppend,
