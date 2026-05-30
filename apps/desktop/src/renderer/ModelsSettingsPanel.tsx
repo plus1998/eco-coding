@@ -135,7 +135,8 @@ export function ModelsSettingsPanel({
     if (!providerModalOpen || !providerForm.id) {
       return;
     }
-    if (modelsCache[providerForm.id]?.models.length) {
+    const cached = modelsCache[providerForm.id];
+    if (cached?.models.length || cached?.error) {
       return;
     }
     void fetchModels(providerForm, { silent: true });
@@ -146,7 +147,11 @@ export function ModelsSettingsPanel({
       return;
     }
     for (const route of routeProfileForm.routes) {
-      if (!route.providerId || modelsCache[route.providerId]?.models.length) {
+      if (!route.providerId) {
+        continue;
+      }
+      const cached = modelsCache[route.providerId];
+      if (cached?.models.length || cached?.error) {
         continue;
       }
       const provider = settings.providers.find((entry) => entry.id === route.providerId);

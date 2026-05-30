@@ -66,7 +66,7 @@ export function ModelSelectField({
     }
     setOpen((current) => {
       const next = !current;
-      if (next && models.length === 0 && onRefresh) {
+      if (next && models.length === 0 && onRefresh && !error) {
         onRefresh();
       }
       return next;
@@ -99,7 +99,7 @@ export function ModelSelectField({
               if (event.key === "ArrowDown" && !open) {
                 event.preventDefault();
                 setOpen(true);
-                if (models.length === 0 && onRefresh) {
+                if (models.length === 0 && onRefresh && !error) {
                   onRefresh();
                 }
               }
@@ -152,13 +152,17 @@ export function ModelSelectField({
             ))
           ) : models.length > 0 ? (
             <li className="model-combobox-menu-status">没有匹配的模型</li>
+          ) : error ? (
+            <li className="model-combobox-menu-status">列表获取失败，可直接输入模型 ID，或点击刷新重试</li>
           ) : (
             <li className="model-combobox-menu-status">暂无可用模型，请刷新列表或直接输入模型 ID</li>
           )}
         </ul>
       )}
 
-      {error ? <p className="model-select-hint error">{error}</p> : null}
+      {error ? (
+        <p className="model-select-hint error">获取模型列表失败，可直接输入模型 ID，或点击刷新重试</p>
+      ) : null}
     </div>
   );
 }
