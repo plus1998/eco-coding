@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { sanitizeThreadTitle, summarizeThreadTitleWithCoder } from "../src/main/thread-title";
+import {
+  buildThreadTitleUserMessage,
+  sanitizeThreadTitle,
+  summarizeThreadTitleWithCoder,
+} from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
 const routes: AnthropicProxyRoute[] = [
@@ -55,4 +59,16 @@ test("summarizes thread title through the coder route", async () => {
 test("rejects empty or copied thread titles", () => {
   expect(sanitizeThreadTitle("实现 TODO 列表", "实现 TODO 列表")).toBeUndefined();
   expect(sanitizeThreadTitle("标题：\"任务状态面板\"", "实现 TODO 列表")).toBe("任务状态面板");
+});
+
+test("buildThreadTitleUserMessage includes plan context", () => {
+  const message = buildThreadTitleUserMessage("实现导出筛选", {
+    analysis: "需要改 API",
+    plan: "## Implementation Plan\n- 加 query 参数",
+  });
+  expect(message).toContain("实现导出筛选");
+  expect(message).toContain("## 分析摘要");
+  expect(message).toContain("需要改 API");
+  expect(message).toContain("## 实现计划摘要");
+  expect(message).toContain("query 参数");
 });

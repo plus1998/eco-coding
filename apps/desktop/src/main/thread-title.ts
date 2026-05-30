@@ -6,10 +6,29 @@ export const pendingThreadTitle = "新编码任务";
 
 type Fetcher = typeof fetch;
 
+export interface ThreadTitleContext {
+  plan?: string;
+  analysis?: string;
+}
+
+const TITLE_CONTEXT_MAX_CHARS = 500;
+
+export function buildThreadTitleUserMessage(prompt: string, context?: ThreadTitleContext): string {
+  const parts = [`请为下面的编码任务生成标题，中文不超过 18 个字，英文不超过 6 个词：`, "", prompt.trim()];
+  if (context?.analysis?.trim()) {
+    parts.push("", "## 分析摘要", truncateTitleContext(context.analysis.trim()));
+  }
+  if (context?.plan?.trim()) {
+    parts.push("", "## 实现计划摘要", truncateTitleContext(context.plan.trim()));
+  }
+  return parts.join("\n");
+}
+
 export async function summarizeThreadTitleWithCoder(
   routes: readonly AnthropicProxyRoute[],
   prompt: string,
   fetcher: Fetcher = fetch,
+  context?: ThreadTitleContext,
 ): Promise<string | undefined> {
   const coderRoute = routes.find((route) => route.role === "coder");
   if (!coderRoute) {
@@ -35,7 +54,7 @@ export async function summarizeThreadTitleWithCoder(
         messages: [
           {
             role: "user",
-            content: `请为下面的编码任务生成标题，中文不超过 18 个字，英文不超过 6 个词：\n\n${prompt.trim()}`,
+            content: buildThreadTitleUserMessage(prompt, context),
           },
         ],
       }),
@@ -93,6 +112,13 @@ function normalizeTitle(value: string): string {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function truncateTitleContext(text: string): string {
+  if (text.length <= TITLE_CONTEXT_MAX_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, TITLE_CONTEXT_MAX_CHARS - 1)}…`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

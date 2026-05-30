@@ -13,6 +13,7 @@ import type {
   EcoSdkSessionOptions,
 } from "./index";
 import { extractPlanningDeliverables } from "./phase-deliverable";
+import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
 import {
@@ -474,6 +475,10 @@ export function createPlanReadyEvent(threadId: string, payload: PlanReadyPayload
 }
 
 export function appendToPhaseTranscript(transcript: string, event: AgentEvent): string {
+  if (event.type === "usage.recorded") {
+    return transcript;
+  }
+
   const line = formatAgentEventLine(event);
   if (!line) {
     return transcript;
@@ -746,6 +751,10 @@ export function formatAgentEventDisplay(
 export function formatAgentEventLine(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): string | null {
+  if (event.type === "usage.recorded") {
+    return null;
+  }
+
   const fromPayload = formatSdkPayloadMessage(event.payload);
   if (fromPayload) {
     return fromPayload;
@@ -753,10 +762,6 @@ export function formatAgentEventLine(
 
   if (event.type === "agent.started") {
     return formatSdkPayloadMessage(event.payload) ?? "Agent session started.";
-  }
-
-  if (event.type === "usage.recorded") {
-    return formatUsagePayload(event.payload);
   }
 
   if (event.type === "plan.ready") {
@@ -948,10 +953,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "result") {
-    if (typeof payload.total_cost_usd === "number") {
-      return `Run finished (cost $${payload.total_cost_usd.toFixed(4)}).`;
-    }
-    return "Run finished.";
+    return null;
   }
 
   if (payload.type === "user") {
@@ -1073,7 +1075,7 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   }
 
   if (toolName === "AskUserQuestion") {
-    if (!isRecord(input) || !Array.isArray(input.questions)) {
+    if (!Array.isArray(input.questions)) {
       return "澄清问题";
     }
     const count = input.questions.length;
@@ -1084,6 +1086,11 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
       return count > 1 ? `澄清 ${count} 个问题 · ${short}` : short;
     }
     return count > 1 ? `澄清 ${count} 个问题` : "澄清问题";
+  }
+
+  const skillName = resolveSkillDisplayName(toolName, input);
+  if (skillName) {
+    return `${skillName} 技能`;
   }
 
   if (toolName === "Agent") {

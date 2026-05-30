@@ -35,7 +35,7 @@ import {
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { isContinuableThreadStatus, pickDisplayContextTokens } from "../shared/thread-continuation";
+import { isContinuableThreadStatus, isUsageNoiseMessage, pickDisplayContextTokens } from "../shared/thread-continuation";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -94,6 +94,7 @@ function App() {
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
+  const [totalCostByThread, setTotalCostByThread] = useState<Record<string, number>>({});
   const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
@@ -197,6 +198,12 @@ function App() {
             [roleKey]: event.usage!,
           },
         }));
+        if (event.totalCostUsd !== undefined) {
+          setTotalCostByThread((current) => ({
+            ...current,
+            [event.threadId]: event.totalCostUsd!,
+          }));
+        }
         const modelId = event.modelId ?? event.usage.modelId;
         if (modelId) {
           setModelByThread((current) => ({
@@ -415,19 +422,22 @@ function App() {
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
-  const contextKLabel = useMemo(() => {
-    if (!threadUsageByRole) {
-      return null;
+  const threadUsageSummary = useMemo(() => {
+    if (!activeThread) {
+      return undefined;
     }
-    const ctx = pickDisplayContextTokens(threadUsageByRole);
-    if (ctx <= 0) {
-      return null;
+    const contextTokens = threadUsageByRole ? pickDisplayContextTokens(threadUsageByRole) : 0;
+    const totalCostUsd = totalCostByThread[activeThread.id];
+    const plannerUsage = threadUsageByRole?.planner;
+    if (!totalCostUsd && contextTokens <= 0) {
+      return undefined;
     }
-    if (ctx < 1000) {
-      return "<1K";
-    }
-    return `${Math.round(ctx / 1000)}K`;
-  }, [threadUsageByRole]);
+    return {
+      ...(totalCostUsd !== undefined && totalCostUsd > 0 && { totalCostUsd }),
+      ...(contextTokens > 0 && { contextTokens }),
+      ...(plannerUsage && { plannerUsage }),
+    };
+  }, [activeThread, threadUsageByRole, totalCostByThread]);
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
@@ -470,6 +480,9 @@ function App() {
   }, [activityLines, activeThread?.id]);
 
   function appendActivityLine(threadId: string, line: ActivityLine) {
+    if (isUsageNoiseMessage(line.message)) {
+      return;
+    }
     setActivityByThread((current) => {
       const previous = current[threadId] ?? [];
       const last = previous[previous.length - 1];
@@ -1029,14 +1042,6 @@ function App() {
                   </span>
                 ))}
               </div>
-              {contextKLabel ? (
-                <span
-                  className="composer-context-k"
-                  title="最近一次 Planner 请求的输入 token（含缓存），不是整段对话累计；子代理会各自计费"
-                >
-                  输入≈{contextKLabel}
-                </span>
-              ) : null}
               {canStopThread ? (
                 <button
                   type="button"
@@ -1093,6 +1098,7 @@ function App() {
           dirtyFileCount={projectWorkspace?.dirtyFileCount}
           todos={coderTodos}
           threadStatus={activeThread.status}
+          {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
           {...(pendingWorktreeApply && { pendingWorktreeApply })}
           onApplyWorktree={() => void applyPendingWorktree()}
           worktreeApplyBusy={worktreeApplyBusy}

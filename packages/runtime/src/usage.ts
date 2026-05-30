@@ -7,6 +7,14 @@ export interface ParsedUsage {
   modelId?: string;
 }
 
+export interface ModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd?: number;
+}
+
 export function parseUsagePayload(payload: unknown): ParsedUsage | null {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -62,8 +70,58 @@ export function mergeUsageTotals(current: ParsedUsage, incoming: ParsedUsage): P
     cacheReadTokens: current.cacheReadTokens + incoming.cacheReadTokens,
     cacheCreationTokens: current.cacheCreationTokens + incoming.cacheCreationTokens,
     ...(incoming.modelId && { modelId: incoming.modelId }),
-    ...(incoming.totalCostUsd !== undefined && { totalCostUsd: incoming.totalCostUsd }),
   };
+}
+
+export function parseModelUsage(payload: unknown): Record<string, ModelUsageEntry> | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  const raw = payload.modelUsage;
+  if (!isRecord(raw)) {
+    return null;
+  }
+
+  const result: Record<string, ModelUsageEntry> = {};
+  for (const [modelName, entry] of Object.entries(raw)) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const costUsd =
+      typeof entry.costUSD === "number"
+        ? entry.costUSD
+        : typeof entry.cost_usd === "number"
+          ? entry.cost_usd
+          : undefined;
+    result[modelName] = {
+      inputTokens: readTokenCount(entry, ["inputTokens", "input_tokens"]),
+      outputTokens: readTokenCount(entry, ["outputTokens", "output_tokens"]),
+      cacheReadTokens: readTokenCount(entry, [
+        "cacheReadInputTokens",
+        "cache_read_input_tokens",
+        "cache_read_tokens",
+      ]),
+      cacheCreationTokens: readTokenCount(entry, [
+        "cacheCreationInputTokens",
+        "cache_creation_input_tokens",
+        "cache_creation_tokens",
+      ]),
+      ...(costUsd !== undefined && { costUsd }),
+    };
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+export function accumulateThreadCost(current: number, delta?: number): number {
+  if (delta === undefined || !Number.isFinite(delta)) {
+    return current;
+  }
+  return current + delta;
+}
+
+export function formatCostUsd(value: number): string {
+  return `$${value.toFixed(4)}`;
 }
 
 export function estimateContextTokens(usage: ParsedUsage): number {

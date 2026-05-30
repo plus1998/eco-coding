@@ -35,6 +35,17 @@ export function shouldUseInterruptedWorktree(worktreeExists: boolean, hasPriorAc
 const ACTIVITY_NOISE =
   /^(?:Tool:|Running tool:|Requesting model|Compacting context|API retry |Usage recorded|Run finished|Agent session started|Claude Agent SDK ready|状态已更新|已从异常退出恢复|【\d+\/\d+】)/i;
 
+export function isActivityNoiseMessage(message: string): boolean {
+  const text = stripSubagentBracketPrefix(message.trim());
+  return !text || ACTIVITY_NOISE.test(text);
+}
+
+/** Usage/cost lines that must never appear in the activity body. */
+export function isUsageNoiseMessage(message: string): boolean {
+  const text = stripSubagentBracketPrefix(message.trim());
+  return /^(?:Usage recorded|Run finished)/i.test(text);
+}
+
 /** Compress stored activity into narrative context for the next agent turn. */
 export function buildActivityContextForPrompt(
   lines: readonly ActivityContextLine[],

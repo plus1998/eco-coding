@@ -11,6 +11,7 @@ import {
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
+import { isUsageNoiseMessage } from "../shared/thread-continuation";
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
@@ -67,7 +68,8 @@ export function buildActivityLogBlocks(
   lines: ThreadActivityLine[],
   options: { status?: ThreadStatus; createdAt?: string },
 ): ActivityLogBlock[] {
-  const segments = splitLinesIntoSegments(lines);
+  const filteredLines = lines.filter((line) => !isUsageNoiseMessage(line.message));
+  const segments = splitLinesIntoSegments(filteredLines);
   const isRunning = options.status === "running" || options.status === "queued";
   const isTerminal = options.status ? terminalStatuses.has(options.status) : false;
   const startedAt = options.createdAt ? Date.parse(options.createdAt) : Date.now();
@@ -536,7 +538,7 @@ function shouldHideSystemLine(line: ThreadActivityLine): boolean {
   if (line.role === "tool") {
     return false;
   }
-  const trimmed = line.message.trim();
+  const trimmed = stripSubagentBracketPrefix(line.message.trim());
   if (!trimmed) {
     return line.role !== "thinking" || !line.stream;
   }
@@ -577,6 +579,7 @@ const KNOWN_SDK_TOOLS = new Set([
   "Agent",
   "TodoWrite",
   "AskUserQuestion",
+  "Skill",
 ]);
 
 function parseToolLine(message: string): ParsedToolAction | null {
@@ -670,9 +673,13 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   Agent: "调用",
   TodoWrite: "更新任务",
   AskUserQuestion: "澄清问题",
+  Skill: "读取技能",
 };
 
 function formatToolActionLabel(tool: ParsedToolAction): string {
+  if (tool.tool === "Skill" || (tool.detail && tool.detail.endsWith(" 技能"))) {
+    return tool.detail ? `读取 · ${tool.detail}` : "读取技能";
+  }
   const verb = TOOL_VERB_LABELS[tool.tool] ?? tool.tool;
   if (tool.tool === "Agent") {
     return "启动子代理";

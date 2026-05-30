@@ -439,6 +439,26 @@ test("maps SDK result messages to usage events", () => {
   });
 });
 
+test("formatAgentEventLine omits usage.recorded display text", () => {
+  expect(
+    formatAgentEventLine({
+      type: "usage.recorded",
+      payload: { totalCostUsd: 2.1695, usage: { input_tokens: 1, output_tokens: 1 } },
+      role: "planner",
+    }),
+  ).toBeNull();
+});
+
+test("formatSdkPayloadMessage omits result cost lines", () => {
+  expect(
+    formatAgentEventLine({
+      type: "tool.completed",
+      payload: { type: "result", total_cost_usd: 2.1695, subtype: "success" },
+      role: "planner",
+    }),
+  ).toBeNull();
+});
+
 test("adapts SDK permission callbacks to app approval decisions", async () => {
   const canUseTool = createCanUseTool(async (request) => {
     expect(request.toolName).toBe("Bash");

@@ -208,13 +208,17 @@ export {
   type SubagentMissionPayload,
 } from "./agent-mission";
 export {
+  accumulateThreadCost,
   estimateContextTokens,
+  formatCostUsd,
   formatRoleModelLabel,
   formatTokenCount,
   formatUsageBadge,
   mergeUsageTotals,
+  parseModelUsage,
   parseUsagePayload,
   shortenModelId,
+  type ModelUsageEntry,
   type ParsedUsage,
 } from "./usage";
 export {
@@ -223,3 +227,9 @@ export {
   findPlanSectionStart,
   stripPlanningTranscriptNoise,
 } from "./phase-deliverable";
+export {
+  formatSkillActivityLabel,
+  isSkillActivityLabel,
+  resolveSkillDisplayName,
+  skillNameFromPath,
+} from "./skill-display";

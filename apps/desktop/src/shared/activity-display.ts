@@ -62,4 +62,5 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   Agent: "调用",
   TodoWrite: "更新任务",
   AskUserQuestion: "澄清问题",
+  Skill: "读取技能",
 };

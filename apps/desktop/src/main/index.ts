@@ -13,7 +13,9 @@ import {
   formatUsageBadge,
   inferActivityRole,
   isStreamPayload,
+  accumulateThreadCost,
   estimateContextTokens,
+  parseModelUsage,
   parseUsagePayload,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
@@ -47,6 +49,7 @@ import {
   type ThreadContinueResult,
   type ThreadRetryResult,
   type ThreadLiveEvent,
+  type ThreadModelUsageEntry,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
   type ThreadStartRequest,
@@ -114,6 +117,7 @@ interface ActiveThreadRun {
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
+const threadTotalCostUsd = new Map<string, number>();
 
 type AgentEventLike = { type: string; payload: unknown; role: AgentRole };
 type AgentEventDisplay = NonNullable<ReturnType<typeof formatAgentEventDisplay>>;
@@ -320,9 +324,6 @@ function registerIpcHandlers(): void {
     conversationStore.saveThread(thread);
     recordUserPrompt(thread.id, prompt);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
-    if (runtimeConfig.ok) {
-      scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
-    }
 
     if (runtimeConfig.ok) {
       if (intent === "question") {
@@ -585,8 +586,9 @@ function scheduleThreadTitleSummary(
   threadId: string,
   prompt: string,
   runtimeConfig: RuntimeConfig,
+  context?: { plan?: string; analysis?: string },
 ): void {
-  void summarizeThreadTitleWithCoder(runtimeConfig.routes, prompt)
+  void summarizeThreadTitleWithCoder(runtimeConfig.routes, prompt, fetch, context)
     .then((title) => {
       if (!title) {
         return;
@@ -700,6 +702,7 @@ async function runQuestionThread(
     }
 
     updateThread(thread.id, { status: "completed", message: "回答完成。" });
+    scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     updateThread(thread.id, {
@@ -806,6 +809,10 @@ async function runCodingThreadPlanning(
                 },
               },
             );
+            scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig, {
+              plan: event.payload.plan,
+              analysis: event.payload.analysis,
+            });
           }
 
           const display = formatAgentEventDisplay(event);
@@ -1589,8 +1596,19 @@ function emitUsageFromDriverEvent(threadId: string, event: AgentEventLike): void
   }
   const role: AgentRole | "system" | "thinking" | "tool" | "user" =
     event.role && event.role !== "system" ? event.role : "planner";
+
+  let totalCostUsd = threadTotalCostUsd.get(threadId) ?? 0;
+  if (parsed.totalCostUsd !== undefined) {
+    totalCostUsd = accumulateThreadCost(totalCostUsd, parsed.totalCostUsd);
+    threadTotalCostUsd.set(threadId, totalCostUsd);
+  }
+
+  const modelUsage = parseModelUsage(event.payload) ?? undefined;
+
   emitThreadEvent(threadId, "thread.usage_updated", formatUsageBadge(parsed), role, false, {
     usage,
+    totalCostUsd,
+    ...(modelUsage && { modelUsage }),
     ...(usage.modelId && { modelId: usage.modelId }),
   });
 }
@@ -1608,6 +1626,8 @@ function emitThreadEvent(
     title?: ThreadLiveEvent["title"];
     usage?: ThreadUsageSnapshot;
     modelId?: string;
+    totalCostUsd?: number;
+    modelUsage?: Record<string, ThreadModelUsageEntry>;
   },
 ): void {
   const trimmed = message.trim();
@@ -1657,6 +1677,12 @@ function emitThreadEvent(
   }
   if (extras?.modelId) {
     payload.modelId = extras.modelId;
+  }
+  if (extras?.totalCostUsd !== undefined) {
+    payload.totalCostUsd = extras.totalCostUsd;
+  }
+  if (extras?.modelUsage) {
+    payload.modelUsage = extras.modelUsage;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

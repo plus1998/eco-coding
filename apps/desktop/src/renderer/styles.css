@@ -2149,6 +2149,16 @@ button:not(:disabled) {
   font-size: 13px;
 }
 
+.thread-info-cost,
+.thread-info-usage {
+  color: #a3a3a3;
+}
+
+.thread-info-token-badge {
+  color: #737373;
+  font-size: 12px;
+}
+
 .thread-info-file-list {
   margin: 0 0 12px;
   padding: 0;

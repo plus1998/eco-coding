@@ -236,6 +236,14 @@ export interface ThreadUsageSnapshot {
   modelId?: string;
 }
 
+export interface ThreadModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd?: number;
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
@@ -248,6 +256,9 @@ export interface ThreadLiveEvent {
   todoList?: CoderTodoItem[];
   usage?: ThreadUsageSnapshot;
   modelId?: string;
+  /** Cumulative SDK-estimated cost across all query() calls in this thread. */
+  totalCostUsd?: number;
+  modelUsage?: Record<string, ThreadModelUsageEntry>;
 }
 
 export interface ThreadActivityLine {

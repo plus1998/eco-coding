@@ -222,3 +222,21 @@ test("deduplicates repeated narrative separated by tool exploration", () => {
       : [];
   expect(narratives).toHaveLength(1);
 });
+
+test("hides usage cost lines even with subagent prefix", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: "【规划】Usage recorded (cost $2.1695)." },
+      { id: "2", role: "tool", message: "Tool: Read · styles.css" },
+      { id: "3", role: "planner", message: "Here is the plan outline." },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const serialized = JSON.stringify(blocks);
+  expect(serialized).not.toMatch(/Usage recorded/i);
+  expect(blocks.some((block) => block.kind === "assistant-message" && block.text.includes("plan outline"))).toBe(
+    true,
+  );
+});
