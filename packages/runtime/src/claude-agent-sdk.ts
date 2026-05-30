@@ -505,6 +505,106 @@ export function appendToPhaseTranscript(transcript: string, event: AgentEvent): 
   return transcript ? `${transcript}\n${line}` : line;
 }
 
+export type SdkTodoUpdatedKind = "task_started" | "task_updated" | "task_progress";
+
+/** Payload for `todo.updated` events — mirrors Claude Agent SDK task system messages. */
+export interface SdkTodoUpdatedPayload {
+  sdkKind: SdkTodoUpdatedKind;
+  task_id: string;
+  description?: string;
+  subagent_type?: string;
+  task_type?: string;
+  skip_transcript?: boolean;
+  prompt?: string;
+  last_tool_name?: string;
+  summary?: string;
+  patch?: {
+    status?: string;
+    description?: string;
+    error?: string;
+  };
+}
+
+export function buildSdkTodoUpdatedPayload(message: Record<string, unknown>): SdkTodoUpdatedPayload | null {
+  const subtype = message.subtype;
+  if (subtype !== "task_started" && subtype !== "task_updated" && subtype !== "task_progress") {
+    return null;
+  }
+
+  const taskId = typeof message.task_id === "string" ? message.task_id : "";
+  if (!taskId) {
+    return null;
+  }
+
+  const payload: SdkTodoUpdatedPayload = {
+    sdkKind: subtype,
+    task_id: taskId,
+  };
+
+  if (typeof message.description === "string" && message.description.trim()) {
+    payload.description = message.description.trim();
+  }
+  if (typeof message.subagent_type === "string" && message.subagent_type.trim()) {
+    payload.subagent_type = message.subagent_type.trim();
+  }
+  if (typeof message.task_type === "string" && message.task_type.trim()) {
+    payload.task_type = message.task_type.trim();
+  }
+  if (message.skip_transcript === true) {
+    payload.skip_transcript = true;
+  }
+  if (typeof message.prompt === "string" && message.prompt.trim()) {
+    payload.prompt = message.prompt.trim();
+  }
+  if (typeof message.last_tool_name === "string" && message.last_tool_name.trim()) {
+    payload.last_tool_name = message.last_tool_name.trim();
+  }
+  if (typeof message.summary === "string" && message.summary.trim()) {
+    payload.summary = message.summary.trim();
+  }
+  if (subtype === "task_updated" && isRecord(message.patch)) {
+    const patch: SdkTodoUpdatedPayload["patch"] = {};
+    if (typeof message.patch.status === "string") {
+      patch.status = message.patch.status;
+    }
+    if (typeof message.patch.description === "string" && message.patch.description.trim()) {
+      patch.description = message.patch.description.trim();
+    }
+    if (typeof message.patch.error === "string" && message.patch.error.trim()) {
+      patch.error = message.patch.error.trim();
+    }
+    if (Object.keys(patch).length > 0) {
+      payload.patch = patch;
+    }
+  }
+
+  return payload;
+}
+
+function mapTaskSystemMessageToEvents(
+  message: Record<string, unknown>,
+  threadId: string,
+  sessionId: string,
+  role: AgentRole,
+  uuid: string,
+): AgentEvent[] {
+  const payload = buildSdkTodoUpdatedPayload(message);
+  if (!payload) {
+    return [];
+  }
+
+  return [
+    createAgentEvent({
+      id: `${uuid}:todo`,
+      threadId,
+      agentId: sessionId,
+      role,
+      type: "todo.updated",
+      payload,
+    }),
+  ];
+}
+
 export function mapSdkMessageToEvents(message: unknown, threadId: string): AgentEvent[] {
   if (!isRecord(message)) {
     return [];
@@ -589,10 +689,14 @@ export function mapSdkMessageToEvents(message: unknown, threadId: string): Agent
       return [];
     }
     if (
-      message.subtype === "status" ||
       message.subtype === "task_started" ||
-      message.subtype === "task_progress" ||
       message.subtype === "task_updated" ||
+      message.subtype === "task_progress"
+    ) {
+      return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
+    }
+    if (
+      message.subtype === "status" ||
       message.subtype === "notification" ||
       message.subtype === "api_retry" ||
       message.subtype === "permission_denied"
@@ -765,8 +869,26 @@ export function formatAgentEventDisplay(
 export function formatAgentEventLine(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): string | null {
-  if (event.type === "usage.recorded") {
-    return null;
+  if (event.type === "usage.recorded" || event.type === "todo.updated") {
+    if (event.type === "todo.updated" && isRecord(event.payload)) {
+      const sdkPayload = event.payload as SdkTodoUpdatedPayload;
+      if (sdkPayload.sdkKind === "task_updated") {
+        const status = sdkPayload.patch?.status;
+        return status ? `Task ${status}` : null;
+      }
+      return formatSdkPayloadMessage({
+        type: "system",
+        subtype: sdkPayload.sdkKind,
+        task_id: sdkPayload.task_id,
+        description: sdkPayload.description,
+        subagent_type: sdkPayload.subagent_type,
+        last_tool_name: sdkPayload.last_tool_name,
+        summary: sdkPayload.summary,
+      });
+    }
+    if (event.type === "usage.recorded") {
+      return null;
+    }
   }
 
   const fromPayload = formatSdkPayloadMessage(event.payload);
@@ -806,6 +928,13 @@ export function inferActivityRole(
     }
     if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
       return event.payload.subagent_type;
+    }
+  }
+
+  if (event.type === "todo.updated" && isRecord(event.payload)) {
+    const subagent = event.payload.subagent_type;
+    if (typeof subagent === "string" && isAgentRole(subagent)) {
+      return subagent;
     }
   }
 

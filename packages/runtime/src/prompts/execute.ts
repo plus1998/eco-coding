@@ -15,12 +15,12 @@ export const executePhaseSystemAppend = [
   "",
   "You are the orchestrator (Planner). Follow this pipeline strictly:",
   "",
-  "0. Progress (Codex update_plan equivalent — mandatory): Use TodoWrite to drive the user-visible progress list.",
-  "   - After you have a final ## Coder Tasks list, call TodoWrite once with short steps (about 5–7 words each).",
-  "   - Each TodoWrite call replaces the full list (pending | in_progress | completed).",
+  "0. Progress (mandatory): Use TaskCreate and TaskUpdate to drive the user-visible progress list.",
+  "   - After you have a final ## Coder Tasks list, call TaskCreate for each short step (about 5–7 words each).",
+  "   - Use TaskUpdate to change status (pending | in_progress | completed) for one task at a time.",
   "   - Exactly ONE step must be in_progress until everything is done.",
-  "   - Mark in_progress BEFORE starting a step; mark completed IMMEDIATELY after finishing (do not batch).",
-  "   - Update TodoWrite after each meaningful sub-step; do not rely on prose alone for progress.",
+  "   - Set in_progress BEFORE starting a step; set completed IMMEDIATELY after finishing (do not batch).",
+  "   - Update task status after each meaningful sub-step; do not rely on prose alone for progress.",
   "",
   `1. Architect (conditional): Call Agent(architect) unless the approved plan is trivial — trivial means ALL: ${architectSkipCriteria}.`,
   '   Wait for "## Coder Tasks". If skipping architect, you must still publish "## Coder Tasks" yourself before coders.',
@@ -78,7 +78,7 @@ export function buildExecutePhasePrompt(
 
   lines.push(
     "",
-    "Task: Pipeline step 0–5 — TodoWrite after Coder Tasks, Architect (or skip per criteria), parallel coders, reviewer, tester.",
+    "Task: Pipeline step 0–5 — TaskCreate/TaskUpdate after Coder Tasks, Architect (or skip per criteria), parallel coders, reviewer, tester.",
   );
 
   return lines.join("\n");

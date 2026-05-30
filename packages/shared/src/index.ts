@@ -44,6 +44,7 @@ export type AgentEventType =
   | "tool.started"
   | "tool.completed"
   | "tool.failed"
+  | "todo.updated"
   | "approval.requested"
   | "approval.resolved"
   | "terminal.output"

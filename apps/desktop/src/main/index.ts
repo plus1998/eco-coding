@@ -9,17 +9,13 @@ import {
   createReviewerScopeToolHandler,
   extractSdkRunFailure,
   formatAgentEventDisplay,
-  formatAgentEventLine,
   formatUsageBadge,
-  inferActivityRole,
-  isStreamPayload,
   accumulateThreadCost,
   estimateContextTokens,
   parseModelUsage,
   parseUsagePayload,
   type EcoPlanningContext,
   type EcoSdkSessionOptions,
-  mergeStreamText,
   type OtelActivityLine,
   type OtelUsageUpdate,
   type PlanReadyPayload,
@@ -46,7 +42,6 @@ import {
   type AgentSkillAssignments,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
-  type CoderTodoStatus,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRetryResult,
@@ -62,15 +57,10 @@ import {
   type WorkspaceInfo,
 } from "../shared/ipc";
 import {
-  completeRunningCoderTodos,
   extractCoderTasksFromActivity,
-  extractCoderTasksFromText,
-  findCoderTodoForPrompt,
   mergeCoderTodoItems,
-  todoListSignature,
-  updateCoderTodoStatus,
 } from "./coder-tasks";
-import { coderTodosFromTodoWrite, parseTodoWriteToolInput } from "./todo-write";
+import { createSdkTaskTracker } from "./sdk-task-tracker";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   runWithRequestAutoRetry,
@@ -123,7 +113,6 @@ const activeRuns = new Map<string, ActiveThreadRun>();
 const threadTotalCostUsd = new Map<string, number>();
 
 type AgentEventLike = { type: string; payload: unknown; role: AgentRole };
-type AgentEventDisplay = NonNullable<ReturnType<typeof formatAgentEventDisplay>>;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -900,7 +889,10 @@ async function runCodingThreadExecution(
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
 
-  const todoTracker = createCoderTodoTracker(threadId);
+  const todoTracker = createSdkTaskTracker(threadId, {
+    listTodos: () => conversationStore.listCoderTodos(threadId),
+    replaceTodos: (todos) => conversationStore.replaceCoderTodos(threadId, todos),
+  }, emitTodoList);
   const executionPlan = {
     ...pending,
     routesJson: pending.routesJson || "[]",
@@ -939,8 +931,7 @@ async function runCodingThreadExecution(
             continue;
           }
 
-          const display = formatAgentEventDisplay(event);
-          todoTracker.observeEvent(event, display);
+          todoTracker.observeEvent(event);
           emitSdkStreamActivity(threadId, event);
         }
 
@@ -1129,181 +1120,8 @@ async function restoreAfterExecutionFailure(
   });
 }
 
-function createCoderTodoTracker(threadId: string): {
-  observeEvent: (event: AgentEventLike, display: AgentEventDisplay | null) => void;
-  completeRunning: (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => void;
-} {
-  let todos = conversationStore.listCoderTodos(threadId);
-  let signature = todoListSignature(todos);
-  let taskTranscript = "";
-  let activeTodoId: string | undefined;
-  let autoTaskIndex = 0;
-  let progressFromTodoWrite = false;
-
-  const persist = (nextTodos: CoderTodoItem[]) => {
-    const nextSignature = todoListSignature(nextTodos);
-    if (nextSignature === signature) {
-      todos = nextTodos;
-      return;
-    }
-    todos = nextTodos;
-    signature = nextSignature;
-    conversationStore.replaceCoderTodos(threadId, todos);
-    emitTodoList(threadId, todos);
-  };
-
-  const applyTodoWrite = (input: Record<string, unknown>) => {
-    const items = parseTodoWriteToolInput(input);
-    if (items.length === 0) {
-      return;
-    }
-    progressFromTodoWrite = true;
-    const next = coderTodosFromTodoWrite(threadId, items, todos);
-    activeTodoId = next.find((item) => item.status === "running")?.id;
-    persist(next);
-  };
-
-  const appendTaskTranscript = (role: string, message: string, stream: boolean) => {
-    if (progressFromTodoWrite) {
-      return;
-    }
-    if (role !== "planner" && role !== "architect") {
-      return;
-    }
-    const trimmed = message.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    taskTranscript = stream
-      ? mergeStreamText(taskTranscript, trimmed)
-      : taskTranscript
-        ? `${taskTranscript}\n${trimmed}`
-        : trimmed;
-
-    const drafts = extractCoderTasksFromText(taskTranscript);
-    if (drafts.length > 0) {
-      persist(mergeCoderTodoItems(threadId, drafts, todos));
-    }
-  };
-
-  const collectTasks = (display: AgentEventDisplay) => {
-    appendTaskTranscript(String(display.role), display.message, display.stream);
-  };
-
-  const startCoderTask = (prompt: string | undefined) => {
-    if (progressFromTodoWrite) {
-      return;
-    }
-    let target = findCoderTodoForPrompt(todos, prompt);
-    if (!target && typeof prompt === "string" && prompt.trim()) {
-      autoTaskIndex += 1;
-      const now = new Date().toISOString();
-      const title = prompt.trim().length > 120 ? `${prompt.trim().slice(0, 117)}...` : prompt.trim();
-      const created: CoderTodoItem = {
-        id: `${threadId}:coder-task:auto:${autoTaskIndex}`,
-        threadId,
-        title,
-        detail: prompt.trim(),
-        status: "pending",
-        position: todos.length,
-        updatedAt: now,
-      };
-      persist([...todos, created]);
-      target = created;
-    }
-    if (!target) return;
-
-    let nextTodos = todos;
-    if (activeTodoId && activeTodoId !== target.id) {
-      nextTodos = updateCoderTodoStatus(nextTodos, activeTodoId, "completed");
-    }
-    nextTodos = updateCoderTodoStatus(nextTodos, target.id, "running");
-    activeTodoId = target.id;
-    persist(nextTodos);
-  };
-
-  const completeRunning = (status: Extract<CoderTodoStatus, "completed" | "blocked" | "cancelled">) => {
-    const nextTodos = completeRunningCoderTodos(todos, status);
-    activeTodoId = undefined;
-    persist(nextTodos);
-  };
-
-  const observeAgentTool = (event: AgentEventLike) => {
-    const request = extractAgentToolRequest(event);
-    if (!request) {
-      return;
-    }
-    if (request.role === "coder") {
-      startCoderTask(request.prompt);
-      return;
-    }
-    if (!progressFromTodoWrite && (request.role === "reviewer" || request.role === "tester")) {
-      completeRunning("completed");
-    }
-  };
-
-  return {
-    observeEvent(event, display) {
-      if (
-        event.type === "tool.started" &&
-        isRecord(event.payload) &&
-        event.payload.tool_name === "TodoWrite" &&
-        isRecord(event.payload.input)
-      ) {
-        applyTodoWrite(event.payload.input);
-      }
-
-      observeAgentTool(event);
-      if (display) {
-        collectTasks(display);
-        return;
-      }
-      const line = formatAgentEventLine(event);
-      if (!line) {
-        return;
-      }
-      const role = inferActivityRole(event);
-      const stream = event.type === "message.delta" && isStreamPayload(event.payload);
-      appendTaskTranscript(String(role), line, stream);
-    },
-    completeRunning,
-  };
-}
-
-function extractAgentToolRequest(event: AgentEventLike): { role: AgentRole; prompt?: string } | undefined {
-  if (event.type !== "tool.started" || !isRecord(event.payload)) {
-    return undefined;
-  }
-  if (event.payload.tool_name !== "Agent" || !isRecord(event.payload.input)) {
-    return undefined;
-  }
-
-  const input = event.payload.input;
-  const role =
-    readAgentRole(input.subagent_type) ??
-    readAgentRole(input.agent_type) ??
-    readAgentRole(event.payload.subagent_type) ??
-    readAgentRole(event.payload.agent_type);
-  if (!role) {
-    return undefined;
-  }
-
-  return {
-    role,
-    ...(typeof input.prompt === "string" && { prompt: input.prompt }),
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readAgentRole(value: unknown): AgentRole | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  return AGENT_ROLES.includes(value as AgentRole) ? (value as AgentRole) : undefined;
 }
 
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
@@ -1487,7 +1305,7 @@ function createSdkDriver(
 
 /** OTel does not stream assistant text; keep SDK message.delta for narrative only. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
-  if (event.type !== "message.delta") {
+  if (event.type !== "message.delta" && event.type !== "todo.updated") {
     return;
   }
   const display = formatAgentEventDisplay(event);

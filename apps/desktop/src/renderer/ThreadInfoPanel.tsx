@@ -151,7 +151,7 @@ export function ThreadInfoPanel({
           {todos.length > 0 ? (
             <CoderTodoPanel todos={todos} embedded compact />
           ) : (
-            <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 TodoWrite 更新进度…</p>
+            <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 SDK Task 工具更新进度…</p>
           )}
         </section>
       ) : null}

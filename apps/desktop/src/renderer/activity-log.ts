@@ -578,6 +578,9 @@ const KNOWN_SDK_TOOLS = new Set([
   "Bash",
   "Agent",
   "TodoWrite",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskList",
   "AskUserQuestion",
   "Skill",
 ]);
@@ -672,6 +675,9 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   Bash: "运行命令",
   Agent: "调用",
   TodoWrite: "更新任务",
+  TaskCreate: "创建任务",
+  TaskUpdate: "更新任务",
+  TaskList: "列出任务",
   AskUserQuestion: "澄清问题",
   Skill: "读取技能",
 };

@@ -169,7 +169,8 @@ test("builds phased orchestration prompts", () => {
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("Implementation Plan");
-  expect(executePhaseSystemAppend).toContain("TodoWrite");
+  expect(executePhaseSystemAppend).toContain("TaskCreate");
+  expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
   expect(executePhaseSystemAppend).toContain("Architect (conditional)");
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
@@ -480,4 +481,56 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     message: "Approval required",
     interrupt: true,
   });
+});
+
+test("maps SDK task system messages to todo.updated events", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "system",
+      subtype: "task_started",
+      task_id: "task_abc",
+      description: "Review changes",
+      uuid: "sdk_task_1",
+      session_id: "session_1",
+    },
+    "thr_1",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "todo.updated",
+    payload: {
+      sdkKind: "task_started",
+      task_id: "task_abc",
+      description: "Review changes",
+    },
+  });
+});
+
+test("formatAgentEventLine renders todo.updated task progress for activity", () => {
+  expect(
+    formatAgentEventLine({
+      type: "todo.updated",
+      role: "planner",
+      payload: {
+        sdkKind: "task_progress",
+        task_id: "task_abc",
+        description: "Inspecting auth module",
+        last_tool_name: "Read",
+      },
+    }),
+  ).toBe("Tool: Read · Inspecting auth module");
+
+  expect(
+    inferActivityRole({
+      type: "todo.updated",
+      role: "planner",
+      payload: {
+        sdkKind: "task_started",
+        task_id: "task_abc",
+        description: "Implement feature",
+        subagent_type: "coder",
+      },
+    }),
+  ).toBe("coder");
 });
