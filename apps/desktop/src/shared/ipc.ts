@@ -243,12 +243,41 @@ export interface ClarificationSubmitPayload {
   selections: string[][];
 }
 
+export type ContextSegmentKey =
+  | "systemPrompt"
+  | "toolDefinitions"
+  | "rules"
+  | "skills"
+  | "mcp"
+  | "subagentDefinitions"
+  | "conversation";
+
+export interface ContextBreakdownSegment {
+  key: ContextSegmentKey;
+  label: string;
+  tokens: number;
+  color: string;
+}
+
+export interface ThreadContextSnapshot {
+  occupied: number;
+  limit: number;
+  occupancyPct: number;
+  limitsResolved: boolean;
+  segments: ContextBreakdownSegment[];
+  updatedAt: number;
+  stale?: boolean;
+  maxOutputTokens?: number;
+}
+
 export interface ThreadUsageSnapshot {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   contextTokens: number;
+  contextLimit?: number;
+  occupancyPct?: number;
   modelId?: string;
 }
 
@@ -323,6 +352,7 @@ export interface ThreadLiveEvent {
   totalCostUsd?: number;
   modelUsage?: Record<string, ThreadModelUsageEntry>;
   billing?: ThreadBillingSnapshot;
+  context?: ThreadContextSnapshot;
 }
 
 export interface ThreadActivityLine {

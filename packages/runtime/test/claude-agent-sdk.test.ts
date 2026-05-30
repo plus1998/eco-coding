@@ -425,6 +425,26 @@ test("ignores SDK messages without displayable text", () => {
   ).toEqual([]);
 });
 
+test("maps assistant message usage to usage.recorded events", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_u1",
+      session_id: "session_1",
+      message: {
+        id: "msg_abc",
+        usage: { input_tokens: 1200, output_tokens: 80 },
+        content: [{ type: "text", text: "ok" }],
+      },
+    },
+    "thr_1",
+  );
+
+  const usageEvent = events.find((event) => event.type === "usage.recorded");
+  expect(usageEvent).toBeDefined();
+  expect((usageEvent?.payload as { messageId?: string }).messageId).toBe("msg_abc");
+});
+
 test("maps SDK result messages to usage events", () => {
   const events = mapSdkMessageToEvents(
     {

@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  DEFAULT_CONTEXT_LIMIT,
   fetchModelsDevCatalog,
   lookupModelCostInCatalog,
+  lookupModelLimitsInCatalog,
   resolveProviderKeyFromBaseUrl,
+  type ModelLimitsLookup,
   type ModelPricingLookup,
   type ModelsDevCatalog,
 } from "@eco/runtime";
@@ -47,6 +50,30 @@ export class ModelsDevPricingCache {
     const catalog = await this.getCatalog();
     const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
     return lookupModelCostInCatalog(catalog, providerHint, modelId);
+  }
+
+  async lookupLimits(baseUrl: string, modelId: string): Promise<ModelLimitsLookup | null> {
+    const catalog = await this.getCatalog();
+    const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
+    return lookupModelLimitsInCatalog(catalog, providerHint, modelId);
+  }
+
+  async resolveContextLimit(baseUrl: string, modelId: string): Promise<{
+    limit: number;
+    maxOutputTokens?: number;
+    limitsResolved: boolean;
+  }> {
+    const lookup = await this.lookupLimits(baseUrl, modelId);
+    if (lookup) {
+      return {
+        limit: lookup.limits.contextTokens,
+        ...(lookup.limits.maxOutputTokens !== undefined && {
+          maxOutputTokens: lookup.limits.maxOutputTokens,
+        }),
+        limitsResolved: true,
+      };
+    }
+    return { limit: DEFAULT_CONTEXT_LIMIT, limitsResolved: false };
   }
 
   getCachedAt(): number {

@@ -195,6 +195,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     });
   }
 
+  async *compactSession(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
+  }
+
+  async *contextSnapshot(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield* this.runSlashCommand(input, "/context", { permissionMode: "dontAsk" });
+  }
+
   async *runContinuation(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
@@ -263,6 +271,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools: string[];
       phaseAppend: string;
       agents?: Record<string, unknown>;
+      maxTurns?: number;
     },
   ): AsyncGenerator<AgentEvent, string> {
     const sdk = await this.loadSdk();
@@ -320,8 +329,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       queryOptions.agents = phase.agents;
     }
 
-    if (this.options.maxTurns !== undefined) {
-      queryOptions.maxTurns = this.options.maxTurns;
+    const maxTurns = phase.maxTurns ?? this.options.maxTurns;
+    if (maxTurns !== undefined) {
+      queryOptions.maxTurns = maxTurns;
     }
 
     const query = sdk.query({
@@ -354,6 +364,23 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     return transcript.trim();
+  }
+
+  private async *runSlashCommand(
+    input: AgentRuntimeRunInput,
+    command: string,
+    options: { permissionMode: "dontAsk" | "default" | "acceptEdits" },
+  ): AsyncGenerator<AgentEvent, string> {
+    if (!input.resume?.resumeSessionId) {
+      throw new Error(`${command} requires an existing SDK session (resume).`);
+    }
+    yield* this.runSingleSession(input, {
+      prompt: command,
+      permissionMode: options.permissionMode,
+      allowedTools: [],
+      phaseAppend: "",
+      maxTurns: 1,
+    });
   }
 
   private async loadSdk(): Promise<ClaudeAgentSdkModule> {
@@ -603,6 +630,56 @@ function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
   return "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload);
 }
 
+export function readSdkSlashCommands(message: unknown): string[] {
+  if (!isRecord(message) || message.type !== "system" || message.subtype !== "init") {
+    return [];
+  }
+  const commands = message.slash_commands;
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+  return commands.filter((entry): entry is string => typeof entry === "string");
+}
+
+export function sdkSupportsSlashCommand(commands: readonly string[], name: string): boolean {
+  const normalized = name.replace(/^\//, "").toLowerCase();
+  return commands.some((entry) => entry.replace(/^\//, "").toLowerCase() === normalized);
+}
+
+export function extractSdkContextResultText(payload: unknown): string | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  if (typeof payload.result === "string" && payload.result.trim()) {
+    return payload.result.trim();
+  }
+  if (payload.type === "result" && typeof payload.result === "string") {
+    return payload.result.trim();
+  }
+  return undefined;
+}
+
+export function extractCompactPostTokens(payload: unknown): number | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  const meta =
+    (isRecord(payload.compact_metadata) && payload.compact_metadata) ||
+    (payload.subtype === "compact_boundary" && isRecord(payload.compact_metadata)
+      ? payload.compact_metadata
+      : undefined);
+  if (!meta) {
+    return undefined;
+  }
+  const post =
+    typeof meta.post_tokens === "number"
+      ? meta.post_tokens
+      : typeof meta.postTokens === "number"
+        ? meta.postTokens
+        : undefined;
+  return post !== undefined && Number.isFinite(post) ? post : undefined;
+}
+
 export function createPlanReadyEvent(threadId: string, payload: PlanReadyPayload): AgentEvent {
   return createAgentEvent({
     id: `${threadId}:plan-ready-${crypto.randomUUID()}`,
@@ -825,6 +902,7 @@ export function mapSdkMessageToEvents(
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
     }
     if (message.subtype === "compact_boundary") {
+      const compactMetadata = isRecord(message.compact_metadata) ? message.compact_metadata : undefined;
       return [
         createAgentEvent({
           id: `${uuid}:compact`,
@@ -838,6 +916,7 @@ export function mapSdkMessageToEvents(
             ...(typeof message.compacted_summary === "string" && {
               compacted_summary: message.compacted_summary,
             }),
+            ...(compactMetadata && { compact_metadata: compactMetadata }),
           },
         }),
       ];
@@ -897,11 +976,32 @@ function mapAssistantMessageToEvents(
   uuid: string,
   streamCtx?: SdkStreamContext,
 ): AgentEvent[] {
-  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
-    return [];
+  const events: AgentEvent[] = [];
+
+  if (isRecord(message.message)) {
+    const nested = message.message;
+    const messageId = typeof nested.id === "string" ? nested.id : undefined;
+    if (isRecord(nested.usage)) {
+      events.push(
+        createAgentEvent({
+          id: `${uuid}:assistant-usage`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "usage.recorded",
+          payload: {
+            usage: nested.usage,
+            ...(messageId && { messageId }),
+            ...(typeof nested.model === "string" && { model: nested.model }),
+          },
+        }),
+      );
+    }
   }
 
-  const events: AgentEvent[] = [];
+  if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
+    return events;
+  }
   for (const [index, block] of message.message.content.entries()) {
     if (!isRecord(block) || block.type !== "tool_use" || typeof block.name !== "string") {
       continue;

@@ -18,6 +18,10 @@ export interface ModelsDevProviderEntry {
 export interface ModelsDevModelEntry {
   id: string;
   name?: string;
+  limit?: {
+    context?: number;
+    output?: number;
+  };
   cost?: {
     input?: number;
     output?: number;

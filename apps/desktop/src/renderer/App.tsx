@@ -35,11 +35,13 @@ import {
   type ThreadPendingPlan,
   type ThreadStatus,
   type ThreadBillingSnapshot,
+  type ThreadContextSnapshot,
   type ThreadSummary,
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isContinuableThreadStatus, isUsageNoiseMessage, pickDisplayContextTokens } from "../shared/thread-continuation";
+import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -112,6 +114,7 @@ function App() {
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
+  const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
   const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
   const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
@@ -236,12 +239,24 @@ function App() {
         return;
       }
 
+      if (event.type === "thread.context_updated" && event.context) {
+        setContextByThread((current) => ({
+          ...current,
+          [event.threadId]: event.context!,
+        }));
+        return;
+      }
+
       if (event.type === "thread.execution_failed" && window.eco) {
         void window.eco.getPendingPlan(event.threadId).then((plan) => {
           if (plan) {
             setPendingPlan(plan);
           }
         });
+      }
+
+      if (event.type.startsWith("thread.") && event.type !== "thread.user_prompt") {
+        return;
       }
 
       appendActivityLine(event.threadId, {
@@ -447,14 +462,16 @@ function App() {
     }
     const contextTokens = threadUsageByRole ? pickDisplayContextTokens(threadUsageByRole) : 0;
     const billing = billingByThread[activeThread.id];
-    if (!billing && contextTokens <= 0) {
+    const context = contextByThread[activeThread.id];
+    if (!billing && contextTokens <= 0 && !context) {
       return undefined;
     }
     return {
       ...(billing && { billing }),
+      ...(context && { context }),
       ...(contextTokens > 0 && { contextTokens }),
     };
-  }, [activeThread, threadUsageByRole, billingByThread]);
+  }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
@@ -497,49 +514,60 @@ function App() {
   }, [activityLines, activeThread?.id]);
 
   function appendActivityLine(threadId: string, line: ActivityLine) {
-    if (isUsageNoiseMessage(line.message)) {
+    const cleanedMessage = stripActivityStatusNoise(line.message);
+    if (isUsageNoiseMessage(cleanedMessage) || isActivityStatusNoise(line.message)) {
       return;
     }
+    const normalizedLine: ActivityLine = {
+      ...line,
+      message: cleanedMessage,
+    };
     setActivityByThread((current) => {
       const previous = current[threadId] ?? [];
       const last = previous[previous.length - 1];
       if (
         last &&
-        !line.stream &&
-        last.role === line.role &&
-        last.message === line.message &&
+        !normalizedLine.stream &&
+        last.role === normalizedLine.role &&
+        last.message === normalizedLine.message &&
         last.stream !== true
       ) {
         return current;
       }
-      if (!line.stream && last?.stream && last.role === line.role) {
-        const merged = line.message.trim()
-          ? mergeStreamText(last.message, line.message)
+      if (normalizedLine.stream && last && !last.stream && isActivityStatusNoise(last.message)) {
+        return {
+          ...current,
+          [threadId]: [...previous.slice(0, -1), { ...normalizedLine, stream: true }].slice(-300),
+        };
+      }
+      if (!normalizedLine.stream && last?.stream && last.role === normalizedLine.role) {
+        const merged = normalizedLine.message.trim()
+          ? mergeStreamText(last.message, normalizedLine.message)
           : last.message;
         return {
           ...current,
           [threadId]: [
             ...previous.slice(0, -1),
-            { ...last, message: merged, stream: false },
+            { ...last, message: stripActivityStatusNoise(merged), stream: false },
           ].slice(-300),
         };
       }
-      if (line.stream && last?.stream) {
+      if (normalizedLine.stream && last?.stream) {
         return {
           ...current,
           [threadId]: [
             ...previous.slice(0, -1),
             {
               ...last,
-              role: line.role,
-              message: mergeStreamText(last.message, line.message),
+              role: normalizedLine.role,
+              message: stripActivityStatusNoise(mergeStreamText(last.message, normalizedLine.message)),
             },
           ].slice(-300),
         };
       }
       return {
         ...current,
-        [threadId]: [...previous, line].slice(-300),
+        [threadId]: [...previous, normalizedLine].slice(-300),
       };
     });
   }

@@ -4,9 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ClaudeAgentSdkDriver,
+  extractCompactPostTokens,
   extractSdkRunFailure,
   formatUsageBadge,
   estimateContextTokens,
+  parseUsagePayload,
   type EcoHookContext,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
@@ -59,6 +61,7 @@ import {
   type ThreadStartRequest,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type ThreadContextSnapshot,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
   type WorkspaceInfo,
@@ -87,6 +90,8 @@ import {
   resolveUsageRoute,
 } from "./billing-resolver";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import { ContextWindowMonitor } from "./context-window-monitor";
+import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import {
   buildUsageRequestKey,
   ThreadUsageAccumulator,
@@ -137,6 +142,8 @@ const threadUsageAccumulator = new ThreadUsageAccumulator();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
+let contextMonitor: ContextWindowMonitor;
+let contextScheduler: ContextSnapshotScheduler;
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role">;
 
@@ -179,6 +186,34 @@ app.whenReady().then(async () => {
       process.stderr.write(`[eco] models.dev pricing cache init failed: ${errorMessage(error)}\n`);
     },
   );
+  contextMonitor = new ContextWindowMonitor(pricingCache);
+  contextScheduler = new ContextSnapshotScheduler({
+    monitor: contextMonitor,
+    isThreadRunning: (threadId) => activeRuns.has(threadId),
+    getResume: (threadId, worktreePath) => resolveResumeOptions(threadId, worktreePath),
+    withSdkDriver: async (threadId, fn) => {
+      const runtimeConfig = resolveRuntimeConfig(
+        providerStore.getSettings(),
+        providerStore.listProvidersWithSecrets(),
+      );
+      if (!runtimeConfig.ok) {
+        return;
+      }
+      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const driverRoutes = buildDriverRoutes(attemptProxy.routes);
+      try {
+        const driver = createSdkDriver(threadId, attemptProxy);
+        const controller = new AbortController();
+        await fn(driver, controller.signal, driverRoutes);
+      } finally {
+        await attemptProxy.close();
+      }
+    },
+    emitContext: emitThreadContextUpdated,
+    emitActivity: (threadId, message) => {
+      emitThreadEvent(threadId, "otel.activity", message, "system", false);
+    },
+  });
   try {
     await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
   } catch (error) {
@@ -591,15 +626,19 @@ function registerIpcHandlers(): void {
       message: intent === "question" && !canResume ? "正在回答…" : statusMessage,
     };
 
-    if (canResume && continuePhase) {
-      void runThreadContinuation(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        continuePhase,
-        worktreeExists ? worktreePlan : undefined,
-      );
+    if (canResume && continuePhase && worktreePath) {
+      void (async () => {
+        const headroomController = new AbortController();
+        await ensureContextHeadroom(payload.threadId, worktreePath, headroomController.signal);
+        await runThreadContinuation(
+          updated,
+          workspace,
+          runtimeConfig,
+          agentPrompt,
+          continuePhase,
+          worktreeExists ? worktreePlan : undefined,
+        );
+      })();
     } else if (intent === "question") {
       void runQuestionThread(updated, workspace, runtimeConfig, agentPrompt, worktreePath);
     } else {
@@ -769,6 +808,7 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -781,6 +821,7 @@ async function runQuestionThread(
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
         }
+        scheduleContextRefresh(thread.id, cwd, true);
         return { ok: true };
       } catch (error) {
         if (controller.signal.aborted) {
@@ -810,6 +851,7 @@ async function runQuestionThread(
       message: errorMessage(error),
     });
   } finally {
+    finishRunContextRefresh(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
@@ -882,6 +924,7 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -918,6 +961,7 @@ async function runCodingThreadPlanning(
 
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(thread.id, event);
             continue;
           }
 
@@ -972,6 +1016,7 @@ async function runCodingThreadPlanning(
     });
     await cleanupWorktreeForThread(thread.id);
   } finally {
+    finishRunContextRefresh(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
@@ -1047,6 +1092,9 @@ async function runCodingThreadExecution(
 
         let sdkFailure: string | undefined;
         const resume = resolveResumeOptions(threadId, pending.worktreePath);
+        if (resume) {
+          await ensureContextHeadroom(threadId, pending.worktreePath, controller.signal);
+        }
         for await (const event of driver.runExecution(
           {
             threadId,
@@ -1062,6 +1110,7 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(threadId, event);
             continue;
           }
 
@@ -1143,6 +1192,7 @@ async function runCodingThreadExecution(
     }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
+    finishRunContextRefresh(threadId);
     sdkStreamBridge.resetThread(threadId);
     activeRuns.delete(threadId);
     const thread = conversationStore.getThread(threadId);
@@ -1602,6 +1652,8 @@ async function runThreadContinuation(
         return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
       }
 
+      await ensureContextHeadroom(thread.id, worktreePlan.worktreePath, controller.signal);
+
       try {
         const driver = createSdkDriver(thread.id, attemptProxy, {
           ...(taskHookHandlers
@@ -1647,6 +1699,7 @@ async function runThreadContinuation(
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -1754,6 +1807,7 @@ async function runThreadContinuation(
     taskHookHandlers?.onStop("blocked");
     updateThread(thread.id, { status: "failed", message: errorMessage(error) });
   } finally {
+    finishRunContextRefresh(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     activeRuns.delete(thread.id);
@@ -1769,12 +1823,19 @@ async function runThreadContinuation(
 
 /** OTel does not stream assistant text; SDK drives narrative, tool, and todo activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
+  const worktreePath =
+    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
+    conversationStore.getSdkSession(threadId)?.cwd;
+  handleSdkContextSideEffects(threadId, event, worktreePath);
   sdkStreamBridge.handleEvent(threadId, event, (id, type, message, role, stream) => {
     emitThreadEvent(id, type, message, role as AgentRole | "system" | "thinking" | "tool" | "user", stream);
   });
 }
 
 function emitOtelActivity(line: OtelActivityLine): void {
+  if (/^Compacting context/i.test(line.message)) {
+    contextMonitor.noteOtelCompaction(line.threadId);
+  }
   if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
     return;
   }
@@ -1815,6 +1876,7 @@ async function processUsageBilling(input: {
   cacheCreationTokens: number;
   otelCostUsd?: number;
   modelId?: string;
+  messageId?: string;
 }): Promise<void> {
   await pricingCatalogReady;
 
@@ -1865,6 +1927,18 @@ async function processUsageBilling(input: {
 
   const resolvedModelId = usageRoute?.modelId ?? input.modelId;
 
+  const monitorModelId = plannerRoute?.modelId ?? resolvedModelId;
+  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
+  if (monitorModelId && monitorBaseUrl) {
+    await contextMonitor.updateFromUsage(input.threadId, delta, {
+      modelId: monitorModelId,
+      providerBaseUrl: monitorBaseUrl,
+      ...(input.messageId && { messageId: input.messageId }),
+    });
+  }
+
+  const monitorSnap = contextMonitor.getSnapshot(input.threadId);
+
   const billing = threadUsageAccumulator.recordUsage({
     threadId: input.threadId,
     role: input.role,
@@ -1890,7 +1964,11 @@ async function processUsageBilling(input: {
     outputTokens: parsed.outputTokens,
     cacheReadTokens: parsed.cacheReadTokens,
     cacheCreationTokens: parsed.cacheCreationTokens,
-    contextTokens: estimateContextTokens(parsed),
+    contextTokens: monitorSnap?.occupied ?? estimateContextTokens(parsed),
+    ...(monitorSnap && {
+      contextLimit: monitorSnap.limit,
+      occupancyPct: monitorSnap.occupancyPct,
+    }),
     ...(parsed.modelId && { modelId: parsed.modelId }),
   };
 
@@ -1900,6 +1978,128 @@ async function processUsageBilling(input: {
     billing,
     ...(parsed.modelId && { modelId: parsed.modelId }),
   });
+
+  contextScheduler.emitFromMonitor(input.threadId, activeRuns.has(input.threadId));
+  const worktreePath =
+    activeRuns.get(input.threadId)?.worktreePlan?.worktreePath ??
+    conversationStore.getSdkSession(input.threadId)?.cwd;
+  if (worktreePath) {
+    contextScheduler.scheduleRefresh(
+      input.threadId,
+      buildDriverRoutesFromRuntime(runtimeRoutes),
+      worktreePath,
+    );
+  }
+}
+
+function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRoutesFromSettings>): ResolvedModelRoute[] {
+  return routes.map((route) => ({
+    role: route.role,
+    primary: {
+      id: `${route.role}:${route.provider.id}`,
+      provider: "custom",
+      displayName: `${route.provider.name} / ${route.modelId}`,
+      baseUrl: route.provider.baseUrl,
+      modelId: route.modelId,
+      capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
+      enabled: route.provider.enabled,
+    },
+    fallbacks: [],
+  }));
+}
+
+async function ensureContextHeadroom(
+  threadId: string,
+  worktreePath: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const runtimeConfig = resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+  );
+  if (!runtimeConfig.ok) {
+    return;
+  }
+  const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+  await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
+}
+
+function finishRunContextRefresh(threadId: string): void {
+  const worktreePath =
+    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
+    conversationStore.getSdkSession(threadId)?.cwd;
+  if (worktreePath) {
+    scheduleContextRefresh(threadId, worktreePath, true);
+  }
+}
+
+function scheduleContextRefresh(threadId: string, worktreePath: string, immediate = false): void {
+  const runtimeConfig = resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+  );
+  if (!runtimeConfig.ok) {
+    return;
+  }
+  contextScheduler.scheduleRefresh(
+    threadId,
+    buildDriverRoutesFromRuntime(runtimeConfig.routes),
+    worktreePath,
+    immediate,
+  );
+}
+
+function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {
+  emitThreadEvent(threadId, "thread.context_updated", "上下文已更新", "system", false, { context });
+}
+
+function handleSdkContextSideEffects(
+  threadId: string,
+  event: AgentEventLike,
+  worktreePath?: string,
+): void {
+  if (!isRecord(event.payload)) {
+    return;
+  }
+  const payload = event.payload;
+  if (payload.subtype === "compact_boundary") {
+    const postTokens = extractCompactPostTokens(payload);
+    contextMonitor.markCompactCompleted(threadId, postTokens);
+    contextScheduler.emitFromMonitor(threadId);
+    if (worktreePath) {
+      scheduleContextRefresh(threadId, worktreePath, true);
+    }
+    return;
+  }
+  if (payload.type === "system" && payload.subtype === "status" && payload.status === "compacting") {
+    contextMonitor.noteOtelCompaction(threadId);
+  }
+}
+
+function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void {
+  const usage = parseUsagePayload(event.payload);
+  if (!usage) {
+    return;
+  }
+  const messageId =
+    isRecord(event.payload) && typeof event.payload.messageId === "string"
+      ? event.payload.messageId
+      : undefined;
+  void processUsageBilling({
+    threadId,
+    role: normalizeBillingRole(event.role as OtelUsageUpdate["role"]),
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheCreationTokens: usage.cacheCreationTokens,
+    ...(usage.totalCostUsd !== undefined && { otelCostUsd: usage.totalCostUsd }),
+    ...(usage.modelId && { modelId: usage.modelId }),
+    ...(messageId && { messageId }),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function buildSdkSessionOptions(): EcoSdkSessionOptions {
@@ -2011,11 +2211,13 @@ function emitThreadEvent(
     totalCostUsd?: number;
     modelUsage?: Record<string, ThreadModelUsageEntry>;
     billing?: ThreadBillingSnapshot;
+    context?: ThreadContextSnapshot;
   },
 ): void {
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
+  const isContextEvent = type === "thread.context_updated";
   const allowEmptyStream = stream && trimmed.length === 0;
   if (
     !trimmed &&
@@ -2023,19 +2225,27 @@ function emitThreadEvent(
     !extras?.plan &&
     !extras?.clarification &&
     !isThreadStatusEvent &&
-    !isUsageEvent
+    !isUsageEvent &&
+    !isContextEvent
   ) {
     return;
   }
 
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
+  const persistActivityLine =
+    !isThreadStatusEvent &&
+    !isUsageEvent &&
+    !isContextEvent &&
+    type !== "thread.todos_updated" &&
+    type !== "thread.title_updated";
+
   if (
     conversationStore.getThread(threadId) &&
     (displayMessage || allowEmptyStream) &&
     !extras?.todoList &&
     !extras?.title &&
-    !isUsageEvent
+    persistActivityLine
   ) {
     conversationStore.appendActivityLine(threadId, {
       role: String(role),
@@ -2077,6 +2287,9 @@ function emitThreadEvent(
   }
   if (extras?.billing) {
     payload.billing = extras.billing;
+  }
+  if (extras?.context) {
+    payload.context = extras.context;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

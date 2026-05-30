@@ -2239,6 +2239,150 @@ button:not(:disabled) {
   font-size: 13px;
 }
 
+.context-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #2e2e2e;
+  border-radius: 10px;
+  background: #222222;
+}
+
+.context-card-empty {
+  padding: 10px 12px;
+}
+
+.context-card-placeholder {
+  margin: 0;
+  color: #737373;
+  font-size: 12px;
+}
+
+.context-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.context-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e5e5;
+  letter-spacing: 0.01em;
+}
+
+.context-card-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #737373;
+  cursor: pointer;
+}
+
+.context-card-collapse:hover {
+  background: #2e2e2e;
+  color: #e5e5e5;
+}
+
+.context-card-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.context-card-pct {
+  color: #a3a3a3;
+  font-weight: 500;
+}
+
+.context-card-pct-warn {
+  color: #f59e0b;
+}
+
+.context-card-pct-critical {
+  color: #ef4444;
+}
+
+.context-card-tokens {
+  color: #737373;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-card-bar {
+  display: flex;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #3a3a3a;
+  margin-bottom: 10px;
+}
+
+.context-card-bar-segment {
+  min-width: 2px;
+  height: 100%;
+}
+
+.context-card-bar-free {
+  height: 100%;
+  background: #3a3a3a;
+}
+
+.context-card-stale {
+  margin: 0 0 8px;
+  color: #737373;
+  font-size: 11px;
+}
+
+.context-card-breakdown {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.context-card-breakdown li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #d4d4d4;
+}
+
+.context-card-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.context-card-label {
+  min-width: 0;
+}
+
+.context-card-value {
+  color: #a3a3a3;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-card-footnote {
+  margin: 8px 0 0;
+  color: #737373;
+  font-size: 11px;
+}
+
 .thread-info-cost,
 .thread-info-usage {
   color: #a3a3a3;

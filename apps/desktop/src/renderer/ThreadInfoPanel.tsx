@@ -1,10 +1,18 @@
-import { DollarSign, Folder, GitBranch, HelpCircle, Layers, ListTodo, Package } from "lucide-react";
+import { DollarSign, Folder, GitBranch, HelpCircle, ListTodo, Package } from "lucide-react";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
-import type { CoderTodoItem, ThreadBillingSnapshot, ThreadStatus, WorkspaceInfo } from "../shared/ipc";
+import type {
+  CoderTodoItem,
+  ThreadBillingSnapshot,
+  ThreadContextSnapshot,
+  ThreadStatus,
+  WorkspaceInfo,
+} from "../shared/ipc";
 import { CoderTodoPanel } from "./CoderTodoPanel";
+import { ContextCard } from "./ContextCard";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
+  context?: ThreadContextSnapshot;
   contextTokens?: number;
 }
 
@@ -19,16 +27,6 @@ interface ThreadInfoPanelProps {
   usageSummary?: ThreadUsageSummary;
   onApplyWorktree?: () => void;
   worktreeApplyBusy?: boolean;
-}
-
-function formatContextLabel(contextTokens: number): string | null {
-  if (contextTokens <= 0) {
-    return null;
-  }
-  if (contextTokens < 1000) {
-    return "<1K";
-  }
-  return `~${Math.round(contextTokens / 1000)}K`;
 }
 
 function formatCacheCostNote(billing: ThreadBillingSnapshot): string | null {
@@ -81,8 +79,6 @@ export function ThreadInfoPanel({
 }: ThreadInfoPanelProps) {
   const projectLabel = workspacePath?.split("/").filter(Boolean).pop() ?? workspace?.name ?? "未打开项目";
   const billing = usageSummary?.billing;
-  const contextLabel =
-    usageSummary?.contextTokens !== undefined ? formatContextLabel(usageSummary.contextTokens) : null;
   const tokenBadge = billing
     ? formatUsageBadge({
         inputTokens: billing.totalTokens.input,
@@ -127,6 +123,7 @@ export function ThreadInfoPanel({
             </li>
           ) : null}
         </ul>
+        <ContextCard context={usageSummary?.context} />
       </section>
 
       {hasBillingData(billing) ? (
@@ -178,20 +175,6 @@ export function ThreadInfoPanel({
           {!billing.pricingResolved ? (
             <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
           ) : null}
-        </section>
-      ) : contextLabel ? (
-        <section className="thread-info-section">
-          <ul className="thread-info-list">
-            <li className="thread-info-usage">
-              <Layers size={14} aria-hidden />
-              <span
-                className="thread-info-value"
-                title="Planner 最近一次请求的输入 token（含缓存读/写），非整段对话累计"
-              >
-                已用上下文 {contextLabel}
-              </span>
-            </li>
-          </ul>
         </section>
       ) : null}
 

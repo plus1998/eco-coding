@@ -59,6 +59,10 @@ export interface AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
   ): AsyncIterable<AgentEvent>;
+  /** Sends `/compact` on an existing session (requires resume). */
+  compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  /** Sends `/context` on an existing session (requires resume). */
+  contextSnapshot?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
 }
 
 export interface RunningThread {
@@ -273,6 +277,23 @@ export {
   type ModelPricingLookup,
   type ModelsDevCatalog,
 } from "./models-dev-pricing";
+export {
+  computeOccupancyRatio,
+  computeWindowOccupancy,
+  DEFAULT_CONTEXT_LIMIT,
+  lookupModelLimitsInCatalog,
+  occupancyPercent,
+  type ModelContextLimits,
+  type ModelLimitsLookup,
+} from "./models-dev-limits";
+export {
+  CONTEXT_SEGMENT_COLORS,
+  CONTEXT_SEGMENT_LABELS,
+  mergeBreakdownWithOccupancy,
+  parseContextCommandResult,
+  type ContextBreakdownSegment,
+  type ContextSegmentKey,
+} from "./context-breakdown";
 export {
   extractPhaseDeliverable,
   extractPlanningDeliverables,

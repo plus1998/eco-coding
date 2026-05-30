@@ -16,10 +16,27 @@ export function mergeStreamText(previous: string, incoming: string): string {
   if (previous.endsWith(incoming)) {
     return previous;
   }
+
+  const overlapped = mergeWithSuffixPrefixOverlap(previous, incoming);
+  if (overlapped) {
+    return overlapped;
+  }
+
   if (needsWordSeparator(previous, incoming)) {
     return `${previous} ${incoming}`;
   }
   return `${previous}${incoming}`;
+}
+
+/** When deltas repeat a trailing phrase (e.g. "of " + "of how"), stitch on overlap. */
+function mergeWithSuffixPrefixOverlap(previous: string, incoming: string): string | null {
+  const max = Math.min(previous.length, incoming.length, 256);
+  for (let len = max; len >= 3; len--) {
+    if (previous.slice(-len) === incoming.slice(0, len)) {
+      return previous + incoming.slice(len);
+    }
+  }
+  return null;
 }
 
 function needsWordSeparator(previous: string, incoming: string): boolean {

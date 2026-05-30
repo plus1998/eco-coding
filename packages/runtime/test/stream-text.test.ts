@@ -42,6 +42,15 @@ test("does not split camelCase or PascalCase identifiers across stream chunks", 
   expect(mergeStreamText("updateCorp", "Roles")).toBe("updateCorpRoles");
 });
 
+test("merges overlapping phrase deltas without stutter", () => {
+  expect(mergeStreamText("Let me look at the details of ", "of how the text")).toBe(
+    "Let me look at the details of how the text",
+  );
+  expect(mergeStreamText("how the text is rendered and ", "and how similar")).toBe(
+    "how the text is rendered and how similar",
+  );
+});
+
 test("reconstructs a realistic identifier-heavy plan sentence", () => {
   let text = "";
   for (const chunk of [

@@ -61,6 +61,7 @@ const systemNoisePatterns = [
   /^API retry /,
   /^Usage recorded/,
   /^Run finished/,
+  /^状态已更新/,
 ];
 
 const terminalStatuses = new Set<ThreadStatus>(["completed", "failed", "blocked", "idle", "awaiting_plan"]);
@@ -173,7 +174,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const recentNarratives: string[] = [];
 
   const flushThinking = () => {
-    const text = thinking.trim();
+    const text = stripActivityStatusNoise(thinking.trim());
     if (!text && !thinkingStreaming) {
       thinking = "";
       thinkingStreaming = false;
@@ -194,8 +195,24 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   const flushNarrative = () => {
-    const text = narrative.trim();
+    let text = narrative.trim();
     if (!text) {
+      narrative = "";
+      narrativeStreaming = false;
+      narrativeSubagent = undefined;
+      return;
+    }
+    text = stripActivityStatusNoise(text);
+    if (!text) {
+      narrative = "";
+      narrativeStreaming = false;
+      narrativeSubagent = undefined;
+      return;
+    }
+    const lastThinking = [...current.details]
+      .reverse()
+      .find((block): block is ActivityDetailBlock & { kind: "thinking" } => block.kind === "thinking");
+    if (lastThinking && isNarrativeDuplicateOfThinking(text, lastThinking.text)) {
       narrative = "";
       narrativeStreaming = false;
       narrativeSubagent = undefined;
@@ -474,6 +491,30 @@ function isRepeatedNarrative(text: string, recentNarratives: readonly string[]):
 
 function normalizeNarrative(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+const activityStatusNoisePattern = /^状态已更新\s*/u;
+
+export function stripActivityStatusNoise(text: string): string {
+  return text.replace(activityStatusNoisePattern, "").trim();
+}
+
+export function isActivityStatusNoise(message: string): boolean {
+  const trimmed = message.trim();
+  return trimmed === "状态已更新" || activityStatusNoisePattern.test(trimmed);
+}
+
+function isNarrativeDuplicateOfThinking(narrative: string, thinking: string): boolean {
+  const n = normalizeNarrative(narrative);
+  const t = normalizeNarrative(thinking);
+  if (!n || !t || n.length < 24) {
+    return false;
+  }
+  if (n === t || t.includes(n) || n.includes(t)) {
+    return true;
+  }
+  const nPrefix = n.slice(0, Math.min(80, n.length));
+  return t.startsWith(nPrefix) || n.startsWith(t.slice(0, Math.min(80, t.length)));
 }
 
 export function resolveActiveMissionSummary(
