@@ -2838,6 +2838,34 @@ button:not(:disabled) {
   color: #fbbf24;
 }
 
+.models-route-capability-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.models-route-capability-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.models-route-capability-badge-unresolved {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+
+.models-route-field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #a3a3a3;
+}
+
 .thread-info-token-badge {
   color: #737373;
   font-size: 12px;
@@ -2879,9 +2907,65 @@ button:not(:disabled) {
 }
 
 /* —— Composer —— */
+.composer-image-notice {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #fbbf24;
+  line-height: 1.4;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-attachment {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #333;
+  background: #171717;
+}
+
+.composer-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #f5f5f5;
+  cursor: pointer;
+}
+
+.composer-attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
 .codex-composer-wrap {
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
   padding: 8px 24px 16px;
@@ -3646,7 +3730,7 @@ button:not(:disabled) {
 
 .models-route-card-fields {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) minmax(0, 0.75fr);
   gap: 12px 16px;
 }
 

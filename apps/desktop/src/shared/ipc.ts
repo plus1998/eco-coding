@@ -41,6 +41,7 @@ export const IPC_CHANNELS = {
   sessionSyncTestConnection: "session-sync:test-connection",
   billingRefreshPricing: "billing:refresh-pricing",
   billingRoutePricing: "billing:route-pricing",
+  billingRouteCapabilities: "billing:route-capabilities",
 } as const;
 
 export type {
@@ -109,10 +110,19 @@ export interface ProviderConfigView {
   updatedAt: string;
 }
 
+export type ThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface RoleRouteConfig {
   role: AgentRole;
   providerId: string;
   modelId: string;
+  thinkingEffort?: ThinkingEffort;
+}
+
+export interface PromptImageAttachment {
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+  /** Base64 payload without data: URL prefix. */
+  data: string;
 }
 
 export interface ModelSettingsSnapshot {
@@ -164,6 +174,7 @@ export interface ThreadSummary {
 export interface ThreadStartRequest {
   workspacePath: string;
   prompt: string;
+  attachments?: PromptImageAttachment[];
 }
 
 export interface ThreadStartResult {
@@ -173,6 +184,7 @@ export interface ThreadStartResult {
 export interface ThreadContinueRequest {
   threadId: string;
   prompt: string;
+  attachments?: PromptImageAttachment[];
 }
 
 export interface ThreadContinueResult {
@@ -347,6 +359,15 @@ export interface RoutePricingHint {
   providerName: string;
   pricingLabel?: string;
   pricingResolved: boolean;
+}
+
+export interface RouteCapabilityHint {
+  role: AgentRole;
+  modelId: string;
+  providerName: string;
+  supportsImageInput: boolean;
+  supportsReasoning: boolean;
+  capabilitiesResolved: boolean;
 }
 
 export interface ThreadLiveEvent {

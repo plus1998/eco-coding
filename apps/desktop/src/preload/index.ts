@@ -10,6 +10,7 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
+  type RouteCapabilityHint,
   type RoutePricingHint,
   type RoleRouteConfig,
   type SessionSyncSettingsInput,
@@ -70,6 +71,9 @@ const api = {
   },
   getRoutePricing(): Promise<RoutePricingHint[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing);
+  },
+  getRouteCapabilities(): Promise<RouteCapabilityHint[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.billingRouteCapabilities);
   },
   refreshPricingCatalog(): Promise<{ ok: true; cachedAt: number }> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRefreshPricing);

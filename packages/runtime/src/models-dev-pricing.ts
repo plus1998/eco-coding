@@ -18,6 +18,12 @@ export interface ModelsDevProviderEntry {
 export interface ModelsDevModelEntry {
   id: string;
   name?: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
   limit?: {
     context?: number;
     output?: number;

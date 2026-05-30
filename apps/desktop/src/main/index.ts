@@ -61,6 +61,8 @@ import {
   type ThreadPendingPlan,
   type ThreadRollbackResult,
   type ThreadStartRequest,
+  type PromptImageAttachment,
+  type ThinkingEffort,
   type ThreadSummary,
   type ThreadUsageSnapshot,
   type ThreadUsageSnapshotResult,
@@ -85,9 +87,14 @@ import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../share
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
-import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import {
+  startAnthropicModelProxy,
+  type AnthropicProxyResolvedRoute,
+  type AnthropicProxyStartOptions,
+} from "./anthropic-proxy";
 import {
   buildPlannerModelLabel,
+  lookupRouteCapabilityHints,
   lookupRoutePricingHints,
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
@@ -337,6 +344,15 @@ function registerIpcHandlers(): void {
     );
   });
 
+  ipcMain.handle(IPC_CHANNELS.billingRouteCapabilities, async () => {
+    await pricingCatalogReady;
+    return lookupRouteCapabilityHints(
+      pricingCache,
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+    );
+  });
+
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
 
   ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload: McpServerConfigInput) => {
@@ -419,7 +435,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.threadStart, async (_event, payload: ThreadStartRequest) => {
     const prompt = payload.prompt.trim();
-    if (!prompt) {
+    const hasAttachments = Boolean(payload.attachments?.length);
+    if (!prompt && !hasAttachments) {
       throw new Error("Task prompt is required.");
     }
 
@@ -449,10 +466,11 @@ function registerIpcHandlers(): void {
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
+      const attachments = payload.attachments;
       if (intent === "question") {
-        void runQuestionThread(thread, workspace, runtimeConfig, prompt);
+        void runQuestionThread(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
       } else {
-        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt);
+        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
       }
     }
 
@@ -581,7 +599,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.threadContinue, async (_event, payload: ThreadContinueRequest) => {
     const prompt = payload.prompt.trim();
-    if (!prompt) {
+    const hasAttachments = Boolean(payload.attachments?.length);
+    if (!prompt && !hasAttachments) {
       throw new Error("Message is required.");
     }
     const thread = conversationStore.getThread(payload.threadId);
@@ -645,10 +664,11 @@ function registerIpcHandlers(): void {
           agentPrompt,
           continuePhase,
           worktreeExists ? worktreePlan : undefined,
+          payload.attachments,
         );
       })();
     } else if (intent === "question") {
-      void runQuestionThread(updated, workspace, runtimeConfig, agentPrompt, worktreePath);
+      void runQuestionThread(updated, workspace, runtimeConfig, agentPrompt, worktreePath, undefined, payload.attachments);
     } else {
       void runCodingThreadPlanning(
         updated,
@@ -656,6 +676,8 @@ function registerIpcHandlers(): void {
         runtimeConfig,
         agentPrompt,
         worktreeExists ? worktreePlan : undefined,
+        undefined,
+        payload.attachments,
       );
     }
     return { thread: conversationStore.getThread(payload.threadId) ?? updated } satisfies ThreadContinueResult;
@@ -781,6 +803,7 @@ async function runQuestionThread(
   prompt: string,
   worktreePath?: string,
   resume?: EcoSdkResumeOptions,
+  attachments?: PromptImageAttachment[],
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
@@ -788,7 +811,7 @@ async function runQuestionThread(
 
   try {
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -881,6 +904,7 @@ async function runCodingThreadPlanning(
   prompt: string,
   existingWorktreePlan?: WorktreePlan,
   resume?: EcoSdkResumeOptions,
+  attachments?: PromptImageAttachment[],
 ): Promise<void> {
   const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
   const controller = new AbortController();
@@ -899,7 +923,7 @@ async function runCodingThreadPlanning(
     });
 
     const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -1505,6 +1529,7 @@ function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): Reso
       enabled: route.provider.enabled,
     },
     fallbacks: [],
+    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
 }
 
@@ -1625,6 +1650,7 @@ async function runThreadContinuation(
   followUp: string,
   mode: "planning" | "execution" | "question",
   existingWorktreePlan?: WorktreePlan,
+  attachments?: PromptImageAttachment[],
 ): Promise<void> {
   const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
   const controller = new AbortController();
@@ -1657,7 +1683,7 @@ async function runThreadContinuation(
     }
 
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments);
       const routes = buildDriverRoutes(attemptProxy.routes);
       const resume = resolveResumeOptions(thread.id, worktreePlan.worktreePath);
       if (!resume) {
@@ -2040,6 +2066,7 @@ function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRo
       enabled: route.provider.enabled,
     },
     fallbacks: [],
+    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
 }
 
@@ -2585,6 +2612,7 @@ interface RuntimeRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  thinkingEffort?: ThinkingEffort;
 }
 
 interface RuntimeConfig {
@@ -2592,6 +2620,15 @@ interface RuntimeConfig {
 }
 
 type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { ok: false; reason: string };
+
+function startRuntimeProxy(
+  routes: RuntimeRoute[],
+  attachments?: PromptImageAttachment[],
+): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
+  const options: AnthropicProxyStartOptions | undefined =
+    attachments && attachments.length > 0 ? { pendingImages: attachments } : undefined;
+  return startAnthropicModelProxy(routes, options);
+}
 
 function resolveRuntimeConfig(
   settings: ModelSettingsSnapshot,
@@ -2601,7 +2638,12 @@ function resolveRuntimeConfig(
   const routes = settings.routes.map((route): RuntimeRoute | undefined => {
     const provider = providersById.get(route.providerId);
     if (!provider) return undefined;
-    return { role: route.role, provider, modelId: route.modelId };
+    return {
+      role: route.role,
+      provider,
+      modelId: route.modelId,
+      ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+    };
   });
 
   const missingRoute = settings.routes.find((route) => !providersById.has(route.providerId));

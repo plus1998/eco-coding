@@ -281,7 +281,24 @@ export {
   resolveProviderKeyFromBaseUrl,
   type ModelPricingLookup,
   type ModelsDevCatalog,
+  type ModelsDevModelEntry,
 } from "./models-dev-pricing";
+export {
+  extractCapabilitiesFromModelEntry,
+  lookupModelCapabilitiesInCatalog,
+  unresolvedModelCapabilities,
+  type ModelCapabilities,
+  type ModelCapabilitiesLookup,
+} from "./models-dev-capabilities";
+export {
+  applyThinkingToMessagesBody,
+  applyThinkingToProcessEnv,
+  applyThinkingToQueryOptions,
+  buildThinkingQueryPatch,
+  isThinkingEffort,
+  type ThinkingEffort,
+  type ThinkingQueryPatch,
+} from "./thinking-options";
 export {
   computeOccupancyRatio,
   computeWindowOccupancy,

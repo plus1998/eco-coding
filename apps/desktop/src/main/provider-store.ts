@@ -8,6 +8,7 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type ThinkingEffort,
 } from "../shared/ipc";
 
 interface ProviderRow {
@@ -25,6 +26,7 @@ interface RouteRow {
   role: AgentRole;
   provider_id: string;
   model_id: string;
+  thinking_effort: string | null;
 }
 
 export interface ProviderConfigSecret extends ProviderConfigView {
@@ -62,10 +64,13 @@ export class ProviderStore {
         role TEXT PRIMARY KEY,
         provider_id TEXT NOT NULL,
         model_id TEXT NOT NULL,
+        thinking_effort TEXT,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(provider_id) REFERENCES provider_configs(id)
       );
     `);
+
+    this.migrateRoleRoutesThinkingEffort();
 
     if (this.listProviders().length === 0) {
       this.saveProvider({
@@ -156,7 +161,7 @@ export class ProviderStore {
 
   listRoleRoutes(): RoleRouteConfig[] {
     return this.db
-      .prepare("SELECT role, provider_id, model_id FROM role_routes ORDER BY role")
+      .prepare("SELECT role, provider_id, model_id, thinking_effort FROM role_routes ORDER BY role")
       .all()
       .map((row) => routeRowToConfig(row as unknown as RouteRow));
   }
@@ -179,16 +184,32 @@ export class ProviderStore {
       throw new Error(`Model id is required for ${route.role}`);
     }
 
+    const thinkingEffort = normalizeThinkingEffort(route.thinkingEffort);
     this.db
       .prepare(`
-        INSERT INTO role_routes (role, provider_id, model_id, updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO role_routes (role, provider_id, model_id, thinking_effort, updated_at)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(role) DO UPDATE SET
           provider_id = excluded.provider_id,
           model_id = excluded.model_id,
+          thinking_effort = excluded.thinking_effort,
           updated_at = excluded.updated_at
       `)
-      .run(route.role, route.providerId, route.modelId.trim(), new Date().toISOString());
+      .run(
+        route.role,
+        route.providerId,
+        route.modelId.trim(),
+        thinkingEffort,
+        new Date().toISOString(),
+      );
+  }
+
+  private migrateRoleRoutesThinkingEffort(): void {
+    const columns = this.db.prepare("PRAGMA table_info(role_routes)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "thinking_effort")) {
+      return;
+    }
+    this.db.exec("ALTER TABLE role_routes ADD COLUMN thinking_effort TEXT");
   }
 
   private listProviderRows(): ProviderRow[] {
@@ -229,11 +250,29 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
 }
 
 function routeRowToConfig(row: RouteRow): RoleRouteConfig {
+  const effort = parseThinkingEffort(row.thinking_effort);
   return {
     role: row.role,
     providerId: row.provider_id,
     modelId: row.model_id,
+    ...(effort && { thinkingEffort: effort }),
   };
+}
+
+const THINKING_EFFORT_VALUES = new Set<ThinkingEffort>(["off", "low", "medium", "high", "xhigh", "max"]);
+
+function parseThinkingEffort(value: string | null | undefined): ThinkingEffort | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return THINKING_EFFORT_VALUES.has(value as ThinkingEffort) ? (value as ThinkingEffort) : undefined;
+}
+
+function normalizeThinkingEffort(value: ThinkingEffort | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  return THINKING_EFFORT_VALUES.has(value) ? value : null;
 }
 
 function validateProviderInput(input: ProviderConfigInput): void {

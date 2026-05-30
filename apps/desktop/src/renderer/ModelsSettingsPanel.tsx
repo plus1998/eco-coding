@@ -7,8 +7,10 @@ import {
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
+  type RouteCapabilityHint,
   type RoutePricingHint,
   type RoleRouteConfig,
+  type ThinkingEffort,
 } from "../shared/ipc";
 import { ModelSelectField } from "./ModelSelectField";
 
@@ -32,6 +34,16 @@ const ROLE_LABELS: Record<AgentRole, string> = {
   tester: "测试",
 };
 
+const THINKING_EFFORT_OPTIONS: Array<{ value: "" | ThinkingEffort; label: string }> = [
+  { value: "", label: "默认" },
+  { value: "off", label: "关闭" },
+  { value: "low", label: "low" },
+  { value: "medium", label: "medium" },
+  { value: "high", label: "high" },
+  { value: "xhigh", label: "xhigh" },
+  { value: "max", label: "max" },
+];
+
 export function ModelsSettingsPanel({
   settings,
   busy,
@@ -45,6 +57,7 @@ export function ModelsSettingsPanel({
   const [panelError, setPanelError] = useState<string>();
   const [modalError, setModalError] = useState<string>();
   const [routePricing, setRoutePricing] = useState<Partial<Record<AgentRole, RoutePricingHint>>>({});
+  const [routeCapabilities, setRouteCapabilities] = useState<Partial<Record<AgentRole, RouteCapabilityHint>>>({});
   const [pricingLoading, setPricingLoading] = useState(false);
 
   const modalProviderId = providerForm.id ?? "__draft__";
@@ -135,9 +148,26 @@ export function ModelsSettingsPanel({
     }
   }, []);
 
+  const refreshRouteCapabilities = useCallback(async () => {
+    if (!window.eco?.getRouteCapabilities) {
+      return;
+    }
+    try {
+      const hints = await window.eco.getRouteCapabilities();
+      setRouteCapabilities(
+        Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
+          Record<AgentRole, RouteCapabilityHint>
+        >,
+      );
+    } catch {
+      setRouteCapabilities({});
+    }
+  }, []);
+
   useEffect(() => {
     void refreshRoutePricing();
-  }, [settings.routes, settings.providers, refreshRoutePricing]);
+    void refreshRouteCapabilities();
+  }, [settings.routes, settings.providers, refreshRoutePricing, refreshRouteCapabilities]);
 
   const modelsForProvider = useCallback(
     (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
@@ -240,6 +270,13 @@ export function ModelsSettingsPanel({
       providerId: patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id ?? "",
       modelId: patch.modelId ?? existingRoute?.modelId ?? settings.providers[0]?.defaultModel ?? "",
     };
+    if ("thinkingEffort" in patch) {
+      if (patch.thinkingEffort) {
+        nextRoute.thinkingEffort = patch.thinkingEffort;
+      }
+    } else if (existingRoute?.thinkingEffort) {
+      nextRoute.thinkingEffort = existingRoute.thinkingEffort;
+    }
     onSettingsChange({
       ...settings,
       routes: [...settings.routes.filter((route) => route.role !== role), nextRoute],
@@ -317,7 +354,9 @@ export function ModelsSettingsPanel({
             <p className="models-section-desc">
               为规划、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
             </p>
-            <p className="models-section-meta">参考单价来自 models.dev，仅用于预估，不影响实际上游计费。</p>
+            <p className="models-section-meta">
+              能力与参考单价来自 models.dev；未匹配时请自行确认模型是否支持视觉/思考链。
+            </p>
           </div>
           <div className="models-section-actions">
             <button
@@ -347,6 +386,9 @@ export function ModelsSettingsPanel({
             const routeLoading = loadingForProvider(providerId);
             const routeError = modelsErrorForProvider(providerId);
             const pricing = routePricing[role];
+            const capability = routeCapabilities[role];
+            const effortDisabled =
+              capability?.capabilitiesResolved === true && capability.supportsReasoning === false;
 
             return (
               <li key={role} className="models-route-card">
@@ -354,6 +396,29 @@ export function ModelsSettingsPanel({
                   <div className="models-route-card-identity">
                     <span className="models-route-role">{ROLE_LABELS[role]}</span>
                     <span className="models-route-role-id">{role}</span>
+                    <span className="models-route-capability-badges">
+                      {capability?.capabilitiesResolved ? (
+                        <>
+                          {capability.supportsImageInput && (
+                            <span className="models-route-capability-badge" title="支持图片输入">
+                              视觉
+                            </span>
+                          )}
+                          {capability.supportsReasoning && (
+                            <span className="models-route-capability-badge" title="支持思考链">
+                              推理
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span
+                          className="models-route-capability-badge models-route-capability-badge-unresolved"
+                          title="未匹配 models.dev"
+                        >
+                          能力 ?
+                        </span>
+                      )}
+                    </span>
                   </div>
                   {pricing?.pricingLabel ? (
                     <span className="models-route-pricing-badge">{pricing.pricingLabel}</span>
@@ -406,6 +471,40 @@ export function ModelsSettingsPanel({
                       onChange={(modelId) => updateRoute(role, { modelId })}
                     />
                   </div>
+                  <label className="mcp-field models-route-field">
+                    <span className="mcp-field-label">思考链</span>
+                    <select
+                      className="mcp-field-input"
+                      value={route?.thinkingEffort ?? ""}
+                      disabled={busy || effortDisabled}
+                      title={
+                        effortDisabled
+                          ? "该模型在 models.dev 中标记为不支持推理"
+                          : capability && !capability.capabilitiesResolved
+                            ? "未匹配 models.dev，请自行确认"
+                            : undefined
+                      }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        updateRoute(role, {
+                          thinkingEffort:
+                            value === "" ? undefined : (value as ThinkingEffort),
+                        });
+                      }}
+                    >
+                      {THINKING_EFFORT_OPTIONS.map((option) => (
+                        <option key={option.value || "default"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {effortDisabled && (
+                      <span className="models-route-field-hint">该模型不支持推理</span>
+                    )}
+                    {capability && !capability.capabilitiesResolved && (
+                      <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
+                    )}
+                  </label>
                 </div>
               </li>
             );

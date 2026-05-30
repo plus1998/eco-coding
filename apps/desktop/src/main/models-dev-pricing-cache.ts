@@ -3,9 +3,11 @@ import path from "node:path";
 import {
   DEFAULT_CONTEXT_LIMIT,
   fetchModelsDevCatalog,
+  lookupModelCapabilitiesInCatalog,
   lookupModelCostInCatalog,
   lookupModelLimitsInCatalog,
   resolveProviderKeyFromBaseUrl,
+  type ModelCapabilitiesLookup,
   type ModelLimitsLookup,
   type ModelPricingLookup,
   type ModelsDevCatalog,
@@ -56,6 +58,12 @@ export class ModelsDevPricingCache {
     const catalog = await this.getCatalog();
     const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
     return lookupModelLimitsInCatalog(catalog, providerHint, modelId);
+  }
+
+  async lookupCapabilities(baseUrl: string, modelId: string): Promise<ModelCapabilitiesLookup | null> {
+    const catalog = await this.getCatalog();
+    const providerHint = resolveProviderKeyFromBaseUrl(baseUrl);
+    return lookupModelCapabilitiesInCatalog(catalog, providerHint, modelId);
   }
 
   async resolveContextLimit(baseUrl: string, modelId: string): Promise<{

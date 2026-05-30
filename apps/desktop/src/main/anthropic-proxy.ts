@@ -1,6 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 import http, { type IncomingHttpHeaders } from "node:http";
-import type { AgentRole } from "../shared/ipc";
+import { applyThinkingToMessagesBody } from "@eco/runtime";
+import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { UpstreamModelOption } from "../shared/models";
@@ -16,6 +17,11 @@ export interface AnthropicProxyRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  thinkingEffort?: ThinkingEffort;
+}
+
+export interface AnthropicProxyStartOptions {
+  pendingImages?: readonly PromptImageAttachment[];
 }
 
 export interface AnthropicProxyResolvedRoute extends AnthropicProxyRoute {
@@ -31,14 +37,23 @@ export interface StartedAnthropicProxy {
 
 const LOCAL_PROXY_API_KEY = "eco-local-model-router";
 const ANTHROPIC_VERSION = "2023-06-01";
+const MAX_PENDING_IMAGES = 5;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export async function startAnthropicModelProxy(
   routes: readonly AnthropicProxyRoute[],
+  options?: AnthropicProxyStartOptions,
 ): Promise<StartedAnthropicProxy> {
-  const resolvedRoutes = routes.map((route) => ({
-    ...route,
+  const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
+    role: route.role,
+    provider: route.provider,
+    modelId: route.modelId,
     aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
+    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
+  let pendingImages = normalizePendingImages(options?.pendingImages);
+  let imagesInjected = false;
+
   const server = http.createServer(async (request, response) => {
     try {
       const isHealthCheck = request.method === "GET" && request.url === "/health";
@@ -86,6 +101,15 @@ export async function startAnthropicModelProxy(
 
       const upstreamModel = route.modelId;
       body.model = upstreamModel;
+
+      if (isMessagesPath(request.url) && pendingImages.length > 0 && !imagesInjected) {
+        injectImagesIntoMessagesBody(body, pendingImages);
+        imagesInjected = true;
+        pendingImages = [];
+      }
+
+      applyThinkingToMessagesBody(body, route.thinkingEffort);
+
       await forwardAnthropicRequest(request, response, route, body, requestedModel);
     } catch (error) {
       logUpstream("handler-error", { error: errorMessage(error) });
@@ -216,6 +240,84 @@ function isModelsListPath(url: string | undefined): boolean {
   }
   const pathname = url.split("?")[0] ?? url;
   return pathname === "/v1/models" || pathname.endsWith("/v1/models");
+}
+
+function isMessagesPath(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+  const pathname = url.split("?")[0] ?? url;
+  return pathname === "/v1/messages" || pathname.endsWith("/v1/messages");
+}
+
+export function injectImagesIntoMessagesBody(
+  body: Record<string, unknown>,
+  images: readonly PromptImageAttachment[],
+): void {
+  const messages = body.messages;
+  if (!Array.isArray(messages) || images.length === 0) {
+    return;
+  }
+
+  let targetIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (isRecord(message) && message.role === "user") {
+      targetIndex = index;
+      break;
+    }
+  }
+  if (targetIndex < 0) {
+    return;
+  }
+
+  const message = messages[targetIndex];
+  if (!isRecord(message)) {
+    return;
+  }
+
+  const imageBlocks = images.map((image) => ({
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: image.mediaType,
+      data: image.data,
+    },
+  }));
+
+  const existing = message.content;
+  if (typeof existing === "string") {
+    message.content = [...imageBlocks, { type: "text", text: existing }];
+    return;
+  }
+
+  if (Array.isArray(existing)) {
+    message.content = [...imageBlocks, ...existing];
+    return;
+  }
+
+  message.content = imageBlocks;
+}
+
+function normalizePendingImages(
+  images: readonly PromptImageAttachment[] | undefined,
+): PromptImageAttachment[] {
+  if (!images?.length) {
+    return [];
+  }
+  const normalized: PromptImageAttachment[] = [];
+  for (const image of images.slice(0, MAX_PENDING_IMAGES)) {
+    const data = image.data?.trim();
+    if (!data || !image.mediaType) {
+      continue;
+    }
+    const byteLength = Buffer.byteLength(data, "base64");
+    if (byteLength > MAX_IMAGE_BYTES) {
+      continue;
+    }
+    normalized.push({ mediaType: image.mediaType, data });
+  }
+  return normalized;
 }
 
 async function listenOnAvailablePort(server: http.Server): Promise<void> {

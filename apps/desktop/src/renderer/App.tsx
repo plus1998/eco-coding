@@ -15,8 +15,9 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  X,
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ClipboardEvent, type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
@@ -24,6 +25,7 @@ import {
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
+  type RouteCapabilityHint,
   type SkillsListResult,
   type AgentSkillAssignments,
   type ClarificationRequest,
@@ -41,6 +43,12 @@ import {
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
+import {
+  COMPOSER_MAX_IMAGES,
+  type ComposerImageAttachment,
+  readImageFileAsAttachment,
+  toPromptImageAttachments,
+} from "./composer-attachments";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
@@ -104,6 +112,9 @@ function App() {
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
+  const [plannerCapability, setPlannerCapability] = useState<RouteCapabilityHint>();
+  const [composerImageNotice, setComposerImageNotice] = useState<string>();
   const [isOpening, setIsOpening] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [planActionBusy, setPlanActionBusy] = useState(false);
@@ -428,6 +439,15 @@ function App() {
     void refreshSkillsList(currentProjectPath);
   }, [settingsOpen, settingsSection, currentProjectPath]);
 
+  useEffect(() => {
+    if (!window.eco?.getRouteCapabilities) {
+      return;
+    }
+    void window.eco.getRouteCapabilities().then((hints) => {
+      setPlannerCapability(hints.find((hint) => hint.role === "planner"));
+    });
+  }, [settings.routes, settings.providers]);
+
   const providerById = useMemo(
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
     [settings.providers],
@@ -438,9 +458,13 @@ function App() {
     return Boolean(route?.modelId.trim() && provider?.enabled && provider.hasApiKey);
   });
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
+  const plannerSupportsImages =
+    !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
+  const canPasteComposerImages = plannerSupportsImages;
+
   const canSend = Boolean(
     currentProjectPath &&
-      prompt.trim() &&
+      (prompt.trim() || composerAttachments.length > 0) &&
       routesReady &&
       !isStarting &&
       !planActionBusy &&
@@ -624,14 +648,21 @@ function App() {
   }
 
   async function sendComposerMessage() {
-    if (!currentProjectPath || !window.eco || !prompt.trim()) return;
+    if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
+      return;
+    }
     setError(undefined);
     setIsStarting(true);
+    const attachments =
+      composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
+    const messagePrompt =
+      prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
     try {
       if (activeThread && isContinuableThreadStatus(activeThread.status)) {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
-          prompt,
+          prompt: messagePrompt,
+          ...(attachments && { attachments }),
         });
         setThreads((current) =>
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
@@ -640,7 +671,8 @@ function App() {
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
-          prompt,
+          prompt: messagePrompt,
+          ...(attachments && { attachments }),
         });
         setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
         setSelectedThreadId(result.thread.id);
@@ -662,6 +694,8 @@ function App() {
         lastUsedAt: new Date().toISOString(),
       });
       setPrompt("");
+      setComposerAttachments([]);
+      setComposerImageNotice(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -898,7 +932,61 @@ function App() {
   function startNewChat() {
     setSelectedThreadId(undefined);
     setPrompt("");
+    setComposerAttachments([]);
+    setComposerImageNotice(undefined);
     setError(undefined);
+  }
+
+  async function addComposerImageFiles(files: FileList | File[]) {
+    if (!canPasteComposerImages) {
+      setComposerImageNotice("当前规划模型不支持图片输入。");
+      return;
+    }
+    if (plannerCapability && !plannerCapability.capabilitiesResolved) {
+      setComposerImageNotice("未匹配 models.dev，请自行确认规划模型是否支持图片。");
+    } else {
+      setComposerImageNotice(undefined);
+    }
+
+    const additions: ComposerImageAttachment[] = [];
+    for (const file of files) {
+      if (composerAttachments.length + additions.length >= COMPOSER_MAX_IMAGES) {
+        break;
+      }
+      const attachment = await readImageFileAsAttachment(file);
+      if (attachment) {
+        additions.push(attachment);
+      }
+    }
+    if (additions.length === 0) {
+      return;
+    }
+    setComposerAttachments((current) => [...current, ...additions].slice(0, COMPOSER_MAX_IMAGES));
+  }
+
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const items = event.clipboardData?.items;
+    if (!items?.length) {
+      return;
+    }
+    const imageFiles: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
+        }
+      }
+    }
+    if (imageFiles.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    void addComposerImageFiles(imageFiles);
+  }
+
+  function removeComposerAttachment(id: string) {
+    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
   function insertComposerNewline(textarea: HTMLTextAreaElement) {
@@ -934,11 +1022,32 @@ function App() {
 
   const composer = (
     <div className="codex-composer-wrap">
+      {composerImageNotice && (
+        <p className="composer-image-notice">{composerImageNotice}</p>
+      )}
+      {composerAttachments.length > 0 && (
+        <ul className="composer-attachments" aria-label="已粘贴的图片">
+          {composerAttachments.map((attachment) => (
+            <li key={attachment.id} className="composer-attachment">
+              <img src={attachment.previewUrl} alt="" />
+              <button
+                type="button"
+                className="composer-attachment-remove"
+                aria-label="移除图片"
+                onClick={() => removeComposerAttachment(attachment.id)}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="codex-composer">
         <textarea
           ref={composerRef}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
+          onPaste={canPasteComposerImages ? handleComposerPaste : undefined}
           onKeyDown={handleComposerKeyDown}
           placeholder={
             pendingClarification

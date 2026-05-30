@@ -6,10 +6,13 @@ import {
   type ModelProfile,
 } from "../../shared/src";
 
+export type RouteThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface ResolvedModelRoute {
   role: AgentRole;
   primary: ModelProfile;
   fallbacks: ModelProfile[];
+  thinkingEffort?: RouteThinkingEffort;
 }
 
 export interface RouterConfig {

@@ -26,6 +26,8 @@ import {
 } from "./sdk-stream-events.js";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
+import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
+import type { ThinkingEffort } from "./thinking-options.js";
 import {
   ecoBasePromptAppend,
   exploreAgentDescription,
@@ -316,6 +318,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
+        ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
         ...(this.options.otel
           ? { otel: { ...this.options.otel, threadId: input.threadId } }
           : {}),
@@ -331,6 +334,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
     applyResumeToQueryOptions(queryOptions, input.resume);
+    applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
 
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
@@ -506,6 +510,7 @@ export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
   otel?: EcoBuiltinOtelOptions;
+  thinkingEffort?: ThinkingEffort;
 }
 
 /** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
@@ -523,6 +528,8 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
   if (options.otel) {
     Object.assign(env, buildBuiltinOtelEnv(options.otel));
   }
+
+  applyThinkingToProcessEnv(env, options.thinkingEffort);
 
   delete env.ANTHROPIC_AUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;

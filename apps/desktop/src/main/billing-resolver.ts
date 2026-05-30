@@ -1,13 +1,24 @@
-import { formatModelPricingLabel, type ModelCostRates } from "@eco/runtime";
+import {
+  formatModelPricingLabel,
+  unresolvedModelCapabilities,
+  type ModelCostRates,
+} from "@eco/runtime";
 import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
-import type { AgentRole, ModelSettingsSnapshot, RoutePricingHint } from "../shared/ipc";
+import type {
+  AgentRole,
+  ModelSettingsSnapshot,
+  RouteCapabilityHint,
+  RoutePricingHint,
+  ThinkingEffort,
+} from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 export interface RuntimeRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  thinkingEffort?: ThinkingEffort;
 }
 
 export interface ResolvedUsageRoute {
@@ -18,8 +29,11 @@ export interface ResolvedUsageRoute {
 
 export function buildResolvedProxyRoutes(routes: readonly RuntimeRoute[]): AnthropicProxyResolvedRoute[] {
   return routes.map((route) => ({
-    ...route,
+    role: route.role,
+    provider: route.provider,
+    modelId: route.modelId,
     aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
+    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
 }
 
@@ -75,8 +89,39 @@ export function resolveRuntimeRoutesFromSettings(
     if (!provider) {
       return [];
     }
-    return [{ role: route.role, provider, modelId: route.modelId }];
+    return [
+      {
+        role: route.role,
+        provider,
+        modelId: route.modelId,
+        ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+      },
+    ];
   });
+}
+
+export async function lookupRouteCapabilityHints(
+  cache: ModelsDevPricingCache,
+  settings: ModelSettingsSnapshot,
+  providers: readonly ProviderConfigSecret[],
+): Promise<RouteCapabilityHint[]> {
+  const routes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const hints: RouteCapabilityHint[] = [];
+
+  for (const route of routes) {
+    const lookup = await cache.lookupCapabilities(route.provider.baseUrl, route.modelId);
+    const capabilities = lookup?.capabilities ?? unresolvedModelCapabilities();
+    hints.push({
+      role: route.role,
+      modelId: route.modelId,
+      providerName: route.provider.name,
+      supportsImageInput: capabilities.supportsImageInput,
+      supportsReasoning: capabilities.supportsReasoning,
+      capabilitiesResolved: capabilities.capabilitiesResolved,
+    });
+  }
+
+  return hints;
 }
 
 export async function lookupRoutePricingHints(
