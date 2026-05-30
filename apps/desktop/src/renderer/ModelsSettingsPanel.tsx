@@ -1,3 +1,4 @@
+import { DEFAULT_CONTEXT_LIMIT, formatContextLimit } from "@eco/runtime";
 import { Plus, RefreshCw, Settings2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import type { UpstreamModelOption } from "../shared/models";
@@ -133,21 +134,6 @@ export function ModelsSettingsPanel({
     void fetchModels(providerForm, { silent: true });
   }, [providerModalOpen, providerForm, settings.providers, modelsCache, fetchModels]);
 
-  const refreshRoutePricing = useCallback(async () => {
-    if (!window.eco?.getRoutePricing) {
-      return;
-    }
-    setPricingLoading(true);
-    try {
-      const hints = await window.eco.getRoutePricing();
-      setRoutePricing(Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
-        Record<AgentRole, RoutePricingHint>
-      >);
-    } finally {
-      setPricingLoading(false);
-    }
-  }, []);
-
   const refreshRouteCapabilities = useCallback(async () => {
     if (!window.eco?.getRouteCapabilities) {
       return;
@@ -164,10 +150,31 @@ export function ModelsSettingsPanel({
     }
   }, []);
 
+  const refreshModelsDevCatalog = useCallback(async () => {
+    if (!window.eco?.getRoutePricing) {
+      return;
+    }
+    setPricingLoading(true);
+    setPanelError(undefined);
+    try {
+      if (window.eco.refreshPricingCatalog) {
+        await window.eco.refreshPricingCatalog();
+      }
+      const hints = await window.eco.getRoutePricing();
+      setRoutePricing(Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
+        Record<AgentRole, RoutePricingHint>
+      >);
+      await refreshRouteCapabilities();
+    } catch (caught) {
+      setPanelError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPricingLoading(false);
+    }
+  }, [refreshRouteCapabilities]);
+
   useEffect(() => {
-    void refreshRoutePricing();
-    void refreshRouteCapabilities();
-  }, [settings.routes, settings.providers, refreshRoutePricing, refreshRouteCapabilities]);
+    void refreshModelsDevCatalog();
+  }, [settings.routes, settings.providers, refreshModelsDevCatalog]);
 
   const modelsForProvider = useCallback(
     (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
@@ -355,7 +362,7 @@ export function ModelsSettingsPanel({
               为规划、架构、编码、审查、测试分别指定 Provider 与模型。线程运行到对应角色时，会调用此处配置的路线。
             </p>
             <p className="models-section-meta">
-              能力与参考单价来自 models.dev；未匹配时请自行确认模型是否支持视觉/思考链。
+              能力、上下文上限与参考单价来自 models.dev；未匹配时请自行确认模型规格。
             </p>
           </div>
           <div className="models-section-actions">
@@ -363,9 +370,9 @@ export function ModelsSettingsPanel({
               type="button"
               className="models-section-button"
               disabled={busy || pricingLoading}
-              onClick={() => void refreshRoutePricing()}
+              onClick={() => void refreshModelsDevCatalog()}
             >
-              刷新单价
+              刷新 models.dev
             </button>
             <button
               type="button"
@@ -418,6 +425,27 @@ export function ModelsSettingsPanel({
                           能力 ?
                         </span>
                       )}
+                      {route?.modelId ? (
+                        capability?.contextLimitResolved && capability.contextTokens ? (
+                          <span
+                            className="models-route-capability-badge"
+                            title={
+                              capability.maxOutputTokens
+                                ? `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens · 单次最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens`
+                                : `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens`
+                            }
+                          >
+                            上下文 {formatContextLimit(capability.contextTokens)}
+                          </span>
+                        ) : (
+                          <span
+                            className="models-route-capability-badge models-route-capability-badge-unresolved"
+                            title={`上下文上限未匹配 models.dev，按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()}（${formatContextLimit(DEFAULT_CONTEXT_LIMIT)}）估算`}
+                          >
+                            上下文 ~{formatContextLimit(DEFAULT_CONTEXT_LIMIT)}
+                          </span>
+                        )
+                      ) : null}
                     </span>
                   </div>
                   {pricing?.pricingLabel ? (
@@ -470,6 +498,26 @@ export function ModelsSettingsPanel({
                       }}
                       onChange={(modelId) => updateRoute(role, { modelId })}
                     />
+                    {route?.modelId ? (
+                      capability?.contextLimitResolved && capability.contextTokens ? (
+                        <span
+                          className="models-route-field-hint"
+                          title={`${capability.contextTokens.toLocaleString()} tokens${capability.maxOutputTokens ? ` · 最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens` : ""}`}
+                        >
+                          上下文上限 {formatContextLimit(capability.contextTokens)}
+                          {capability.maxOutputTokens
+                            ? ` · 最大输出 ${formatContextLimit(capability.maxOutputTokens)}`
+                            : null}
+                        </span>
+                      ) : (
+                        <span
+                          className="models-route-field-hint"
+                          title={`本地 catalog 未命中（与网站搜索不同：需匹配 Provider baseURL + 模型 ID）。可点「刷新 models.dev」拉取最新 api.json；运行时按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()} tokens 估算`}
+                        >
+                          上下文上限未匹配本地 catalog，按 {formatContextLimit(DEFAULT_CONTEXT_LIMIT)} 估算
+                        </span>
+                      )
+                    ) : null}
                   </div>
                   <label className="mcp-field models-route-field">
                     <span className="mcp-field-label">思考链</span>

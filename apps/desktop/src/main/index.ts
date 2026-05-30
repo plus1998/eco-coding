@@ -2261,9 +2261,7 @@ async function processSdkRunBilling(input: {
       const usageRoute = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
       const actualLookup = usageRoute
         ? await pricingCache.lookup(usageRoute.provider.baseUrl, usageRoute.modelId)
-        : plannerRoute
-          ? await pricingCache.lookup(plannerRoute.provider.baseUrl, entry.modelId)
-          : null;
+        : null;
       return {
         modelId: entry.modelId,
         usage: entry.usage,

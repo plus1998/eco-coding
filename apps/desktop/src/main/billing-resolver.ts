@@ -43,18 +43,75 @@ export function resolveUsageRoute(
   routes: readonly RuntimeRoute[],
 ): ResolvedUsageRoute | undefined {
   const resolved = buildResolvedProxyRoutes(routes);
-  if (requestedModel?.trim()) {
-    const byModel = resolveProxyRoute(resolved, requestedModel.trim());
-    if (byModel) {
-      return {
-        role: byModel.role,
-        provider: byModel.provider,
-        modelId: byModel.modelId,
-      };
-    }
+  const roleRoute = routes.find((route) => route.role === role);
+
+  if (!requestedModel?.trim()) {
+    return roleRoute;
   }
 
-  return routes.find((route) => route.role === role);
+  const trimmed = requestedModel.trim();
+
+  const byAlias = resolved.find((route) => route.aliasModelId === trimmed);
+  if (byAlias) {
+    return {
+      role: byAlias.role,
+      provider: byAlias.provider,
+      modelId: byAlias.modelId,
+    };
+  }
+
+  const byModelId = resolved.filter((route) => route.modelId === trimmed);
+  if (byModelId.length === 1) {
+    const route = byModelId[0]!;
+    if (roleRoute && route.role !== role) {
+      return {
+        role: roleRoute.role,
+        provider: roleRoute.provider,
+        modelId: roleRoute.modelId,
+      };
+    }
+    return {
+      role: route.role,
+      provider: route.provider,
+      modelId: route.modelId,
+    };
+  }
+
+  // SDK/OTel often reports the planner upstream id for every role; prefer this role's route.
+  if (byModelId.length > 1 && roleRoute) {
+    const roleMatch = byModelId.find((route) => route.role === role);
+    if (roleMatch) {
+      return {
+        role: roleMatch.role,
+        provider: roleMatch.provider,
+        modelId: roleMatch.modelId,
+      };
+    }
+    return {
+      role: roleRoute.role,
+      provider: roleRoute.provider,
+      modelId: roleRoute.modelId,
+    };
+  }
+
+  if (roleRoute) {
+    return {
+      role: roleRoute.role,
+      provider: roleRoute.provider,
+      modelId: roleRoute.modelId,
+    };
+  }
+
+  const byModel = resolveProxyRoute(resolved, trimmed);
+  if (byModel) {
+    return {
+      role: byModel.role,
+      provider: byModel.provider,
+      modelId: byModel.modelId,
+    };
+  }
+
+  return undefined;
 }
 
 export async function lookupRatesForRoute(
@@ -110,6 +167,7 @@ export async function lookupRouteCapabilityHints(
 
   for (const route of routes) {
     const lookup = await cache.lookupCapabilities(route.provider.baseUrl, route.modelId);
+    const limitsLookup = await cache.lookupLimits(route.provider.baseUrl, route.modelId);
     const capabilities = lookup?.capabilities ?? unresolvedModelCapabilities();
     hints.push({
       role: route.role,
@@ -118,6 +176,13 @@ export async function lookupRouteCapabilityHints(
       supportsImageInput: capabilities.supportsImageInput,
       supportsReasoning: capabilities.supportsReasoning,
       capabilitiesResolved: capabilities.capabilitiesResolved,
+      ...(limitsLookup && {
+        contextTokens: limitsLookup.limits.contextTokens,
+        ...(limitsLookup.limits.maxOutputTokens !== undefined && {
+          maxOutputTokens: limitsLookup.limits.maxOutputTokens,
+        }),
+      }),
+      contextLimitResolved: Boolean(limitsLookup),
     });
   }
 

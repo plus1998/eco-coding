@@ -368,6 +368,9 @@ export interface RouteCapabilityHint {
   supportsImageInput: boolean;
   supportsReasoning: boolean;
   capabilitiesResolved: boolean;
+  contextTokens?: number;
+  maxOutputTokens?: number;
+  contextLimitResolved: boolean;
 }
 
 export interface ThreadLiveEvent {

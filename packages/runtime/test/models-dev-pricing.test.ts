@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import {
+  expandModelLookupCandidates,
   lookupModelCostInCatalog,
   parseModelsDevCatalog,
   resolveProviderKeyFromBaseUrl,
 } from "../src/models-dev-pricing";
+import { lookupModelLimitsInCatalog } from "../src/models-dev-limits";
 
 const mockCatalog = parseModelsDevCatalog({
   anthropic: {
@@ -44,4 +46,37 @@ test("lookupModelCostInCatalog resolves sonnet alias", () => {
 test("lookupModelCostInCatalog searches all providers when hint missing", () => {
   const result = lookupModelCostInCatalog(mockCatalog, null, "claude-haiku-4-5");
   expect(result?.rates.input).toBe(0.8);
+});
+
+test("expandModelLookupCandidates normalizes openrouter anthropic ids", () => {
+  expect(expandModelLookupCandidates("claude-opus-4-7", "openrouter")).toEqual([
+    "claude-opus-4-7",
+    "claude-opus-4.7",
+    "anthropic/claude-opus-4-7",
+    "anthropic/claude-opus-4.7",
+  ]);
+});
+
+const openRouterCatalog = parseModelsDevCatalog({
+  openrouter: {
+    id: "openrouter",
+    models: {
+      "anthropic/claude-opus-4.7": {
+        id: "anthropic/claude-opus-4.7",
+        limit: { context: 1_000_000, output: 128_000 },
+        cost: { input: 5, output: 25 },
+      },
+      "anthropic/claude-opus-4": {
+        id: "anthropic/claude-opus-4",
+        limit: { context: 200_000, output: 32_000 },
+        cost: { input: 4, output: 20 },
+      },
+    },
+  },
+});
+
+test("lookupModelLimitsInCatalog resolves hyphenated id on openrouter", () => {
+  const result = lookupModelLimitsInCatalog(openRouterCatalog, "openrouter", "claude-opus-4-7");
+  expect(result?.modelId).toBe("anthropic/claude-opus-4.7");
+  expect(result?.limits.contextTokens).toBe(1_000_000);
 });

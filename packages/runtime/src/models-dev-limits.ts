@@ -3,6 +3,7 @@ import {
   type ModelsDevCatalog,
   type ModelsDevModelEntry,
   type ModelsDevProviderEntry,
+  expandModelLookupCandidates,
   lookupModelCostInCatalog,
 } from "./models-dev-pricing";
 
@@ -51,7 +52,7 @@ export function lookupModelLimitsInCatalog(
   const entry = provider ? findModelEntry(provider, pricing.modelId) : undefined;
   const limits = entry ? extractLimitsFromModelEntry(entry) : null;
   if (!limits) {
-    return null;
+    return lookupLimitsOnly(catalog, providerHint, modelId);
   }
 
   return {
@@ -67,11 +68,35 @@ function lookupLimitsOnly(
   providerHint: string | null,
   modelId: string,
 ): ModelLimitsLookup | null {
-  const trimmed = modelId.trim();
-  if (!trimmed) {
+  const candidates = expandModelLookupCandidates(modelId, providerHint);
+  if (candidates.length === 0) {
     return null;
   }
 
+  for (const candidate of candidates) {
+    const match = lookupLimitsForCandidate(catalog, providerHint, candidate);
+    if (match) {
+      return match;
+    }
+  }
+
+  if (providerHint) {
+    for (const candidate of expandModelLookupCandidates(modelId, null)) {
+      const match = lookupLimitsForCandidate(catalog, null, candidate);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  return null;
+}
+
+function lookupLimitsForCandidate(
+  catalog: ModelsDevCatalog,
+  providerHint: string | null,
+  trimmed: string,
+): ModelLimitsLookup | null {
   if (providerHint && catalog[providerHint]) {
     const match = lookupLimitsInProvider(catalog[providerHint]!, trimmed);
     if (match) {
@@ -143,7 +168,7 @@ function matchLimitsFromProvider(
 
   const fuzzy = Object.values(provider.models)
     .filter((entry) => entry.id.toLowerCase().includes(lower) || lower.includes(entry.id.toLowerCase()))
-    .sort((a, b) => a.id.length - b.id.length);
+    .sort((a, b) => b.id.length - a.id.length);
   for (const entry of fuzzy) {
     const matched = limitsFromEntry(entry);
     if (matched) {
@@ -205,4 +230,16 @@ export function occupancyPercent(occupied: number, limit: number): number {
     return 0;
   }
   return Math.min(100, Math.round((occupied / limit) * 100));
+}
+
+/** Compact label for context window size (e.g. 200K, 1.0M). */
+export function formatContextLimit(tokens: number): string {
+  if (tokens < 1000) {
+    return String(tokens);
+  }
+  if (tokens < 1_000_000) {
+    const rounded = tokens / 1000;
+    return rounded >= 100 ? `${Math.round(rounded)}K` : `${rounded.toFixed(1)}K`;
+  }
+  return `${(tokens / 1_000_000).toFixed(1)}M`;
 }

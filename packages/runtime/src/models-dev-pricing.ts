@@ -87,16 +87,69 @@ export function extractRatesFromModelEntry(entry: ModelsDevModelEntry): ModelCos
   };
 }
 
+/**
+ * Alternate model ids to try against models.dev (gateway naming differs from Anthropic API).
+ */
+export function expandModelLookupCandidates(
+  modelId: string,
+  providerHint: string | null,
+): string[] {
+  const trimmed = modelId.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const candidates = new Set<string>([trimmed]);
+
+  // API: claude-opus-4-7 · OpenRouter catalog: anthropic/claude-opus-4.7
+  const dotVersion = trimmed.replace(/^(.*-)(\d+)-(\d+)$/, "$1$2.$3");
+  if (dotVersion !== trimmed) {
+    candidates.add(dotVersion);
+  }
+
+  if (providerHint === "openrouter" && !trimmed.includes("/")) {
+    candidates.add(`anthropic/${trimmed}`);
+    if (dotVersion !== trimmed) {
+      candidates.add(`anthropic/${dotVersion}`);
+    }
+  }
+
+  return [...candidates];
+}
+
 export function lookupModelCostInCatalog(
   catalog: ModelsDevCatalog,
   providerHint: string | null,
   modelId: string,
 ): ModelPricingLookup | null {
-  const trimmed = modelId.trim();
-  if (!trimmed) {
+  const candidates = expandModelLookupCandidates(modelId, providerHint);
+  if (candidates.length === 0) {
     return null;
   }
 
+  for (const candidate of candidates) {
+    const match = lookupModelCostForCandidate(catalog, providerHint, candidate);
+    if (match) {
+      return match;
+    }
+  }
+
+  if (providerHint) {
+    for (const candidate of expandModelLookupCandidates(modelId, null)) {
+      const match = lookupModelCostForCandidate(catalog, null, candidate);
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  return null;
+}
+
+function lookupModelCostForCandidate(
+  catalog: ModelsDevCatalog,
+  providerHint: string | null,
+  trimmed: string,
+): ModelPricingLookup | null {
   if (providerHint && catalog[providerHint]) {
     const direct = lookupInProvider(catalog[providerHint]!, trimmed);
     if (direct) {
@@ -191,7 +244,7 @@ function lookupInProvider(
 
   const fuzzy = Object.values(provider.models)
     .filter((entry) => entry.id.toLowerCase().includes(lower) || lower.includes(entry.id.toLowerCase()))
-    .sort((a, b) => a.id.length - b.id.length);
+    .sort((a, b) => b.id.length - a.id.length);
   for (const entry of fuzzy) {
     const matched = matchFromEntry(entry);
     if (matched) {

@@ -141,8 +141,8 @@ function BillingFloatingCard({
             <span>① SDK（OTel）</span>
             <span>{formatCostUsd(billing.otelCostUsd)}</span>
           </li>
-          <li title={`OTel token × Planner models.dev 单价（${plannerLabel}）`}>
-            <span>② 全主模型（{plannerLabel}）</span>
+          <li title={`OTel token × 默认模式 models.dev 单价（${plannerLabel}）`}>
+            <span>② 默认模式（{plannerLabel}）</span>
             <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
           </li>
           <li

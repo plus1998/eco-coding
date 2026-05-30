@@ -274,6 +274,7 @@ export {
   type TokenTotals,
 } from "./billing";
 export {
+  expandModelLookupCandidates,
   fetchModelsDevCatalog,
   formatModelPricingLabel,
   lookupModelCostInCatalog,
@@ -303,6 +304,7 @@ export {
   computeOccupancyRatio,
   computeWindowOccupancy,
   DEFAULT_CONTEXT_LIMIT,
+  formatContextLimit,
   lookupModelLimitsInCatalog,
   occupancyPercent,
   type ModelContextLimits,

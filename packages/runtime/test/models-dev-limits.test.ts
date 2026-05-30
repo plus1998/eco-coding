@@ -3,6 +3,7 @@ import { mergeBreakdownWithOccupancy, parseContextCommandResult } from "../src/c
 import {
   computeOccupancyRatio,
   computeWindowOccupancy,
+  formatContextLimit,
   lookupModelLimitsInCatalog,
   occupancyPercent,
 } from "../src/models-dev-limits";
@@ -26,6 +27,11 @@ test("lookupModelLimitsInCatalog exact match", () => {
   const result = lookupModelLimitsInCatalog(mockCatalog, "anthropic", "claude-sonnet-4-6");
   expect(result?.limits.contextTokens).toBe(200000);
   expect(result?.limits.maxOutputTokens).toBe(64000);
+});
+
+test("formatContextLimit compacts token counts", () => {
+  expect(formatContextLimit(200_000)).toBe("200K");
+  expect(formatContextLimit(1_000_000)).toBe("1.0M");
 });
 
 test("computeWindowOccupancy uses input and cache only", () => {
