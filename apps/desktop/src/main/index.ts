@@ -7,7 +7,6 @@ import {
   extractSdkRunFailure,
   formatUsageBadge,
   estimateContextTokens,
-  parseUsagePayload,
   type EcoHookContext,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
@@ -770,7 +769,6 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -884,7 +882,6 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -921,7 +918,6 @@ async function runCodingThreadPlanning(
 
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
 
@@ -1066,7 +1062,6 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
 
@@ -1652,7 +1647,6 @@ async function runThreadContinuation(
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            emitUsageFromDriverEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
@@ -1998,30 +1992,6 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
   emitThreadEvent(threadId, "thread.todos_updated", "TODO 已更新", "system", false, {
     todoList,
-  });
-}
-
-function emitUsageFromDriverEvent(threadId: string, event: AgentEventLike): void {
-  if (event.type !== "usage.recorded") {
-    return;
-  }
-  const parsed = parseUsagePayload(event.payload);
-  if (!parsed) {
-    return;
-  }
-  const role: AgentRole =
-    event.role && AGENT_ROLES.includes(event.role) ? event.role : "planner";
-
-  void processUsageBilling({
-    threadId,
-    role,
-    inputTokens: parsed.inputTokens,
-    outputTokens: parsed.outputTokens,
-    cacheReadTokens: parsed.cacheReadTokens,
-    cacheCreationTokens: parsed.cacheCreationTokens,
-    ...(parsed.modelId && { modelId: parsed.modelId }),
-  }).catch((error) => {
-    process.stderr.write(`[eco] sdk usage billing failed: ${errorMessage(error)}\n`);
   });
 }
 

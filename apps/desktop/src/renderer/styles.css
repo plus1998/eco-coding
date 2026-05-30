@@ -2190,6 +2190,16 @@ button:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 
+.thread-info-billing-cache {
+  color: #737373;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.thread-info-billing-cache span {
+  font-variant-numeric: tabular-nums;
+}
+
 .thread-info-billing-eco {
   color: #e5e5e5;
 }

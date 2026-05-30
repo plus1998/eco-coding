@@ -2,9 +2,12 @@ import type { AgentRole, ThreadBillingSnapshot } from "../shared/ipc";
 import {
   computeRequestBilling,
   computeThreadBillingTotals,
+  emptyCostBreakdown,
+  mergeCostBreakdowns,
   mergeUsageTotals,
   type ModelCostRates,
   type ParsedUsage,
+  type TokenCostBreakdown,
   tokenTotalsFromUsage,
 } from "@eco/runtime";
 import { createEmptyUsage, type UsageRequestRecord } from "./usage-request-types";
@@ -32,6 +35,8 @@ export class ThreadUsageAccumulator {
       otelCostUsd: number;
       plannerTokenCostUsd: number;
       ecoCostUsd: number;
+      ecoCostBreakdown: TokenCostBreakdown;
+      plannerCostBreakdown: TokenCostBreakdown;
       roleEcoCostUsd: Partial<Record<AgentRole, number>>;
       roleModelIds: Partial<Record<AgentRole, string>>;
       seenRequestKeys: Set<string>;
@@ -62,6 +67,15 @@ export class ThreadUsageAccumulator {
     const billing = computeRequestBilling(input.delta, input.actualRates, input.plannerRates);
     state.plannerTokenCostUsd += billing.plannerTokenCostUsd;
     state.ecoCostUsd += billing.ecoCostUsd;
+    if (billing.ecoBreakdown) {
+      state.ecoCostBreakdown = mergeCostBreakdowns(state.ecoCostBreakdown, billing.ecoBreakdown);
+    }
+    if (billing.plannerBreakdown) {
+      state.plannerCostBreakdown = mergeCostBreakdowns(
+        state.plannerCostBreakdown,
+        billing.plannerBreakdown,
+      );
+    }
     state.roleEcoCostUsd[role] = (state.roleEcoCostUsd[role] ?? 0) + billing.ecoCostUsd;
 
     if (input.modelId) {
@@ -97,6 +111,8 @@ export class ThreadUsageAccumulator {
         otelCostUsd: 0,
         plannerTokenCostUsd: 0,
         ecoCostUsd: 0,
+        ecoCostBreakdown: emptyCostBreakdown(),
+        plannerCostBreakdown: emptyCostBreakdown(),
         roleEcoCostUsd: {},
         roleModelIds: {},
         seenRequestKeys: new Set(),
@@ -133,6 +149,8 @@ export class ThreadUsageAccumulator {
     return {
       totalTokens: tokenTotalsFromUsage(state.total),
       ...totals,
+      ecoCostBreakdown: state.ecoCostBreakdown,
+      plannerCostBreakdown: state.plannerCostBreakdown,
       ...(plannerModelLabel && { plannerModelLabel }),
       pricingResolved: state.pricingResolved && state.unresolvedCount === 0,
       ...(Object.keys(byRole).length > 0 && { byRole }),
@@ -142,6 +160,7 @@ export class ThreadUsageAccumulator {
 
 export function buildUsageRequestKey(record: UsageRequestRecord): string {
   return [
+    "otel",
     record.role,
     record.inputTokens,
     record.outputTokens,

@@ -239,8 +239,12 @@ function logRecordToActivity(
     const outputTokens = readAttributeNumber(attrs, "output_tokens") ?? 0;
     const costUsd = readAttributeNumber(attrs, "cost_usd");
     const model = readAttributeString(attrs, "model");
-    const cacheRead = readAttributeNumber(attrs, "cache_read_tokens");
-    const cacheCreation = readAttributeNumber(attrs, "cache_creation_tokens");
+    const cacheRead =
+      readAttributeNumber(attrs, "cache_read_tokens") ??
+      readAttributeNumber(attrs, "cache_read_input_tokens");
+    const cacheCreation =
+      readAttributeNumber(attrs, "cache_creation_tokens") ??
+      readAttributeNumber(attrs, "cache_creation_input_tokens");
     return {
       usage: {
         threadId,
@@ -248,8 +252,8 @@ function logRecordToActivity(
         ...(model && { modelId: model }),
         inputTokens,
         outputTokens,
-        ...(cacheRead !== undefined && { cacheReadTokens: cacheRead }),
-        ...(cacheCreation !== undefined && { cacheCreationTokens: cacheCreation }),
+        cacheReadTokens: cacheRead ?? 0,
+        cacheCreationTokens: cacheCreation ?? 0,
         ...(costUsd !== undefined && { costUsd }),
       },
     };

@@ -1,5 +1,5 @@
 import { DollarSign, Folder, GitBranch, HelpCircle, Layers, ListTodo, Package } from "lucide-react";
-import { formatCostUsd, formatSavingsLine, formatUsageBadge } from "@eco/runtime";
+import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type { CoderTodoItem, ThreadBillingSnapshot, ThreadStatus, WorkspaceInfo } from "../shared/ipc";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 
@@ -29,6 +29,25 @@ function formatContextLabel(contextTokens: number): string | null {
     return "<1K";
   }
   return `~${Math.round(contextTokens / 1000)}K`;
+}
+
+function formatCacheCostNote(billing: ThreadBillingSnapshot): string | null {
+  const breakdown = billing.ecoCostBreakdown;
+  const cacheRead = billing.totalTokens.cacheRead;
+  const cacheCreation = billing.totalTokens.cacheCreation;
+  if (!breakdown || (cacheRead <= 0 && cacheCreation <= 0)) {
+    return null;
+  }
+  const cacheUsd = breakdown.cacheReadUsd + breakdown.cacheCreationUsd;
+  const cachePct = billing.ecoCostUsd > 0 ? (cacheUsd / billing.ecoCostUsd) * 100 : 0;
+  const parts: string[] = [];
+  if (cacheRead > 0) {
+    parts.push(`读 ${formatTokenCount(cacheRead)}`);
+  }
+  if (cacheCreation > 0) {
+    parts.push(`写 ${formatTokenCount(cacheCreation)}`);
+  }
+  return `缓存 ${parts.join(" · ")} → ${formatCostUsd(cacheUsd)}（占 ${cachePct.toFixed(0)}%）`;
 }
 
 function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBillingSnapshot {
@@ -73,6 +92,7 @@ export function ThreadInfoPanel({
       })
     : null;
   const plannerLabel = billing?.plannerModelLabel?.split(" · ")[0] ?? "主模型";
+  const cacheCostNote = billing ? formatCacheCostNote(billing) : null;
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -115,7 +135,7 @@ export function ThreadInfoPanel({
             计费对比
             <span
               className="thread-info-help"
-              title="① SDK（OTel cost_usd 累计）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价 ④ ②−③"
+              title="① OTel cost_usd 累计（Claude Code 内置价目，含缓存折扣）② OTel token × 主模型 models.dev 单价 ③ OTel token × 各 role 实际 models.dev 单价（input/output/cache 分项）节省 = ②−③"
             >
               <HelpCircle size={13} aria-hidden />
             </span>
@@ -134,10 +154,15 @@ export function ThreadInfoPanel({
               <span>② 全主模型（{plannerLabel}）</span>
               <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
             </li>
-            <li className="thread-info-billing-eco" title="OTel token × 各 role 实际 models.dev 单价">
+            <li className="thread-info-billing-eco" title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）">
               <span>③ 经济编程</span>
               <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
             </li>
+            {cacheCostNote ? (
+              <li className="thread-info-billing-cache" title="缓存 token 按 models.dev cache_read / cache_write 单价计费">
+                <span>{cacheCostNote}</span>
+              </li>
+            ) : null}
             <li
               className={
                 billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"
@@ -146,7 +171,7 @@ export function ThreadInfoPanel({
             >
               <span>
                 <DollarSign size={13} aria-hidden />
-                ④ {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
+                {formatSavingsLine(billing.savedUsd, billing.savedPct).replace(/^eco-coding /, "")}
               </span>
             </li>
           </ul>

@@ -251,13 +251,17 @@ export {
   computeRequestBilling,
   computeSavings,
   computeThreadBillingTotals,
+  emptyCostBreakdown,
+  estimateCostBreakdown,
   estimateCostFromTokens,
   formatSavingsLine,
   formatSavingsPct,
+  mergeCostBreakdowns,
   tokenTotalsFromUsage,
   type ModelCostRates,
   type RequestBillingDelta,
   type ThreadBillingTotals,
+  type TokenCostBreakdown,
   type TokenTotals,
 } from "./billing";
 export {

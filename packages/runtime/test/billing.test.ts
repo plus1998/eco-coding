@@ -3,12 +3,23 @@ import {
   computeRequestBilling,
   computeSavings,
   computeThreadBillingTotals,
+  estimateCostBreakdown,
   estimateCostFromTokens,
   formatSavingsLine,
 } from "../src/billing";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
+
+test("estimateCostBreakdown splits cache read pricing", () => {
+  const breakdown = estimateCostBreakdown(
+    { inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 100_000, cacheCreationTokens: 0 },
+    sonnetRates,
+  );
+  expect(breakdown.inputUsd).toBeCloseTo(0.003);
+  expect(breakdown.cacheReadUsd).toBeCloseTo(0.03);
+  expect(breakdown.totalUsd).toBeCloseTo(0.033);
+});
 
 test("estimateCostFromTokens applies cache rates", () => {
   const cost = estimateCostFromTokens(

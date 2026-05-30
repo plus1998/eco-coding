@@ -16,7 +16,7 @@ test("ThreadUsageAccumulator tracks four billing metrics", () => {
     actualRates: haikuRates,
     plannerRates: sonnetRates,
     modelId: "haiku",
-    requestKey: "coder:100000:10000:0:0:haiku",
+    requestKey: "otel:coder:100000:10000:0:0:haiku",
     plannerModelLabel: "sonnet · Anthropic",
   });
 

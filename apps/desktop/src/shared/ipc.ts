@@ -260,6 +260,14 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
+export interface TokenCostBreakdown {
+  inputUsd: number;
+  outputUsd: number;
+  cacheReadUsd: number;
+  cacheCreationUsd: number;
+  totalUsd: number;
+}
+
 export interface ThreadBillingSnapshot {
   totalTokens: {
     input: number;
@@ -272,6 +280,8 @@ export interface ThreadBillingSnapshot {
   ecoCostUsd: number;
   savedUsd: number;
   savedPct: number;
+  ecoCostBreakdown?: TokenCostBreakdown;
+  plannerCostBreakdown?: TokenCostBreakdown;
   plannerModelLabel?: string;
   pricingResolved: boolean;
   byRole?: Partial<
