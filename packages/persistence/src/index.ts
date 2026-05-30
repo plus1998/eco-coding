@@ -176,3 +176,12 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
 function secretKey(service: string, account: string): string {
   return `${service}:${account}`;
 }
+
+export * from "./session-store.js";
+export {
+  RedisSessionStore,
+  createRedisSessionStore,
+  testRedisConnection,
+  type RedisSessionStoreConnection,
+  type RedisSessionStoreOptions,
+} from "./redis-session-store.js";

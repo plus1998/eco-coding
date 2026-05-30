@@ -83,3 +83,19 @@ export function buildExecutePhasePrompt(
 
   return lines.join("\n");
 }
+
+/** Shorter execution prompt when resuming the same SDK session after planning. */
+export function buildExecuteResumePrompt(planning: {
+  plan: string;
+  planUserEdited?: boolean;
+}): string {
+  if (planning.planUserEdited) {
+    return [
+      "Proceed with phase 2 execution.",
+      "The user edited the approved plan before execution. Treat this plan as authoritative:",
+      "",
+      planning.plan.trim() || "(no plan captured)",
+    ].join("\n");
+  }
+  return "Proceed with phase 2 execution. Implement the approved plan from our conversation above.";
+}

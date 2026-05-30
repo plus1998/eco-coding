@@ -35,6 +35,9 @@ export const IPC_CHANNELS = {
   skillsList: "skills:list",
   agentSkillsGet: "agent-skills:get",
   agentSkillsSave: "agent-skills:save",
+  sessionSyncSettingsGet: "session-sync-settings:get",
+  sessionSyncSettingsSave: "session-sync-settings:save",
+  sessionSyncTestConnection: "session-sync:test-connection",
 } as const;
 
 export type {
@@ -49,6 +52,13 @@ export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
 /** Skill directory names enabled per agent role at runtime (SDK skills preload). */
 export type AgentSkillAssignments = Record<AgentRole, string[]>;
 export type { ListUpstreamModelsRequest, ListUpstreamModelsResult, UpstreamModelOption } from "./models";
+export type {
+  SessionSyncSettingsInput,
+  SessionSyncSettingsSnapshot,
+  SessionSyncSettingsView,
+  SessionSyncTestConnectionRequest,
+  SessionSyncTestConnectionResult,
+} from "./session-sync";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
@@ -140,6 +150,10 @@ export interface ThreadSummary {
   status: ThreadStatus;
   createdAt: string;
   message: string;
+  /** Claude Agent SDK session ID when resume is available. */
+  sdkSessionId?: string;
+  /** Worktree path used as SDK cwd when the session was created. */
+  sdkCwd?: string;
 }
 
 export interface ThreadStartRequest {

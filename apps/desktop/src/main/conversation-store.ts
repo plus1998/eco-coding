@@ -21,6 +21,13 @@ interface ThreadRow {
   message: string;
   created_at: string;
   updated_at: string;
+  sdk_session_id: string | null;
+  sdk_cwd: string | null;
+}
+
+export interface ThreadSdkSession {
+  sessionId: string;
+  cwd: string;
 }
 
 interface ActivityRow {
@@ -139,6 +146,18 @@ export class ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_thread_applied_diffs_workspace_applied
         ON thread_applied_diffs(workspace_path, applied_at);
     `);
+    this.migrateSchema();
+  }
+
+  private migrateSchema(): void {
+    const columns = this.db.prepare(`PRAGMA table_info(threads)`).all() as Array<{ name: string }>;
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("sdk_session_id")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN sdk_session_id TEXT`);
+    }
+    if (!names.has("sdk_cwd")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN sdk_cwd TEXT`);
+    }
   }
 
   saveThread(thread: ThreadSummary): void {
@@ -189,10 +208,40 @@ export class ConversationStore {
       .run(patch.status, patch.message, new Date().toISOString(), threadId);
   }
 
+  saveSdkSession(threadId: string, sessionId: string, cwd: string): void {
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET sdk_session_id = ?, sdk_cwd = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(sessionId, cwd, new Date().toISOString(), threadId);
+  }
+
+  getSdkSession(threadId: string): ThreadSdkSession | undefined {
+    const row = this.db
+      .prepare(`SELECT sdk_session_id, sdk_cwd FROM threads WHERE id = ?`)
+      .get(threadId) as { sdk_session_id: string | null; sdk_cwd: string | null } | undefined;
+    if (!row?.sdk_session_id || !row.sdk_cwd) {
+      return undefined;
+    }
+    return { sessionId: row.sdk_session_id, cwd: row.sdk_cwd };
+  }
+
+  clearSdkSession(threadId: string): void {
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET sdk_session_id = NULL, sdk_cwd = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(new Date().toISOString(), threadId);
+  }
+
   listThreads(): ThreadSummary[] {
     const rows = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd
          FROM threads
          ORDER BY updated_at DESC`,
       )
@@ -204,7 +253,7 @@ export class ConversationStore {
   getThread(threadId: string): ThreadSummary | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd
          FROM threads
          WHERE id = ?`,
       )
@@ -494,5 +543,8 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     status: row.status as ThreadStatus,
     message: row.message,
     createdAt: row.created_at,
+    ...(row.sdk_session_id && row.sdk_cwd
+      ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd }
+      : {}),
   };
 }

@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowUp,
   ChevronLeft,
+  Database,
   Folder,
   FolderOpen,
   GitBranch,
@@ -27,6 +28,8 @@ import {
   type AgentSkillAssignments,
   type ClarificationRequest,
   type CoderTodoItem,
+  type SessionSyncSettingsInput,
+  type SessionSyncSettingsSnapshot,
   type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadPendingPlan,
@@ -40,6 +43,7 @@ import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
+import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
@@ -59,8 +63,18 @@ const settingsSections = [
   { id: "models", label: "模型与路由", icon: SlidersHorizontal },
   { id: "mcp", label: "MCP", icon: Plug },
   { id: "skills", label: "Skills", icon: Sparkles },
+  { id: "sessionSync", label: "会话同步", icon: Database },
   { id: "git", label: "Git", icon: GitBranch },
 ] as const;
+
+const emptySessionSyncSettings: SessionSyncSettingsSnapshot = {
+  settings: {
+    redisEnabled: false,
+    redisUrl: "",
+    keyPrefix: "eco-sessions",
+    hasRedisPassword: false,
+  },
+};
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
@@ -79,6 +93,8 @@ function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
+  const [sessionSyncSettings, setSessionSyncSettings] =
+    useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
@@ -117,7 +133,8 @@ function App() {
       window.eco.listThreads(),
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp]) => {
+      window.eco.getSessionSyncSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -130,6 +147,7 @@ function App() {
       setThreads(currentThreads);
       setSettings(modelSettings);
       setMcpSettings(mcp);
+      setSessionSyncSettings(sessionSync);
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -791,6 +809,24 @@ function App() {
     }
   }
 
+  async function saveSessionSyncSettings(input: SessionSyncSettingsInput) {
+    if (!window.eco) return;
+    setIsSavingSettings(true);
+    try {
+      const settings = await window.eco.saveSessionSyncSettings(input);
+      setSessionSyncSettings({ settings });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function testSessionSyncConnection(input: { redisUrl: string; redisPassword?: string }) {
+    if (!window.eco) {
+      return { ok: false, error: "Electron preload API is unavailable." };
+    }
+    return window.eco.testSessionSyncConnection(input);
+  }
+
   function rememberProject(project: RecentProject) {
     setRecentProjects((current) => {
       const next = [project, ...current.filter((item) => item.path !== project.path)].slice(0, 12);
@@ -1150,6 +1186,15 @@ function App() {
                 busy={isSavingSettings}
                 onSave={saveMcpServer}
                 onDelete={deleteMcpServer}
+              />
+            )}
+
+            {settingsSection === "sessionSync" && (
+              <SessionSyncSettingsPanel
+                settings={sessionSyncSettings.settings}
+                busy={isSavingSettings}
+                onSave={saveSessionSyncSettings}
+                onTestConnection={testSessionSyncConnection}
               />
             )}
 

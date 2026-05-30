@@ -16,6 +16,7 @@ export { ecoPlanHarnessAdapter } from "./eco-plan-adapter.js";
 export {
   executePhaseSystemAppend,
   buildExecutePhasePrompt,
+  buildExecuteResumePrompt,
   architectSkipCriteria,
 } from "./execute.js";
 export { questionAnswerSystemAppend, buildQuestionAnswerPrompt } from "./question.js";

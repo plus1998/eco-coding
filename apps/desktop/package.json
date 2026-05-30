@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@eco/model-router": "workspace:*",
+    "@eco/persistence": "workspace:*",
     "@eco/runtime": "workspace:*",
     "@eco/workspace": "workspace:*",
     "@vitejs/plugin-react": "^5.0.0",

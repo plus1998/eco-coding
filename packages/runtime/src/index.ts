@@ -25,6 +25,13 @@ export interface EcoSdkSessionOptions {
   mcpAllowedTools?: string[];
 }
 
+export interface EcoSdkResumeOptions {
+  /** Resume an existing SDK session by ID. */
+  resumeSessionId?: string;
+  /** Fork from resumeSessionId into a new session (explore alternatives). */
+  forkSession?: boolean;
+}
+
 export interface AgentRuntimeRunInput {
   threadId: string;
   prompt: string;
@@ -33,6 +40,7 @@ export interface AgentRuntimeRunInput {
   routes: ResolvedModelRoute[];
   signal: AbortSignal;
   sdkSession?: EcoSdkSessionOptions;
+  resume?: EcoSdkResumeOptions;
 }
 
 export interface EcoPlanningContext {
@@ -47,6 +55,10 @@ export interface AgentRuntimeDriver {
   run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
   runExecution?(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent>;
   runQuestion?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  runContinuation?(
+    input: AgentRuntimeRunInput,
+    mode: "planning" | "execution" | "question",
+  ): AsyncIterable<AgentEvent>;
 }
 
 export interface RunningThread {
@@ -195,7 +207,7 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
   );
 }
 
-export type { PlanReadyPayload } from "../../shared/src";
+export type { PlanReadyPayload, SessionCapturedPayload } from "../../shared/src";
 export * from "./eco-sdk-hooks";
 export * from "./claude-agent-sdk";
 export {

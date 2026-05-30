@@ -1,16 +1,21 @@
 import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
 import {
+  applyResumeToQueryOptions,
+  applySessionStoreToQueryOptions,
   appendToPhaseTranscript,
   buildExecutePhasePrompt,
+  buildExecuteResumePrompt,
   buildPlanningPhasePrompt,
   buildQuestionAnswerPrompt,
+  ClaudeAgentSdkDriver,
   createAgentDefinitions,
   createCanUseTool,
   createExecutionAgentDefinitions,
   createPlanningAgentDefinitions,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
+  createSessionCapturedEvent,
   executePhaseSystemAppend,
   extractSdkRunFailure,
   formatAgentEventDisplay,
@@ -18,11 +23,13 @@ import {
   formatSdkPayloadMessage,
   getDefaultAllowedTools,
   inferActivityRole,
+  isSdkInitMessage,
   mapSdkMessageToEvents,
   buildSdkProcessEnv,
   mergeAllowedTools,
   planningPhaseSystemAppend,
   questionAnswerSystemAppend,
+  readSdkSessionId,
   resolveAgentSkills,
   resolveSdkSessionOptions,
   toSdkAgentModel,
@@ -550,4 +557,87 @@ test("formatAgentEventLine renders todo.updated task progress for activity", () 
       },
     }),
   ).toBe("coder");
+});
+
+test("applyResumeToQueryOptions sets resume and forkSession", () => {
+  const options: Record<string, unknown> = {};
+  applyResumeToQueryOptions(options, { resumeSessionId: "sess-123", forkSession: true });
+  expect(options.resume).toBe("sess-123");
+  expect(options.forkSession).toBe(true);
+});
+
+test("applySessionStoreToQueryOptions disables file checkpointing", () => {
+  const withStore: Record<string, unknown> = { enableFileCheckpointing: true };
+  applySessionStoreToQueryOptions(withStore, { append: async () => {}, load: async () => null });
+  expect(withStore.sessionStore).toBeDefined();
+  expect(withStore.enableFileCheckpointing).toBeUndefined();
+
+  const withoutStore: Record<string, unknown> = {};
+  applySessionStoreToQueryOptions(withoutStore);
+  expect(withoutStore.enableFileCheckpointing).toBe(true);
+});
+
+test("createSessionCapturedEvent and init message helpers", () => {
+  const init = {
+    type: "system",
+    subtype: "init",
+    session_id: "sess-abc",
+  };
+  expect(isSdkInitMessage(init)).toBe(true);
+  expect(readSdkSessionId(init)).toBe("sess-abc");
+
+  const event = createSessionCapturedEvent("thr_1", "sess-abc", "/tmp/worktree");
+  expect(event.type).toBe("session.captured");
+  expect(event.payload).toEqual({ sessionId: "sess-abc", cwd: "/tmp/worktree" });
+});
+
+test("buildExecuteResumePrompt is shorter when resuming", () => {
+  expect(buildExecuteResumePrompt({ plan: "Do the thing" })).toContain("phase 2 execution");
+  expect(buildExecuteResumePrompt({ plan: "Edited", planUserEdited: true })).toContain("Edited");
+});
+
+test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-resume-test",
+              uuid: "init-1",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-resume-test",
+              uuid: "result-1",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const events: string[] = [];
+  for await (const event of driver.runQuestion({
+    threadId: "thr_resume",
+    prompt: "Follow up",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+    resume: { resumeSessionId: "sess-resume-test" },
+  })) {
+    events.push(event.type);
+  }
+
+  expect(capturedOptions[0]?.resume).toBe("sess-resume-test");
+  expect(events).toContain("session.captured");
 });

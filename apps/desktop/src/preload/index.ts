@@ -11,6 +11,11 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type SessionSyncSettingsInput,
+  type SessionSyncSettingsSnapshot,
+  type SessionSyncSettingsView,
+  type SessionSyncTestConnectionRequest,
+  type SessionSyncTestConnectionResult,
   type SkillsListResult,
   type AgentSkillAssignments,
   type ClarificationAnswers,
@@ -78,6 +83,17 @@ const api = {
   },
   saveAgentSkillsAssignments(assignments: AgentSkillAssignments): Promise<AgentSkillAssignments> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsSave, assignments);
+  },
+  getSessionSyncSettings(): Promise<SessionSyncSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsGet);
+  },
+  saveSessionSyncSettings(input: SessionSyncSettingsInput): Promise<SessionSyncSettingsView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsSave, input);
+  },
+  testSessionSyncConnection(
+    request: SessionSyncTestConnectionRequest,
+  ): Promise<SessionSyncTestConnectionResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncTestConnection, request);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

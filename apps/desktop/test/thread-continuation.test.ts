@@ -46,6 +46,12 @@ test("buildAgentPromptWithContext includes history for coding follow-up", () => 
   expect(prompt).toContain("corp.service.ts");
 });
 
+test("legacy continuation uses full prompt injection without SDK session", () => {
+  const prompt = buildAgentPromptWithContext("原任务", "继续", []);
+  expect(prompt).toContain("原任务");
+  expect(prompt).not.toContain("对话记录");
+});
+
 test("pickDisplayContextTokens prefers planner", () => {
   expect(
     pickDisplayContextTokens({

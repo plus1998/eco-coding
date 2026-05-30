@@ -10,8 +10,10 @@ import type {
   AgentRuntimeDriver,
   AgentRuntimeRunInput,
   EcoPlanningContext,
+  EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
+import type { SessionStore } from "../../persistence/src/session-store.js";
 import { extractPlanningDeliverables } from "./phase-deliverable";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
@@ -28,6 +30,7 @@ import {
   buildPlanPhasePrompt,
   executePhaseSystemAppend,
   buildExecutePhasePrompt,
+  buildExecuteResumePrompt,
   questionAnswerSystemAppend,
   buildQuestionAnswerPrompt,
   reviewerAgentPrompt,
@@ -114,6 +117,8 @@ export interface ClaudeAgentSdkDriverOptions {
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   /** SDK callback hooks context (AskUserQuestion, reviewer scope, task tracking, notifications). */
   hookContext?: EcoHookContext;
+  /** Mirror SDK session transcripts to external storage (mutually exclusive with file checkpointing). */
+  sessionStore?: SessionStore;
 }
 
 export interface SdkToolPermissionRequest {
@@ -153,10 +158,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     planning: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
+    const isResume = Boolean(input.resume?.resumeSessionId);
+    const prompt = isResume
+      ? buildExecuteResumePrompt(planning)
+      : buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
+          ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+        });
     yield* this.runSingleSession(input, {
-      prompt: buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
-        planUserEdited: planning.planUserEdited,
-      }),
+      prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
       phaseAppend: executePhaseSystemAppend,
@@ -172,6 +181,44 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools: [...questionAllowedTools],
       phaseAppend: questionAnswerSystemAppend,
       agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+    });
+  }
+
+  async *runContinuation(
+    input: AgentRuntimeRunInput,
+    mode: "planning" | "execution" | "question",
+  ): AsyncIterable<AgentEvent> {
+    if (mode === "planning") {
+      yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
+      yield* this.runSingleSession(input, {
+        prompt: input.prompt,
+        permissionMode: planningPermissionMode,
+        allowedTools: [...planningAllowedTools],
+        phaseAppend: planningPhaseSystemAppend,
+        agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      });
+      return;
+    }
+
+    if (mode === "question") {
+      yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
+      yield* this.runSingleSession(input, {
+        prompt: input.prompt,
+        permissionMode: "default",
+        allowedTools: [...questionAllowedTools],
+        phaseAppend: questionAnswerSystemAppend,
+        agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      });
+      return;
+    }
+
+    yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
+    yield* this.runSingleSession(input, {
+      prompt: input.prompt,
+      permissionMode: "acceptEdits",
+      allowedTools: [...defaultAllowedTools],
+      phaseAppend: executePhaseSystemAppend,
+      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
     });
   }
 
@@ -221,7 +268,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       model: plannerRoute.primary.modelId,
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
-      enableFileCheckpointing: true,
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
@@ -251,6 +297,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       },
     };
 
+    applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
+    applyResumeToQueryOptions(queryOptions, input.resume);
+
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
     }
@@ -271,7 +320,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
 
     let transcript = "";
+    let sessionCaptured = false;
     for await (const message of query) {
+      if (!sessionCaptured && isSdkInitMessage(message)) {
+        const sessionId = readSdkSessionId(message);
+        if (sessionId) {
+          sessionCaptured = true;
+          yield createSessionCapturedEvent(input.threadId, sessionId, input.worktreePath);
+        }
+      }
+
       for (const event of mapSdkMessageToEvents(message, input.threadId)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
@@ -424,6 +482,56 @@ export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
 }
 
+export function applyResumeToQueryOptions(
+  queryOptions: Record<string, unknown>,
+  resume?: EcoSdkResumeOptions,
+): void {
+  if (resume?.resumeSessionId) {
+    queryOptions.resume = resume.resumeSessionId;
+  }
+  if (resume?.forkSession) {
+    queryOptions.forkSession = true;
+  }
+}
+
+export function applySessionStoreToQueryOptions(
+  queryOptions: Record<string, unknown>,
+  sessionStore?: SessionStore,
+): void {
+  if (sessionStore) {
+    queryOptions.sessionStore = sessionStore;
+    delete queryOptions.enableFileCheckpointing;
+    return;
+  }
+  queryOptions.enableFileCheckpointing = true;
+}
+
+export function readSdkSessionId(message: unknown): string | undefined {
+  if (!isRecord(message)) {
+    return undefined;
+  }
+  return typeof message.session_id === "string" ? message.session_id : undefined;
+}
+
+export function isSdkInitMessage(message: unknown): boolean {
+  return isRecord(message) && message.type === "system" && message.subtype === "init";
+}
+
+export function createSessionCapturedEvent(
+  threadId: string,
+  sessionId: string,
+  cwd: string,
+): AgentEvent {
+  return createAgentEvent({
+    id: `${threadId}:session:${sessionId}`,
+    threadId,
+    agentId: sessionId,
+    role: "planner",
+    type: "session.captured",
+    payload: { sessionId, cwd },
+  });
+}
+
 export {
   planningPhaseSystemAppend,
   executePhaseSystemAppend,
@@ -432,6 +540,7 @@ export {
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
   buildExecutePhasePrompt,
+  buildExecuteResumePrompt,
   buildQuestionAnswerPrompt,
 };
 

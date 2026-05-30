@@ -13,12 +13,20 @@ import {
   parseUsagePayload,
   type EcoHookContext,
   type EcoPlanningContext,
+  type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
   type OtelActivityLine,
   type OtelUsageUpdate,
   type PlanReadyPayload,
   type SdkTodoUpdatedPayload,
+  type SessionCapturedPayload,
 } from "@eco/runtime";
+import {
+  createRedisSessionStore,
+  createSqliteSessionStore,
+  testRedisConnection,
+  type SessionStore,
+} from "@eco/persistence";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   createWorktreePlan,
@@ -40,6 +48,9 @@ import {
   type AgentSkillAssignments,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  type ThreadActivityLine,
+  type SessionSyncSettingsInput,
+  type SessionSyncTestConnectionRequest,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRetryResult,
@@ -69,6 +80,7 @@ import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../shared/thread-continuation";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
+import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import { startAnthropicModelProxy, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
@@ -100,6 +112,9 @@ let providerStore: ProviderStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
+let sessionSyncStore: SessionSyncStore;
+let sdkSessionStore: SessionStore | undefined;
+let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
 interface ActiveThreadRun {
   controller: AbortController;
@@ -141,6 +156,15 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
+  sessionSyncStore = await createSessionSyncStore(dbPath);
+  try {
+    await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
+  } catch (error) {
+    process.stderr.write(
+      `[eco] SessionStore init failed (${errorMessage(error)}), using local SQLite fallback\n`,
+    );
+    sdkSessionStore = await createSqliteSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
+  }
   await localOtelReceiver.start({
     onActivity: emitOtelActivity,
     onUsage: emitOtelUsage,
@@ -160,6 +184,10 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  void closeSdkSessionStore?.();
 });
 
 function registerIpcHandlers(): void {
@@ -287,6 +315,33 @@ function registerIpcHandlers(): void {
     emitSettingsUpdated();
     return { ok: true };
   });
+
+  ipcMain.handle(IPC_CHANNELS.sessionSyncSettingsGet, async () => sessionSyncStore.getSettings());
+
+  ipcMain.handle(IPC_CHANNELS.sessionSyncSettingsSave, async (_event, payload: SessionSyncSettingsInput) => {
+    const settings = sessionSyncStore.saveSettings(payload);
+    await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
+    emitSettingsUpdated();
+    return settings;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.sessionSyncTestConnection,
+    async (_event, payload: SessionSyncTestConnectionRequest) => {
+      if (!payload || typeof payload.redisUrl !== "string" || !payload.redisUrl.trim()) {
+        return { ok: false, error: "Redis URL is required." };
+      }
+      const stored = sessionSyncStore.getSettingsWithSecrets();
+      const password =
+        payload.redisPassword && payload.redisPassword.length > 0
+          ? payload.redisPassword
+          : stored.redisPassword;
+      return testRedisConnection({
+        url: payload.redisUrl.trim(),
+        ...(password ? { password } : {}),
+      });
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.threadStart, async (_event, payload: ThreadStartRequest) => {
     const prompt = payload.prompt.trim();
@@ -472,24 +527,44 @@ function registerIpcHandlers(): void {
 
     const intent = classifyThreadIntent(prompt);
     const activityLines = conversationStore.listActivityLines(payload.threadId);
-    const agentPrompt = buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
     const worktreePlan = createWorktreePlan(workspace.path, payload.threadId);
     const worktreeExists = await fileExists(worktreePlan.worktreePath);
     const worktreePath = worktreeExists ? worktreePlan.worktreePath : undefined;
+    const sdkSession = conversationStore.getSdkSession(payload.threadId);
+    const canResume = Boolean(sdkSession?.sessionId && worktreePath && sdkSession.cwd === worktreePath);
+    const continuePhase = canResume ? resolveContinuePhase(thread, intent) : undefined;
+    const agentPrompt = canResume
+      ? prompt
+      : buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
+    const statusMessage =
+      continuePhase === "question"
+        ? "正在回答…"
+        : continuePhase === "execution"
+          ? "正在继续执行…"
+          : "正在分析并制定计划…";
 
     updateThread(payload.threadId, {
       status: "running",
-      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
+      message: intent === "question" && !canResume ? "正在回答…" : statusMessage,
     });
     recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
       ...thread,
       status: "running",
-      message: intent === "question" ? "正在回答…" : "正在分析并制定计划…",
+      message: intent === "question" && !canResume ? "正在回答…" : statusMessage,
     };
 
-    if (intent === "question") {
+    if (canResume && continuePhase) {
+      void runThreadContinuation(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        continuePhase,
+        worktreeExists ? worktreePlan : undefined,
+      );
+    } else if (intent === "question") {
       void runQuestionThread(updated, workspace, runtimeConfig, agentPrompt, worktreePath);
     } else {
       void runCodingThreadPlanning(
@@ -622,6 +697,7 @@ async function runQuestionThread(
   runtimeConfig: RuntimeConfig,
   prompt: string,
   worktreePath?: string,
+  resume?: EcoSdkResumeOptions,
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
@@ -653,11 +729,13 @@ async function runQuestionThread(
           routes,
           signal: controller.signal,
           sdkSession: buildSdkSessionOptions(),
+          ...(resume ? { resume } : {}),
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
             continue;
           }
+          captureSdkSessionFromEvent(thread.id, event, cwd);
           emitSdkStreamActivity(thread.id, event);
         }
 
@@ -714,6 +792,7 @@ async function runCodingThreadPlanning(
   runtimeConfig: RuntimeConfig,
   prompt: string,
   existingWorktreePlan?: WorktreePlan,
+  resume?: EcoSdkResumeOptions,
 ): Promise<void> {
   const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
   const controller = new AbortController();
@@ -752,6 +831,8 @@ async function runCodingThreadPlanning(
         let sdkFailure: string | undefined;
         let captured = false;
 
+        const effectiveResume = resume ?? resolveResumeOptions(thread.id, worktreePlan.worktreePath);
+
         for await (const event of driver.run({
           threadId: thread.id,
           prompt,
@@ -760,11 +841,13 @@ async function runCodingThreadPlanning(
           routes,
           signal: controller.signal,
           sdkSession: buildSdkSessionOptions(),
+          ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
             continue;
           }
+          captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
           if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
             captured = true;
             conversationStore.savePendingPlan({
@@ -925,6 +1008,7 @@ async function runCodingThreadExecution(
         }
 
         let sdkFailure: string | undefined;
+        const resume = resolveResumeOptions(threadId, pending.worktreePath);
         for await (const event of driver.runExecution(
           {
             threadId,
@@ -934,6 +1018,7 @@ async function runCodingThreadExecution(
             routes: attemptRoutes,
             signal: controller.signal,
             sdkSession: buildSdkSessionOptions(),
+            ...(resume ? { resume } : {}),
           },
           planning,
         )) {
@@ -941,6 +1026,8 @@ async function runCodingThreadExecution(
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
             continue;
           }
+
+          captureSdkSessionFromEvent(threadId, event, pending.worktreePath);
 
           if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
             todoTracker.handleTaskProgress(event.payload);
@@ -1086,10 +1173,27 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
     status: "running",
     message: intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
   };
+  const worktreePlan = createWorktreePlan(workspace.path, threadId);
+  const worktreeExists = await fileExists(worktreePlan.worktreePath);
+  const resume = worktreeExists ? resolveResumeOptions(threadId, worktreePlan.worktreePath) : undefined;
   if (intent === "question") {
-    void runQuestionThread(updated, workspace, runtimeConfig, prompt);
+    void runQuestionThread(
+      updated,
+      workspace,
+      runtimeConfig,
+      prompt,
+      worktreeExists ? worktreePlan.worktreePath : undefined,
+      resume,
+    );
   } else {
-    void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt);
+    void runCodingThreadPlanning(
+      updated,
+      workspace,
+      runtimeConfig,
+      prompt,
+      worktreeExists ? worktreePlan : undefined,
+      resume,
+    );
   }
   return { thread: updated };
 }
@@ -1329,7 +1433,298 @@ function createSdkDriver(
       ...hookContextExtras,
     },
     otel: { endpoint, threadId },
+    ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
   });
+}
+
+async function rebuildSdkSessionStore(localDbPath: string): Promise<void> {
+  if (closeSdkSessionStore) {
+    await closeSdkSessionStore();
+    closeSdkSessionStore = undefined;
+  }
+
+  const config = sessionSyncStore.getSettingsWithSecrets();
+  if (config.redisEnabled && config.redisUrl.trim()) {
+    const connection = await createRedisSessionStore({
+      url: config.redisUrl.trim(),
+      ...(config.redisPassword ? { password: config.redisPassword } : {}),
+      keyPrefix: config.keyPrefix,
+    });
+    sdkSessionStore = connection.store;
+    closeSdkSessionStore = connection.close;
+    process.stderr.write(`[eco] SessionStore: Redis (${config.redisUrl.trim()})\n`);
+    return;
+  }
+
+  sdkSessionStore = await createSqliteSessionStore(localDbPath);
+  closeSdkSessionStore = undefined;
+  process.stderr.write(`[eco] SessionStore: local SQLite (${localDbPath})\n`);
+}
+
+function isSessionCapturedPayload(payload: unknown): payload is SessionCapturedPayload {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as SessionCapturedPayload).sessionId === "string" &&
+    typeof (payload as SessionCapturedPayload).cwd === "string"
+  );
+}
+
+function captureSdkSessionFromEvent(
+  threadId: string,
+  event: { type: string; payload: unknown },
+  worktreePath: string,
+): void {
+  if (event.type !== "session.captured") {
+    return;
+  }
+  if (isSessionCapturedPayload(event.payload)) {
+    conversationStore.saveSdkSession(threadId, event.payload.sessionId, worktreePath);
+  }
+}
+
+function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
+  const session = conversationStore.getSdkSession(threadId);
+  if (!session?.sessionId) {
+    return undefined;
+  }
+  if (session.cwd !== worktreePath) {
+    conversationStore.clearSdkSession(threadId);
+    return undefined;
+  }
+  return { resumeSessionId: session.sessionId };
+}
+
+function resolveContinuePhase(
+  thread: ThreadSummary,
+  intent: "question" | "coding",
+): "planning" | "execution" | "question" {
+  if (intent === "question") {
+    return "question";
+  }
+  if (conversationStore.getAppliedDiff(thread.id) || thread.status === "completed") {
+    return "execution";
+  }
+  const activity = conversationStore.listActivityLines(thread.id);
+  const executed = activity.some(
+    (line) =>
+      line.message.includes("子代理执行") ||
+      line.message.includes("执行完成") ||
+      line.message.includes("继续执行"),
+  );
+  if (executed) {
+    return "execution";
+  }
+  return "planning";
+}
+
+async function runThreadContinuation(
+  thread: ThreadSummary,
+  workspace: WorkspaceInfo,
+  runtimeConfig: RuntimeConfig,
+  followUp: string,
+  mode: "planning" | "execution" | "question",
+  existingWorktreePlan?: WorktreePlan,
+): Promise<void> {
+  const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
+  const controller = new AbortController();
+  const worktreeExists = await fileExists(worktreePlan.worktreePath);
+  activeRuns.set(thread.id, { controller, worktreePlan, worktreeReady: worktreeExists });
+
+  const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
+  let stopTodosHandled = false;
+  const todoTracker =
+    mode === "execution"
+      ? createSdkTaskTracker(
+          thread.id,
+          {
+            listTodos: () => conversationStore.listCoderTodos(thread.id),
+            replaceTodos: (todos) => conversationStore.replaceCoderTodos(thread.id, todos),
+          },
+          emitTodoList,
+        )
+      : undefined;
+  const taskHookHandlers = todoTracker?.createHookHandlers(() => stopStatusRef.current);
+
+  try {
+    if (mode !== "question") {
+      await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
+      if (!worktreeExists) {
+        await gitWorktrees.createWorktree(worktreePlan);
+      }
+      activeRuns.get(thread.id)!.worktreeReady = true;
+    }
+
+    const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+      const attemptProxy = await startAnthropicModelProxy(runtimeConfig.routes);
+      const routes = buildDriverRoutes(attemptProxy.routes);
+      const resume = resolveResumeOptions(thread.id, worktreePlan.worktreePath);
+      if (!resume) {
+        return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
+      }
+
+      try {
+        const driver = createSdkDriver(thread.id, attemptProxy, {
+          ...(taskHookHandlers
+            ? {
+                taskTracker: {
+                  ...taskHookHandlers,
+                  onStop(status) {
+                    stopTodosHandled = true;
+                    taskHookHandlers.onStop(status);
+                  },
+                },
+                getStopTodoStatus: () => stopStatusRef.current,
+              }
+            : {}),
+        });
+        if (!driver.runQuestion && mode === "question") {
+          throw new Error("Runtime driver does not support question answering.");
+        }
+        if (!driver.runContinuation && mode === "execution") {
+          throw new Error("Runtime driver does not support session continuation.");
+        }
+
+        let sdkFailure: string | undefined;
+        let planCaptured = false;
+        const runInput = {
+          threadId: thread.id,
+          prompt: followUp,
+          workspacePath: workspace.path,
+          worktreePath: worktreePlan.worktreePath,
+          routes,
+          signal: controller.signal,
+          sdkSession: buildSdkSessionOptions(),
+          resume,
+        };
+
+        const eventStream =
+          mode === "planning"
+            ? driver.run(runInput)
+            : mode === "question"
+              ? driver.runQuestion!(runInput)
+              : driver.runContinuation!(runInput, mode);
+
+        for await (const event of eventStream) {
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            continue;
+          }
+          captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
+          if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+            planCaptured = true;
+            conversationStore.savePendingPlan({
+              threadId: thread.id,
+              userPrompt: event.payload.userPrompt,
+              analysis: event.payload.analysis,
+              plan: event.payload.plan,
+              workspacePath: workspace.path,
+              worktreePath: worktreePlan.worktreePath,
+              routesJson: JSON.stringify(routes),
+            });
+            emitThreadEvent(
+              thread.id,
+              "thread.awaiting_plan",
+              "计划已生成，请确认是否执行。",
+              "planner",
+              false,
+              {
+                plan: {
+                  userPrompt: event.payload.userPrompt,
+                  analysis: event.payload.analysis,
+                  plan: event.payload.plan,
+                },
+              },
+            );
+          }
+          if (event.type === "todo.updated" && todoTracker && isSdkTodoProgressPayload(event.payload)) {
+            todoTracker.handleTaskProgress(event.payload);
+          }
+          emitSdkStreamActivity(thread.id, event);
+        }
+
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        if (sdkFailure) {
+          return { ok: false, reason: sdkFailure };
+        }
+        if (mode === "planning" && !planCaptured) {
+          return { ok: false, reason: "未能生成可执行的计划。" };
+        }
+        return { ok: true };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        return { ok: false, reason: errorMessage(error) };
+      } finally {
+        await attemptProxy.close();
+      }
+    });
+
+    if (outcome.aborted) {
+      stopStatusRef.current = "cancelled";
+      taskHookHandlers?.onStop("cancelled");
+      updateThread(thread.id, { status: "idle", message: "已停止。" });
+      return;
+    }
+    if (!outcome.ok) {
+      stopStatusRef.current = "blocked";
+      taskHookHandlers?.onStop("blocked");
+      updateThread(thread.id, { status: "failed", message: outcome.reason });
+      return;
+    }
+
+    if (mode === "execution") {
+      taskHookHandlers?.onStop("completed");
+      updateThread(thread.id, {
+        status: "idle",
+        message: "代理执行完成，正在合并工作树更改…",
+      });
+      try {
+        const { files, message, diff } = await applyWorktreeChanges(worktreePlan);
+        conversationStore.saveAppliedDiff(thread.id, worktreePlan.workspacePath, diff, files);
+        updateThread(thread.id, { status: "completed", message });
+        emitThreadEvent(thread.id, "worktree.applied", message, "system");
+        await cleanupWorktreeForThread(thread.id);
+      } catch (applyError) {
+        const detail = errorMessage(applyError);
+        updateThread(thread.id, {
+          status: "completed",
+          message: `执行已完成，但未能合并到工作区：${detail}`,
+        });
+      }
+      return;
+    }
+
+    if (mode === "question") {
+      updateThread(thread.id, { status: "completed", message: "回答完成。" });
+      scheduleThreadTitleSummary(thread.id, followUp, runtimeConfig);
+      return;
+    }
+
+    if (mode === "planning") {
+      updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
+      return;
+    }
+
+    updateThread(thread.id, { status: "idle", message: "续聊已结束。" });
+  } catch (error) {
+    stopStatusRef.current = "blocked";
+    taskHookHandlers?.onStop("blocked");
+    updateThread(thread.id, { status: "failed", message: errorMessage(error) });
+  } finally {
+    cancelClarificationsForThread(thread.id, "run finished");
+    activeRuns.delete(thread.id);
+    const currentThread = conversationStore.getThread(thread.id);
+    if (currentThread?.status === "running") {
+      updateThread(thread.id, {
+        status: "idle",
+        message: currentThread.message || "续聊已结束。",
+      });
+    }
+  }
 }
 
 /** OTel does not stream assistant text; keep SDK message.delta for narrative only. */
