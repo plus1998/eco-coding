@@ -930,6 +930,97 @@ function App() {
   }
 
   const showThreadInfo = Boolean(activeThread);
+  const showLanding = !activeThread;
+
+  const composer = (
+    <div className="codex-composer-wrap">
+      <div className="codex-composer">
+        <textarea
+          ref={composerRef}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          onKeyDown={handleComposerKeyDown}
+          placeholder={
+            pendingClarification
+              ? "请先在上方回答问题"
+              : activeThread?.status === "awaiting_plan"
+                ? "请先确认或忽略上方计划"
+                : activeThread && isContinuableThreadStatus(activeThread.status)
+                  ? "继续对话；若需改计划请说明，将重新生成完整计划…"
+                  : activeThread
+                    ? "当前对话不可发送"
+                    : "尽管问"
+          }
+          disabled={Boolean(activeThread && !threadAcceptsInput)}
+          rows={1}
+        />
+        <div className="composer-footer">
+          <button
+            type="button"
+            className="composer-settings-link"
+            onClick={() => {
+              setSettingsSection("models");
+              setSettingsOpen(true);
+            }}
+            title="模型设置"
+            aria-label="模型设置"
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+          <div className="composer-agent-models" aria-label="各 Agent 模型">
+            {agentModelLabels.map(({ role, label }) => (
+              <span key={role} className="composer-agent-model" title={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+          {canStopThread ? (
+            <button
+              type="button"
+              className="send-button stop"
+              onClick={() => void cancelActiveThread()}
+              disabled={cancelBusy}
+              title="停止当前运行"
+              aria-label="停止"
+            >
+              {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="send-button"
+              onClick={sendComposerMessage}
+              disabled={!canSend}
+              aria-label="发送"
+            >
+              {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
+            </button>
+          )}
+        </div>
+        {error && (
+          <p className="composer-error">
+            <AlertCircle size={14} /> {error}
+          </p>
+        )}
+        {!routesReady && (
+          <p className="composer-hint">
+            请先在
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setSettingsSection("models");
+                setSettingsOpen(true);
+              }}
+            >
+              设置
+            </button>
+            中配置模型与 API Key
+          </p>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <main className={showThreadInfo ? "shell shell-with-info" : "shell"}>
@@ -996,14 +1087,17 @@ function App() {
         </button>
       </aside>
 
-      <section className="codex-main">
+      <section className={showLanding ? "codex-main codex-main-landing" : "codex-main"}>
         <div className="codex-main-scroll">
-          {!activeThread && activityLines.length === 0 ? (
-            <h1 className="codex-hero">
-              {currentProjectPath
-                ? `我们应该在 ${currentProjectName} 中构建什么？`
-                : "打开一个项目开始编码"}
-            </h1>
+          {showLanding ? (
+            <div className="codex-landing">
+              <h1 className="codex-hero">
+                {currentProjectPath
+                  ? `我们应该在 ${currentProjectName} 中构建什么？`
+                  : "打开一个项目开始编码"}
+              </h1>
+              {composer}
+            </div>
           ) : (
             <div className="activity-feed">
               {activeThread && (
@@ -1088,93 +1182,7 @@ function App() {
           )}
         </div>
 
-        <div className="codex-composer-wrap">
-          <div className="codex-composer">
-            <textarea
-              ref={composerRef}
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={handleComposerKeyDown}
-              placeholder={
-                pendingClarification
-                  ? "请先在上方回答问题"
-                  : activeThread?.status === "awaiting_plan"
-                    ? "请先确认或忽略上方计划"
-                    : activeThread && isContinuableThreadStatus(activeThread.status)
-                      ? "继续对话；若需改计划请说明，将重新生成完整计划…"
-                      : activeThread
-                        ? "当前对话不可发送"
-                        : "尽管问"
-              }
-              disabled={Boolean(activeThread && !threadAcceptsInput)}
-              rows={1}
-            />
-            <div className="composer-footer">
-              <button
-                type="button"
-                className="composer-settings-link"
-                onClick={() => {
-                  setSettingsSection("models");
-                  setSettingsOpen(true);
-                }}
-                title="模型设置"
-                aria-label="模型设置"
-              >
-                <SlidersHorizontal size={16} />
-              </button>
-              <div className="composer-agent-models" aria-label="各 Agent 模型">
-                {agentModelLabels.map(({ role, label }) => (
-                  <span key={role} className="composer-agent-model" title={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-              {canStopThread ? (
-                <button
-                  type="button"
-                  className="send-button stop"
-                  onClick={() => void cancelActiveThread()}
-                  disabled={cancelBusy}
-                  title="停止当前运行"
-                  aria-label="停止"
-                >
-                  {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="send-button"
-                  onClick={sendComposerMessage}
-                  disabled={!canSend}
-                  aria-label="发送"
-                >
-                  {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
-                </button>
-              )}
-            </div>
-            {error && (
-              <p className="composer-error">
-                <AlertCircle size={14} /> {error}
-              </p>
-            )}
-            {!routesReady && (
-              <p className="composer-hint">
-                请先在
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => {
-                    setSettingsSection("models");
-                    setSettingsOpen(true);
-                  }}
-                >
-                  设置
-                </button>
-                中配置模型与 API Key
-              </p>
-            )}
-          </div>
-        </div>
+        {!showLanding ? composer : null}
       </section>
 
       {showThreadInfo && activeThread ? (

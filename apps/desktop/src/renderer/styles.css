@@ -295,13 +295,27 @@ button:not(:disabled) {
   padding: 0 24px;
 }
 
-.codex-main-scroll:has(.codex-hero) {
+.codex-main-scroll:has(.codex-landing) {
   align-items: center;
   justify-content: center;
 }
 
-.codex-hero {
+.codex-landing {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 640px;
   margin: auto;
+  gap: 28px;
+}
+
+.codex-landing .codex-composer-wrap {
+  padding: 0;
+}
+
+.codex-hero {
+  margin: 0;
   max-width: 640px;
   color: #f0f0f0;
   font-size: clamp(22px, 3vw, 32px);
