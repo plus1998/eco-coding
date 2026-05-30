@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { buildPlanningPhaseSystemAppend } from "../src/prompts/eco-plan-adapter.js";
 import { CODEX_PLAN_MODE_TEMPLATE } from "../src/prompts/codex-plan-template.js";
-import { buildPlanningPhasePrompt, planningPhaseSystemAppend } from "../src/prompts/planning.js";
+import {
+  buildPlanningContinuationPrompt,
+  buildPlanningPhasePrompt,
+  planningPhaseSystemAppend,
+} from "../src/prompts/planning.js";
 
 test("inlined Codex plan template matches upstream structure", () => {
   const template = CODEX_PLAN_MODE_TEMPLATE;
@@ -21,6 +25,7 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).toContain("Agent(explore)");
   expect(append).toContain("Eco Plan Mode turn order");
   expect(append).toContain("MUST NOT include `## Implementation Plan`");
+  expect(append).toContain("complete replacement");
 });
 
 test("planningPhaseSystemAppend is built from inlined Codex template", () => {
@@ -34,4 +39,11 @@ test("buildPlanningPhasePrompt enforces explore and ask on turn 1", () => {
   expect(prompt).toContain("AskUserQuestion");
   expect(prompt).toContain("Do NOT output ## Implementation Plan");
   expect(prompt).not.toContain("when decision-complete");
+});
+
+test("buildPlanningContinuationPrompt requires full replacement plan", () => {
+  const prompt = buildPlanningContinuationPrompt("把提示语改成可配置字段");
+  expect(prompt).toContain("not turn 1");
+  expect(prompt).toContain("complete replacement");
+  expect(prompt).not.toContain("turn 1).");
 });

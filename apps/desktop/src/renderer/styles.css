@@ -979,6 +979,20 @@ button:not(:disabled) {
   min-height: 80px;
 }
 
+.plan-approval-markdown {
+  padding: 12px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.plan-approval-markdown-compact {
+  margin-top: 8px;
+  max-height: 200px;
+}
+
 .plan-approval-body {
   margin: 0;
   padding: 12px;

@@ -32,6 +32,7 @@ import {
   exploreAgentPrompt,
   planningPhaseSystemAppend,
   buildPlanningPhasePrompt,
+  buildPlanningContinuationPrompt,
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
   executePhaseSystemAppend,
@@ -209,12 +210,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent> {
     if (mode === "planning") {
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
-      yield* this.runSingleSession(input, {
-        prompt: input.prompt,
+      const planningTranscript = yield* this.runSingleSession(input, {
+        prompt: buildPlanningContinuationPrompt(input.prompt),
         permissionMode: planningPermissionMode,
         allowedTools: [...planningAllowedTools],
         phaseAppend: planningPhaseSystemAppend,
         agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      });
+      if (input.signal.aborted) {
+        return;
+      }
+
+      const { analysis, plan } = extractPlanningDeliverables(planningTranscript);
+      yield createPlanReadyEvent(input.threadId, {
+        userPrompt: input.prompt,
+        analysis,
+        plan,
       });
       return;
     }

@@ -137,10 +137,12 @@ export interface ThreadPendingPlan {
   worktreePath: string;
 }
 
-/** Approve execution; optional plan/analysis override user edits before run. */
+/** Approve execution of the pending plan captured from the planner. */
 export interface ThreadApprovePlanRequest {
   threadId: string;
+  /** @deprecated UI no longer edits plan text; ignored if sent. */
   plan?: string;
+  /** @deprecated UI no longer edits plan text; ignored if sent. */
   analysis?: string;
 }
 

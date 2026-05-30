@@ -675,15 +675,13 @@ function App() {
     }
   }
 
-  async function approvePendingPlan(edits: { plan: string; analysis: string }) {
+  async function approvePendingPlan() {
     if (!activeThread || !window.eco) return;
     setError(undefined);
     setPlanActionBusy(true);
     try {
       const result = await window.eco.approvePlan({
         threadId: activeThread.id,
-        plan: edits.plan,
-        analysis: edits.analysis,
       });
       if (result.thread) {
         setThreads((current) =>
@@ -1089,7 +1087,7 @@ function App() {
                   : activeThread?.status === "awaiting_plan"
                     ? "请先确认或忽略上方计划"
                     : activeThread && isContinuableThreadStatus(activeThread.status)
-                      ? "继续当前对话…"
+                      ? "继续对话；若需改计划请说明，将重新生成完整计划…"
                       : activeThread
                         ? "当前对话不可发送"
                         : "尽管问"

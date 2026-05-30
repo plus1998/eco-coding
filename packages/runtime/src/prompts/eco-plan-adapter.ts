@@ -48,6 +48,11 @@ export const ecoPlanHarnessAdapter = [
   "- Output `## Implementation Plan` / `## 实现计划` once spec is decision-complete (unanswered preference questions use recommended defaults recorded under Assumptions).",
   "",
   "If you have not called `AskUserQuestion` at least once in this Plan Mode session, you are not ready for the final plan (except truly trivial one-line doc fixes with zero tradeoffs).",
+  "",
+  "### Plan revisions via chat (after dismiss or follow-up)",
+  "",
+  "If the user revises the spec after a prior `## Implementation Plan` (including after dismissing Eco plan approval),",
+  "the next finalized plan MUST be a **complete replacement** — same rule as Codex `<proposed_plan>` revisions, not a partial diff.",
 ].join("\n");
 
 export function buildPlanningPhaseSystemAppend(): string {

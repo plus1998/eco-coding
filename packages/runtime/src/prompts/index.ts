@@ -4,6 +4,7 @@ export {
   planningPhaseSystemAppend,
   buildPlanningPhaseSystemAppend,
   buildPlanningPhasePrompt,
+  buildPlanningContinuationPrompt,
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
 } from "./planning.js";

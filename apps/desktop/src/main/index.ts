@@ -514,7 +514,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, payload: unknown) => {
-    const { threadId, plan: editedPlan, analysis: editedAnalysis } = parseThreadApprovePlanPayload(payload);
+    const { threadId } = parseThreadApprovePlanPayload(payload);
     const thread = conversationStore.getThread(threadId);
     if (!thread) {
       throw new Error("Thread was not found.");
@@ -531,20 +531,8 @@ function registerIpcHandlers(): void {
       throw new Error("找不到待批准的计划。");
     }
 
-    const plan = editedPlan !== undefined ? editedPlan.trim() : pending.plan.trim();
-    const analysis = editedAnalysis !== undefined ? editedAnalysis.trim() : pending.analysis.trim();
-    if (!plan) {
+    if (!pending.plan.trim()) {
       throw new Error("计划内容不能为空。");
-    }
-
-    const planUserEdited = plan !== pending.plan.trim() || analysis !== pending.analysis.trim();
-    if (planUserEdited) {
-      conversationStore.savePendingPlan({
-        ...pending,
-        plan,
-        analysis,
-      });
-      emitThreadEvent(threadId, "thread.plan_updated", "已采用你编辑后的计划。", "planner", false);
     }
 
     const runtimeConfig = resolveRuntimeConfig(
@@ -557,9 +545,9 @@ function registerIpcHandlers(): void {
 
     updateThread(threadId, {
       status: "running",
-      message: planUserEdited ? "正在按编辑后的计划执行…" : "正在按计划执行…",
+      message: "正在按计划执行…",
     });
-    void runCodingThreadExecution(threadId, runtimeConfig, { planUserEdited });
+    void runCodingThreadExecution(threadId, runtimeConfig);
     return { thread: conversationStore.getThread(threadId) ?? thread };
   });
 
@@ -567,7 +555,10 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
-    await dismissPendingPlan(threadId, "已忽略计划。你可以继续在本对话中提问。");
+    await dismissPendingPlan(
+      threadId,
+      "已忽略计划。可在下方继续对话说明修改意见，Planner 将重新输出完整计划。",
+    );
     return { thread: conversationStore.getThread(threadId) };
   });
 
@@ -1622,6 +1613,7 @@ async function runThreadContinuation(
 
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
+  let planningPlanCaptured = false;
   const todoTracker =
     mode === "execution"
       ? createSdkTaskTracker(
@@ -1672,12 +1664,11 @@ async function runThreadContinuation(
         if (!driver.runQuestion && mode === "question") {
           throw new Error("Runtime driver does not support question answering.");
         }
-        if (!driver.runContinuation && mode === "execution") {
+        if (!driver.runContinuation) {
           throw new Error("Runtime driver does not support session continuation.");
         }
 
         let sdkFailure: string | undefined;
-        let planCaptured = false;
         const runInput = {
           threadId: thread.id,
           prompt: followUp,
@@ -1690,11 +1681,9 @@ async function runThreadContinuation(
         };
 
         const eventStream =
-          mode === "planning"
-            ? driver.run(runInput)
-            : mode === "question"
-              ? driver.runQuestion!(runInput)
-              : driver.runContinuation!(runInput, mode);
+          mode === "question"
+            ? driver.runQuestion!(runInput)
+            : driver.runContinuation!(runInput, mode);
 
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
@@ -1704,7 +1693,7 @@ async function runThreadContinuation(
           }
           captureSdkSessionFromEvent(thread.id, event, worktreePlan.worktreePath);
           if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-            planCaptured = true;
+            planningPlanCaptured = true;
             conversationStore.savePendingPlan({
               threadId: thread.id,
               userPrompt: event.payload.userPrompt,
@@ -1728,6 +1717,10 @@ async function runThreadContinuation(
                 },
               },
             );
+            scheduleThreadTitleSummary(thread.id, followUp, runtimeConfig, {
+              plan: event.payload.plan,
+              analysis: event.payload.analysis,
+            });
           }
           if (event.type === "todo.updated" && todoTracker && isSdkTodoProgressPayload(event.payload)) {
             todoTracker.handleTaskProgress(event.payload);
@@ -1741,7 +1734,7 @@ async function runThreadContinuation(
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
         }
-        if (mode === "planning" && !planCaptured) {
+        if (mode === "planning" && !planningPlanCaptured) {
           return { ok: false, reason: "未能生成可执行的计划。" };
         }
         return { ok: true };
@@ -1797,7 +1790,14 @@ async function runThreadContinuation(
     }
 
     if (mode === "planning") {
-      updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
+      if (planningPlanCaptured) {
+        updateThread(thread.id, {
+          status: "awaiting_plan",
+          message: "等待你确认计划。",
+        });
+      } else {
+        updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
+      }
       return;
     }
 
