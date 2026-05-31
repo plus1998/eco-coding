@@ -27,6 +27,7 @@ export interface RecordUsageInput {
 }
 
 export interface RecordRunUsageModel {
+  role?: AgentRole;
   modelId: string;
   usage: ParsedUsage;
   actualRates: ModelCostRates | null;
@@ -141,7 +142,7 @@ export class ThreadUsageAccumulator {
     }
 
     for (const model of input.models) {
-      const role = input.role;
+      const role = model.role ?? input.role;
       const prevRole = state.byRole[role] ?? createEmptyUsage();
       state.byRole[role] = mergeUsageTotals(prevRole, model.usage);
       state.total = mergeUsageTotals(state.total, model.usage);

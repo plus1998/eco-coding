@@ -2056,6 +2056,7 @@ async function processUsageBilling(input: {
   );
 
   const resolvedModelId = usageRoute?.modelId ?? input.modelId;
+  const billingRole = usageRoute?.role ?? input.role;
 
   const monitorModelId = plannerRoute?.modelId ?? resolvedModelId;
   const monitorBaseUrl = plannerRoute?.provider.baseUrl;
@@ -2077,7 +2078,7 @@ async function processUsageBilling(input: {
 
   const billing = threadUsageAccumulator.recordUsage({
     threadId: input.threadId,
-    role: input.role,
+    role: billingRole,
     delta,
     ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
     actualRates: actualLookup?.rates ?? null,
@@ -2393,6 +2394,7 @@ async function processSdkRunBilling(input: {
   const models = await Promise.all(
     input.bundle.models.map(async (entry) => {
       const usageRoute = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
+      const billingRole = usageRoute?.role ?? input.role;
       const actualLookup = usageRoute
         ? await pricingCache.lookupForRoute({
             baseUrl: usageRoute.provider.baseUrl,
@@ -2403,7 +2405,8 @@ async function processSdkRunBilling(input: {
           })
         : null;
       return {
-        modelId: entry.modelId,
+        role: billingRole,
+        modelId: usageRoute?.modelId ?? entry.modelId,
         usage: entry.usage,
         actualRates: actualLookup?.rates ?? null,
         plannerRates,

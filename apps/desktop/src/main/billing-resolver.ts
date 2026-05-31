@@ -69,10 +69,20 @@ export function resolveUsageRoute(
   if (byModelId.length === 1) {
     const route = byModelId[0]!;
     if (roleRoute && route.role !== role) {
+      const plannerRoute = routes.find((entry) => entry.role === "planner");
+      // SDK/OTel often reports the planner upstream id for subagent calls — prefer the billing role's route.
+      if (plannerRoute && route.modelId === plannerRoute.modelId && role !== "planner") {
+        return {
+          role: roleRoute.role,
+          provider: roleRoute.provider,
+          modelId: roleRoute.modelId,
+        };
+      }
+      // Unique upstream id identifies a specific role (e.g. explore haiku when billing role wrongly says planner).
       return {
-        role: roleRoute.role,
-        provider: roleRoute.provider,
-        modelId: roleRoute.modelId,
+        role: route.role,
+        provider: route.provider,
+        modelId: route.modelId,
       };
     }
     return {

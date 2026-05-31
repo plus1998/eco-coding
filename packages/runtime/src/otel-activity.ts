@@ -5,6 +5,7 @@
 
 export type OtelActivityRole =
   | "planner"
+  | "explore"
   | "architect"
   | "coder"
   | "reviewer"

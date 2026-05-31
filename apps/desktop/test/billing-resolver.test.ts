@@ -37,6 +37,29 @@ test("resolveUsageRoute unique model id still resolves correctly", () => {
   expect(resolved?.modelId).toBe("claude-haiku-4-5");
 });
 
+test("resolveUsageRoute maps unique explore model when SDK result role is planner", () => {
+  const provider = createProvider();
+  const routes = [
+    { role: "planner" as const, provider, modelId: "claude-opus-4-7" },
+    { role: "explore" as const, provider, modelId: "claude-haiku-4-5" },
+  ];
+  const resolved = resolveUsageRoute("planner", "claude-haiku-4-5", routes);
+  expect(resolved?.role).toBe("explore");
+  expect(resolved?.modelId).toBe("claude-haiku-4-5");
+});
+
+test("resolveUsageRoute maps explore eco alias when SDK result role is planner", () => {
+  const provider = createProvider();
+  const routes = [
+    { role: "planner" as const, provider, modelId: "claude-opus-4-7" },
+    { role: "explore" as const, provider, modelId: "claude-haiku-4-5" },
+  ];
+  const alias = createModelAlias("explore", provider.id, "claude-haiku-4-5");
+  const resolved = resolveUsageRoute("planner", alias, routes);
+  expect(resolved?.role).toBe("explore");
+  expect(resolved?.modelId).toBe("claude-haiku-4-5");
+});
+
 function createProvider(): ProviderConfigSecret {
   return {
     id: "anthropic-compatible",

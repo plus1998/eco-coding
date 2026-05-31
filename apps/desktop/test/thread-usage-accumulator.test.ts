@@ -97,3 +97,29 @@ test("ThreadUsageAccumulator recordRunUsage bills cache at models.dev rates", ()
   expect(billing?.ecoCostBreakdown?.cacheReadUsd).toBeCloseTo(0.0692481, 4);
   expect(billing?.otelCostUsd).toBe(0.18);
 });
+
+test("ThreadUsageAccumulator recordRunUsage attributes per-model role", () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const delta = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+
+  accumulator.recordRunUsage({
+    threadId: "t1",
+    role: "planner",
+    requestKey: "sdk-result:run-explore",
+    models: [
+      {
+        role: "explore",
+        modelId: "claude-haiku-4-5",
+        usage: delta,
+        actualRates: haikuRates,
+        plannerRates: sonnetRates,
+      },
+    ],
+  });
+
+  const billing = accumulator.getSnapshot("t1");
+  expect(billing?.byRole?.explore?.inputTokens).toBe(10_000);
+  expect(billing?.byRole?.planner).toBeUndefined();
+  expect(billing?.ecoCostUsd).toBeCloseTo(0.012, 4);
+  expect(billing?.plannerTokenCostUsd).toBeCloseTo(0.045, 4);
+});
