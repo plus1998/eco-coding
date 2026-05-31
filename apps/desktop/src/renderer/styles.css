@@ -2596,6 +2596,23 @@ button:not(:disabled) {
   letter-spacing: 0.01em;
 }
 
+.context-card-title-group {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.context-card-role-badge {
+  min-width: 0;
+  overflow: hidden;
+  color: #8f8f8f;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .context-card-collapse {
   display: inline-flex;
   align-items: center;
@@ -2670,6 +2687,79 @@ button:not(:disabled) {
 .context-card-bar-free {
   height: 100%;
   background: #3a3a3a;
+}
+
+.context-card-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 0 10px;
+}
+
+.context-card-role-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: #242424;
+  color: #d4d4d4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-card-role-row:hover {
+  border-color: #3a3a3a;
+  background: #292929;
+}
+
+.context-card-role-row.active {
+  border-color: #4b5563;
+  background: #2d2d2d;
+}
+
+.context-card-role-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.context-card-role-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-card-role-meter {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #3a3a3a;
+}
+
+.context-card-role-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #60a5fa;
+}
+
+.context-card-role-usage {
+  color: #8f8f8f;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .context-card-stale {
@@ -2773,7 +2863,9 @@ button:not(:disabled) {
   opacity: 0;
   visibility: hidden;
   transform: translateY(-50%);
-  transition: opacity 0.12s ease, visibility 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease;
 }
 
 .thread-info-help-wrap:hover .thread-info-help-tooltip,

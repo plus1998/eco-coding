@@ -1,18 +1,18 @@
+import type { ResolvedModelRoute } from "@eco/model-router";
+import type { ClaudeAgentSdkDriver } from "@eco/runtime";
 import {
+  type AgentRuntimeDriver,
+  type EcoSdkResumeOptions,
+  extractCompactPostTokens,
   extractSdkContextResultText,
   mergeBreakdownWithOccupancy,
   parseContextCommandResult,
   parseUsagePayload,
-  sdkSupportsSlashCommand,
   readSdkSlashCommands,
-  extractCompactPostTokens,
-  type AgentRuntimeDriver,
-  type EcoSdkResumeOptions,
-  type ResolvedModelRoute,
+  sdkSupportsSlashCommand,
 } from "@eco/runtime";
-import type { ClaudeAgentSdkDriver } from "@eco/runtime";
-import type { ThreadContextSnapshot } from "../shared/ipc";
-import type { ContextWindowMonitor } from "./context-window-monitor";
+import type { AgentRole, ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
+import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
 
 const REFRESH_DEBOUNCE_MS = 3000;
 
@@ -35,7 +35,10 @@ export interface ContextSnapshotSchedulerOptions {
 
 export class ContextSnapshotScheduler {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly lastSegments = new Map<string, ThreadContextSnapshot["segments"]>();
+  private readonly lastSegments = new Map<
+    string,
+    Partial<Record<AgentRole, ThreadContextSnapshot["segments"]>>
+  >();
   private readonly lastEmitted = new Map<string, ThreadContextSnapshot>();
   private readonly breakdownInFlight = new Set<string>();
   private refreshInFlight = new Set<string>();
@@ -90,8 +93,14 @@ export class ContextSnapshotScheduler {
 
   restoreSnapshot(threadId: string, snapshot: ThreadContextSnapshot): void {
     this.lastEmitted.set(threadId, snapshot);
-    if (snapshot.segments.length > 0) {
-      this.lastSegments.set(threadId, snapshot.segments);
+    if (snapshot.roles && snapshot.roles.length > 0) {
+      for (const role of snapshot.roles) {
+        if (role.segments.length > 0) {
+          this.setLastSegments(threadId, role.role, role.segments);
+        }
+      }
+    } else if (snapshot.segments.length > 0) {
+      this.setLastSegments(threadId, snapshot.displayRole ?? "planner", snapshot.segments);
     }
     this.options.monitor.restoreFromContextSnapshot(threadId, snapshot);
   }
@@ -108,11 +117,43 @@ export class ContextSnapshotScheduler {
     this.options.monitor.clearThread(threadId);
   }
 
+  clearSubagentState(threadId: string): void {
+    const segments = this.lastSegments.get(threadId);
+    if (segments) {
+      const planner = segments.planner;
+      if (planner) {
+        this.lastSegments.set(threadId, { planner });
+      } else {
+        this.lastSegments.delete(threadId);
+      }
+    }
+
+    const emitted = this.lastEmitted.get(threadId);
+    const plannerRole = emitted?.roles?.find((role) => role.role === "planner");
+    if (!emitted || !plannerRole) {
+      this.lastEmitted.delete(threadId);
+      return;
+    }
+
+    this.lastEmitted.set(threadId, {
+      occupied: plannerRole.occupied,
+      limit: plannerRole.limit,
+      occupancyPct: plannerRole.occupancyPct,
+      limitsResolved: plannerRole.limitsResolved,
+      displayRole: "planner",
+      segments: plannerRole.segments,
+      roles: [plannerRole],
+      updatedAt: Date.now(),
+      ...(plannerRole.modelId && { modelId: plannerRole.modelId }),
+      ...(plannerRole.maxOutputTokens !== undefined && { maxOutputTokens: plannerRole.maxOutputTokens }),
+    });
+  }
+
   async ensureHeadroom(
     threadId: string,
-    routes: readonly ResolvedModelRoute[],
+    _routes: readonly ResolvedModelRoute[],
     worktreePath: string,
-    signal: AbortSignal,
+    _signal: AbortSignal,
   ): Promise<void> {
     if (!this.options.monitor.shouldCompact(threadId)) {
       return;
@@ -144,7 +185,7 @@ export class ContextSnapshotScheduler {
           prompt: "/compact",
           workspacePath: worktreePath,
           worktreePath,
-          routes,
+          routes: [...routes],
           signal: runSignal,
           resume,
         })) {
@@ -194,29 +235,53 @@ export class ContextSnapshotScheduler {
     if (!monitorSnap || monitorSnap.occupied <= 0) {
       return undefined;
     }
-    const segments = this.lastSegments.get(threadId) ?? [];
-    const breakdownRefreshing =
-      options?.breakdownRefreshing ?? this.breakdownInFlight.has(threadId);
+    const breakdownRefreshing = options?.breakdownRefreshing ?? this.breakdownInFlight.has(threadId);
+    const roles = monitorSnap.roles.map((role) => this.buildRoleSnapshot(threadId, role));
+    const active = roles.find((role) => role.role === monitorSnap.displayRole) ?? roles[0];
+    if (!active) {
+      return undefined;
+    }
     return {
-      occupied: monitorSnap.occupied,
-      limit: monitorSnap.limit,
-      occupancyPct: monitorSnap.occupancyPct,
-      limitsResolved: monitorSnap.limitsResolved,
-      segments: mergeBreakdownWithOccupancy(segments, monitorSnap.occupied).map((segment) => ({
-        key: segment.key,
-        label: segment.label,
-        tokens: segment.tokens,
-        color: segment.color,
-      })),
+      occupied: active.occupied,
+      limit: active.limit,
+      occupancyPct: active.occupancyPct,
+      limitsResolved: active.limitsResolved,
+      displayRole: active.role,
+      segments: active.segments,
+      roles,
       updatedAt: Date.now(),
       ...(breakdownRefreshing && { breakdownRefreshing: true }),
-      ...(monitorSnap.maxOutputTokens !== undefined && { maxOutputTokens: monitorSnap.maxOutputTokens }),
+      ...(active.modelId && { modelId: active.modelId }),
+      ...(active.maxOutputTokens !== undefined && { maxOutputTokens: active.maxOutputTokens }),
+    };
+  }
+
+  private buildRoleSnapshot(threadId: string, role: ContextMonitorRoleSnapshot): ThreadRoleContextSnapshot {
+    const segments = mergeBreakdownWithOccupancy(
+      this.getLastSegments(threadId, role.role),
+      role.occupied,
+    ).map((segment) => ({
+      key: segment.key,
+      label: segment.label,
+      tokens: segment.tokens,
+      color: segment.color,
+    }));
+
+    return {
+      role: role.role,
+      occupied: role.occupied,
+      limit: role.limit,
+      occupancyPct: role.occupancyPct,
+      limitsResolved: role.limitsResolved,
+      segments,
+      ...(role.modelId && { modelId: role.modelId }),
+      ...(role.maxOutputTokens !== undefined && { maxOutputTokens: role.maxOutputTokens }),
     };
   }
 
   private async refreshBreakdownNow(
     threadId: string,
-    routes: readonly ResolvedModelRoute[],
+    _routes: readonly ResolvedModelRoute[],
     worktreePath: string,
   ): Promise<void> {
     if (this.options.isThreadRunning(threadId)) {
@@ -256,7 +321,7 @@ export class ContextSnapshotScheduler {
           prompt: "/context",
           workspacePath: worktreePath,
           worktreePath,
-          routes,
+          routes: [...routes],
           signal: runSignal,
           resume,
         })) {
@@ -279,10 +344,11 @@ export class ContextSnapshotScheduler {
         }
 
         const monitorSnap = this.options.monitor.getSnapshot(threadId);
-        const occupied = monitorSnap?.occupied ?? 0;
+        const planner = monitorSnap?.roles.find((role) => role.role === "planner");
+        const occupied = planner?.occupied ?? 0;
         const segments = parseContextCommandResult(contextText, occupied);
         if (segments.length > 0) {
-          this.lastSegments.set(threadId, segments);
+          this.setLastSegments(threadId, "planner", segments);
         }
       });
     } catch (error) {
@@ -294,6 +360,21 @@ export class ContextSnapshotScheduler {
       this.breakdownInFlight.delete(threadId);
       this.emitLiveFromMonitor(threadId);
     }
+  }
+
+  private getLastSegments(threadId: string, role: AgentRole): ThreadContextSnapshot["segments"] {
+    return this.lastSegments.get(threadId)?.[role] ?? [];
+  }
+
+  private setLastSegments(
+    threadId: string,
+    role: AgentRole,
+    segments: ThreadContextSnapshot["segments"],
+  ): void {
+    this.lastSegments.set(threadId, {
+      ...(this.lastSegments.get(threadId) ?? {}),
+      [role]: segments,
+    });
   }
 }
 

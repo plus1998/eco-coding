@@ -40,9 +40,21 @@ test("buildThreadUsageSummary always includes context when tokens known", () => 
         contextLimit: 200_000,
         occupancyPct: 6,
       },
+      coder: {
+        inputTokens: 20,
+        outputTokens: 10,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        contextTokens: 80_000,
+        contextLimit: 100_000,
+        occupancyPct: 80,
+        modelId: "coder-model",
+      },
     },
   });
   expect(summary.context?.occupied).toBe(12_000);
+  expect(summary.context?.displayRole).toBe("planner");
+  expect(summary.context?.roles?.find((role) => role.role === "coder")?.occupied).toBe(80_000);
 });
 
 test("contextCardPlaceholder differs for awaiting_plan vs idle", () => {

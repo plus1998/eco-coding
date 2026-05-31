@@ -57,7 +57,7 @@ export type {
   McpTransport,
 } from "./mcp";
 
-export type { SkillInfo, SkillsListResult, SkillSource } from "./skills";
+export type { SkillInfo, SkillSource, SkillsListResult } from "./skills";
 
 /** Skill directory names enabled per agent role at runtime (SDK skills preload). */
 export type AgentSkillAssignments = Record<AgentRole, string[]>;
@@ -170,9 +170,7 @@ export interface ModelSettingsSnapshot {
   routeProfiles: RouteProfileView[];
 }
 
-export function getActiveRouteProfile(
-  settings: ModelSettingsSnapshot,
-): RouteProfileView | undefined {
+export function getActiveRouteProfile(settings: ModelSettingsSnapshot): RouteProfileView | undefined {
   return settings.routeProfiles.find((profile) => profile.isActive) ?? settings.routeProfiles[0];
 }
 
@@ -315,13 +313,25 @@ export type ContextSegmentKey =
   | "skills"
   | "mcp"
   | "subagentDefinitions"
-  | "conversation";
+  | "conversation"
+  | "unattributed";
 
 export interface ContextBreakdownSegment {
   key: ContextSegmentKey;
   label: string;
   tokens: number;
   color: string;
+}
+
+export interface ThreadRoleContextSnapshot {
+  role: AgentRole;
+  occupied: number;
+  limit: number;
+  occupancyPct: number;
+  limitsResolved: boolean;
+  modelId?: string;
+  segments: ContextBreakdownSegment[];
+  maxOutputTokens?: number;
 }
 
 export interface ThreadContextSnapshot {
@@ -331,7 +341,9 @@ export interface ThreadContextSnapshot {
   limitsResolved: boolean;
   /** Which role's session fill is shown (planner vs subagent). */
   displayRole?: AgentRole;
+  modelId?: string;
   segments: ContextBreakdownSegment[];
+  roles?: ThreadRoleContextSnapshot[];
   updatedAt: number;
   /** @deprecated Use breakdownRefreshing. */
   stale?: boolean;

@@ -65,6 +65,22 @@ Conversation: 42.8K
   expect(segments.find((s) => s.key === "conversation")?.tokens).toBe(42800);
 });
 
+test("parseContextCommandResult maps Claude and Cursor style categories", () => {
+  const segments = parseContextCommandResult(`
+Messages: 10K
+MCP tools: 2K
+Memory files: 500
+Subagents: 1.2K
+Custom extension: 300
+Total: 14K
+`);
+  expect(segments.find((s) => s.key === "conversation")?.tokens).toBe(10_000);
+  expect(segments.find((s) => s.key === "mcp")?.tokens).toBe(2000);
+  expect(segments.find((s) => s.key === "rules")?.tokens).toBe(500);
+  expect(segments.find((s) => s.key === "subagentDefinitions")?.tokens).toBe(1200);
+  expect(segments.find((s) => s.key === "unattributed")?.tokens).toBe(300);
+});
+
 test("parseContextCommandResult fallback conversation", () => {
   const segments = parseContextCommandResult("no structured data", 50_000);
   expect(segments).toHaveLength(1);

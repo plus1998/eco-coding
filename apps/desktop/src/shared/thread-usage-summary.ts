@@ -1,11 +1,15 @@
 import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime";
 import type {
+  AgentRole,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
+  ThreadRoleContextSnapshot,
   ThreadStatus,
   ThreadUsageSnapshot,
 } from "./ipc";
 import { pickDisplayContextTokens } from "./thread-continuation";
+
+const ROLE_ORDER: readonly AgentRole[] = ["planner", "explore", "architect", "coder", "reviewer", "tester"];
 
 export interface ThreadUsageSummaryInput {
   billing?: ThreadBillingSnapshot;
@@ -24,46 +28,46 @@ export function buildFallbackContextSnapshot(options: {
   context?: ThreadContextSnapshot;
   contextTokens?: number;
   plannerUsage?: ThreadUsageSnapshot;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }): ThreadContextSnapshot | undefined {
   if (options.context) {
     return options.context;
   }
 
-  const occupied = options.contextTokens ?? options.plannerUsage?.contextTokens ?? 0;
+  const roles = buildFallbackRoleSnapshots(options.usageByRole, options.plannerUsage);
+  const displayRole = roles.find((role) => role.role === "planner")?.role ?? roles[0]?.role;
+  const active = roles.find((role) => role.role === displayRole);
+  const occupied = active?.occupied ?? options.contextTokens ?? options.plannerUsage?.contextTokens ?? 0;
   if (occupied <= 0) {
     return undefined;
   }
 
-  const limit = options.plannerUsage?.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
+  const limit = active?.limit ?? options.plannerUsage?.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
   const occupancyPct =
-    options.plannerUsage?.occupancyPct ?? occupancyPercent(occupied, limit);
+    active?.occupancyPct ?? options.plannerUsage?.occupancyPct ?? occupancyPercent(occupied, limit);
+  const limitsResolved = active?.limitsResolved ?? options.plannerUsage?.contextLimit !== undefined;
+  const segments = active?.segments ?? fallbackSegments(occupied);
 
   return {
     occupied,
     limit,
     occupancyPct,
-    limitsResolved: options.plannerUsage?.contextLimit !== undefined,
-    segments: [
-      {
-        key: "conversation",
-        label: "会话占用",
-        tokens: occupied,
-        color: "#ea580c",
-      },
-    ],
+    limitsResolved,
+    ...(displayRole && { displayRole }),
+    segments,
+    ...(roles.length > 0 && { roles }),
     updatedAt: Date.now(),
   };
 }
 
-export function buildThreadUsageSummary(
-  input: ThreadUsageSummaryInput,
-): ThreadUsageSummaryOutput {
+export function buildThreadUsageSummary(input: ThreadUsageSummaryInput): ThreadUsageSummaryOutput {
   const contextTokens = input.usageByRole ? pickDisplayContextTokens(input.usageByRole) : 0;
   const plannerUsage = input.usageByRole?.planner;
   const context = buildFallbackContextSnapshot({
-    context: input.context,
-    contextTokens,
-    plannerUsage,
+    ...(input.context && { context: input.context }),
+    ...(contextTokens > 0 && { contextTokens }),
+    ...(plannerUsage && { plannerUsage }),
+    ...(input.usageByRole && { usageByRole: input.usageByRole }),
   });
 
   return {
@@ -71,6 +75,46 @@ export function buildThreadUsageSummary(
     ...(context && { context }),
     ...(contextTokens > 0 && { contextTokens }),
   };
+}
+
+function buildFallbackRoleSnapshots(
+  usageByRole: Record<string, ThreadUsageSnapshot> | undefined,
+  plannerUsage: ThreadUsageSnapshot | undefined,
+): ThreadRoleContextSnapshot[] {
+  const snapshots: ThreadRoleContextSnapshot[] = [];
+  const source = usageByRole ?? (plannerUsage ? { planner: plannerUsage } : undefined);
+  if (!source) {
+    return snapshots;
+  }
+
+  for (const role of ROLE_ORDER) {
+    const usage = source[role];
+    if (!usage || usage.contextTokens <= 0) {
+      continue;
+    }
+    const limit = usage.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
+    snapshots.push({
+      role,
+      occupied: usage.contextTokens,
+      limit,
+      occupancyPct: usage.occupancyPct ?? occupancyPercent(usage.contextTokens, limit),
+      limitsResolved: usage.contextLimit !== undefined,
+      ...(usage.modelId && { modelId: usage.modelId }),
+      segments: fallbackSegments(usage.contextTokens),
+    });
+  }
+  return snapshots;
+}
+
+function fallbackSegments(tokens: number): ThreadRoleContextSnapshot["segments"] {
+  return [
+    {
+      key: "conversation",
+      label: "会话占用",
+      tokens,
+      color: "#ea580c",
+    },
+  ];
 }
 
 const USAGE_PANEL_STATUSES = new Set<ThreadStatus>([
@@ -94,12 +138,7 @@ export function contextCardPlaceholder(status?: ThreadStatus): string {
   if (status === "awaiting_plan") {
     return "计划阶段用量将随模型响应更新";
   }
-  if (
-    status === "completed" ||
-    status === "idle" ||
-    status === "failed" ||
-    status === "blocked"
-  ) {
+  if (status === "completed" || status === "idle" || status === "failed" || status === "blocked") {
     return "暂无上下文数据";
   }
   return "上下文 — 有模型请求后显示";

@@ -7,7 +7,6 @@ import {
   extractCompactPostTokens,
   extractSdkRunFailure,
   formatUsageBadge,
-  estimateContextTokens,
   parseSdkUsageBilling,
   parseUsagePayload,
   type ParsedUsage,
@@ -112,6 +111,7 @@ import {
 } from "./billing-resolver";
 import {
   buildAssistantUsageRequestKey,
+  buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
   nextOtelRequestDedupId,
   shouldBillAssistantSubagentUsage,
@@ -938,6 +938,7 @@ async function runQuestionThread(
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
   activeRuns.set(thread.id, { controller, worktreePlan: createWorktreePlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
+  resetSubagentContextWindows(thread.id);
 
   try {
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
@@ -1042,6 +1043,7 @@ async function runCodingThreadPlanning(
     worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
     worktreeReady: false,
   });
+  resetSubagentContextWindows(thread.id);
 
   try {
     const { worktreePlan, cwd, isolated } = await resolveThreadWorktree(
@@ -1223,6 +1225,7 @@ async function runCodingThreadExecution(
   const worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
   activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
+  resetSubagentContextWindows(threadId);
 
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
@@ -1675,8 +1678,8 @@ function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): Reso
       provider: "custom",
       displayName: `${route.provider.name} / ${route.modelId}`,
       baseUrl: route.provider.baseUrl,
-      // Real upstream id for Claude Code; local proxy accepts alias or modelId.
-      modelId: route.modelId,
+      // Role-specific alias lets the local proxy attribute shared upstream models to the right context window.
+      modelId: route.aliasModelId,
       capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
       enabled: route.provider.enabled,
     },
@@ -1810,6 +1813,7 @@ async function runThreadContinuation(
     worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
     worktreeReady: false,
   });
+  resetSubagentContextWindows(thread.id);
 
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
@@ -2220,9 +2224,9 @@ async function processUsageBilling(input: {
   const resolvedModelId = usageRoute?.modelId ?? input.modelId;
   const billingRole = usageRoute?.role ?? input.role;
 
-  const monitorModelId = plannerRoute?.modelId ?? resolvedModelId;
-  const monitorBaseUrl = plannerRoute?.provider.baseUrl;
-  const monitorRole = input.role;
+  const monitorModelId = usageRoute?.modelId ?? plannerRoute?.modelId ?? resolvedModelId;
+  const monitorBaseUrl = usageRoute?.provider.baseUrl ?? plannerRoute?.provider.baseUrl;
+  const monitorRole = billingRole;
   const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
   const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
   const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
@@ -2259,20 +2263,15 @@ async function processUsageBilling(input: {
     ...(input.modelId && { modelId: input.modelId }),
   };
 
-  const snapshot: ThreadUsageSnapshot = {
-    inputTokens: parsed.inputTokens,
-    outputTokens: parsed.outputTokens,
-    cacheReadTokens: parsed.cacheReadTokens,
-    cacheCreationTokens: parsed.cacheCreationTokens,
-    contextTokens: monitorSnap?.occupied ?? estimateContextTokens(parsed),
-    ...(monitorSnap && {
-      contextLimit: monitorSnap.limit,
-      occupancyPct: monitorSnap.occupancyPct,
-    }),
+  const snapshot = buildUsageSnapshotForRole({
+    usage: parsed,
+    role: billingRole,
+    ...(monitorSnap && { monitorSnap }),
     ...(parsed.modelId && { modelId: parsed.modelId }),
-  };
+    fallbackContext: "estimate",
+  });
 
-  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(parsed), input.role, false, {
+  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(parsed), billingRole, false, {
     usage: snapshot,
     totalCostUsd: billing.otelCostUsd,
     billing,
@@ -2338,6 +2337,15 @@ function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   const path = worktreePath ?? resolveThreadWorktreePath(threadId);
   if (path) {
     scheduleContextBreakdownRefresh(threadId, path, true);
+  }
+}
+
+function resetSubagentContextWindows(threadId: string): void {
+  contextScheduler.clearSubagentState(threadId);
+  const snapshot = contextMonitor.clearSubagentRoles(threadId);
+  if (snapshot) {
+    contextScheduler.emitLiveFromMonitor(threadId);
+    schedulePersistThreadMetrics(threadId);
   }
 }
 
@@ -2617,20 +2625,7 @@ async function processSdkRunBilling(input: {
     }),
   );
 
-  for (const entry of input.bundle.models) {
-    const route = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
-    const contextRole = route?.role ?? input.role;
-    if (!route) {
-      continue;
-    }
-    await contextMonitor.updateFromUsage(input.threadId, entry.usage, {
-      role: contextRole,
-      modelId: route.modelId,
-      providerBaseUrl: route.provider.baseUrl,
-      ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
-    });
-  }
-
+  // SDK result modelUsage is a billing aggregate; context windows are updated only from per-session usage.
   const billing = threadUsageAccumulator.recordRunUsage({
     threadId: input.threadId,
     role: input.role,
@@ -2643,17 +2638,12 @@ async function processSdkRunBilling(input: {
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
   const contextUsage = input.bundle.contextUsage;
-  const snapshot: ThreadUsageSnapshot = {
-    inputTokens: contextUsage.inputTokens,
-    outputTokens: contextUsage.outputTokens,
-    cacheReadTokens: contextUsage.cacheReadTokens,
-    cacheCreationTokens: contextUsage.cacheCreationTokens,
-    contextTokens: monitorSnap?.occupied ?? estimateContextTokens(contextUsage),
-    ...(monitorSnap && {
-      contextLimit: monitorSnap.limit,
-      occupancyPct: monitorSnap.occupancyPct,
-    }),
-  };
+  const snapshot = buildUsageSnapshotForRole({
+    usage: contextUsage,
+    role: input.role,
+    ...(monitorSnap && { monitorSnap }),
+    fallbackContext: "none",
+  });
 
   emitThreadEvent(
     input.threadId,

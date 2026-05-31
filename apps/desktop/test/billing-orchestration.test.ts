@@ -2,12 +2,14 @@ import { expect, test } from "bun:test";
 import { parseSdkUsageBilling } from "@eco/runtime";
 import {
   buildAssistantUsageRequestKey,
+  buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
   nextOtelRequestDedupId,
   sdkPayloadHasModelUsage,
   shouldBillAssistantSubagentUsage,
 } from "../src/main/billing-orchestration";
+import type { ContextMonitorSnapshot } from "../src/main/context-window-monitor";
 import { buildUsageRequestKey, ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 
 test("isSubagentBillingRole excludes planner", () => {
@@ -71,13 +73,62 @@ test("buildUsageRequestKey includes dedupId to avoid token fingerprint collision
     cacheCreationTokens: 0,
     modelId: "haiku",
   };
-  expect(buildUsageRequestKey(base)).not.toBe(
-    buildUsageRequestKey({ ...base, dedupId: "1" }),
-  );
+  expect(buildUsageRequestKey(base)).not.toBe(buildUsageRequestKey({ ...base, dedupId: "1" }));
 });
 
 test("buildAssistantUsageRequestKey is stable per message", () => {
   expect(buildAssistantUsageRequestKey("msg_abc")).toBe("sdk-assistant:msg_abc");
+});
+
+test("buildUsageSnapshotForRole uses the matching role window instead of display occupancy", () => {
+  const monitorSnap: ContextMonitorSnapshot = {
+    occupied: 90_000,
+    limit: 100_000,
+    ratio: 0.9,
+    occupancyPct: 90,
+    limitsResolved: true,
+    displayRole: "planner",
+    roles: [
+      {
+        role: "planner",
+        occupied: 90_000,
+        limit: 100_000,
+        ratio: 0.9,
+        occupancyPct: 90,
+        limitsResolved: true,
+      },
+      {
+        role: "explore",
+        occupied: 15_000,
+        limit: 40_000,
+        ratio: 0.375,
+        occupancyPct: 38,
+        limitsResolved: true,
+      },
+    ],
+  };
+
+  const snapshot = buildUsageSnapshotForRole({
+    role: "explore",
+    usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 2000, cacheCreationTokens: 0 },
+    monitorSnap,
+    fallbackContext: "estimate",
+  });
+
+  expect(snapshot.contextTokens).toBe(15_000);
+  expect(snapshot.contextLimit).toBe(40_000);
+  expect(snapshot.occupancyPct).toBe(38);
+});
+
+test("buildUsageSnapshotForRole can suppress aggregate SDK context fallback", () => {
+  const snapshot = buildUsageSnapshotForRole({
+    role: "planner",
+    usage: { inputTokens: 20_000, outputTokens: 1000, cacheReadTokens: 30_000, cacheCreationTokens: 0 },
+    fallbackContext: "none",
+  });
+
+  expect(snapshot.contextTokens).toBe(0);
+  expect(snapshot.contextLimit).toBeUndefined();
 });
 
 test("OTel incremental billing attributes subagent role separately from planner", () => {

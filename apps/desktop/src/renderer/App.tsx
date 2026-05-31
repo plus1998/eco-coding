@@ -524,9 +524,9 @@ function App() {
       return undefined;
     }
     return buildThreadUsageSummary({
-      billing: billingByThread[activeThread.id],
-      context: contextByThread[activeThread.id],
-      usageByRole: threadUsageByRole,
+      ...(billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] }),
+      ...(contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] }),
+      ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const agentModelLabels = useMemo(

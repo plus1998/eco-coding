@@ -39,13 +39,36 @@ export const CONTEXT_SEGMENT_LABELS: Record<ContextSegmentKey, string> = {
 
 /** Maps English labels from Claude Code /context output to segment keys. */
 const CONTEXT_LABEL_PATTERNS: { key: ContextSegmentKey; patterns: RegExp[] }[] = [
-  { key: "systemPrompt", patterns: [/^system\s*prompt$/i, /^系统提示/] },
-  { key: "toolDefinitions", patterns: [/^tool\s*definitions?$/i, /^工具定义/] },
-  { key: "rules", patterns: [/^rules?$/i, /^规则/] },
-  { key: "skills", patterns: [/^skills?$/i, /^技能/] },
-  { key: "mcp", patterns: [/^mcp$/i] },
-  { key: "subagentDefinitions", patterns: [/^subagent\s*definitions?$/i, /^子代理定义/] },
-  { key: "conversation", patterns: [/^conversation$/i, /^对话/] },
+  { key: "systemPrompt", patterns: [/^system\s*prompts?$/i, /^base\s*system\s*prompt$/i, /^系统提示/] },
+  {
+    key: "toolDefinitions",
+    patterns: [/^tool\s*definitions?$/i, /^tools?$/i, /^tool\s*schemas?$/i, /^工具定义/],
+  },
+  {
+    key: "rules",
+    patterns: [/^rules?$/i, /^memory(?:\s*files?)?$/i, /^instructions?$/i, /^claude\.md$/i, /^规则/],
+  },
+  { key: "skills", patterns: [/^skills?(?:\s*(?:descriptions?|list))?$/i, /^技能/] },
+  { key: "mcp", patterns: [/^mcp(?:\s*(?:tools?|servers?))?$/i] },
+  {
+    key: "subagentDefinitions",
+    patterns: [/^subagent\s*definitions?$/i, /^subagents?$/i, /^agent\s*definitions?$/i, /^子代理定义/],
+  },
+  {
+    key: "conversation",
+    patterns: [/^conversation$/i, /^messages?$/i, /^transcript$/i, /^chat\s*history$/i, /^对话/],
+  },
+  { key: "unattributed", patterns: [/^other(?:\s*usage)?$/i, /^unattributed$/i, /^其他/] },
+];
+
+const CONTEXT_TOTAL_LABEL_PATTERNS = [
+  /^total(?:\s*tokens?)?$/i,
+  /^used$/i,
+  /^free$/i,
+  /^remaining$/i,
+  /^available$/i,
+  /^context\s*window$/i,
+  /^max(?:imum)?(?:\s*tokens?)?$/i,
 ];
 
 function parseTokenCount(raw: string): number {
@@ -55,7 +78,11 @@ function parseTokenCount(raw: string): number {
     const digits = Number.parseInt(normalized, 10);
     return Number.isFinite(digits) ? digits : 0;
   }
-  const value = Number.parseFloat(match[1]!);
+  const rawValue = match[1];
+  if (!rawValue) {
+    return 0;
+  }
+  const value = Number.parseFloat(rawValue);
   if (!Number.isFinite(value)) {
     return 0;
   }
@@ -79,6 +106,11 @@ function resolveSegmentKey(label: string): ContextSegmentKey | null {
   return null;
 }
 
+function shouldIgnoreUnknownLabel(label: string): boolean {
+  const trimmed = label.trim();
+  return CONTEXT_TOTAL_LABEL_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 function segmentFromKey(key: ContextSegmentKey, tokens: number): ContextBreakdownSegment {
   return {
     key,
@@ -91,8 +123,26 @@ function segmentFromKey(key: ContextSegmentKey, tokens: number): ContextBreakdow
 /**
  * Parse Claude Code `/context` command text output into breakdown segments.
  */
-export function parseContextCommandResult(text: string, fallbackOccupied?: number): ContextBreakdownSegment[] {
+export function parseContextCommandResult(
+  text: string,
+  fallbackOccupied?: number,
+): ContextBreakdownSegment[] {
   const segments = new Map<ContextSegmentKey, number>();
+
+  const addLabeledSegment = (rawLabel: string, rawTokens: string) => {
+    const tokens = parseTokenCount(rawTokens);
+    if (tokens <= 0) {
+      return;
+    }
+    const key = resolveSegmentKey(rawLabel);
+    if (key) {
+      segments.set(key, (segments.get(key) ?? 0) + tokens);
+      return;
+    }
+    if (!shouldIgnoreUnknownLabel(rawLabel)) {
+      segments.set("unattributed", (segments.get("unattributed") ?? 0) + tokens);
+    }
+  };
 
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
@@ -102,18 +152,18 @@ export function parseContextCommandResult(text: string, fallbackOccupied?: numbe
 
     const pipeMatch = trimmed.match(/^([^|]+)\|\s*([\d.,]+\s*[kKmM]?)\s*$/i);
     if (pipeMatch) {
-      const key = resolveSegmentKey(pipeMatch[1]!);
-      if (key) {
-        segments.set(key, parseTokenCount(pipeMatch[2]!));
+      const [, label, tokens] = pipeMatch;
+      if (label && tokens) {
+        addLabeledSegment(label, tokens);
       }
       continue;
     }
 
     const colonMatch = trimmed.match(/^([^:]+):\s*([\d.,]+\s*[kKmM]?)\s*(?:tokens?)?$/i);
     if (colonMatch) {
-      const key = resolveSegmentKey(colonMatch[1]!);
-      if (key) {
-        segments.set(key, parseTokenCount(colonMatch[2]!));
+      const [, label, tokens] = colonMatch;
+      if (label && tokens) {
+        addLabeledSegment(label, tokens);
       }
     }
   }

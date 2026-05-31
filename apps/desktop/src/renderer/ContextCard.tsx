@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
 import { X } from "lucide-react";
-import { formatTokenCount } from "@eco/runtime";
-import type { ThreadContextSnapshot } from "../shared/ipc";
+import { useState } from "react";
+import type { AgentRole, ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
@@ -46,13 +46,27 @@ function formatOccupancyLabel(pct: number): string {
   return `${pct}% 已用`;
 }
 
-export function ContextCard({
-  context,
-  placeholder,
-  showWhenEmpty = true,
-  onDismiss,
-}: ContextCardProps) {
+function contextRoles(context: ThreadContextSnapshot): ThreadRoleContextSnapshot[] {
+  if (context.roles && context.roles.length > 0) {
+    return context.roles;
+  }
+  return [
+    {
+      role: context.displayRole ?? "planner",
+      occupied: context.occupied,
+      limit: context.limit,
+      occupancyPct: context.occupancyPct,
+      limitsResolved: context.limitsResolved,
+      ...(context.modelId && { modelId: context.modelId }),
+      segments: context.segments,
+      ...(context.maxOutputTokens !== undefined && { maxOutputTokens: context.maxOutputTokens }),
+    },
+  ];
+}
+
+export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [selectedRole, setSelectedRole] = useState<AgentRole>();
 
   if (!context) {
     if (!showWhenEmpty) {
@@ -65,16 +79,31 @@ export function ContextCard({
     );
   }
 
-  const visibleSegments = context.segments.filter((segment) => segment.tokens > 0);
-  const occupied = context.occupied;
-  const limit = context.limit;
+  const roles = contextRoles(context);
+  const defaultRole = context.displayRole ?? roles[0]?.role ?? "planner";
+  const selected =
+    roles.find((role) => role.role === selectedRole) ??
+    roles.find((role) => role.role === defaultRole) ??
+    roles[0];
+  if (!selected) {
+    return null;
+  }
+  const visibleSegments = selected.segments.filter((segment) => segment.tokens > 0);
+  const occupied = selected.occupied;
+  const limit = selected.limit;
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
   const freeTokens = Math.max(limit - occupied, 0);
+  const showRefreshing = context.breakdownRefreshing && selected.role === "planner";
 
   return (
     <div className="context-card">
       <div className="context-card-header">
-        <h4 className="context-card-title">Context</h4>
+        <div className="context-card-title-group">
+          <h4 className="context-card-title">Context</h4>
+          <span className="context-card-role-badge">
+            {formatRoleModelLabel(selected.role, selected.modelId)}
+          </span>
+        </div>
         <div className="context-card-header-actions">
           <button
             type="button"
@@ -99,16 +128,16 @@ export function ContextCard({
       </div>
 
       <div className="context-card-summary">
-        <span className={pctClass(context.occupancyPct)}>{formatOccupancyLabel(context.occupancyPct)}</span>
+        <span className={pctClass(selected.occupancyPct)}>{formatOccupancyLabel(selected.occupancyPct)}</span>
         <span className="context-card-tokens">
-          ~{formatContextK(context.occupied)} / {formatContextK(context.limit)} Tokens
+          ~{formatContextK(occupied)} / {formatContextK(limit)} Tokens
         </span>
       </div>
 
       <div
         className="context-card-bar"
         role="img"
-        aria-label={`上下文已用 ${context.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
+        aria-label={`${formatRoleModelLabel(selected.role, selected.modelId)} 上下文已用 ${selected.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
       >
         {occupied > 0 ? (
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
@@ -130,14 +159,41 @@ export function ContextCard({
             ) : null}
           </span>
         ) : null}
-        {freeTokens > 0 ? (
-          <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} />
-        ) : null}
+        {freeTokens > 0 ? <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} /> : null}
       </div>
 
-      {context.breakdownRefreshing ? (
-        <p className="context-card-stale">正在拉取分项明细…</p>
-      ) : null}
+      <div className="context-card-roles" role="tablist" aria-label="上下文窗口">
+        {roles.map((role) => {
+          const active = role.role === selected.role;
+          const label = formatRoleModelLabel(role.role, role.modelId);
+          return (
+            <button
+              type="button"
+              key={role.role}
+              className={active ? "context-card-role-row active" : "context-card-role-row"}
+              onClick={() => setSelectedRole(role.role)}
+              role="tab"
+              aria-selected={active}
+              title={label}
+            >
+              <span className="context-card-role-main">
+                <span className="context-card-role-name">{label}</span>
+                <span className="context-card-role-meter" aria-hidden>
+                  <span
+                    className="context-card-role-meter-fill"
+                    style={{ width: `${Math.min(role.occupancyPct, 100)}%` }}
+                  />
+                </span>
+              </span>
+              <span className="context-card-role-usage">
+                {formatContextK(role.occupied)} / {formatContextK(role.limit)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {showRefreshing ? <p className="context-card-stale">正在拉取分项明细…</p> : null}
 
       {detailsOpen ? (
         <ul className="context-card-breakdown">
@@ -151,8 +207,10 @@ export function ContextCard({
         </ul>
       ) : null}
 
-      {!context.limitsResolved ? (
-        <p className="context-card-footnote">上限未匹配 models.dev，按 {formatContextK(context.limit)} 估算</p>
+      {!selected.limitsResolved ? (
+        <p className="context-card-footnote">
+          上限未匹配 models.dev，按 {formatContextK(selected.limit)} 估算
+        </p>
       ) : null}
     </div>
   );
