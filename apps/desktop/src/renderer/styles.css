@@ -2827,6 +2827,12 @@ button:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 
+.thread-info-billing-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .thread-info-billing-eco {
   color: #e5e5e5;
 }

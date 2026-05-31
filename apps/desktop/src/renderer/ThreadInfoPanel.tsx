@@ -154,19 +154,6 @@ function BillingFloatingCard({
       <div className="thread-info-float-card-header">
         <h4 className="thread-info-float-card-title">
           计费对比
-          <span className="thread-info-help-wrap">
-            <button
-              type="button"
-              className="thread-info-help"
-              aria-describedby="thread-info-billing-help-tip"
-              aria-label="计费对比说明"
-            >
-              <HelpCircle size={13} aria-hidden />
-            </button>
-            <span id="thread-info-billing-help-tip" className="thread-info-help-tooltip" role="tooltip">
-              Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
-            </span>
-          </span>
         </h4>
         <button type="button" className="thread-info-float-dismiss" onClick={onDismiss} aria-label="关闭计费对比">
           <X size={14} aria-hidden />
@@ -191,15 +178,42 @@ function BillingFloatingCard({
 
       {showBilling && billing ? (
         <ul className="thread-info-billing-list">
-          <li title={`OTel token × 默认模式 models.dev 单价（${plannerLabel}）`}>
-            <span>① 默认模式（{plannerLabel}）</span>
+          <li>
+            <span className="thread-info-billing-row-label">
+              <span>① 未编排</span>
+              <span className="thread-info-help-wrap">
+                <button
+                  type="button"
+                  className="thread-info-help"
+                  aria-describedby="thread-info-unorchestrated-help-tip"
+                  aria-label="未编排说明"
+                >
+                  <HelpCircle size={12} aria-hidden />
+                </button>
+                <span id="thread-info-unorchestrated-help-tip" className="thread-info-help-tooltip" role="tooltip">
+                  假设全部 token 均按主模型（{plannerLabel}）models.dev 单价估算，未做角色编排
+                </span>
+              </span>
+            </span>
             <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
           </li>
-          <li
-            className="thread-info-billing-eco"
-            title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）"
-          >
-            <span>② 经济编程</span>
+          <li className="thread-info-billing-eco">
+            <span className="thread-info-billing-row-label">
+              <span>② 经济编程</span>
+              <span className="thread-info-help-wrap">
+                <button
+                  type="button"
+                  className="thread-info-help"
+                  aria-describedby="thread-info-eco-help-tip"
+                  aria-label="经济编程说明"
+                >
+                  <HelpCircle size={12} aria-hidden />
+                </button>
+                <span id="thread-info-eco-help-tip" className="thread-info-help-tooltip" role="tooltip">
+                  Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
+                </span>
+              </span>
+            </span>
             <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
           </li>
           <li
