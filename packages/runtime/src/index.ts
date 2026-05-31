@@ -277,9 +277,11 @@ export {
   buildModelPricingSummary,
   expandModelLookupCandidates,
   fetchModelsDevCatalog,
+  filterOfficialModelsDevProviders,
   findModelEntryByKey,
   formatModelPricingLabel,
   formatRatePerMillion,
+  isOfficialModelsDevProvider,
   lookupModelCostInCatalog,
   lookupModelCostByKey,
   listModelsDevCatalogOptions,
@@ -290,6 +292,7 @@ export {
   type ModelsDevCatalog,
   type ModelsDevCatalogModelOption,
   type ModelsDevModelEntry,
+  type ModelsDevProviderEntry,
 } from "./models-dev-pricing";
 export {
   extractCapabilitiesFromModelEntry,

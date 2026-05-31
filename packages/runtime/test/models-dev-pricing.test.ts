@@ -4,7 +4,9 @@ import {
   expandModelLookupCandidates,
   formatModelPricingLabel,
   formatRatePerMillion,
+  isOfficialModelsDevProvider,
   lookupModelCostInCatalog,
+  listModelsDevCatalogOptions,
   parseModelsDevCatalog,
   resolveProviderKeyFromBaseUrl,
 } from "../src/models-dev-pricing";
@@ -103,4 +105,116 @@ test("lookupModelLimitsInCatalog resolves hyphenated id on openrouter", () => {
   const result = lookupModelLimitsInCatalog(openRouterCatalog, "openrouter", "claude-opus-4-7");
   expect(result?.modelId).toBe("anthropic/claude-opus-4.7");
   expect(result?.limits.contextTokens).toBe(1_000_000);
+});
+
+test("isOfficialModelsDevProvider keeps dedicated SDK providers", () => {
+  expect(
+    isOfficialModelsDevProvider("anthropic", {
+      id: "anthropic",
+      npm: "@ai-sdk/anthropic",
+      models: {},
+    }),
+  ).toBe(true);
+  expect(
+    isOfficialModelsDevProvider("openrouter", {
+      id: "openrouter",
+      npm: "@openrouter/ai-sdk-provider",
+      models: {},
+    }),
+  ).toBe(true);
+});
+
+test("isOfficialModelsDevProvider rejects third-party resellers", () => {
+  expect(
+    isOfficialModelsDevProvider("packyapi", {
+      id: "packyapi",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://api.packyapi.com/v1",
+      models: {},
+    }),
+  ).toBe(false);
+});
+
+test("isOfficialModelsDevProvider keeps first-party openai-compatible labs", () => {
+  expect(
+    isOfficialModelsDevProvider("deepseek", {
+      id: "deepseek",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://api.deepseek.com",
+      models: {},
+    }),
+  ).toBe(true);
+});
+
+test("parseModelsDevCatalog filters non-official providers", () => {
+  const catalog = parseModelsDevCatalog({
+    anthropic: {
+      id: "anthropic",
+      npm: "@ai-sdk/anthropic",
+      models: {
+        "claude-sonnet-4-6": {
+          id: "claude-sonnet-4-6",
+          cost: { input: 3, output: 15 },
+        },
+      },
+    },
+    packyapi: {
+      id: "packyapi",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://api.packyapi.com/v1",
+      models: {
+        "claude-opus-4-7": {
+          id: "claude-opus-4-7",
+          cost: { input: 1, output: 2 },
+        },
+      },
+    },
+    deepseek: {
+      id: "deepseek",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://api.deepseek.com",
+      models: {
+        "deepseek-chat": {
+          id: "deepseek-chat",
+          cost: { input: 0.2, output: 0.2 },
+        },
+      },
+    },
+  });
+
+  expect(Object.keys(catalog).sort()).toEqual(["anthropic", "deepseek"]);
+  expect(lookupModelCostInCatalog(catalog, null, "claude-opus-4-7")).toBeNull();
+  expect(lookupModelCostInCatalog(catalog, "deepseek", "deepseek-chat")?.rates.input).toBe(0.2);
+});
+
+test("listModelsDevCatalogOptions excludes non-official providers", () => {
+  const options = listModelsDevCatalogOptions(
+    parseModelsDevCatalog({
+      anthropic: {
+        id: "anthropic",
+        npm: "@ai-sdk/anthropic",
+        models: {
+          "claude-sonnet-4-6": {
+            id: "claude-sonnet-4-6",
+            name: "Claude Sonnet 4.6",
+            cost: { input: 3, output: 15 },
+          },
+        },
+      },
+      packyapi: {
+        id: "packyapi",
+        npm: "@ai-sdk/openai-compatible",
+        models: {
+          "claude-opus-4-7": {
+            id: "claude-opus-4-7",
+            name: "Claude Opus 4.7",
+            cost: { input: 1, output: 2 },
+          },
+        },
+      },
+    }),
+  );
+
+  expect(options).toHaveLength(1);
+  expect(options[0]?.providerKey).toBe("anthropic");
 });

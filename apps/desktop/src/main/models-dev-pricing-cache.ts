@@ -5,6 +5,7 @@ import {
   extractCapabilitiesFromModelEntry,
   extractLimitsFromModelEntry,
   fetchModelsDevCatalog,
+  filterOfficialModelsDevProviders,
   findModelEntryByKey,
   listModelsDevCatalogOptions,
   lookupModelCapabilitiesInCatalog,
@@ -199,7 +200,10 @@ export class ModelsDevPricingCache {
       const raw = await fs.readFile(this.options.cachePath, "utf8");
       const parsed = JSON.parse(raw) as { fetchedAt?: number; catalog?: ModelsDevCatalog };
       if (parsed.catalog && typeof parsed.fetchedAt === "number") {
-        return { catalog: parsed.catalog, fetchedAt: parsed.fetchedAt };
+        return {
+          catalog: filterOfficialModelsDevProviders(parsed.catalog),
+          fetchedAt: parsed.fetchedAt,
+        };
       }
     } catch {
       return null;

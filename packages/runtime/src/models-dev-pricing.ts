@@ -11,8 +11,52 @@ const MODEL_ALIASES: Record<string, string[]> = {
 
 export interface ModelsDevProviderEntry {
   id: string;
+  npm?: string;
   api?: string;
+  name?: string;
+  doc?: string;
   models: Record<string, ModelsDevModelEntry>;
+}
+
+/** First-party labs that publish via OpenAI-compatible APIs in models.dev. */
+const OFFICIAL_OPENAI_COMPATIBLE_PROVIDER_IDS = new Set([
+  "alibaba",
+  "alibaba-cn",
+  "alibaba-coding-plan",
+  "alibaba-coding-plan-cn",
+  "deepseek",
+  "inception",
+  "llama",
+  "moonshotai",
+  "moonshotai-cn",
+  "stepfun",
+  "stepfun-ai",
+  "upstage",
+  "zai",
+  "zai-coding-plan",
+  "zhipuai",
+  "zhipuai-coding-plan",
+]);
+
+export function isOfficialModelsDevProvider(providerKey: string, provider: ModelsDevProviderEntry): boolean {
+  const npm = provider.npm?.trim();
+  if (!npm) {
+    return true;
+  }
+  if (npm !== "@ai-sdk/openai-compatible") {
+    return true;
+  }
+  return OFFICIAL_OPENAI_COMPATIBLE_PROVIDER_IDS.has(providerKey);
+}
+
+export function filterOfficialModelsDevProviders(catalog: ModelsDevCatalog): ModelsDevCatalog {
+  const filtered: ModelsDevCatalog = {};
+  for (const [providerKey, provider] of Object.entries(catalog)) {
+    if (isOfficialModelsDevProvider(providerKey, provider)) {
+      filtered[providerKey] = provider;
+    }
+  }
+  return filtered;
 }
 
 export interface ModelsDevModelEntry {
@@ -240,7 +284,7 @@ export interface ModelsDevCatalogModelOption {
 
 export function listModelsDevCatalogOptions(catalog: ModelsDevCatalog): ModelsDevCatalogModelOption[] {
   const options: ModelsDevCatalogModelOption[] = [];
-  for (const [providerKey, provider] of Object.entries(catalog)) {
+  for (const [providerKey, provider] of Object.entries(filterOfficialModelsDevProviders(catalog))) {
     for (const entry of Object.values(provider.models)) {
       options.push({
         providerKey,
@@ -324,7 +368,7 @@ export function parseModelsDevCatalog(payload: unknown): ModelsDevCatalog {
   if (!payload || typeof payload !== "object") {
     return {};
   }
-  return payload as ModelsDevCatalog;
+  return filterOfficialModelsDevProviders(payload as ModelsDevCatalog);
 }
 
 export async function fetchModelsDevCatalog(
