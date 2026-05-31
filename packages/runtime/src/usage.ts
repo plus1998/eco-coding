@@ -157,11 +157,19 @@ export function parseSdkUsageBilling(payload: unknown): {
   }
 
   const modelBillings = parseSdkModelUsageBilling(payload);
-  const totalCostUsd =
+  const explicitTotalCostUsd =
     typeof payload.totalCostUsd === "number"
       ? payload.totalCostUsd
       : typeof payload.total_cost_usd === "number"
         ? payload.total_cost_usd
+        : undefined;
+  const modelCostTotal = modelBillings
+    ?.reduce((sum, entry) => sum + (entry.sdkCostUsd ?? 0), 0);
+  const totalCostUsd =
+    explicitTotalCostUsd !== undefined
+      ? explicitTotalCostUsd
+      : modelCostTotal !== undefined && modelCostTotal > 0
+        ? modelCostTotal
         : undefined;
 
   if (modelBillings) {

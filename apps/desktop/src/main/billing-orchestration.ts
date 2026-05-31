@@ -24,11 +24,6 @@ export function isSdkIncrementalStreamUsage(
   return authoritative && !sdkPayloadHasModelUsage(payload);
 }
 
-/** Skip result token billing when OTel already recorded per-request tokens this run. */
-export function shouldSkipSdkResultTokenBilling(otelTokenBilled: boolean | undefined): boolean {
-  return otelTokenBilled === true;
-}
-
 export function buildAssistantUsageRequestKey(messageId: string): string {
   return `sdk-assistant:${messageId}`;
 }

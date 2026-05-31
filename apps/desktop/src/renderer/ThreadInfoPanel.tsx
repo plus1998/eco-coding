@@ -2,6 +2,7 @@ import { DollarSign, Folder, GitBranch, HardDrive, HelpCircle, ListTodo, Package
 import { useEffect, useState } from "react";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type {
+  BillingUsageSource,
   CoderTodoItem,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
@@ -76,6 +77,58 @@ function hasBillingData(billing?: ThreadBillingSnapshot): billing is ThreadBilli
     billing.otelCostUsd > 0 ||
     billing.plannerTokenCostUsd > 0 ||
     billing.ecoCostUsd > 0
+  );
+}
+
+const billingSourceLabels: Record<BillingUsageSource, string> = {
+  proxy: "Proxy",
+  otel: "OTel",
+  sdk: "SDK",
+};
+
+function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
+  const sources = billing.sourceBreakdown;
+  if (!sources) {
+    return null;
+  }
+  const rows = (["proxy", "otel", "sdk"] as BillingUsageSource[])
+    .map((source) => sources[source])
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="thread-info-source-compare">
+      <h5 className="usage-breakdown-heading">计费校验</h5>
+      <ul className="thread-info-billing-list">
+        {rows.map((row) => {
+          const tokenBadge = formatUsageBadge({
+            inputTokens: row.totalTokens.input,
+            outputTokens: row.totalTokens.output,
+            cacheReadTokens: row.totalTokens.cacheRead,
+            cacheCreationTokens: row.totalTokens.cacheCreation,
+          });
+          const reported =
+            row.reportedCostUsd !== undefined ? ` · 报告 ${formatCostUsd(row.reportedCostUsd)}` : "";
+          const primary = billing.primarySource === row.source ? " · 主账" : "";
+          return (
+            <li key={row.source} title={`${billingSourceLabels[row.source]} token × models.dev 单价${reported}`}>
+              <span>
+                {billingSourceLabels[row.source]}{primary}
+                <small> {tokenBadge}</small>
+              </span>
+              <span>
+                {formatCostUsd(row.ecoCostUsd)}
+                {row.reportedCostUsd !== undefined ? (
+                  <small> / {formatCostUsd(row.reportedCostUsd)}</small>
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -171,6 +224,7 @@ function BillingFloatingCard({
         <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
       ) : null}
 
+      {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
       {showBilling && billing ? <UsageBreakdownPanel billing={billing} variant="full" /> : null}
     </div>
   );

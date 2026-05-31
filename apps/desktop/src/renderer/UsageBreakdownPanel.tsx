@@ -99,7 +99,8 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
   }
 
   if (compact) {
-    const summary = breakdown.byAgent
+    const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
+    const summary = summaryRows
       .map((row) => `${row.label} ${row.tokenBadge}`)
       .join(" · ");
 

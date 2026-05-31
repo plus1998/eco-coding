@@ -3,6 +3,8 @@ import {
   type AnthropicProxyResolvedRoute,
   buildModelsListResponse,
   createModelAlias,
+  createStreamingUsageTracker,
+  extractUsageFromResponseBody,
   injectImagesIntoMessagesBody,
   resolveProxyRoute,
 } from "../src/main/anthropic-proxy";
@@ -64,11 +66,70 @@ test("injectImagesIntoMessagesBody prepends image blocks to last user message", 
   expect(user.content[1]?.type).toBe("text");
 });
 
-function createProvider(id: string, name: string, apiKey: string): ProviderConfigSecret {
+test("extractUsageFromResponseBody reads non-streaming response usage", () => {
+  const usage = extractUsageFromResponseBody({
+    id: "msg_1",
+    type: "message",
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_read_input_tokens: 30,
+      cache_creation_input_tokens: 40,
+    },
+  });
+
+  expect(usage).toMatchObject({
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheReadTokens: 30,
+    cacheCreationTokens: 40,
+  });
+});
+
+test("createStreamingUsageTracker reads streaming response usage", () => {
+  const tracker = createStreamingUsageTracker();
+  tracker.push(
+    Buffer.from(
+      `event: message_start\ndata: ${JSON.stringify({
+        type: "message_start",
+        message: {
+          usage: {
+            input_tokens: 80,
+            output_tokens: 1,
+            cache_read_input_tokens: 10,
+            cache_creation_input_tokens: 12,
+          },
+        },
+      })}\n\n`,
+    ),
+  );
+  tracker.push(
+    Buffer.from(
+      `event: message_delta\ndata: ${JSON.stringify({
+        type: "message_delta",
+        usage: { output_tokens: 25 },
+      })}\n\n`,
+    ),
+  );
+
+  expect(tracker.finish()).toMatchObject({
+    inputTokens: 80,
+    outputTokens: 25,
+    cacheReadTokens: 10,
+    cacheCreationTokens: 12,
+  });
+});
+
+function createProvider(
+  id: string,
+  name: string,
+  apiKey: string,
+  baseUrl = `https://${id}.example.com`,
+): ProviderConfigSecret {
   return {
     id,
     name,
-    baseUrl: `https://${id}.example.com`,
+    baseUrl,
     defaultModel: "sonnet",
     enabled: true,
     hasApiKey: true,

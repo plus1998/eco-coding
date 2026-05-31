@@ -30,6 +30,7 @@ export interface ResolvedUsageRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  modelsDevMapping?: ModelsDevMapping;
 }
 
 export function buildResolvedProxyRoutes(routes: readonly RuntimeRoute[]): AnthropicProxyResolvedRoute[] {
@@ -49,81 +50,70 @@ export function resolveUsageRoute(
 ): ResolvedUsageRoute | undefined {
   const resolved = buildResolvedProxyRoutes(routes);
   const roleRoute = routes.find((route) => route.role === role);
+  const toResolved = (route: RuntimeRoute): ResolvedUsageRoute => ({
+    role: route.role,
+    provider: route.provider,
+    modelId: route.modelId,
+    ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
+  });
+  const fromProxyRoute = (route: AnthropicProxyResolvedRoute): ResolvedUsageRoute => {
+    const runtimeRoute = routes.find(
+      (entry) =>
+        entry.role === route.role &&
+        entry.provider.id === route.provider.id &&
+        entry.modelId === route.modelId,
+    );
+    return runtimeRoute
+      ? toResolved(runtimeRoute)
+      : {
+          role: route.role,
+          provider: route.provider,
+          modelId: route.modelId,
+        };
+  };
 
   if (!requestedModel?.trim()) {
-    return roleRoute;
+    return roleRoute ? toResolved(roleRoute) : undefined;
   }
 
   const trimmed = requestedModel.trim();
 
   const byAlias = resolved.find((route) => route.aliasModelId === trimmed);
   if (byAlias) {
-    return {
-      role: byAlias.role,
-      provider: byAlias.provider,
-      modelId: byAlias.modelId,
-    };
+    return fromProxyRoute(byAlias);
   }
 
-  const byModelId = resolved.filter((route) => route.modelId === trimmed);
+  const byModelId = routes.filter((route) => route.modelId === trimmed);
   if (byModelId.length === 1) {
     const route = byModelId[0]!;
     if (roleRoute && route.role !== role) {
       const plannerRoute = routes.find((entry) => entry.role === "planner");
       // SDK/OTel often reports the planner upstream id for subagent calls — prefer the billing role's route.
       if (plannerRoute && route.modelId === plannerRoute.modelId && role !== "planner") {
-        return {
-          role: roleRoute.role,
-          provider: roleRoute.provider,
-          modelId: roleRoute.modelId,
-        };
+        return toResolved(roleRoute);
       }
       // Unique upstream id identifies a specific role (e.g. explore haiku when billing role wrongly says planner).
-      return {
-        role: route.role,
-        provider: route.provider,
-        modelId: route.modelId,
-      };
+      return toResolved(route);
     }
-    return {
-      role: route.role,
-      provider: route.provider,
-      modelId: route.modelId,
-    };
+    return toResolved(route);
   }
 
   // SDK/OTel often reports the planner upstream id for every role; prefer this role's route.
   if (byModelId.length > 1 && roleRoute) {
     const roleMatch = byModelId.find((route) => route.role === role);
     if (roleMatch) {
-      return {
-        role: roleMatch.role,
-        provider: roleMatch.provider,
-        modelId: roleMatch.modelId,
-      };
+      return toResolved(roleMatch);
     }
-    return {
-      role: roleRoute.role,
-      provider: roleRoute.provider,
-      modelId: roleRoute.modelId,
-    };
+    return toResolved(roleRoute);
   }
 
   if (roleRoute) {
-    return {
-      role: roleRoute.role,
-      provider: roleRoute.provider,
-      modelId: roleRoute.modelId,
-    };
+    return toResolved(roleRoute);
   }
 
   const byModel = resolveProxyRoute(resolved, trimmed);
   if (byModel) {
-    return {
-      role: byModel.role,
-      provider: byModel.provider,
-      modelId: byModel.modelId,
-    };
+    return fromProxyRoute(byModel);
   }
 
   return undefined;

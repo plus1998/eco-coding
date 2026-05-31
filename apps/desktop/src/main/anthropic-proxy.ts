@@ -1,6 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
 import http, { type IncomingHttpHeaders } from "node:http";
-import { applyThinkingToMessagesBody } from "@eco/runtime";
+import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -30,12 +30,25 @@ export interface AnthropicProxyUpstreamErrorInfo {
   error: string;
 }
 
+export interface AnthropicProxyUsageInfo {
+  role: AgentRole;
+  providerId: string;
+  providerName: string;
+  providerBaseUrl: string;
+  modelId: string;
+  requestedModel?: string;
+  requestId?: string;
+  usage: ParsedUsage;
+}
+
 export interface AnthropicProxyStartOptions {
   pendingImages?: readonly PromptImageAttachment[];
   /** Fires when the local proxy forwards a streaming Messages API call upstream. */
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
   /** Fires when the upstream fetch fails before a response body is returned. */
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void;
+  /** Fires after a Messages API response exposes provider-reported token usage. */
+  onUsage?: (info: AnthropicProxyUsageInfo) => void;
 }
 
 export interface AnthropicProxyResolvedRoute extends AnthropicProxyRoute {
@@ -60,6 +73,7 @@ export async function startAnthropicModelProxy(
 ): Promise<StartedAnthropicProxy> {
   const onMessagesRequest = options?.onMessagesRequest;
   const onUpstreamConnectionError = options?.onUpstreamConnectionError;
+  const onUsage = options?.onUsage;
   const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
     role: route.role,
     provider: route.provider,
@@ -134,6 +148,7 @@ export async function startAnthropicModelProxy(
         requestedModel,
         onMessagesRequest,
         onUpstreamConnectionError,
+        onUsage,
       );
     } catch (error) {
       logUpstream("handler-error", { error: errorMessage(error) });
@@ -377,6 +392,7 @@ async function forwardAnthropicRequest(
   requestedModel?: string,
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void,
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void,
+  onUsage?: (info: AnthropicProxyUsageInfo) => void,
 ): Promise<void> {
   const upstreamUrl = `${trimTrailingSlash(route.provider.baseUrl)}${request.url ?? ""}`;
   const requestPayload = JSON.stringify(body);
@@ -420,15 +436,21 @@ async function forwardAnthropicRequest(
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
+  const requestId = upstreamResponse.headers.get("x-request-id") ?? upstreamResponse.headers.get("request-id") ?? undefined;
 
   if (!upstreamResponse.ok || !isEventStream) {
     const responseText = await upstreamResponse.text();
+    const parsedBody = parseJsonForLog(responseText);
+    const usage = upstreamResponse.ok && isMessagesPath(request.url) ? extractUsageFromResponseBody(parsedBody) : null;
+    if (usage && onUsage) {
+      onUsage(buildUsageInfo(route, usage, requestedModel, requestId));
+    }
     logUpstream("response", {
       status: upstreamResponse.status,
       statusText: upstreamResponse.statusText,
       contentType,
       headers: Object.fromEntries(upstreamResponse.headers.entries()),
-      body: parseJsonForLog(responseText) ?? truncateForLog(responseText),
+      body: parsedBody ?? truncateForLog(responseText),
     });
     response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers));
     response.end(responseText);
@@ -449,6 +471,7 @@ async function forwardAnthropicRequest(
   }
 
   let loggedStreamPreview = false;
+  const usageTracker = createStreamingUsageTracker();
   for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
     if (!loggedStreamPreview) {
       logUpstream("response-stream-preview", {
@@ -456,9 +479,145 @@ async function forwardAnthropicRequest(
       });
       loggedStreamPreview = true;
     }
+    if (onUsage && isMessagesPath(request.url)) {
+      usageTracker.push(chunk);
+    }
     response.write(chunk);
   }
+  const usage = usageTracker.finish();
+  if (usage && onUsage) {
+    onUsage(buildUsageInfo(route, usage, requestedModel, requestId));
+  }
   response.end();
+}
+
+function buildUsageInfo(
+  route: AnthropicProxyResolvedRoute,
+  usage: ParsedUsage,
+  requestedModel?: string,
+  requestId?: string,
+): AnthropicProxyUsageInfo {
+  return {
+    role: route.role,
+    providerId: route.provider.id,
+    providerName: route.provider.name,
+    providerBaseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    ...(requestedModel && { requestedModel }),
+    ...(requestId && { requestId }),
+    usage,
+  };
+}
+
+export interface StreamingUsageTracker {
+  push(chunk: Uint8Array): void;
+  finish(): ParsedUsage | null;
+}
+
+export function createStreamingUsageTracker(): StreamingUsageTracker {
+  let buffer = "";
+  let latest: ParsedUsage | null = null;
+
+  const processBlock = (block: string) => {
+    const dataLines = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart());
+    if (dataLines.length === 0) {
+      return;
+    }
+    const data = dataLines.join("\n").trim();
+    if (!data || data === "[DONE]") {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      latest = mergeStreamingUsage(latest, extractUsageFromStreamEvent(parsed));
+    } catch {
+      // Ignore malformed third-party SSE chunks; the byte stream is still forwarded unchanged.
+    }
+  };
+
+  return {
+    push(chunk) {
+      buffer += Buffer.from(chunk).toString("utf8");
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        processBlock(part);
+      }
+    },
+    finish() {
+      if (buffer.trim()) {
+        processBlock(buffer);
+      }
+      return latest;
+    },
+  };
+}
+
+function extractUsageFromStreamEvent(event: unknown): ParsedUsage | null {
+  if (!isRecord(event)) {
+    return null;
+  }
+  if (isRecord(event.message)) {
+    const fromMessage = extractUsageFromResponseBody(event.message);
+    if (fromMessage) {
+      return fromMessage;
+    }
+  }
+  return extractUsageFromResponseBody(event);
+}
+
+export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+  const usage = isRecord(body.usage) ? body.usage : body;
+  const parsed = {
+    inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens"]),
+    outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens"]),
+    cacheReadTokens: readTokenCount(usage, [
+      "cache_read_input_tokens",
+      "cacheReadInputTokens",
+      "cache_read_tokens",
+    ]),
+    cacheCreationTokens: readTokenCount(usage, [
+      "cache_creation_input_tokens",
+      "cacheCreationInputTokens",
+      "cache_creation_tokens",
+    ]),
+  };
+  return usageTotal(parsed) > 0 ? parsed : null;
+}
+
+function mergeStreamingUsage(current: ParsedUsage | null, incoming: ParsedUsage | null): ParsedUsage | null {
+  if (!incoming) {
+    return current;
+  }
+  if (!current) {
+    return incoming;
+  }
+  return {
+    inputTokens: Math.max(current.inputTokens, incoming.inputTokens),
+    outputTokens: Math.max(current.outputTokens, incoming.outputTokens),
+    cacheReadTokens: Math.max(current.cacheReadTokens, incoming.cacheReadTokens),
+    cacheCreationTokens: Math.max(current.cacheCreationTokens, incoming.cacheCreationTokens),
+  };
+}
+
+function readTokenCount(usage: Record<string, unknown>, keys: string[]): number {
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function usageTotal(usage: ParsedUsage): number {
+  return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
 }
 
 function buildUpstreamHeaders(headers: IncomingHttpHeaders, apiKey: string): Headers {

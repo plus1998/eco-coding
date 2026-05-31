@@ -56,31 +56,51 @@ function toTokenBadge(entry: {
 export function buildBillingTokenBreakdown(
   billing: ThreadBillingSnapshot | undefined,
 ): BillingTokenBreakdown | null {
-  if (!billing?.byRole) {
+  if (!billing?.byRole && !billing?.byModel) {
     return null;
   }
 
   const byAgent: BillingAgentRow[] = [];
-  for (const role of AGENT_ROLES) {
-    const entry = billing.byRole[role];
-    if (!entry || roleUsageTotal(entry) <= 0) {
-      continue;
+  if (billing.byRole) {
+    for (const role of AGENT_ROLES) {
+      const entry = billing.byRole[role];
+      if (!entry || roleUsageTotal(entry) <= 0) {
+        continue;
+      }
+      byAgent.push({
+        role,
+        label: formatRoleModelLabel(role, entry.modelId),
+        ...(entry.modelId && { modelId: entry.modelId }),
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        cacheReadTokens: entry.cacheReadTokens,
+        cacheCreationTokens: entry.cacheCreationTokens,
+        ecoCostUsd: entry.ecoCostUsd,
+        tokenBadge: toTokenBadge(entry),
+      });
     }
-    byAgent.push({
-      role,
-      label: formatRoleModelLabel(role, entry.modelId),
-      ...(entry.modelId && { modelId: entry.modelId }),
-      inputTokens: entry.inputTokens,
-      outputTokens: entry.outputTokens,
-      cacheReadTokens: entry.cacheReadTokens,
-      cacheCreationTokens: entry.cacheCreationTokens,
-      ecoCostUsd: entry.ecoCostUsd,
-      tokenBadge: toTokenBadge(entry),
-    });
   }
 
-  if (byAgent.length === 0) {
+  if (byAgent.length === 0 && !billing.byModel?.length) {
     return null;
+  }
+
+  if (billing.byModel?.length) {
+    const byModel = billing.byModel
+      .filter((entry) => roleUsageTotal(entry) > 0 || entry.ecoCostUsd > 0)
+      .map((entry) => ({
+        modelId: entry.modelId,
+        label: shortenModelId(entry.modelId),
+        roles: entry.roles,
+        inputTokens: entry.inputTokens,
+        outputTokens: entry.outputTokens,
+        cacheReadTokens: entry.cacheReadTokens,
+        cacheCreationTokens: entry.cacheCreationTokens,
+        ecoCostUsd: entry.ecoCostUsd,
+        tokenBadge: toTokenBadge(entry),
+      }))
+      .sort((left, right) => roleUsageTotal(right) - roleUsageTotal(left));
+    return { byAgent, byModel };
   }
 
   const modelMap = new Map<

@@ -7,19 +7,12 @@ import {
   nextOtelRequestDedupId,
   sdkPayloadHasModelUsage,
   shouldBillAssistantSubagentUsage,
-  shouldSkipSdkResultTokenBilling,
 } from "../src/main/billing-orchestration";
 import { buildUsageRequestKey, ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 
 test("isSubagentBillingRole excludes planner", () => {
   expect(isSubagentBillingRole("coder")).toBe(true);
   expect(isSubagentBillingRole("planner")).toBe(false);
-});
-
-test("shouldSkipSdkResultTokenBilling when OTel already billed tokens", () => {
-  expect(shouldSkipSdkResultTokenBilling(true)).toBe(true);
-  expect(shouldSkipSdkResultTokenBilling(false)).toBe(false);
-  expect(shouldSkipSdkResultTokenBilling(undefined)).toBe(false);
 });
 
 test("isSdkIncrementalStreamUsage detects message_delta style payloads", () => {
@@ -136,7 +129,7 @@ test("OTel incremental billing attributes subagent role separately from planner"
   expect(billing?.ecoCostUsd).toBeGreaterThan(billing?.byRole?.planner?.ecoCostUsd ?? 0);
 });
 
-test("sdk result tokens do not duplicate when OTel already billed same run", () => {
+test("SDK result and OTel tokens stay separate without doubling headline totals", () => {
   const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
   const accumulator = new ThreadUsageAccumulator();
   const otelDelta = {
@@ -159,12 +152,6 @@ test("sdk result tokens do not duplicate when OTel already billed same run", () 
   const before = accumulator.getSnapshot("t1");
   expect(before?.totalTokens.input).toBe(100_000);
 
-  if (shouldSkipSdkResultTokenBilling(true)) {
-    // Simulates skipping processSdkRunBilling when otelTokenBilled
-    expect(before?.totalTokens.input).toBe(100_000);
-    return;
-  }
-
   accumulator.recordRunUsage({
     threadId: "t1",
     role: "planner",
@@ -181,7 +168,11 @@ test("sdk result tokens do not duplicate when OTel already billed same run", () 
     otelCostUsd: 3.5,
   });
 
-  expect.fail("should not bill SDK result tokens when OTel already billed");
+  const after = accumulator.getSnapshot("t1");
+  expect(after?.primarySource).toBe("sdk");
+  expect(after?.totalTokens.input).toBe(100_000);
+  expect(after?.sourceBreakdown?.otel?.totalTokens.input).toBe(100_000);
+  expect(after?.sourceBreakdown?.sdk?.totalTokens.input).toBe(100_000);
 });
 
 test("assistant subagent fallback bills when OTel unavailable", () => {

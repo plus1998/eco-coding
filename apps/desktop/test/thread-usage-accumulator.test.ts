@@ -123,3 +123,87 @@ test("ThreadUsageAccumulator recordRunUsage attributes per-model role", () => {
   expect(billing?.ecoCostUsd).toBeCloseTo(0.012, 4);
   expect(billing?.plannerTokenCostUsd).toBeCloseTo(0.045, 4);
 });
+
+test("ThreadUsageAccumulator keeps separate source totals for proxy otel and sdk", () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const delta = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+
+  accumulator.recordUsage({
+    threadId: "t1",
+    role: "coder",
+    source: "otel",
+    delta,
+    otelCostUsd: 0.2,
+    actualRates: haikuRates,
+    plannerRates: sonnetRates,
+    modelId: "haiku",
+    requestKey: "otel:1",
+  });
+  accumulator.recordUsage({
+    threadId: "t1",
+    role: "coder",
+    source: "proxy",
+    delta,
+    actualRates: haikuRates,
+    plannerRates: sonnetRates,
+    modelId: "haiku",
+    requestKey: "proxy:1",
+  });
+  accumulator.recordRunUsage({
+    threadId: "t1",
+    role: "coder",
+    source: "sdk",
+    requestKey: "sdk:1",
+    models: [
+      {
+        role: "coder",
+        modelId: "haiku",
+        usage: delta,
+        actualRates: haikuRates,
+        plannerRates: sonnetRates,
+        sdkCostUsd: 0.19,
+      },
+    ],
+    otelCostUsd: 0.19,
+  });
+
+  const billing = accumulator.getSnapshot("t1");
+  expect(billing?.primarySource).toBe("proxy");
+  expect(billing?.totalTokens.input).toBe(10_000);
+  expect(billing?.sourceBreakdown?.otel?.reportedCostUsd).toBeCloseTo(0.2);
+  expect(billing?.sourceBreakdown?.sdk?.reportedCostUsd).toBeCloseTo(0.19);
+  expect(billing?.sourceBreakdown?.proxy?.ecoCostUsd).toBeCloseTo(0.012);
+});
+
+test("ThreadUsageAccumulator byModel keeps two models under one role", () => {
+  const accumulator = new ThreadUsageAccumulator();
+
+  accumulator.recordRunUsage({
+    threadId: "t1",
+    role: "planner",
+    source: "sdk",
+    requestKey: "sdk:multi-model",
+    models: [
+      {
+        role: "planner",
+        modelId: "sonnet",
+        usage: { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        actualRates: sonnetRates,
+        plannerRates: sonnetRates,
+      },
+      {
+        role: "planner",
+        modelId: "haiku",
+        usage: { inputTokens: 20_000, outputTokens: 2_000, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        actualRates: haikuRates,
+        plannerRates: sonnetRates,
+      },
+    ],
+  });
+
+  const billing = accumulator.getSnapshot("t1");
+  expect(billing?.byRole?.planner?.modelId).toBe("haiku");
+  expect(billing?.byModel?.map((entry) => entry.modelId).sort()).toEqual(["haiku", "sonnet"]);
+  expect(billing?.byModel?.find((entry) => entry.modelId === "sonnet")?.ecoCostUsd).toBeCloseTo(0.045);
+  expect(billing?.byModel?.find((entry) => entry.modelId === "haiku")?.ecoCostUsd).toBeCloseTo(0.024);
+});

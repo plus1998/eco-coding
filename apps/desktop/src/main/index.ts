@@ -39,6 +39,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import {
   AGENT_ROLES,
   type AgentRole,
+  type BillingUsageSource,
   IPC_CHANNELS,
   isKnownIpcChannel,
   type McpServerConfigInput,
@@ -100,6 +101,7 @@ import {
   startAnthropicModelProxy,
   type AnthropicProxyResolvedRoute,
   type AnthropicProxyStartOptions,
+  type AnthropicProxyUsageInfo,
 } from "./anthropic-proxy";
 import {
   buildPlannerModelLabel,
@@ -113,7 +115,6 @@ import {
   isSdkIncrementalStreamUsage,
   nextOtelRequestDedupId,
   shouldBillAssistantSubagentUsage,
-  shouldSkipSdkResultTokenBilling,
 } from "./billing-orchestration";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
@@ -166,6 +167,9 @@ interface ActiveThreadRun {
   /** True once OTel api_request token usage was billed this run. */
   otelTokenBilled?: boolean;
   otelRequestSeq?: number;
+  /** True once proxy-captured response usage was billed this run. */
+  proxyTokenBilled?: boolean;
+  proxyRequestSeq?: number;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
@@ -2074,6 +2078,7 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
   void processUsageBilling({
     threadId: usage.threadId,
     role: normalizeBillingRole(usage.role),
+    source: "otel",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens ?? 0,
@@ -2092,6 +2097,44 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
     });
 }
 
+function emitProxyUsage(info: AnthropicProxyUsageInfo & { threadId: string }): void {
+  const run = activeRuns.get(info.threadId);
+  const seq = (run?.proxyRequestSeq ?? 0) + 1;
+  if (run) {
+    run.proxyRequestSeq = seq;
+  }
+  const requestKey = [
+    "proxy",
+    info.role,
+    info.modelId,
+    info.requestId ?? String(seq),
+    info.usage.inputTokens,
+    info.usage.outputTokens,
+    info.usage.cacheReadTokens,
+    info.usage.cacheCreationTokens,
+  ].join(":");
+
+  void processUsageBilling({
+    threadId: info.threadId,
+    role: info.role,
+    source: "proxy",
+    inputTokens: info.usage.inputTokens,
+    outputTokens: info.usage.outputTokens,
+    cacheReadTokens: info.usage.cacheReadTokens,
+    cacheCreationTokens: info.usage.cacheCreationTokens,
+    modelId: info.modelId,
+    requestKey,
+  })
+    .then(() => {
+      if (run) {
+        run.proxyTokenBilled = true;
+      }
+    })
+    .catch((error) => {
+      process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
+    });
+}
+
 function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
   if (role === "system" || role === "thinking" || role === "tool") {
     return "planner";
@@ -2105,6 +2148,7 @@ function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
 async function processUsageBilling(input: {
   threadId: string;
   role: AgentRole;
+  source?: BillingUsageSource;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -2145,9 +2189,7 @@ async function processUsageBilling(input: {
     ? await pricingCache.lookupForRoute({
         baseUrl: usageRoute.provider.baseUrl,
         modelId: usageRoute.modelId,
-        ...(runtimeRoutes.find((route) => route.role === usageRoute.role)?.modelsDevMapping && {
-          mapping: runtimeRoutes.find((route) => route.role === usageRoute.role)!.modelsDevMapping,
-        }),
+        ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
       })
     : null;
   const plannerLookup = plannerRoute
@@ -2199,6 +2241,7 @@ async function processUsageBilling(input: {
   const billing = threadUsageAccumulator.recordUsage({
     threadId: input.threadId,
     role: billingRole,
+    source: input.source ?? "otel",
     delta,
     ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
     actualRates: actualLookup?.rates ?? null,
@@ -2448,6 +2491,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       void processUsageBilling({
         threadId,
         role: billingRole,
+        source: "sdk",
         inputTokens: bundle.contextUsage.inputTokens,
         outputTokens: bundle.contextUsage.outputTokens,
         cacheReadTokens: bundle.contextUsage.cacheReadTokens,
@@ -2476,17 +2520,6 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     ).catch((error) => {
       process.stderr.write(`[eco] stream usage context update failed: ${errorMessage(error)}\n`);
     });
-    return;
-  }
-
-  if (shouldSkipSdkResultTokenBilling(run?.otelTokenBilled)) {
-    const billing = threadUsageAccumulator.getSnapshot(threadId);
-    if (billing) {
-      emitThreadEvent(threadId, "thread.usage_updated", "SDK 会话结束", billingRole, false, {
-        billing,
-      });
-      schedulePersistThreadMetrics(threadId);
-    }
     return;
   }
 
@@ -2570,9 +2603,7 @@ async function processSdkRunBilling(input: {
         ? await pricingCache.lookupForRoute({
             baseUrl: usageRoute.provider.baseUrl,
             modelId: usageRoute.modelId,
-            ...(runtimeRoutes.find((route) => route.role === usageRoute.role)?.modelsDevMapping && {
-              mapping: runtimeRoutes.find((route) => route.role === usageRoute.role)!.modelsDevMapping,
-            }),
+            ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
           })
         : null;
       return {
@@ -2581,6 +2612,7 @@ async function processSdkRunBilling(input: {
         usage: entry.usage,
         actualRates: actualLookup?.rates ?? null,
         plannerRates,
+        ...(entry.sdkCostUsd !== undefined && { sdkCostUsd: entry.sdkCostUsd }),
       };
     }),
   );
@@ -2595,15 +2627,14 @@ async function processSdkRunBilling(input: {
       role: contextRole,
       modelId: route.modelId,
       providerBaseUrl: route.provider.baseUrl,
-      ...(runtimeRoutes.find((candidate) => candidate.role === route.role)?.modelsDevMapping && {
-        modelsDevMapping: runtimeRoutes.find((candidate) => candidate.role === route.role)!.modelsDevMapping,
-      }),
+      ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
     });
   }
 
   const billing = threadUsageAccumulator.recordRunUsage({
     threadId: input.threadId,
     role: input.role,
+    source: "sdk",
     requestKey: input.requestKey,
     models,
     ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
@@ -2971,6 +3002,9 @@ function startRuntimeProxy(
       },
       onUpstreamConnectionError: ({ role, error }) => {
         emitUpstreamConnectionErrorActivity(threadId, role, error);
+      },
+      onUsage: (info) => {
+        emitProxyUsage({ ...info, threadId });
       },
     }),
   };

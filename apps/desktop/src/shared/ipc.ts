@@ -359,12 +359,55 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
+export type BillingUsageSource = "proxy" | "otel" | "sdk";
+
 export interface TokenCostBreakdown {
   inputUsd: number;
   outputUsd: number;
   cacheReadUsd: number;
   cacheCreationUsd: number;
   totalUsd: number;
+}
+
+export interface ThreadBillingModelSnapshot {
+  modelId: string;
+  roles: AgentRole[];
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  ecoCostUsd: number;
+  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
+  reportedCostUsd?: number;
+}
+
+export interface ThreadBillingSourceSnapshot {
+  source: BillingUsageSource;
+  totalTokens: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreation: number;
+  };
+  plannerTokenCostUsd: number;
+  ecoCostUsd: number;
+  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
+  reportedCostUsd?: number;
+  pricingResolved: boolean;
+  byModel?: ThreadBillingModelSnapshot[];
+  byRole?: Partial<
+    Record<
+      AgentRole,
+      {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+        ecoCostUsd: number;
+        modelId?: string;
+      }
+    >
+  >;
 }
 
 export interface ThreadBillingSnapshot {
@@ -383,6 +426,10 @@ export interface ThreadBillingSnapshot {
   plannerCostBreakdown?: TokenCostBreakdown;
   plannerModelLabel?: string;
   pricingResolved: boolean;
+  /** Primary source used for the headline Eco spend; prefers proxy, then SDK, then OTel. */
+  primarySource?: BillingUsageSource;
+  sourceBreakdown?: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>;
+  byModel?: ThreadBillingModelSnapshot[];
   byRole?: Partial<
     Record<
       AgentRole,

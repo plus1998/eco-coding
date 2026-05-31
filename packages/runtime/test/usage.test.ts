@@ -98,6 +98,30 @@ test("parseSdkUsageBilling prefers modelUsage cache fields for billing", () => {
   expect(bundle?.contextUsage.cacheReadTokens).toBe(230827);
 });
 
+test("parseSdkUsageBilling sums modelUsage costs when total is absent", () => {
+  const bundle = parseSdkUsageBilling({
+    modelUsage: {
+      "claude-sonnet-4-6": {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadInputTokens: 20,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.12,
+      },
+      "claude-haiku-4-5": {
+        inputTokens: 200,
+        outputTokens: 80,
+        cacheReadInputTokens: 40,
+        cacheCreationInputTokens: 10,
+        costUSD: 0.03,
+      },
+    },
+  });
+  expect(bundle?.models).toHaveLength(2);
+  expect(bundle?.totalCostUsd).toBeCloseTo(0.15);
+  expect(bundle?.models[1]?.sdkCostUsd).toBe(0.03);
+});
+
 test("parseSdkUsageBilling marks assistant usage as non-authoritative", () => {
   const bundle = parseSdkUsageBilling({
     messageId: "msg_1",

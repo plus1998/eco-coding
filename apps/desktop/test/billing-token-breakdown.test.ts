@@ -82,6 +82,42 @@ test("buildBillingTokenBreakdown merges roles that share the same model", () => 
   expect(breakdown?.byModel[0]?.ecoCostUsd).toBeCloseTo(0.06);
 });
 
+test("buildBillingTokenBreakdown prefers explicit byModel rows", () => {
+  const billing = makeBilling({
+    planner: {
+      inputTokens: 3000,
+      outputTokens: 300,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.03,
+      modelId: "last-model",
+    },
+  });
+  billing.byModel = [
+    {
+      modelId: "sonnet",
+      roles: ["planner"],
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+    },
+    {
+      modelId: "haiku",
+      roles: ["planner"],
+      inputTokens: 2000,
+      outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.01,
+    },
+  ];
+
+  const breakdown = buildBillingTokenBreakdown(billing);
+  expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["haiku", "sonnet"]);
+});
+
 test("buildBillingTokenBreakdown returns null for empty or zero usage", () => {
   expect(buildBillingTokenBreakdown(undefined)).toBeNull();
   expect(buildBillingTokenBreakdown(makeBilling({}))).toBeNull();

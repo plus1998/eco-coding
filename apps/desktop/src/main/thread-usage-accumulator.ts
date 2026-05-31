@@ -1,4 +1,10 @@
-import type { AgentRole, ThreadBillingSnapshot } from "../shared/ipc";
+import type {
+  AgentRole,
+  BillingUsageSource,
+  ThreadBillingModelSnapshot,
+  ThreadBillingSnapshot,
+  ThreadBillingSourceSnapshot,
+} from "../shared/ipc";
 import {
   computeRequestBilling,
   computeThreadBillingTotals,
@@ -7,6 +13,7 @@ import {
   mergeUsageTotals,
   type ModelCostRates,
   type ParsedUsage,
+  type RequestBillingDelta,
   type TokenCostBreakdown,
   tokenTotalsFromUsage,
 } from "@eco/runtime";
@@ -14,16 +21,20 @@ import { createEmptyUsage, type UsageRequestRecord } from "./usage-request-types
 
 export type { ThreadBillingSnapshot };
 
+const BILLING_SOURCE_PRIORITY: BillingUsageSource[] = ["proxy", "sdk", "otel"];
+
 export interface RecordUsageInput {
   threadId: string;
   role: AgentRole;
   delta: ParsedUsage;
+  /** Cost reported by the source itself, when available (SDK/OTel estimate). */
   otelCostUsd?: number;
   actualRates: ModelCostRates | null;
   plannerRates: ModelCostRates | null;
   modelId?: string;
   requestKey?: string;
   plannerModelLabel?: string;
+  source?: BillingUsageSource;
 }
 
 export interface RecordRunUsageModel {
@@ -32,6 +43,8 @@ export interface RecordRunUsageModel {
   usage: ParsedUsage;
   actualRates: ModelCostRates | null;
   plannerRates: ModelCostRates | null;
+  /** Per-model cost reported by the SDK, used only for comparison. */
+  sdkCostUsd?: number;
 }
 
 export interface RecordRunUsageInput {
@@ -39,11 +52,39 @@ export interface RecordRunUsageInput {
   role: AgentRole;
   requestKey: string;
   models: RecordRunUsageModel[];
+  /** Total cost reported by the SDK, used only for comparison. */
   otelCostUsd?: number;
   plannerModelLabel?: string;
+  source?: BillingUsageSource;
 }
 
+interface SourceModelUsageState {
+  modelId: string;
+  roles: AgentRole[];
+  usage: ParsedUsage;
+  ecoCostUsd: number;
+  reportedCostUsd: number;
+}
+
+export interface SerializedBillingSourceState {
+  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  total: ParsedUsage;
+  plannerTokenCostUsd: number;
+  ecoCostUsd: number;
+  ecoCostBreakdown: TokenCostBreakdown;
+  plannerCostBreakdown: TokenCostBreakdown;
+  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
+  roleModelIds: Partial<Record<AgentRole, string>>;
+  byModel: Record<string, SourceModelUsageState>;
+  reportedCostUsd: number;
+  pricingResolved: boolean;
+  unresolvedCount: number;
+}
+
+type SourceUsageState = SerializedBillingSourceState;
+
 type ThreadUsageAccumulatorState = {
+  /** Legacy aggregate retained for old persisted snapshots. New billing reads from sources. */
   byRole: Partial<Record<AgentRole, ParsedUsage>>;
   total: ParsedUsage;
   otelCostUsd: number;
@@ -53,6 +94,7 @@ type ThreadUsageAccumulatorState = {
   plannerCostBreakdown: TokenCostBreakdown;
   roleEcoCostUsd: Partial<Record<AgentRole, number>>;
   roleModelIds: Partial<Record<AgentRole, string>>;
+  sources: Partial<Record<BillingUsageSource, SourceUsageState>>;
   seenRequestKeys: Set<string>;
   pricingResolved: boolean;
   unresolvedCount: number;
@@ -70,6 +112,7 @@ export interface SerializedThreadUsageState {
   plannerCostBreakdown: TokenCostBreakdown;
   roleEcoCostUsd: Partial<Record<AgentRole, number>>;
   roleModelIds: Partial<Record<AgentRole, string>>;
+  sources?: Partial<Record<BillingUsageSource, SerializedBillingSourceState>>;
   seenRequestKeys: string[];
   pricingResolved: boolean;
   unresolvedCount: number;
@@ -89,37 +132,19 @@ export class ThreadUsageAccumulator {
       state.seenRequestKeys.add(input.requestKey);
     }
 
-    const role = input.role;
-    const prevRole = state.byRole[role] ?? createEmptyUsage();
-    state.byRole[role] = mergeUsageTotals(prevRole, input.delta);
-    state.total = mergeUsageTotals(state.total, input.delta);
-
-    if (input.otelCostUsd !== undefined && Number.isFinite(input.otelCostUsd)) {
-      state.otelCostUsd += input.otelCostUsd;
-    }
-
+    const source = input.source ?? "otel";
+    const sourceState = getOrCreateSourceState(state, source);
     const billing = computeRequestBilling(input.delta, input.actualRates, input.plannerRates);
-    state.plannerTokenCostUsd += billing.plannerTokenCostUsd;
-    state.ecoCostUsd += billing.ecoCostUsd;
-    if (billing.ecoBreakdown) {
-      state.ecoCostBreakdown = mergeCostBreakdowns(state.ecoCostBreakdown, billing.ecoBreakdown);
-    }
-    if (billing.plannerBreakdown) {
-      state.plannerCostBreakdown = mergeCostBreakdowns(
-        state.plannerCostBreakdown,
-        billing.plannerBreakdown,
-      );
-    }
-    state.roleEcoCostUsd[role] = (state.roleEcoCostUsd[role] ?? 0) + billing.ecoCostUsd;
-
-    if (input.modelId) {
-      state.roleModelIds[role] = input.modelId;
-    }
-
-    if (!billing.pricingResolved) {
-      state.unresolvedCount += 1;
-      state.pricingResolved = false;
-    }
+    applyUsageContribution(sourceState, {
+      role: input.role,
+      usage: input.delta,
+      billing,
+      ...(input.modelId && { modelId: input.modelId }),
+      ...(input.otelCostUsd !== undefined && {
+        sourceReportedCostUsd: input.otelCostUsd,
+        modelReportedCostUsd: input.otelCostUsd,
+      }),
+    });
 
     if (input.plannerModelLabel) {
       state.plannerModelLabel = input.plannerModelLabel;
@@ -128,7 +153,7 @@ export class ThreadUsageAccumulator {
     return this.toSnapshot(state, input.plannerModelLabel);
   }
 
-  /** Authoritative SDK result billing (modelUsage); deduped per run via requestKey. */
+  /** SDK result billing (modelUsage); stored as its own comparison source. */
   recordRunUsage(input: RecordRunUsageInput): ThreadBillingSnapshot {
     const state = this.getOrCreateState(input.threadId);
 
@@ -137,35 +162,23 @@ export class ThreadUsageAccumulator {
     }
     state.seenRequestKeys.add(input.requestKey);
 
-    if (input.otelCostUsd !== undefined && Number.isFinite(input.otelCostUsd)) {
-      state.otelCostUsd += input.otelCostUsd;
+    const source = input.source ?? "sdk";
+    const sourceState = getOrCreateSourceState(state, source);
+    const reportedTotal = resolveReportedRunCost(input);
+    if (reportedTotal !== undefined) {
+      sourceState.reportedCostUsd += reportedTotal;
     }
 
     for (const model of input.models) {
       const role = model.role ?? input.role;
-      const prevRole = state.byRole[role] ?? createEmptyUsage();
-      state.byRole[role] = mergeUsageTotals(prevRole, model.usage);
-      state.total = mergeUsageTotals(state.total, model.usage);
-
       const billing = computeRequestBilling(model.usage, model.actualRates, model.plannerRates);
-      state.plannerTokenCostUsd += billing.plannerTokenCostUsd;
-      state.ecoCostUsd += billing.ecoCostUsd;
-      if (billing.ecoBreakdown) {
-        state.ecoCostBreakdown = mergeCostBreakdowns(state.ecoCostBreakdown, billing.ecoBreakdown);
-      }
-      if (billing.plannerBreakdown) {
-        state.plannerCostBreakdown = mergeCostBreakdowns(
-          state.plannerCostBreakdown,
-          billing.plannerBreakdown,
-        );
-      }
-      state.roleEcoCostUsd[role] = (state.roleEcoCostUsd[role] ?? 0) + billing.ecoCostUsd;
-      state.roleModelIds[role] = model.modelId;
-
-      if (!billing.pricingResolved) {
-        state.unresolvedCount += 1;
-        state.pricingResolved = false;
-      }
+      applyUsageContribution(sourceState, {
+        role,
+        modelId: model.modelId,
+        usage: model.usage,
+        billing,
+        ...(model.sdkCostUsd !== undefined && { modelReportedCostUsd: model.sdkCostUsd }),
+      });
     }
 
     if (input.plannerModelLabel) {
@@ -178,7 +191,10 @@ export class ThreadUsageAccumulator {
   recordOtelCostOnly(threadId: string, otelCostUsd: number, plannerModelLabel?: string): ThreadBillingSnapshot {
     const state = this.getOrCreateState(threadId);
     if (Number.isFinite(otelCostUsd)) {
-      state.otelCostUsd += otelCostUsd;
+      getOrCreateSourceState(state, "otel").reportedCostUsd += otelCostUsd;
+    }
+    if (plannerModelLabel) {
+      state.plannerModelLabel = plannerModelLabel;
     }
     return this.toSnapshot(state, plannerModelLabel);
   }
@@ -210,6 +226,7 @@ export class ThreadUsageAccumulator {
       plannerCostBreakdown: state.plannerCostBreakdown,
       roleEcoCostUsd: state.roleEcoCostUsd,
       roleModelIds: state.roleModelIds,
+      sources: state.sources,
       seenRequestKeys: [...state.seenRequestKeys],
       pricingResolved: state.pricingResolved,
       unresolvedCount: state.unresolvedCount,
@@ -228,6 +245,7 @@ export class ThreadUsageAccumulator {
       plannerCostBreakdown: data.plannerCostBreakdown,
       roleEcoCostUsd: data.roleEcoCostUsd,
       roleModelIds: data.roleModelIds,
+      sources: restoreSourceStates(data.sources),
       seenRequestKeys: new Set(data.seenRequestKeys),
       pricingResolved: data.pricingResolved,
       unresolvedCount: data.unresolvedCount,
@@ -248,6 +266,7 @@ export class ThreadUsageAccumulator {
         plannerCostBreakdown: emptyCostBreakdown(),
         roleEcoCostUsd: {},
         roleModelIds: {},
+        sources: {},
         seenRequestKeys: new Set(),
         pricingResolved: true,
         unresolvedCount: 0,
@@ -262,23 +281,51 @@ export class ThreadUsageAccumulator {
     plannerModelLabel?: string,
   ): ThreadBillingSnapshot {
     const label = plannerModelLabel ?? state.plannerModelLabel;
+    const sourceBreakdown = buildSourceBreakdown(state.sources);
+    const primarySource = selectPrimarySource(sourceBreakdown);
+    if (primarySource) {
+      const primary = sourceBreakdown[primarySource];
+      const primaryState = state.sources[primarySource];
+      if (!primary || !primaryState) {
+        return this.toLegacySnapshot(state, label);
+      }
+      const sdkOrOtelReported =
+        sourceBreakdown.otel?.reportedCostUsd ??
+        sourceBreakdown.sdk?.reportedCostUsd ??
+        0;
+      const totals = computeThreadBillingTotals(
+        sdkOrOtelReported,
+        primary.plannerTokenCostUsd,
+        primary.ecoCostUsd,
+      );
+
+      return {
+        totalTokens: primary.totalTokens,
+        ...totals,
+        ecoCostBreakdown: primaryState.ecoCostBreakdown,
+        plannerCostBreakdown: primaryState.plannerCostBreakdown,
+        ...(label && { plannerModelLabel: label }),
+        pricingResolved: primary.pricingResolved,
+        primarySource,
+        sourceBreakdown,
+        ...(primary.byModel && { byModel: primary.byModel }),
+        ...(primary.byRole && { byRole: primary.byRole }),
+      };
+    }
+
+    return this.toLegacySnapshot(state, label);
+  }
+
+  private toLegacySnapshot(
+    state: ThreadUsageAccumulatorState,
+    label: string | undefined,
+  ): ThreadBillingSnapshot {
+    const byRole = buildRoleSnapshot(state.byRole, state.roleEcoCostUsd, state.roleModelIds);
     const totals = computeThreadBillingTotals(
       state.otelCostUsd,
       state.plannerTokenCostUsd,
       state.ecoCostUsd,
     );
-
-    const byRole: ThreadBillingSnapshot["byRole"] = {};
-    for (const [role, usage] of Object.entries(state.byRole) as [AgentRole, ParsedUsage][]) {
-      byRole[role] = {
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheCreationTokens: usage.cacheCreationTokens,
-        ecoCostUsd: state.roleEcoCostUsd[role] ?? 0,
-        ...(state.roleModelIds[role] && { modelId: state.roleModelIds[role] }),
-      };
-    }
 
     return {
       totalTokens: tokenTotalsFromUsage(state.total),
@@ -290,6 +337,227 @@ export class ThreadUsageAccumulator {
       ...(Object.keys(byRole).length > 0 && { byRole }),
     };
   }
+}
+
+function getOrCreateSourceState(
+  state: ThreadUsageAccumulatorState,
+  source: BillingUsageSource,
+): SourceUsageState {
+  const existing = state.sources[source];
+  if (existing) {
+    return existing;
+  }
+  const created = createEmptySourceState();
+  state.sources[source] = created;
+  return created;
+}
+
+function createEmptySourceState(): SourceUsageState {
+  return {
+    byRole: {},
+    total: createEmptyUsage(),
+    plannerTokenCostUsd: 0,
+    ecoCostUsd: 0,
+    ecoCostBreakdown: emptyCostBreakdown(),
+    plannerCostBreakdown: emptyCostBreakdown(),
+    roleEcoCostUsd: {},
+    roleModelIds: {},
+    byModel: {},
+    reportedCostUsd: 0,
+    pricingResolved: true,
+    unresolvedCount: 0,
+  };
+}
+
+function applyUsageContribution(
+  source: SourceUsageState,
+  input: {
+    role: AgentRole;
+    modelId?: string;
+    usage: ParsedUsage;
+    billing: RequestBillingDelta;
+    sourceReportedCostUsd?: number;
+    modelReportedCostUsd?: number;
+  },
+): void {
+  const role = input.role;
+  const modelKey = input.modelId?.trim() || role;
+  const prevRole = source.byRole[role] ?? createEmptyUsage();
+  source.byRole[role] = mergeUsageTotals(prevRole, input.usage);
+  source.total = mergeUsageTotals(source.total, input.usage);
+  source.plannerTokenCostUsd += input.billing.plannerTokenCostUsd;
+  source.ecoCostUsd += input.billing.ecoCostUsd;
+  if (input.billing.ecoBreakdown) {
+    source.ecoCostBreakdown = mergeCostBreakdowns(source.ecoCostBreakdown, input.billing.ecoBreakdown);
+  }
+  if (input.billing.plannerBreakdown) {
+    source.plannerCostBreakdown = mergeCostBreakdowns(
+      source.plannerCostBreakdown,
+      input.billing.plannerBreakdown,
+    );
+  }
+  source.roleEcoCostUsd[role] = (source.roleEcoCostUsd[role] ?? 0) + input.billing.ecoCostUsd;
+  if (input.modelId) {
+    source.roleModelIds[role] = input.modelId;
+  }
+  if (input.sourceReportedCostUsd !== undefined && Number.isFinite(input.sourceReportedCostUsd)) {
+    source.reportedCostUsd += input.sourceReportedCostUsd;
+  }
+
+  const modelState =
+    source.byModel[modelKey] ??
+    {
+      modelId: modelKey,
+      roles: [],
+      usage: createEmptyUsage(),
+      ecoCostUsd: 0,
+      reportedCostUsd: 0,
+    };
+  addRole(modelState.roles, role);
+  modelState.usage = mergeUsageTotals(modelState.usage, input.usage);
+  modelState.ecoCostUsd += input.billing.ecoCostUsd;
+  if (input.modelReportedCostUsd !== undefined && Number.isFinite(input.modelReportedCostUsd)) {
+    modelState.reportedCostUsd += input.modelReportedCostUsd;
+  }
+  source.byModel[modelKey] = modelState;
+
+  if (!input.billing.pricingResolved) {
+    source.unresolvedCount += 1;
+    source.pricingResolved = false;
+  }
+}
+
+function addRole(roles: AgentRole[], role: AgentRole): void {
+  if (!roles.includes(role)) {
+    roles.push(role);
+  }
+}
+
+function resolveReportedRunCost(input: RecordRunUsageInput): number | undefined {
+  if (input.otelCostUsd !== undefined && Number.isFinite(input.otelCostUsd)) {
+    return input.otelCostUsd;
+  }
+  const total = input.models.reduce(
+    (sum, model) => sum + (model.sdkCostUsd !== undefined && Number.isFinite(model.sdkCostUsd) ? model.sdkCostUsd : 0),
+    0,
+  );
+  return total > 0 ? total : undefined;
+}
+
+function restoreSourceStates(
+  sources: Partial<Record<BillingUsageSource, SerializedBillingSourceState>> | undefined,
+): Partial<Record<BillingUsageSource, SourceUsageState>> {
+  if (!sources) {
+    return {};
+  }
+  const restored: Partial<Record<BillingUsageSource, SourceUsageState>> = {};
+  for (const source of BILLING_SOURCE_PRIORITY) {
+    const state = sources[source];
+    if (!state) {
+      continue;
+    }
+    restored[source] = {
+      ...createEmptySourceState(),
+      ...state,
+      byModel: state.byModel ?? {},
+    };
+  }
+  return restored;
+}
+
+function buildSourceBreakdown(
+  sources: Partial<Record<BillingUsageSource, SourceUsageState>>,
+): Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>> {
+  const snapshots: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>> = {};
+  for (const source of BILLING_SOURCE_PRIORITY) {
+    const state = sources[source];
+    if (!state || !hasSourceData(state)) {
+      continue;
+    }
+    snapshots[source] = sourceToSnapshot(source, state);
+  }
+  return snapshots;
+}
+
+function sourceToSnapshot(
+  source: BillingUsageSource,
+  state: SourceUsageState,
+): ThreadBillingSourceSnapshot {
+  const byRole = buildRoleSnapshot(state.byRole, state.roleEcoCostUsd, state.roleModelIds);
+  const byModel = buildModelSnapshot(state.byModel);
+  return {
+    source,
+    totalTokens: tokenTotalsFromUsage(state.total),
+    plannerTokenCostUsd: state.plannerTokenCostUsd,
+    ecoCostUsd: state.ecoCostUsd,
+    ...(state.reportedCostUsd > 0 && { reportedCostUsd: state.reportedCostUsd }),
+    pricingResolved: state.pricingResolved && state.unresolvedCount === 0,
+    ...(byModel.length > 0 && { byModel }),
+    ...(Object.keys(byRole).length > 0 && { byRole }),
+  };
+}
+
+function buildRoleSnapshot(
+  byRoleState: Partial<Record<AgentRole, ParsedUsage>>,
+  roleEcoCostUsd: Partial<Record<AgentRole, number>>,
+  roleModelIds: Partial<Record<AgentRole, string>>,
+): NonNullable<ThreadBillingSnapshot["byRole"]> {
+  const byRole: NonNullable<ThreadBillingSnapshot["byRole"]> = {};
+  for (const [role, usage] of Object.entries(byRoleState) as [AgentRole, ParsedUsage][]) {
+    byRole[role] = {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      ecoCostUsd: roleEcoCostUsd[role] ?? 0,
+      ...(roleModelIds[role] && { modelId: roleModelIds[role] }),
+    };
+  }
+  return byRole;
+}
+
+function buildModelSnapshot(
+  byModel: Record<string, SourceModelUsageState>,
+): ThreadBillingModelSnapshot[] {
+  return Object.values(byModel)
+    .filter((entry) => usageTotal(entry.usage) > 0 || entry.ecoCostUsd > 0 || entry.reportedCostUsd > 0)
+    .map((entry) => ({
+      modelId: entry.modelId,
+      roles: entry.roles,
+      inputTokens: entry.usage.inputTokens,
+      outputTokens: entry.usage.outputTokens,
+      cacheReadTokens: entry.usage.cacheReadTokens,
+      cacheCreationTokens: entry.usage.cacheCreationTokens,
+      ecoCostUsd: entry.ecoCostUsd,
+      ...(entry.reportedCostUsd > 0 && { reportedCostUsd: entry.reportedCostUsd }),
+    }))
+    .sort((left, right) => {
+      const tokenDiff = modelSnapshotTotal(right) - modelSnapshotTotal(left);
+      return tokenDiff !== 0 ? tokenDiff : left.modelId.localeCompare(right.modelId);
+    });
+}
+
+function selectPrimarySource(
+  sources: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>,
+): BillingUsageSource | undefined {
+  return BILLING_SOURCE_PRIORITY.find((source) => sources[source]);
+}
+
+function hasSourceData(state: SourceUsageState): boolean {
+  return (
+    usageTotal(state.total) > 0 ||
+    state.ecoCostUsd > 0 ||
+    state.plannerTokenCostUsd > 0 ||
+    state.reportedCostUsd > 0
+  );
+}
+
+function usageTotal(usage: ParsedUsage): number {
+  return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+}
+
+function modelSnapshotTotal(entry: ThreadBillingModelSnapshot): number {
+  return entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens;
 }
 
 export function buildUsageRequestKey(record: UsageRequestRecord): string {
