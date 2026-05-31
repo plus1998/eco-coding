@@ -1,0 +1,101 @@
+import { expect, test } from "bun:test";
+import { buildBillingTokenBreakdown } from "../src/shared/billing-token-breakdown";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
+
+function makeBilling(
+  byRole: NonNullable<ThreadBillingSnapshot["byRole"]>,
+): ThreadBillingSnapshot {
+  const total = Object.values(byRole).reduce(
+    (acc, entry) => ({
+      input: acc.input + entry.inputTokens,
+      output: acc.output + entry.outputTokens,
+      cacheRead: acc.cacheRead + entry.cacheReadTokens,
+      cacheCreation: acc.cacheCreation + entry.cacheCreationTokens,
+    }),
+    { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 },
+  );
+
+  return {
+    totalTokens: total,
+    otelCostUsd: 0,
+    plannerTokenCostUsd: 0,
+    ecoCostUsd: Object.values(byRole).reduce((sum, entry) => sum + entry.ecoCostUsd, 0),
+    savedUsd: 0,
+    savedPct: 0,
+    pricingResolved: true,
+    byRole,
+  };
+}
+
+test("buildBillingTokenBreakdown returns agent rows in AGENT_ROLES order", () => {
+  const breakdown = buildBillingTokenBreakdown(
+    makeBilling({
+      coder: {
+        inputTokens: 5000,
+        outputTokens: 500,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.05,
+        modelId: "claude-haiku-4-5",
+      },
+      planner: {
+        inputTokens: 10000,
+        outputTokens: 1000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.1,
+        modelId: "claude-opus-4-7",
+      },
+    }),
+  );
+
+  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "coder"]);
+  expect(breakdown?.byAgent[0]?.label).toBe("规划 · claude-opus-4-7");
+  expect(breakdown?.byAgent[0]?.tokenBadge).toBe("↑10k ↓1k");
+});
+
+test("buildBillingTokenBreakdown merges roles that share the same model", () => {
+  const breakdown = buildBillingTokenBreakdown(
+    makeBilling({
+      explore: {
+        inputTokens: 3000,
+        outputTokens: 300,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.02,
+        modelId: "claude-haiku-4-5",
+      },
+      coder: {
+        inputTokens: 7000,
+        outputTokens: 700,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.04,
+        modelId: "claude-haiku-4-5",
+      },
+    }),
+  );
+
+  expect(breakdown?.byModel).toHaveLength(1);
+  expect(breakdown?.byModel[0]?.roles).toEqual(["explore", "coder"]);
+  expect(breakdown?.byModel[0]?.inputTokens).toBe(10000);
+  expect(breakdown?.byModel[0]?.ecoCostUsd).toBeCloseTo(0.06);
+});
+
+test("buildBillingTokenBreakdown returns null for empty or zero usage", () => {
+  expect(buildBillingTokenBreakdown(undefined)).toBeNull();
+  expect(buildBillingTokenBreakdown(makeBilling({}))).toBeNull();
+  expect(
+    buildBillingTokenBreakdown(
+      makeBilling({
+        planner: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          ecoCostUsd: 0,
+        },
+      }),
+    ),
+  ).toBeNull();
+});

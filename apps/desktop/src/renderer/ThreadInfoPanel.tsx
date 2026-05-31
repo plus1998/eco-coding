@@ -15,6 +15,7 @@ import {
   shouldShowThreadUsagePanels,
 } from "../shared/thread-usage-summary";
 import { ContextCard } from "./ContextCard";
+import { UsageBreakdownPanel } from "./UsageBreakdownPanel";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -169,6 +170,8 @@ function BillingFloatingCard({
       {showBilling && billing && !billing.pricingResolved ? (
         <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
       ) : null}
+
+      {showBilling && billing ? <UsageBreakdownPanel billing={billing} variant="full" /> : null}
     </div>
   );
 }
