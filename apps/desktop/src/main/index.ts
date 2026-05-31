@@ -108,6 +108,13 @@ import {
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
 } from "./billing-resolver";
+import {
+  buildAssistantUsageRequestKey,
+  isSdkIncrementalStreamUsage,
+  nextOtelRequestDedupId,
+  shouldBillAssistantSubagentUsage,
+  shouldSkipSdkResultTokenBilling,
+} from "./billing-orchestration";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
@@ -156,6 +163,9 @@ interface ActiveThreadRun {
   controller: AbortController;
   worktreePlan?: WorktreePlan;
   worktreeReady?: boolean;
+  /** True once OTel api_request token usage was billed this run. */
+  otelTokenBilled?: boolean;
+  otelRequestSeq?: number;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
@@ -2049,16 +2059,17 @@ function emitOtelActivity(line: OtelActivityLine): void {
 }
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
-  if (activeRuns.has(usage.threadId)) {
-    if (usage.costUsd !== undefined) {
-      const billing = threadUsageAccumulator.recordOtelCostOnly(usage.threadId, usage.costUsd);
-      emitThreadEvent(usage.threadId, "thread.usage_updated", "SDK 费用更新", usage.role, false, {
-        billing,
-      });
-      schedulePersistThreadMetrics(usage.threadId);
-    }
-    return;
+  const run = activeRuns.get(usage.threadId);
+  const { seq, dedupId } = nextOtelRequestDedupId(run?.otelRequestSeq);
+  if (run) {
+    run.otelRequestSeq = seq;
   }
+
+  const hasTokens =
+    usage.inputTokens > 0 ||
+    usage.outputTokens > 0 ||
+    (usage.cacheReadTokens ?? 0) > 0 ||
+    (usage.cacheCreationTokens ?? 0) > 0;
 
   void processUsageBilling({
     threadId: usage.threadId,
@@ -2069,9 +2080,16 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
     cacheCreationTokens: usage.cacheCreationTokens ?? 0,
     ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
     ...(usage.modelId && { modelId: usage.modelId }),
-  }).catch((error) => {
-    process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
-  });
+    otelDedupId: dedupId,
+  })
+    .then(() => {
+      if (hasTokens && run) {
+        run.otelTokenBilled = true;
+      }
+    })
+    .catch((error) => {
+      process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
+    });
 }
 
 function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
@@ -2094,6 +2112,8 @@ async function processUsageBilling(input: {
   otelCostUsd?: number;
   modelId?: string;
   messageId?: string;
+  requestKey?: string;
+  otelDedupId?: string;
 }): Promise<void> {
   await pricingCatalogReady;
 
@@ -2138,14 +2158,17 @@ async function processUsageBilling(input: {
       })
     : null;
 
-  const requestKey = buildUsageRequestKey({
-    role: input.role,
-    inputTokens: input.inputTokens,
-    outputTokens: input.outputTokens,
-    cacheReadTokens: input.cacheReadTokens,
-    cacheCreationTokens: input.cacheCreationTokens,
-    ...(input.modelId && { modelId: input.modelId }),
-  });
+  const requestKey =
+    input.requestKey ??
+    buildUsageRequestKey({
+      role: input.role,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      cacheReadTokens: input.cacheReadTokens,
+      cacheCreationTokens: input.cacheCreationTokens,
+      ...(input.modelId && { modelId: input.modelId }),
+      ...(input.otelDedupId && { dedupId: input.otelDedupId }),
+    });
 
   const plannerModelLabel = buildPlannerModelLabel(
     plannerRoute,
@@ -2386,7 +2409,7 @@ function handleSdkContextSideEffects(
   }
 }
 
-function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void {
+function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id: string }): void {
   const bundle = parseSdkUsageBilling(event.payload);
   if (!bundle) {
     return;
@@ -2396,6 +2419,8 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void 
     isRecord(event.payload) && typeof event.payload.messageId === "string"
       ? event.payload.messageId
       : undefined;
+  const billingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
+  const run = activeRuns.get(threadId);
 
   if (!bundle.authoritative) {
     const modelId =
@@ -2404,21 +2429,70 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike): void 
         : bundle.models[0]?.modelId;
     void updateContextFromUsage(
       threadId,
-      event.role as AgentRole,
+      billingRole,
       bundle.contextUsage,
       messageId,
       modelId,
-    ).catch(
-      (error) => {
-        process.stderr.write(`[eco] context usage update failed: ${errorMessage(error)}\n`);
-      },
-    );
+    ).catch((error) => {
+      process.stderr.write(`[eco] context usage update failed: ${errorMessage(error)}\n`);
+    });
+
+    if (
+      messageId &&
+      shouldBillAssistantSubagentUsage({
+        role: billingRole,
+        messageId,
+        otelTokenBilled: run?.otelTokenBilled,
+      })
+    ) {
+      void processUsageBilling({
+        threadId,
+        role: billingRole,
+        inputTokens: bundle.contextUsage.inputTokens,
+        outputTokens: bundle.contextUsage.outputTokens,
+        cacheReadTokens: bundle.contextUsage.cacheReadTokens,
+        cacheCreationTokens: bundle.contextUsage.cacheCreationTokens,
+        ...(modelId && { modelId }),
+        messageId,
+        requestKey: buildAssistantUsageRequestKey(messageId),
+      }).catch((error) => {
+        process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
+      });
+    }
+    return;
+  }
+
+  if (isSdkIncrementalStreamUsage(bundle.authoritative, event.payload)) {
+    const modelId =
+      isRecord(event.payload) && typeof event.payload.model === "string"
+        ? event.payload.model
+        : bundle.models[0]?.modelId;
+    void updateContextFromUsage(
+      threadId,
+      billingRole,
+      bundle.contextUsage,
+      undefined,
+      modelId,
+    ).catch((error) => {
+      process.stderr.write(`[eco] stream usage context update failed: ${errorMessage(error)}\n`);
+    });
+    return;
+  }
+
+  if (shouldSkipSdkResultTokenBilling(run?.otelTokenBilled)) {
+    const billing = threadUsageAccumulator.getSnapshot(threadId);
+    if (billing) {
+      emitThreadEvent(threadId, "thread.usage_updated", "SDK 会话结束", billingRole, false, {
+        billing,
+      });
+      schedulePersistThreadMetrics(threadId);
+    }
     return;
   }
 
   void processSdkRunBilling({
     threadId,
-    role: normalizeBillingRole(event.role as OtelUsageUpdate["role"]),
+    role: billingRole,
     requestKey: `sdk-result:${event.id}`,
     bundle,
   }).catch((error) => {

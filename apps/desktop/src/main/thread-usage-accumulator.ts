@@ -301,5 +301,6 @@ export function buildUsageRequestKey(record: UsageRequestRecord): string {
     record.cacheReadTokens ?? 0,
     record.cacheCreationTokens ?? 0,
     record.modelId ?? "",
+    record.dedupId ?? "",
   ].join(":");
 }

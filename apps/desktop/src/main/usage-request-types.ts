@@ -16,4 +16,6 @@ export interface UsageRequestRecord {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   modelId?: string;
+  /** Run-scoped OTel sequence or other unique id to avoid token-fingerprint collisions. */
+  dedupId?: string;
 }
