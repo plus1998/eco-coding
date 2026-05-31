@@ -81,9 +81,9 @@ test("buildAssistantUsageRequestKey is stable per message", () => {
   expect(buildAssistantUsageRequestKey("msg_abc")).toBe("sdk-assistant:msg_abc");
 });
 
-test("shouldUpdateContextFromUsageSource excludes OTel aggregates", () => {
+test("shouldUpdateContextFromUsageSource only accepts proxy request usage", () => {
   expect(shouldUpdateContextFromUsageSource("proxy")).toBe(true);
-  expect(shouldUpdateContextFromUsageSource("sdk")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("sdk")).toBe(false);
   expect(shouldUpdateContextFromUsageSource("otel")).toBe(false);
 });
 

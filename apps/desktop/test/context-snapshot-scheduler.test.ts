@@ -3,11 +3,7 @@ import { ContextSnapshotScheduler } from "../src/main/context-snapshot-scheduler
 import type { ContextMonitorSnapshot, ContextWindowMonitor } from "../src/main/context-window-monitor";
 import type { ThreadContextSnapshot } from "../src/shared/ipc";
 
-test("keeps planner breakdown separate from subagent fallback segments", () => {
-  const plannerSegments: ThreadContextSnapshot["segments"] = [
-    { key: "systemPrompt", label: "系统提示", tokens: 1000, color: "#9ca3af" },
-    { key: "conversation", label: "对话", tokens: 9000, color: "#ea580c" },
-  ];
+test("emits one occupancy segment per independent role window", () => {
   const emitted: ThreadContextSnapshot[] = [];
   const monitorSnapshot: ContextMonitorSnapshot = {
     occupied: 10_000,
@@ -56,7 +52,7 @@ test("keeps planner breakdown separate from subagent fallback segments", () => {
     occupancyPct: 10,
     limitsResolved: true,
     displayRole: "planner",
-    segments: plannerSegments,
+    segments: [],
     roles: [
       {
         role: "planner",
@@ -64,7 +60,7 @@ test("keeps planner breakdown separate from subagent fallback segments", () => {
         limit: 100_000,
         occupancyPct: 10,
         limitsResolved: true,
-        segments: plannerSegments,
+        segments: [],
       },
     ],
     updatedAt: Date.now(),
@@ -72,21 +68,45 @@ test("keeps planner breakdown separate from subagent fallback segments", () => {
   scheduler.emitLiveFromMonitor("t1");
 
   const snapshot = emitted.at(-1);
-  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments).toEqual(plannerSegments);
+  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments).toEqual([
+    { key: "conversation", label: "会话占用", tokens: 10_000, color: "#ea580c" },
+  ]);
   const coderSegments = snapshot?.roles?.find((role) => role.role === "coder")?.segments;
-  expect(coderSegments).toEqual([{ key: "conversation", label: "对话", tokens: 40_000, color: "#ea580c" }]);
+  expect(coderSegments).toEqual([
+    { key: "conversation", label: "会话占用", tokens: 40_000, color: "#ea580c" },
+  ]);
 });
 
 test("clearSubagentState drops cached child role snapshots and segments", () => {
   const plannerSegments: ThreadContextSnapshot["segments"] = [
-    { key: "conversation", label: "对话", tokens: 10_000, color: "#ea580c" },
+    { key: "conversation", label: "会话占用", tokens: 10_000, color: "#ea580c" },
   ];
   const coderSegments: ThreadContextSnapshot["segments"] = [
-    { key: "conversation", label: "对话", tokens: 40_000, color: "#ea580c" },
+    { key: "conversation", label: "会话占用", tokens: 40_000, color: "#ea580c" },
   ];
+  let monitorSnapshot: ContextMonitorSnapshot | undefined;
   const monitor = {
-    getSnapshot: () => undefined,
-    restoreFromContextSnapshot: () => {},
+    getSnapshot: () => monitorSnapshot,
+    restoreFromContextSnapshot: (_threadId: string, snapshot: ThreadContextSnapshot) => {
+      monitorSnapshot = {
+        occupied: snapshot.occupied,
+        limit: snapshot.limit,
+        ratio: snapshot.limit > 0 ? snapshot.occupied / snapshot.limit : 0,
+        occupancyPct: snapshot.occupancyPct,
+        limitsResolved: snapshot.limitsResolved,
+        displayRole: snapshot.displayRole,
+        roles:
+          snapshot.roles?.map((role) => ({
+            role: role.role,
+            occupied: role.occupied,
+            limit: role.limit,
+            ratio: role.limit > 0 ? role.occupied / role.limit : 0,
+            occupancyPct: role.occupancyPct,
+            limitsResolved: role.limitsResolved,
+            ...(role.modelId && { modelId: role.modelId }),
+          })) ?? [],
+      };
+    },
     clearThread: () => {},
     shouldCompact: () => false,
   } as unknown as ContextWindowMonitor;

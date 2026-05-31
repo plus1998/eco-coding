@@ -44,7 +44,7 @@ export function nextOtelRequestDedupId(currentSeq: number | undefined): {
 }
 
 export function shouldUpdateContextFromUsageSource(source: BillingUsageSource | undefined): boolean {
-  return source !== "otel";
+  return source === "proxy";
 }
 
 export function buildUsageSnapshotForRole(input: {

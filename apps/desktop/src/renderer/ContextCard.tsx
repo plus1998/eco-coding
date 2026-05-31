@@ -94,6 +94,9 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
   const freeTokens = Math.max(limit - occupied, 0);
   const showRefreshing = context.breakdownRefreshing && selected.role === "planner";
+  const hasDetailedBreakdown =
+    visibleSegments.length > 1 ||
+    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话占用");
 
   return (
     <div className="context-card">
@@ -105,15 +108,17 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
           </span>
         </div>
         <div className="context-card-header-actions">
-          <button
-            type="button"
-            className="context-card-collapse"
-            onClick={() => setDetailsOpen((open) => !open)}
-            aria-expanded={detailsOpen}
-            aria-label={detailsOpen ? "折叠分项" : "展开分项"}
-          >
-            <span className="context-card-collapse-label">{detailsOpen ? "−" : "+"}</span>
-          </button>
+          {hasDetailedBreakdown ? (
+            <button
+              type="button"
+              className="context-card-collapse"
+              onClick={() => setDetailsOpen((open) => !open)}
+              aria-expanded={detailsOpen}
+              aria-label={detailsOpen ? "折叠分项" : "展开分项"}
+            >
+              <span className="context-card-collapse-label">{detailsOpen ? "−" : "+"}</span>
+            </button>
+          ) : null}
           {onDismiss ? (
             <button
               type="button"
@@ -193,9 +198,11 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         })}
       </div>
 
-      {showRefreshing ? <p className="context-card-stale">正在拉取分项明细…</p> : null}
+      {showRefreshing && hasDetailedBreakdown ? (
+        <p className="context-card-stale">正在拉取分项明细…</p>
+      ) : null}
 
-      {detailsOpen ? (
+      {hasDetailedBreakdown && detailsOpen ? (
         <ul className="context-card-breakdown">
           {visibleSegments.map((segment) => (
             <li key={segment.key}>

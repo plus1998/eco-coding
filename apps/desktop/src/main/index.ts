@@ -8,7 +8,6 @@ import {
   extractSdkRunFailure,
   formatUsageBadge,
   parseSdkUsageBilling,
-  parseUsagePayload,
   type ParsedUsage,
   type EcoHookContext,
   type EcoPlanningContext,
@@ -97,6 +96,7 @@ import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-titl
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
+  createModelAlias,
   startAnthropicModelProxy,
   type AnthropicProxyResolvedRoute,
   type AnthropicProxyStartOptions,
@@ -171,11 +171,14 @@ interface ActiveThreadRun {
   /** True once proxy-captured response usage was billed this run. */
   proxyTokenBilled?: boolean;
   proxyRequestSeq?: number;
+  /** Roles whose context window has been captured by the proxy during this run. */
+  proxyContextRolesSeen?: Set<AgentRole>;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingUsageUpdates = new Map<string, Set<Promise<void>>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -236,7 +239,7 @@ app.whenReady().then(async () => {
       if (!runtimeConfig.ok) {
         return;
       }
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined);
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
       try {
         const driver = createSdkDriver(threadId, attemptProxy);
@@ -984,7 +987,7 @@ async function runQuestionThread(
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
         }
-        scheduleContextRefresh(thread.id, cwd, true);
+        requestThreadContextRefresh(thread.id, true);
         return { ok: true };
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1017,6 +1020,7 @@ async function runQuestionThread(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
+    await flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -1192,6 +1196,7 @@ async function runCodingThreadPlanning(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
+    await flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -1373,6 +1378,7 @@ async function runCodingThreadExecution(
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     sdkStreamBridge.resetThread(threadId);
+    await flushUsageUpdates(threadId);
     activeRuns.delete(threadId);
     afterRunContextRefresh(threadId, worktreePlan.worktreePath);
     const thread = conversationStore.getThread(threadId);
@@ -2034,6 +2040,7 @@ async function runThreadContinuation(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
+    await flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -2067,6 +2074,34 @@ function emitOtelActivity(line: OtelActivityLine): void {
   emitThreadEvent(line.threadId, "otel.activity", line.message, line.role, line.stream ?? false);
 }
 
+function trackUsageUpdate(threadId: string, promise: Promise<void>): void {
+  let set = pendingUsageUpdates.get(threadId);
+  if (!set) {
+    set = new Set();
+    pendingUsageUpdates.set(threadId, set);
+  }
+
+  const tracked = promise.finally(() => {
+    const current = pendingUsageUpdates.get(threadId);
+    current?.delete(tracked);
+    if (current?.size === 0) {
+      pendingUsageUpdates.delete(threadId);
+    }
+  });
+  set.add(tracked);
+  void tracked.catch(() => {});
+}
+
+async function flushUsageUpdates(threadId: string): Promise<void> {
+  while (true) {
+    const pending = pendingUsageUpdates.get(threadId);
+    if (!pending || pending.size === 0) {
+      return;
+    }
+    await Promise.allSettled([...pending]);
+  }
+}
+
 function emitOtelUsage(usage: OtelUsageUpdate): void {
   const run = activeRuns.get(usage.threadId);
   const { seq, dedupId } = nextOtelRequestDedupId(run?.otelRequestSeq);
@@ -2080,33 +2115,42 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
     (usage.cacheReadTokens ?? 0) > 0 ||
     (usage.cacheCreationTokens ?? 0) > 0;
 
-  void processUsageBilling({
-    threadId: usage.threadId,
-    role: normalizeBillingRole(usage.role),
-    source: "otel",
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens ?? 0,
-    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-    ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
-    ...(usage.modelId && { modelId: usage.modelId }),
-    otelDedupId: dedupId,
-  })
-    .then(() => {
-      if (hasTokens && run) {
-        run.otelTokenBilled = true;
-      }
-    })
-    .catch((error) => {
+  if (hasTokens && run) {
+    run.otelTokenBilled = true;
+  }
+
+  trackUsageUpdate(
+    usage.threadId,
+    processUsageBilling({
+      threadId: usage.threadId,
+      role: normalizeBillingRole(usage.role),
+      source: "otel",
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens ?? 0,
+      cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+      ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
+      ...(usage.modelId && { modelId: usage.modelId }),
+      otelDedupId: dedupId,
+    }).catch((error) => {
       process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
-    });
+    }),
+  );
 }
 
 function emitProxyUsage(info: AnthropicProxyUsageInfo & { threadId: string }): void {
   const run = activeRuns.get(info.threadId);
   const seq = (run?.proxyRequestSeq ?? 0) + 1;
+  const updateContext = isProxyContextAuthoritative(info);
   if (run) {
     run.proxyRequestSeq = seq;
+    run.proxyTokenBilled = true;
+    if (updateContext && !run.proxyContextRolesSeen) {
+      run.proxyContextRolesSeen = new Set();
+    }
+    if (updateContext) {
+      run.proxyContextRolesSeen?.add(info.role);
+    }
   }
   const requestKey = [
     "proxy",
@@ -2119,25 +2163,49 @@ function emitProxyUsage(info: AnthropicProxyUsageInfo & { threadId: string }): v
     info.usage.cacheCreationTokens,
   ].join(":");
 
-  void processUsageBilling({
-    threadId: info.threadId,
-    role: info.role,
-    source: "proxy",
-    inputTokens: info.usage.inputTokens,
-    outputTokens: info.usage.outputTokens,
-    cacheReadTokens: info.usage.cacheReadTokens,
-    cacheCreationTokens: info.usage.cacheCreationTokens,
-    modelId: info.modelId,
-    requestKey,
-  })
-    .then(() => {
-      if (run) {
-        run.proxyTokenBilled = true;
-      }
-    })
-    .catch((error) => {
+  trackUsageUpdate(
+    info.threadId,
+    processUsageBilling({
+      threadId: info.threadId,
+      role: info.role,
+      source: "proxy",
+      inputTokens: info.usage.inputTokens,
+      outputTokens: info.usage.outputTokens,
+      cacheReadTokens: info.usage.cacheReadTokens,
+      cacheCreationTokens: info.usage.cacheCreationTokens,
+      modelId: info.modelId,
+      requestKey,
+      updateContext,
+    }).catch((error) => {
       process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
-    });
+    }),
+  );
+}
+
+function isProxyContextAuthoritative(info: AnthropicProxyUsageInfo): boolean {
+  const requestedModel = info.requestedModel?.trim();
+  if (!requestedModel) {
+    return true;
+  }
+  if (requestedModel === createModelAlias(info.role, info.providerId, info.modelId)) {
+    return true;
+  }
+  if (requestedModel !== info.modelId) {
+    return false;
+  }
+
+  const runtimeConfig = resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+  );
+  if (!runtimeConfig.ok) {
+    return false;
+  }
+
+  const sameUpstreamModelRoutes = runtimeConfig.routes.filter(
+    (route) => route.provider.id === info.providerId && route.modelId === info.modelId,
+  );
+  return sameUpstreamModelRoutes.length === 1 && sameUpstreamModelRoutes[0]?.role === info.role;
 }
 
 function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
@@ -2163,6 +2231,7 @@ async function processUsageBilling(input: {
   messageId?: string;
   requestKey?: string;
   otelDedupId?: string;
+  updateContext?: boolean;
 }): Promise<void> {
   await pricingCatalogReady;
 
@@ -2231,7 +2300,7 @@ async function processUsageBilling(input: {
   const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
   const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
   const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
-  const updateContext = shouldUpdateContextFromUsageSource(input.source);
+  const updateContext = input.updateContext ?? shouldUpdateContextFromUsageSource(input.source);
   if (updateContext && monitorModelForRole && monitorBaseForRole) {
     await contextMonitor.updateFromUsage(input.threadId, delta, {
       role: monitorRole,
@@ -2480,15 +2549,20 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       isRecord(event.payload) && typeof event.payload.model === "string"
         ? event.payload.model
         : bundle.models[0]?.modelId;
-    void updateContextFromUsage(
-      threadId,
-      billingRole,
-      bundle.contextUsage,
-      messageId,
-      modelId,
-    ).catch((error) => {
-      process.stderr.write(`[eco] context usage update failed: ${errorMessage(error)}\n`);
-    });
+    if (shouldUseSdkContextFallback(billingRole, run)) {
+      trackUsageUpdate(
+        threadId,
+        updateContextFromSdkFallback(
+          threadId,
+          billingRole,
+          bundle.contextUsage,
+          messageId,
+          modelId,
+        ).catch((error) => {
+          process.stderr.write(`[eco] SDK context fallback failed: ${errorMessage(error)}\n`);
+        }),
+      );
+    }
 
     if (
       messageId &&
@@ -2498,20 +2572,23 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
         otelTokenBilled: run?.otelTokenBilled,
       })
     ) {
-      void processUsageBilling({
+      trackUsageUpdate(
         threadId,
-        role: billingRole,
-        source: "sdk",
-        inputTokens: bundle.contextUsage.inputTokens,
-        outputTokens: bundle.contextUsage.outputTokens,
-        cacheReadTokens: bundle.contextUsage.cacheReadTokens,
-        cacheCreationTokens: bundle.contextUsage.cacheCreationTokens,
-        ...(modelId && { modelId }),
-        messageId,
-        requestKey: buildAssistantUsageRequestKey(messageId),
-      }).catch((error) => {
-        process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
-      });
+        processUsageBilling({
+          threadId,
+          role: billingRole,
+          source: "sdk",
+          inputTokens: bundle.contextUsage.inputTokens,
+          outputTokens: bundle.contextUsage.outputTokens,
+          cacheReadTokens: bundle.contextUsage.cacheReadTokens,
+          cacheCreationTokens: bundle.contextUsage.cacheCreationTokens,
+          ...(modelId && { modelId }),
+          messageId,
+          requestKey: buildAssistantUsageRequestKey(messageId),
+        }).catch((error) => {
+          process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
+        }),
+      );
     }
     return;
   }
@@ -2521,29 +2598,41 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       isRecord(event.payload) && typeof event.payload.model === "string"
         ? event.payload.model
         : bundle.models[0]?.modelId;
-    void updateContextFromUsage(
-      threadId,
-      billingRole,
-      bundle.contextUsage,
-      undefined,
-      modelId,
-    ).catch((error) => {
-      process.stderr.write(`[eco] stream usage context update failed: ${errorMessage(error)}\n`);
-    });
+    if (shouldUseSdkContextFallback(billingRole, run)) {
+      trackUsageUpdate(
+        threadId,
+        updateContextFromSdkFallback(
+          threadId,
+          billingRole,
+          bundle.contextUsage,
+          undefined,
+          modelId,
+        ).catch((error) => {
+          process.stderr.write(`[eco] SDK stream context fallback failed: ${errorMessage(error)}\n`);
+        }),
+      );
+    }
     return;
   }
 
-  void processSdkRunBilling({
+  trackUsageUpdate(
     threadId,
-    role: billingRole,
-    requestKey: `sdk-result:${event.id}`,
-    bundle,
-  }).catch((error) => {
-    process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
-  });
+    processSdkRunBilling({
+      threadId,
+      role: billingRole,
+      requestKey: `sdk-result:${event.id}`,
+      bundle,
+    }).catch((error) => {
+      process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
+    }),
+  );
 }
 
-async function updateContextFromUsage(
+function shouldUseSdkContextFallback(role: AgentRole, run: ActiveThreadRun | undefined): boolean {
+  return role !== "planner" && run?.proxyContextRolesSeen?.has(role) !== true;
+}
+
+async function updateContextFromSdkFallback(
   threadId: string,
   role: AgentRole,
   usage: ParsedUsage,
@@ -2555,29 +2644,18 @@ async function updateContextFromUsage(
   const providers = providerStore.listProvidersWithSecrets();
   const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
   const usageRoute = resolveUsageRoute(role, modelId, runtimeRoutes);
-  const monitorModelId = usageRoute?.modelId;
-  const monitorBaseUrl = usageRoute?.provider.baseUrl;
-  if (monitorModelId && monitorBaseUrl) {
-    await contextMonitor.updateFromUsage(threadId, usage, {
-      role,
-      modelId: monitorModelId,
-      providerBaseUrl: monitorBaseUrl,
-      ...(usageRoute?.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-      ...(messageId && { messageId }),
-    });
+  if (!usageRoute) {
+    return;
   }
+
+  await contextMonitor.updateFromUsage(threadId, usage, {
+    role,
+    modelId: usageRoute.modelId,
+    providerBaseUrl: usageRoute.provider.baseUrl,
+    ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
+    ...(messageId && { messageId }),
+  });
   contextScheduler.emitLiveFromMonitor(threadId);
-  const worktreePath = resolveThreadWorktreePath(threadId);
-  if (worktreePath && !activeRuns.has(threadId)) {
-    const runtimeConfig = resolveRuntimeConfig(settings, providers);
-    if (runtimeConfig.ok) {
-      contextScheduler.scheduleBreakdownRefresh(
-        threadId,
-        buildDriverRoutesFromRuntime(runtimeConfig.routes),
-        worktreePath,
-      );
-    }
-  }
 }
 
 async function processSdkRunBilling(input: {
