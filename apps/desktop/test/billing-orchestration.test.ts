@@ -8,6 +8,7 @@ import {
   nextOtelRequestDedupId,
   sdkPayloadHasModelUsage,
   shouldBillAssistantSubagentUsage,
+  shouldUpdateContextFromUsageSource,
 } from "../src/main/billing-orchestration";
 import type { ContextMonitorSnapshot } from "../src/main/context-window-monitor";
 import { buildUsageRequestKey, ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
@@ -78,6 +79,12 @@ test("buildUsageRequestKey includes dedupId to avoid token fingerprint collision
 
 test("buildAssistantUsageRequestKey is stable per message", () => {
   expect(buildAssistantUsageRequestKey("msg_abc")).toBe("sdk-assistant:msg_abc");
+});
+
+test("shouldUpdateContextFromUsageSource excludes OTel aggregates", () => {
+  expect(shouldUpdateContextFromUsageSource("proxy")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("sdk")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("otel")).toBe(false);
 });
 
 test("buildUsageSnapshotForRole uses the matching role window instead of display occupancy", () => {

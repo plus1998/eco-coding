@@ -115,6 +115,7 @@ import {
   isSdkIncrementalStreamUsage,
   nextOtelRequestDedupId,
   shouldBillAssistantSubagentUsage,
+  shouldUpdateContextFromUsageSource,
 } from "./billing-orchestration";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
@@ -2230,7 +2231,8 @@ async function processUsageBilling(input: {
   const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
   const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
   const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
-  if (monitorModelForRole && monitorBaseForRole) {
+  const updateContext = shouldUpdateContextFromUsageSource(input.source);
+  if (updateContext && monitorModelForRole && monitorBaseForRole) {
     await contextMonitor.updateFromUsage(input.threadId, delta, {
       role: monitorRole,
       modelId: monitorModelForRole,
@@ -2268,7 +2270,7 @@ async function processUsageBilling(input: {
     role: billingRole,
     ...(monitorSnap && { monitorSnap }),
     ...(parsed.modelId && { modelId: parsed.modelId }),
-    fallbackContext: "estimate",
+    fallbackContext: updateContext ? "estimate" : "none",
   });
 
   emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(parsed), billingRole, false, {

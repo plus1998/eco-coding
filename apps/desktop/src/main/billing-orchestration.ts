@@ -1,5 +1,5 @@
 import { estimateContextTokens, type ParsedUsage } from "@eco/runtime";
-import type { AgentRole, ThreadUsageSnapshot } from "../shared/ipc";
+import type { AgentRole, BillingUsageSource, ThreadUsageSnapshot } from "../shared/ipc";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
 
 const SUBAGENT_BILLING_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
@@ -41,6 +41,10 @@ export function nextOtelRequestDedupId(currentSeq: number | undefined): {
 } {
   const seq = (currentSeq ?? 0) + 1;
   return { seq, dedupId: String(seq) };
+}
+
+export function shouldUpdateContextFromUsageSource(source: BillingUsageSource | undefined): boolean {
+  return source !== "otel";
 }
 
 export function buildUsageSnapshotForRole(input: {
