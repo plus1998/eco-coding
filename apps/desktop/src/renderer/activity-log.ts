@@ -199,6 +199,20 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
   };
 
+  const repositionPendingRequestBlocksToEnd = () => {
+    const pending: ActivityDetailBlock[] = [];
+    for (let index = current.details.length - 1; index >= 0; index -= 1) {
+      const block = current.details[index];
+      if (block?.kind === "agent-request" || block?.kind === "model-request") {
+        pending.unshift(block);
+        current.details.splice(index, 1);
+      }
+    }
+    if (pending.length > 0) {
+      current.details.push(...pending);
+    }
+  };
+
   const upsertReconnectPhase = (label: string) => {
     const block: ActivityDetailBlock = {
       kind: "phase",
@@ -218,6 +232,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const upsertModelRequest = (role?: string) => {
     const last = current.details[current.details.length - 1];
     if (last?.kind === "model-request" && last.role === role) {
+      repositionPendingRequestBlocksToEnd();
       return;
     }
     removePendingRequestBlocks();
@@ -230,8 +245,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const upsertAgentRequest = (subagent?: string) => {
     const last = current.details[current.details.length - 1];
     if (last?.kind === "agent-request" && last.subagent === subagent) {
+      repositionPendingRequestBlocksToEnd();
       return;
     }
+    removePendingRequestBlocks();
     current.details.push({
       kind: "agent-request",
       ...(subagent && { subagent }),
@@ -321,6 +338,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   const pushSubagentMission = (mission: SubagentMissionPayload) => {
+    removePendingRequestBlocks();
     toolContextSubagent = mission.role;
     const last = current.details[current.details.length - 1];
     if (
@@ -339,6 +357,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   const pushToolAction = (tool: ParsedToolAction, line: ThreadActivityLine) => {
+    removePendingRequestBlocks();
     noteToolContext(line);
     const subagent =
       tool.subagent ?? (isSubagentRole(line.role) ? line.role : toolContextSubagent);
@@ -404,6 +423,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       if (isReconnectActivityMessage(line.message)) {
         upsertReconnectPhase(line.message);
       } else {
+        removePendingRequestBlocks();
         current.details.push({ kind: "phase", label: line.message });
       }
       continue;
@@ -427,6 +447,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     if (isTaskActivityLine(line)) {
       flushTextBuffers();
+      removePendingRequestBlocks();
       const label = normalizeActivityActionLabel(line.message);
       const subagent = isSubagentRole(line.role)
         ? line.role

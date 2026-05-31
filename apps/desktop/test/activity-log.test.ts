@@ -318,6 +318,48 @@ test("collapses repeated auto-retry lines into one reconnect phase", () => {
   }
 });
 
+test("drops stale model-request before tool actions", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "hi" },
+      { id: "1", role: "planner", message: "Requesting model…" },
+      { id: "2", role: "tool", message: "Tool: Read · src/api.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  expect(session.children.some((child) => child.kind === "model-request")).toBe(false);
+  expect(session.children[session.children.length - 1]?.kind).toBe("action");
+});
+
+test("keeps model-request as the last step when still waiting", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "hi" },
+      { id: "1", role: "tool", message: "Tool: Read · src/api.ts" },
+      { id: "2", role: "planner", message: "Requesting model…" },
+      { id: "3", role: "planner", message: "Requesting model…" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const requests = session.children.filter(
+    (child) => child.kind === "model-request" || child.kind === "agent-request",
+  );
+  expect(requests).toHaveLength(1);
+  expect(session.children[session.children.length - 1]?.kind).toBe("model-request");
+});
+
 test("shows model-request row for Requesting model status line", () => {
   expect(isModelRequestLine("Requesting model…")).toBe(true);
 
