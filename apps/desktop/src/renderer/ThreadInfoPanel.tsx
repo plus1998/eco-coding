@@ -191,24 +191,20 @@ function BillingFloatingCard({
 
       {showBilling && billing ? (
         <ul className="thread-info-billing-list">
-          <li title="Claude Code 内置价目估算，非权威账单">
-            <span>① SDK（OTel）</span>
-            <span>{formatCostUsd(billing.otelCostUsd)}</span>
-          </li>
           <li title={`OTel token × 默认模式 models.dev 单价（${plannerLabel}）`}>
-            <span>② 默认模式（{plannerLabel}）</span>
+            <span>① 默认模式（{plannerLabel}）</span>
             <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
           </li>
           <li
             className="thread-info-billing-eco"
             title="OTel token × 各 role 实际 models.dev 单价（含 cache_read/cache_write 分项）"
           >
-            <span>③ 经济编程</span>
+            <span>② 经济编程</span>
             <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
           </li>
           <li
             className={billing.savedUsd >= 0 ? "thread-info-billing-saved" : "thread-info-billing-over"}
-            title="② − ③"
+            title="① − ②"
           >
             <span>
               <DollarSign size={13} aria-hidden />
@@ -221,7 +217,7 @@ function BillingFloatingCard({
       )}
 
       {showBilling && billing && !billing.pricingResolved ? (
-        <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，②③ 可能不完整。</p>
+        <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，①② 可能不完整。</p>
       ) : null}
 
       {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
