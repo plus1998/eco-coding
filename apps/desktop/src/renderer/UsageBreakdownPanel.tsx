@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { formatCostUsd, formatRoleModelLabel } from "@eco/runtime";
 import { buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
 import type { ThreadBillingSnapshot } from "../shared/ipc";
@@ -9,6 +9,40 @@ type BreakdownView = "agent" | "model";
 interface UsageBreakdownPanelProps {
   billing?: ThreadBillingSnapshot;
   variant: "full" | "compact";
+}
+
+export function ExpandableBillingSection({
+  title,
+  summary,
+  children,
+  className,
+}: {
+  title: string;
+  summary?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className={["usage-breakdown-expandable", className].filter(Boolean).join(" ")}>
+      <button
+        type="button"
+        className="usage-breakdown-expand-trigger"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="usage-breakdown-expand-title">{title}</span>
+        {!expanded && summary ? <span className="usage-breakdown-expand-summary">{summary}</span> : null}
+        <ChevronDown
+          size={14}
+          className={expanded ? "usage-breakdown-chevron open" : "usage-breakdown-chevron"}
+          aria-hidden
+        />
+      </button>
+      {expanded ? <div className="usage-breakdown-expand-body">{children}</div> : null}
+    </div>
+  );
 }
 
 function BreakdownRows({
@@ -126,11 +160,13 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
     );
   }
 
+  const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
+  const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
+
   return (
-    <div className="usage-breakdown">
-      <h5 className="usage-breakdown-heading">用量明细</h5>
+    <ExpandableBillingSection title="用量明细" summary={summary}>
       <ViewToggle view={view} onChange={setView} compact={false} />
       <BreakdownRows view={view} breakdown={breakdown} compact={false} />
-    </div>
+    </ExpandableBillingSection>
   );
 }

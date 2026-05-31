@@ -2364,7 +2364,7 @@ button:not(:disabled) {
   min-height: 100vh;
   max-height: 100vh;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
   padding: 0;
   border-left: 1px solid #2e2e2e;
   background: #1a1a1a;
@@ -2373,24 +2373,22 @@ button:not(:disabled) {
 .thread-info-panel-scroll {
   flex: 1 1 0%;
   min-height: 0;
-  height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: calc(var(--window-chrome-top) + 16px) 16px 24px;
+  padding: calc(var(--window-chrome-top) + 16px) 16px 16px;
 }
 
 .thread-info-float-stack {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
-  z-index: 30;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
-  pointer-events: none;
+  align-items: stretch;
+  padding: 8px 12px 12px;
+  border-top: 1px solid #2e2e2e;
+  background: #1a1a1a;
+  overflow: visible;
 }
 
 .thread-info-float-pills {
@@ -2398,7 +2396,7 @@ button:not(:disabled) {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .thread-info-float-reopen {
@@ -2409,7 +2407,6 @@ button:not(:disabled) {
   color: #d4d4d4;
   font-size: 12px;
   font-weight: 500;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .thread-info-float-reopen:hover {
@@ -2419,12 +2416,11 @@ button:not(:disabled) {
 
 .thread-info-float-panel {
   width: 100%;
-  pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .thread-info-float-panel .context-card {
   margin-top: 0;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
 }
 
 .thread-info-float-card {
@@ -2432,11 +2428,6 @@ button:not(:disabled) {
   border: 1px solid #2e2e2e;
   border-radius: 10px;
   background: #222222;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-  overflow: visible;
-}
-
-.thread-info-float-stack {
   overflow: visible;
 }
 
@@ -2996,6 +2987,149 @@ button:not(:disabled) {
 .usage-breakdown-compact-body {
   padding: 0 10px 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.usage-breakdown-expandable {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2e2e2e;
+}
+
+.usage-breakdown-expand-trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  row-gap: 2px;
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.usage-breakdown-expand-trigger:hover .usage-breakdown-expand-title {
+  color: #e5e5e5;
+}
+
+.usage-breakdown-expand-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a3a3a3;
+  white-space: nowrap;
+}
+
+.usage-breakdown-expand-summary {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #737373;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-breakdown-expand-trigger .usage-breakdown-chevron {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.usage-breakdown-expand-body {
+  margin-top: 8px;
+}
+
+.thread-info-source-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-info-source-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #a3a3a3;
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-info-source-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.thread-info-source-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: #e5e5e5;
+}
+
+.thread-info-source-primary {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.thread-info-source-cost {
+  flex-shrink: 0;
+  color: #e5e5e5;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.thread-info-source-reported {
+  color: #737373;
+  font-size: 11px;
+}
+
+.thread-info-source-tokens {
+  color: #737373;
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.thread-info-billing-card .usage-breakdown-toggle {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.thread-info-billing-card .usage-breakdown-toggle button {
+  color: #a3a3a3;
+}
+
+.thread-info-billing-card .usage-breakdown-toggle button.active {
+  background: #333;
+  color: #e5e5e5;
+  box-shadow: none;
+}
+
+.thread-info-billing-card .usage-breakdown-row {
+  color: #a3a3a3;
+}
+
+.thread-info-billing-card .usage-breakdown-cost {
+  color: #e5e5e5;
 }
 
 .thread-info-billing-warning {
@@ -4579,7 +4713,8 @@ button:not(:disabled) {
   }
 
   .thread-info-panel-scroll {
-    max-height: 40vh;
+    max-height: none;
+    flex: 1 1 0%;
   }
 
   .codex-sidebar {

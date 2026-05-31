@@ -16,7 +16,7 @@ import {
   shouldShowThreadUsagePanels,
 } from "../shared/thread-usage-summary";
 import { ContextCard } from "./ContextCard";
-import { UsageBreakdownPanel } from "./UsageBreakdownPanel";
+import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -98,10 +98,11 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
     return null;
   }
 
+  const summary = rows.map((row) => billingSourceLabels[row.source]).join(" · ");
+
   return (
-    <div className="thread-info-source-compare">
-      <h5 className="usage-breakdown-heading">计费校验</h5>
-      <ul className="thread-info-billing-list">
+    <ExpandableBillingSection title="计费校验" summary={summary} className="thread-info-source-compare">
+      <ul className="thread-info-source-list">
         {rows.map((row) => {
           const tokenBadge = formatUsageBadge({
             inputTokens: row.totalTokens.input,
@@ -109,26 +110,35 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
             cacheReadTokens: row.totalTokens.cacheRead,
             cacheCreationTokens: row.totalTokens.cacheCreation,
           });
-          const reported =
-            row.reportedCostUsd !== undefined ? ` · 报告 ${formatCostUsd(row.reportedCostUsd)}` : "";
-          const primary = billing.primarySource === row.source ? " · 主账" : "";
+          const isPrimary = billing.primarySource === row.source;
           return (
-            <li key={row.source} title={`${billingSourceLabels[row.source]} token × models.dev 单价${reported}`}>
-              <span>
-                {billingSourceLabels[row.source]}{primary}
-                <small> {tokenBadge}</small>
-              </span>
-              <span>
-                {formatCostUsd(row.ecoCostUsd)}
-                {row.reportedCostUsd !== undefined ? (
-                  <small> / {formatCostUsd(row.reportedCostUsd)}</small>
-                ) : null}
+            <li
+              key={row.source}
+              className="thread-info-source-row"
+              title={`${billingSourceLabels[row.source]} token × models.dev 单价${
+                row.reportedCostUsd !== undefined ? ` · 报告 ${formatCostUsd(row.reportedCostUsd)}` : ""
+              }`}
+            >
+              <div className="thread-info-source-row-head">
+                <span className="thread-info-source-label">
+                  {billingSourceLabels[row.source]}
+                  {isPrimary ? <span className="thread-info-source-primary">主账</span> : null}
+                </span>
+                <span className="thread-info-source-cost">
+                  {formatCostUsd(row.ecoCostUsd)}
+                  {row.reportedCostUsd !== undefined ? (
+                    <span className="thread-info-source-reported"> / {formatCostUsd(row.reportedCostUsd)}</span>
+                  ) : null}
+                </span>
+              </div>
+              <span className="thread-info-source-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+                {tokenBadge}
               </span>
             </li>
           );
         })}
       </ul>
-    </div>
+    </ExpandableBillingSection>
   );
 }
 
@@ -234,8 +244,8 @@ function BillingFloatingCard({
         <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，①② 可能不完整。</p>
       ) : null}
 
-      {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
       {showBilling && billing ? <UsageBreakdownPanel billing={billing} variant="full" /> : null}
+      {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
     </div>
   );
 }
