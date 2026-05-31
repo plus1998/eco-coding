@@ -1433,30 +1433,34 @@ function App() {
                   </div>
                   <div className="settings-editor-card">
                     {projectWorkspace ? (
-                      <ul className="settings-kv-list">
-                        <li>
-                          <span>路径</span>
-                          <strong>{projectWorkspace.path}</strong>
-                        </li>
-                        <li>
-                          <span>分支</span>
-                          <strong>
-                            {projectWorkspace.isGitRepository
-                              ? (projectWorkspace.branch ?? "detached")
-                              : "非 Git 仓库"}
-                          </strong>
-                        </li>
-                        <li>
-                          <span>未提交变更</span>
-                          <strong>{projectWorkspace.dirtyFileCount} 个文件</strong>
-                        </li>
-                        {projectWorkspace.packageManager && (
+                      <>
+                        <ul className="settings-kv-list">
                           <li>
-                            <span>包管理器</span>
-                            <strong>{projectWorkspace.packageManager}</strong>
+                            <span>路径</span>
+                            <strong>{projectWorkspace.path}</strong>
                           </li>
-                        )}
-                      </ul>
+                          <li>
+                            <span>分支</span>
+                            <strong>
+                              {projectWorkspace.isGitRepository
+                                ? projectWorkspace.hasGitCommits === false
+                                  ? "尚无提交"
+                                  : (projectWorkspace.branch ?? "detached")
+                                : "非 Git 仓库"}
+                            </strong>
+                          </li>
+                          <li>
+                            <span>未提交变更</span>
+                            <strong>{projectWorkspace.dirtyFileCount} 个文件</strong>
+                          </li>
+                          {projectWorkspace.packageManager && (
+                            <li>
+                              <span>包管理器</span>
+                              <strong>{projectWorkspace.packageManager}</strong>
+                            </li>
+                          )}
+                        </ul>
+                      </>
                     ) : currentProjectPath ? (
                       <p className="settings-empty">正在读取 Git 状态…</p>
                     ) : (

@@ -144,8 +144,18 @@ export class GitWorktreeService {
     }
   }
 
+  async ensureGitHasCommits(workspacePath: string): Promise<void> {
+    await this.ensureGitRepository(workspacePath);
+    const result = await this.runner.run(["git", "rev-parse", "--verify", "HEAD"], workspacePath);
+    if (result.exitCode !== 0) {
+      throw new Error(
+        "Git 仓库还没有任何提交。请先至少创建一次提交（例如 git add . && git commit -m \"initial commit\"），再开始编码线程。",
+      );
+    }
+  }
+
   async createWorktree(plan: WorktreePlan): Promise<void> {
-    await this.ensureGitRepository(plan.workspacePath);
+    await this.ensureGitHasCommits(plan.workspacePath);
     const result = await this.runner.run(
       ["git", "worktree", "add", "-B", plan.branchName, plan.worktreePath, "HEAD"],
       plan.workspacePath,

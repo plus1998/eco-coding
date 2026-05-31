@@ -102,8 +102,25 @@ test("creates a git worktree through an injectable runner", async () => {
 
   expect(calls).toEqual([
     ["git", "rev-parse", "--show-toplevel"],
+    ["git", "rev-parse", "--verify", "HEAD"],
     ["git", "worktree", "add", "-B", "eco/thr_1", "/repo/.eco/worktrees/thr_1", "HEAD"],
   ]);
+});
+
+test("createWorktree rejects repositories without commits", async () => {
+  const runner: CommandRunner = {
+    async run(command) {
+      if (command[0] === "git" && command[1] === "rev-parse" && command[2] === "--verify") {
+        return { exitCode: 1, stdout: "", stderr: "fatal: Needed a single revision" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  await expect(service.createWorktree(createWorktreePlan("/repo", "thr_1"))).rejects.toThrow(
+    "Git 仓库还没有任何提交",
+  );
 });
 
 test("discards uncommitted worktree changes", async () => {

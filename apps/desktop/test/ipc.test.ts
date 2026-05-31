@@ -3,6 +3,7 @@ import { IPC_CHANNELS, isKnownIpcChannel } from "../src/shared/ipc";
 
 test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
+  expect(IPC_CHANNELS.workspacePrepareGit).toBe("workspace:prepare-git");
   expect(IPC_CHANNELS.modelSettingsGet).toBe("model-settings:get");
   expect(IPC_CHANNELS.modelProviderSave).toBe("model-provider:save");
   expect(IPC_CHANNELS.modelRouteProfileSave).toBe("model-route-profile:save");

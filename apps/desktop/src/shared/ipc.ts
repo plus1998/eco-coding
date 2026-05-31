@@ -2,6 +2,7 @@ export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
   workspaceGetCurrent: "workspace:get-current",
   workspaceInspect: "workspace:inspect",
+  workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
   modelProviderDelete: "model-provider:delete",
@@ -85,6 +86,8 @@ export interface WorkspaceInfo {
   path: string;
   name: string;
   isGitRepository: boolean;
+  /** False when the repo exists but has no commits yet (HEAD invalid for worktrees). */
+  hasGitCommits?: boolean;
   gitRoot?: string;
   branch?: string;
   dirtyFileCount: number;
@@ -94,6 +97,10 @@ export interface WorkspaceInfo {
 export interface WorkspaceOpenResult {
   canceled: boolean;
   workspace?: WorkspaceInfo;
+}
+
+export interface WorkspacePrepareGitRequest {
+  workspacePath: string;
 }
 
 export const AGENT_ROLES = ["planner", "explore", "architect", "coder", "reviewer", "tester"] as const;

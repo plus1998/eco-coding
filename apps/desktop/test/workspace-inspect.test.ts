@@ -23,7 +23,21 @@ describe("inspectWorkspace", () => {
 
     const info = await inspectWorkspace(root);
     expect(info.isGitRepository).toBe(true);
+    expect(info.hasGitCommits).toBe(false);
     expect(info.gitRoot).toBe(root);
     expect(info.branch).toBe("main");
+  });
+
+  test("marks repo with an initial commit as ready for worktrees", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "eco-inspect-commit-"));
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["init", "-b", "main"], { cwd: root });
+    await fs.writeFile(path.join(root, "README.md"), "# test\n");
+    execFileSync("git", ["add", "README.md"], { cwd: root });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: root });
+
+    const info = await inspectWorkspace(root);
+    expect(info.isGitRepository).toBe(true);
+    expect(info.hasGitCommits).toBe(true);
   });
 });

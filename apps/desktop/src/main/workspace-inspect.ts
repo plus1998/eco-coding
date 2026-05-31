@@ -90,8 +90,11 @@ export async function inspectWorkspace(workspacePath: string): Promise<Workspace
 
   let branch: string | undefined;
   let dirtyFileCount = 0;
+  let hasGitCommits = false;
 
   if (isGitRepository && gitRootPath) {
+    hasGitCommits = (await runGit(resolvedPath, ["rev-parse", "--verify", "HEAD"])).ok;
+
     const branchResult = await runGit(resolvedPath, ["branch", "--show-current"]);
     if (branchResult.ok) {
       branch = branchResult.stdout || "detached";
@@ -109,6 +112,7 @@ export async function inspectWorkspace(workspacePath: string): Promise<Workspace
     path: resolvedPath,
     name: path.basename(resolvedPath),
     isGitRepository,
+    ...(isGitRepository && { hasGitCommits }),
     dirtyFileCount,
   };
 

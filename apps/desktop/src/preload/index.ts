@@ -62,6 +62,9 @@ const api = {
   inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceInspect, workspacePath);
   },
+  prepareWorkspaceGit(workspacePath: string): Promise<WorkspaceInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspacePrepareGit, { workspacePath });
+  },
   getModelSettings(): Promise<ModelSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);
   },
