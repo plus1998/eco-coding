@@ -61,7 +61,6 @@ import { isReconnectActivityMessage } from "../shared/activity-display";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
-import { UsageBreakdownPanel } from "./UsageBreakdownPanel";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
@@ -1304,7 +1303,6 @@ function App() {
                     </button>
                   </div>
                 ) : null}
-                <UsageBreakdownPanel billing={threadUsageSummary?.billing} variant="compact" />
                 <ActivityLogView
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
