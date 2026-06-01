@@ -1,4 +1,5 @@
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
+import { buildProviderRequestBaseUrl } from "./provider-models";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const TITLE_TIMEOUT_MS = 15_000;
@@ -46,24 +47,27 @@ export async function summarizeThreadTitleWithCoder(
     if (apiKey) {
       titleHeaders["x-api-key"] = apiKey;
     }
-    const response = await fetcher(`${trimTrailingSlash(coderRoute.provider.baseUrl)}/v1/messages`, {
-      method: "POST",
-      headers: titleHeaders,
-      body: JSON.stringify({
-        model: coderRoute.modelId,
-        max_tokens: 48,
-        temperature: 0,
-        system:
-          "你是编码任务标题生成器。用 coder 视角总结用户任务，输出一个简短标题。只输出标题，不要解释，不要照抄用户原文。",
-        messages: [
-          {
-            role: "user",
-            content: buildThreadTitleUserMessage(prompt, context),
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
+    const response = await fetcher(
+      `${buildProviderRequestBaseUrl(coderRoute.provider.baseUrl, coderRoute.provider.requestPath)}/v1/messages`,
+      {
+        method: "POST",
+        headers: titleHeaders,
+        body: JSON.stringify({
+          model: coderRoute.modelId,
+          max_tokens: 48,
+          temperature: 0,
+          system:
+            "你是编码任务标题生成器。用 coder 视角总结用户任务，输出一个简短标题。只输出标题，不要解释，不要照抄用户原文。",
+          messages: [
+            {
+              role: "user",
+              content: buildThreadTitleUserMessage(prompt, context),
+            },
+          ],
+        }),
+        signal: controller.signal,
+      },
+    );
 
     if (!response.ok) {
       return undefined;

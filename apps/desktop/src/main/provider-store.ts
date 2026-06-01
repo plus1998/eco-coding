@@ -12,11 +12,13 @@ import {
   type RouteProfileView,
   type ThinkingEffort,
 } from "../shared/ipc";
+import { normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
 
 interface ProviderRow {
   id: string;
   name: string;
   base_url: string;
+  request_path: string;
   api_key: string;
   default_model: string;
   enabled: number;
@@ -90,6 +92,7 @@ export class ProviderStore {
       );
     `);
 
+    this.migrateProviderRequestPath();
     this.migrateRoleRoutesToProfiles();
     this.migrateRoleRoutesThinkingEffort();
     this.migrateRoleRoutesModelsDevMapping();
@@ -158,11 +161,12 @@ export class ProviderStore {
     this.db
       .prepare(`
         INSERT INTO provider_configs (
-          id, name, base_url, api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
+          request_path = excluded.request_path,
           api_key = excluded.api_key,
           default_model = excluded.default_model,
           enabled = excluded.enabled,
@@ -172,6 +176,7 @@ export class ProviderStore {
         id,
         input.name.trim(),
         input.baseUrl.trim(),
+        normalizeRequestPath(input.requestPath),
         apiKey,
         input.defaultModel.trim(),
         input.enabled ? 1 : 0,
@@ -348,6 +353,29 @@ export class ProviderStore {
       .map((row) => routeRowToConfig(row as unknown as RouteRow));
   }
 
+  private migrateProviderRequestPath(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "request_path")) {
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN request_path TEXT NOT NULL DEFAULT ''`);
+    }
+
+    const rows = this.db
+      .prepare("SELECT id, base_url, request_path FROM provider_configs")
+      .all() as Array<{ id: string; base_url: string; request_path: string }>;
+
+    for (const row of rows) {
+      if (row.request_path) {
+        continue;
+      }
+      const split = splitBaseUrlAndRequestPath(row.base_url);
+      if (split.requestPath || split.baseUrl !== row.base_url) {
+        this.db
+          .prepare("UPDATE provider_configs SET base_url = ?, request_path = ? WHERE id = ?")
+          .run(split.baseUrl, split.requestPath, row.id);
+      }
+    }
+  }
+
   private migrateRoleRoutesToProfiles(): void {
     const tables = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'role_routes'")
@@ -501,7 +529,7 @@ export class ProviderStore {
   private listProviderRows(): ProviderRow[] {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
       `)
@@ -511,7 +539,7 @@ export class ProviderStore {
   private getProviderRow(id: string): ProviderRow | undefined {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)
@@ -544,6 +572,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
     id: row.id,
     name: row.name,
     baseUrl: row.base_url,
+    requestPath: row.request_path ?? "",
     defaultModel: row.default_model,
     enabled: row.enabled === 1,
     hasApiKey: row.api_key.length > 0,
@@ -637,6 +666,10 @@ function validateProviderInput(input: ProviderConfigInput): void {
   if (!input.name.trim()) throw new Error("Provider name is required.");
   if (!input.baseUrl.trim().startsWith("http://") && !input.baseUrl.trim().startsWith("https://")) {
     throw new Error("Provider baseURL must start with http:// or https://.");
+  }
+  const requestPath = input.requestPath?.trim();
+  if (requestPath && !requestPath.startsWith("/")) {
+    throw new Error("请求端点须以 / 开头，例如 /anthropic。");
   }
   if (!input.defaultModel.trim()) throw new Error("Default model is required.");
 }

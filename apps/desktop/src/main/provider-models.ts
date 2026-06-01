@@ -57,7 +57,7 @@ export async function testProviderConnection(
     return { ok: false, error: "请先选择默认模型。" };
   }
 
-  const messagesUrl = buildMessagesUrl(resolved.baseUrl);
+  const messagesUrl = buildMessagesUrl(resolved.baseUrl, resolved.requestPath);
   const requestBody = buildProviderTestRequestBody(modelId);
   const requestHeaders = {
     ...buildAnthropicHeaders(resolved.apiKey),
@@ -178,23 +178,60 @@ export async function testProviderConnection(
   }
 }
 
-/** Anthropic Messages API: POST `{baseUrl}/v1/messages` (preserves path suffix e.g. `/anthropic`). */
-export function buildMessagesUrl(baseUrl: string): string {
-  return `${trimTrailingSlash(baseUrl.trim())}/v1/messages`;
+/** Normalize request path prefix (e.g. `/anthropic`). Empty string means API root. */
+export function normalizeRequestPath(path?: string): string {
+  const trimmed = path?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
 }
 
-/** OpenAI-style model discovery: always GET `{origin}/v1/models`, ignoring baseUrl path (e.g. `/anthropic`). */
-export function buildModelsListUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim();
+/** Base URL for upstream Anthropic-compatible requests (`baseUrl` + optional `requestPath`). */
+export function buildProviderRequestBaseUrl(baseUrl: string, requestPath?: string): string {
+  const path = normalizeRequestPath(requestPath);
+  if (path) {
+    return `${trimTrailingSlash(baseUrl.trim())}${path}`;
+  }
+  const split = splitBaseUrlAndRequestPath(baseUrl);
+  if (split.requestPath) {
+    return `${split.baseUrl}${split.requestPath}`;
+  }
+  return trimTrailingSlash(baseUrl.trim());
+}
+
+/** Anthropic Messages API: POST `{requestBase}/v1/messages`. */
+export function buildMessagesUrl(baseUrl: string, requestPath?: string): string {
+  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/messages`;
+}
+
+/** Split legacy baseURL that embedded a path suffix into origin + request path. */
+export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; requestPath: string } {
+  const trimmed = fullUrl.trim();
   if (!trimmed) {
-    return "/v1/models";
+    return { baseUrl: "", requestPath: "" };
   }
   try {
     const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-    return `${parsed.origin}/v1/models`;
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "";
+    if (!pathname || pathname === "/") {
+      return { baseUrl: parsed.origin, requestPath: "" };
+    }
+    return { baseUrl: parsed.origin, requestPath: pathname };
   } catch {
-    return `${trimTrailingSlash(trimmed).replace(/\/[^/]*$/, "")}/v1/models`;
+    return { baseUrl: trimmed, requestPath: "" };
   }
+}
+
+/** OpenAI-style model discovery: GET `{baseUrl}/v1/models` (uses base URL only, not request path). */
+export function buildModelsListUrl(baseUrl: string): string {
+  const { baseUrl: origin } = splitBaseUrlAndRequestPath(baseUrl);
+  const root = origin || baseUrl.trim();
+  if (!root) {
+    return "/v1/models";
+  }
+  return `${trimTrailingSlash(root)}/v1/models`;
 }
 
 export async function fetchUpstreamModelsFromCredentials(
@@ -391,12 +428,14 @@ function redactRequestHeaders(headers: Record<string, string>): Record<string, s
 
 function resolveProviderCredentials(
   store: ProviderStore,
-  request: ListUpstreamModelsRequest,
+  request: ListUpstreamModelsRequest | TestProviderConnectionRequest,
 ):
-  | { ok: true; baseUrl: string; apiKey: string }
+  | { ok: true; baseUrl: string; requestPath: string; apiKey: string }
   | { ok: false; error: string } {
   const baseUrl = request.baseUrl?.trim();
   const inlineApiKey = request.apiKey?.trim();
+  const inlineRequestPath =
+    "requestPath" in request ? normalizeRequestPath(request.requestPath) : "";
 
   if (request.providerId) {
     const provider = store.getProviderWithSecret(request.providerId);
@@ -404,15 +443,24 @@ function resolveProviderCredentials(
       return { ok: false, error: `找不到 Provider：${request.providerId}` };
     }
     const resolvedBaseUrl = baseUrl || provider.baseUrl;
+    const resolvedRequestPath =
+      "requestPath" in request && request.requestPath !== undefined
+        ? inlineRequestPath
+        : provider.requestPath;
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
-    return { ok: true, baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey };
+    return {
+      ok: true,
+      baseUrl: resolvedBaseUrl,
+      requestPath: resolvedRequestPath,
+      apiKey: resolvedApiKey,
+    };
   }
 
   if (!baseUrl) {
     return { ok: false, error: "请先填写 baseURL。" };
   }
 
-  return { ok: true, baseUrl, apiKey: inlineApiKey ?? "" };
+  return { ok: true, baseUrl, requestPath: inlineRequestPath, apiKey: inlineApiKey ?? "" };
 }
 
 function formatUpstreamError(status: number, raw: string): string {

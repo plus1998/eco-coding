@@ -382,6 +382,7 @@ export function ModelsSettingsPanel({
     try {
       const result = await window.eco.testProviderConnection({
         baseUrl: target.baseUrl,
+        requestPath: target.requestPath,
         defaultModel: target.defaultModel,
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
@@ -1085,8 +1086,23 @@ function ProviderEditorModal({
             <input
               className="mcp-field-input"
               value={form.baseUrl}
+              placeholder="https://api.deepseek.com"
               onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
             />
+            <span className="mcp-field-hint">用于拉取模型列表（GET /v1/models）</span>
+          </label>
+
+          <label className="mcp-field">
+            <span className="mcp-field-label">请求端点</span>
+            <input
+              className="mcp-field-input"
+              value={form.requestPath ?? ""}
+              placeholder="/anthropic"
+              onChange={(event) =>
+                setForm((current) => ({ ...current, requestPath: event.target.value }))
+              }
+            />
+            <span className="mcp-field-hint">Anthropic 兼容 API 路径前缀，留空表示根路径</span>
           </label>
 
           <label className="mcp-field">
@@ -1212,6 +1228,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
   const form: ProviderConfigInput = {
     name: provider?.name ?? "Anthropic compatible",
     baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
+    requestPath: provider?.requestPath ?? "",
     apiKey: "",
     defaultModel: provider?.defaultModel ?? "sonnet",
     enabled: provider?.enabled ?? true,

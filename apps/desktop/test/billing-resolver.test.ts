@@ -85,6 +85,7 @@ function createProvider(): ProviderConfigSecret {
     id: "anthropic-compatible",
     name: "Anthropic",
     baseUrl: "https://api.anthropic.com",
+    requestPath: "",
     defaultModel: "sonnet",
     enabled: true,
     hasApiKey: true,

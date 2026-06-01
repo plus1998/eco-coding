@@ -125,11 +125,13 @@ function createProvider(
   name: string,
   apiKey: string,
   baseUrl = `https://${id}.example.com`,
+  requestPath = "",
 ): ProviderConfigSecret {
   return {
     id,
     name,
     baseUrl,
+    requestPath,
     defaultModel: "sonnet",
     enabled: true,
     hasApiKey: true,

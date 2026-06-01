@@ -16,6 +16,7 @@ export type ListUpstreamModelsResult =
 export interface TestProviderConnectionRequest {
   providerId?: string;
   baseUrl?: string;
+  requestPath?: string;
   apiKey?: string;
   defaultModel?: string;
 }

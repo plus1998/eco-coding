@@ -1359,6 +1359,13 @@ button:not(:disabled) {
   font-size: 13px;
 }
 
+.mcp-field-hint {
+  display: block;
+  margin-top: -4px;
+  font-size: 11px;
+  color: #737373;
+}
+
 .mcp-field-input {
   width: 100%;
   padding: 10px 12px;

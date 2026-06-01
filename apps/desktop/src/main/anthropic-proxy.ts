@@ -3,6 +3,7 @@ import http, { type IncomingHttpHeaders } from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
+import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { UpstreamModelOption } from "../shared/models";
 import {
@@ -403,7 +404,8 @@ async function forwardAnthropicRequest(
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void,
   onUsage?: (info: AnthropicProxyUsageInfo) => void,
 ): Promise<void> {
-  const upstreamUrl = `${trimTrailingSlash(route.provider.baseUrl)}${request.url ?? ""}`;
+  const upstreamRoot = buildProviderRequestBaseUrl(route.provider.baseUrl, route.provider.requestPath);
+  const upstreamUrl = `${trimTrailingSlash(upstreamRoot)}${request.url ?? ""}`;
   const requestPayload = JSON.stringify(body);
   const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
 

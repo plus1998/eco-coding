@@ -111,6 +111,8 @@ export interface ProviderConfigInput {
   id?: string;
   name: string;
   baseUrl: string;
+  /** Path prefix for Anthropic-compatible API requests, e.g. `/anthropic`. */
+  requestPath?: string;
   apiKey?: string;
   defaultModel: string;
   enabled: boolean;
@@ -120,6 +122,7 @@ export interface ProviderConfigView {
   id: string;
   name: string;
   baseUrl: string;
+  requestPath: string;
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;
