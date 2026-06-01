@@ -1,5 +1,5 @@
 import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Terminal } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ThreadActivityLine,
   ThreadContextSnapshot,
@@ -136,8 +136,8 @@ interface ActivityLogViewProps {
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
-  /** Called after log layout changes so the parent can scroll the feed. */
-  onLayoutChange?: () => void;
+  /** Called when planner / main-window log content changes — scroll the activity feed. */
+  onPlannerLayoutChange?: () => void;
 }
 
 export function ActivityLogView({
@@ -147,7 +147,7 @@ export function ActivityLogView({
   modelByRole,
   usageByRole,
   context,
-  onLayoutChange,
+  onPlannerLayoutChange,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
     if (lines.some((line) => line.role === "user") || !thread?.prompt.trim()) {
@@ -165,9 +165,29 @@ export function ActivityLogView({
     [effectiveLines, thread?.createdAt, thread?.status],
   );
 
+  const mainFeedLayoutSignature = useMemo(
+    () =>
+      blocks
+        .map((block) => {
+          if (block.kind === "user-prompt") {
+            return `u:${block.lineId}`;
+          }
+          if (block.kind === "assistant-message") {
+            return `a:${block.text.length}:${block.streaming ? 1 : 0}`;
+          }
+          if (block.kind === "work-session" && block.inlineContent) {
+            return `p:${block.sessionKey ?? ""}:${block.children.length}:${block.running ? 1 : 0}`;
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join("|"),
+    [blocks],
+  );
+
   useLayoutEffect(() => {
-    onLayoutChange?.();
-  }, [blocks, onLayoutChange]);
+    onPlannerLayoutChange?.();
+  }, [mainFeedLayoutSignature, onPlannerLayoutChange]);
 
   return (
     <div className="run-log">
@@ -185,7 +205,7 @@ export function ActivityLogView({
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
           {...(context && { context })}
-          {...(onLayoutChange && { onLayoutChange })}
+          {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
         />
       ))}
     </div>
@@ -198,14 +218,14 @@ function RunLogBlock({
   modelByRole,
   usageByRole,
   context,
-  onLayoutChange,
+  onPlannerLayoutChange,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
-  onLayoutChange?: () => void;
+  onPlannerLayoutChange?: () => void;
 }) {
   if (block.kind === "user-prompt") {
     return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
@@ -217,7 +237,7 @@ function RunLogBlock({
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
         {...(context && { context })}
-        {...(onLayoutChange && { onLayoutChange })}
+        {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
       />
     );
   }
@@ -364,23 +384,68 @@ function WorkSessionBlock({
   modelByRole,
   usageByRole,
   context,
-  onLayoutChange,
+  onPlannerLayoutChange,
 }: {
   block: Extract<ActivityLogBlock, { kind: "work-session" }>;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
-  onLayoutChange?: () => void;
+  onPlannerLayoutChange?: () => void;
 }) {
   const [expanded, setExpanded] = useState(() =>
     block.compactSubagentMode ? false : !block.defaultCollapsed,
   );
+  const subagentDetailsScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollSubagentDetailsToEnd = useCallback(() => {
+    const container = subagentDetailsScrollRef.current;
+    if (!container) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+  }, []);
 
   useEffect(() => {
     if (block.compactSubagentMode) {
       setExpanded(false);
     }
   }, [block.compactSubagentMode, block.sessionKey]);
+
+  const subagentDetailsSignature = useMemo(
+    () =>
+      block.compactSubagentMode
+        ? `${block.sessionKey ?? ""}:${block.children.length}:${block.latestSubagentLogLine ?? ""}:${block.running ? 1 : 0}`
+        : "",
+    [
+      block.children.length,
+      block.compactSubagentMode,
+      block.latestSubagentLogLine,
+      block.running,
+      block.sessionKey,
+    ],
+  );
+
+  useLayoutEffect(() => {
+    if (!block.compactSubagentMode || !expanded) {
+      return;
+    }
+    scrollSubagentDetailsToEnd();
+    const frame = requestAnimationFrame(scrollSubagentDetailsToEnd);
+    return () => cancelAnimationFrame(frame);
+  }, [block.compactSubagentMode, expanded, scrollSubagentDetailsToEnd, subagentDetailsSignature]);
+
+  useLayoutEffect(() => {
+    if (!block.inlineContent) {
+      return;
+    }
+    onPlannerLayoutChange?.();
+  }, [
+    block.awaitingFirstToken,
+    block.children,
+    block.inlineContent,
+    block.running,
+    onPlannerLayoutChange,
+  ]);
 
   const displayRoles = block.subagentRunRole
     ? block.running && block.activeSubagents && block.activeSubagents.length > 0
@@ -414,14 +479,19 @@ function WorkSessionBlock({
             block.runDurationMs > 0 && { durationMs: block.runDurationMs })}
           expanded={expanded}
           onToggle={() => {
-            setExpanded((current) => !current);
-            requestAnimationFrame(() => onLayoutChange?.());
+            setExpanded((current) => {
+              const next = !current;
+              if (next) {
+                requestAnimationFrame(scrollSubagentDetailsToEnd);
+              }
+              return next;
+            });
           }}
         />
         {expanded && block.children.length > 0 ? (
           <div className="work-session-details-compact">
             <p className="work-session-details-compact-title">子代理执行详情</p>
-            <div className="work-session-details-compact-scroll">
+            <div ref={subagentDetailsScrollRef} className="work-session-details-compact-scroll">
               {block.children.map((child, index) => (
                 <DetailBlock
                   key={`${child.kind}-${index}`}

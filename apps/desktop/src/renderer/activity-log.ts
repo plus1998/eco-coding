@@ -20,6 +20,23 @@ import { isUsageNoiseMessage } from "../shared/thread-continuation";
 
 export { isReconnectActivityMessage };
 
+/** Whether a new activity line should scroll the main feed (planner/user), not sub-agent panels. */
+export function shouldScrollMainActivityFeedForLine(line: Pick<ThreadActivityLine, "role"> | undefined): boolean {
+  if (!line) {
+    return false;
+  }
+  if (line.role === "user") {
+    return true;
+  }
+  if (line.role === "planner" || line.role === "thinking") {
+    return true;
+  }
+  if (isSubagentRole(line.role)) {
+    return false;
+  }
+  return true;
+}
+
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =

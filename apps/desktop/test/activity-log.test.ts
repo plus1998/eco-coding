@@ -14,7 +14,20 @@ import {
   resolveLatestSubagentLogLine,
   resolveSubagentRunDurationMs,
   sessionAwaitingFirstToken,
+  shouldScrollMainActivityFeedForLine,
 } from "../src/renderer/activity-log";
+
+test("only planner-side activity lines scroll the main feed", () => {
+  expect(shouldScrollMainActivityFeedForLine({ role: "planner", message: "hi", id: "1" })).toBe(true);
+  expect(shouldScrollMainActivityFeedForLine({ role: "user", message: "go", id: "2" })).toBe(true);
+  expect(shouldScrollMainActivityFeedForLine({ role: "tool", message: "Tool: Read", id: "3" })).toBe(
+    true,
+  );
+  expect(shouldScrollMainActivityFeedForLine({ role: "reviewer", message: "Tool: Read", id: "4" })).toBe(
+    false,
+  );
+  expect(shouldScrollMainActivityFeedForLine({ role: "coder", message: "editing", id: "5" })).toBe(false);
+});
 
 test("groups narrative and compact tool summaries into collapsible work session", () => {
   const blocks = buildActivityLogBlocks(

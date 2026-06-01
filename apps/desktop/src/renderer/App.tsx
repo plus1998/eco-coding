@@ -74,7 +74,11 @@ import {
   isReconnectActivityMessage,
   shouldClearReconnectActivity,
 } from "../shared/activity-display";
-import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
+import {
+  isActivityStatusNoise,
+  shouldScrollMainActivityFeedForLine,
+  stripActivityStatusNoise,
+} from "./activity-log";
 import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -629,23 +633,15 @@ function App() {
   }, []);
 
   useLayoutEffect(() => {
-    const isStreaming = activityLines.at(-1)?.stream === true;
+    const lastLine = activityLines.at(-1);
+    if (!shouldScrollMainActivityFeedForLine(lastLine)) {
+      return;
+    }
+    const isStreaming = lastLine?.stream === true;
     scrollActivityFeedToEnd(isStreaming);
     const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(isStreaming));
     return () => cancelAnimationFrame(frame);
   }, [activityLines, activeThread?.id, scrollActivityFeedToEnd]);
-
-  useEffect(() => {
-    const container = activityEndRef.current?.parentElement;
-    if (!container) {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      scrollActivityFeedToEnd(false);
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [activeThread?.id, scrollActivityFeedToEnd]);
 
   function withoutReconnectActivityLines(lines: ActivityLine[]): ActivityLine[] {
     return lines.filter((entry) => !isReconnectActivityMessage(entry.message));
@@ -1474,7 +1470,7 @@ function App() {
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   onRestorePrompt={restorePrompt}
-                  onLayoutChange={scrollActivityFeedToEnd}
+                  onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(activeThread &&
