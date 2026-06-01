@@ -39,6 +39,7 @@ export function isRetryableRequestFailure(reason: string): boolean {
     normalized.includes("network") ||
     normalized.includes("fetch failed") ||
     normalized.includes("socket hang up") ||
+    normalized.includes("terminated") ||
     normalized.includes("502") ||
     normalized.includes("503") ||
     normalized.includes("504") ||
@@ -67,6 +68,9 @@ export function formatUserFacingRequestError(reason: string): string {
     normalized.includes("socket hang up")
   ) {
     return "连接上游模型 API 失败。请检查网络与 Provider 配置。";
+  }
+  if (normalized.includes("terminated")) {
+    return "上游模型连接中断（流式响应未完成）。请检查 Provider 的 Base URL、API Key 与网络后重试。";
   }
 
   return text;

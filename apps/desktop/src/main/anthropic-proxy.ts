@@ -151,8 +151,17 @@ export async function startAnthropicModelProxy(
         onUsage,
       );
     } catch (error) {
+      if (request.aborted) {
+        logUpstream("handler-aborted", { error: errorMessage(error) });
+        endHttpResponse(response);
+        return;
+      }
       logUpstream("handler-error", { error: errorMessage(error) });
-      writeJson(response, 500, { error: errorMessage(error) });
+      if (!response.headersSent) {
+        writeJson(response, 500, { error: errorMessage(error) });
+      } else {
+        endHttpResponse(response);
+      }
     }
   });
 
@@ -419,19 +428,27 @@ async function forwardAnthropicRequest(
     body: parseJsonForLog(requestPayload),
   });
 
+  const upstreamAbort = linkClientAbortToUpstream(request, response);
+
   let upstreamResponse: Response;
   try {
     upstreamResponse = await fetch(upstreamUrl, {
       method: "POST",
       headers: upstreamHeaders,
       body: requestPayload,
+      signal: upstreamAbort.signal,
     });
   } catch (error) {
+    if (upstreamAbort.signal.aborted) {
+      return;
+    }
     const fetchError = errorMessage(error);
     if (onUpstreamConnectionError && isMessagesPath(request.url)) {
       onUpstreamConnectionError({ role: route.role, error: fetchError });
     }
     throw error;
+  } finally {
+    upstreamAbort.dispose();
   }
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
@@ -472,23 +489,38 @@ async function forwardAnthropicRequest(
 
   let loggedStreamPreview = false;
   const usageTracker = createStreamingUsageTracker();
-  for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
-    if (!loggedStreamPreview) {
-      logUpstream("response-stream-preview", {
-        preview: Buffer.from(chunk).toString("utf8", 0, Math.min(chunk.byteLength, 800)),
-      });
-      loggedStreamPreview = true;
+  try {
+    for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
+      if (!loggedStreamPreview) {
+        logUpstream("response-stream-preview", {
+          preview: Buffer.from(chunk).toString("utf8", 0, Math.min(chunk.byteLength, 800)),
+        });
+        loggedStreamPreview = true;
+      }
+      if (onUsage && isMessagesPath(request.url)) {
+        usageTracker.push(chunk);
+      }
+      if (!response.write(chunk)) {
+        await waitForDrain(response);
+      }
     }
-    if (onUsage && isMessagesPath(request.url)) {
-      usageTracker.push(chunk);
+    const usage = usageTracker.finish();
+    if (usage && onUsage) {
+      onUsage(buildUsageInfo(route, usage, requestedModel, requestId));
     }
-    response.write(chunk);
+  } catch (error) {
+    if (upstreamAbort.signal.aborted) {
+      logUpstream("stream-aborted", { reason: "client-disconnected" });
+    } else {
+      const streamError = errorMessage(error);
+      logUpstream("stream-error", { error: streamError });
+      if (onUpstreamConnectionError && isMessagesPath(request.url)) {
+        onUpstreamConnectionError({ role: route.role, error: streamError });
+      }
+    }
+  } finally {
+    endHttpResponse(response);
   }
-  const usage = usageTracker.finish();
-  if (usage && onUsage) {
-    onUsage(buildUsageInfo(route, usage, requestedModel, requestId));
-  }
-  response.end();
 }
 
 function buildUsageInfo(
@@ -658,8 +690,52 @@ async function readJsonBody(request: http.IncomingMessage): Promise<Record<strin
 }
 
 function writeJson(response: http.ServerResponse, statusCode: number, body: Record<string, unknown>): void {
+  if (response.headersSent) {
+    logUpstream("response-already-started", { statusCode });
+    endHttpResponse(response);
+    return;
+  }
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function endHttpResponse(response: http.ServerResponse): void {
+  if (!response.writableEnded) {
+    response.end();
+  }
+}
+
+function waitForDrain(response: http.ServerResponse): Promise<void> {
+  if (response.writableEnded || response.writableFinished) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    response.once("drain", resolve);
+  });
+}
+
+function linkClientAbortToUpstream(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+  request.once("aborted", abort);
+  response.once("close", () => {
+    if (!response.writableFinished) {
+      abort();
+    }
+  });
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      request.off("aborted", abort);
+    },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
