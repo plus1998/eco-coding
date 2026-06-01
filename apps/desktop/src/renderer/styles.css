@@ -1632,6 +1632,51 @@ button:not(:disabled) {
   text-align: left;
 }
 
+.agent-skills-col-header {
+  min-width: 88px;
+}
+
+.agent-skills-col-title {
+  display: block;
+  margin-bottom: 6px;
+  color: #e5e5e5;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.agent-skills-col-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-skills-col-action {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8a8a8a;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.agent-skills-col-action:hover:not(:disabled) {
+  color: #e5e5e5;
+  text-decoration: underline;
+}
+
+.agent-skills-col-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.agent-skills-col-action-sep {
+  color: #525252;
+  font-size: 11px;
+  user-select: none;
+}
+
 .agent-skills-skill-cell {
   text-align: left;
   font-weight: 500;
