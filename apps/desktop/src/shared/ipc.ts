@@ -247,6 +247,7 @@ export interface ThreadSummary {
   workspacePath: string;
   status: ThreadStatus;
   createdAt: string;
+  updatedAt: string;
   message: string;
   /** Claude Agent SDK session ID when resume is available. */
   sdkSessionId?: string;

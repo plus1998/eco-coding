@@ -709,6 +709,7 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     status: row.status as ThreadStatus,
     message: row.message,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
     ...(row.sdk_session_id && row.sdk_cwd
       ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd }
       : {}),

@@ -583,13 +583,15 @@ function registerIpcHandlers(): void {
     );
     const intent = classifyThreadIntent(prompt);
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
+    const now = new Date().toISOString();
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
       title: pendingThreadTitle,
       prompt,
       workspacePath: workspace.path,
       status,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       message: runtimeConfig.ok
         ? intent === "question"
           ? "正在回答…"

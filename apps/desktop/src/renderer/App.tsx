@@ -91,10 +91,12 @@ import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
+import { formatRelativeTime } from "./relative-time";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
 const recentProjectsStorageKey = "eco.recent-projects";
+const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
   path: string;
@@ -131,6 +133,7 @@ function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
+  const [expandedProjectPaths, setExpandedProjectPaths] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -242,6 +245,7 @@ function App() {
                   ...thread,
                   message: resolveThreadMessageFromLiveEvent(event.type, event.message),
                   status: statusFromLiveEvent(event.type, thread.status),
+                  updatedAt: new Date().toISOString(),
                 }
               : thread,
           ),
@@ -427,16 +431,50 @@ function App() {
         });
       }
     }
-    return [...merged.values()].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
+    return [...merged.values()].sort((a, b) => {
+      const aActivity = projectActivityTime(a.path, a.lastUsedAt, threads);
+      const bActivity = projectActivityTime(b.path, b.lastUsedAt, threads);
+      return bActivity - aActivity;
+    });
   }, [recentProjects, threads, workspace]);
+
+  const threadsByProject = useMemo(() => {
+    const grouped = new Map<string, ThreadSummary[]>();
+    for (const thread of threads) {
+      const bucket = grouped.get(thread.workspacePath) ?? [];
+      bucket.push(thread);
+      grouped.set(thread.workspacePath, bucket);
+    }
+    for (const bucket of grouped.values()) {
+      bucket.sort((a, b) =>
+        (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
+      );
+    }
+    return grouped;
+  }, [threads]);
+
+  const projectTree = useMemo(
+    () =>
+      projects.map((project) => {
+        const projectThreads = threadsByProject.get(project.path) ?? [];
+        const expanded = expandedProjectPaths.has(project.path);
+        const visibleCount = expanded ? projectThreads.length : sidebarThreadsCollapsed;
+        return {
+          project,
+          projectThreads,
+          visibleThreads: projectThreads.slice(0, visibleCount),
+          hasMore: !expanded && projectThreads.length > visibleCount,
+        };
+      }),
+    [expandedProjectPaths, projects, threadsByProject],
+  );
 
   const currentProjectPath = selectedProjectPath ?? workspace?.path ?? projects[0]?.path;
   const currentProjectName = currentProjectPath ? pathToName(currentProjectPath) : "项目";
-  const projectThreads = useMemo(
-    () => threads.filter((thread) => !currentProjectPath || thread.workspacePath === currentProjectPath),
-    [currentProjectPath, threads],
+  const activeThread = useMemo(
+    () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
+    [selectedThreadId, threads],
   );
-  const activeThread = projectThreads.find((thread) => thread.id === selectedThreadId);
   useEffect(() => {
     if (!currentProjectPath || !window.eco) {
       setProjectWorkspace(undefined);
@@ -1120,6 +1158,24 @@ function App() {
     }
   }
 
+  function selectThread(thread: ThreadSummary) {
+    setSelectedThreadId(thread.id);
+    setSelectedProjectPath(thread.workspacePath);
+    rememberProject({
+      path: thread.workspacePath,
+      name: pathToName(thread.workspacePath),
+      lastUsedAt: new Date().toISOString(),
+    });
+  }
+
+  function expandProjectThreads(projectPath: string) {
+    setExpandedProjectPaths((current) => {
+      const next = new Set(current);
+      next.add(projectPath);
+      return next;
+    });
+  }
+
   function startNewChat() {
     setComposerRoutePopoverOpen(false);
     setSelectedThreadId(undefined);
@@ -1347,47 +1403,63 @@ function App() {
           新对话
         </button>
 
-        <div className="sidebar-section">
-          <div className="sidebar-section-label">项目</div>
-          <div className="project-list">
-            {projects.map((project) => (
-              <button
-                key={project.path}
-                type="button"
-                className={
-                  currentProjectPath === project.path ? "project-item active" : "project-item"
-                }
-                onClick={() => switchProject(project.path)}
-              >
-                <Folder size={16} />
-                <span>{project.name}</span>
-              </button>
-            ))}
-            <button type="button" className="project-item muted" onClick={openWorkspace} disabled={isOpening}>
-              <FolderOpen size={16} />
-              <span>打开项目…</span>
-            </button>
-          </div>
-        </div>
-
         <div className="sidebar-section sidebar-section-grow">
-          <div className="sidebar-section-label">对话</div>
-          {projectThreads.length > 0 ? (
-            <div className="chat-list">
-              {projectThreads.map((thread) => (
-                <button
-                  key={thread.id}
-                  type="button"
-                  className={activeThread?.id === thread.id ? "chat-item active" : "chat-item"}
-                  onClick={() => setSelectedThreadId(thread.id)}
-                >
-                  <span className="chat-item-title">{thread.title}</span>
-                  <span className={`status-dot ${thread.status}`} title={thread.status} />
-                </button>
+          <div className="sidebar-section-label">项目</div>
+          {projectTree.length > 0 ? (
+            <div className="project-tree">
+              {projectTree.map(({ project, visibleThreads, hasMore }) => (
+                <div key={project.path} className="project-group">
+                  <button
+                    type="button"
+                    className={
+                      currentProjectPath === project.path && !activeThread
+                        ? "project-group-header active"
+                        : "project-group-header"
+                    }
+                    onClick={() => switchProject(project.path)}
+                  >
+                    <Folder size={16} />
+                    <span>{project.name}</span>
+                  </button>
+                  {visibleThreads.map((thread) => (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      className={activeThread?.id === thread.id ? "chat-item nested active" : "chat-item nested"}
+                      onClick={() => selectThread(thread)}
+                    >
+                      <span className="chat-item-title">{thread.title}</span>
+                      <span className="chat-item-meta">
+                        <span className={`status-dot ${thread.status}`} title={thread.status} />
+                        <span className="chat-item-time">
+                          {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {hasMore ? (
+                    <button
+                      type="button"
+                      className="project-expand"
+                      onClick={() => expandProjectThreads(project.path)}
+                    >
+                      展开显示
+                    </button>
+                  ) : null}
+                </div>
               ))}
+              <button type="button" className="project-open muted" onClick={openWorkspace} disabled={isOpening}>
+                <FolderOpen size={16} />
+                <span>打开项目…</span>
+              </button>
             </div>
           ) : (
-            <p className="sidebar-empty">暂无对话</p>
+            <div className="project-tree">
+              <button type="button" className="project-open muted" onClick={openWorkspace} disabled={isOpening}>
+                <FolderOpen size={16} />
+                <span>打开项目…</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -1687,6 +1759,27 @@ function errorMessage(error: unknown): string {
 function pathToName(projectPath: string): string {
   const segments = projectPath.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? projectPath;
+}
+
+function projectActivityTime(
+  projectPath: string,
+  lastUsedAt: string,
+  threadList: ThreadSummary[],
+): number {
+  let latest = new Date(lastUsedAt).getTime();
+  if (Number.isNaN(latest)) {
+    latest = 0;
+  }
+  for (const thread of threadList) {
+    if (thread.workspacePath !== projectPath) {
+      continue;
+    }
+    const activity = new Date(thread.updatedAt ?? thread.createdAt).getTime();
+    if (!Number.isNaN(activity) && activity > latest) {
+      latest = activity;
+    }
+  }
+  return latest;
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
