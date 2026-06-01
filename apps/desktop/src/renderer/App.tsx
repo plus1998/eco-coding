@@ -101,7 +101,8 @@ const sidebarThreadsCollapsed = 5;
 interface RecentProject {
   path: string;
   name: string;
-  lastUsedAt: string;
+  /** Set once when the project is first opened in the app; used for stable sidebar order. */
+  importedAt: string;
 }
 
 const settingsSections = [
@@ -197,11 +198,7 @@ function App() {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
-        rememberProject({
-          path: currentWorkspace.path,
-          name: currentWorkspace.name,
-          lastUsedAt: new Date().toISOString(),
-        });
+        registerImportedProject(currentWorkspace.path, currentWorkspace.name);
       }
       setThreads(currentThreads);
       setSettings(modelSettings);
@@ -401,9 +398,17 @@ function App() {
     const saved = window.localStorage.getItem(recentProjectsStorageKey);
     if (!saved) return;
     try {
-      const parsed = JSON.parse(saved) as RecentProject[];
+      const parsed = JSON.parse(saved) as Array<
+        RecentProject & { lastUsedAt?: string; importedAt?: string }
+      >;
       if (Array.isArray(parsed)) {
-        setRecentProjects(parsed);
+        setRecentProjects(
+          parsed.map((project) => ({
+            path: project.path,
+            name: project.name,
+            importedAt: project.importedAt ?? project.lastUsedAt ?? new Date(0).toISOString(),
+          })),
+        );
       }
     } catch {
       window.localStorage.removeItem(recentProjectsStorageKey);
@@ -416,26 +421,26 @@ function App() {
       merged.set(project.path, project);
     }
     if (workspace) {
-      merged.set(workspace.path, {
-        path: workspace.path,
-        name: workspace.name,
-        lastUsedAt: new Date().toISOString(),
-      });
+      const existing = merged.get(workspace.path);
+      if (existing) {
+        merged.set(workspace.path, { ...existing, name: workspace.name });
+      }
     }
     for (const thread of threads) {
       if (!merged.has(thread.workspacePath)) {
+        const workspaceThreads = threads.filter((item) => item.workspacePath === thread.workspacePath);
+        const importedAt = workspaceThreads.reduce(
+          (earliest, item) => (item.createdAt < earliest ? item.createdAt : earliest),
+          workspaceThreads[0]!.createdAt,
+        );
         merged.set(thread.workspacePath, {
           path: thread.workspacePath,
           name: pathToName(thread.workspacePath),
-          lastUsedAt: thread.createdAt,
+          importedAt,
         });
       }
     }
-    return [...merged.values()].sort((a, b) => {
-      const aActivity = projectActivityTime(a.path, a.lastUsedAt, threads);
-      const bActivity = projectActivityTime(b.path, b.lastUsedAt, threads);
-      return bActivity - aActivity;
-    });
+    return [...merged.values()].sort((a, b) => b.importedAt.localeCompare(a.importedAt));
   }, [recentProjects, threads, workspace]);
 
   const threadsByProject = useMemo(() => {
@@ -786,11 +791,7 @@ function App() {
       if (!result.canceled && result.workspace) {
         setWorkspace(result.workspace);
         setSelectedProjectPath(result.workspace.path);
-        rememberProject({
-          path: result.workspace.path,
-          name: result.workspace.name,
-          lastUsedAt: new Date().toISOString(),
-        });
+        registerImportedProject(result.workspace.path, result.workspace.name);
         setSelectedThreadId(undefined);
         setActivityByThread({});
         setTodosByThread({});
@@ -851,11 +852,6 @@ function App() {
           }));
         });
       }
-      rememberProject({
-        path: currentProjectPath,
-        name: pathToName(currentProjectPath),
-        lastUsedAt: new Date().toISOString(),
-      });
       setPrompt("");
       setComposerAttachments([]);
       setComposerImageNotice(undefined);
@@ -1141,9 +1137,12 @@ function App() {
     return window.eco.testSessionSyncConnection(input);
   }
 
-  function rememberProject(project: RecentProject) {
+  function registerImportedProject(path: string, name: string) {
     setRecentProjects((current) => {
-      const next = [project, ...current.filter((item) => item.path !== project.path)].slice(0, 12);
+      const existing = current.find((item) => item.path === path);
+      const next = existing
+        ? current.map((item) => (item.path === path ? { ...item, name } : item))
+        : [{ path, name, importedAt: new Date().toISOString() }, ...current].slice(0, 12);
       window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
       return next;
     });
@@ -1152,20 +1151,11 @@ function App() {
   function switchProject(nextPath: string) {
     setSelectedProjectPath(nextPath);
     setSelectedThreadId(undefined);
-    const entry = projects.find((project) => project.path === nextPath);
-    if (entry) {
-      rememberProject({ ...entry, lastUsedAt: new Date().toISOString() });
-    }
   }
 
   function selectThread(thread: ThreadSummary) {
     setSelectedThreadId(thread.id);
     setSelectedProjectPath(thread.workspacePath);
-    rememberProject({
-      path: thread.workspacePath,
-      name: pathToName(thread.workspacePath),
-      lastUsedAt: new Date().toISOString(),
-    });
   }
 
   function expandProjectThreads(projectPath: string) {
@@ -1759,27 +1749,6 @@ function errorMessage(error: unknown): string {
 function pathToName(projectPath: string): string {
   const segments = projectPath.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? projectPath;
-}
-
-function projectActivityTime(
-  projectPath: string,
-  lastUsedAt: string,
-  threadList: ThreadSummary[],
-): number {
-  let latest = new Date(lastUsedAt).getTime();
-  if (Number.isNaN(latest)) {
-    latest = 0;
-  }
-  for (const thread of threadList) {
-    if (thread.workspacePath !== projectPath) {
-      continue;
-    }
-    const activity = new Date(thread.updatedAt ?? thread.createdAt).getTime();
-    if (!Number.isNaN(activity) && activity > latest) {
-      latest = activity;
-    }
-  }
-  return latest;
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
