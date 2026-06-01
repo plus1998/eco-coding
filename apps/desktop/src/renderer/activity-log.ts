@@ -50,6 +50,8 @@ export type ActivityLogBlock =
       runDurationMs?: number;
       /** Planner / main-window steps — always shown inline (no collapse toggle). */
       inlineContent?: boolean;
+      /** Stable key for React list items (subagent runs, planner segments). */
+      sessionKey?: string;
       awaitingFirstToken?: boolean;
       children: ActivityDetailBlock[];
     }
@@ -711,6 +713,7 @@ function pushWorkSessionsFromRuns(
     ? resolveActiveSubagents(options.lines, options.status)
     : [];
   const hasSubagentRuns = runs.some((run) => run.kind === "subagent");
+  let plannerRunIndex = 0;
 
   for (let index = 0; index < runs.length; index += 1) {
     const run = runs[index];
@@ -734,9 +737,11 @@ function pushWorkSessionsFromRuns(
         running,
         defaultCollapsed: false,
         inlineContent: true,
+        sessionKey: `planner-${plannerRunIndex}`,
         ...(awaitingFirstToken && { awaitingFirstToken }),
         children: run.blocks,
       });
+      plannerRunIndex += 1;
       continue;
     }
 
@@ -756,6 +761,7 @@ function pushWorkSessionsFromRuns(
       running,
       defaultCollapsed: true,
       compactSubagentMode: true,
+      sessionKey: `subagent-${role}-${run.occurrence}`,
       subagentRunRole: role,
       activeSubagents: running && roleActive.length > 0 ? roleActive : [role],
       ...(isActiveRole && { activeSubagent: role }),

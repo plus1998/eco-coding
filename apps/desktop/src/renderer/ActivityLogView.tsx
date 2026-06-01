@@ -136,6 +136,8 @@ interface ActivityLogViewProps {
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  /** Called after log layout changes so the parent can scroll the feed. */
+  onLayoutChange?: () => void;
 }
 
 export function ActivityLogView({
@@ -145,6 +147,7 @@ export function ActivityLogView({
   modelByRole,
   usageByRole,
   context,
+  onLayoutChange,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
     if (lines.some((line) => line.role === "user") || !thread?.prompt.trim()) {
@@ -162,16 +165,27 @@ export function ActivityLogView({
     [effectiveLines, thread?.createdAt, thread?.status],
   );
 
+  useLayoutEffect(() => {
+    onLayoutChange?.();
+  }, [blocks, onLayoutChange]);
+
   return (
     <div className="run-log">
       {blocks.map((block, index) => (
         <RunLogBlock
-          key={`${block.kind}-${index}`}
+          key={
+            block.kind === "work-session" && block.sessionKey
+              ? block.sessionKey
+              : block.kind === "user-prompt"
+                ? `user-${block.lineId}`
+                : `${block.kind}-${index}`
+          }
           block={block}
           {...(onRestorePrompt && { onRestorePrompt })}
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
           {...(context && { context })}
+          {...(onLayoutChange && { onLayoutChange })}
         />
       ))}
     </div>
@@ -184,12 +198,14 @@ function RunLogBlock({
   modelByRole,
   usageByRole,
   context,
+  onLayoutChange,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  onLayoutChange?: () => void;
 }) {
   if (block.kind === "user-prompt") {
     return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
@@ -201,6 +217,7 @@ function RunLogBlock({
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
         {...(context && { context })}
+        {...(onLayoutChange && { onLayoutChange })}
       />
     );
   }
@@ -347,13 +364,24 @@ function WorkSessionBlock({
   modelByRole,
   usageByRole,
   context,
+  onLayoutChange,
 }: {
   block: Extract<ActivityLogBlock, { kind: "work-session" }>;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  onLayoutChange?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(!block.defaultCollapsed);
+  const [expanded, setExpanded] = useState(() =>
+    block.compactSubagentMode ? false : !block.defaultCollapsed,
+  );
+
+  useEffect(() => {
+    if (block.compactSubagentMode) {
+      setExpanded(false);
+    }
+  }, [block.compactSubagentMode, block.sessionKey]);
+
   const displayRoles = block.subagentRunRole
     ? block.running && block.activeSubagents && block.activeSubagents.length > 0
       ? block.activeSubagents.filter((role) => role === block.subagentRunRole)
@@ -385,7 +413,10 @@ function WorkSessionBlock({
           {...(block.runDurationMs !== undefined &&
             block.runDurationMs > 0 && { durationMs: block.runDurationMs })}
           expanded={expanded}
-          onToggle={() => setExpanded((current) => !current)}
+          onToggle={() => {
+            setExpanded((current) => !current);
+            requestAnimationFrame(() => onLayoutChange?.());
+          }}
         />
         {expanded && block.children.length > 0 ? (
           <div className="work-session-details-compact">

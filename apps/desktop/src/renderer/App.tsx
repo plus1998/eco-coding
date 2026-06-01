@@ -17,7 +17,16 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { type ClipboardEvent, type KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ClipboardEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
@@ -606,14 +615,37 @@ function App() {
     }
   }, [prompt]);
 
-  useLayoutEffect(() => {
-    const end = activityEndRef.current;
-    if (!end) {
+  const scrollActivityFeedToEnd = useCallback((force = false) => {
+    const container = activityEndRef.current?.parentElement;
+    if (!container) {
       return;
     }
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (!force && distanceFromBottom > 120) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
+  useLayoutEffect(() => {
     const isStreaming = activityLines.at(-1)?.stream === true;
-    end.scrollIntoView({ block: "end", behavior: isStreaming ? "auto" : "smooth" });
-  }, [activityLines, activeThread?.id]);
+    scrollActivityFeedToEnd(isStreaming);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(isStreaming));
+    return () => cancelAnimationFrame(frame);
+  }, [activityLines, activeThread?.id, scrollActivityFeedToEnd]);
+
+  useEffect(() => {
+    const container = activityEndRef.current?.parentElement;
+    if (!container) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      scrollActivityFeedToEnd(false);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeThread?.id, scrollActivityFeedToEnd]);
 
   function withoutReconnectActivityLines(lines: ActivityLine[]): ActivityLine[] {
     return lines.filter((entry) => !isReconnectActivityMessage(entry.message));
@@ -1442,6 +1474,7 @@ function App() {
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   onRestorePrompt={restorePrompt}
+                  onLayoutChange={scrollActivityFeedToEnd}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(activeThread &&
