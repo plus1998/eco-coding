@@ -138,6 +138,14 @@ import {
   isSubagentEnabledSettings,
   type SubagentSettingsStore,
 } from "./subagent-settings-store";
+import {
+  createWorkflowSettingsStore,
+  isWorkflowSettingsSnapshot,
+  normalizeWorkflowSettingsSnapshot,
+  orchestrationModeFromSnapshot,
+  usesPlanOrchestration as workflowUsesPlan,
+  type WorkflowSettingsStore,
+} from "./workflow-settings-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
@@ -165,6 +173,7 @@ let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
 let subagentSettingsStore: SubagentSettingsStore;
+let workflowSettingsStore: WorkflowSettingsStore;
 let sessionSyncStore: SessionSyncStore;
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
@@ -225,6 +234,7 @@ app.whenReady().then(async () => {
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
   subagentSettingsStore = await createSubagentSettingsStore(dbPath);
+  workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
@@ -500,6 +510,15 @@ function registerIpcHandlers(): void {
     return subagentSettingsStore.save(payload);
   });
 
+  ipcMain.handle(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
+
+  ipcMain.handle(IPC_CHANNELS.workflowSettingsSave, async (_event, payload: unknown) => {
+    if (!isWorkflowSettingsSnapshot(payload)) {
+      throw new Error("Invalid workflow settings.");
+    }
+    return workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+  });
+
   ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
@@ -586,8 +605,10 @@ function registerIpcHandlers(): void {
       const attachments = payload.attachments;
       if (intent === "question") {
         void runQuestionThread(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
-      } else {
+      } else if (workflowUsesPlan(workflowSettingsStore.get())) {
         void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
+      } else {
+        void runCodingThreadSdkDefault(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
       }
     }
 
@@ -785,6 +806,18 @@ function registerIpcHandlers(): void {
       void (async () => {
         const headroomController = new AbortController();
         await ensureContextHeadroom(payload.threadId, cwd, headroomController.signal);
+        if (!usesPlanOrchestration() && continuePhase !== "question") {
+          await runCodingThreadSdkDefault(
+            updated,
+            workspace,
+            runtimeConfig,
+            agentPrompt,
+            existingWorktreePlan,
+            resolveResumeOptions(payload.threadId, cwd),
+            payload.attachments,
+          );
+          return;
+        }
         await runThreadContinuation(
           updated,
           workspace,
@@ -805,8 +838,18 @@ function registerIpcHandlers(): void {
         undefined,
         payload.attachments,
       );
-    } else {
+    } else if (workflowUsesPlan(workflowSettingsStore.get())) {
       void runCodingThreadPlanning(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        existingWorktreePlan,
+        undefined,
+        payload.attachments,
+      );
+    } else {
+      void runCodingThreadSdkDefault(
         updated,
         workspace,
         runtimeConfig,
@@ -1053,6 +1096,174 @@ async function runQuestionThread(
       updateThread(thread.id, {
         status: "idle",
         message: currentThread.message || "回答已结束。",
+      });
+    }
+  }
+}
+
+function usesPlanOrchestration(): boolean {
+  return workflowUsesPlan(workflowSettingsStore.get());
+}
+
+async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
+  if (isIsolatedWorktreePlan(worktreePlan)) {
+    updateThread(threadId, {
+      status: "idle",
+      message: "代理执行完成，正在合并工作树更改…",
+    });
+
+    try {
+      const { files, message, diff } = await applyWorktreeChanges(worktreePlan);
+      conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
+      updateThread(threadId, { status: "completed", message });
+      emitThreadEvent(threadId, "worktree.applied", message, "system");
+      process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
+      await cleanupWorktreeForThread(threadId);
+    } catch (applyError) {
+      const detail = errorMessage(applyError);
+      process.stderr.write(`[eco] worktree apply failed: ${detail}\n`);
+      updateThread(threadId, {
+        status: "completed",
+        message: `执行已完成，但未能合并到工作区：${detail}。可点击「应用到工作区」重试，或手动处理 ${worktreePlan.worktreePath}。`,
+      });
+      emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
+    }
+    return;
+  }
+
+  updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
+  emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
+}
+
+async function runCodingThreadSdkDefault(
+  thread: ThreadSummary,
+  workspace: WorkspaceInfo,
+  runtimeConfig: RuntimeConfig,
+  prompt: string,
+  existingWorktreePlan?: WorktreePlan,
+  resume?: EcoSdkResumeOptions,
+  attachments?: PromptImageAttachment[],
+): Promise<void> {
+  const controller = new AbortController();
+  activeRuns.set(thread.id, {
+    controller,
+    worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
+    worktreeReady: false,
+  });
+  resetSubagentContextWindows(thread.id);
+
+  let worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
+
+  try {
+    const { worktreePlan: resolvedPlan, cwd, isolated } = await resolveThreadWorktree(
+      workspace,
+      thread.id,
+      existingWorktreePlan,
+    );
+    worktreePlan = resolvedPlan;
+    activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
+    activeRuns.get(thread.id)!.worktreeReady = true;
+    updateThread(thread.id, {
+      message: isolated
+        ? `Isolated worktree ready: ${worktreePlan.worktreePath}`
+        : `Working in project directory: ${workspace.path}`,
+      status: "running",
+    });
+
+    const runOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
+      process.stderr.write(
+        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+      );
+      updateThread(thread.id, {
+        message: `Local model router ready: ${attemptProxy.baseUrl}`,
+        status: "running",
+      });
+      const routes = buildDriverRoutes(attemptProxy.routes);
+      const plannerRoute = attemptProxy.routes.find((route) => route.role === "planner");
+      process.stderr.write(
+        `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
+      );
+
+      try {
+        const driver = createSdkDriver(thread.id, attemptProxy);
+        let sdkFailure: string | undefined;
+        const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+
+        for await (const event of driver.run({
+          threadId: thread.id,
+          prompt,
+          workspacePath: workspace.path,
+          worktreePath: cwd,
+          routes,
+          signal: controller.signal,
+          sdkSession: buildSdkSessionOptions(),
+          ...(effectiveResume ? { resume: effectiveResume } : {}),
+        })) {
+          if (event.type === "usage.recorded") {
+            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+            recordSdkUsageFromEvent(thread.id, event);
+            continue;
+          }
+          captureSdkSessionFromEvent(thread.id, event, cwd);
+          emitSdkStreamActivity(thread.id, event);
+        }
+
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        if (sdkFailure) {
+          return { ok: false, reason: sdkFailure };
+        }
+        return { ok: true };
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return { ok: false, reason: "cancelled by user", aborted: true };
+        }
+        return { ok: false, reason: errorMessage(error) };
+      } finally {
+        await attemptProxy.close();
+      }
+    });
+
+    if (runOutcome.aborted) {
+      cancelClarificationsForThread(thread.id, "cancelled by user");
+      updateThread(thread.id, { status: "idle", message: "已取消。" });
+      await cleanupWorktreeForThread(thread.id);
+      return;
+    }
+    if (!runOutcome.ok) {
+      cancelClarificationsForThread(thread.id, runOutcome.reason);
+      updateThread(thread.id, {
+        status: "failed",
+        message: runOutcome.reason,
+      });
+      await cleanupWorktreeForThread(thread.id);
+      return;
+    }
+
+    await completeCodingThreadRun(thread.id, worktreePlan);
+    scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
+    requestThreadContextRefresh(thread.id, true);
+  } catch (error) {
+    cancelClarificationsForThread(thread.id, errorMessage(error));
+    updateThread(thread.id, {
+      status: "failed",
+      message: errorMessage(error),
+    });
+    await cleanupWorktreeForThread(thread.id);
+  } finally {
+    const worktreePath = resolveThreadWorktreePath(thread.id);
+    cancelClarificationsForThread(thread.id, "run finished");
+    sdkStreamBridge.resetThread(thread.id);
+    await flushUsageUpdates(thread.id);
+    activeRuns.delete(thread.id);
+    afterRunContextRefresh(thread.id, worktreePath);
+    const currentThread = conversationStore.getThread(thread.id);
+    if (currentThread?.status === "running") {
+      updateThread(thread.id, {
+        status: "idle",
+        message: currentThread.message || "运行已结束。",
       });
     }
   }
@@ -1495,8 +1706,10 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
       cwd !== workspace.path ? cwd : undefined,
       resume,
     );
-  } else {
+  } else if (workflowUsesPlan(workflowSettingsStore.get())) {
     void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt, existingWorktreePlan, resume);
+  } else {
+    void runCodingThreadSdkDefault(updated, workspace, runtimeConfig, prompt, existingWorktreePlan, resume);
   }
   return { thread: updated };
 }
@@ -1740,6 +1953,7 @@ function createSdkDriver(
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
+    orchestration: orchestrationModeFromSnapshot(workflowSettingsStore.get()),
     hookContext: {
       ...createThreadHookContext(threadId),
       ...hookContextExtras,
@@ -1839,6 +2053,19 @@ async function runThreadContinuation(
   existingWorktreePlan?: WorktreePlan,
   attachments?: PromptImageAttachment[],
 ): Promise<void> {
+  if (!usesPlanOrchestration() && mode !== "question") {
+    await runCodingThreadSdkDefault(
+      thread,
+      workspace,
+      runtimeConfig,
+      followUp,
+      existingWorktreePlan,
+      undefined,
+      attachments,
+    );
+    return;
+  }
+
   const controller = new AbortController();
   activeRuns.set(thread.id, {
     controller,

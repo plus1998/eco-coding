@@ -32,6 +32,7 @@ import {
   type AgentSkillAssignments,
   type SubagentEnabledSettings,
   type SubagentRole,
+  type WorkflowSettingsSnapshot,
   type ClarificationRequest,
   type CoderTodoItem,
   type SessionSyncSettingsInput,
@@ -66,6 +67,7 @@ import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } fro
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
@@ -123,8 +125,10 @@ function App() {
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
   const [subagentSettings, setSubagentSettings] = useState<SubagentEnabledSettings | null>(null);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot | null>(null);
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
   const [isSavingSubagentSettings, setIsSavingSubagentSettings] = useState(false);
+  const [isSavingWorkflowSettings, setIsSavingWorkflowSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("providers");
   const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
@@ -169,7 +173,8 @@ function App() {
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
       window.eco.getSubagentSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents]) => {
+      window.eco.getWorkflowSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents, workflow]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -184,6 +189,7 @@ function App() {
       setMcpSettings(mcp);
       setSessionSyncSettings(sessionSync);
       setSubagentSettings(subagents);
+      setWorkflowSettings(workflow);
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -563,6 +569,10 @@ function App() {
         };
       }),
     [activeRoutes, threadModelByRole],
+  );
+  const plannerModelLabel = useMemo(
+    () => agentModelLabels.find((entry) => entry.role === "planner"),
+    [agentModelLabels],
   );
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -951,6 +961,27 @@ function App() {
     await saveSubagentSettings({ ...subagentSettings, [role]: enabled });
   }
 
+  async function toggleComposerPlanMode(enabled: boolean) {
+    if (!workflowSettings || !canEditPreChatConfig) {
+      return;
+    }
+    await saveWorkflowSettings({ ...workflowSettings, planModeEnabled: enabled });
+  }
+
+  async function saveWorkflowSettings(next: WorkflowSettingsSnapshot) {
+    if (!window.eco) return;
+    setIsSavingWorkflowSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveWorkflowSettings(next);
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingWorkflowSettings(false);
+    }
+  }
+
   async function saveSubagentSettings(next: SubagentEnabledSettings) {
     if (!window.eco) return;
     setIsSavingSubagentSettings(true);
@@ -1197,13 +1228,25 @@ function App() {
               onOpenFullSettings={() => openModelsSettings("routes")}
             />
           </div>
-          <ComposerAgentModels
-            labels={agentModelLabels}
-            subagentSettings={subagentSettings}
-            canEditSubagents={canEditPreChatConfig}
-            subagentSaving={isSavingSubagentSettings}
-            onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-          />
+          <div className="composer-agent-labels">
+            {workflowSettings ? (
+              <ComposerPlanModeToggle
+                planModeEnabled={workflowSettings.planModeEnabled}
+                plannerModelId={plannerModelLabel?.modelId}
+                plannerTitle={plannerModelLabel?.title}
+                canEdit={canEditPreChatConfig}
+                saving={isSavingWorkflowSettings}
+                onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+              />
+            ) : null}
+            <ComposerAgentModels
+              labels={agentModelLabels}
+              subagentSettings={subagentSettings}
+              canEditSubagents={canEditPreChatConfig}
+              subagentSaving={isSavingSubagentSettings}
+              onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+            />
+          </div>
           {canStopThread ? (
             <button
               type="button"
@@ -1482,19 +1525,22 @@ function App() {
             )}
 
             {settingsSection === "models" &&
-              (subagentSettings ? (
+              (subagentSettings && workflowSettings ? (
                 <ModelsSettingsPanel
                   settings={settings}
                   subagentSettings={subagentSettings}
+                  workflowSettings={workflowSettings}
                   subagentSettingsSaving={isSavingSubagentSettings}
+                  workflowSettingsSaving={isSavingWorkflowSettings}
                   initialTab={modelsSettingsTab}
                   busy={isSavingSettings}
                   onSettingsChange={setSettings}
                   onSavingChange={setIsSavingSettings}
                   onSubagentSettingsChange={(next) => void saveSubagentSettings(next)}
+                  onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
                 />
               ) : (
-                <p className="settings-empty-hint">正在加载子代理配置…</p>
+                <p className="settings-empty-hint">正在加载模型与工作流配置…</p>
               ))}
 
             {settingsSection === "git" && (

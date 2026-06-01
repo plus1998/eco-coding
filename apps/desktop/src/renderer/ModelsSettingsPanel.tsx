@@ -25,6 +25,9 @@ import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { RoutePricingDisplay } from "./RoutePricingDisplay";
 import { AppMessage, formatDurationMs, type AppMessageKind } from "./AppMessage";
+import { SubagentSettingsSection } from "./SubagentSettingsSection";
+import { WorkflowSettingsSection } from "./WorkflowSettingsSection";
+import type { WorkflowSettingsSnapshot } from "../shared/ipc";
 
 export type ModelsSettingsTab = "providers" | "subagents" | "routes";
 
@@ -37,11 +40,14 @@ const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   subagentSettings: SubagentEnabledSettings;
+  workflowSettings: WorkflowSettingsSnapshot;
   subagentSettingsSaving?: boolean | undefined;
+  workflowSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
   onSubagentSettingsChange: (settings: SubagentEnabledSettings) => void;
+  onWorkflowSettingsChange: (settings: WorkflowSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
 
@@ -72,11 +78,14 @@ const THINKING_EFFORT_OPTIONS: Array<{ value: "" | ThinkingEffort; label: string
 export function ModelsSettingsPanel({
   settings,
   subagentSettings,
+  workflowSettings,
   subagentSettingsSaving,
+  workflowSettingsSaving,
   busy,
   initialTab = "providers",
   onSettingsChange,
   onSubagentSettingsChange,
+  onWorkflowSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(initialTab);
@@ -564,13 +573,6 @@ export function ModelsSettingsPanel({
     }
   }
 
-  function toggleSubagent(role: SubagentRole, enabled: boolean) {
-    if (role === "coder") {
-      return;
-    }
-    onSubagentSettingsChange({ ...subagentSettings, [role]: enabled });
-  }
-
   function updateRouteInForm(
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
@@ -659,50 +661,29 @@ export function ModelsSettingsPanel({
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
       {activeTab === "subagents" && (
-      <section className="mcp-list-section models-subagent-section">
-        <header className="models-section-header">
-          <div className="models-section-intro">
-            <h2 className="models-section-title">子代理</h2>
-            <p className="models-section-desc">
-              点击条目开启或关闭子代理；高亮为已启用。关闭后不会注册到 SDK，提示词与流水线会同步调整。编码（Coder）为必需，不可关闭。
-            </p>
-          </div>
-        </header>
-        <ul className="models-subagent-list">
-          {SUBAGENT_ROLES.map((role) => {
-            const enabled = subagentSettings[role];
-            const locked = role === "coder";
-            return (
-              <li key={role}>
-                <button
-                  type="button"
-                  className={
-                    enabled
-                      ? "models-subagent-row is-active"
-                      : "models-subagent-row is-inactive"
-                  }
-                  disabled={busy || subagentSettingsSaving || locked}
-                  aria-pressed={enabled}
-                  title={locked ? "编码子代理不可关闭" : enabled ? "点击关闭" : "点击开启"}
-                  onClick={() => toggleSubagent(role, !enabled)}
-                >
-                  <div className="models-subagent-row-main">
-                    <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                    <span className="models-route-role-id">{role}</span>
-                    {locked ? (
-                      <span className="models-subagent-required-badge">流水线必需</span>
-                    ) : !enabled ? (
-                      <span className="models-subagent-off-badge">已关闭</span>
-                    ) : (
-                      <span className="models-subagent-on-badge">已启用</span>
-                    )}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+        <div className="models-subagents-tab">
+          <WorkflowSettingsSection
+            settings={workflowSettings}
+            disabled={busy || workflowSettingsSaving}
+            onChange={onWorkflowSettingsChange}
+          />
+          <section className="mcp-list-section models-subagent-section">
+            <header className="models-section-header">
+              <div className="models-section-intro">
+                <h2 className="models-section-title">子代理</h2>
+                <p className="models-section-desc">
+                  各角色可单独开关；关闭后不会注册到 SDK。与上方计划模式无关，默认全部启用。
+                </p>
+              </div>
+            </header>
+            <SubagentSettingsSection
+              settings={subagentSettings}
+              saving={subagentSettingsSaving}
+              disabled={busy}
+              onChange={onSubagentSettingsChange}
+            />
+          </section>
+        </div>
       )}
 
       {activeTab === "providers" && (

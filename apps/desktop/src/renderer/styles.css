@@ -1262,6 +1262,27 @@ button:not(:disabled) {
 
 .mcp-toggle input:disabled + .mcp-toggle-track {
   opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcp-toggle-lg {
+  flex-shrink: 0;
+}
+
+.mcp-toggle-lg .mcp-toggle-track {
+  width: 52px;
+  height: 30px;
+}
+
+.mcp-toggle-lg .mcp-toggle-track::after {
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+}
+
+.mcp-toggle-lg input:checked + .mcp-toggle-track::after {
+  transform: translateX(22px);
 }
 
 .mcp-editor-header {
@@ -3811,66 +3832,86 @@ button:not(:disabled) {
   color: #f5f5f5;
 }
 
-.composer-agent-models {
+.composer-agent-labels {
   display: flex;
   flex: 1;
-  flex-wrap: nowrap;
-  gap: 6px;
+  align-items: center;
   min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
+.composer-plan-mode-toggle {
+  flex-shrink: 0;
+}
+
+.composer-agent-models {
+  display: flex;
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: 0;
+  min-width: 0;
+}
+
+.composer-agent-models > .composer-agent-model + .composer-agent-model {
+  padding-left: 12px;
+  margin-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.composer-agent-labels > .composer-plan-mode-toggle + .composer-agent-models > .composer-agent-model:first-child {
+  padding-left: 12px;
+  margin-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .composer-agent-model {
   display: inline-flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #737373;
+  align-items: baseline;
+  gap: 5px;
+  padding-left: 0;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  border-radius: 0;
+  background: transparent;
+  color: #6b6b6b;
   font: inherit;
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 1.25;
   white-space: nowrap;
-}
-
-.composer-agent-model.is-active {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.14);
-  color: #bfdbfe;
+  -webkit-font-smoothing: antialiased;
 }
 
 .composer-agent-model.is-active .composer-agent-model-role {
-  color: #e0f2fe;
+  color: #f5f5f5;
 }
 
 .composer-agent-model.is-active .composer-agent-model-id {
-  color: #93c5fd;
+  color: #a3a3a3;
 }
 
-.composer-agent-model.is-inactive {
-  border-color: #333;
-  background: rgba(255, 255, 255, 0.03);
-  color: #525252;
-}
-
-.composer-agent-model.is-inactive .composer-agent-model-role {
-  color: #6b6b6b;
-}
-
+.composer-agent-model.is-inactive .composer-agent-model-role,
 .composer-agent-model.is-inactive .composer-agent-model-id {
-  color: #404040;
+  color: #6b6b6b;
 }
 
 .composer-agent-model.is-clickable {
   cursor: pointer;
 }
 
-.composer-agent-model.is-clickable:hover {
-  filter: brightness(1.08);
+.composer-agent-model.is-clickable.is-active:hover .composer-agent-model-role {
+  color: #fff;
+}
+
+.composer-agent-model.is-clickable.is-active:hover .composer-agent-model-id {
+  color: #d4d4d4;
+}
+
+.composer-agent-model.is-clickable.is-inactive:hover .composer-agent-model-role,
+.composer-agent-model.is-clickable.is-inactive:hover .composer-agent-model-id {
+  color: #8a8a8a;
 }
 
 .composer-agent-model.is-clickable:disabled {
@@ -3883,13 +3924,28 @@ button:not(:disabled) {
 }
 
 .composer-agent-model-role {
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.composer-agent-model-id::before {
+  content: "·";
+  margin-right: 5px;
+  opacity: 0.35;
 }
 
 .composer-agent-model-id {
-  max-width: 88px;
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  opacity: 0.92;
+}
+
+.composer-agent-model.is-inactive .composer-agent-model-id {
+  opacity: 1;
 }
 
 .composer-context-k {
@@ -4561,24 +4617,40 @@ button:not(:disabled) {
   color: #d4d4d4;
 }
 
-.models-subagent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.models-subagents-tab {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 28px;
 }
 
-.models-subagent-row {
+.models-plan-mode-section {
+  margin-bottom: 20px;
+}
+
+.models-plan-mode-card {
+  max-width: 100%;
+}
+
+.models-workflow-section {
   display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #2e2e2e;
-  border-radius: 8px;
+}
+
+.models-workflow-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.models-workflow-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid #333;
+  border-radius: 12px;
   background: #1a1a1a;
   color: inherit;
   font: inherit;
@@ -4586,62 +4658,112 @@ button:not(:disabled) {
   cursor: pointer;
   transition:
     border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.models-workflow-card:hover:not(:disabled) {
+  border-color: #444;
+}
+
+.models-workflow-card.active {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+.models-workflow-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+
+.models-workflow-card-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #a3a3a3;
+}
+
+.models-subagent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.models-subagent-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border: 1px solid #2e2e2e;
+  border-radius: 10px;
+  background: #1a1a1a;
+  transition:
+    border-color 0.15s ease,
     background 0.15s ease;
 }
 
-.models-subagent-row.is-active {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.1);
+.models-subagent-card.is-active {
+  border-color: #404040;
+  background: #222;
 }
 
-.models-subagent-row.is-active .models-route-role {
-  color: #e0f2fe;
+.models-subagent-card.is-active .models-route-role {
+  color: #f5f5f5;
 }
 
-.models-subagent-row.is-inactive {
+.models-subagent-card.is-active .models-route-role-id {
+  color: #a3a3a3;
+}
+
+.models-subagent-card.is-inactive {
   border-color: #2a2a2a;
   background: #161616;
-  opacity: 0.85;
 }
 
-.models-subagent-row.is-inactive .models-route-role {
-  color: #737373;
+.models-subagent-card.is-inactive .models-route-role,
+.models-subagent-card.is-inactive .models-route-role-id {
+  color: #6b6b6b;
 }
 
-.models-subagent-row:hover:not(:disabled) {
-  filter: brightness(1.06);
+.models-subagent-card-body {
+  flex: 1;
+  min-width: 0;
 }
 
-.models-subagent-row:disabled {
-  cursor: default;
-  opacity: 1;
-}
-
-.models-subagent-row-main {
+.models-subagent-card-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 
-.models-subagent-required-badge,
-.models-subagent-off-badge,
-.models-subagent-on-badge {
+.models-subagent-card-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #8a8a8a;
+}
+
+.models-subagent-card.is-active .models-subagent-card-desc {
+  color: #8a8a8a;
+}
+
+.models-subagent-card.is-inactive .models-subagent-card-desc {
+  color: #525252;
+}
+
+.models-subagent-required-badge {
   font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #2a2a2a;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
   color: #a3a3a3;
-}
-
-.models-subagent-row.is-active .models-subagent-on-badge {
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
-}
-
-.models-subagent-row.is-active .models-subagent-required-badge {
-  background: rgba(59, 130, 246, 0.2);
-  color: #93c5fd;
 }
 
 .models-route-card-subagent-off {

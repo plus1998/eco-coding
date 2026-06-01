@@ -48,9 +48,11 @@ export function ComposerAgentModels({
   subagentSaving,
   onToggleSubagent,
 }: ComposerAgentModelsProps) {
+  const agentLabels = labels.filter((entry) => entry.role !== "planner");
+
   return (
     <div className="composer-agent-models" aria-label="各 Agent 模型">
-      {labels.map(({ role, modelId, title }) => {
+      {agentLabels.map(({ role, modelId, title }) => {
         const subagent = isSubagentRole(role);
         const enabled = subagent && subagentSettings ? subagentSettings[role] : true;
         const locked = role === "coder";

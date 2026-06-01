@@ -44,6 +44,8 @@ export const IPC_CHANNELS = {
   agentSkillsSave: "agent-skills:save",
   subagentSettingsGet: "subagent-settings:get",
   subagentSettingsSave: "subagent-settings:save",
+  workflowSettingsGet: "workflow-settings:get",
+  workflowSettingsSave: "workflow-settings:save",
   sessionSyncSettingsGet: "session-sync-settings:get",
   sessionSyncSettingsSave: "session-sync-settings:save",
   sessionSyncTestConnection: "session-sync:test-connection",
@@ -119,6 +121,10 @@ export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tes
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
 export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
+
+export interface WorkflowSettingsSnapshot {
+  planModeEnabled: boolean;
+}
 
 export interface ProviderConfigInput {
   id?: string;

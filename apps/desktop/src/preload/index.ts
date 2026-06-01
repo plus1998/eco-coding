@@ -28,6 +28,7 @@ import {
   type SkillsListResult,
   type AgentSkillAssignments,
   type SubagentEnabledSettings,
+  type WorkflowSettingsSnapshot,
   type ClarificationAnswers,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
@@ -130,6 +131,12 @@ const api = {
   },
   saveSubagentSettings(settings: SubagentEnabledSettings): Promise<SubagentEnabledSettings> {
     return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsSave, settings);
+  },
+  getWorkflowSettings(): Promise<WorkflowSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsGet);
+  },
+  saveWorkflowSettings(settings: WorkflowSettingsSnapshot): Promise<WorkflowSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsSave, settings);
   },
   getSessionSyncSettings(): Promise<SessionSyncSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsGet);

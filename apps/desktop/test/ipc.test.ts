@@ -23,6 +23,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.agentSkillsSave).toBe("agent-skills:save");
   expect(IPC_CHANNELS.subagentSettingsGet).toBe("subagent-settings:get");
   expect(IPC_CHANNELS.subagentSettingsSave).toBe("subagent-settings:save");
+  expect(IPC_CHANNELS.workflowSettingsGet).toBe("workflow-settings:get");
+  expect(IPC_CHANNELS.workflowSettingsSave).toBe("workflow-settings:save");
   expect(IPC_CHANNELS.mcpSettingsGet).toBe("mcp-settings:get");
   expect(IPC_CHANNELS.skillsList).toBe("skills:list");
   expect(IPC_CHANNELS.mcpServerSave).toBe("mcp-server:save");
