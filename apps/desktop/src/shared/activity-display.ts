@@ -1,11 +1,64 @@
 /** Normalize activity line text for display (strip redundant subagent prefixes). */
 
+import { parseSubagentMissionMessage } from "@eco/runtime";
+
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
+
+const reconnectClearSystemNoise = [
+  /^Local model router ready:/i,
+  /^Claude Agent SDK ready/i,
+  /^Agent session started/i,
+  /^Agent run completed/i,
+  /^Compacting context/i,
+  /^API retry /i,
+  /^Usage recorded/i,
+  /^Run finished/i,
+  /^已从异常退出恢复/i,
+];
 
 /** Auto-retry or upstream connection failure status — should replace prior line, not stack. */
 export function isReconnectActivityMessage(message: string): boolean {
   const trimmed = message.trim();
   return /^【(?:自动重试|连接失败)/.test(trimmed);
+}
+
+/** True when a new activity line means the upstream connection resumed — drop reconnect status. */
+export function shouldClearReconnectActivity(line: { message: string; role: string }): boolean {
+  if (isReconnectActivityMessage(line.message)) {
+    return false;
+  }
+
+  const trimmed = stripSubagentBracketPrefix(line.message.trim());
+  if (!trimmed || trimmed === "状态已更新" || /^状态已更新\s/u.test(trimmed)) {
+    return false;
+  }
+  if (reconnectClearSystemNoise.some((pattern) => pattern.test(trimmed))) {
+    return false;
+  }
+
+  if (parseSubagentMissionMessage(trimmed)) {
+    return true;
+  }
+  if (/^Requesting model/i.test(trimmed)) {
+    return true;
+  }
+  if (/^Tool(?: failed)?:/i.test(trimmed)) {
+    return true;
+  }
+  if (/^【\d+\/\d+】/.test(trimmed)) {
+    return true;
+  }
+  if (/^(Reading|Writing|Editing|Searching|Running)\s+/i.test(trimmed)) {
+    return true;
+  }
+  if (line.role === "thinking") {
+    return true;
+  }
+  if (["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(line.role)) {
+    return true;
+  }
+
+  return false;
 }
 
 const PROGRESS_PATTERNS: Array<{ pattern: RegExp; verb: string }> = [

@@ -12,6 +12,7 @@ import {
   activityActionKey,
   isReconnectActivityMessage,
   normalizeActivityActionLabel,
+  shouldClearReconnectActivity,
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
@@ -201,6 +202,14 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
     if (pending.length > 0) {
       current.details.push(...pending);
+    }
+  };
+
+  const clearReconnectPhase = () => {
+    for (let index = current.details.length - 1; index >= 0; index -= 1) {
+      if (current.details[index]?.kind === "phase" && current.details[index]?.reconnecting) {
+        current.details.splice(index, 1);
+      }
     }
   };
 
@@ -450,6 +459,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       }
       current.userLines.push(line);
       continue;
+    }
+
+    if (shouldClearReconnectActivity(line)) {
+      clearReconnectPhase();
     }
 
     if (isPhaseLine(line.message)) {

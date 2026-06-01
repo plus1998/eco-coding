@@ -1,5 +1,5 @@
 import { formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 import type { AgentRole, ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 
@@ -32,7 +32,6 @@ function pctClass(pct: number): string {
   return "context-card-pct";
 }
 
-/** 占用比例文案（对齐参考图 “29% Full” = 窗口已用比例，不是“已经满了”） */
 function formatOccupancyLabel(pct: number): string {
   if (pct >= 100) {
     return "100% 已满";
@@ -64,79 +63,55 @@ function contextRoles(context: ThreadContextSnapshot): ThreadRoleContextSnapshot
   ];
 }
 
-export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<AgentRole>();
-
-  if (!context) {
-    if (!showWhenEmpty) {
-      return null;
-    }
-    return (
-      <div className="context-card context-card-empty">
-        <p className="context-card-placeholder">{placeholder ?? "上下文 — 有模型请求后显示"}</p>
-      </div>
-    );
+function resolvePlannerSnapshot(
+  context: ThreadContextSnapshot,
+  roles: ThreadRoleContextSnapshot[],
+): ThreadRoleContextSnapshot {
+  const fromRoles = roles.find((role) => role.role === "planner");
+  if (fromRoles) {
+    return fromRoles;
   }
+  return {
+    role: "planner",
+    occupied: context.occupied,
+    limit: context.limit,
+    occupancyPct: context.occupancyPct,
+    limitsResolved: context.limitsResolved,
+    ...(context.modelId && { modelId: context.modelId }),
+    segments: context.segments,
+    ...(context.maxOutputTokens !== undefined && { maxOutputTokens: context.maxOutputTokens }),
+  };
+}
 
-  const roles = contextRoles(context);
-  const defaultRole = context.displayRole ?? roles[0]?.role ?? "planner";
-  const selected =
-    roles.find((role) => role.role === selectedRole) ??
-    roles.find((role) => role.role === defaultRole) ??
-    roles[0];
-  if (!selected) {
-    return null;
-  }
-  const visibleSegments = selected.segments.filter((segment) => segment.tokens > 0);
-  const occupied = selected.occupied;
-  const limit = selected.limit;
+function hasDetailedBreakdown(role: ThreadRoleContextSnapshot): boolean {
+  const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
+  return (
+    visibleSegments.length > 1 ||
+    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话占用")
+  );
+}
+
+function ContextRoleBody({
+  role,
+  detailsOpen,
+  showRefreshing,
+}: {
+  role: ThreadRoleContextSnapshot;
+  detailsOpen: boolean;
+  showRefreshing?: boolean;
+}) {
+  const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
+  const occupied = role.occupied;
+  const limit = role.limit;
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
   const freeTokens = Math.max(limit - occupied, 0);
-  const showRefreshing = context.breakdownRefreshing && selected.role === "planner";
-  const hasDetailedBreakdown =
-    visibleSegments.length > 1 ||
-    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话占用");
+  const detailed = hasDetailedBreakdown(role);
+  const roleLabel = formatRoleModelLabel(role.role, role.modelId);
 
   return (
-    <div className="context-card">
-      <div className="context-card-header">
-        <div className="context-card-title-group">
-          <h4 className="context-card-title">Context</h4>
-          <span className="context-card-role-badge">
-            {formatRoleModelLabel(selected.role, selected.modelId)}
-          </span>
-        </div>
-        <div className="context-card-header-actions">
-          {hasDetailedBreakdown ? (
-            <button
-              type="button"
-              className="context-card-collapse"
-              onClick={() => setDetailsOpen((open) => !open)}
-              aria-expanded={detailsOpen}
-              aria-label={detailsOpen ? "折叠分项" : "展开分项"}
-            >
-              <span className="context-card-collapse-label">{detailsOpen ? "−" : "+"}</span>
-            </button>
-          ) : null}
-          {onDismiss ? (
-            <button
-              type="button"
-              className="context-card-dismiss"
-              onClick={onDismiss}
-              aria-label="关闭 Context"
-            >
-              <X size={14} aria-hidden />
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        className="context-card-summary"
-        title="当前会话窗口占用（非线程累计 token）；运行中由 API usage 实时更新，结束后由 /context 校正"
-      >
-        <span className={pctClass(selected.occupancyPct)}>{formatOccupancyLabel(selected.occupancyPct)}</span>
+    <>
+      <div className="context-card-summary">
+        <span className={pctClass(role.occupancyPct)}>{formatOccupancyLabel(role.occupancyPct)}</span>
         <span className="context-card-tokens">
           ~{formatContextK(occupied)} / {formatContextK(limit)} Tokens
         </span>
@@ -145,7 +120,7 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
       <div
         className="context-card-bar"
         role="img"
-        aria-label={`${formatRoleModelLabel(selected.role, selected.modelId)} 上下文已用 ${selected.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
+        aria-label={`${roleLabel} 上下文已用 ${role.occupancyPct}%，约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
       >
         {occupied > 0 ? (
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
@@ -170,42 +145,9 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         {freeTokens > 0 ? <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} /> : null}
       </div>
 
-      <div className="context-card-roles" role="tablist" aria-label="上下文窗口">
-        {roles.map((role) => {
-          const active = role.role === selected.role;
-          const label = formatRoleModelLabel(role.role, role.modelId);
-          return (
-            <button
-              type="button"
-              key={role.role}
-              className={active ? "context-card-role-row active" : "context-card-role-row"}
-              onClick={() => setSelectedRole(role.role)}
-              role="tab"
-              aria-selected={active}
-              title={label}
-            >
-              <span className="context-card-role-main">
-                <span className="context-card-role-name">{label}</span>
-                <span className="context-card-role-meter" aria-hidden>
-                  <span
-                    className="context-card-role-meter-fill"
-                    style={{ width: `${Math.min(role.occupancyPct, 100)}%` }}
-                  />
-                </span>
-              </span>
-              <span className="context-card-role-usage">
-                {formatContextK(role.occupied)} / {formatContextK(role.limit)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {showRefreshing && detailed ? <p className="context-card-stale">正在拉取分项明细…</p> : null}
 
-      {showRefreshing && hasDetailedBreakdown ? (
-        <p className="context-card-stale">正在拉取分项明细…</p>
-      ) : null}
-
-      {hasDetailedBreakdown && detailsOpen ? (
+      {detailed && detailsOpen ? (
         <ul className="context-card-breakdown">
           {visibleSegments.map((segment) => (
             <li key={segment.key}>
@@ -217,15 +159,129 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         </ul>
       ) : null}
 
-      {!selected.limitsResolved ? (
+      {!role.limitsResolved ? (
         <p className="context-card-footnote">
-          上限未匹配 models.dev，按 {formatContextK(selected.limit)} 估算
+          上限未匹配 models.dev，按 {formatContextK(role.limit)} 估算
         </p>
       ) : null}
+    </>
+  );
+}
 
-      <p className="context-card-footnote" title="与用量明细中的累计 token 不同">
-        当前窗口占用，非线程累计 token
-      </p>
+export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
+  const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
+  const [expandedSubagents, setExpandedSubagents] = useState<Set<AgentRole>>(() => new Set());
+
+  if (!context) {
+    if (!showWhenEmpty) {
+      return null;
+    }
+    return (
+      <div className="context-card context-card-empty">
+        <p className="context-card-placeholder">{placeholder ?? "上下文 — 有模型请求后显示"}</p>
+      </div>
+    );
+  }
+
+  const roles = contextRoles(context);
+  const planner = resolvePlannerSnapshot(context, roles);
+  const subagentRoles = roles.filter((role) => role.role !== "planner");
+  const plannerDetailed = hasDetailedBreakdown(planner);
+  const showPlannerRefreshing = Boolean(context.breakdownRefreshing);
+
+  const toggleSubagent = (role: AgentRole) => {
+    setExpandedSubagents((current) => {
+      const next = new Set(current);
+      if (next.has(role)) {
+        next.delete(role);
+      } else {
+        next.add(role);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="context-card">
+      <div className="context-card-header">
+        <div className="context-card-title-group">
+          <h4 className="context-card-title">Context</h4>
+          <span className="context-card-role-badge">
+            {formatRoleModelLabel(planner.role, planner.modelId)}
+          </span>
+        </div>
+        <div className="context-card-header-actions">
+          {plannerDetailed ? (
+            <button
+              type="button"
+              className="context-card-collapse"
+              onClick={() => setPlannerDetailsOpen((open) => !open)}
+              aria-expanded={plannerDetailsOpen}
+              aria-label={plannerDetailsOpen ? "折叠分项" : "展开分项"}
+            >
+              <span className="context-card-collapse-label">{plannerDetailsOpen ? "−" : "+"}</span>
+            </button>
+          ) : null}
+          {onDismiss ? (
+            <button
+              type="button"
+              className="context-card-dismiss"
+              onClick={onDismiss}
+              aria-label="关闭 Context"
+            >
+              <X size={14} aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <ContextRoleBody
+        role={planner}
+        detailsOpen={plannerDetailsOpen}
+        showRefreshing={showPlannerRefreshing}
+      />
+
+      {subagentRoles.length > 0 ? (
+        <div className="context-card-subagents" aria-label="子代理上下文">
+          {subagentRoles.map((role) => {
+            const expanded = expandedSubagents.has(role.role);
+            const label = formatRoleModelLabel(role.role, role.modelId);
+            return (
+              <div key={role.role} className="context-card-subagent">
+                <button
+                  type="button"
+                  className="context-card-subagent-toggle"
+                  onClick={() => toggleSubagent(role.role)}
+                  aria-expanded={expanded}
+                >
+                  <ChevronDown
+                    size={14}
+                    className={expanded ? "context-card-subagent-chevron open" : "context-card-subagent-chevron"}
+                    aria-hidden
+                  />
+                  <span className="context-card-subagent-toggle-main">
+                    <span className="context-card-role-name">{label}</span>
+                    <span className="context-card-role-meter" aria-hidden>
+                      <span
+                        className="context-card-role-meter-fill"
+                        style={{ width: `${Math.min(role.occupancyPct, 100)}%` }}
+                      />
+                    </span>
+                  </span>
+                  <span className="context-card-role-usage">
+                    {formatContextK(role.occupied)} / {formatContextK(role.limit)}
+                  </span>
+                </button>
+                {expanded ? (
+                  <div className="context-card-subagent-body">
+                    <ContextRoleBody role={role} detailsOpen />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

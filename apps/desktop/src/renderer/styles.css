@@ -2998,18 +2998,20 @@ button:not(:disabled) {
   background: #3a3a3a;
 }
 
-.context-card-roles {
+.context-card-subagents {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  margin: 0 0 10px;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #333;
 }
 
-.context-card-role-row {
+.context-card-subagent-toggle {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   min-height: 32px;
   padding: 6px 8px;
@@ -3021,14 +3023,35 @@ button:not(:disabled) {
   text-align: left;
 }
 
-.context-card-role-row:hover {
+.context-card-subagent-toggle:hover {
   border-color: #3a3a3a;
   background: #292929;
 }
 
-.context-card-role-row.active {
-  border-color: #4b5563;
-  background: #2d2d2d;
+.context-card-subagent-chevron {
+  flex-shrink: 0;
+  color: #8f8f8f;
+  transition: transform 0.15s ease;
+}
+
+.context-card-subagent-chevron.open {
+  transform: rotate(180deg);
+}
+
+.context-card-subagent-toggle-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.context-card-subagent-body {
+  margin-top: 8px;
+  padding: 0 4px 4px;
+}
+
+.context-card-subagent-body .context-card-summary {
+  margin-top: 0;
 }
 
 .context-card-role-main {

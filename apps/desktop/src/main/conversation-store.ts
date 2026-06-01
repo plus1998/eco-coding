@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { mergeStreamText } from "@eco/runtime";
-import { isReconnectActivityMessage } from "../shared/activity-display";
+import {
+  isReconnectActivityMessage,
+  shouldClearReconnectActivity,
+} from "../shared/activity-display";
 import { logSuspiciousActivityLines, repairActivityText } from "../shared/activity-text";
 import type {
   CoderTodoItem,
@@ -356,11 +359,23 @@ export class ConversationStore {
     return row ? rowToThread(row) : undefined;
   }
 
+  private clearReconnectActivityLines(threadId: string): void {
+    const rows = this.db
+      .prepare(`SELECT id, message FROM thread_activity WHERE thread_id = ?`)
+      .all(threadId) as Array<{ id: string; message: string }>;
+    const deleteStmt = this.db.prepare(`DELETE FROM thread_activity WHERE id = ?`);
+    for (const row of rows) {
+      if (isReconnectActivityMessage(row.message)) {
+        deleteStmt.run(row.id);
+      }
+    }
+  }
+
   appendActivityLine(
     threadId: string,
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
-    const last = this.getLastActivityLine(threadId);
+    let last = this.getLastActivityLine(threadId);
     if (isReconnectActivityMessage(line.message)) {
       if (last && isReconnectActivityMessage(last.message)) {
         this.db
@@ -368,6 +383,9 @@ export class ConversationStore {
           .run(line.message, line.role, last.id);
         return { ...last, message: line.message, role: line.role };
       }
+    } else if (shouldClearReconnectActivity({ message: line.message, role: line.role })) {
+      this.clearReconnectActivityLines(threadId);
+      last = this.getLastActivityLine(threadId);
     }
     if (!line.stream && last?.stream && last.role === line.role) {
       const merged = line.message.trim()

@@ -61,7 +61,10 @@ import {
   toPromptImageAttachments,
 } from "./composer-attachments";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
-import { isReconnectActivityMessage } from "../shared/activity-display";
+import {
+  isReconnectActivityMessage,
+  shouldClearReconnectActivity,
+} from "../shared/activity-display";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
 import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
@@ -602,6 +605,10 @@ function App() {
     end.scrollIntoView({ block: "end", behavior: isStreaming ? "auto" : "smooth" });
   }, [activityLines, activeThread?.id]);
 
+  function withoutReconnectActivityLines(lines: ActivityLine[]): ActivityLine[] {
+    return lines.filter((entry) => !isReconnectActivityMessage(entry.message));
+  }
+
   function appendActivityLine(threadId: string, line: ActivityLine) {
     const cleanedMessage = stripActivityStatusNoise(line.message);
     if (isUsageNoiseMessage(cleanedMessage) || isActivityStatusNoise(line.message)) {
@@ -611,6 +618,7 @@ function App() {
       ...line,
       message: cleanedMessage,
     };
+    const clearsReconnect = shouldClearReconnectActivity(normalizedLine);
     if (isReconnectActivityMessage(cleanedMessage)) {
       setActivityByThread((current) => {
         const previous = current[threadId] ?? [];
@@ -635,7 +643,9 @@ function App() {
       return;
     }
     setActivityByThread((current) => {
-      const previous = current[threadId] ?? [];
+      const previous = clearsReconnect
+        ? withoutReconnectActivityLines(current[threadId] ?? [])
+        : (current[threadId] ?? []);
       const last = previous[previous.length - 1];
       if (
         last &&
@@ -644,6 +654,9 @@ function App() {
         last.message === normalizedLine.message &&
         last.stream !== true
       ) {
+        if (clearsReconnect && previous.length !== (current[threadId] ?? []).length) {
+          return { ...current, [threadId]: previous };
+        }
         return current;
       }
       if (normalizedLine.stream && last && !last.stream && isActivityStatusNoise(last.message)) {

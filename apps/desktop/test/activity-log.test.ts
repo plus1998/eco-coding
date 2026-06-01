@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { formatSubagentMissionMessage } from "@eco/runtime";
 import {
+  shouldClearReconnectActivity,
+} from "../src/shared/activity-display";
+import {
   buildActivityLogBlocks,
   countOpenAgentDelegations,
   findSubagentRunLineBounds,
@@ -528,6 +531,31 @@ test("shows reconnect phase for auto-retry and connection failure lines", () => 
     expect(phases[0].reconnecting).toBe(true);
     expect(phases[0].label).toContain("自动重试 2/5");
   }
+});
+
+test("clears reconnect phase after connection resumes", () => {
+  expect(shouldClearReconnectActivity({ role: "planner", message: "Requesting model…" })).toBe(true);
+  expect(shouldClearReconnectActivity({ role: "system", message: "【自动重试 1/5】5 秒后重试" })).toBe(
+    false,
+  );
+
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "system", message: "【连接失败】无法连接上游模型 API。" },
+      { id: "2", role: "system", message: "【自动重试 1/5】5 秒后重试：fetch failed" },
+      { id: "3", role: "planner", message: "Requesting model…" },
+      { id: "4", role: "tool", message: "Tool: Read · a.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const reconnectPhases =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "phase" && child.reconnecting)
+      : [];
+  expect(reconnectPhases).toHaveLength(0);
 });
 
 test("collapses repeated auto-retry lines into one reconnect phase", () => {
