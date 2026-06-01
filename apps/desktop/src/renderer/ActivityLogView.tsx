@@ -256,14 +256,16 @@ function RunLogBlock({
 }
 
 function SubagentClusterCard({
+  sessionKey,
   running,
   roles,
   logLine,
   metaEntries,
-  durationMs,
+  durationMs = 0,
   onToggle,
   expanded,
 }: {
+  sessionKey?: string;
   running: boolean;
   roles: readonly string[];
   logLine?: string;
@@ -272,18 +274,21 @@ function SubagentClusterCard({
   onToggle: () => void;
   expanded: boolean;
 }) {
-  const [liveDurationMs, setLiveDurationMs] = useState(0);
+  const [liveDurationMs, setLiveDurationMs] = useState(durationMs);
 
   useEffect(() => {
     if (!running) {
+      setLiveDurationMs(durationMs);
       return;
     }
-    const startedAt = Date.now();
-    const tick = () => setLiveDurationMs(Date.now() - startedAt);
+
+    const baselineMs = durationMs;
+    const anchorAt = Date.now();
+    const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [running]);
+  }, [running, durationMs, sessionKey]);
 
   const chips = buildSubagentChips(roles);
   const agentCount = roles.length;
@@ -471,12 +476,12 @@ function WorkSessionBlock({
     return (
       <section className="work-session work-session-compact">
         <SubagentClusterCard
+          {...(block.sessionKey && { sessionKey: block.sessionKey })}
           running={block.running}
           roles={displayRoles}
           metaEntries={metaEntries}
+          durationMs={block.runDurationMs ?? 0}
           {...(block.latestSubagentLogLine && { logLine: block.latestSubagentLogLine })}
-          {...(block.runDurationMs !== undefined &&
-            block.runDurationMs > 0 && { durationMs: block.runDurationMs })}
           expanded={expanded}
           onToggle={() => {
             setExpanded((current) => {
