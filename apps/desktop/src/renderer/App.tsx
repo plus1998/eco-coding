@@ -577,6 +577,16 @@ function App() {
     () => agentModelLabels.find((entry) => entry.role === "planner"),
     [agentModelLabels],
   );
+  const activityModelByRole = useMemo(() => {
+    const configured: Record<string, string> = {};
+    for (const route of activeRoutes) {
+      const modelId = route.modelId.trim();
+      if (modelId) {
+        configured[route.role] = modelId;
+      }
+    }
+    return { ...configured, ...threadModelByRole };
+  }, [activeRoutes, threadModelByRole]);
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1432,7 +1442,7 @@ function App() {
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   onRestorePrompt={restorePrompt}
-                  {...(threadModelByRole && { modelByRole: threadModelByRole })}
+                  {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}

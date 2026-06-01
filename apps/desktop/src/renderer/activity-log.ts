@@ -48,8 +48,8 @@ export type ActivityLogBlock =
       latestSubagentLogLine?: string;
       /** Elapsed time for this sub-agent run (from Agent tool duration lines). */
       runDurationMs?: number;
-      /** Hide misleading thread-level duration on planner separators when sub-agent cards exist. */
-      hideProcessedDuration?: boolean;
+      /** Planner / main-window steps — always shown inline (no collapse toggle). */
+      inlineContent?: boolean;
       awaitingFirstToken?: boolean;
       children: ActivityDetailBlock[];
     }
@@ -114,6 +114,7 @@ export function buildActivityLogBlocks(
           durationMs,
           running: true,
           defaultCollapsed: false,
+          inlineContent: true,
           awaitingFirstToken: true,
           children: [{ kind: "model-request" }],
         });
@@ -595,6 +596,21 @@ type DetailRun =
   | { kind: "planner"; blocks: ActivityDetailBlock[] }
   | { kind: "subagent"; role: string; occurrence: number; blocks: ActivityDetailBlock[] };
 
+function isEphemeralPlannerBlock(block: ActivityDetailBlock): boolean {
+  return block.kind === "model-request" || block.kind === "agent-request";
+}
+
+function hasSubstantivePlannerContent(blocks: readonly ActivityDetailBlock[]): boolean {
+  return blocks.some(
+    (block) =>
+      block.kind === "action" ||
+      block.kind === "narrative" ||
+      block.kind === "thinking" ||
+      block.kind === "tool-failed" ||
+      block.kind === "phase",
+  );
+}
+
 function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
   if (block.kind === "subagent-mission") {
     return block.subagent;
@@ -666,6 +682,10 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
       continue;
     }
 
+    if (currentRole && isEphemeralPlannerBlock(block)) {
+      continue;
+    }
+
     flushSubagent();
     plannerBlocks.push(block);
   }
@@ -704,13 +724,16 @@ function pushWorkSessionsFromRuns(
       if (run.blocks.length === 0) {
         continue;
       }
+      if (hasSubagentRuns && !hasSubstantivePlannerContent(run.blocks)) {
+        continue;
+      }
       const awaitingFirstToken = running && sessionAwaitingFirstToken(run.blocks, undefined);
       output.push({
         kind: "work-session",
         durationMs: options.durationMs,
         running,
-        defaultCollapsed: !running,
-        ...(hasSubagentRuns && { hideProcessedDuration: true }),
+        defaultCollapsed: false,
+        inlineContent: true,
         ...(awaitingFirstToken && { awaitingFirstToken }),
         children: run.blocks,
       });

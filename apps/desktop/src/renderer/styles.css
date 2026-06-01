@@ -1947,6 +1947,19 @@ button:not(:disabled) {
   min-width: 0;
 }
 
+.work-session-inline .work-session-details {
+  padding-top: 0;
+}
+
+.work-session-inline-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+  color: #a3a3a3;
+  font-size: 14px;
+}
+
 .work-session-toggle {
   display: flex;
   align-items: center;

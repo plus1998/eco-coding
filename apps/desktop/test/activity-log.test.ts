@@ -36,7 +36,8 @@ test("groups narrative and compact tool summaries into collapsible work session"
   if (session?.kind !== "work-session") {
     return;
   }
-  expect(session.defaultCollapsed).toBe(true);
+  expect(session.defaultCollapsed).toBe(false);
+  expect(session.inlineContent).toBe(true);
   expect(session.compactSubagentMode).toBeFalsy();
   expect(session.children.some((child) => child.kind === "action" && child.label.includes("styles.css"))).toBe(
     true,
@@ -187,7 +188,7 @@ test("counts parallel coder delegations", () => {
   expect(resolveActiveSubagents(lines, "running").filter((role) => role === "coder")).toHaveLength(2);
 });
 
-test("hides thread duration on planner separators when subagent cards exist", () => {
+test("shows planner work inline when subagent cards exist", () => {
   const missionCoder = formatSubagentMissionMessage("coder", "Implement");
   const blocks = buildActivityLogBlocks(
     [
@@ -204,7 +205,8 @@ test("hides thread duration on planner separators when subagent cards exist", ()
   );
   expect(plannerSession?.kind).toBe("work-session");
   if (plannerSession?.kind === "work-session") {
-    expect(plannerSession.hideProcessedDuration).toBe(true);
+    expect(plannerSession.inlineContent).toBe(true);
+    expect(plannerSession.defaultCollapsed).toBe(false);
   }
 });
 
@@ -365,6 +367,31 @@ test("attaches run duration to completed subagent work session", () => {
     expect(coderSession.runDurationMs).toBe(8000);
     expect(coderSession.running).toBe(false);
   }
+});
+
+test("does not split subagent run on interleaved planner model-request lines", () => {
+  const missionLine = formatSubagentMissionMessage("reviewer", "Review changes");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "reviewer", message: "Tool: TodoWrite · update task" },
+      { id: "3", role: "planner", message: "Requesting model…" },
+      { id: "4", role: "reviewer", message: "Tool: TodoWrite · list tasks" },
+      { id: "5", role: "planner", message: "Requesting model…" },
+      { id: "6", role: "reviewer", message: "Tool: Bash · npx tsc" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const reviewerSessions = blocks.filter(
+    (block) => block.kind === "work-session" && block.subagentRunRole === "reviewer",
+  );
+  expect(reviewerSessions).toHaveLength(1);
+  const plannerSeparators = blocks.filter(
+    (block) => block.kind === "work-session" && !block.compactSubagentMode,
+  );
+  expect(plannerSeparators).toHaveLength(0);
 });
 
 test("isolates repeated reviewer missions into separate compact cards with distinct durations", () => {

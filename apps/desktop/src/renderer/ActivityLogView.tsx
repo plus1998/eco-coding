@@ -92,7 +92,7 @@ function buildSubagentChips(
 
 type SubagentMetaEntry = {
   role: string;
-  modelShort: string;
+  modelShort?: string;
   contextText?: string;
 };
 
@@ -120,9 +120,10 @@ function buildSubagentMetaEntries(
     const occupied = roleContext?.occupied ?? usage?.contextTokens ?? 0;
     const limit = roleContext?.limit ?? usage?.contextLimit;
     const contextText = formatContextCapacityText(occupied, limit);
+    const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
     return {
       role,
-      modelShort: modelId?.trim() ? shortenModelId(modelId.trim()) : "—",
+      ...(modelShort && { modelShort }),
       ...(contextText && { contextText }),
     };
   });
@@ -284,11 +285,13 @@ function SubagentClusterCard({
           ) : (
             <span className="subagent-cluster-heading">子代理</span>
           )}
-          {singleMeta ? (
+          {singleMeta && (singleMeta.modelShort || singleMeta.contextText) ? (
             <div className="subagent-cluster-inline-meta">
-              <span className="subagent-cluster-inline-model" title={singleMeta.modelShort}>
-                {singleMeta.modelShort}
-              </span>
+              {singleMeta.modelShort ? (
+                <span className="subagent-cluster-inline-model" title={singleMeta.modelShort}>
+                  {singleMeta.modelShort}
+                </span>
+              ) : null}
               {singleMeta.contextText ? (
                 <span className="subagent-cluster-inline-ctx" title="上下文占用 / 窗口容量">
                   {singleMeta.contextText}
@@ -315,9 +318,11 @@ function SubagentClusterCard({
             {metaEntries.map((entry) => (
               <div key={entry.role} className="subagent-cluster-meta-row">
                 <span className="subagent-cluster-meta-chip">{SUBAGENT_ROLE_SHORT[entry.role] ?? entry.role}</span>
-                <span className="subagent-cluster-meta-model" title={entry.modelShort}>
-                  {entry.modelShort}
-                </span>
+                {entry.modelShort ? (
+                  <span className="subagent-cluster-meta-model" title={entry.modelShort}>
+                    {entry.modelShort}
+                  </span>
+                ) : null}
                 {entry.contextText ? (
                   <span className="subagent-cluster-meta-ctx" title="上下文占用 / 窗口容量">
                     {entry.contextText}
@@ -367,9 +372,7 @@ function WorkSessionBlock({
 
   const label = block.running
     ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
-    : block.hideProcessedDuration
-      ? "规划"
-      : `已处理 ${formatDuration(block.durationMs)}`;
+    : `已处理 ${formatDuration(block.durationMs)}`;
 
   if (block.compactSubagentMode) {
     return (
@@ -398,6 +401,39 @@ function WorkSessionBlock({
                 />
               ))}
             </div>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
+  if (block.inlineContent) {
+    const showRunningHint =
+      block.running && (block.children.length === 0 || Boolean(block.awaitingFirstToken));
+    return (
+      <section className="work-session work-session-inline">
+        {showRunningHint ? (
+          <div className="work-session-inline-status" aria-live="polite">
+            <span className="work-session-dot running" />
+            <span className="work-session-label">
+              {label}
+              <RequestTimingBadge timing={sessionTiming} />
+              {block.activeMissionSummary ? (
+                <span className="work-session-mission">{block.activeMissionSummary}</span>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
+        {block.children.length > 0 ? (
+          <div className="work-session-details">
+            {block.children.map((child, index) => (
+              <DetailBlock
+                key={`${child.kind}-${index}`}
+                block={child}
+                {...(modelByRole && { modelByRole })}
+                {...(usageByRole && { usageByRole })}
+              />
+            ))}
           </div>
         ) : null}
       </section>
