@@ -292,6 +292,13 @@ export interface ThreadRollbackResult {
   message: string;
 }
 
+export type WorktreeCancelDisposition = "apply" | "keep" | "discard";
+
+export interface ThreadCancelRequest {
+  threadId: string;
+  worktreeDisposition?: WorktreeCancelDisposition;
+}
+
 export type CoderTodoStatus = "pending" | "running" | "completed" | "blocked" | "cancelled";
 
 export interface CoderTodoItem {

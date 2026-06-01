@@ -54,9 +54,11 @@ import {
   type ThreadContextSnapshot,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type WorktreeCancelDisposition,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
+import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   extractPlanFailureMessage,
   resolveRetryBannerDetail,
@@ -178,6 +180,7 @@ function App() {
   }>();
   const [worktreeApplyBusy, setWorktreeApplyBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
 
@@ -987,18 +990,39 @@ function App() {
     }
   }
 
-  async function cancelActiveThread() {
+  async function performCancel(worktreeDisposition?: WorktreeCancelDisposition) {
     if (!activeThread || !window.eco) {
       return;
     }
     setError(undefined);
     setCancelBusy(true);
     try {
-      await window.eco.cancelThread(activeThread.id);
+      await window.eco.cancelThread({
+        threadId: activeThread.id,
+        ...(worktreeDisposition ? { worktreeDisposition } : {}),
+      });
+      setStopConfirm(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setCancelBusy(false);
+    }
+  }
+
+  async function requestStopThread() {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    setError(undefined);
+    try {
+      const status = await window.eco.getWorktreeStatus(activeThread.id);
+      if (status.exists && status.changedFiles.length > 0) {
+        setStopConfirm({ changedFiles: status.changedFiles });
+        return;
+      }
+      await performCancel();
+    } catch (caught) {
+      setError(errorMessage(caught));
     }
   }
 
@@ -1369,7 +1393,7 @@ function App() {
             <button
               type="button"
               className="send-button stop"
-              onClick={() => void cancelActiveThread()}
+              onClick={() => void requestStopThread()}
               disabled={cancelBusy}
               title="停止当前运行"
               aria-label="停止"
@@ -1646,6 +1670,19 @@ function App() {
           {...(pendingWorktreeApply && { pendingWorktreeApply })}
           onApplyWorktree={() => void applyPendingWorktree()}
           worktreeApplyBusy={worktreeApplyBusy}
+        />
+      ) : null}
+
+      {stopConfirm ? (
+        <StopThreadConfirmDialog
+          changedFiles={stopConfirm.changedFiles}
+          busy={cancelBusy}
+          onConfirm={(disposition) => void performCancel(disposition)}
+          onDismiss={() => {
+            if (!cancelBusy) {
+              setStopConfirm(undefined);
+            }
+          }}
         />
       ) : null}
 

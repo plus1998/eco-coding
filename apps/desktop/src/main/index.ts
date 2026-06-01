@@ -64,6 +64,7 @@ import {
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
   type ThreadRollbackResult,
+  type WorktreeCancelDisposition,
   type ThreadStartRequest,
   type ThreadStatus,
   type PromptImageAttachment,
@@ -156,6 +157,12 @@ import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
 import { workspaceSupportsWorktree } from "../shared/workspace-readiness";
 import {
+  finalizeCancelledRun,
+  parseThreadCancelRequest,
+  takePendingCancelDisposition,
+  type FinalizeCancelledRunDeps,
+} from "./cancel-worktree";
+import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
   cancelClarificationsForThread,
@@ -198,6 +205,7 @@ interface ActiveThreadRun {
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
+const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingUsageUpdates = new Map<string, Set<Promise<void>>>();
@@ -878,9 +886,14 @@ function registerIpcHandlers(): void {
     return retryThread(request);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, threadId: unknown) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
+  ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, payload: unknown) => {
+    const request = parseThreadCancelRequest(payload);
+    if (!request) {
       return;
+    }
+    const { threadId, worktreeDisposition } = request;
+    if (worktreeDisposition) {
+      pendingCancelDisposition.set(threadId, worktreeDisposition);
     }
     const active = activeRuns.get(threadId);
     if (active) {
@@ -895,11 +908,15 @@ function registerIpcHandlers(): void {
       return;
     }
     if (thread?.status === "running" || thread?.status === "queued") {
-      updateThread(threadId, {
-        status: "idle",
-        message: "已停止。若隔离工作树仍有变更，可在右侧「应用到工作区」合并。",
-      });
-      emitThreadEvent(threadId, "thread.idle", "已停止。", "system");
+      const pending = conversationStore.getPendingPlan(threadId);
+      const workspacePath = pending?.workspacePath ?? thread.workspacePath;
+      if (workspacePath) {
+        const plan = resolveWorktreePlan(workspacePath, threadId, pending?.worktreePath);
+        await handleRunCancelled(threadId, plan);
+      } else {
+        updateThread(threadId, { status: "idle", message: "已停止。" });
+        emitThreadEvent(threadId, "thread.idle", "已停止。", "system");
+      }
     }
   });
 
@@ -1083,7 +1100,9 @@ async function runQuestionThread(
     });
 
     if (outcome.aborted) {
-      updateThread(thread.id, { status: "idle", message: "已停止回答。" });
+      cancelClarificationsForThread(thread.id, "cancelled by user");
+      const plan = resolveWorktreePlan(workspace.path, thread.id, cwd);
+      await handleRunCancelled(thread.id, plan);
       return;
     }
     if (!outcome.ok) {
@@ -1249,8 +1268,7 @@ async function runCodingThreadSdkDefault(
 
     if (runOutcome.aborted) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
-      updateThread(thread.id, { status: "idle", message: "已取消。" });
-      await cleanupWorktreeForThread(thread.id);
+      await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
     if (!runOutcome.ok) {
@@ -1429,8 +1447,7 @@ async function runCodingThreadPlanning(
 
     if (planningOutcome.aborted) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
-      updateThread(thread.id, { status: "idle", message: "已取消。" });
-      await cleanupWorktreeForThread(thread.id);
+      await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
     if (!planningOutcome.ok) {
@@ -1593,7 +1610,8 @@ async function runCodingThreadExecution(
       if (!stopTodosHandled) {
         taskHookHandlers.onStop("cancelled");
       }
-      await restoreAfterExecutionFailure(threadId, worktreePlan, "执行已取消。", executionPlan);
+      cancelClarificationsForThread(threadId, "cancelled by user");
+      await handleRunCancelled(threadId, worktreePlan);
       return;
     }
 
@@ -1906,17 +1924,23 @@ async function restoreAfterExecutionFailure(
   });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
   const active = activeRuns.get(threadId);
   if (active) {
     active.controller.abort("dismissed by user");
   }
+  const pending = conversationStore.getPendingPlan(threadId);
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
+  const worktreePath = pending?.worktreePath;
   conversationStore.clearPendingPlan(threadId);
-  await cleanupWorktreeForThread(threadId);
+  if (workspacePath) {
+    const plan = resolveWorktreePlan(workspacePath, threadId, worktreePath);
+    if (isIsolatedWorktreePlan(plan)) {
+      await handleRunCancelled(threadId, plan);
+      return;
+    }
+  }
   updateThread(threadId, { status: "idle", message });
   emitThreadEvent(threadId, "thread.idle", message, "system");
 }
@@ -2052,6 +2076,26 @@ async function cleanupWorktreeForThread(threadId: string): Promise<void> {
     return;
   }
   await removeIsolatedWorktree(plan, threadId);
+}
+
+function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
+  return {
+    isIsolatedWorktreePlan,
+    changedFiles: (plan) => gitWorktrees.changedFiles(plan),
+    applyWorktreeChanges,
+    saveAppliedDiff: (threadId, workspacePath, diff, files) =>
+      conversationStore.saveAppliedDiff(threadId, workspacePath, diff, files),
+    discardWorktreeChanges: (plan) => gitWorktrees.discardWorktreeChanges(plan),
+    cleanupWorktreeForThread,
+    updateThread: (threadId, patch) => updateThread(threadId, patch),
+    emitThreadEvent: (threadId, type, message, role) =>
+      emitThreadEvent(threadId, type, message, role),
+  };
+}
+
+async function handleRunCancelled(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
+  const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
+  await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps());
 }
 
 function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): ResolvedModelRoute[] {
@@ -2371,7 +2415,8 @@ async function runThreadContinuation(
     if (outcome.aborted) {
       stopStatusRef.current = "cancelled";
       taskHookHandlers?.onStop("cancelled");
-      updateThread(thread.id, { status: "idle", message: "已停止。" });
+      cancelClarificationsForThread(thread.id, "cancelled by user");
+      await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
     if (!outcome.ok) {

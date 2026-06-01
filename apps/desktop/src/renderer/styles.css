@@ -5360,6 +5360,52 @@ button:not(:disabled) {
   gap: 10px;
 }
 
+.stop-thread-confirm-modal {
+  max-width: 520px;
+}
+
+.stop-thread-confirm-lead {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #c8c8c8;
+}
+
+.stop-thread-confirm-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.stop-thread-confirm-files li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stop-thread-confirm-files code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #e0e0e0;
+  word-break: break-all;
+}
+
+.stop-thread-confirm-more {
+  color: #888;
+  font-style: italic;
+}
+
+.stop-thread-confirm-footer {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stop-thread-confirm-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .settings-modal-cancel {
   padding: 8px 14px;
   border: none;
