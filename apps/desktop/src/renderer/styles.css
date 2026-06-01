@@ -2998,18 +2998,14 @@ button:not(:disabled) {
   background: #3a3a3a;
 }
 
-.context-card-subagents {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.context-card-subagents-group {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid #333;
 }
 
-.context-card-subagent-toggle {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.context-card-subagents-toggle {
+  display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -3023,34 +3019,53 @@ button:not(:disabled) {
   text-align: left;
 }
 
-.context-card-subagent-toggle:hover {
+.context-card-subagents-toggle:hover {
   border-color: #3a3a3a;
   background: #292929;
 }
 
-.context-card-subagent-chevron {
+.context-card-subagents-chevron {
   flex-shrink: 0;
   color: #8f8f8f;
   transition: transform 0.15s ease;
 }
 
-.context-card-subagent-chevron.open {
+.context-card-subagents-chevron.open {
   transform: rotate(180deg);
 }
 
-.context-card-subagent-toggle-main {
-  display: flex;
+.context-card-subagents-toggle-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e5e5e5;
+}
+
+.context-card-subagents-collapsed-hint {
   min-width: 0;
+  overflow: hidden;
+  color: #8f8f8f;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-card-subagents-body {
+  display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 14px;
+  margin-top: 10px;
 }
 
-.context-card-subagent-body {
-  margin-top: 8px;
-  padding: 0 4px 4px;
+.context-card-subagent-entry-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #a3a3a3;
 }
 
-.context-card-subagent-body .context-card-summary {
+.context-card-subagent-entry .context-card-summary {
   margin-top: 0;
 }
 

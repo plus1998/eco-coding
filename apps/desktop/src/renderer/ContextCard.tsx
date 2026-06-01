@@ -1,7 +1,7 @@
 import { formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
 import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
-import type { AgentRole, ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
+import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
@@ -10,6 +10,14 @@ interface ContextCardProps {
   showWhenEmpty?: boolean;
   onDismiss?: () => void;
 }
+
+const SUBAGENT_ROLE_SHORT: Record<string, string> = {
+  explore: "探索",
+  architect: "架构",
+  coder: "编码",
+  reviewer: "审查",
+  tester: "测试",
+};
 
 function formatContextK(value: number): string {
   if (value < 1000) {
@@ -91,6 +99,15 @@ function hasDetailedBreakdown(role: ThreadRoleContextSnapshot): boolean {
   );
 }
 
+function formatSubagentsCollapsedSummary(roles: ThreadRoleContextSnapshot[]): string {
+  return roles
+    .map((role) => {
+      const short = SUBAGENT_ROLE_SHORT[role.role] ?? role.role;
+      return `${short} ${formatContextK(role.occupied)}/${formatContextK(role.limit)}`;
+    })
+    .join(" · ");
+}
+
 function ContextRoleBody({
   role,
   detailsOpen,
@@ -170,7 +187,7 @@ function ContextRoleBody({
 
 export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
-  const [expandedSubagents, setExpandedSubagents] = useState<Set<AgentRole>>(() => new Set());
+  const [subagentsOpen, setSubagentsOpen] = useState(false);
 
   if (!context) {
     if (!showWhenEmpty) {
@@ -188,18 +205,6 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const subagentRoles = roles.filter((role) => role.role !== "planner");
   const plannerDetailed = hasDetailedBreakdown(planner);
   const showPlannerRefreshing = Boolean(context.breakdownRefreshing);
-
-  const toggleSubagent = (role: AgentRole) => {
-    setExpandedSubagents((current) => {
-      const next = new Set(current);
-      if (next.has(role)) {
-        next.delete(role);
-      } else {
-        next.add(role);
-      }
-      return next;
-    });
-  };
 
   return (
     <div className="context-card">
@@ -242,44 +247,39 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
       />
 
       {subagentRoles.length > 0 ? (
-        <div className="context-card-subagents" aria-label="子代理上下文">
-          {subagentRoles.map((role) => {
-            const expanded = expandedSubagents.has(role.role);
-            const label = formatRoleModelLabel(role.role, role.modelId);
-            return (
-              <div key={role.role} className="context-card-subagent">
-                <button
-                  type="button"
-                  className="context-card-subagent-toggle"
-                  onClick={() => toggleSubagent(role.role)}
-                  aria-expanded={expanded}
-                >
-                  <ChevronDown
-                    size={14}
-                    className={expanded ? "context-card-subagent-chevron open" : "context-card-subagent-chevron"}
-                    aria-hidden
-                  />
-                  <span className="context-card-subagent-toggle-main">
-                    <span className="context-card-role-name">{label}</span>
-                    <span className="context-card-role-meter" aria-hidden>
-                      <span
-                        className="context-card-role-meter-fill"
-                        style={{ width: `${Math.min(role.occupancyPct, 100)}%` }}
-                      />
-                    </span>
-                  </span>
-                  <span className="context-card-role-usage">
-                    {formatContextK(role.occupied)} / {formatContextK(role.limit)}
-                  </span>
-                </button>
-                {expanded ? (
-                  <div className="context-card-subagent-body">
-                    <ContextRoleBody role={role} detailsOpen />
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
+        <div className="context-card-subagents-group">
+          <button
+            type="button"
+            className="context-card-subagents-toggle"
+            onClick={() => setSubagentsOpen((open) => !open)}
+            aria-expanded={subagentsOpen}
+            aria-label={subagentsOpen ? "收起子代理上下文" : "展开子代理上下文"}
+          >
+            <ChevronDown
+              size={14}
+              className={subagentsOpen ? "context-card-subagents-chevron open" : "context-card-subagents-chevron"}
+              aria-hidden
+            />
+            <span className="context-card-subagents-toggle-label">子代理</span>
+            {!subagentsOpen ? (
+              <span className="context-card-subagents-collapsed-hint" title={formatSubagentsCollapsedSummary(subagentRoles)}>
+                {formatSubagentsCollapsedSummary(subagentRoles)}
+              </span>
+            ) : null}
+          </button>
+
+          {subagentsOpen ? (
+            <div className="context-card-subagents-body" aria-label="子代理上下文">
+              {subagentRoles.map((role) => (
+                <section key={role.role} className="context-card-subagent-entry">
+                  <h5 className="context-card-subagent-entry-title">
+                    {formatRoleModelLabel(role.role, role.modelId)}
+                  </h5>
+                  <ContextRoleBody role={role} detailsOpen={false} />
+                </section>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
