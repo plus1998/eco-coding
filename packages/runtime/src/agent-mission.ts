@@ -21,6 +21,27 @@ const ROLE_DEFAULT_SUMMARY: Record<SubagentRole, string> = {
   tester: "验证实现与测试用例",
 };
 
+const GENERIC_MISSION_SUMMARIES = new Set<string>(Object.values(ROLE_DEFAULT_SUMMARY));
+
+export function isGenericMissionSummary(summary: string): boolean {
+  return GENERIC_MISSION_SUMMARIES.has(summary.trim());
+}
+
+/** Agent tool detail that only names the subagent role, without a real task prompt. */
+export function isWeakAgentToolDetail(detail: string | undefined): boolean {
+  const trimmed = detail?.trim();
+  if (!trimmed || isToolElapsedDuration(trimmed)) {
+    return true;
+  }
+  if (parseSubagentMissionMessage(trimmed)) {
+    return false;
+  }
+  if (missionFromAgentToolDetail(trimmed) && !/[\n.!?。！？]/.test(trimmed) && trimmed.length <= 48) {
+    return true;
+  }
+  return false;
+}
+
 export function summarizeAgentObjective(role: string, prompt: string): string {
   const trimmed = prompt.trim();
   if (!trimmed) {

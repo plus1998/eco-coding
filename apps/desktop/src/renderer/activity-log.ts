@@ -1,6 +1,8 @@
 import {
+  isGenericMissionSummary,
   isSubagentRole,
   isToolElapsedDuration,
+  isWeakAgentToolDetail,
   mergeStreamText,
   missionFromAgentToolDetail,
   parseSubagentMissionMessage,
@@ -26,7 +28,8 @@ export type ActivityDetailBlock =
   | { kind: "agent-request"; subagent?: string }
   | { kind: "thinking"; text: string; streaming?: boolean }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
-  | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string };
+  | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string }
+  | { kind: "tool-failed"; tool: string; error?: string; subagent?: string };
 
 export type ActivityLogBlock =
   | { kind: "user-prompt"; text: string; lineId: string }
@@ -188,6 +191,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let thinking = "";
   let thinkingStreaming = false;
   let toolContextSubagent: string | undefined;
+  const missionByRole = new Map<string, SubagentMissionPayload>();
   const recentNarratives: string[] = [];
 
   const removePendingRequestBlocks = () => {
@@ -340,19 +344,45 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const pushSubagentMission = (mission: SubagentMissionPayload) => {
     removePendingRequestBlocks();
     toolContextSubagent = mission.role;
+    const stored = missionByRole.get(mission.role);
+    const merged: SubagentMissionPayload = {
+      role: mission.role,
+      summary:
+        stored && !isGenericMissionSummary(stored.summary) && isGenericMissionSummary(mission.summary)
+          ? stored.summary
+          : mission.summary,
+      prompt: mission.prompt?.trim() || stored?.prompt?.trim() || "",
+    };
+    missionByRole.set(merged.role, merged);
+
     const last = current.details[current.details.length - 1];
-    if (
-      last?.kind === "subagent-mission" &&
-      last.subagent === mission.role &&
-      last.summary === mission.summary
-    ) {
+    if (last?.kind === "subagent-mission" && last.subagent === merged.role) {
+      const upgraded = {
+        kind: "subagent-mission" as const,
+        subagent: merged.role,
+        summary:
+          isGenericMissionSummary(last.summary) && !isGenericMissionSummary(merged.summary)
+            ? merged.summary
+            : last.summary,
+        ...((merged.prompt || last.prompt) && { prompt: merged.prompt || last.prompt }),
+      };
+      if (
+        upgraded.summary === last.summary &&
+        upgraded.prompt === last.prompt
+      ) {
+        return;
+      }
+      current.details[current.details.length - 1] = upgraded;
+      return;
+    }
+    if (last?.kind === "subagent-mission" && last.subagent === merged.role && last.summary === merged.summary) {
       return;
     }
     current.details.push({
       kind: "subagent-mission",
-      subagent: mission.role,
-      summary: mission.summary,
-      ...(mission.prompt && { prompt: mission.prompt }),
+      subagent: merged.role,
+      summary: merged.summary,
+      ...(merged.prompt && { prompt: merged.prompt }),
     });
   };
 
@@ -371,11 +401,24 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       }
       const legacy = missionFromAgentToolDetail(tool.detail);
       if (legacy && legacy.role) {
-        pushSubagentMission({
-          role: legacy.role,
-          summary: legacy.summary,
-          prompt: tool.detail ?? "",
-        });
+        if (!isWeakAgentToolDetail(tool.detail)) {
+          pushSubagentMission({
+            role: legacy.role,
+            summary: legacy.summary,
+            prompt: tool.detail ?? "",
+          });
+        } else {
+          const stored = missionByRole.get(legacy.role);
+          if (stored) {
+            pushSubagentMission(stored);
+          } else {
+            pushSubagentMission({
+              role: legacy.role,
+              summary: legacy.summary,
+              prompt: "",
+            });
+          }
+        }
       }
       if (tool.detail || subagent || legacy) {
         return;
@@ -441,7 +484,22 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     const mission = parseSubagentMissionMessage(line.message);
     if (mission) {
       flushTextBuffers();
+      missionByRole.set(mission.role, mission);
       pushSubagentMission(mission);
+      continue;
+    }
+
+    const toolFailed = parseToolFailedLine(line.message);
+    if (toolFailed) {
+      flushTextBuffers();
+      removePendingRequestBlocks();
+      noteToolContext(line);
+      current.details.push({
+        kind: "tool-failed",
+        tool: toolFailed.tool,
+        ...(toolFailed.error && { error: toolFailed.error }),
+        ...(toolContextSubagent && { subagent: toolContextSubagent }),
+      });
       continue;
     }
 
@@ -840,6 +898,20 @@ const KNOWN_SDK_TOOLS = new Set([
   "AskUserQuestion",
   "Skill",
 ]);
+
+function parseToolFailedLine(message: string): { tool: string; error?: string } | null {
+  const match = stripSubagentBracketPrefix(message.trim()).match(
+    /^Tool failed:\s*([A-Za-z_]+)(?:\s*·\s*(.+))?$/i,
+  );
+  if (!match?.[1]) {
+    return null;
+  }
+  const error = match[2]?.trim();
+  return {
+    tool: match[1],
+    ...(error && { error }),
+  };
+}
 
 function parseToolLine(message: string): ParsedToolAction | null {
   const match = message

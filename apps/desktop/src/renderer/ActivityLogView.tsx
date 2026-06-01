@@ -4,6 +4,7 @@ import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
 import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
 import type { ThreadUsageSnapshot } from "../shared/ipc";
 import { formatDurationMs } from "./AppMessage";
+import { isGenericMissionSummary } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
   formatDuration,
@@ -216,6 +217,16 @@ function DetailBlock({
       <RunLogAction
         icon={block.icon}
         label={block.label}
+        {...(block.subagent && { subagent: block.subagent })}
+        {...(modelByRole && { modelByRole })}
+      />
+    );
+  }
+  if (block.kind === "tool-failed") {
+    return (
+      <ToolFailedBlock
+        tool={block.tool}
+        {...(block.error && { error: block.error })}
         {...(block.subagent && { subagent: block.subagent })}
         {...(modelByRole && { modelByRole })}
       />
@@ -481,7 +492,15 @@ function SubagentMissionBlock({
   prompt?: string;
   modelByRole?: Record<string, string>;
 }) {
-  const showPrompt = Boolean(prompt && prompt.trim() && prompt.trim() !== summary.trim());
+  const trimmedPrompt = prompt?.trim() ?? "";
+  const genericSummary = isGenericMissionSummary(summary);
+  const showPrompt = Boolean(
+    trimmedPrompt && (trimmedPrompt !== summary.trim() || genericSummary),
+  );
+  const displaySummary =
+    genericSummary && trimmedPrompt
+      ? trimmedPrompt.split("\n").find((line) => line.trim())?.trim().slice(0, 200) ?? summary
+      : summary;
 
   return (
     <div className="run-log-mission">
@@ -491,15 +510,45 @@ function SubagentMissionBlock({
         </span>
         <span className="run-log-mission-tag">任务目标</span>
       </div>
-      <p className="run-log-mission-summary">
-        <MarkdownContent text={summary} />
-      </p>
+      {displaySummary.trim() ? (
+        <p className="run-log-mission-summary">
+          <MarkdownContent text={displaySummary} />
+        </p>
+      ) : (
+        <p className="run-log-mission-summary run-log-mission-summary-muted">等待任务说明…</p>
+      )}
       {showPrompt ? (
-        <details className="run-log-mission-details">
+        <details className="run-log-mission-details" open={genericSummary}>
           <summary>查看完整任务说明</summary>
-          <pre className="run-log-mission-prompt">{prompt}</pre>
+          <pre className="run-log-mission-prompt">{trimmedPrompt}</pre>
         </details>
       ) : null}
+    </div>
+  );
+}
+
+function ToolFailedBlock({
+  tool,
+  error,
+  subagent,
+  modelByRole,
+}: {
+  tool: string;
+  error?: string;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+}) {
+  return (
+    <div className="run-log-tool-failed" role="alert">
+      {subagent ? (
+        <span className="run-log-tool-failed-role">
+          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+        </span>
+      ) : null}
+      <span className="run-log-tool-failed-label">
+        工具失败 · {tool}
+      </span>
+      {error ? <p className="run-log-tool-failed-error">{error}</p> : null}
     </div>
   );
 }

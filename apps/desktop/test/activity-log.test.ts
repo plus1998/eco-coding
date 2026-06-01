@@ -448,6 +448,56 @@ test("clears awaiting once subagent streams narrative", () => {
   }
 });
 
+test("renders tool failed lines as tool-failed blocks", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "coder", message: "Tool failed: Read · ENOENT: missing file" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const failed = session.children.find((child) => child.kind === "tool-failed");
+  expect(failed).toMatchObject({
+    kind: "tool-failed",
+    tool: "Read",
+    error: "ENOENT: missing file",
+    subagent: "coder",
+  });
+});
+
+test("upgrades weak agent mission with @mission payload", () => {
+  const missionLine = formatSubagentMissionMessage(
+    "coder",
+    "Implement export filters.\nFiles: src/api.ts",
+  );
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "planner", message: missionLine },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const missions = session.children.filter((child) => child.kind === "subagent-mission");
+  expect(missions).toHaveLength(1);
+  if (missions[0]?.kind === "subagent-mission") {
+    expect(missions[0].prompt).toContain("src/api.ts");
+    expect(missions[0].summary).toContain("src/api.ts");
+  }
+});
+
 test("does not treat tool elapsed duration as subagent role", () => {
   const blocks = buildActivityLogBlocks(
     [

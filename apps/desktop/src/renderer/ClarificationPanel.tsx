@@ -80,12 +80,27 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
     customInputRef.current?.focus();
   }, [showCustomInput, questionIndex, busy]);
 
+  function advanceToNextQuestionIfReady(nextSelection: string[]) {
+    if (!question || question.multiSelect || questionIndex >= total - 1) {
+      return;
+    }
+    const customText = customTexts[questionIndex] ?? "";
+    if (!isClarificationQuestionReady(nextSelection, customText)) {
+      return;
+    }
+    if (nextSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL) && !customText.trim()) {
+      return;
+    }
+    setQuestionIndex((index) => index + 1);
+  }
+
   function selectOption(optionLabel: string) {
     if (!question) {
       return;
     }
     setSelections((current) => {
       const next = current.map((row) => [...row]);
+      let nextSelection: string[] = [];
       if (question.multiSelect) {
         const row = next[questionIndex] ?? [];
         if (optionLabel === CLARIFICATION_CUSTOM_OPTION_LABEL) {
@@ -97,8 +112,13 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
             ? row.filter((item) => item !== optionLabel)
             : [...row, optionLabel];
         }
+        nextSelection = next[questionIndex] ?? [];
       } else {
         next[questionIndex] = [optionLabel];
+        nextSelection = next[questionIndex] ?? [];
+        if (optionLabel !== CLARIFICATION_CUSTOM_OPTION_LABEL) {
+          queueMicrotask(() => advanceToNextQuestionIfReady(nextSelection));
+        }
       }
       return next;
     });
@@ -330,7 +350,7 @@ export function ClarificationPanel({ request, busy, onSubmit, onDismiss }: Clari
           disabled={busy || !questionReady}
           onClick={continueFlow}
         >
-          {isLastQuestion ? "继续" : "下一题"} <kbd>↵</kbd>
+          {isLastQuestion ? "确认提交" : "下一题"} <kbd>↵</kbd>
         </button>
       </footer>
     </section>

@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   formatSubagentMissionMessage,
+  isGenericMissionSummary,
+  isWeakAgentToolDetail,
   parseSubagentMissionMessage,
   summarizeAgentObjective,
   missionFromAgentToolDetail,
@@ -25,4 +27,11 @@ test("round-trips mission messages", () => {
 test("ignores elapsed duration in agent tool detail", () => {
   expect(missionFromAgentToolDetail("(32.5s)")).toBeNull();
   expect(missionFromAgentToolDetail("32.5s")).toBeNull();
+});
+
+test("detects generic mission summaries and weak agent tool labels", () => {
+  expect(isGenericMissionSummary("实现计划中的开发任务")).toBe(true);
+  expect(isGenericMissionSummary("实现：Wire IPC")).toBe(false);
+  expect(isWeakAgentToolDetail("编码 (coder)")).toBe(true);
+  expect(isWeakAgentToolDetail("Implement export filters in src/api.ts")).toBe(false);
 });

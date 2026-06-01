@@ -2033,6 +2033,43 @@ button:not(:disabled) {
   line-height: 1.5;
 }
 
+.run-log-mission-summary-muted {
+  color: #737373;
+  font-style: italic;
+}
+
+.run-log-tool-failed {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.run-log-tool-failed-role {
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.run-log-tool-failed-label {
+  color: #fecaca;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.run-log-tool-failed-error {
+  margin: 0;
+  color: #fda4af;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .run-log-mission-details {
   margin-top: 8px;
   color: #a3a3a3;
@@ -2387,6 +2424,8 @@ button:not(:disabled) {
 }
 
 .thread-info-float-stack {
+  position: relative;
+  z-index: 40;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2850,7 +2889,7 @@ button:not(:disabled) {
   top: 50%;
   right: calc(100% + 8px);
   left: auto;
-  z-index: 100;
+  z-index: 200;
   width: min(248px, calc(30vw - 40px));
   max-width: 248px;
   padding: 10px 12px;
@@ -2879,6 +2918,13 @@ button:not(:disabled) {
 .thread-info-help-wrap:focus-within .thread-info-help-tooltip {
   opacity: 1;
   visibility: visible;
+}
+
+.thread-info-billing-card .thread-info-help-tooltip {
+  top: calc(100% + 8px);
+  right: auto;
+  left: 0;
+  transform: none;
 }
 
 .thread-info-billing-tokens {
