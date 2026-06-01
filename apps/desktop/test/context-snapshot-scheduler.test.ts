@@ -153,3 +153,89 @@ test("clearSubagentState drops cached child role snapshots and segments", () => 
   expect(snapshot?.roles?.map((role) => role.role)).toEqual(["planner"]);
   expect(snapshot?.segments).toEqual(plannerSegments);
 });
+
+test("refreshBreakdownNow applies /context header and planner segments", async () => {
+  const emitted: ThreadContextSnapshot[] = [];
+  let monitorSnapshot: ContextMonitorSnapshot = {
+    occupied: 36_000,
+    limit: 147_000,
+    ratio: 0.24,
+    occupancyPct: 24,
+    limitsResolved: true,
+    displayRole: "planner",
+    roles: [
+      {
+        role: "planner",
+        occupied: 36_000,
+        limit: 147_000,
+        ratio: 0.24,
+        occupancyPct: 24,
+        limitsResolved: true,
+      },
+    ],
+  };
+  const monitor = {
+    getSnapshot: () => monitorSnapshot,
+    updateOccupied: async (_threadId: string, role: "planner", occupied: number) => {
+      monitorSnapshot = {
+        ...monitorSnapshot,
+        occupied,
+        roles: monitorSnapshot.roles.map((entry) =>
+          entry.role === role ? { ...entry, occupied, occupancyPct: Math.round((occupied / entry.limit) * 100) } : entry,
+        ),
+      };
+      return monitorSnapshot;
+    },
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+  } as unknown as ContextWindowMonitor;
+
+  const contextText = `
+claude-sonnet-4 · 76k/200k tokens (38%)
+System prompt: 2.7k tokens
+System tools: 16.8k tokens
+Messages: 9.6k tokens
+`;
+
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async (_threadId, fn) => {
+      const driver = {
+        contextSnapshot: async function* () {
+          yield {
+            type: "usage.recorded",
+            payload: { type: "result", result: contextText },
+          };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, [
+        {
+          role: "planner",
+          primary: {
+            id: "planner:p1",
+            provider: "custom",
+            displayName: "Planner",
+            baseUrl: "https://api.example",
+            modelId: "claude-sonnet-4",
+            capabilities: ["messages_api"],
+            enabled: true,
+          },
+          fallbacks: [],
+        },
+      ]);
+    },
+    emitContext: (_threadId, snapshot) => emitted.push(snapshot),
+    emitActivity: () => {},
+  });
+
+  scheduler.scheduleBreakdownRefresh("t1", [], "/tmp", true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const snapshot = emitted.at(-1);
+  expect(snapshot?.occupied).toBe(76_000);
+  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments.length).toBeGreaterThan(1);
+  expect(snapshot?.breakdownRefreshing).toBeUndefined();
+});

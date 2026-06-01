@@ -71,6 +71,48 @@ const CONTEXT_TOTAL_LABEL_PATTERNS = [
   /^max(?:imum)?(?:\s*tokens?)?$/i,
 ];
 
+export interface ContextCommandHeader {
+  occupied: number;
+  limit: number;
+  occupancyPct?: number;
+}
+
+/**
+ * Parse Claude Code `/context` summary line, e.g.
+ * `claude-sonnet-4 · 76k/200k tokens (38%)`
+ */
+export function parseContextCommandHeader(text: string): ContextCommandHeader | null {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const slashMatch = trimmed.match(
+      /([\d.,]+\s*[kKmM]?)\s*\/\s*([\d.,]+\s*[kKmM]?)\s*tokens?\s*(?:\((\d+)%\))?/i,
+    );
+    if (slashMatch) {
+      const occupiedRaw = slashMatch[1];
+      const limitRaw = slashMatch[2];
+      const pctRaw = slashMatch[3];
+      if (!occupiedRaw || !limitRaw) {
+        continue;
+      }
+      const occupied = parseTokenCount(occupiedRaw);
+      const limit = parseTokenCount(limitRaw);
+      if (occupied <= 0 || limit <= 0) {
+        continue;
+      }
+      const pct =
+        pctRaw !== undefined && Number.isFinite(Number.parseInt(pctRaw, 10))
+          ? Number.parseInt(pctRaw, 10)
+          : undefined;
+      return { occupied, limit, ...(pct !== undefined && { occupancyPct: pct }) };
+    }
+  }
+  return null;
+}
+
 function parseTokenCount(raw: string): number {
   const normalized = raw.trim().replace(/,/g, "");
   const match = normalized.match(/^([\d.]+)\s*([kKmM])?$/);

@@ -313,7 +313,9 @@ export {
 export {
   computeOccupancyRatio,
   computeWindowOccupancy,
+  DEFAULT_AUTOCOMPACT_BUFFER,
   DEFAULT_CONTEXT_LIMIT,
+  effectiveContextLimit,
   extractLimitsFromModelEntry,
   formatContextLimit,
   lookupModelLimitsInCatalog,
@@ -325,8 +327,10 @@ export {
   CONTEXT_SEGMENT_COLORS,
   CONTEXT_SEGMENT_LABELS,
   mergeBreakdownWithOccupancy,
+  parseContextCommandHeader,
   parseContextCommandResult,
   type ContextBreakdownSegment,
+  type ContextCommandHeader,
   type ContextSegmentKey,
 } from "./context-breakdown";
 export {

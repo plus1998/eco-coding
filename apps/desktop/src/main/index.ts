@@ -2629,7 +2629,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
 }
 
 function shouldUseSdkContextFallback(role: AgentRole, run: ActiveThreadRun | undefined): boolean {
-  return role !== "planner" && run?.proxyContextRolesSeen?.has(role) !== true;
+  return run?.proxyContextRolesSeen?.has(role) !== true;
 }
 
 async function updateContextFromSdkFallback(

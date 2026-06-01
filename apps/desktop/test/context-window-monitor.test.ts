@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { effectiveContextLimit } from "@eco/runtime";
 import { ContextWindowMonitor } from "../src/main/context-window-monitor";
 import type { ModelsDevPricingCache } from "../src/main/models-dev-pricing-cache";
 
@@ -9,6 +10,10 @@ function mockCache(limit = 100_000, resolved = true): ModelsDevPricingCache {
       limitsResolved: resolved,
     }),
   } as ModelsDevPricingCache;
+}
+
+function effectiveLimit(catalogLimit: number): number {
+  return effectiveContextLimit(catalogLimit);
 }
 
 function roleAwareMockCache(): ModelsDevPricingCache {
@@ -80,8 +85,8 @@ test("resolves context limits per role model", async () => {
     { role: "coder", modelId: "coder-model", providerBaseUrl: "https://api.example" },
   );
   const snapshot = monitor.getSnapshot("t1");
-  expect(snapshot?.roles.find((role) => role.role === "planner")?.limit).toBe(100_000);
-  expect(snapshot?.roles.find((role) => role.role === "coder")?.limit).toBe(40_000);
+  expect(snapshot?.roles.find((role) => role.role === "planner")?.limit).toBe(effectiveLimit(100_000));
+  expect(snapshot?.roles.find((role) => role.role === "coder")?.limit).toBe(effectiveLimit(40_000));
 });
 
 test("shouldCompact ignores high subagent occupancy", async () => {
@@ -171,4 +176,31 @@ test("dedupes assistant usage by messageId", async () => {
     { messageId: "msg-1" },
   );
   expect(monitor.getSnapshot("t1")?.occupied).toBe(50_000);
+});
+
+test("updateOccupied sets planner occupancy from /context header", async () => {
+  const monitor = new ContextWindowMonitor(mockCache());
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 36_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
+  );
+  await monitor.updateOccupied("t1", "planner", 76_000);
+  expect(monitor.getSnapshot("t1")?.roles.find((role) => role.role === "planner")?.occupied).toBe(76_000);
+});
+
+test("shouldCompact uses effective context limit", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(200_000));
+  const limit = effectiveLimit(200_000);
+  await monitor.updateFromUsage(
+    "t1",
+    {
+      inputTokens: Math.round(limit * 0.86),
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    },
+    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
+  );
+  expect(monitor.shouldCompact("t1")).toBe(true);
 });

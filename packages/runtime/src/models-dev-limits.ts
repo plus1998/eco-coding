@@ -15,6 +15,20 @@ const MODEL_ALIASES: Record<string, string[]> = {
 
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 
+/** Claude Code autocompact buffer (reserved headroom before compaction). */
+export const DEFAULT_AUTOCOMPACT_BUFFER = 33_000;
+
+const MAX_OUTPUT_RESERVE_CAP = 20_000;
+
+/**
+ * Effective context window for occupancy / compact (Claude Code style).
+ * Deducts autocompact buffer and output reservation from catalog limit.
+ */
+export function effectiveContextLimit(catalogLimit: number, maxOutputTokens?: number): number {
+  const outputReserve = Math.min(maxOutputTokens ?? MAX_OUTPUT_RESERVE_CAP, MAX_OUTPUT_RESERVE_CAP);
+  return Math.max(catalogLimit - DEFAULT_AUTOCOMPACT_BUFFER - outputReserve, catalogLimit * 0.5);
+}
+
 export interface ModelContextLimits {
   contextTokens: number;
   maxOutputTokens?: number;

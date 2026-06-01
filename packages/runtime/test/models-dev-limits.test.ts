@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { mergeBreakdownWithOccupancy, parseContextCommandResult } from "../src/context-breakdown";
+import { mergeBreakdownWithOccupancy, parseContextCommandHeader, parseContextCommandResult } from "../src/context-breakdown";
 import {
   computeOccupancyRatio,
   computeWindowOccupancy,
+  DEFAULT_AUTOCOMPACT_BUFFER,
+  effectiveContextLimit,
   formatContextLimit,
   lookupModelLimitsInCatalog,
   occupancyPercent,
@@ -94,4 +96,25 @@ test("mergeBreakdownWithOccupancy adds unattributed gap", () => {
     840_000,
   );
   expect(segments.find((s) => s.key === "unattributed")?.tokens).toBe(320_000);
+});
+
+test("parseContextCommandHeader parses Claude Code summary line", () => {
+  const header = parseContextCommandHeader(`
+claude-sonnet-4-20250514 · 76k/200k tokens (38%)
+System prompt: 2.7k tokens
+`);
+  expect(header).toEqual({ occupied: 76_000, limit: 200_000, occupancyPct: 38 });
+});
+
+test("parseContextCommandHeader parses compact numeric forms", () => {
+  const header = parseContextCommandHeader("gpt-5.5 · 17k/1.1M tokens (2%)");
+  expect(header?.occupied).toBe(17_000);
+  expect(header?.limit).toBe(1_100_000);
+  expect(header?.occupancyPct).toBe(2);
+});
+
+test("effectiveContextLimit deducts autocompact buffer and output reserve", () => {
+  expect(effectiveContextLimit(200_000)).toBe(200_000 - DEFAULT_AUTOCOMPACT_BUFFER - 20_000);
+  expect(effectiveContextLimit(200_000, 8_000)).toBe(200_000 - DEFAULT_AUTOCOMPACT_BUFFER - 8_000);
+  expect(effectiveContextLimit(40_000)).toBe(20_000);
 });

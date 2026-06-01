@@ -132,7 +132,10 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         </div>
       </div>
 
-      <div className="context-card-summary">
+      <div
+        className="context-card-summary"
+        title="当前会话窗口占用（非线程累计 token）；运行中由 API usage 实时更新，结束后由 /context 校正"
+      >
         <span className={pctClass(selected.occupancyPct)}>{formatOccupancyLabel(selected.occupancyPct)}</span>
         <span className="context-card-tokens">
           ~{formatContextK(occupied)} / {formatContextK(limit)} Tokens
@@ -219,6 +222,10 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
           上限未匹配 models.dev，按 {formatContextK(selected.limit)} 估算
         </p>
       ) : null}
+
+      <p className="context-card-footnote" title="与用量明细中的累计 token 不同">
+        当前窗口占用，非线程累计 token
+      </p>
     </div>
   );
 }

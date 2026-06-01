@@ -2,6 +2,7 @@ import {
   computeOccupancyRatio,
   computeWindowOccupancy,
   DEFAULT_CONTEXT_LIMIT,
+  effectiveContextLimit,
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
@@ -106,6 +107,31 @@ export class ContextWindowMonitor {
     state.byRole[role] = next;
 
     await this.refreshLimitForRole(next);
+    this.refreshDisplayRole(state);
+    return this.toSnapshot(state);
+  }
+
+  async updateOccupied(
+    threadId: string,
+    role: AgentRole,
+    occupied: number,
+    options?: { limit?: number },
+  ): Promise<ContextMonitorSnapshot> {
+    const state = this.getOrCreateState(threadId);
+    const prev = state.byRole[role];
+    const next: RoleOccupancyState = {
+      occupied,
+      limit: options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
+      limitsResolved: prev?.limitsResolved ?? false,
+      ...(prev?.modelId && { modelId: prev.modelId }),
+      ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
+      ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
+      ...(prev?.maxOutputTokens !== undefined && { maxOutputTokens: prev.maxOutputTokens }),
+    };
+    state.byRole[role] = next;
+    if (prev?.modelId && prev?.providerBaseUrl && options?.limit === undefined) {
+      await this.refreshLimitForRole(next);
+    }
     this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }
@@ -288,7 +314,7 @@ export class ContextWindowMonitor {
       roleState.modelId,
       roleState.modelsDevMapping,
     );
-    roleState.limit = resolved.limit;
+    roleState.limit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
     roleState.limitsResolved = resolved.limitsResolved;
     if (resolved.maxOutputTokens !== undefined) {
       roleState.maxOutputTokens = resolved.maxOutputTokens;
