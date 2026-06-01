@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
   modelProviderTest: "model-provider:test",
+  modelRouteProfileTest: "model-route-profile:test",
   modelRouteProfileSave: "model-route-profile:save",
   modelRouteProfileDelete: "model-route-profile:delete",
   modelRouteProfileSetActive: "model-route-profile:set-active",
@@ -64,8 +65,12 @@ export type AgentSkillAssignments = Record<AgentRole, string[]>;
 export type {
   ListUpstreamModelsRequest,
   ListUpstreamModelsResult,
+  RoleRouteTestResult,
   TestProviderConnectionRequest,
   TestProviderConnectionResult,
+  TestRoleRouteItem,
+  TestRoleRoutesRequest,
+  TestRoleRoutesResult,
   UpstreamModelOption,
 } from "./models";
 export type {
@@ -138,12 +143,25 @@ export interface ModelsDevMapping {
   modelId: string;
 }
 
+/** User-provided pricing/context when upstream model id is absent from models.dev. */
+export interface RouteManualSpec {
+  /** Context window in tokens. */
+  contextTokens?: number;
+  /** USD per million input tokens. */
+  inputPerM?: number;
+  /** USD per million output tokens. */
+  outputPerM?: number;
+  cacheReadPerM?: number;
+  cacheWritePerM?: number;
+}
+
 export interface RoleRouteConfig {
   role: AgentRole;
   providerId: string;
   modelId: string;
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
 }
 
 export interface RouteProfileView {

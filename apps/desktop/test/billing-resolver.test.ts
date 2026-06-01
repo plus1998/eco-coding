@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { resolveUsageRoute } from "../src/main/billing-resolver";
+import {
+  manualSpecToRates,
+  resolveRatesForRoute,
+  resolveUsageRoute,
+} from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { createModelAlias } from "../src/main/anthropic-proxy";
 
@@ -77,6 +81,38 @@ test("resolveUsageRoute preserves models.dev mapping for billing", () => {
   expect(resolved?.modelsDevMapping).toEqual({
     providerKey: "anthropic",
     modelId: "claude-haiku-4-5",
+  });
+});
+
+test("manualSpecToRates returns rates when input and output are set", () => {
+  expect(
+    manualSpecToRates({
+      inputPerM: 3,
+      outputPerM: 15,
+      cacheReadPerM: 0.3,
+    }),
+  ).toEqual({
+    input: 3,
+    output: 15,
+    cacheRead: 0.3,
+  });
+});
+
+test("resolveRatesForRoute prefers models.dev lookup over manual spec", () => {
+  const lookup = {
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+    rates: { input: 1, output: 2 },
+  };
+  expect(
+    resolveRatesForRoute(lookup, { inputPerM: 9, outputPerM: 9 }),
+  ).toEqual({ input: 1, output: 2 });
+});
+
+test("resolveRatesForRoute falls back to manual spec", () => {
+  expect(resolveRatesForRoute(null, { inputPerM: 4, outputPerM: 8 })).toEqual({
+    input: 4,
+    output: 8,
   });
 });
 

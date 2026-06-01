@@ -8,6 +8,7 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
+  type RouteManualSpec,
   type RouteProfileInput,
   type RouteProfileView,
   type ThinkingEffort,
@@ -42,6 +43,11 @@ interface RouteRow {
   thinking_effort: string | null;
   models_dev_provider_key: string | null;
   models_dev_model_id: string | null;
+  manual_context_tokens: number | null;
+  manual_input_per_m: number | null;
+  manual_output_per_m: number | null;
+  manual_cache_read_per_m: number | null;
+  manual_cache_write_per_m: number | null;
 }
 
 interface LegacyRouteRow {
@@ -96,6 +102,7 @@ export class ProviderStore {
     this.migrateRoleRoutesToProfiles();
     this.migrateRoleRoutesThinkingEffort();
     this.migrateRoleRoutesModelsDevMapping();
+    this.migrateRoleRoutesManualSpec();
     this.migrateExploreRoleRoute();
 
     if (this.listProviders().length === 0) {
@@ -313,19 +320,28 @@ export class ProviderStore {
 
     const thinkingEffort = normalizeThinkingEffort(route.thinkingEffort);
     const modelsDev = normalizeModelsDevMapping(route.modelsDevMapping);
+    const manual = normalizeManualSpec(route.manualSpec);
     this.db
       .prepare(`
         INSERT INTO role_routes (
           profile_id, role, provider_id, model_id, thinking_effort,
-          models_dev_provider_key, models_dev_model_id, updated_at
+          models_dev_provider_key, models_dev_model_id,
+          manual_context_tokens, manual_input_per_m, manual_output_per_m,
+          manual_cache_read_per_m, manual_cache_write_per_m,
+          updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(profile_id, role) DO UPDATE SET
           provider_id = excluded.provider_id,
           model_id = excluded.model_id,
           thinking_effort = excluded.thinking_effort,
           models_dev_provider_key = excluded.models_dev_provider_key,
           models_dev_model_id = excluded.models_dev_model_id,
+          manual_context_tokens = excluded.manual_context_tokens,
+          manual_input_per_m = excluded.manual_input_per_m,
+          manual_output_per_m = excluded.manual_output_per_m,
+          manual_cache_read_per_m = excluded.manual_cache_read_per_m,
+          manual_cache_write_per_m = excluded.manual_cache_write_per_m,
           updated_at = excluded.updated_at
       `)
       .run(
@@ -336,6 +352,11 @@ export class ProviderStore {
         thinkingEffort,
         modelsDev?.providerKey ?? null,
         modelsDev?.modelId ?? null,
+        manual?.contextTokens ?? null,
+        manual?.inputPerM ?? null,
+        manual?.outputPerM ?? null,
+        manual?.cacheReadPerM ?? null,
+        manual?.cacheWritePerM ?? null,
         new Date().toISOString(),
       );
   }
@@ -344,7 +365,9 @@ export class ProviderStore {
     return this.db
       .prepare(`
         SELECT profile_id, role, provider_id, model_id, thinking_effort,
-               models_dev_provider_key, models_dev_model_id
+               models_dev_provider_key, models_dev_model_id,
+               manual_context_tokens, manual_input_per_m, manual_output_per_m,
+               manual_cache_read_per_m, manual_cache_write_per_m
         FROM role_routes
         WHERE profile_id = ?
         ORDER BY role
@@ -467,6 +490,20 @@ export class ProviderStore {
     this.db.exec(`
       ALTER TABLE role_routes ADD COLUMN models_dev_provider_key TEXT;
       ALTER TABLE role_routes ADD COLUMN models_dev_model_id TEXT;
+    `);
+  }
+
+  private migrateRoleRoutesManualSpec(): void {
+    const columns = this.db.prepare("PRAGMA table_info(role_routes)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "manual_context_tokens")) {
+      return;
+    }
+    this.db.exec(`
+      ALTER TABLE role_routes ADD COLUMN manual_context_tokens INTEGER;
+      ALTER TABLE role_routes ADD COLUMN manual_input_per_m REAL;
+      ALTER TABLE role_routes ADD COLUMN manual_output_per_m REAL;
+      ALTER TABLE role_routes ADD COLUMN manual_cache_read_per_m REAL;
+      ALTER TABLE role_routes ADD COLUMN manual_cache_write_per_m REAL;
     `);
   }
 
@@ -599,12 +636,14 @@ function profileRowToView(row: RouteProfileRow, routes: RoleRouteConfig[]): Rout
 function routeRowToConfig(row: RouteRow): RoleRouteConfig {
   const effort = parseThinkingEffort(row.thinking_effort);
   const modelsDevMapping = parseModelsDevMapping(row.models_dev_provider_key, row.models_dev_model_id);
+  const manualSpec = parseManualSpecRow(row);
   return {
     role: row.role,
     providerId: row.provider_id,
     modelId: row.model_id,
     ...(effort && { thinkingEffort: effort }),
     ...(modelsDevMapping && { modelsDevMapping }),
+    ...(manualSpec && { manualSpec }),
   };
 }
 
@@ -647,6 +686,72 @@ function normalizeModelsDevMapping(
     providerKey: value.providerKey.trim(),
     modelId: value.modelId.trim(),
   };
+}
+
+function parseManualSpecRow(row: RouteRow): RouteManualSpec | undefined {
+  const contextTokens = parsePositiveInt(row.manual_context_tokens);
+  const inputPerM = parsePositiveNumber(row.manual_input_per_m);
+  const outputPerM = parsePositiveNumber(row.manual_output_per_m);
+  const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
+  const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  if (
+    contextTokens === undefined &&
+    inputPerM === undefined &&
+    outputPerM === undefined &&
+    cacheReadPerM === undefined &&
+    cacheWritePerM === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(contextTokens !== undefined && { contextTokens }),
+    ...(inputPerM !== undefined && { inputPerM }),
+    ...(outputPerM !== undefined && { outputPerM }),
+    ...(cacheReadPerM !== undefined && { cacheReadPerM }),
+    ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+  };
+}
+
+function normalizeManualSpec(value: RouteManualSpec | undefined): RouteManualSpec | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const contextTokens = parsePositiveInt(value.contextTokens);
+  const inputPerM = parsePositiveNumber(value.inputPerM);
+  const outputPerM = parsePositiveNumber(value.outputPerM);
+  const cacheReadPerM = parsePositiveNumber(value.cacheReadPerM);
+  const cacheWritePerM = parsePositiveNumber(value.cacheWritePerM);
+  if (
+    contextTokens === undefined &&
+    inputPerM === undefined &&
+    outputPerM === undefined &&
+    cacheReadPerM === undefined &&
+    cacheWritePerM === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(contextTokens !== undefined && { contextTokens }),
+    ...(inputPerM !== undefined && { inputPerM }),
+    ...(outputPerM !== undefined && { outputPerM }),
+    ...(cacheReadPerM !== undefined && { cacheReadPerM }),
+    ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+  };
+}
+
+function parsePositiveInt(value: number | undefined | null): number | undefined {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const rounded = Math.floor(value);
+  return rounded > 0 ? rounded : undefined;
+}
+
+function parsePositiveNumber(value: number | undefined | null): number | undefined {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value > 0 ? value : undefined;
 }
 
 function normalizeProfileRoutes(routes: RoleRouteConfig[]): RoleRouteConfig[] {

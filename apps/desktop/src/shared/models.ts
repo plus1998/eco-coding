@@ -24,3 +24,29 @@ export interface TestProviderConnectionRequest {
 export type TestProviderConnectionResult =
   | { ok: true; reply: string }
   | { ok: false; error: string };
+
+export interface TestRoleRouteItem {
+  role: string;
+  providerId: string;
+  modelId: string;
+  thinkingEffort?: string;
+}
+
+export interface RoleRouteTestResult {
+  role: string;
+  modelId: string;
+  ok: boolean;
+  error?: string;
+  reply?: string;
+  elapsedMs?: number;
+}
+
+export interface TestRoleRoutesRequest {
+  routes: TestRoleRouteItem[];
+}
+
+export interface TestRoleRoutesResult {
+  results: RoleRouteTestResult[];
+  passed: number;
+  failed: number;
+}

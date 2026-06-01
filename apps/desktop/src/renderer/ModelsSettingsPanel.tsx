@@ -13,7 +13,9 @@ import {
   type RoleRouteConfig,
   type RouteProfileInput,
   type RouteProfileView,
+  type RouteManualSpec,
   type ModelsDevModelOption,
+  type RoleRouteTestResult,
   type ThinkingEffort,
 } from "../shared/ipc";
 import { ModelSelectField } from "./ModelSelectField";
@@ -73,7 +75,15 @@ export function ModelsSettingsPanel({
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
+  const [testingRouteProfileId, setTestingRouteProfileId] = useState<string | null>(null);
+  const [routeTestResults, setRouteTestResults] = useState<Partial<Record<AgentRole, RoleRouteTestResult>>>(
+    {},
+  );
   const [providerTestMessage, setProviderTestMessage] = useState<{
+    kind: AppMessageKind;
+    message: string;
+  }>();
+  const [routeTestMessage, setRouteTestMessage] = useState<{
     kind: AppMessageKind;
     message: string;
   }>();
@@ -269,6 +279,8 @@ export function ModelsSettingsPanel({
   function openCreateRouteProfile() {
     setPanelError(undefined);
     setRouteProfileModalError(undefined);
+    setRouteTestResults({});
+    setRouteTestMessage(undefined);
     setRouteProfileForm(createBlankRouteProfileForm(settings));
     setRouteProfileModalOpen(true);
   }
@@ -276,6 +288,8 @@ export function ModelsSettingsPanel({
   function openEditRouteProfile(profile: RouteProfileView) {
     setPanelError(undefined);
     setRouteProfileModalError(undefined);
+    setRouteTestResults({});
+    setRouteTestMessage(undefined);
     setRouteProfileForm(routeProfileToForm(profile));
     setRouteProfileModalOpen(true);
   }
@@ -283,6 +297,8 @@ export function ModelsSettingsPanel({
   function closeRouteProfileModal() {
     setRouteProfileModalOpen(false);
     setRouteProfileModalError(undefined);
+    setRouteTestResults({});
+    setRouteTestMessage(undefined);
     setRouteProfileForm(createBlankRouteProfileForm(settings));
   }
 
@@ -358,6 +374,68 @@ export function ModelsSettingsPanel({
       setPanelError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       onSavingChange?.(false);
+    }
+  }
+
+  async function testRouteProfile(routes: RoleRouteConfig[], profileKey?: string) {
+    if (!window.eco?.testRouteProfile) {
+      return;
+    }
+    const testKey = profileKey ?? routeProfileForm.id ?? "__draft__";
+    setTestingRouteProfileId(testKey);
+    setRouteTestMessage(undefined);
+    setRouteTestResults({});
+
+    try {
+      const result = await window.eco.testRouteProfile({
+        routes: routes.map((route) => ({
+          role: route.role,
+          providerId: route.providerId,
+          modelId: route.modelId,
+          ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+        })),
+      });
+      setRouteTestResults(
+        Object.fromEntries(result.results.map((entry) => [entry.role as AgentRole, entry])) as Partial<
+          Record<AgentRole, RoleRouteTestResult>
+        >,
+      );
+
+      if (result.failed === 0) {
+        const uniqueModels = new Set(
+          routes
+            .filter((route) => route.providerId.trim() && route.modelId.trim())
+            .map((route) => `${route.providerId.trim()}:${route.modelId.trim()}`),
+        );
+        const durations = result.results
+          .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
+          .filter(Boolean);
+        const durationHint = durations.length > 0 ? `，耗时 ${durations[0]}` : "";
+        const dedupeHint =
+          uniqueModels.size < result.passed
+            ? `（${uniqueModels.size} 组 Provider+模型，共 ${result.passed} 个角色）`
+            : "";
+        setRouteTestMessage({
+          kind: "success",
+          message: `全部 ${result.passed} 个角色已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
+        });
+      } else {
+        const failedLabels = result.results
+          .filter((entry) => !entry.ok)
+          .map((entry) => `${ROLE_LABELS[entry.role as AgentRole] ?? entry.role}：${entry.error ?? "失败"}`)
+          .join("；");
+        setRouteTestMessage({
+          kind: "error",
+          message: `${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
+        });
+      }
+    } catch (caught) {
+      setRouteTestMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setTestingRouteProfileId(null);
     }
   }
 
@@ -465,7 +543,11 @@ export function ModelsSettingsPanel({
   function updateRouteInForm(
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
-    options?: { clearThinkingEffort?: boolean; clearModelsDevMapping?: boolean },
+    options?: {
+      clearThinkingEffort?: boolean;
+      clearModelsDevMapping?: boolean;
+      clearManualSpec?: boolean;
+    },
   ) {
     setRouteProfileForm((current) => {
       const existingRoute = current.routes.find((route) => route.role === role);
@@ -488,6 +570,13 @@ export function ModelsSettingsPanel({
       } else if (existingRoute?.modelsDevMapping) {
         nextRoute.modelsDevMapping = existingRoute.modelsDevMapping;
       }
+      if (options?.clearManualSpec) {
+        // omit manualSpec
+      } else if (patch.manualSpec !== undefined) {
+        nextRoute.manualSpec = patch.manualSpec;
+      } else if (existingRoute?.manualSpec) {
+        nextRoute.manualSpec = existingRoute.manualSpec;
+      }
       return {
         ...current,
         routes: [...current.routes.filter((route) => route.role !== role), nextRoute],
@@ -504,6 +593,13 @@ export function ModelsSettingsPanel({
           kind={providerTestMessage.kind}
           message={providerTestMessage.message}
           onDismiss={() => setProviderTestMessage(undefined)}
+        />
+      )}
+      {routeTestMessage && (
+        <AppMessage
+          kind={routeTestMessage.kind}
+          message={routeTestMessage.message}
+          onDismiss={() => setRouteTestMessage(undefined)}
         />
       )}
 
@@ -587,7 +683,8 @@ export function ModelsSettingsPanel({
               可保存多套角色路由配置，并选择其中一套作为当前启用。线程运行到对应角色时，会调用启用配置中的路线。
             </p>
             <p className="models-section-meta">
-              能力、上下文上限与参考单价来自 models.dev；未匹配时请自行确认模型规格。
+              能力、上下文与参考单价优先来自 models.dev；未匹配时可手动填写，并用「测试」验证各角色模型能否调用
+              /v1/messages。
             </p>
           </div>
         </header>
@@ -614,6 +711,18 @@ export function ModelsSettingsPanel({
                   <span className={profile.isActive ? "models-provider-badge on" : "models-provider-badge"}>
                     {profile.isActive ? "当前启用" : "未启用"}
                   </span>
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || testingRouteProfileId !== null}
+                    onClick={() => void testRouteProfile(profile.routes, profile.id)}
+                  >
+                    <RefreshCw
+                      size={14}
+                      className={testingRouteProfileId === profile.id ? "model-refresh-spin" : undefined}
+                    />
+                    测试
+                  </button>
                   {!profile.isActive && (
                     <button
                       type="button"
@@ -675,10 +784,15 @@ export function ModelsSettingsPanel({
           busy={busy}
           canDelete={settings.routeProfiles.length > 1}
           pricingLoading={pricingLoading}
+          testing={testingRouteProfileId === (routeProfileForm.id ?? "__draft__")}
+          routeTestResults={routeTestResults}
           onClose={closeRouteProfileModal}
           onSave={() => void saveRouteProfile()}
           onDelete={() => void deleteRouteProfile()}
           onRefreshModelsDev={() => void refreshModelsDevCatalog(routeProfileForm.routes)}
+          onTestAll={() =>
+            void testRouteProfile(routeProfileForm.routes, routeProfileForm.id ?? "__draft__")
+          }
           onUpdateRoute={updateRouteInForm}
           onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
@@ -702,10 +816,13 @@ function RouteProfileEditorModal({
   busy,
   canDelete,
   pricingLoading,
+  testing,
+  routeTestResults,
   onClose,
   onSave,
   onDelete,
   onRefreshModelsDev,
+  onTestAll,
   onUpdateRoute,
   onFetchModels,
 }: {
@@ -723,14 +840,21 @@ function RouteProfileEditorModal({
   busy?: boolean | undefined;
   canDelete: boolean;
   pricingLoading: boolean;
+  testing: boolean;
+  routeTestResults: Partial<Record<AgentRole, RoleRouteTestResult>>;
   onClose: () => void;
   onSave: () => void;
   onDelete: () => void;
   onRefreshModelsDev: () => void;
+  onTestAll: () => void;
   onUpdateRoute: (
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
-    options?: { clearThinkingEffort?: boolean; clearModelsDevMapping?: boolean },
+    options?: {
+      clearThinkingEffort?: boolean;
+      clearModelsDevMapping?: boolean;
+      clearManualSpec?: boolean;
+    },
   ) => void;
   onFetchModels: (provider: ProviderConfigView) => void;
 }) {
@@ -787,14 +911,25 @@ function RouteProfileEditorModal({
             <section className="models-route-profile-section">
               <div className="models-route-profile-section-head">
                 <h3 className="models-route-profile-section-title">各角色模型</h3>
-                <button
-                  type="button"
-                  className="models-section-button"
-                  disabled={busy || pricingLoading}
-                  onClick={onRefreshModelsDev}
-                >
-                  刷新 models.dev
-                </button>
+                <div className="models-route-profile-section-actions">
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || testing}
+                    onClick={onTestAll}
+                  >
+                    <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
+                    测试全部
+                  </button>
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || pricingLoading}
+                    onClick={onRefreshModelsDev}
+                  >
+                    刷新 models.dev
+                  </button>
+                </div>
               </div>
 
               <ul className="models-route-list models-route-list-modal">
@@ -808,6 +943,10 @@ function RouteProfileEditorModal({
               const capability = routeCapabilities[role];
               const effortDisabled =
                 capability?.capabilitiesResolved === true && capability.supportsReasoning === false;
+              const needsManualSpec =
+                Boolean(route?.modelId) &&
+                (!pricing?.pricingResolved || !capability?.contextLimitResolved);
+              const roleTest = routeTestResults[role];
 
               return (
                 <li key={role} className="models-route-card models-route-card-modal">
@@ -815,6 +954,20 @@ function RouteProfileEditorModal({
                     <div className="models-route-card-identity">
                       <span className="models-route-role">{ROLE_LABELS[role]}</span>
                       <span className="models-route-role-id">{role}</span>
+                      {roleTest && (
+                        <span
+                          className={
+                            roleTest.ok
+                              ? "models-route-test-badge ok"
+                              : "models-route-test-badge err"
+                          }
+                          title={roleTest.ok ? roleTest.reply : roleTest.error}
+                        >
+                          {roleTest.ok
+                            ? `测试通过${roleTest.elapsedMs !== undefined ? ` · ${formatDurationMs(roleTest.elapsedMs)}` : ""}`
+                            : "测试失败"}
+                        </span>
+                      )}
                     </div>
                     <div className="models-route-card-meta">
                       {pricing?.rates ? (
@@ -866,6 +1019,13 @@ function RouteProfileEditorModal({
                             >
                               上下文 {formatContextLimit(capability.contextTokens)}
                             </span>
+                          ) : route?.manualSpec?.contextTokens ? (
+                            <span
+                              className="models-route-capability-badge"
+                              title={`手动填写上下文 ${route.manualSpec.contextTokens.toLocaleString()} tokens`}
+                            >
+                              上下文 {formatContextLimit(route.manualSpec.contextTokens)}
+                            </span>
                           ) : (
                             <span
                               className="models-route-capability-badge models-route-capability-badge-unresolved"
@@ -875,6 +1035,12 @@ function RouteProfileEditorModal({
                             </span>
                           )
                         ) : null}
+                        {route?.manualSpec?.inputPerM !== undefined &&
+                          route.manualSpec.outputPerM !== undefined && (
+                            <span className="models-route-capability-badge" title="手动填写参考单价">
+                              手动单价
+                            </span>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -979,6 +1145,17 @@ function RouteProfileEditorModal({
                         }}
                       />
                     </div>
+                    {(needsManualSpec || route?.manualSpec) && (
+                      <RouteManualSpecFields
+                        spec={route?.manualSpec}
+                        disabled={busy}
+                        onChange={(manualSpec) => onUpdateRoute(role, { manualSpec })}
+                        onClear={() => onUpdateRoute(role, {}, { clearManualSpec: true })}
+                      />
+                    )}
+                    {roleTest && !roleTest.ok && roleTest.error && (
+                      <p className="models-route-test-error">{roleTest.error}</p>
+                    )}
                   </div>
                 </li>
               );
@@ -1194,6 +1371,127 @@ function ProviderEditorModal({
             </button>
           </div>
         </footer>
+      </div>
+    </div>
+  );
+}
+
+function RouteManualSpecFields({
+  spec,
+  disabled,
+  onChange,
+  onClear,
+}: {
+  spec?: RouteManualSpec | undefined;
+  disabled?: boolean | undefined;
+  onChange: (spec: RouteManualSpec) => void;
+  onClear: () => void;
+}) {
+  const hasValues =
+    spec?.contextTokens !== undefined ||
+    spec?.inputPerM !== undefined ||
+    spec?.outputPerM !== undefined ||
+    spec?.cacheReadPerM !== undefined ||
+    spec?.cacheWritePerM !== undefined;
+
+  function patchManual(partial: Partial<RouteManualSpec>) {
+    const next: RouteManualSpec = { ...spec, ...partial };
+    for (const key of Object.keys(next) as (keyof RouteManualSpec)[]) {
+      if (next[key] === undefined) {
+        delete next[key];
+      }
+    }
+    onChange(next);
+  }
+
+  function parseOptionalNumber(raw: string): number | undefined {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const value = Number(trimmed);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+
+  return (
+    <div className="mcp-field models-route-field models-route-manual-spec">
+      <div className="model-field-head">
+        <span className="mcp-field-label">手动规格（models.dev 未匹配）</span>
+        {hasValues && (
+          <button type="button" className="model-inline-refresh" disabled={disabled} onClick={onClear}>
+            清除
+          </button>
+        )}
+      </div>
+      <p className="models-route-field-hint">
+        新模型未收录时可填写上下文 token 数与每百万 token 单价（USD），用于费用与上下文估算。
+      </p>
+      <div className="models-route-manual-spec-grid">
+        <label className="mcp-field models-route-manual-field">
+          <span className="mcp-field-label">上下文 tokens</span>
+          <input
+            className="mcp-field-input"
+            type="number"
+            min={1}
+            step={1}
+            disabled={disabled}
+            value={spec?.contextTokens ?? ""}
+            placeholder="如 200000"
+            onChange={(event) => patchManual({ contextTokens: parseOptionalNumber(event.target.value) })}
+          />
+        </label>
+        <label className="mcp-field models-route-manual-field">
+          <span className="mcp-field-label">输入 $/M</span>
+          <input
+            className="mcp-field-input"
+            type="number"
+            min={0}
+            step={0.01}
+            disabled={disabled}
+            value={spec?.inputPerM ?? ""}
+            placeholder="如 3"
+            onChange={(event) => patchManual({ inputPerM: parseOptionalNumber(event.target.value) })}
+          />
+        </label>
+        <label className="mcp-field models-route-manual-field">
+          <span className="mcp-field-label">输出 $/M</span>
+          <input
+            className="mcp-field-input"
+            type="number"
+            min={0}
+            step={0.01}
+            disabled={disabled}
+            value={spec?.outputPerM ?? ""}
+            placeholder="如 15"
+            onChange={(event) => patchManual({ outputPerM: parseOptionalNumber(event.target.value) })}
+          />
+        </label>
+        <label className="mcp-field models-route-manual-field">
+          <span className="mcp-field-label">缓存读 $/M</span>
+          <input
+            className="mcp-field-input"
+            type="number"
+            min={0}
+            step={0.01}
+            disabled={disabled}
+            value={spec?.cacheReadPerM ?? ""}
+            placeholder="可选"
+            onChange={(event) => patchManual({ cacheReadPerM: parseOptionalNumber(event.target.value) })}
+          />
+        </label>
+        <label className="mcp-field models-route-manual-field">
+          <span className="mcp-field-label">缓存写 $/M</span>
+          <input
+            className="mcp-field-input"
+            type="number"
+            min={0}
+            step={0.01}
+            disabled={disabled}
+            value={spec?.cacheWritePerM ?? ""}
+            placeholder="可选"
+            onChange={(event) => patchManual({ cacheWritePerM: parseOptionalNumber(event.target.value) })}
+          />
+        </label>
       </div>
     </div>
   );

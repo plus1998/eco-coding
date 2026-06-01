@@ -6,7 +6,7 @@ import {
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
-import type { AgentRole, ModelsDevMapping, ThreadContextSnapshot } from "../shared/ipc";
+import type { AgentRole, ModelsDevMapping, RouteManualSpec, ThreadContextSnapshot } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 const COMPACT_COOLDOWN_MS = 60_000;
@@ -45,6 +45,7 @@ interface RoleOccupancyState {
   modelId?: string;
   providerBaseUrl?: string;
   modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
   limit: number;
   limitsResolved: boolean;
   maxOutputTokens?: number;
@@ -71,6 +72,7 @@ export class ContextWindowMonitor {
       modelId?: string;
       providerBaseUrl?: string;
       modelsDevMapping?: ModelsDevMapping;
+      manualSpec?: RouteManualSpec;
       messageId?: string;
     },
   ): Promise<ContextMonitorSnapshot> {
@@ -89,6 +91,7 @@ export class ContextWindowMonitor {
     const modelId = options?.modelId ?? prev?.modelId;
     const providerBaseUrl = options?.providerBaseUrl ?? prev?.providerBaseUrl;
     const modelsDevMapping = options?.modelsDevMapping ?? prev?.modelsDevMapping;
+    const manualSpec = options?.manualSpec ?? prev?.manualSpec;
     const next: RoleOccupancyState = {
       occupied: occupancy,
       limit: prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
@@ -103,6 +106,9 @@ export class ContextWindowMonitor {
     }
     if (modelsDevMapping) {
       next.modelsDevMapping = modelsDevMapping;
+    }
+    if (manualSpec) {
+      next.manualSpec = manualSpec;
     }
     state.byRole[role] = next;
 
@@ -313,6 +319,7 @@ export class ContextWindowMonitor {
       roleState.providerBaseUrl,
       roleState.modelId,
       roleState.modelsDevMapping,
+      roleState.manualSpec?.contextTokens,
     );
     roleState.limit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
     roleState.limitsResolved = resolved.limitsResolved;

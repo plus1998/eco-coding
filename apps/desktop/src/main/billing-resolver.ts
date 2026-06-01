@@ -3,6 +3,7 @@ import {
   formatModelPricingLabel,
   unresolvedModelCapabilities,
   type ModelCostRates,
+  type ModelPricingLookup,
 } from "@eco/runtime";
 import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -13,6 +14,7 @@ import {
   type ModelsDevMapping,
   type RoleRouteConfig,
   type RouteCapabilityHint,
+  type RouteManualSpec,
   type RoutePricingHint,
   type ThinkingEffort,
 } from "../shared/ipc";
@@ -24,6 +26,7 @@ export interface RuntimeRoute {
   modelId: string;
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
 }
 
 export interface ResolvedUsageRoute {
@@ -31,6 +34,40 @@ export interface ResolvedUsageRoute {
   provider: ProviderConfigSecret;
   modelId: string;
   modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
+}
+
+export function manualSpecToRates(spec?: RouteManualSpec): ModelCostRates | null {
+  if (spec?.inputPerM === undefined || spec.outputPerM === undefined) {
+    return null;
+  }
+  return {
+    input: spec.inputPerM,
+    output: spec.outputPerM,
+    ...(spec.cacheReadPerM !== undefined && { cacheRead: spec.cacheReadPerM }),
+    ...(spec.cacheWritePerM !== undefined && { cacheWrite: spec.cacheWritePerM }),
+  };
+}
+
+export function resolveRatesForRoute(
+  lookup: ModelPricingLookup | null,
+  manualSpec?: RouteManualSpec,
+): ModelCostRates | null {
+  return lookup?.rates ?? manualSpecToRates(manualSpec);
+}
+
+export function formatManualPricingLabel(spec: RouteManualSpec): string {
+  const parts: string[] = [];
+  if (spec.inputPerM !== undefined && spec.outputPerM !== undefined) {
+    parts.push(`输入 $${spec.inputPerM}/M · 输出 $${spec.outputPerM}/M`);
+  }
+  if (spec.cacheReadPerM !== undefined) {
+    parts.push(`缓存读 $${spec.cacheReadPerM}/M`);
+  }
+  if (spec.cacheWritePerM !== undefined) {
+    parts.push(`缓存写 $${spec.cacheWritePerM}/M`);
+  }
+  return parts.length > 0 ? `手动单价：${parts.join(" · ")}` : "手动单价";
 }
 
 export function buildResolvedProxyRoutes(routes: readonly RuntimeRoute[]): AnthropicProxyResolvedRoute[] {
@@ -55,6 +92,7 @@ export function resolveUsageRoute(
     provider: route.provider,
     modelId: route.modelId,
     ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
+    ...(route.manualSpec && { manualSpec: route.manualSpec }),
   });
   const fromProxyRoute = (route: AnthropicProxyResolvedRoute): ResolvedUsageRoute => {
     const runtimeRoute = routes.find(
@@ -126,8 +164,12 @@ export async function lookupRatesForRoute(
   if (!route) {
     return null;
   }
-  const lookup = await cache.lookup(route.provider.baseUrl, route.modelId);
-  return lookup?.rates ?? null;
+  const lookup = await cache.lookupForRoute({
+    baseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    ...(route.modelsDevMapping && { mapping: route.modelsDevMapping }),
+  });
+  return resolveRatesForRoute(lookup, route.manualSpec);
 }
 
 export function buildPlannerModelLabel(
@@ -160,6 +202,7 @@ export function resolveRuntimeRoutesFromSettings(
         modelId: route.modelId,
         ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
         ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
+        ...(route.manualSpec && { manualSpec: route.manualSpec }),
       },
     ];
   });
@@ -193,6 +236,11 @@ function routeLookupFromRuntime(route: RuntimeRoute) {
   };
 }
 
+function manualContextTokens(spec?: RouteManualSpec): number | undefined {
+  const tokens = spec?.contextTokens;
+  return tokens !== undefined && tokens > 0 ? tokens : undefined;
+}
+
 export async function lookupRouteCapabilityHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
@@ -212,20 +260,23 @@ export async function lookupRouteCapabilityHints(
       resolvedMappingFromLookup(lookup) ??
       resolvedMappingFromLookup(limitsLookup) ??
       resolvedMappingFromLookup(pricingLookup);
+    const manualContext = manualContextTokens(route.manualSpec);
     hints.push({
       role: route.role,
       modelId: route.modelId,
       providerName: route.provider.name,
       supportsImageInput: capabilities.supportsImageInput,
       supportsReasoning: capabilities.supportsReasoning,
-      capabilitiesResolved: capabilities.capabilitiesResolved,
-      ...(limitsLookup && {
-        contextTokens: limitsLookup.limits.contextTokens,
-        ...(limitsLookup.limits.maxOutputTokens !== undefined && {
-          maxOutputTokens: limitsLookup.limits.maxOutputTokens,
-        }),
-      }),
-      contextLimitResolved: Boolean(limitsLookup),
+      capabilitiesResolved: capabilities.capabilitiesResolved || Boolean(manualContext),
+      ...(limitsLookup
+        ? {
+            contextTokens: limitsLookup.limits.contextTokens,
+            ...(limitsLookup.limits.maxOutputTokens !== undefined && {
+              maxOutputTokens: limitsLookup.limits.maxOutputTokens,
+            }),
+          }
+        : manualContext !== undefined && { contextTokens: manualContext }),
+      contextLimitResolved: Boolean(limitsLookup) || manualContext !== undefined,
       ...(resolved && {
         resolvedModelsDevMapping: resolved.mapping,
         resolvedModelsDevLabel: resolved.label,
@@ -255,20 +306,35 @@ export async function lookupRoutePricingHints(
   for (const route of routes) {
     const lookup = await cache.lookupForRoute(routeLookupFromRuntime(route));
     const summary = lookup ? buildModelPricingSummary(lookup) : null;
+    const manualRates = manualSpecToRates(route.manualSpec);
+    const manualSummary =
+      manualRates && route.manualSpec
+        ? {
+            inputPerM: manualRates.input,
+            outputPerM: manualRates.output,
+            ...(manualRates.cacheRead !== undefined && { cacheReadPerM: manualRates.cacheRead }),
+            ...(manualRates.cacheWrite !== undefined && { cacheWritePerM: manualRates.cacheWrite }),
+          }
+        : null;
     hints.push({
       role: route.role,
       modelId: route.modelId,
       providerName: route.provider.name,
-      ...(summary && {
-        rates: {
-          inputPerM: summary.inputPerM,
-          outputPerM: summary.outputPerM,
-          ...(summary.cacheReadPerM !== undefined && { cacheReadPerM: summary.cacheReadPerM }),
-          ...(summary.cacheWritePerM !== undefined && { cacheWritePerM: summary.cacheWritePerM }),
-        },
-        pricingLabel: formatModelPricingLabel(lookup!),
-      }),
-      pricingResolved: Boolean(lookup),
+      ...(summary
+        ? {
+            rates: {
+              inputPerM: summary.inputPerM,
+              outputPerM: summary.outputPerM,
+              ...(summary.cacheReadPerM !== undefined && { cacheReadPerM: summary.cacheReadPerM }),
+              ...(summary.cacheWritePerM !== undefined && { cacheWritePerM: summary.cacheWritePerM }),
+            },
+            pricingLabel: formatModelPricingLabel(lookup!),
+          }
+        : manualSummary && {
+            rates: manualSummary,
+            pricingLabel: formatManualPricingLabel(route.manualSpec!),
+          }),
+      pricingResolved: Boolean(lookup) || Boolean(manualSummary),
       ...(route.modelsDevMapping && {
         modelsDevMapping: route.modelsDevMapping,
         modelsDevLabel: formatModelsDevLabel(route.modelsDevMapping, lookup?.displayName),

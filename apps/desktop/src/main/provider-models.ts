@@ -1,11 +1,16 @@
 import type {
   ListUpstreamModelsRequest,
   ListUpstreamModelsResult,
+  RoleRouteTestResult,
   TestProviderConnectionRequest,
   TestProviderConnectionResult,
+  TestRoleRouteItem,
+  TestRoleRoutesRequest,
+  TestRoleRoutesResult,
   UpstreamModelOption,
 } from "../shared/models";
 import { applyThinkingToMessagesBody } from "@eco/runtime";
+import type { ThinkingEffort } from "../shared/ipc";
 import type { ProviderStore } from "./provider-store";
 import {
   headersToLoggable,
@@ -57,20 +62,165 @@ export async function testProviderConnection(
     return { ok: false, error: "请先选择默认模型。" };
   }
 
-  const messagesUrl = buildMessagesUrl(resolved.baseUrl, resolved.requestPath);
-  const requestBody = buildProviderTestRequestBody(modelId);
+  const testResult = await postMessagesTest(
+    {
+      providerId: request.providerId,
+      baseUrl: resolved.baseUrl,
+      requestPath: resolved.requestPath,
+      apiKey: resolved.apiKey,
+      modelId,
+    },
+    undefined,
+    fetcher,
+  );
+  if (testResult.ok) {
+    return { ok: true, reply: testResult.reply };
+  }
+  return { ok: false, error: testResult.error };
+}
+
+/** Dedupe key for route tests: same provider + model only needs one /v1/messages call. */
+export function buildRouteTestDedupeKey(providerId: string, modelId: string): string {
+  return `${providerId.trim()}:${modelId.trim()}`;
+}
+
+interface RouteTestGroup {
+  provider: NonNullable<ReturnType<ProviderStore["getProviderWithSecret"]>>;
+  modelId: string;
+  thinkingEffort?: ThinkingEffort;
+  roles: string[];
+}
+
+export async function testRoleRoutes(
+  store: ProviderStore,
+  request: TestRoleRoutesRequest,
+  fetcher: typeof fetch = fetch,
+): Promise<TestRoleRoutesResult> {
+  const resultsByRole = new Map<string, RoleRouteTestResult>();
+  const groups = new Map<string, RouteTestGroup>();
+
+  for (const route of request.routes) {
+    const modelId = route.modelId?.trim();
+    if (!route.providerId?.trim() || !modelId) {
+      resultsByRole.set(route.role, {
+        role: route.role,
+        modelId: modelId ?? "",
+        ok: false,
+        error: "请先选择 Provider 与模型。",
+      });
+      continue;
+    }
+
+    const provider = store.getProviderWithSecret(route.providerId.trim());
+    if (!provider) {
+      resultsByRole.set(route.role, {
+        role: route.role,
+        modelId,
+        ok: false,
+        error: `找不到 Provider：${route.providerId}`,
+      });
+      continue;
+    }
+
+    if (!provider.enabled) {
+      resultsByRole.set(route.role, {
+        role: route.role,
+        modelId,
+        ok: false,
+        error: `Provider「${provider.name}」已禁用。`,
+      });
+      continue;
+    }
+
+    const dedupeKey = buildRouteTestDedupeKey(provider.id, modelId);
+    const existing = groups.get(dedupeKey);
+    if (existing) {
+      existing.roles.push(route.role);
+      continue;
+    }
+
+    groups.set(dedupeKey, {
+      provider,
+      modelId,
+      thinkingEffort: parseRouteThinkingEffort(route.thinkingEffort),
+      roles: [route.role],
+    });
+  }
+
+  for (const group of groups.values()) {
+    const labelRole = group.roles[0];
+    const testResult = await postMessagesTest(
+      {
+        providerId: group.provider.id,
+        baseUrl: group.provider.baseUrl,
+        requestPath: group.provider.requestPath,
+        apiKey: group.provider.apiKey,
+        modelId: group.modelId,
+        role: labelRole,
+      },
+      group.thinkingEffort,
+      fetcher,
+    );
+
+    const shared: RoleRouteTestResult = {
+      role: labelRole ?? "",
+      modelId: group.modelId,
+      ok: testResult.ok,
+      ...(testResult.ok
+        ? { reply: testResult.reply, elapsedMs: testResult.elapsedMs }
+        : { error: testResult.error, elapsedMs: testResult.elapsedMs }),
+    };
+
+    for (const role of group.roles) {
+      resultsByRole.set(role, { ...shared, role });
+    }
+  }
+
+  const results = request.routes.map(
+    (route) =>
+      resultsByRole.get(route.role) ?? {
+        role: route.role,
+        modelId: route.modelId?.trim() ?? "",
+        ok: false,
+        error: "未执行测试。",
+      },
+  );
+
+  const passed = results.filter((result) => result.ok).length;
+  return { results, passed, failed: results.length - passed };
+}
+
+type MessagesTestSuccess = { ok: true; reply: string; elapsedMs: number };
+type MessagesTestFailure = { ok: false; error: string; elapsedMs?: number };
+type MessagesTestResult = MessagesTestSuccess | MessagesTestFailure;
+
+async function postMessagesTest(
+  input: {
+    providerId?: string;
+    baseUrl: string;
+    requestPath: string;
+    apiKey: string;
+    modelId: string;
+    role?: string;
+  },
+  thinkingEffort: ThinkingEffort | undefined,
+  fetcher: typeof fetch,
+): Promise<MessagesTestResult> {
+  const messagesUrl = buildMessagesUrl(input.baseUrl, input.requestPath);
+  const requestBody = buildMessagesTestRequestBody(input.modelId, thinkingEffort);
   const requestHeaders = {
-    ...buildAnthropicHeaders(resolved.apiKey),
+    ...buildAnthropicHeaders(input.apiKey),
     "content-type": "application/json",
   };
 
   logUpstream("provider-test-start", {
-    providerId: request.providerId,
-    baseUrl: resolved.baseUrl,
+    providerId: input.providerId,
+    role: input.role,
+    baseUrl: input.baseUrl,
     url: messagesUrl,
-    model: modelId,
-    hasApiKey: Boolean(resolved.apiKey.trim()),
-    apiKeyPreview: resolved.apiKey.trim() ? redactSecret(resolved.apiKey) : undefined,
+    model: input.modelId,
+    hasApiKey: Boolean(input.apiKey.trim()),
+    apiKeyPreview: input.apiKey.trim() ? redactSecret(input.apiKey) : undefined,
     requestBody,
   });
 
@@ -79,7 +229,8 @@ export async function testProviderConnection(
   const startedAt = Date.now();
   try {
     logUpstream("provider-test-request", {
-      providerId: request.providerId,
+      providerId: input.providerId,
+      role: input.role,
       method: "POST",
       url: messagesUrl,
       headers: redactRequestHeaders(requestHeaders),
@@ -96,7 +247,8 @@ export async function testProviderConnection(
     const raw = await response.text();
     const elapsedMs = Date.now() - startedAt;
     logUpstream("provider-test-response", {
-      providerId: request.providerId,
+      providerId: input.providerId,
+      role: input.role,
       status: response.status,
       ok: response.ok,
       elapsedMs,
@@ -108,13 +260,14 @@ export async function testProviderConnection(
     if (!response.ok) {
       const error = formatUpstreamError(response.status, raw);
       logUpstream("provider-test-error", {
-        providerId: request.providerId,
+        providerId: input.providerId,
+        role: input.role,
         phase: "upstream-http",
         status: response.status,
         elapsedMs,
         error,
       });
-      return { ok: false, error };
+      return { ok: false, error, elapsedMs };
     }
 
     let parsed: unknown;
@@ -122,57 +275,62 @@ export async function testProviderConnection(
       parsed = JSON.parse(raw) as unknown;
     } catch {
       logUpstream("provider-test-error", {
-        providerId: request.providerId,
+        providerId: input.providerId,
+        role: input.role,
         phase: "parse-json",
         elapsedMs,
         error: "上游返回了非 JSON 响应。",
         bodyRaw: truncateForLog(raw),
       });
-      return { ok: false, error: "上游返回了非 JSON 响应。" };
+      return { ok: false, error: "上游返回了非 JSON 响应。", elapsedMs };
     }
 
     const reply = extractAssistantReply(parsed);
     if (!reply) {
       logUpstream("provider-test-error", {
-        providerId: request.providerId,
+        providerId: input.providerId,
+        role: input.role,
         phase: "parse-assistant-reply",
         elapsedMs,
         error: "上游未返回可识别的 assistant 文本。",
         responseShape: describeResponseShape(parsed),
         bodyJson: parsed,
       });
-      return { ok: false, error: "上游未返回可识别的 assistant 文本。" };
+      return { ok: false, error: "上游未返回可识别的 assistant 文本。", elapsedMs };
     }
 
     logUpstream("provider-test-success", {
-      providerId: request.providerId,
+      providerId: input.providerId,
+      role: input.role,
       elapsedMs,
-      model: modelId,
+      model: input.modelId,
       replyPreview: truncateForLog(reply),
       replyLength: reply.length,
     });
-    return { ok: true, reply };
+    return { ok: true, reply, elapsedMs };
   } catch (error) {
     const elapsedMs = Date.now() - startedAt;
     if (error instanceof Error && error.name === "AbortError") {
       logUpstream("provider-test-error", {
-        providerId: request.providerId,
+        providerId: input.providerId,
+        role: input.role,
         phase: "timeout",
         elapsedMs,
         timeoutMs: PROVIDER_TEST_TIMEOUT_MS,
         error: "请求超时，请检查 baseURL 与网络。",
       });
-      return { ok: false, error: "请求超时，请检查 baseURL 与网络。" };
+      return { ok: false, error: "请求超时，请检查 baseURL 与网络。", elapsedMs };
     }
     const message = error instanceof Error ? error.message : String(error);
     logUpstream("provider-test-error", {
-      providerId: request.providerId,
+      providerId: input.providerId,
+      role: input.role,
       phase: "fetch",
       elapsedMs,
       error: message,
       errorName: error instanceof Error ? error.name : undefined,
     });
-    return { ok: false, error: message };
+    return { ok: false, error: message, elapsedMs };
   } finally {
     clearTimeout(timeout);
   }
@@ -401,13 +559,29 @@ function extractAssistantReply(body: unknown): string | undefined {
 }
 
 export function buildProviderTestRequestBody(modelId: string): Record<string, unknown> {
+  return buildMessagesTestRequestBody(modelId, "off");
+}
+
+export function buildMessagesTestRequestBody(
+  modelId: string,
+  thinkingEffort?: ThinkingEffort,
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: modelId,
     max_tokens: PROVIDER_TEST_MAX_TOKENS,
     messages: [{ role: "user", content: "hi" }],
   };
-  applyThinkingToMessagesBody(body, "off");
+  applyThinkingToMessagesBody(body, thinkingEffort ?? "off");
   return body;
+}
+
+const ROUTE_THINKING_EFFORTS = new Set<ThinkingEffort>(["off", "low", "medium", "high", "xhigh", "max"]);
+
+function parseRouteThinkingEffort(value: string | undefined): ThinkingEffort | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return ROUTE_THINKING_EFFORTS.has(value as ThinkingEffort) ? (value as ThinkingEffort) : undefined;
 }
 
 function describeResponseShape(body: unknown): Record<string, unknown> {

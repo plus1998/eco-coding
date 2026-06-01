@@ -149,6 +149,7 @@ export class ModelsDevPricingCache {
     baseUrl: string,
     modelId: string,
     mapping?: ModelsDevMapping,
+    manualContextTokens?: number,
   ): Promise<{
     limit: number;
     maxOutputTokens?: number;
@@ -163,6 +164,9 @@ export class ModelsDevPricingCache {
         }),
         limitsResolved: true,
       };
+    }
+    if (manualContextTokens !== undefined && manualContextTokens > 0) {
+      return { limit: manualContextTokens, limitsResolved: true };
     }
     return { limit: DEFAULT_CONTEXT_LIMIT, limitsResolved: false };
   }

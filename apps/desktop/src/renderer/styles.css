@@ -3408,6 +3408,50 @@ button:not(:disabled) {
   color: #fbbf24;
 }
 
+.models-route-profile-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.models-route-manual-spec {
+  grid-column: 1 / -1;
+}
+
+.models-route-manual-spec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.models-route-manual-field .mcp-field-label {
+  font-size: 0.75rem;
+}
+
+.models-route-test-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.models-route-test-badge.ok {
+  color: var(--eco-success-fg, #3d8f5f);
+  background: color-mix(in srgb, var(--eco-success-fg, #3d8f5f) 12%, transparent);
+}
+
+.models-route-test-badge.err {
+  color: var(--eco-danger-fg, #c44);
+  background: color-mix(in srgb, var(--eco-danger-fg, #c44) 12%, transparent);
+}
+
+.models-route-test-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--eco-danger-fg, #c44);
+}
+
 .models-route-field-hint {
   display: block;
   margin-top: 4px;

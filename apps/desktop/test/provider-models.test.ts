@@ -7,7 +7,9 @@ import {
   normalizeRequestPath,
   parseUpstreamModelsPayload,
   splitBaseUrlAndRequestPath,
+  buildRouteTestDedupeKey,
   testProviderConnection,
+  testRoleRoutes,
 } from "../src/main/provider-models";
 import type { ProviderStore } from "../src/main/provider-store";
 
@@ -215,5 +217,97 @@ describe("testProviderConnection", () => {
     );
 
     expect(result).toEqual({ ok: true, reply: "The user said hi." });
+  });
+});
+
+describe("buildRouteTestDedupeKey", () => {
+  test("combines provider id and model id", () => {
+    expect(buildRouteTestDedupeKey("p1", "claude-sonnet")).toBe("p1:claude-sonnet");
+    expect(buildRouteTestDedupeKey(" p1 ", " claude-sonnet ")).toBe("p1:claude-sonnet");
+  });
+});
+
+describe("testRoleRoutes", () => {
+  test("dedupes identical provider and model to a single upstream call", async () => {
+    const store = {
+      getProviderWithSecret: (id: string) =>
+        id === "p1"
+          ? {
+              id: "p1",
+              name: "Test",
+              baseUrl: "https://api.example.com",
+              requestPath: "",
+              apiKey: "key",
+              enabled: true,
+            }
+          : undefined,
+    } as unknown as ProviderStore;
+
+    let callCount = 0;
+    const fetcher = async () => {
+      callCount += 1;
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+    };
+
+    const result = await testRoleRoutes(
+      store,
+      {
+        routes: [
+          { role: "planner", providerId: "p1", modelId: "shared-model" },
+          { role: "explore", providerId: "p1", modelId: "shared-model" },
+          { role: "coder", providerId: "p1", modelId: "shared-model" },
+          { role: "reviewer", providerId: "p1", modelId: "other-model" },
+        ],
+      },
+      fetcher,
+    );
+
+    expect(callCount).toBe(2);
+    expect(result.passed).toBe(4);
+    expect(result.results.every((entry) => entry.ok)).toBe(true);
+    expect(result.results.map((entry) => entry.modelId)).toEqual([
+      "shared-model",
+      "shared-model",
+      "shared-model",
+      "other-model",
+    ]);
+  });
+
+  test("tests each configured role against /v1/messages", async () => {
+    const store = {
+      getProviderWithSecret: (id: string) =>
+        id === "p1"
+          ? {
+              id: "p1",
+              name: "Test",
+              baseUrl: "https://api.example.com",
+              requestPath: "",
+              apiKey: "key",
+              enabled: true,
+            }
+          : undefined,
+    } as unknown as ProviderStore;
+
+    let callCount = 0;
+    const fetcher = async () => {
+      callCount += 1;
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+    };
+
+    const result = await testRoleRoutes(
+      store,
+      {
+        routes: [
+          { role: "planner", providerId: "p1", modelId: "model-a" },
+          { role: "coder", providerId: "p1", modelId: "model-b", thinkingEffort: "low" },
+        ],
+      },
+      fetcher,
+    );
+
+    expect(callCount).toBe(2);
+    expect(result.passed).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.results.map((entry) => entry.ok)).toEqual([true, true]);
   });
 });

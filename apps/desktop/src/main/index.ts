@@ -43,6 +43,7 @@ import {
   type McpServerConfigInput,
   type ListUpstreamModelsRequest,
   type TestProviderConnectionRequest,
+  type TestRoleRoutesRequest,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   getActiveRoutes,
@@ -106,6 +107,7 @@ import {
   buildPlannerModelLabel,
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
+  resolveRatesForRoute,
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
 } from "./billing-resolver";
@@ -128,7 +130,7 @@ import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
-import { listProviderUpstreamModels, testProviderConnection } from "./provider-models";
+import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
@@ -383,6 +385,13 @@ function registerIpcHandlers(): void {
       return { ok: false, error: "Invalid provider test request." } as const;
     }
     return testProviderConnection(providerStore, payload);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.modelRouteProfileTest, async (_event, payload: TestRoleRoutesRequest) => {
+    if (!payload || typeof payload !== "object" || !Array.isArray(payload.routes)) {
+      return { results: [], passed: 0, failed: 0 };
+    }
+    return testRoleRoutes(providerStore, payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.modelRouteProfileSave, async (_event, payload: RouteProfileInput) => {
@@ -2307,6 +2316,7 @@ async function processUsageBilling(input: {
       modelId: monitorModelForRole,
       providerBaseUrl: monitorBaseForRole,
       ...(monitorRoute?.modelsDevMapping && { modelsDevMapping: monitorRoute.modelsDevMapping }),
+      ...(monitorRoute?.manualSpec && { manualSpec: monitorRoute.manualSpec }),
       ...(input.messageId && { messageId: input.messageId }),
     });
   }
@@ -2319,8 +2329,8 @@ async function processUsageBilling(input: {
     source: input.source ?? "otel",
     delta,
     ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-    actualRates: actualLookup?.rates ?? null,
-    plannerRates: plannerLookup?.rates ?? null,
+    actualRates: resolveRatesForRoute(actualLookup, usageRoute?.manualSpec),
+    plannerRates: resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec),
     ...(resolvedModelId && { modelId: resolvedModelId }),
     requestKey,
     ...(plannerModelLabel && { plannerModelLabel }),
@@ -2677,7 +2687,7 @@ async function processSdkRunBilling(input: {
         ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
       })
     : null;
-  const plannerRates = plannerLookup?.rates ?? null;
+  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
   const plannerModelLabel = buildPlannerModelLabel(
     plannerRoute,
     plannerLookup?.displayName ?? plannerRoute?.modelId,
@@ -2698,7 +2708,7 @@ async function processSdkRunBilling(input: {
         role: billingRole,
         modelId: usageRoute?.modelId ?? entry.modelId,
         usage: entry.usage,
-        actualRates: actualLookup?.rates ?? null,
+        actualRates: resolveRatesForRoute(actualLookup, usageRoute?.manualSpec),
         plannerRates,
         ...(entry.sdkCostUsd !== undefined && { sdkCostUsd: entry.sdkCostUsd }),
       };

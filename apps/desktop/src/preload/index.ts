@@ -9,6 +9,8 @@ import {
   type ListUpstreamModelsResult,
   type TestProviderConnectionRequest,
   type TestProviderConnectionResult,
+  type TestRoleRoutesRequest,
+  type TestRoleRoutesResult,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
@@ -79,6 +81,9 @@ const api = {
   },
   testProviderConnection(request: TestProviderConnectionRequest): Promise<TestProviderConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderTest, request);
+  },
+  testRouteProfile(request: TestRoleRoutesRequest): Promise<TestRoleRoutesResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileTest, request);
   },
   saveRouteProfile(profile: RouteProfileInput): Promise<RouteProfileView> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileSave, profile);
