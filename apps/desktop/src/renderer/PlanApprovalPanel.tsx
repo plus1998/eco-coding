@@ -5,6 +5,7 @@ interface PlanApprovalPanelProps {
   plan: ThreadPendingPlan;
   busy?: boolean | undefined;
   failureMessage?: string | undefined;
+  executionSummary?: string | undefined;
   onApprove: () => void;
   onDismiss: () => void;
 }
@@ -13,6 +14,7 @@ export function PlanApprovalPanel({
   plan,
   busy,
   failureMessage,
+  executionSummary,
   onApprove,
   onDismiss,
 }: PlanApprovalPanelProps) {
@@ -23,9 +25,8 @@ export function PlanApprovalPanel({
       <header className="plan-approval-header">
         <h3>实施计划</h3>
         <p>
-          确认后将按流程执行：复杂需求先由 Architect 拆分任务，再并行 Coder 实现，最后 Reviewer 审查与
-          Tester 测试；简单需求将跳过 Architect。若要调整计划，请选择「忽略」后在下方对话中说明，Planner
-          会重新输出完整计划。
+          {executionSummary ??
+            "确认后将按你已启用的子代理执行。若要调整计划，请选择「忽略」后在下方对话中说明，Planner 会重新输出完整计划。"}
         </p>
       </header>
       {failureMessage && (

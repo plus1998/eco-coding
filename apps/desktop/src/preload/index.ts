@@ -27,6 +27,7 @@ import {
   type SessionSyncTestConnectionResult,
   type SkillsListResult,
   type AgentSkillAssignments,
+  type SubagentEnabledSettings,
   type ClarificationAnswers,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
@@ -123,6 +124,12 @@ const api = {
   },
   saveAgentSkillsAssignments(assignments: AgentSkillAssignments): Promise<AgentSkillAssignments> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsSave, assignments);
+  },
+  getSubagentSettings(): Promise<SubagentEnabledSettings> {
+    return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsGet);
+  },
+  saveSubagentSettings(settings: SubagentEnabledSettings): Promise<SubagentEnabledSettings> {
+    return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsSave, settings);
   },
   getSessionSyncSettings(): Promise<SessionSyncSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsGet);

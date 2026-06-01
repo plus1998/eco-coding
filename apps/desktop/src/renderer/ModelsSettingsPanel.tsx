@@ -4,7 +4,10 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, us
 import type { UpstreamModelOption } from "../shared/models";
 import {
   AGENT_ROLES,
+  SUBAGENT_ROLES,
   type AgentRole,
+  type SubagentEnabledSettings,
+  type SubagentRole,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
@@ -23,10 +26,22 @@ import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { RoutePricingDisplay } from "./RoutePricingDisplay";
 import { AppMessage, formatDurationMs, type AppMessageKind } from "./AppMessage";
 
+export type ModelsSettingsTab = "providers" | "subagents" | "routes";
+
+const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
+  { id: "providers", label: "提供商和模型" },
+  { id: "subagents", label: "子代理" },
+  { id: "routes", label: "角色路由" },
+];
+
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
+  subagentSettings: SubagentEnabledSettings;
+  subagentSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
+  initialTab?: ModelsSettingsTab | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
+  onSubagentSettingsChange: (settings: SubagentEnabledSettings) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
 
@@ -56,10 +71,15 @@ const THINKING_EFFORT_OPTIONS: Array<{ value: "" | ThinkingEffort; label: string
 
 export function ModelsSettingsPanel({
   settings,
+  subagentSettings,
+  subagentSettingsSaving,
   busy,
+  initialTab = "providers",
   onSettingsChange,
+  onSubagentSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
+  const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(initialTab);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [routeProfileModalOpen, setRouteProfileModalOpen] = useState(false);
@@ -87,6 +107,10 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const modalProviderId = providerForm.id ?? "__draft__";
   const modalCache = modelsCache[modalProviderId];
@@ -540,6 +564,13 @@ export function ModelsSettingsPanel({
     }
   }
 
+  function toggleSubagent(role: SubagentRole, enabled: boolean) {
+    if (role === "coder") {
+      return;
+    }
+    onSubagentSettingsChange({ ...subagentSettings, [role]: enabled });
+  }
+
   function updateRouteInForm(
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
@@ -606,12 +637,75 @@ export function ModelsSettingsPanel({
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
-          配置上游 Provider，并为各 Agent 角色指定调用的模型。保存后，新启动的编码线程会按当前启用的角色路由选用对应 Provider 与模型。
+          配置 Provider、子代理开关与角色路由方案。新线程将使用当前启用的方案与子代理设置。
         </p>
       </header>
 
+      <div className="models-settings-tabs" role="tablist" aria-label="模型设置分类">
+        {MODELS_TAB_ITEMS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
+      {activeTab === "subagents" && (
+      <section className="mcp-list-section models-subagent-section">
+        <header className="models-section-header">
+          <div className="models-section-intro">
+            <h2 className="models-section-title">子代理</h2>
+            <p className="models-section-desc">
+              点击条目开启或关闭子代理；高亮为已启用。关闭后不会注册到 SDK，提示词与流水线会同步调整。编码（Coder）为必需，不可关闭。
+            </p>
+          </div>
+        </header>
+        <ul className="models-subagent-list">
+          {SUBAGENT_ROLES.map((role) => {
+            const enabled = subagentSettings[role];
+            const locked = role === "coder";
+            return (
+              <li key={role}>
+                <button
+                  type="button"
+                  className={
+                    enabled
+                      ? "models-subagent-row is-active"
+                      : "models-subagent-row is-inactive"
+                  }
+                  disabled={busy || subagentSettingsSaving || locked}
+                  aria-pressed={enabled}
+                  title={locked ? "编码子代理不可关闭" : enabled ? "点击关闭" : "点击开启"}
+                  onClick={() => toggleSubagent(role, !enabled)}
+                >
+                  <div className="models-subagent-row-main">
+                    <span className="models-route-role">{ROLE_LABELS[role]}</span>
+                    <span className="models-route-role-id">{role}</span>
+                    {locked ? (
+                      <span className="models-subagent-required-badge">流水线必需</span>
+                    ) : !enabled ? (
+                      <span className="models-subagent-off-badge">已关闭</span>
+                    ) : (
+                      <span className="models-subagent-on-badge">已启用</span>
+                    )}
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      )}
+
+      {activeTab === "providers" && (
       <section className="mcp-list-section">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">Provider</span>
@@ -674,7 +768,9 @@ export function ModelsSettingsPanel({
           </ul>
         )}
       </section>
+      )}
 
+      {activeTab === "routes" && (
       <section className="mcp-list-section models-routes-section">
         <header className="models-section-header">
           <div className="models-section-intro">
@@ -748,6 +844,7 @@ export function ModelsSettingsPanel({
           </ul>
         )}
       </section>
+      )}
 
       {providerModalOpen && (
         <ProviderEditorModal
@@ -786,6 +883,7 @@ export function ModelsSettingsPanel({
           pricingLoading={pricingLoading}
           testing={testingRouteProfileId === (routeProfileForm.id ?? "__draft__")}
           routeTestResults={routeTestResults}
+          subagentSettings={subagentSettings}
           onClose={closeRouteProfileModal}
           onSave={() => void saveRouteProfile()}
           onDelete={() => void deleteRouteProfile()}
@@ -825,6 +923,7 @@ function RouteProfileEditorModal({
   onTestAll,
   onUpdateRoute,
   onFetchModels,
+  subagentSettings,
 }: {
   form: RouteProfileInput;
   setForm: Dispatch<SetStateAction<RouteProfileInput>>;
@@ -842,6 +941,7 @@ function RouteProfileEditorModal({
   pricingLoading: boolean;
   testing: boolean;
   routeTestResults: Partial<Record<AgentRole, RoleRouteTestResult>>;
+  subagentSettings: SubagentEnabledSettings;
   onClose: () => void;
   onSave: () => void;
   onDelete: () => void;
@@ -947,13 +1047,27 @@ function RouteProfileEditorModal({
                 Boolean(route?.modelId) &&
                 (!pricing?.pricingResolved || !capability?.contextLimitResolved);
               const roleTest = routeTestResults[role];
+              const subagentOff =
+                role !== "planner" &&
+                SUBAGENT_ROLES.includes(role as SubagentRole) &&
+                !subagentSettings[role as SubagentRole];
 
               return (
-                <li key={role} className="models-route-card models-route-card-modal">
+                <li
+                  key={role}
+                  className={
+                    subagentOff
+                      ? "models-route-card models-route-card-modal models-route-card-subagent-off"
+                      : "models-route-card models-route-card-modal"
+                  }
+                >
                   <div className="models-route-card-head">
                     <div className="models-route-card-identity">
                       <span className="models-route-role">{ROLE_LABELS[role]}</span>
                       <span className="models-route-role-id">{role}</span>
+                      {subagentOff ? (
+                        <span className="models-subagent-off-badge">子代理已关闭</span>
+                      ) : null}
                       {roleTest && (
                         <span
                           className={

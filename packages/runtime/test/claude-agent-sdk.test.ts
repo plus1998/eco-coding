@@ -14,6 +14,7 @@ import {
   createExecutionAgentDefinitions,
   createPlanningAgentDefinitions,
   createQuestionAgentDefinitions,
+  buildExecutePhaseSystemAppend,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
   createSessionCapturedEvent,
@@ -198,7 +199,7 @@ test("builds phased orchestration prompts", () => {
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("system-reminder");
-  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Pipeline step");
+  expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("Pipeline —");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan, { planUserEdited: true })).toContain(
     "edited this plan in Eco",
   );
@@ -217,6 +218,35 @@ test("planning agents include read-only explore subagent", () => {
 test("question explore subagent uses explore route model", () => {
   const definitions = createQuestionAgentDefinitions(routes);
   expect(definitions.explore).toMatchObject({ model: "claude-haiku-explore" });
+});
+
+test("createExecutionAgentDefinitions omits disabled roles but keeps coder", () => {
+  const availability = {
+    explore: true,
+    architect: true,
+    coder: true,
+    reviewer: false,
+    tester: false,
+  };
+  const definitions = createExecutionAgentDefinitions(routes, undefined, availability);
+  expect(definitions).toHaveProperty("coder");
+  expect(definitions).not.toHaveProperty("reviewer");
+  expect(definitions).not.toHaveProperty("tester");
+});
+
+test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", () => {
+  const append = buildExecutePhaseSystemAppend({
+    explore: true,
+    architect: true,
+    coder: true,
+    reviewer: false,
+    tester: false,
+  });
+  expect(append).not.toContain("Agent(reviewer)");
+  expect(append).not.toContain("Agent(tester)");
+  expect(append).toContain("Reviewer subagent is disabled");
+  expect(append).toContain("Tester subagent is disabled");
+  expect(append).toContain("Coders (parallel)");
 });
 
 test("inferActivityRole maps Agent(explore) to explore", () => {

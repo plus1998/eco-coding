@@ -133,6 +133,11 @@ import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
+import {
+  createSubagentSettingsStore,
+  isSubagentEnabledSettings,
+  type SubagentSettingsStore,
+} from "./subagent-settings-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
@@ -159,6 +164,7 @@ let providerStore: ProviderStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
+let subagentSettingsStore: SubagentSettingsStore;
 let sessionSyncStore: SessionSyncStore;
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
@@ -218,6 +224,7 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
+  subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
@@ -482,6 +489,15 @@ function registerIpcHandlers(): void {
       [...discovered.userSkills, ...discovered.projectSkills].map((skill) => skill.name),
     );
     return agentSkillsStore.saveAssignments(payload, allowed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.subagentSettingsGet, async () => subagentSettingsStore.get());
+
+  ipcMain.handle(IPC_CHANNELS.subagentSettingsSave, async (_event, payload: unknown) => {
+    if (!isSubagentEnabledSettings(payload)) {
+      throw new Error("Invalid subagent settings.");
+    }
+    return subagentSettingsStore.save(payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
@@ -2763,10 +2779,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function buildSdkSessionOptions(): EcoSdkSessionOptions {
   const mcp = mcpStore.buildSdkConfig();
   const assignments = agentSkillsStore.getAssignments();
+  const enabledSubagents = subagentSettingsStore.get();
   return {
     settingSources: ["user", "project"],
     skills: assignments.planner,
     agentSkills: assignments,
+    enabledSubagents,
     mcpServers: mcp.mcpServers,
     mcpAllowedTools: mcp.allowedTools,
   };

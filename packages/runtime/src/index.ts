@@ -2,6 +2,7 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import type { EventStore, ThreadRecord } from "../../persistence/src";
 import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
+import type { SubagentRole } from "./subagent-availability.js";
 
 export interface ThreadStartRequest {
   threadId: string;
@@ -21,6 +22,8 @@ export interface EcoSdkSessionOptions {
   skills?: string[];
   /** Per-role skill directories for subagent definitions */
   agentSkills?: Partial<Record<AgentRole, string[]>>;
+  /** Subagent on/off; coder is always enabled after normalize. */
+  enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];
 }
@@ -213,6 +216,8 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
 
 export type { PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
 export * from "./eco-sdk-hooks";
+export * from "./subagent-availability";
+export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
 export * from "./claude-agent-sdk";
 export {
   buildBuiltinOtelEnv,

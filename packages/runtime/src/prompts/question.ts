@@ -1,18 +1,33 @@
-export const questionAnswerSystemAppend = [
-  "Eco orchestration — ANSWER (read-only).",
-  "",
-  "Answer the user's question directly and concisely.",
-  "For broad codebase questions, use Agent(explore) with thoroughness quick|medium|very thorough.",
-  "For a known file or symbol, use Read/Grep directly — do not over-delegate.",
-  "Do not create an implementation plan, do not modify files.",
-  "Do not call coder, reviewer, tester, or architect subagents.",
-].join("\n");
+import type { SubagentAvailability } from "../subagent-availability.js";
+import { defaultSubagentAvailability } from "../subagent-availability.js";
+import {
+  buildQuestionAnswerTaskLine,
+  buildQuestionExploreInstruction,
+  formatAvailableSubagentsLine,
+} from "./subagent-pipeline.js";
 
-export function buildQuestionAnswerPrompt(userPrompt: string): string {
+export function buildQuestionAnswerSystemAppend(
+  availability: SubagentAvailability = defaultSubagentAvailability(),
+): string {
   return [
-    "User question:",
-    userPrompt.trim(),
+    "Eco orchestration — ANSWER (read-only).",
     "",
-    "Task: Answer read-only. Use Agent(explore) if the question requires repo-wide context.",
+    formatAvailableSubagentsLine(availability),
+    "",
+    "Answer the user's question directly and concisely.",
+    buildQuestionExploreInstruction(availability),
+    "For a known file or symbol, use Read/Grep directly — do not over-delegate.",
+    "Do not create an implementation plan, do not modify files.",
+    "Do not call coder, reviewer, tester, or architect subagents.",
   ].join("\n");
+}
+
+/** @deprecated Use buildQuestionAnswerSystemAppend(availability) */
+export const questionAnswerSystemAppend = buildQuestionAnswerSystemAppend();
+
+export function buildQuestionAnswerPrompt(
+  userPrompt: string,
+  availability: SubagentAvailability = defaultSubagentAvailability(),
+): string {
+  return ["User question:", userPrompt.trim(), "", buildQuestionAnswerTaskLine(availability)].join("\n");
 }

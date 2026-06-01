@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
+  createDisabledSubagentPreToolHook,
   createReviewerScopePreToolHook,
   createTaskToolPreToolHook,
 } from "../src/eco-sdk-hooks";
@@ -83,6 +84,35 @@ test("createTaskToolPreToolHook forwards tool input to tracker", async () => {
   );
 
   expect(calls).toEqual([{ toolName: "TaskCreate", input: { subject: "Run tests" } }]);
+});
+
+test("createDisabledSubagentPreToolHook denies Agent for disabled roles", async () => {
+  const hook = createDisabledSubagentPreToolHook({
+    explore: true,
+    architect: true,
+    coder: true,
+    reviewer: false,
+    tester: true,
+  });
+  expect(hook).toBeDefined();
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "reviewer", prompt: "Review." },
+      tool_use_id: "tool_r",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_r",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
 });
 
 test("buildEcoSdkHooks registers expected hook events", () => {

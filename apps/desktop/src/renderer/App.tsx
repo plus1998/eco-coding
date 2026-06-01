@@ -21,6 +21,7 @@ import { type ClipboardEvent, type KeyboardEvent, useEffect, useLayoutEffect, us
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
+  getActiveRouteProfile,
   getActiveRoutes,
   type AgentRole,
   type McpServerConfigInput,
@@ -29,6 +30,8 @@ import {
   type RouteCapabilityHint,
   type SkillsListResult,
   type AgentSkillAssignments,
+  type SubagentEnabledSettings,
+  type SubagentRole,
   type ClarificationRequest,
   type CoderTodoItem,
   type SessionSyncSettingsInput,
@@ -59,10 +62,12 @@ import {
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import { isReconnectActivityMessage } from "../shared/activity-display";
 import { isActivityStatusNoise, stripActivityStatusNoise } from "./activity-log";
-import { formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
+import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
-import { ModelsSettingsPanel } from "./ModelsSettingsPanel";
+import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
+import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
@@ -117,7 +122,12 @@ function App() {
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
+  const [subagentSettings, setSubagentSettings] = useState<SubagentEnabledSettings | null>(null);
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
+  const [isSavingSubagentSettings, setIsSavingSubagentSettings] = useState(false);
+  const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
+  const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("providers");
+  const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
@@ -158,7 +168,8 @@ function App() {
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync]) => {
+      window.eco.getSubagentSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -172,6 +183,7 @@ function App() {
       setSettings(modelSettings);
       setMcpSettings(mcp);
       setSessionSyncSettings(sessionSync);
+      setSubagentSettings(subagents);
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -455,6 +467,12 @@ function App() {
   }, [settingsOpen, settingsSection, currentProjectPath]);
 
   useEffect(() => {
+    if (activeThread) {
+      setComposerRoutePopoverOpen(false);
+    }
+  }, [activeThread?.id]);
+
+  useEffect(() => {
     if (!window.eco?.getRouteCapabilities) {
       return;
     }
@@ -529,15 +547,19 @@ function App() {
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
+  const activeRouteProfile = useMemo(() => getActiveRouteProfile(settings), [settings]);
+  const canEditPreChatConfig = !activeThread;
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
         const route = activeRoutes.find((candidate) => candidate.role === role);
         const configured = route?.modelId.trim() || undefined;
         const live = threadModelByRole?.[role];
+        const modelId = live ?? configured;
         return {
           role,
-          label: formatRoleModelLabel(role, live ?? configured),
+          modelId,
+          title: formatRoleModelLabel(role, modelId),
         };
       }),
     [activeRoutes, threadModelByRole],
@@ -898,6 +920,51 @@ function App() {
     }
   }
 
+  function openModelsSettings(tab: ModelsSettingsTab = "providers") {
+    setModelsSettingsTab(tab);
+    setSettingsSection("models");
+    setSettingsOpen(true);
+  }
+
+  async function activateRouteProfile(profileId: string) {
+    if (!window.eco) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      await window.eco.setActiveRouteProfile(profileId);
+      const modelSettings = await window.eco.getModelSettings();
+      setSettings(modelSettings);
+      setComposerRoutePopoverOpen(false);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
+    if (!subagentSettings || role === "coder") {
+      return;
+    }
+    await saveSubagentSettings({ ...subagentSettings, [role]: enabled });
+  }
+
+  async function saveSubagentSettings(next: SubagentEnabledSettings) {
+    if (!window.eco) return;
+    setIsSavingSubagentSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveSubagentSettings(next);
+      setSubagentSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSubagentSettings(false);
+    }
+  }
+
   async function saveAgentSkillsAssignments(assignments: AgentSkillAssignments) {
     if (!window.eco) return;
     setIsSavingAgentSkills(true);
@@ -972,6 +1039,7 @@ function App() {
   }
 
   function startNewChat() {
+    setComposerRoutePopoverOpen(false);
     setSelectedThreadId(undefined);
     setPrompt("");
     setComposerAttachments([]);
@@ -1106,25 +1174,36 @@ function App() {
           rows={1}
         />
         <div className="composer-footer">
-          <button
-            type="button"
-            className="composer-settings-link"
-            onClick={() => {
-              setSettingsSection("models");
-              setSettingsOpen(true);
-            }}
-            title="模型设置"
-            aria-label="模型设置"
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-          <div className="composer-agent-models" aria-label="各 Agent 模型">
-            {agentModelLabels.map(({ role, label }) => (
-              <span key={role} className="composer-agent-model" title={label}>
-                {label}
-              </span>
-            ))}
+          <div className="composer-route-control">
+            <ComposerRoutePopoverTrigger
+              buttonRef={composerRouteButtonRef}
+              open={composerRoutePopoverOpen}
+              disabled={!canEditPreChatConfig || isSavingSettings}
+              profileName={activeRouteProfile?.name}
+              onToggle={() => {
+                if (!canEditPreChatConfig) {
+                  return;
+                }
+                setComposerRoutePopoverOpen((current) => !current);
+              }}
+            />
+            <ComposerRoutePopover
+              open={composerRoutePopoverOpen && canEditPreChatConfig}
+              settings={settings}
+              busy={isSavingSettings}
+              anchorRef={composerRouteButtonRef}
+              onClose={() => setComposerRoutePopoverOpen(false)}
+              onSelectProfile={activateRouteProfile}
+              onOpenFullSettings={() => openModelsSettings("routes")}
+            />
           </div>
+          <ComposerAgentModels
+            labels={agentModelLabels}
+            subagentSettings={subagentSettings}
+            canEditSubagents={canEditPreChatConfig}
+            subagentSaving={isSavingSubagentSettings}
+            onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+          />
           {canStopThread ? (
             <button
               type="button"
@@ -1156,14 +1235,7 @@ function App() {
         {!routesReady && (
           <p className="composer-hint">
             请先在
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setSettingsSection("models");
-                setSettingsOpen(true);
-              }}
-            >
+            <button type="button" className="link-button" onClick={() => openModelsSettings("providers")}>
               设置
             </button>
             中配置模型（API Key 可选）
@@ -1228,10 +1300,7 @@ function App() {
         <button
           type="button"
           className="sidebar-settings"
-          onClick={() => {
-            setSettingsSection("models");
-            setSettingsOpen(true);
-          }}
+          onClick={() => openModelsSettings("providers")}
         >
           <Settings2 size={18} />
           设置
@@ -1322,6 +1391,9 @@ function App() {
                   <PlanApprovalPanel
                     plan={pendingPlan}
                     busy={planActionBusy}
+                    {...(subagentSettings && {
+                      executionSummary: formatPlanExecutionSummary(subagentSettings),
+                    })}
                     {...(planFailureMessage && { failureMessage: planFailureMessage })}
                     onApprove={approvePendingPlan}
                     onDismiss={dismissPendingPlan}
@@ -1409,14 +1481,21 @@ function App() {
               />
             )}
 
-            {settingsSection === "models" && (
-              <ModelsSettingsPanel
-                settings={settings}
-                busy={isSavingSettings}
-                onSettingsChange={setSettings}
-                onSavingChange={setIsSavingSettings}
-              />
-            )}
+            {settingsSection === "models" &&
+              (subagentSettings ? (
+                <ModelsSettingsPanel
+                  settings={settings}
+                  subagentSettings={subagentSettings}
+                  subagentSettingsSaving={isSavingSubagentSettings}
+                  initialTab={modelsSettingsTab}
+                  busy={isSavingSettings}
+                  onSettingsChange={setSettings}
+                  onSavingChange={setIsSavingSettings}
+                  onSubagentSettingsChange={(next) => void saveSubagentSettings(next)}
+                />
+              ) : (
+                <p className="settings-empty-hint">正在加载子代理配置…</p>
+              ))}
 
             {settingsSection === "git" && (
               <>

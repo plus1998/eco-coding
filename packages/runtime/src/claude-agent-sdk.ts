@@ -33,14 +33,18 @@ import {
   exploreAgentDescription,
   exploreAgentPrompt,
   planningPhaseSystemAppend,
+  buildPlanningPhaseSystemAppend,
   buildPlanningPhasePrompt,
   buildPlanningContinuationPrompt,
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
   executePhaseSystemAppend,
+  buildExecutePhaseSystemAppend,
+  buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
   questionAnswerSystemAppend,
+  buildQuestionAnswerSystemAppend,
   buildQuestionAnswerPrompt,
   reviewerAgentPrompt,
   executionArchitectPrompt,
@@ -52,6 +56,15 @@ import {
   planningArchitectPrompt,
   planningArchitectDescription,
 } from "./prompts/index.js";
+import {
+  filterAgentDefinitions,
+  normalizeSubagentAvailability,
+  SUBAGENT_ROLES,
+  type SubagentAvailability,
+  type SubagentRole,
+} from "./subagent-availability.js";
+
+export { SUBAGENT_ROLES, type SubagentRole };
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -86,6 +99,12 @@ export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
     skills: plannerSkills.length > 0 ? plannerSkills : undefined,
     mcpServers: session?.mcpServers ?? {},
   };
+}
+
+export function resolveSubagentAvailabilityFromSession(
+  session?: EcoSdkSessionOptions,
+): SubagentAvailability {
+  return normalizeSubagentAvailability(session?.enabledSubagents);
 }
 
 export function resolveAgentSkills(
@@ -153,13 +172,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     if (this.options.orchestration === "sdk_default") {
       yield* this.runSingleSession(input, {
         prompt: input.prompt,
         permissionMode: "acceptEdits",
         allowedTools: [...defaultAllowedTools],
         phaseAppend: "",
-        agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+        agents: createExecutionAgentDefinitions(
+          input.routes,
+          input.sdkSession?.agentSkills,
+          availability,
+        ),
+        availability,
       });
       return;
     }
@@ -171,30 +196,43 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     planning: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
     const prompt = isResume
       ? buildExecuteResumePrompt(planning)
       : buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
           ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+          availability,
         });
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
-      phaseAppend: executePhaseSystemAppend,
-      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      phaseAppend: buildExecutePhaseSystemAppend(availability),
+      agents: createExecutionAgentDefinitions(
+        input.routes,
+        input.sdkSession?.agentSkills,
+        availability,
+      ),
+      availability,
     });
   }
 
   async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
     yield* this.runSingleSession(input, {
-      prompt: buildQuestionAnswerPrompt(input.prompt),
+      prompt: buildQuestionAnswerPrompt(input.prompt, availability),
       permissionMode: "default",
       allowedTools: [...questionAllowedTools],
-      phaseAppend: questionAnswerSystemAppend,
-      agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      phaseAppend: buildQuestionAnswerSystemAppend(availability),
+      agents: createQuestionAgentDefinitions(
+        input.routes,
+        input.sdkSession?.agentSkills,
+        availability,
+      ),
+      availability,
     });
   }
 
@@ -211,13 +249,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     mode: "planning" | "execution" | "question",
   ): AsyncIterable<AgentEvent> {
     if (mode === "planning") {
+      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
       const planningTranscript = yield* this.runSingleSession(input, {
-        prompt: buildPlanningContinuationPrompt(input.prompt),
+        prompt: buildPlanningContinuationPrompt(input.prompt, availability),
         permissionMode: planningPermissionMode,
         allowedTools: [...planningAllowedTools],
-        phaseAppend: planningPhaseSystemAppend,
-        agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+        phaseAppend: buildPlanningPhaseSystemAppend(availability),
+        agents: createPlanningAgentDefinitions(
+          input.routes,
+          input.sdkSession?.agentSkills,
+          availability,
+        ),
+        availability,
       });
       if (input.signal.aborted) {
         return;
@@ -233,35 +277,53 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     if (mode === "question") {
+      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, {
-        prompt: input.prompt,
+        prompt: buildQuestionAnswerPrompt(input.prompt, availability),
         permissionMode: "default",
         allowedTools: [...questionAllowedTools],
-        phaseAppend: questionAnswerSystemAppend,
-        agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+        phaseAppend: buildQuestionAnswerSystemAppend(availability),
+        agents: createQuestionAgentDefinitions(
+          input.routes,
+          input.sdkSession?.agentSkills,
+          availability,
+        ),
+        availability,
       });
       return;
     }
 
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
     yield* this.runSingleSession(input, {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
-      phaseAppend: executePhaseSystemAppend,
-      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      phaseAppend: buildExecutePhaseSystemAppend(availability),
+      agents: createExecutionAgentDefinitions(
+        input.routes,
+        input.sdkSession?.agentSkills,
+        availability,
+      ),
+      availability,
     });
   }
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
     const planningTranscript = yield* this.runSingleSession(input, {
-      prompt: buildPlanningPhasePrompt(input.prompt),
+      prompt: buildPlanningPhasePrompt(input.prompt, availability),
       permissionMode: planningPermissionMode,
       allowedTools: [...planningAllowedTools],
-      phaseAppend: planningPhaseSystemAppend,
-      agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      phaseAppend: buildPlanningPhaseSystemAppend(availability),
+      agents: createPlanningAgentDefinitions(
+        input.routes,
+        input.sdkSession?.agentSkills,
+        availability,
+      ),
+      availability,
     });
     if (input.signal.aborted) {
       return;
@@ -285,6 +347,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: string;
       agents?: Record<string, unknown>;
       maxTurns?: number;
+      availability?: SubagentAvailability;
     },
   ): AsyncGenerator<AgentEvent, string> {
     const sdk = await this.loadSdk();
@@ -313,7 +376,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       },
       tools: { type: "preset", preset: "claude_code" },
       ...(this.options.hookContext
-        ? { hooks: buildEcoSdkHooks(this.options.hookContext) }
+        ? {
+            hooks: buildEcoSdkHooks({
+              ...this.options.hookContext,
+              subagentAvailability:
+                phase.availability ??
+                resolveSubagentAvailabilityFromSession(input.sdkSession),
+            }),
+          }
         : {}),
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
@@ -414,18 +484,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 export function createAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
+  availability?: SubagentAvailability,
 ): Record<string, unknown> {
-  return createExecutionAgentDefinitions(routes, agentSkills);
+  return createExecutionAgentDefinitions(routes, agentSkills, availability);
 }
 
 export function createPlanningAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
+  availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   const exploreTools = ["Read", "Glob", "Grep", "Bash"];
 
-  return {
+  const definitions = {
     explore: {
       description: exploreAgentDescription,
       tools: exploreTools,
@@ -441,15 +513,18 @@ export function createPlanningAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
     },
   };
+
+  return filterAgentDefinitions(definitions, availability);
 }
 
 export function createQuestionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
+  availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
 
-  return {
+  const definitions = {
     explore: {
       description: exploreAgentDescription,
       tools: ["Read", "Glob", "Grep", "Bash"],
@@ -458,6 +533,8 @@ export function createQuestionAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId),
     },
   };
+
+  return filterAgentDefinitions(definitions, availability);
 }
 
 /** @deprecated Import from ./prompts/execution-agents.js */
@@ -466,10 +543,11 @@ export { reviewerAgentPrompt };
 export function createExecutionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
+  availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
 
-  return {
+  const definitions = {
     architect: {
       description: executionArchitectDescription,
       tools: ["Read", "Glob", "Grep"],
@@ -500,6 +578,12 @@ export function createExecutionAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
     },
   };
+
+  const filtered = filterAgentDefinitions(definitions, availability);
+  if (!filtered.coder) {
+    return { ...filtered, coder: definitions.coder };
+  }
+  return filtered;
 }
 
 export function toSdkAgentModel(modelId?: string): string {
@@ -592,8 +676,12 @@ export function createSessionCapturedEvent(
 
 export {
   planningPhaseSystemAppend,
+  buildPlanningPhaseSystemAppend,
   executePhaseSystemAppend,
+  buildExecutePhaseSystemAppend,
+  buildExecuteBuildSwitchAppend,
   questionAnswerSystemAppend,
+  buildQuestionAnswerSystemAppend,
   buildPlanningPhasePrompt,
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
@@ -1503,10 +1591,6 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
 
   return null;
 }
-
-export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
-
-export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
 const SUBAGENT_ROLE_LABELS: Record<string, string> = {
   explore: "探索",

@@ -42,6 +42,8 @@ export const IPC_CHANNELS = {
   skillsList: "skills:list",
   agentSkillsGet: "agent-skills:get",
   agentSkillsSave: "agent-skills:save",
+  subagentSettingsGet: "subagent-settings:get",
+  subagentSettingsSave: "subagent-settings:save",
   sessionSyncSettingsGet: "session-sync-settings:get",
   sessionSyncSettingsSave: "session-sync-settings:save",
   sessionSyncTestConnection: "session-sync:test-connection",
@@ -111,6 +113,12 @@ export interface WorkspacePrepareGitRequest {
 export const AGENT_ROLES = ["planner", "explore", "architect", "coder", "reviewer", "tester"] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
+
+export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
+
+export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
+
+export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
 
 export interface ProviderConfigInput {
   id?: string;

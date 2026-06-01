@@ -1,6 +1,5 @@
 export {
   ecoBasePromptAppend,
-  executeBuildSwitchAppend,
   executeCoreGoalAppend,
 } from "./eco-common.js";
 export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
@@ -13,14 +12,25 @@ export {
   buildPlanPhasePrompt,
 } from "./planning.js";
 export { CODEX_PLAN_MODE_TEMPLATE, loadCodexPlanTemplate } from "./codex-plan-template.js";
-export { ecoPlanHarnessAdapter } from "./eco-plan-adapter.js";
+export { ecoPlanHarnessAdapter, buildEcoPlanHarnessAdapter } from "./eco-plan-adapter.js";
 export {
   executePhaseSystemAppend,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
+  buildExecutePhaseSystemAppend,
+  buildExecuteBuildSwitchAppend,
   architectSkipCriteria,
 } from "./execute.js";
-export { questionAnswerSystemAppend, buildQuestionAnswerPrompt } from "./question.js";
+export {
+  questionAnswerSystemAppend,
+  buildQuestionAnswerSystemAppend,
+  buildQuestionAnswerPrompt,
+} from "./question.js";
+export {
+  formatAvailableSubagentsLine,
+  formatPlanExecutionSummary,
+  summarizeExecutePipeline,
+} from "./subagent-pipeline.js";
 export {
   reviewerAgentPrompt,
   executionArchitectPrompt,

@@ -12,6 +12,13 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
 import { appendReviewerScopeToPrompt } from "./reviewer-scope";
+import {
+  isSubagentEnabled,
+  normalizeSubagentAvailability,
+  SUBAGENT_ROLES,
+  type SubagentAvailability,
+  type SubagentRole,
+} from "./subagent-availability";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
@@ -30,6 +37,7 @@ export interface EcoHookContext {
   taskTracker?: EcoTaskTrackerHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
+  subagentAvailability?: SubagentAvailability;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -74,6 +82,40 @@ export function createAskUserQuestionPreToolHook(
         hookEventName: "PreToolUse",
         permissionDecision: "allow",
         updatedInput,
+      },
+    };
+  };
+}
+
+function isSubagentRole(role: string): role is SubagentRole {
+  return (SUBAGENT_ROLES as readonly string[]).includes(role);
+}
+
+export function createDisabledSubagentPreToolHook(
+  availability?: SubagentAvailability,
+): HookCallback | undefined {
+  const resolved = availability ?? normalizeSubagentAvailability();
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent") {
+      return {};
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const subagentType = readAgentSubagentType(toolInput);
+    if (!subagentType || !isSubagentRole(subagentType)) {
+      return {};
+    }
+    if (isSubagentEnabled(resolved, subagentType)) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: `Subagent "${subagentType}" is disabled in Eco settings. Do not call Agent(${subagentType}).`,
       },
     };
   };
@@ -255,7 +297,10 @@ function pushHook(
 export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent, HookCallbackMatcher[]>> {
   const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {};
 
+  const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
+
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
+  pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent");
   pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent");
 
   if (ctx.taskTracker) {

@@ -12,12 +12,3 @@ export const ecoBasePromptAppend = [
  */
 export const executeCoreGoalAppend =
   "Core goal: produce runnable, verified code—not documentation or explanatory prose in place of implementation.";
-
-/** Injected when execution starts after human plan approval (OpenCode build-switch analogue). */
-export const executeBuildSwitchAppend = [
-  "<system-reminder>",
-  "The implementation plan has been approved by the user.",
-  "You are now in EXECUTE phase: you may edit files, run shell commands, and delegate to coder/reviewer/tester subagents.",
-  "Follow the approved plan and the execution pipeline. Do not restart planning from scratch unless blocked.",
-  "</system-reminder>",
-].join("\n");

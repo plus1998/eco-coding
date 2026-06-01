@@ -1,4 +1,14 @@
-import { executeBuildSwitchAppend, executeCoreGoalAppend } from "./eco-common.js";
+import {
+  buildExecuteBuildSwitchAppend,
+  buildExecutePhaseSystemAppend,
+  summarizeExecutePipeline,
+} from "./subagent-pipeline.js";
+import { defaultSubagentAvailability, type SubagentAvailability } from "../subagent-availability.js";
+
+export { buildExecuteBuildSwitchAppend, buildExecutePhaseSystemAppend };
+
+/** @deprecated Use buildExecuteBuildSwitchAppend(availability) */
+export const executeBuildSwitchAppend = buildExecuteBuildSwitchAppend(defaultSubagentAvailability());
 
 /** Skip Agent(architect) only when ALL apply (otherwise architect is mandatory). */
 export const architectSkipCriteria = [
@@ -8,55 +18,18 @@ export const architectSkipCriteria = [
   "No parallel workstreams that could conflict",
 ].join("; ");
 
-export const executePhaseSystemAppend = [
-  "Eco orchestration phase 2/2 — EXECUTE.",
-  executeBuildSwitchAppend,
-  "",
-  executeCoreGoalAppend,
-  "",
-  "You are the orchestrator (Planner). Follow this pipeline strictly:",
-  "",
-  "0. Progress (mandatory): Use TaskCreate and TaskUpdate to drive the user-visible progress list.",
-  "   - After you have a final ## Coder Tasks list, call TaskCreate for each short step (about 5–7 words each).",
-  "   - Use TaskUpdate to change status (pending | in_progress | completed) for one task at a time.",
-  "   - Exactly ONE step must be in_progress until everything is done.",
-  "   - Set in_progress BEFORE starting a step; set completed IMMEDIATELY after finishing (do not batch).",
-  "   - Update task status after each meaningful sub-step; do not rely on prose alone for progress.",
-  "",
-  `1. Architect (conditional): Call Agent(architect) unless the approved plan is trivial — trivial means ALL: ${architectSkipCriteria}.`,
-  '   Wait for "## Coder Tasks". If skipping architect, you must still publish "## Coder Tasks" yourself before coders.',
-  "",
-  '2. Task list: Parse "## Coder Tasks". Each item becomes one Agent(coder) delegation.',
-  '   Print the final "## Coder Tasks" section with numbered tasks before spawning coders.',
-  "",
-  "3. Coders (parallel): Same parallel_group or no dependencies → multiple Agent(coder) in one turn.",
-  "   Each delegation must state: scope, target files, how to verify (test/lint command), expected return format.",
-  "",
-  "4. Reviewer: After all coders finish, call Agent(reviewer) with approved plan + task list.",
-  "   Eco prepends this session's changed file list; do not diff against main/master.",
-  "   Severity policy: only fix P0/P1 issues. Do NOT spend cycles implementing P2 suggestions.",
-  "   If the reviewer returns BLOCKERS (P0/P1 exist), convert ALL P0/P1 items into a single concrete fix batch and run coders once to address them.",
-  "   Then re-run Agent(reviewer) exactly once. If there are still P0/P1 issues after the second review, STOP and summarize remaining P0/P1 for the user (do not loop).",
-  "   Always summarize P2 items at the end as follow-ups; do not implement them unless the user explicitly asks.",
-  "",
-  "5. Tester: After review passes, call Agent(tester).",
-  "",
-  "When NOT to use Agent:",
-  "- Single known file for reviewer → still use Agent(reviewer) for pipeline consistency",
-  "- Do not delegate exploration during execute unless blocked — execute the approved plan",
-  "",
-  "Never ask a subagent to spawn another subagent. You alone coordinate the pipeline.",
-  "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
-].join("\n");
+/** @deprecated Use buildExecutePhaseSystemAppend(availability) */
+export const executePhaseSystemAppend = buildExecutePhaseSystemAppend(defaultSubagentAvailability());
 
 export function buildExecutePhasePrompt(
   userPrompt: string,
   analysis: string,
   plan: string,
-  options?: { planUserEdited?: boolean },
+  options?: { planUserEdited?: boolean; availability?: SubagentAvailability },
 ): string {
+  const availability = options?.availability ?? defaultSubagentAvailability();
   const lines = [
-    executeBuildSwitchAppend,
+    buildExecuteBuildSwitchAppend(availability),
     "",
     "User request:",
     userPrompt.trim(),
@@ -77,10 +50,7 @@ export function buildExecutePhasePrompt(
     );
   }
 
-  lines.push(
-    "",
-    "Task: Pipeline step 0–5 — TaskCreate/TaskUpdate after Coder Tasks, Architect (or skip per criteria), parallel coders, reviewer, tester.",
-  );
+  lines.push("", `Task: Pipeline — ${summarizeExecutePipeline(availability)}.`);
 
   return lines.join("\n");
 }
