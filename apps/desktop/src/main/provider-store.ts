@@ -368,7 +368,8 @@ export class ProviderStore {
         continue;
       }
       const split = splitBaseUrlAndRequestPath(row.base_url);
-      if (split.requestPath || split.baseUrl !== row.base_url) {
+      // Only split `/anthropic`-style message prefixes; keep service roots like `/zen` in base_url.
+      if (split.requestPath === "/anthropic" && split.baseUrl !== row.base_url) {
         this.db
           .prepare("UPDATE provider_configs SET base_url = ?, request_path = ? WHERE id = ?")
           .run(split.baseUrl, split.requestPath, row.id);

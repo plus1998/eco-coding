@@ -1089,7 +1089,9 @@ function ProviderEditorModal({
               placeholder="https://api.deepseek.com"
               onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
             />
-            <span className="mcp-field-hint">用于拉取模型列表（GET /v1/models）</span>
+            <span className="mcp-field-hint">
+              服务根地址，可含路径（如 https://opencode.ai/zen → GET …/zen/v1/models）
+            </span>
           </label>
 
           <label className="mcp-field">

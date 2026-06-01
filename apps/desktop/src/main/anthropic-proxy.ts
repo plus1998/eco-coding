@@ -263,7 +263,11 @@ async function loadUpstreamModelsForRoutes(
       continue;
     }
     providersSeen.add(route.provider.id);
-    const result = await fetchUpstreamModelsFromCredentials(route.provider.baseUrl, route.provider.apiKey);
+    const result = await fetchUpstreamModelsFromCredentials(
+      route.provider.baseUrl,
+      route.provider.apiKey,
+      route.provider.requestPath,
+    );
     if (result.ok) {
       collected.push(...result.models);
       logUpstream("models-list-upstream", {

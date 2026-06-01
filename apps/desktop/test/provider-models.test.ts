@@ -42,13 +42,21 @@ describe("buildProviderRequestBaseUrl", () => {
 });
 
 describe("buildModelsListUrl", () => {
-  test("uses baseURL origin only", () => {
+  test("uses bare baseURL", () => {
     expect(buildModelsListUrl("https://api.deepseek.com")).toBe("https://api.deepseek.com/v1/models");
     expect(buildModelsListUrl("http://127.0.0.1:55302")).toBe("http://127.0.0.1:55302/v1/models");
   });
 
-  test("still strips legacy path suffix on baseURL", () => {
+  test("ignores messages-only request path (DeepSeek /anthropic)", () => {
+    expect(buildModelsListUrl("https://api.deepseek.com", "/anthropic")).toBe(
+      "https://api.deepseek.com/v1/models",
+    );
     expect(buildModelsListUrl("https://api.deepseek.com/anthropic")).toBe("https://api.deepseek.com/v1/models");
+  });
+
+  test("includes service path prefix (OpenCode Zen)", () => {
+    expect(buildModelsListUrl("https://opencode.ai/zen")).toBe("https://opencode.ai/zen/v1/models");
+    expect(buildModelsListUrl("https://opencode.ai", "/zen")).toBe("https://opencode.ai/zen/v1/models");
   });
 });
 

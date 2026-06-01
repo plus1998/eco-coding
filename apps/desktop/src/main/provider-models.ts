@@ -28,7 +28,7 @@ export async function listProviderUpstreamModels(
     return resolved;
   }
 
-  return fetchUpstreamModelsFromCredentials(resolved.baseUrl, resolved.apiKey);
+  return fetchUpstreamModelsFromCredentials(resolved.baseUrl, resolved.apiKey, resolved.requestPath);
 }
 
 export async function testProviderConnection(
@@ -224,21 +224,47 @@ export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; 
   }
 }
 
-/** OpenAI-style model discovery: GET `{baseUrl}/v1/models` (uses base URL only, not request path). */
-export function buildModelsListUrl(baseUrl: string): string {
-  const { baseUrl: origin } = splitBaseUrlAndRequestPath(baseUrl);
-  const root = origin || baseUrl.trim();
+/** Path prefixes used only for Anthropic Messages, not for `/v1/models` discovery. */
+const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
+
+function isMessagesOnlyRequestPath(path: string): boolean {
+  return MESSAGES_ONLY_REQUEST_PATHS.has(normalizeRequestPath(path));
+}
+
+/**
+ * OpenAI-style model discovery: GET `{serviceRoot}/v1/models`.
+ * Includes `requestPath` when it is part of the API root (e.g. OpenCode `/zen`),
+ * but not when it is messages-only (e.g. DeepSeek `/anthropic`).
+ */
+export function buildModelsListUrl(baseUrl: string, requestPath?: string): string {
+  const path = normalizeRequestPath(requestPath);
+  let root: string;
+
+  if (path) {
+    root = isMessagesOnlyRequestPath(path)
+      ? trimTrailingSlash(baseUrl.trim())
+      : buildProviderRequestBaseUrl(baseUrl, path);
+  } else {
+    const split = splitBaseUrlAndRequestPath(baseUrl);
+    if (split.requestPath && isMessagesOnlyRequestPath(split.requestPath)) {
+      root = split.baseUrl;
+    } else {
+      root = buildProviderRequestBaseUrl(baseUrl);
+    }
+  }
+
   if (!root) {
     return "/v1/models";
   }
-  return `${trimTrailingSlash(root)}/v1/models`;
+  return `${root}/v1/models`;
 }
 
 export async function fetchUpstreamModelsFromCredentials(
   baseUrl: string,
   apiKey: string,
+  requestPath?: string,
 ): Promise<ListUpstreamModelsResult> {
-  const modelsUrl = buildModelsListUrl(baseUrl);
+  const modelsUrl = buildModelsListUrl(baseUrl, requestPath);
 
   try {
     const response = await fetch(modelsUrl, {
