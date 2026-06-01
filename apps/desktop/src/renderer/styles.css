@@ -545,6 +545,36 @@ button:not(:disabled) {
   font-size: 12px !important;
 }
 
+.thread-retry-banner-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-retry-banner-route-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #a3a3a3;
+}
+
+.thread-retry-banner-route-picker select {
+  max-width: 320px;
+}
+
+.thread-retry-banner-route {
+  margin-top: 6px !important;
+  color: #a3a3a3 !important;
+  font-size: 12px !important;
+}
+
+.thread-retry-banner-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .thread-retry-banner .plan-button {
   align-self: flex-start;
 }

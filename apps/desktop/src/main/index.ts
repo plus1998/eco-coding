@@ -57,6 +57,7 @@ import {
   type SessionSyncTestConnectionRequest,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRetryRequest,
   type ThreadRetryResult,
   type ThreadLiveEvent,
   type ThreadBillingSnapshot,
@@ -93,6 +94,10 @@ import {
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
 import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../shared/thread-continuation";
+import {
+  computeRouteFingerprint,
+  routesMatchFingerprint,
+} from "../shared/route-fingerprint";
 import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
@@ -755,8 +760,12 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(thread.workspacePath);
+    const settings = providerStore.getSettings();
+    const roleRoutes = getActiveRoutes(settings);
+    invalidateSdkSessionIfRoutesChanged(payload.threadId, roleRoutes);
+
     const runtimeConfig = resolveRuntimeConfig(
-      providerStore.getSettings(),
+      settings,
       providerStore.listProvidersWithSecrets(),
     );
     if (!runtimeConfig.ok) {
@@ -864,11 +873,9 @@ function registerIpcHandlers(): void {
     return { thread: conversationStore.getThread(payload.threadId) ?? updated } satisfies ThreadContinueResult;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, threadId: unknown) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
-      throw new Error("Thread id is required.");
-    }
-    return retryThread(threadId.trim());
+  ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, payload: unknown) => {
+    const request = parseThreadRetryRequest(payload);
+    return retryThread(request);
   });
 
   ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, threadId: unknown) => {
@@ -1008,6 +1015,7 @@ async function runQuestionThread(
   worktreePath?: string,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
@@ -1016,7 +1024,12 @@ async function runQuestionThread(
 
   try {
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
+      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
+      if (!freshConfig.ok) {
+        return { ok: false, reason: freshConfig.reason };
+      }
+      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
+      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -1145,6 +1158,7 @@ async function runCodingThreadSdkDefault(
   existingWorktreePlan?: WorktreePlan,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   activeRuns.set(thread.id, {
@@ -1173,7 +1187,12 @@ async function runCodingThreadSdkDefault(
     });
 
     const runOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
+      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
+      if (!freshConfig.ok) {
+        return { ok: false, reason: freshConfig.reason };
+      }
+      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
+      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -1279,6 +1298,7 @@ async function runCodingThreadPlanning(
   existingWorktreePlan?: WorktreePlan,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   activeRuns.set(thread.id, {
@@ -1304,7 +1324,12 @@ async function runCodingThreadPlanning(
     });
 
     const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
+      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
+      if (!freshConfig.ok) {
+        return { ok: false, reason: freshConfig.reason };
+      }
+      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
+      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
       process.stderr.write(
         `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
       );
@@ -1450,7 +1475,7 @@ async function runCodingThreadPlanning(
 async function runCodingThreadExecution(
   threadId: string,
   runtimeConfig: RuntimeConfig,
-  options?: { planUserEdited?: boolean },
+  options?: { planUserEdited?: boolean; routesOverride?: readonly RoleRouteConfig[] },
 ): Promise<void> {
   const pending = conversationStore.getPendingPlan(threadId);
   const thread = conversationStore.getThread(threadId);
@@ -1489,7 +1514,12 @@ async function runCodingThreadExecution(
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
     const executionOutcome = await runThreadRequestWithAutoRetry(threadId, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
+      const freshConfig = resolveRuntimeConfigFresh(options?.routesOverride);
+      if (!freshConfig.ok) {
+        return { ok: false, reason: freshConfig.reason };
+      }
+      recordThreadRouteFingerprint(threadId, freshConfig.routes);
+      const attemptProxy = await startRuntimeProxy(freshConfig.routes, undefined, threadId);
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
@@ -1629,7 +1659,68 @@ async function runCodingThreadExecution(
   }
 }
 
-async function retryThread(threadId: string): Promise<ThreadRetryResult> {
+function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
+  if (typeof payload === "string" && payload.trim()) {
+    return { threadId: payload.trim() };
+  }
+  if (typeof payload === "object" && payload !== null && "threadId" in payload) {
+    const raw = payload as ThreadRetryRequest;
+    if (typeof raw.threadId === "string" && raw.threadId.trim()) {
+      return {
+        threadId: raw.threadId.trim(),
+        ...(typeof raw.routeProfileId === "string" && raw.routeProfileId.trim()
+          ? { routeProfileId: raw.routeProfileId.trim() }
+          : {}),
+      };
+    }
+  }
+  throw new Error("Thread id is required.");
+}
+
+function roleRoutesForProfile(
+  settings: ModelSettingsSnapshot,
+  routeProfileId: string,
+): RoleRouteConfig[] | undefined {
+  return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
+}
+
+function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig[] {
+  return routes.map((route) => ({
+    role: route.role,
+    providerId: route.provider.id,
+    modelId: route.modelId,
+  }));
+}
+
+function invalidateSdkSessionIfRoutesChanged(
+  threadId: string,
+  roleRoutes: readonly RoleRouteConfig[],
+): void {
+  const stored = conversationStore.getRouteFingerprint(threadId);
+  if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
+    conversationStore.clearSdkSession(threadId);
+  }
+}
+
+function recordThreadRouteFingerprint(threadId: string, routes: readonly RuntimeRoute[]): void {
+  conversationStore.saveRouteFingerprint(
+    threadId,
+    computeRouteFingerprint(roleRoutesFromRuntime(routes)),
+  );
+}
+
+function resolveRuntimeConfigFresh(
+  routesOverride?: readonly RoleRouteConfig[],
+): RuntimeConfigResolution {
+  return resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+    routesOverride,
+  );
+}
+
+async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResult> {
+  const threadId = request.threadId;
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
     throw new Error("Thread was not found.");
@@ -1641,10 +1732,17 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
     throw new Error("对话正在运行中。");
   }
 
-  const runtimeConfig = resolveRuntimeConfig(
-    providerStore.getSettings(),
-    providerStore.listProvidersWithSecrets(),
-  );
+  const settings = providerStore.getSettings();
+  const routesOverride = request.routeProfileId
+    ? roleRoutesForProfile(settings, request.routeProfileId)
+    : undefined;
+  if (request.routeProfileId && !routesOverride) {
+    throw new Error(`找不到路由配置：${request.routeProfileId}`);
+  }
+
+  invalidateSdkSessionIfRoutesChanged(threadId, routesOverride ?? getActiveRoutes(settings));
+
+  const runtimeConfig = resolveRuntimeConfigFresh(routesOverride);
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
   }
@@ -1655,10 +1753,24 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
     throw new Error("没有可重试的需求内容。");
   }
 
+  const retryLabel = request.routeProfileId
+    ? settings.routeProfiles.find((profile) => profile.id === request.routeProfileId)?.name ??
+      "备用路由"
+    : undefined;
+
   if (thread.status === "awaiting_plan" && pending) {
     updateThread(threadId, { status: "running", message: "正在重试执行…" });
-    emitThreadEvent(threadId, "thread.retry", "正在重试执行计划…", "system");
-    void runCodingThreadExecution(threadId, runtimeConfig);
+    emitThreadEvent(
+      threadId,
+      "thread.retry",
+      retryLabel ? `正在使用「${retryLabel}」重试执行计划…` : "正在重试执行计划…",
+      "system",
+    );
+    void runCodingThreadExecution(
+      threadId,
+      runtimeConfig,
+      routesOverride ? { routesOverride } : undefined,
+    );
     return { thread: conversationStore.getThread(threadId) ?? thread };
   }
 
@@ -1668,15 +1780,17 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
 
   const workspace = await ensureWorkspace(thread.workspacePath);
   const intent = classifyThreadIntent(prompt);
+  const activityLines = conversationStore.listActivityLines(threadId);
   conversationStore.clearCoderTodos(threadId);
+  const runningMessage = intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…";
   updateThread(threadId, {
     status: "running",
-    message: intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+    message: runningMessage,
   });
   emitThreadEvent(
     threadId,
     "thread.retry",
-    intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+    retryLabel ? `正在使用「${retryLabel}」${runningMessage}` : runningMessage,
     "system",
   );
   emitTodoList(threadId, []);
@@ -1684,7 +1798,7 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
   const updated: ThreadSummary = {
     ...thread,
     status: "running",
-    message: intent === "question" ? "正在重试回答…" : "正在重试分析并制定计划…",
+    message: runningMessage,
   };
   const sdkSession = conversationStore.getSdkSession(threadId);
   const defaultPlan = createWorktreePlan(workspace.path, threadId);
@@ -1699,19 +1813,42 @@ async function retryThread(threadId: string): Promise<ThreadRetryResult> {
       ? resolveWorktreePlan(workspace.path, threadId, cwd)
       : undefined;
   const resume = resolveResumeOptions(threadId, cwd);
+  const agentPrompt = resume
+    ? prompt
+    : buildAgentPromptWithContext(prompt, "请继续完成未完成的任务。", activityLines);
   if (intent === "question") {
     void runQuestionThread(
       updated,
       workspace,
       runtimeConfig,
-      prompt,
+      agentPrompt,
       cwd !== workspace.path ? cwd : undefined,
       resume,
+      undefined,
+      routesOverride,
     );
   } else if (workflowUsesPlan(workflowSettingsStore.get())) {
-    void runCodingThreadPlanning(updated, workspace, runtimeConfig, prompt, existingWorktreePlan, resume);
+    void runCodingThreadPlanning(
+      updated,
+      workspace,
+      runtimeConfig,
+      agentPrompt,
+      existingWorktreePlan,
+      resume,
+      undefined,
+      routesOverride,
+    );
   } else {
-    void runCodingThreadSdkDefault(updated, workspace, runtimeConfig, prompt, existingWorktreePlan, resume);
+    void runCodingThreadSdkDefault(
+      updated,
+      workspace,
+      runtimeConfig,
+      agentPrompt,
+      existingWorktreePlan,
+      resume,
+      undefined,
+      routesOverride,
+    );
   }
   return { thread: updated };
 }
@@ -2115,7 +2252,12 @@ async function runThreadContinuation(
     }
 
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, attachments, thread.id);
+      const freshConfig = resolveRuntimeConfigFresh();
+      if (!freshConfig.ok) {
+        return { ok: false, reason: freshConfig.reason };
+      }
+      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
+      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
       const routes = buildDriverRoutes(attemptProxy.routes);
       const resume = resolveResumeOptions(thread.id, cwd);
       if (!resume) {
@@ -3341,9 +3483,10 @@ function startRuntimeProxy(
 function resolveRuntimeConfig(
   settings: ModelSettingsSnapshot,
   providersWithSecrets: ProviderConfigSecret[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
-  const activeRoutes = getActiveRoutes(settings);
+  const activeRoutes = routesOverride ?? getActiveRoutes(settings);
   const routes = activeRoutes.map((route): RuntimeRoute | undefined => {
     const provider = providersById.get(route.providerId);
     if (!provider) return undefined;

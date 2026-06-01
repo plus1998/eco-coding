@@ -1,3 +1,4 @@
+import { isQuotaOrRateLimitFailure } from "./request-errors";
 import type { ThreadStatus } from "./ipc";
 
 export const planExecutionFailurePrefix = "执行失败，已回退更改。";
@@ -57,4 +58,17 @@ export function resolveRetryBannerDetail(threadMessage: string, status: ThreadSt
     return threadMessage.trim();
   }
   return genericThreadFailureHint;
+}
+
+export const quotaRetryBannerHint =
+  "同一上游已自动重试多次仍失败。请通过输入区「切换路由方案」或下方选择备用方案，换用其他 Provider 后重试；跨服务商续聊将使用对话记录重建上下文。";
+
+export const defaultRetryBannerHint =
+  "工作区更改已回退（如有）。可重试同一需求；若仍出现 HTTP 200 空响应，请检查模型代理或上游 API 配置。";
+
+export function resolveRetryBannerHint(detail: string): string {
+  if (isQuotaOrRateLimitFailure(detail)) {
+    return quotaRetryBannerHint;
+  }
+  return defaultRetryBannerHint;
 }

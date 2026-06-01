@@ -6,6 +6,10 @@ export type RequestAttemptResult =
   | { ok: true }
   | { ok: false; reason: string; aborted?: boolean };
 
+import { isQuotaOrRateLimitFailure } from "../shared/request-errors";
+
+export { isQuotaOrRateLimitFailure } from "../shared/request-errors";
+
 export function isRetryableRequestFailure(reason: string): boolean {
   const text = reason.trim();
   if (!text) {

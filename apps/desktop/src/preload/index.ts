@@ -36,6 +36,7 @@ import {
   type ThreadActivityLine,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRetryRequest,
   type ThreadRetryResult,
   type ThreadApprovePlanRequest,
   type ThreadPendingPlan,
@@ -155,8 +156,8 @@ const api = {
   continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
   },
-  retryThread(threadId: string): Promise<ThreadRetryResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, threadId);
+  retryThread(request: ThreadRetryRequest | string): Promise<ThreadRetryResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, request);
   },
   cancelThread(threadId: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadCancel, threadId);

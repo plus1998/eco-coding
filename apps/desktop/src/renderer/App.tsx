@@ -60,6 +60,7 @@ import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread
 import {
   extractPlanFailureMessage,
   resolveRetryBannerDetail,
+  resolveRetryBannerHint,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
@@ -578,6 +579,17 @@ function App() {
   const retryBannerDetail = activeThread
     ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
     : undefined;
+  const retryBannerHint = retryBannerDetail ? resolveRetryBannerHint(retryBannerDetail) : undefined;
+  const alternateRouteProfiles = useMemo(
+    () => settings.routeProfiles.filter((profile) => !profile.isActive),
+    [settings.routeProfiles],
+  );
+  const [retryRouteProfileId, setRetryRouteProfileId] = useState<string>("");
+
+  useEffect(() => {
+    setRetryRouteProfileId(alternateRouteProfiles[0]?.id ?? "");
+  }, [activeThread?.id, alternateRouteProfiles]);
+
   const canRetryThread = Boolean(
     activeThread &&
       routesReady &&
@@ -614,6 +626,12 @@ function App() {
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const activeRouteProfile = useMemo(() => getActiveRouteProfile(settings), [settings]);
   const canEditPreChatConfig = !activeThread;
+  const canSwitchRouteProfile =
+    !activeThread ||
+    (activeThread &&
+      isContinuableThreadStatus(activeThread.status) &&
+      activeThread.status !== "running" &&
+      activeThread.status !== "queued");
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
@@ -862,14 +880,17 @@ function App() {
     }
   }
 
-  async function retryActiveThread() {
+  async function retryActiveThread(routeProfileId?: string) {
     if (!activeThread || !window.eco) {
       return;
     }
     setError(undefined);
     setRetryBusy(true);
     try {
-      const result = await window.eco.retryThread(activeThread.id);
+      const result = await window.eco.retryThread({
+        threadId: activeThread.id,
+        ...(routeProfileId ? { routeProfileId } : {}),
+      });
       if (result.thread) {
         setThreads((current) =>
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
@@ -1306,17 +1327,17 @@ function App() {
             <ComposerRoutePopoverTrigger
               buttonRef={composerRouteButtonRef}
               open={composerRoutePopoverOpen}
-              disabled={!canEditPreChatConfig || isSavingSettings}
+              disabled={!canSwitchRouteProfile || isSavingSettings}
               profileName={activeRouteProfile?.name}
               onToggle={() => {
-                if (!canEditPreChatConfig) {
+                if (!canSwitchRouteProfile) {
                   return;
                 }
                 setComposerRoutePopoverOpen((current) => !current);
               }}
             />
             <ComposerRoutePopover
-              open={composerRoutePopoverOpen && canEditPreChatConfig}
+              open={composerRoutePopoverOpen && canSwitchRouteProfile}
               settings={settings}
               busy={isSavingSettings}
               anchorRef={composerRouteButtonRef}
@@ -1513,19 +1534,64 @@ function App() {
                     <div className="thread-retry-banner-body">
                       <strong>此次请求失败</strong>
                       <p>{retryBannerDetail}</p>
-                      <p className="thread-retry-banner-hint">
-                        工作区更改已回退（如有）。可重试同一需求；若仍出现 HTTP 200 空响应，请检查模型代理或上游
-                        API 配置。
-                      </p>
+                      {retryBannerHint ? (
+                        <p className="thread-retry-banner-hint">{retryBannerHint}</p>
+                      ) : null}
+                      {activeRouteProfile ? (
+                        <p className="thread-retry-banner-route">
+                          当前路由方案：{activeRouteProfile.name}
+                        </p>
+                      ) : null}
                     </div>
-                    <button
-                      type="button"
-                      className="plan-button primary"
-                      onClick={() => void retryActiveThread()}
-                      disabled={retryBusy}
-                    >
-                      {retryBusy ? "正在重试…" : activeThread?.status === "awaiting_plan" ? "重试执行" : "重试此次请求"}
-                    </button>
+                    <div className="thread-retry-banner-actions">
+                      {alternateRouteProfiles.length > 0 ? (
+                        <label className="thread-retry-banner-route-picker">
+                          <span>备用路由方案</span>
+                          <select
+                            className="mcp-field-input"
+                            value={retryRouteProfileId}
+                            disabled={retryBusy}
+                            onChange={(event) => setRetryRouteProfileId(event.target.value)}
+                          >
+                            {alternateRouteProfiles.map((profile) => (
+                              <option key={profile.id} value={profile.id}>
+                                {profile.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                      <div className="thread-retry-banner-buttons">
+                        {alternateRouteProfiles.length > 0 && retryRouteProfileId ? (
+                          <button
+                            type="button"
+                            className="plan-button primary"
+                            onClick={() => void retryActiveThread(retryRouteProfileId)}
+                            disabled={retryBusy}
+                          >
+                            {retryBusy ? "正在重试…" : "用所选方案重试"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className={
+                            alternateRouteProfiles.length > 0 && retryRouteProfileId
+                              ? "plan-button"
+                              : "plan-button primary"
+                          }
+                          onClick={() => void retryActiveThread()}
+                          disabled={retryBusy}
+                        >
+                          {retryBusy
+                            ? "正在重试…"
+                            : activeThread?.status === "awaiting_plan"
+                              ? "重试执行"
+                              : alternateRouteProfiles.length > 0
+                                ? "仍用当前方案重试"
+                                : "重试此次请求"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
                 <ActivityLogView

@@ -29,6 +29,7 @@ interface ThreadRow {
   updated_at: string;
   sdk_session_id: string | null;
   sdk_cwd: string | null;
+  routes_fingerprint: string | null;
 }
 
 export interface ThreadSdkSession {
@@ -178,6 +179,9 @@ export class ConversationStore {
     }
     if (!names.has("sdk_cwd")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN sdk_cwd TEXT`);
+    }
+    if (!names.has("routes_fingerprint")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN routes_fingerprint TEXT`);
     }
   }
 
@@ -333,6 +337,24 @@ export class ConversationStore {
          WHERE id = ?`,
       )
       .run(new Date().toISOString(), threadId);
+  }
+
+  saveRouteFingerprint(threadId: string, fingerprint: string): void {
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET routes_fingerprint = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(fingerprint, new Date().toISOString(), threadId);
+  }
+
+  getRouteFingerprint(threadId: string): string | undefined {
+    const row = this.db
+      .prepare(`SELECT routes_fingerprint FROM threads WHERE id = ?`)
+      .get(threadId) as { routes_fingerprint: string | null } | undefined;
+    const value = row?.routes_fingerprint?.trim();
+    return value || undefined;
   }
 
   listThreads(): ThreadSummary[] {

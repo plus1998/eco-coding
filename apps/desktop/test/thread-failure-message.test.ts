@@ -4,7 +4,9 @@ import {
   extractPlanFailureMessage,
   genericThreadFailureHint,
   planExecutionFailurePrefix,
+  quotaRetryBannerHint,
   resolveRetryBannerDetail,
+  resolveRetryBannerHint,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../src/shared/thread-failure-message";
@@ -49,4 +51,9 @@ test("resolveRetryBannerDetail ignores operational cleanup message on failed thr
 test("resolveRetryBannerDetail keeps formatted upstream error", () => {
   const detail = formatUserFacingRequestError("fetch failed");
   expect(resolveRetryBannerDetail(detail, "failed")).toBe(detail);
+});
+
+test("resolveRetryBannerHint suggests switching routes for quota failures", () => {
+  expect(resolveRetryBannerHint("API Error: 429 rate limit exceeded")).toBe(quotaRetryBannerHint);
+  expect(resolveRetryBannerHint("fetch failed")).not.toBe(quotaRetryBannerHint);
 });

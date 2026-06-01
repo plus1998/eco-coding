@@ -1,11 +1,18 @@
 import { expect, test } from "bun:test";
 import {
   appendAutoRetryExhaustedHint,
+  isQuotaOrRateLimitFailure,
   isRetryableRequestFailure,
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   REQUEST_AUTO_RETRY_MAX,
   runWithRequestAutoRetry,
 } from "../src/main/request-retry";
+
+test("detects quota and rate limit failures", () => {
+  expect(isQuotaOrRateLimitFailure("HTTP 429 Too Many Requests")).toBe(true);
+  expect(isQuotaOrRateLimitFailure("rate limit exceeded")).toBe(true);
+  expect(isQuotaOrRateLimitFailure("fetch failed")).toBe(false);
+});
 
 test("detects retryable API / proxy failures", () => {
   expect(

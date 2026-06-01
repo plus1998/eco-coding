@@ -275,6 +275,12 @@ export interface ThreadContinueResult {
   thread: ThreadSummary;
 }
 
+export interface ThreadRetryRequest {
+  threadId: string;
+  /** Retry with this route profile's routes without changing the global active profile. */
+  routeProfileId?: string;
+}
+
 export interface ThreadRetryResult {
   thread: ThreadSummary;
 }
