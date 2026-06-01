@@ -1421,6 +1421,8 @@ function App() {
                   onRestorePrompt={restorePrompt}
                   {...(threadModelByRole && { modelByRole: threadModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                  {...(activeThread &&
+                    contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel

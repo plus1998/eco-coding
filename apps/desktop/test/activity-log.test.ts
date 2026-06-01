@@ -2,9 +2,14 @@ import { expect, test } from "bun:test";
 import { formatSubagentMissionMessage } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
+  countOpenAgentDelegations,
+  findSubagentRunLineBounds,
   isAgentElapsedProgressLine,
   isModelRequestLine,
   isReconnectActivityMessage,
+  resolveActiveSubagents,
+  resolveLatestSubagentLogLine,
+  resolveSubagentRunDurationMs,
   sessionAwaitingFirstToken,
 } from "../src/renderer/activity-log";
 
@@ -21,12 +26,15 @@ test("groups narrative and compact tool summaries into collapsible work session"
   );
 
   expect(blocks.some((block) => block.kind === "user-prompt")).toBe(true);
-  const session = blocks.find((block) => block.kind === "work-session");
+  const session = blocks.find(
+    (block) => block.kind === "work-session" && !block.compactSubagentMode,
+  );
   expect(session?.kind).toBe("work-session");
   if (session?.kind !== "work-session") {
     return;
   }
   expect(session.defaultCollapsed).toBe(true);
+  expect(session.compactSubagentMode).toBeFalsy();
   expect(session.children.some((child) => child.kind === "action" && child.label.includes("styles.css"))).toBe(
     true,
   );
@@ -37,11 +45,32 @@ test("groups narrative and compact tool summaries into collapsible work session"
   }
 });
 
-test("keeps work session expanded while running", () => {
+test("collapses work session while subagent is running", () => {
+  const lines = [
+    { id: "u1", role: "user", message: "Go" },
+    { id: "1", role: "coder", message: "Checking package.json", stream: true },
+  ] as const;
+  const blocks = buildActivityLogBlocks([...lines], {
+    status: "running",
+    createdAt: new Date().toISOString(),
+  });
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  expect(session.running).toBe(true);
+  expect(session.compactSubagentMode).toBe(true);
+  expect(session.defaultCollapsed).toBe(true);
+  expect(session.activeSubagents).toContain("coder");
+});
+
+test("keeps planner-only work session expanded while running", () => {
   const blocks = buildActivityLogBlocks(
     [
       { id: "u1", role: "user", message: "Go" },
-      { id: "1", role: "coder", message: "Checking package.json", stream: true },
+      { id: "1", role: "planner", message: "Let me inspect the repo.", stream: true },
     ],
     { status: "running", createdAt: new Date().toISOString() },
   );
@@ -52,6 +81,7 @@ test("keeps work session expanded while running", () => {
     return;
   }
   expect(session.running).toBe(true);
+  expect(session.compactSubagentMode).toBeFalsy();
   expect(session.defaultCollapsed).toBe(false);
 });
 
@@ -70,13 +100,19 @@ test("keeps thinking separate from agent narrative streams", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
+  const plannerSession = blocks.find(
+    (block) => block.kind === "work-session" && !block.compactSubagentMode,
+  );
+  const coderSession = blocks.find(
+    (block) => block.kind === "work-session" && block.compactSubagentMode,
+  );
+  expect(plannerSession?.kind).toBe("work-session");
+  expect(coderSession?.kind).toBe("work-session");
+  if (plannerSession?.kind !== "work-session" || coderSession?.kind !== "work-session") {
     return;
   }
-  const thinking = session.children.find((child) => child.kind === "thinking");
-  const narrative = session.children.find((child) => child.kind === "narrative");
+  const thinking = plannerSession.children.find((child) => child.kind === "thinking");
+  const narrative = coderSession.children.find((child) => child.kind === "narrative");
   expect(thinking?.kind).toBe("thinking");
   if (thinking?.kind === "thinking") {
     expect(thinking.text).toBe("Let me also");
@@ -109,16 +145,113 @@ test("renders streaming thinking label even before first token", () => {
 });
 
 test("shows active subagent while running", () => {
+  const lines = [
+    { id: "u1", role: "user", message: "run" },
+    { id: "1", role: "planner", message: "【3/3】执行" },
+    {
+      id: "2",
+      role: "tool",
+      message: "Tool: Agent · 编码 (coder)",
+    },
+    { id: "3", role: "coder", message: "Checking package.json", stream: true },
+  ];
+  const blocks = buildActivityLogBlocks(lines, {
+    status: "running",
+    createdAt: new Date().toISOString(),
+  });
+
+  const session = blocks.find(
+    (block) => block.kind === "work-session" && block.compactSubagentMode && block.running,
+  );
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.subagentRunRole).toBe("coder");
+    expect(session.activeSubagent).toBe("coder");
+    expect(session.compactSubagentMode).toBe(true);
+    expect(session.activeSubagents).toContain("coder");
+  }
+  expect(resolveActiveSubagents(lines, "running")).toContain("coder");
+});
+
+test("counts parallel coder delegations", () => {
+  const lines = [
+    { id: "u1", role: "user", message: "go" },
+    { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+    { id: "2", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+    { id: "3", role: "coder", message: "Tool: Read · a.ts" },
+  ];
+  expect(countOpenAgentDelegations(lines, "coder")).toBe(2);
+  expect(resolveActiveSubagents(lines, "running").filter((role) => role === "coder")).toHaveLength(2);
+});
+
+test("hides thread duration on planner separators when subagent cards exist", () => {
+  const missionCoder = formatSubagentMissionMessage("coder", "Implement");
   const blocks = buildActivityLogBlocks(
     [
-      { id: "u1", role: "user", message: "run" },
+      { id: "u1", role: "user", message: "go" },
       { id: "1", role: "planner", message: "【3/3】执行" },
-      {
-        id: "2",
-        role: "tool",
-        message: "Tool: Agent · 编码 (coder)",
-      },
-      { id: "3", role: "coder", message: "Checking package.json", stream: true },
+      { id: "2", role: "planner", message: missionCoder },
+      { id: "3", role: "coder", message: "Tool: Read · a.ts" },
+    ],
+    { status: "completed", createdAt: new Date(Date.now() - 3_334_000).toISOString() },
+  );
+
+  const plannerSession = blocks.find(
+    (block) => block.kind === "work-session" && !block.compactSubagentMode,
+  );
+  expect(plannerSession?.kind).toBe("work-session");
+  if (plannerSession?.kind === "work-session") {
+    expect(plannerSession.hideProcessedDuration).toBe(true);
+  }
+});
+
+test("isolates each subagent run into its own compact work session", () => {
+  const missionCoder = formatSubagentMissionMessage("coder", "Implement export API");
+  const missionReviewer = formatSubagentMissionMessage(
+    "reviewer",
+    "Review export API changes in src/api.ts",
+  );
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: "【3/3】执行" },
+      { id: "2", role: "planner", message: missionCoder },
+      { id: "3", role: "coder", message: "Tool: Read · src/api.ts" },
+      { id: "4", role: "planner", message: missionReviewer },
+      { id: "5", role: "reviewer", message: "Tool: Read · src/api.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const compactSessions = blocks.filter(
+    (block): block is Extract<typeof block, { kind: "work-session" }> =>
+      block.kind === "work-session" && Boolean(block.compactSubagentMode),
+  );
+  expect(compactSessions).toHaveLength(2);
+  expect(compactSessions[0]?.subagentRunRole).toBe("coder");
+  expect(compactSessions[1]?.subagentRunRole).toBe("reviewer");
+  expect(compactSessions[0]?.running).toBe(false);
+  expect(compactSessions[1]?.running).toBe(true);
+  expect(
+    blocks.some(
+      (block) =>
+        block.kind === "work-session" &&
+        !block.compactSubagentMode &&
+        block.children.some((child) => child.kind === "phase"),
+    ),
+  ).toBe(true);
+});
+
+test("uses compact mode for reviewer subagent work", () => {
+  const missionLine = formatSubagentMissionMessage(
+    "reviewer",
+    "Review export API changes in src/api.ts",
+  );
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "reviewer", message: "Tool: Read · src/api.ts" },
     ],
     { status: "running", createdAt: new Date().toISOString() },
   );
@@ -126,7 +259,8 @@ test("shows active subagent while running", () => {
   const session = blocks.find((block) => block.kind === "work-session");
   expect(session?.kind).toBe("work-session");
   if (session?.kind === "work-session") {
-    expect(session.activeSubagent).toBe("coder");
+    expect(session.compactSubagentMode).toBe(true);
+    expect(session.defaultCollapsed).toBe(true);
   }
 });
 
@@ -175,6 +309,108 @@ test("shows subagent mission before tool steps", () => {
   expect(session.activeMissionSummary).toContain("src/api.ts");
 });
 
+test("resolves subagent run duration from agent elapsed lines", () => {
+  const missionLine = formatSubagentMissionMessage("coder", "Implement API");
+  const lines = [
+    { id: "1", role: "planner", message: missionLine },
+    { id: "2", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+    { id: "3", role: "tool", message: "Tool: Agent (12.5s)" },
+    {
+      id: "4",
+      role: "planner",
+      message: formatSubagentMissionMessage("reviewer", "Review"),
+    },
+    { id: "5", role: "tool", message: "Tool: Agent · 审查 (reviewer)" },
+    { id: "6", role: "tool", message: "Tool: Agent (4s)" },
+  ];
+  expect(resolveSubagentRunDurationMs(lines, "coder", 0)).toBe(12_500);
+  expect(resolveSubagentRunDurationMs(lines, "reviewer", 0)).toBe(4000);
+});
+
+test("finds isolated line bounds per subagent occurrence", () => {
+  const lines = [
+    { id: "1", role: "planner", message: formatSubagentMissionMessage("reviewer", "Round 1") },
+    { id: "2", role: "tool", message: "Tool: Agent (3s)" },
+    { id: "3", role: "planner", message: formatSubagentMissionMessage("reviewer", "Round 2") },
+    { id: "4", role: "tool", message: "Tool: Agent (7s)" },
+  ];
+  expect(findSubagentRunLineBounds(lines, "reviewer", 0)).toEqual({ start: 0, end: 2 });
+  expect(findSubagentRunLineBounds(lines, "reviewer", 1)).toEqual({ start: 2, end: 4 });
+  expect(resolveSubagentRunDurationMs(lines, "reviewer", 0)).toBe(3000);
+  expect(resolveSubagentRunDurationMs(lines, "reviewer", 1)).toBe(7000);
+});
+
+test("attaches run duration to completed subagent work session", () => {
+  const missionLine = formatSubagentMissionMessage("coder", "Implement API");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "3", role: "tool", message: "Tool: Agent (8s)" },
+      { id: "4", role: "tool", message: "Tool: Agent · 审查 (reviewer)" },
+      { id: "5", role: "reviewer", message: "Tool: Read · a.ts", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const coderSession = blocks.find(
+    (block) => block.kind === "work-session" && block.subagentRunRole === "coder",
+  );
+  expect(coderSession?.kind).toBe("work-session");
+  if (coderSession?.kind === "work-session") {
+    expect(coderSession.runDurationMs).toBe(8000);
+    expect(coderSession.running).toBe(false);
+  }
+});
+
+test("isolates repeated reviewer missions into separate compact cards with distinct durations", () => {
+  const mission1 = formatSubagentMissionMessage("reviewer", "Review round 1");
+  const mission2 = formatSubagentMissionMessage("reviewer", "Review round 2");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: mission1 },
+      { id: "2", role: "tool", message: "Tool: Agent · 审查 (reviewer)" },
+      { id: "3", role: "tool", message: "Tool: Agent (10s)" },
+      { id: "4", role: "planner", message: mission2 },
+      { id: "5", role: "tool", message: "Tool: Agent · 审查 (reviewer)" },
+      { id: "6", role: "tool", message: "Tool: Agent (22s)" },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const reviewerSessions = blocks.filter(
+    (block): block is Extract<typeof block, { kind: "work-session" }> =>
+      block.kind === "work-session" && block.subagentRunRole === "reviewer",
+  );
+  expect(reviewerSessions).toHaveLength(2);
+  expect(reviewerSessions[0]?.runDurationMs).toBe(10_000);
+  expect(reviewerSessions[1]?.runDurationMs).toBe(22_000);
+});
+
+test("resolves latest subagent log line for compact card", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "implement" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "coder", message: "Tool: Read · src/api.ts" },
+      { id: "3", role: "coder", message: "Tool: Edit · src/api.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.latestSubagentLogLine).toBe("编辑 · src/api.ts");
+  }
+  expect(resolveLatestSubagentLogLine([
+    { kind: "action", icon: "file", label: "读取 · a.ts", subagent: "coder" },
+    { kind: "action", icon: "edit", label: "编辑 · b.ts", subagent: "coder" },
+  ])).toBe("编辑 · b.ts");
+});
+
 test("shows each subagent tool step with role and target", () => {
   const blocks = buildActivityLogBlocks(
     [
@@ -187,12 +423,11 @@ test("shows each subagent tool step with role and target", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
-    return;
-  }
-  const actions = session.children.filter((child) => child.kind === "action");
+  const sessions = blocks.filter((block) => block.kind === "work-session" && block.compactSubagentMode);
+  expect(sessions.length).toBeGreaterThanOrEqual(2);
+  const actions = sessions.flatMap((session) =>
+    session.kind === "work-session" ? session.children.filter((child) => child.kind === "action") : [],
+  );
   expect(actions.length).toBeGreaterThanOrEqual(3);
   const coderRead = actions.find(
     (child) => child.kind === "action" && child.subagent === "coder" && child.label.includes("src/api.ts"),
@@ -422,7 +657,9 @@ test("shows agent-request row while subagent has no output yet", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
+  const session = blocks.find(
+    (block) => block.kind === "work-session" && block.compactSubagentMode && block.running,
+  );
   expect(session?.kind).toBe("work-session");
   if (session?.kind === "work-session") {
     expect(session.children.some((child) => child.kind === "agent-request")).toBe(true);

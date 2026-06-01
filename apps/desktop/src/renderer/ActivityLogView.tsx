@@ -1,8 +1,12 @@
 import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Terminal } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ThreadActivityLine, ThreadSummary } from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
-import type { ThreadUsageSnapshot } from "../shared/ipc";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type {
+  ThreadActivityLine,
+  ThreadContextSnapshot,
+  ThreadSummary,
+  ThreadUsageSnapshot,
+} from "../shared/ipc";
+import { formatRoleModelLabel, formatTokenCount, formatUsageBadge, shortenModelId } from "@eco/runtime";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
@@ -15,12 +19,122 @@ import {
 import { MarkdownContent } from "./MarkdownContent";
 import { useStreamRequestTiming } from "./useStreamRequestTiming";
 
+const SUBAGENT_ROLE_SHORT: Record<string, string> = {
+  explore: "探索",
+  architect: "架构",
+  coder: "编码",
+  reviewer: "审查",
+  tester: "测试",
+};
+
+const SUBAGENT_ROLES = new Set(Object.keys(SUBAGENT_ROLE_SHORT));
+
+function isSubagentDisplayRole(role?: string): boolean {
+  return Boolean(role && SUBAGENT_ROLES.has(role));
+}
+
+function shouldOmitSubagentIdentity(
+  block: ActivityDetailBlock,
+  hideSubagentIdentity?: boolean,
+): boolean {
+  if (!hideSubagentIdentity) {
+    return false;
+  }
+  if (block.kind === "model-request") {
+    return isSubagentDisplayRole(block.role);
+  }
+  if (block.kind === "phase" || block.kind === "thinking") {
+    return false;
+  }
+  if ("subagent" in block && block.subagent) {
+    return isSubagentDisplayRole(block.subagent);
+  }
+  return false;
+}
+
+function extractSubagentRolesFromChildren(children: readonly ActivityDetailBlock[]): string[] {
+  const roles = new Set<string>();
+  for (const child of children) {
+    if (child.kind === "subagent-mission") {
+      roles.add(child.subagent);
+      continue;
+    }
+    if (
+      (child.kind === "action" ||
+        child.kind === "narrative" ||
+        child.kind === "tool-failed" ||
+        child.kind === "agent-request") &&
+      child.subagent
+    ) {
+      roles.add(child.subagent);
+    }
+  }
+  return [...roles];
+}
+
+function buildSubagentChips(
+  roles: readonly string[],
+  modelByRole?: Record<string, string>,
+): Array<{ role: string; label: string }> {
+  const counts = new Map<string, number>();
+  for (const role of roles) {
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([role, count]) => {
+    const full = formatRoleModelLabel(role, modelByRole?.[role]);
+    const short = SUBAGENT_ROLE_SHORT[role] ?? full.split(" · ")[0] ?? full;
+    return {
+      role,
+      label: count > 1 ? `${short} ×${count}` : short,
+    };
+  });
+}
+
+type SubagentMetaEntry = {
+  role: string;
+  modelShort: string;
+  contextText?: string;
+};
+
+function formatContextCapacityText(occupied: number, limit?: number): string | undefined {
+  if (limit !== undefined && limit > 0) {
+    return `${formatTokenCount(occupied)} / ${formatTokenCount(limit)}`;
+  }
+  if (occupied > 0) {
+    return formatTokenCount(occupied);
+  }
+  return undefined;
+}
+
+function buildSubagentMetaEntries(
+  roles: readonly string[],
+  modelByRole?: Record<string, string>,
+  usageByRole?: Record<string, ThreadUsageSnapshot>,
+  context?: ThreadContextSnapshot,
+): SubagentMetaEntry[] {
+  const uniqueRoles = [...new Set(roles)];
+  return uniqueRoles.map((role) => {
+    const roleContext = context?.roles?.find((entry) => entry.role === role);
+    const usage = usageByRole?.[role];
+    const modelId = roleContext?.modelId ?? usage?.modelId ?? modelByRole?.[role];
+    const occupied = roleContext?.occupied ?? usage?.contextTokens ?? 0;
+    const limit = roleContext?.limit ?? usage?.contextLimit;
+    const contextText = formatContextCapacityText(occupied, limit);
+    return {
+      role,
+      modelShort: modelId?.trim() ? shortenModelId(modelId.trim()) : "—",
+      ...(contextText && { contextText }),
+    };
+  });
+}
+
 interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
   thread?: ThreadSummary;
   onRestorePrompt?: (prompt: string) => void;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  context?: ThreadContextSnapshot;
 }
 
 export function ActivityLogView({
@@ -29,6 +143,7 @@ export function ActivityLogView({
   onRestorePrompt,
   modelByRole,
   usageByRole,
+  context,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
     if (lines.some((line) => line.role === "user") || !thread?.prompt.trim()) {
@@ -55,6 +170,7 @@ export function ActivityLogView({
           {...(onRestorePrompt && { onRestorePrompt })}
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
+          {...(context && { context })}
         />
       ))}
     </div>
@@ -66,11 +182,13 @@ function RunLogBlock({
   onRestorePrompt,
   modelByRole,
   usageByRole,
+  context,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  context?: ThreadContextSnapshot;
 }) {
   if (block.kind === "user-prompt") {
     return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
@@ -81,6 +199,7 @@ function RunLogBlock({
         block={block}
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
+        {...(context && { context })}
       />
     );
   }
@@ -98,16 +217,146 @@ function RunLogBlock({
   return null;
 }
 
+function SubagentClusterCard({
+  running,
+  roles,
+  logLine,
+  metaEntries,
+  durationMs,
+  onToggle,
+  expanded,
+}: {
+  running: boolean;
+  roles: readonly string[];
+  logLine?: string;
+  metaEntries: SubagentMetaEntry[];
+  durationMs?: number;
+  onToggle: () => void;
+  expanded: boolean;
+}) {
+  const [liveDurationMs, setLiveDurationMs] = useState(0);
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const startedAt = Date.now();
+    const tick = () => setLiveDurationMs(Date.now() - startedAt);
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  const chips = buildSubagentChips(roles);
+  const agentCount = roles.length;
+  const singleMeta = metaEntries.length === 1 ? metaEntries[0] : undefined;
+  const elapsedMs = running ? liveDurationMs : durationMs;
+  const durationLabel =
+    elapsedMs !== undefined && (running || elapsedMs > 0)
+      ? running
+        ? formatDuration(elapsedMs)
+        : `用时 ${formatDuration(elapsedMs)}`
+      : undefined;
+  const fallbackText = running
+    ? agentCount > 1
+      ? `${agentCount} 个子代理工作中`
+      : "工作中"
+    : "点击查看执行详情";
+  const displayLog = logLine?.trim() || fallbackText;
+
+  return (
+    <button
+      type="button"
+      className="subagent-cluster-card"
+      onClick={onToggle}
+      aria-expanded={expanded}
+    >
+      <div className="subagent-cluster-body">
+        <div className="subagent-cluster-top">
+          {chips.length > 0 ? (
+            <div className="subagent-cluster-chips">
+              {chips.map((chip) => (
+                <span key={`${chip.role}-${chip.label}`} className="subagent-cluster-chip">
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="subagent-cluster-heading">子代理</span>
+          )}
+          {singleMeta ? (
+            <div className="subagent-cluster-inline-meta">
+              <span className="subagent-cluster-inline-model" title={singleMeta.modelShort}>
+                {singleMeta.modelShort}
+              </span>
+              {singleMeta.contextText ? (
+                <span className="subagent-cluster-inline-ctx" title="上下文占用 / 窗口容量">
+                  {singleMeta.contextText}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="subagent-cluster-trail">
+            {durationLabel ? (
+              <span className="subagent-cluster-duration" aria-live={running ? "polite" : undefined}>
+                {durationLabel}
+              </span>
+            ) : null}
+            {running ? <span className="subagent-cluster-loading" aria-hidden /> : null}
+            <ChevronDown
+              size={16}
+              className={expanded ? "subagent-cluster-chevron open" : "subagent-cluster-chevron"}
+              aria-hidden
+            />
+          </div>
+        </div>
+        {metaEntries.length > 1 ? (
+          <div className="subagent-cluster-meta">
+            {metaEntries.map((entry) => (
+              <div key={entry.role} className="subagent-cluster-meta-row">
+                <span className="subagent-cluster-meta-chip">{SUBAGENT_ROLE_SHORT[entry.role] ?? entry.role}</span>
+                <span className="subagent-cluster-meta-model" title={entry.modelShort}>
+                  {entry.modelShort}
+                </span>
+                {entry.contextText ? (
+                  <span className="subagent-cluster-meta-ctx" title="上下文占用 / 窗口容量">
+                    {entry.contextText}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="subagent-cluster-log-row">
+        <span className="subagent-cluster-log" title={displayLog}>
+          {displayLog}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 function WorkSessionBlock({
   block,
   modelByRole,
   usageByRole,
+  context,
 }: {
   block: Extract<ActivityLogBlock, { kind: "work-session" }>;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  context?: ThreadContextSnapshot;
 }) {
   const [expanded, setExpanded] = useState(!block.defaultCollapsed);
+  const displayRoles = block.subagentRunRole
+    ? block.running && block.activeSubagents && block.activeSubagents.length > 0
+      ? block.activeSubagents.filter((role) => role === block.subagentRunRole)
+      : [block.subagentRunRole]
+    : block.activeSubagents && block.activeSubagents.length > 0
+      ? block.activeSubagents
+      : extractSubagentRolesFromChildren(block.children);
+  const metaEntries = buildSubagentMetaEntries(displayRoles, modelByRole, usageByRole, context);
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
     : "";
@@ -118,7 +367,42 @@ function WorkSessionBlock({
 
   const label = block.running
     ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
-    : `已处理 ${formatDuration(block.durationMs)}`;
+    : block.hideProcessedDuration
+      ? "规划"
+      : `已处理 ${formatDuration(block.durationMs)}`;
+
+  if (block.compactSubagentMode) {
+    return (
+      <section className="work-session work-session-compact">
+        <SubagentClusterCard
+          running={block.running}
+          roles={displayRoles}
+          metaEntries={metaEntries}
+          {...(block.latestSubagentLogLine && { logLine: block.latestSubagentLogLine })}
+          {...(block.runDurationMs !== undefined &&
+            block.runDurationMs > 0 && { durationMs: block.runDurationMs })}
+          expanded={expanded}
+          onToggle={() => setExpanded((current) => !current)}
+        />
+        {expanded && block.children.length > 0 ? (
+          <div className="work-session-details-compact">
+            <p className="work-session-details-compact-title">子代理执行详情</p>
+            <div className="work-session-details-compact-scroll">
+              {block.children.map((child, index) => (
+                <DetailBlock
+                  key={`${child.kind}-${index}`}
+                  block={child}
+                  hideSubagentIdentity
+                  {...(modelByRole && { modelByRole })}
+                  {...(usageByRole && { usageByRole })}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
 
   return (
     <section className="work-session">
@@ -158,14 +442,12 @@ function WorkSessionBlock({
           {block.children
             .filter(
               (child) =>
-                child.kind === "action" || child.kind === "phase" || child.kind === "subagent-mission",
+                child.kind === "phase" || child.kind === "subagent-mission",
             )
             .slice(-4)
             .map((child, index) => (
               <li key={`preview-${index}`}>
-                {child.kind === "subagent-mission"
-                  ? `${formatRoleModelLabel(child.subagent, modelByRole?.[child.subagent])}：${child.summary}`
-                  : child.label}
+                {child.kind === "subagent-mission" ? child.summary : child.label}
               </li>
             ))}
         </ul>
@@ -178,11 +460,15 @@ function DetailBlock({
   block,
   modelByRole,
   usageByRole,
+  hideSubagentIdentity,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  hideSubagentIdentity?: boolean;
 }) {
+  const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
+
   if (block.kind === "phase") {
     return <PhaseBlock label={block.label} {...(block.reconnecting && { reconnecting: block.reconnecting })} />;
   }
@@ -191,8 +477,9 @@ function DetailBlock({
       <SubagentMissionBlock
         subagent={block.subagent}
         summary={block.summary}
-        prompt={block.prompt}
-        {...(modelByRole && { modelByRole })}
+        {...(block.prompt !== undefined && { prompt: block.prompt })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
   }
@@ -200,7 +487,8 @@ function DetailBlock({
     return (
       <ModelRequestBlock
         {...(block.role && { role: block.role })}
-        {...(modelByRole && { modelByRole })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
   }
@@ -208,7 +496,8 @@ function DetailBlock({
     return (
       <AgentRequestBlock
         {...(block.subagent && { subagent: block.subagent })}
-        {...(modelByRole && { modelByRole })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
   }
@@ -218,7 +507,8 @@ function DetailBlock({
         icon={block.icon}
         label={block.label}
         {...(block.subagent && { subagent: block.subagent })}
-        {...(modelByRole && { modelByRole })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
   }
@@ -228,7 +518,8 @@ function DetailBlock({
         tool={block.tool}
         {...(block.error && { error: block.error })}
         {...(block.subagent && { subagent: block.subagent })}
-        {...(modelByRole && { modelByRole })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
   }
@@ -245,8 +536,9 @@ function DetailBlock({
       text={block.text}
       {...(block.streaming !== undefined && { streaming: block.streaming })}
       {...(block.subagent && { subagent: block.subagent })}
-      {...(modelByRole && { modelByRole })}
-      {...(usageByRole && { usageByRole })}
+      omitSubagentBadge={omitSubagent}
+      {...(!omitSubagent && modelByRole && { modelByRole })}
+      {...(!omitSubagent && usageByRole && { usageByRole })}
       compact
     />
   );
@@ -442,18 +734,24 @@ function AssistantMessageBlock({
 function ModelRequestBlock({
   role,
   modelByRole,
+  omitRoleLabel,
 }: {
   role?: string;
   modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
 }) {
   const timing = useStreamRequestTiming(true, false);
-  const roleLabel = role ? formatRoleModelLabel(role, modelByRole?.[role]) : "模型";
+  const roleLabel = omitRoleLabel
+    ? "请求中"
+    : role
+      ? formatRoleModelLabel(role, modelByRole?.[role])
+      : "模型";
 
   return (
     <div className="run-log-agent-request run-log-model-request">
       <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
       <span className="run-log-agent-request-label">
-        {roleLabel} 请求中
+        {omitRoleLabel ? roleLabel : `${roleLabel} 请求中`}
         <RequestTimingBadge timing={timing} />
       </span>
     </div>
@@ -463,18 +761,24 @@ function ModelRequestBlock({
 function AgentRequestBlock({
   subagent,
   modelByRole,
+  omitRoleLabel,
 }: {
   subagent?: string;
   modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
 }) {
   const timing = useStreamRequestTiming(true, false);
-  const roleLabel = subagent ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : "子代理";
+  const roleLabel = omitRoleLabel
+    ? "请求中"
+    : subagent
+      ? formatRoleModelLabel(subagent, modelByRole?.[subagent])
+      : "子代理";
 
   return (
     <div className="run-log-agent-request">
       <Bot size={16} className="run-log-agent-request-icon" aria-hidden />
       <span className="run-log-agent-request-label">
-        {roleLabel} 请求中
+        {omitRoleLabel ? roleLabel : `${roleLabel} 请求中`}
         <RequestTimingBadge timing={timing} />
       </span>
     </div>
@@ -486,11 +790,13 @@ function SubagentMissionBlock({
   summary,
   prompt,
   modelByRole,
+  omitRoleLabel,
 }: {
   subagent: string;
   summary: string;
   prompt?: string;
   modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
 }) {
   const trimmedPrompt = prompt?.trim() ?? "";
   const genericSummary = isGenericMissionSummary(summary);
@@ -505,9 +811,11 @@ function SubagentMissionBlock({
   return (
     <div className="run-log-mission">
       <div className="run-log-mission-head">
-        <span className="run-log-mission-role">
-          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-        </span>
+        {!omitRoleLabel ? (
+          <span className="run-log-mission-role">
+            {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+          </span>
+        ) : null}
         <span className="run-log-mission-tag">任务目标</span>
       </div>
       {displaySummary.trim() ? (
@@ -532,15 +840,17 @@ function ToolFailedBlock({
   error,
   subagent,
   modelByRole,
+  omitRoleLabel,
 }: {
   tool: string;
   error?: string;
   subagent?: string;
   modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
 }) {
   return (
     <div className="run-log-tool-failed" role="alert">
-      {subagent ? (
+      {subagent && !omitRoleLabel ? (
         <span className="run-log-tool-failed-role">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
         </span>
@@ -558,16 +868,18 @@ function RunLogAction({
   label,
   subagent,
   modelByRole,
+  omitRoleLabel,
 }: {
   icon: ActivityActionIcon;
   label: string;
   subagent?: string;
   modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
 }) {
   const Icon = actionIcons[icon];
   return (
     <div className="run-log-action">
-      {subagent ? (
+      {subagent && !omitRoleLabel ? (
         <span className="run-log-action-role">{formatRoleModelLabel(subagent, modelByRole?.[subagent])}</span>
       ) : null}
       <Icon size={16} className="run-log-action-icon" aria-hidden />
@@ -591,6 +903,7 @@ function RunLogNarrative({
   compact,
   modelByRole,
   usageByRole,
+  omitSubagentBadge,
 }: {
   text: string;
   streaming?: boolean;
@@ -598,14 +911,16 @@ function RunLogNarrative({
   compact?: boolean;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  omitSubagentBadge?: boolean;
 }) {
   const usage = subagent ? usageByRole?.[subagent] : undefined;
   const hasBody = text.trim().length > 0;
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
+  const showSubagentBadge = subagent && !omitSubagentBadge;
 
   return (
     <div className={compact ? "run-log-narrative compact" : "run-log-narrative"}>
-      {subagent ? (
+      {showSubagentBadge ? (
         <span className="run-log-subagent-badge">
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
           {streaming ? <RequestTimingBadge timing={timing} /> : null}

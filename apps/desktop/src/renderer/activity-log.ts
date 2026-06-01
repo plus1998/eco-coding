@@ -14,10 +14,10 @@ import {
   normalizeActivityActionLabel,
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
-
-export { isReconnectActivityMessage };
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
+
+export { isReconnectActivityMessage };
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
@@ -38,8 +38,17 @@ export type ActivityLogBlock =
       durationMs: number;
       running: boolean;
       defaultCollapsed: boolean;
+      compactSubagentMode?: boolean;
+      /** Isolated sub-agent run when compactSubagentMode (one card per delegation). */
+      subagentRunRole?: string;
+      activeSubagents?: string[];
       activeSubagent?: string;
       activeMissionSummary?: string;
+      latestSubagentLogLine?: string;
+      /** Elapsed time for this sub-agent run (from Agent tool duration lines). */
+      runDurationMs?: number;
+      /** Hide misleading thread-level duration on planner separators when sub-agent cards exist. */
+      hideProcessedDuration?: boolean;
       awaitingFirstToken?: boolean;
       children: ActivityDetailBlock[];
     }
@@ -112,39 +121,17 @@ export function buildActivityLogBlocks(
     }
 
     const { processBlocks, summaryBlock } = partitionSessionBlocks(segment.details, isTerminal && !isRunning);
+    const isLastSegment = segment === segments[segments.length - 1];
+    const segmentRunning = isRunning && isLastSegment;
 
-    if (isRunning && segment === segments[segments.length - 1]) {
-      const awaitingFirstToken = sessionAwaitingFirstToken(processBlocks, activeSubagent);
-      output.push({
-        kind: "work-session",
-        durationMs,
-        running: true,
-        defaultCollapsed: false,
-        ...(activeSubagent && { activeSubagent }),
-        ...(activeMissionSummary && { activeMissionSummary }),
-        ...(awaitingFirstToken && { awaitingFirstToken }),
-        children: processBlocks,
-      });
-      if (summaryBlock) {
-        output.push({
-          kind: "assistant-message",
-          text: summaryBlock.text,
-          ...(summaryBlock.streaming !== undefined && { streaming: summaryBlock.streaming }),
-          ...(summaryBlock.subagent && { subagent: summaryBlock.subagent }),
-        });
-      }
-      continue;
-    }
-
-    if (processBlocks.length > 0) {
-      output.push({
-        kind: "work-session",
-        durationMs,
-        running: false,
-        defaultCollapsed: true,
-        children: processBlocks,
-      });
-    }
+    pushWorkSessionsFromRuns(output, partitionDetailsIntoRuns(processBlocks), {
+      durationMs,
+      segmentRunning,
+      lines,
+      status: options.status,
+      activeSubagent,
+      activeMissionSummary,
+    });
 
     if (summaryBlock) {
       output.push({
@@ -357,26 +344,30 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const last = current.details[current.details.length - 1];
     if (last?.kind === "subagent-mission" && last.subagent === merged.role) {
-      const upgraded = {
-        kind: "subagent-mission" as const,
-        subagent: merged.role,
-        summary:
-          isGenericMissionSummary(last.summary) && !isGenericMissionSummary(merged.summary)
-            ? merged.summary
-            : last.summary,
-        ...((merged.prompt || last.prompt) && { prompt: merged.prompt || last.prompt }),
-      };
-      if (
-        upgraded.summary === last.summary &&
-        upgraded.prompt === last.prompt
-      ) {
+      const sameSummary = last.summary === merged.summary;
+      const upgradeInPlace =
+        sameSummary ||
+        isGenericMissionSummary(last.summary) ||
+        (!last.prompt?.trim() && Boolean(merged.prompt?.trim()));
+      if (upgradeInPlace) {
+        const upgraded = {
+          kind: "subagent-mission" as const,
+          subagent: merged.role,
+          summary:
+            isGenericMissionSummary(last.summary) && !isGenericMissionSummary(merged.summary)
+              ? merged.summary
+              : last.summary,
+          ...((merged.prompt || last.prompt) && { prompt: merged.prompt || last.prompt }),
+        };
+        if (
+          upgraded.summary === last.summary &&
+          upgraded.prompt === last.prompt
+        ) {
+          return;
+        }
+        current.details[current.details.length - 1] = upgraded;
         return;
       }
-      current.details[current.details.length - 1] = upgraded;
-      return;
-    }
-    if (last?.kind === "subagent-mission" && last.subagent === merged.role && last.summary === merged.summary) {
-      return;
     }
     current.details.push({
       kind: "subagent-mission",
@@ -587,6 +578,161 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   return segments;
 }
 
+type DetailRun =
+  | { kind: "planner"; blocks: ActivityDetailBlock[] }
+  | { kind: "subagent"; role: string; occurrence: number; blocks: ActivityDetailBlock[] };
+
+function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
+  if (block.kind === "subagent-mission") {
+    return block.subagent;
+  }
+  if (block.kind === "model-request" && block.role && isSubagentRole(block.role)) {
+    return block.role;
+  }
+  if (
+    (block.kind === "action" ||
+      block.kind === "narrative" ||
+      block.kind === "agent-request" ||
+      block.kind === "tool-failed") &&
+    block.subagent &&
+    isSubagentRole(block.subagent)
+  ) {
+    return block.subagent;
+  }
+  return undefined;
+}
+
+/** Split session details into planner (main window) vs isolated sub-agent runs. */
+export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]): DetailRun[] {
+  const runs: DetailRun[] = [];
+  let plannerBlocks: ActivityDetailBlock[] = [];
+  let currentRole: string | undefined;
+  let subagentBlocks: ActivityDetailBlock[] = [];
+  const roleOccurrences = new Map<string, number>();
+
+  const flushPlanner = () => {
+    if (plannerBlocks.length > 0) {
+      runs.push({ kind: "planner", blocks: plannerBlocks });
+      plannerBlocks = [];
+    }
+  };
+
+  const flushSubagent = () => {
+    if (currentRole && subagentBlocks.length > 0) {
+      const occurrence = roleOccurrences.get(currentRole) ?? 0;
+      runs.push({ kind: "subagent", role: currentRole, occurrence, blocks: subagentBlocks });
+      roleOccurrences.set(currentRole, occurrence + 1);
+    }
+    subagentBlocks = [];
+    currentRole = undefined;
+  };
+
+  for (const block of details) {
+    if (block.kind === "subagent-mission") {
+      if (currentRole && block.subagent === currentRole) {
+        flushSubagent();
+      } else if (currentRole && block.subagent !== currentRole) {
+        flushSubagent();
+      } else if (!currentRole) {
+        flushPlanner();
+      }
+      currentRole = block.subagent;
+      subagentBlocks.push(block);
+      continue;
+    }
+
+    const role = getBlockSubagentRole(block);
+    if (role) {
+      if (currentRole && role !== currentRole) {
+        flushSubagent();
+      } else if (!currentRole) {
+        flushPlanner();
+      }
+      currentRole = role;
+      subagentBlocks.push(block);
+      continue;
+    }
+
+    flushSubagent();
+    plannerBlocks.push(block);
+  }
+
+  flushSubagent();
+  flushPlanner();
+  return runs;
+}
+
+function pushWorkSessionsFromRuns(
+  output: ActivityLogBlock[],
+  runs: DetailRun[],
+  options: {
+    durationMs: number;
+    segmentRunning: boolean;
+    lines: ThreadActivityLine[];
+    status?: ThreadStatus;
+    activeSubagent?: string;
+    activeMissionSummary?: string;
+  },
+): void {
+  const liveSubagents = options.segmentRunning
+    ? resolveActiveSubagents(options.lines, options.status)
+    : [];
+  const hasSubagentRuns = runs.some((run) => run.kind === "subagent");
+
+  for (let index = 0; index < runs.length; index += 1) {
+    const run = runs[index];
+    if (!run) {
+      continue;
+    }
+    const isLastRun = index === runs.length - 1;
+    const running = options.segmentRunning && isLastRun;
+
+    if (run.kind === "planner") {
+      if (run.blocks.length === 0) {
+        continue;
+      }
+      const awaitingFirstToken = running && sessionAwaitingFirstToken(run.blocks, undefined);
+      output.push({
+        kind: "work-session",
+        durationMs: options.durationMs,
+        running,
+        defaultCollapsed: !running,
+        ...(hasSubagentRuns && { hideProcessedDuration: true }),
+        ...(awaitingFirstToken && { awaitingFirstToken }),
+        children: run.blocks,
+      });
+      continue;
+    }
+
+    const role = run.role;
+    const roleActive = liveSubagents.filter((entry) => entry === role);
+    const isActiveRole = running && options.activeSubagent === role;
+    const awaitingFirstToken =
+      running && sessionAwaitingFirstToken(run.blocks, isActiveRole ? role : undefined);
+    const latestSubagentLogLine = resolveLatestSubagentLogLine(
+      run.blocks,
+      isActiveRole ? options.activeMissionSummary : undefined,
+    );
+    const runDurationMs = resolveSubagentRunDurationMs(options.lines, role, run.occurrence);
+    output.push({
+      kind: "work-session",
+      durationMs: options.durationMs,
+      running,
+      defaultCollapsed: true,
+      compactSubagentMode: true,
+      subagentRunRole: role,
+      activeSubagents: running && roleActive.length > 0 ? roleActive : [role],
+      ...(isActiveRole && { activeSubagent: role }),
+      ...(isActiveRole &&
+        options.activeMissionSummary && { activeMissionSummary: options.activeMissionSummary }),
+      ...(awaitingFirstToken && { awaitingFirstToken }),
+      ...(latestSubagentLogLine && { latestSubagentLogLine }),
+      ...(runDurationMs > 0 && { runDurationMs }),
+      children: run.blocks,
+    });
+  }
+}
+
 function partitionSessionBlocks(
   details: ActivityDetailBlock[],
   extractSummary: boolean,
@@ -704,6 +850,143 @@ export function resolveActiveMissionSummary(
   return undefined;
 }
 
+function clampSubagentLogLine(text: string, max = 160): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  if (oneLine.length <= max) {
+    return oneLine;
+  }
+  return `${oneLine.slice(0, max - 1)}…`;
+}
+
+/** Latest subagent step text for compact card (role shown on card chips, not repeated here). */
+export function resolveLatestSubagentLogLine(
+  children: readonly ActivityDetailBlock[],
+  missionSummary?: string,
+): string | undefined {
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    const block = children[index];
+    if (!block) {
+      continue;
+    }
+
+    if (block.kind === "action" && block.subagent) {
+      return clampSubagentLogLine(block.label);
+    }
+    if (block.kind === "tool-failed" && block.subagent) {
+      const detail = block.error?.trim();
+      return clampSubagentLogLine(
+        detail ? `${block.tool} 失败：${detail}` : `${block.tool} 失败`,
+      );
+    }
+    if (block.kind === "narrative" && block.subagent) {
+      const text = block.text.trim();
+      if (text) {
+        const firstLine = text.split("\n").find((line) => line.trim())?.trim() ?? text;
+        return clampSubagentLogLine(firstLine);
+      }
+    }
+    if (block.kind === "agent-request" && block.subagent) {
+      return "处理中…";
+    }
+    if (block.kind === "subagent-mission") {
+      const summary = block.summary.trim();
+      if (summary) {
+        return clampSubagentLogLine(summary);
+      }
+    }
+  }
+
+  const trimmedMission = missionSummary?.trim();
+  if (trimmedMission) {
+    return clampSubagentLogLine(trimmedMission);
+  }
+  return undefined;
+}
+
+export function sessionHasSubagentWork(children: readonly ActivityDetailBlock[]): boolean {
+  return children.some((block) => {
+    if (block.kind === "subagent-mission" || block.kind === "agent-request") {
+      return true;
+    }
+    if (
+      block.kind === "action" ||
+      block.kind === "narrative" ||
+      block.kind === "tool-failed"
+    ) {
+      return Boolean(block.subagent);
+    }
+    return false;
+  });
+}
+
+export function countOpenAgentDelegations(lines: ThreadActivityLine[], role: string): number {
+  return resolveActiveSubagents(lines, "running").filter((entry) => entry === role).length;
+}
+
+export function resolveActiveSubagents(
+  lines: ThreadActivityLine[],
+  status?: ThreadStatus,
+): string[] {
+  if (status !== "running" && status !== "queued") {
+    return [];
+  }
+
+  const openByRole = new Map<string, number>();
+  let contextSubagent: string | undefined;
+
+  for (const line of lines) {
+    if (isSubagentRole(line.role) && line.stream) {
+      openByRole.set(line.role, Math.max(openByRole.get(line.role) ?? 0, 1));
+    }
+
+    const tool = parseToolLine(line.message);
+    if (tool?.tool !== "Agent") {
+      continue;
+    }
+
+    if (isAgentElapsedProgressLine(line.message)) {
+      const role =
+        tool.subagent ??
+        (isSubagentRole(line.role) ? line.role : contextSubagent);
+      if (role && isSubagentRole(role)) {
+        const next = Math.max(0, (openByRole.get(role) ?? 1) - 1);
+        if (next === 0) {
+          openByRole.delete(role);
+        } else {
+          openByRole.set(role, next);
+        }
+      }
+      continue;
+    }
+
+    const legacy = missionFromAgentToolDetail(tool.detail);
+    const role =
+      tool.subagent ??
+      legacy?.role ??
+      (isSubagentRole(line.role) ? line.role : contextSubagent);
+    if (role && isSubagentRole(role)) {
+      openByRole.set(role, (openByRole.get(role) ?? 0) + 1);
+      contextSubagent = role;
+    }
+  }
+
+  const result: string[] = [];
+  for (const [role, count] of openByRole) {
+    for (let index = 0; index < count; index += 1) {
+      result.push(role);
+    }
+  }
+
+  if (result.length === 0) {
+    const single = resolveActiveSubagent(lines, status);
+    if (single) {
+      result.push(single);
+    }
+  }
+
+  return result;
+}
+
 export function resolveActiveSubagent(
   lines: ThreadActivityLine[],
   status?: ThreadStatus,
@@ -785,6 +1068,134 @@ export function sessionAwaitingFirstToken(
 
 export function isAgentElapsedProgressLine(message: string): boolean {
   return /^Tool:\s*Agent\s+\(\d+(?:\.\d+)?s\)\s*$/i.test(stripSubagentBracketPrefix(message.trim()));
+}
+
+export function parseAgentElapsedMs(message: string): number {
+  const match = stripSubagentBracketPrefix(message.trim()).match(
+    /^Tool:\s*Agent\s+\((\d+(?:\.\d+)?)s\)\s*$/i,
+  );
+  if (!match?.[1]) {
+    return 0;
+  }
+  return Math.round(parseFloat(match[1]) * 1000);
+}
+
+function lineStartsSubagentMission(line: ThreadActivityLine): { role: string } | null {
+  const mission = parseSubagentMissionMessage(line.message);
+  if (mission?.role && isSubagentRole(mission.role)) {
+    return { role: mission.role };
+  }
+  return null;
+}
+
+function lineStartsSubagentDelegation(line: ThreadActivityLine): { role: string } | null {
+  const mission = lineStartsSubagentMission(line);
+  if (mission) {
+    return mission;
+  }
+
+  const tool = parseToolLine(line.message);
+  if (tool?.tool !== "Agent" || isAgentElapsedProgressLine(line.message)) {
+    return null;
+  }
+
+  const role =
+    tool.subagent ??
+    missionFromAgentToolDetail(tool.detail)?.role ??
+    (isSubagentRole(line.role) ? line.role : undefined);
+  return role && isSubagentRole(role) ? { role } : null;
+}
+
+/** Line index bounds for one isolated sub-agent delegation (Nth run for that role). */
+export function findSubagentRunLineBounds(
+  lines: ThreadActivityLine[],
+  role: string,
+  occurrence = 0,
+): { start: number; end: number } | undefined {
+  const missionStarts: Array<{ index: number; role: string }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const run = lineStartsSubagentMission(lines[index]!);
+    if (run) {
+      missionStarts.push({ index, role: run.role });
+    }
+  }
+
+  const missionMatches = missionStarts.filter((entry) => entry.role === role);
+  if (missionMatches.length > 0) {
+    const hit = missionMatches[occurrence];
+    if (!hit) {
+      return undefined;
+    }
+    const nextStart = missionStarts.find((entry) => entry.index > hit.index);
+    return { start: hit.index, end: nextStart?.index ?? lines.length };
+  }
+
+  const delegationStarts: Array<{ index: number; role: string }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const run = lineStartsSubagentDelegation(lines[index]!);
+    if (run) {
+      delegationStarts.push({ index, role: run.role });
+    }
+  }
+
+  const matching = delegationStarts.filter((entry) => entry.role === role);
+  const hit = matching[occurrence];
+  if (!hit) {
+    return undefined;
+  }
+
+  const nextStart = delegationStarts.find((entry) => entry.index > hit.index);
+  return { start: hit.index, end: nextStart?.index ?? lines.length };
+}
+
+/** Sum Agent elapsed seconds for one isolated sub-agent run window in the activity log. */
+export function resolveSubagentRunDurationMs(
+  lines: ThreadActivityLine[],
+  role: string,
+  occurrence = 0,
+): number {
+  const bounds = findSubagentRunLineBounds(lines, role, occurrence);
+  if (!bounds) {
+    return 0;
+  }
+
+  let contextRole: string | undefined = role;
+  let totalMs = 0;
+
+  for (let index = bounds.start; index < bounds.end; index += 1) {
+    const line = lines[index]!;
+    const mission = parseSubagentMissionMessage(line.message);
+    if (mission?.role && isSubagentRole(mission.role)) {
+      contextRole = mission.role;
+      continue;
+    }
+
+    const tool = parseToolLine(line.message);
+    if (!tool) {
+      continue;
+    }
+
+    if (tool.tool === "Agent" && isAgentElapsedProgressLine(line.message)) {
+      const elapsedRole =
+        tool.subagent ?? (isSubagentRole(line.role) ? line.role : contextRole);
+      if (elapsedRole === role) {
+        totalMs += parseAgentElapsedMs(line.message);
+      }
+      continue;
+    }
+
+    if (tool.tool === "Agent") {
+      const startRole =
+        tool.subagent ??
+        missionFromAgentToolDetail(tool.detail)?.role ??
+        (isSubagentRole(line.role) ? line.role : contextRole);
+      if (startRole && isSubagentRole(startRole)) {
+        contextRole = startRole;
+      }
+    }
+  }
+
+  return totalMs;
 }
 
 export function isModelRequestLine(message: string): boolean {
