@@ -61,9 +61,8 @@ export interface ProviderConfigSecret extends ProviderConfigView {
   apiKey: string;
 }
 
-const DEFAULT_PROVIDER_ID = "anthropic-compatible";
 const DEFAULT_ROUTE_PROFILE_ID = "default";
-const DEFAULT_MODEL = "sonnet";
+
 
 export async function createProviderStore(dbPath: string): Promise<ProviderStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
@@ -103,29 +102,7 @@ export class ProviderStore {
     this.migrateRoleRoutesThinkingEffort();
     this.migrateRoleRoutesModelsDevMapping();
     this.migrateRoleRoutesManualSpec();
-    this.migrateExploreRoleRoute();
 
-    if (this.listProviders().length === 0) {
-      this.saveProvider({
-        id: DEFAULT_PROVIDER_ID,
-        name: "Anthropic compatible",
-        baseUrl: "https://api.anthropic.com",
-        apiKey: "",
-        defaultModel: DEFAULT_MODEL,
-        enabled: true,
-      });
-    }
-
-    if (this.listRouteProfiles().length === 0) {
-      this.saveRouteProfile({
-        id: DEFAULT_ROUTE_PROFILE_ID,
-        name: "默认",
-        isActive: true,
-        routes: this.createDefaultRoutes(),
-      });
-    } else {
-      this.ensureAllRolesInActiveProfile();
-    }
   }
 
   getSettings(): ModelSettingsSnapshot {
@@ -505,63 +482,6 @@ export class ProviderStore {
       ALTER TABLE role_routes ADD COLUMN manual_cache_read_per_m REAL;
       ALTER TABLE role_routes ADD COLUMN manual_cache_write_per_m REAL;
     `);
-  }
-
-  /** Seed explore route from planner on upgrade so existing installs keep the same effective model. */
-  private migrateExploreRoleRoute(): void {
-    const activeProfile = this.listRouteProfileRows().find((profile) => profile.is_active === 1);
-    if (!activeProfile) {
-      return;
-    }
-    const routes = this.listRoutesForProfile(activeProfile.id);
-    if (routes.some((route) => route.role === "explore")) {
-      return;
-    }
-    const planner = routes.find((route) => route.role === "planner");
-    if (planner) {
-      this.saveRoleRoute(activeProfile.id, {
-        role: "explore",
-        providerId: planner.providerId,
-        modelId: planner.modelId,
-        ...(planner.thinkingEffort && { thinkingEffort: planner.thinkingEffort }),
-      });
-      return;
-    }
-    this.saveRoleRoute(activeProfile.id, {
-      role: "explore",
-      providerId: DEFAULT_PROVIDER_ID,
-      modelId: DEFAULT_MODEL,
-    });
-  }
-
-  private ensureAllRolesInActiveProfile(): void {
-    const activeProfile = this.listRouteProfileRows().find((profile) => profile.is_active === 1);
-    if (!activeProfile) {
-      const first = this.listRouteProfileRows()[0];
-      if (first) {
-        this.setActiveRouteProfile(first.id);
-      }
-      return;
-    }
-
-    const routeRoles = new Set(this.listRoutesForProfile(activeProfile.id).map((route) => route.role));
-    for (const role of AGENT_ROLES) {
-      if (!routeRoles.has(role)) {
-        this.saveRoleRoute(activeProfile.id, {
-          role,
-          providerId: DEFAULT_PROVIDER_ID,
-          modelId: DEFAULT_MODEL,
-        });
-      }
-    }
-  }
-
-  private createDefaultRoutes(): RoleRouteConfig[] {
-    return AGENT_ROLES.map((role) => ({
-      role,
-      providerId: DEFAULT_PROVIDER_ID,
-      modelId: DEFAULT_MODEL,
-    }));
   }
 
   private listProviderRows(): ProviderRow[] {

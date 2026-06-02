@@ -239,3 +239,48 @@ Messages: 9.6k tokens
   expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments.length).toBeGreaterThan(1);
   expect(snapshot?.breakdownRefreshing).toBeUndefined();
 });
+
+test("emits activity when context snapshot refresh fails", async () => {
+  const activities: string[] = [];
+  const monitor = {
+    getSnapshot: () => ({
+      occupied: 12_000,
+      limit: 200_000,
+      ratio: 0.06,
+      occupancyPct: 6,
+      limitsResolved: true,
+      displayRole: "planner",
+      roles: [
+        {
+          role: "planner",
+          occupied: 12_000,
+          limit: 200_000,
+          ratio: 0.06,
+          occupancyPct: 6,
+          limitsResolved: true,
+        },
+      ],
+    }),
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async () => {
+      throw new Error("Route planner references a missing provider.");
+    },
+    emitContext: () => {},
+    emitActivity: (_threadId, message) => activities.push(message),
+  });
+
+  scheduler.scheduleBreakdownRefresh("t1", [], "/tmp", true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(activities.some((entry) => entry.includes("Context snapshot failed:"))).toBe(true);
+  expect(
+    activities.some((entry) => entry.includes("Route planner references a missing provider.")),
+  ).toBe(true);
+});

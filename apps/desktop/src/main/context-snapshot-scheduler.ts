@@ -211,8 +211,10 @@ export class ContextSnapshotScheduler {
         this.scheduleBreakdownRefresh(threadId, routes, worktreePath, true);
       });
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.options.emitActivity(threadId, `Context compact failed: ${detail}`);
       process.stderr.write(
-        `[eco] context compact failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        `[eco] context compact failed: ${detail}\n`,
       );
     }
   }
@@ -373,8 +375,10 @@ export class ContextSnapshotScheduler {
         }
       });
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.options.emitActivity(threadId, `Context snapshot failed: ${detail}`);
       process.stderr.write(
-        `[eco] context snapshot failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        `[eco] context snapshot failed: ${detail}\n`,
       );
     } finally {
       this.refreshInFlight.delete(threadId);

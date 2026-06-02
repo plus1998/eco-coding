@@ -269,7 +269,7 @@ app.whenReady().then(async () => {
         providerStore.listProvidersWithSecrets(),
       );
       if (!runtimeConfig.ok) {
-        return;
+        throw new Error(runtimeConfig.reason);
       }
       const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined);
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
@@ -2830,7 +2830,7 @@ async function ensureContextHeadroom(
     providerStore.listProvidersWithSecrets(),
   );
   if (!runtimeConfig.ok) {
-    return;
+    throw new Error(runtimeConfig.reason);
   }
   const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
   await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
@@ -2881,6 +2881,7 @@ function scheduleContextBreakdownRefresh(
     providerStore.listProvidersWithSecrets(),
   );
   if (!runtimeConfig.ok) {
+    emitThreadEvent(threadId, "thread.blocked", runtimeConfig.reason, "system", false);
     return;
   }
   contextScheduler.scheduleBreakdownRefresh(
