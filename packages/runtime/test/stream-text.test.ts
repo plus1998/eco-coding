@@ -7,6 +7,7 @@ test("appends stream deltas within a word", () => {
 
 test("accepts cumulative snapshots", () => {
   expect(mergeStreamText("No", "No markdown")).toBe("No markdown");
+  expect(mergeStreamText("Let me also", "Let me also check")).toBe("Let me also check");
 });
 
 test("does not insert spaces between CJK stream chunks", () => {
@@ -14,23 +15,13 @@ test("does not insert spaces between CJK stream chunks", () => {
   expect(mergeStreamText("##", "分析结果")).toBe("##分析结果");
 });
 
-test("inserts word boundary space when chunks omit it", () => {
-  expect(mergeStreamText("Let me also", "check")).toBe("Let me also check");
-  expect(mergeStreamText("No", "markdown")).toBe("No markdown");
-  expect(mergeStreamText("in", "the")).toBe("in the");
-  expect(mergeStreamText("to", "understand")).toBe("to understand");
-  expect(mergeStreamText("go", "to")).toBe("go to");
-});
-
 test("preserves explicit spaces in deltas", () => {
   expect(mergeStreamText("No", " markdown")).toBe("No markdown");
+  expect(mergeStreamText("Let me also", " check")).toBe("Let me also check");
+  expect(mergeStreamText("go", " to")).toBe("go to");
 });
 
-test("does not add space before punctuation", () => {
-  expect(mergeStreamText("setup", ".")).toBe("setup.");
-});
-
-test("does not split lowercase words across arbitrary stream chunks", () => {
+test("does not mutate lowercase or identifier chunks (append-only)", () => {
   expect(mergeStreamText("s", "orter")).toBe("sorter");
   expect(mergeStreamText("sort", "er")).toBe("sorter");
   expect(mergeStreamText("mod", "ulo")).toBe("modulo");

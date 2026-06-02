@@ -1,7 +1,9 @@
 /**
- * Merges streaming text chunks from the agent SDK.
- * Chunks may be cumulative snapshots or deltas; word boundaries may omit spaces
- * when thinking/text streams switch roles between activity rows.
+ * Merges streaming text chunks from the agent SDK (Codex-style append-only).
+ *
+ * Chunks may be cumulative snapshots or incremental deltas. We never guess word
+ * boundaries or insert spaces — the model/API owns spacing. Overlap stitching
+ * only handles repeated phrase tails (e.g. "of " + "of how").
  */
 export function mergeStreamText(previous: string, incoming: string): string {
   if (!incoming) {
@@ -22,9 +24,6 @@ export function mergeStreamText(previous: string, incoming: string): string {
     return overlapped;
   }
 
-  if (needsWordSeparator(previous, incoming)) {
-    return `${previous} ${incoming}`;
-  }
   return `${previous}${incoming}`;
 }
 
@@ -37,99 +36,4 @@ function mergeWithSuffixPrefixOverlap(previous: string, incoming: string): strin
     }
   }
   return null;
-}
-
-/** Common English function words that start a new token when streamed as a delta. */
-const STREAM_WORD_BOUNDARY = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "by",
-  "for",
-  "from",
-  "in",
-  "is",
-  "it",
-  "me",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "we",
-  "with",
-]);
-
-function needsWordSeparator(previous: string, incoming: string): boolean {
-  const last = previous.at(-1);
-  const first = incoming.at(0);
-  if (!last || !first) {
-    return false;
-  }
-  if (last === first) {
-    return false;
-  }
-  if (/\s/u.test(last) || /\s/u.test(first)) {
-    return false;
-  }
-  // Only fix missing spaces between Latin word chunks (not CJK or punctuation).
-  if (!/[A-Za-z0-9]/.test(last) || !/[A-Za-z0-9]/.test(first)) {
-    return false;
-  }
-  if (looksLikeIdentifierContinuation(previous, incoming)) {
-    return false;
-  }
-  if (looksLikeLowercaseWordContinuation(previous, incoming)) {
-    return false;
-  }
-  return true;
-}
-
-/** SDK deltas can split plain lowercase words (sorter → "s" + "orter", modulo → "mod" + "ulo"). */
-function looksLikeLowercaseWordContinuation(previous: string, incoming: string): boolean {
-  const incomingWord = incoming.match(/^[a-z]+/)?.[0];
-  if (!incomingWord) {
-    return false;
-  }
-  const lastWord = previous.match(/[A-Za-z0-9_]+$/)?.[0] ?? "";
-  if (!lastWord || lastWord !== lastWord.toLowerCase()) {
-    return false;
-  }
-  if (STREAM_WORD_BOUNDARY.has(incomingWord)) {
-    return false;
-  }
-  if (lastWord.length === 1) {
-    return true;
-  }
-  if (incomingWord.length < 3) {
-    return true;
-  }
-  if (lastWord.length < 3 && incomingWord.length < 5) {
-    return true;
-  }
-  if (lastWord.length < 4 && incomingWord.length < 4) {
-    return true;
-  }
-  return false;
-}
-
-function looksLikeIdentifierContinuation(previous: string, incoming: string): boolean {
-  const tail = previous.slice(Math.max(0, previous.length - 32));
-  if (/[a-z][A-Z]/u.test(tail)) {
-    return true;
-  }
-  if (/[A-Z]$/u.test(previous)) {
-    return true;
-  }
-  if (/[A-Z]/u.test(incoming)) {
-    return true;
-  }
-  if (incoming.length < 2 && /^[a-z0-9]+$/u.test(incoming)) {
-    return true;
-  }
-  return false;
 }

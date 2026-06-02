@@ -163,13 +163,10 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "message.delta" && stream) {
-      const pendingMsg = this.pendingDeltas.get(threadId)?.message;
-      const merged = pendingMsg ? mergeStreamText(pendingMsg, message) : message;
-      this.lastStreamLine.set(threadId, {
-        role,
-        message: mergeStreamText(this.lastStreamLine.get(threadId)?.message ?? "", merged),
-      });
-      this.scheduleThrottledDelta(threadId, event.type, message, role, stream, emit);
+      const previous = this.lastStreamLine.get(threadId)?.message ?? "";
+      const accumulated = mergeStreamText(previous, message);
+      this.lastStreamLine.set(threadId, { role, message: accumulated });
+      this.scheduleThrottledDelta(threadId, event.type, accumulated, role, stream, emit);
       return;
     }
 
@@ -190,18 +187,17 @@ export class SdkStreamActivityBridge {
     stream: boolean,
     emit: (threadId: string, type: string, message: string, role: string, stream: boolean) => void,
   ): void {
-    const existing = this.pendingDeltas.get(threadId);
-    if (existing?.timer) {
-      clearTimeout(existing.timer);
+    const pendingExisting = this.pendingDeltas.get(threadId);
+    if (pendingExisting?.timer) {
+      clearTimeout(pendingExisting.timer);
     }
-    const mergedMessage = existing ? mergeStreamText(existing.message, message) : message;
     const pending: PendingStreamDelta = {
       role,
-      message: mergedMessage,
+      message,
       stream,
       timer: setTimeout(() => {
         this.pendingDeltas.delete(threadId);
-        emit(threadId, type, mergedMessage, role, stream);
+        emit(threadId, type, message, role, stream);
       }, STREAM_THROTTLE_MS),
     };
     this.pendingDeltas.set(threadId, pending);

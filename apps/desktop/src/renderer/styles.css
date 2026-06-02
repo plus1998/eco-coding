@@ -2594,13 +2594,43 @@ button:not(:disabled) {
   color: #e5e5e5;
   font-size: 15px;
   line-height: 1.65;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .markdown-content {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.markdown-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.markdown-content th {
+  color: #f0f0f0;
+  font-weight: 600;
+}
+
+.markdown-content code {
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .markdown-content > :first-child {
