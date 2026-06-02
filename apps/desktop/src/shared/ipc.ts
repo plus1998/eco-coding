@@ -383,6 +383,19 @@ export interface ThreadRoleContextSnapshot {
   maxOutputTokens?: number;
 }
 
+export interface ThreadContextInstanceSnapshot {
+  agentId: string;
+  role: AgentRole;
+  occupied: number;
+  limit: number;
+  occupancyPct: number;
+  limitsResolved: boolean;
+  modelId?: string;
+  segments: ContextBreakdownSegment[];
+  maxOutputTokens?: number;
+  updatedAt: number;
+}
+
 export interface ThreadContextSnapshot {
   occupied: number;
   limit: number;
@@ -393,6 +406,7 @@ export interface ThreadContextSnapshot {
   modelId?: string;
   segments: ContextBreakdownSegment[];
   roles?: ThreadRoleContextSnapshot[];
+  instances?: ThreadContextInstanceSnapshot[];
   updatedAt: number;
   /** @deprecated Use breakdownRefreshing. */
   stale?: boolean;

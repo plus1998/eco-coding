@@ -19,6 +19,13 @@ const SUBAGENT_ROLE_SHORT: Record<string, string> = {
   tester: "测试",
 };
 
+function shortAgentId(agentId: string): string {
+  if (agentId.length <= 8) {
+    return agentId;
+  }
+  return agentId.slice(0, 8);
+}
+
 function formatContextK(value: number): string {
   if (value < 1000) {
     return String(value);
@@ -203,6 +210,9 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const roles = contextRoles(context);
   const planner = resolvePlannerSnapshot(context, roles);
   const subagentRoles = roles.filter((role) => role.role !== "planner");
+  const instanceEntries = [...(context.instances ?? [])]
+    .filter((instance) => instance.role !== "planner" && instance.occupied > 0)
+    .sort((left, right) => right.occupied - left.occupied);
   const plannerDetailed = hasDetailedBreakdown(planner);
   const showPlannerRefreshing = Boolean(context.breakdownRefreshing);
 
@@ -246,7 +256,32 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         showRefreshing={showPlannerRefreshing}
       />
 
-      {subagentRoles.length > 0 ? (
+      {instanceEntries.length > 0 ? (
+        <div className="context-card-subagents-group">
+          <div className="context-card-subagents-body" aria-label="子代理上下文">
+            {instanceEntries.map((instance) => (
+              <section key={instance.agentId} className="context-card-subagent-entry">
+                <h5 className="context-card-subagent-entry-title">
+                  {(SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role) + ` #${shortAgentId(instance.agentId)}`}
+                </h5>
+                <ContextRoleBody
+                  role={{
+                    role: instance.role,
+                    occupied: instance.occupied,
+                    limit: instance.limit,
+                    occupancyPct: instance.occupancyPct,
+                    limitsResolved: instance.limitsResolved,
+                    segments: instance.segments,
+                    ...(instance.modelId && { modelId: instance.modelId }),
+                    ...(instance.maxOutputTokens !== undefined && { maxOutputTokens: instance.maxOutputTokens }),
+                  }}
+                  detailsOpen={false}
+                />
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : subagentRoles.length > 0 ? (
         <div className="context-card-subagents-group">
           <button
             type="button"

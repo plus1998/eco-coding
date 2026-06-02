@@ -552,6 +552,43 @@ test("maps assistant message usage to usage.recorded events", () => {
   expect((usageEvent?.payload as { messageId?: string }).messageId).toBe("msg_abc");
 });
 
+test("preserves subagent metadata on tool_use events", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_subagent_1",
+      session_id: "session_coder_1",
+      parent_tool_use_id: "tool_parent_1",
+      subagent_type: "coder",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "tool_child_1",
+            name: "Read",
+            input: { file_path: "/tmp/work.ts" },
+          },
+        ],
+      },
+    },
+    "thr_1",
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "tool.started",
+    agentId: "session_coder_1",
+    role: "coder",
+    payload: {
+      type: "tool_use",
+      tool_name: "Read",
+      tool_use_id: "tool_child_1",
+      parent_tool_use_id: "tool_parent_1",
+      subagent_type: "coder",
+    },
+  });
+});
+
 test("maps SDK result messages to usage events", () => {
   const events = mapSdkMessageToEvents(
     {

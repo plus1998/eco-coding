@@ -119,13 +119,14 @@ test("clearSubagentRoles preserves planner and drops stale child windows", async
   await monitor.updateFromUsage(
     "t1",
     { inputTokens: 70_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    { role: "coder" },
+    { role: "coder", agentId: "coder-1" },
   );
 
   const snapshot = monitor.clearSubagentRoles("t1");
 
   expect(snapshot?.roles.map((role) => role.role)).toEqual(["planner"]);
   expect(snapshot?.occupied).toBe(10_000);
+  expect(snapshot?.instances).toEqual([]);
 });
 
 test("restores multi-role context snapshots", () => {
@@ -156,11 +157,46 @@ test("restores multi-role context snapshots", () => {
         segments: [],
       },
     ],
+    instances: [
+      {
+        agentId: "coder-agent-1",
+        role: "coder",
+        occupied: 12_000,
+        limit: 40_000,
+        occupancyPct: 30,
+        limitsResolved: true,
+        modelId: "coder-model",
+        segments: [],
+        updatedAt: Date.now(),
+      },
+    ],
     updatedAt: Date.now(),
   });
   const snapshot = monitor.getSnapshot("t1");
   expect(snapshot?.displayRole).toBe("planner");
   expect(snapshot?.roles.find((role) => role.role === "coder")?.modelId).toBe("coder-model");
+  expect(snapshot?.instances?.[0]?.agentId).toBe("coder-agent-1");
+});
+
+test("tracks concurrent coder instances by agentId", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(100_000));
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 22_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "coder", agentId: "coder-agent-1" },
+  );
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 31_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "coder", agentId: "coder-agent-2" },
+  );
+
+  const snapshot = monitor.getSnapshot("t1");
+  expect(snapshot?.instances?.map((entry) => entry.agentId)).toEqual([
+    "coder-agent-2",
+    "coder-agent-1",
+  ]);
+  expect(snapshot?.instances?.map((entry) => entry.occupied)).toEqual([31_000, 22_000]);
 });
 
 test("dedupes assistant usage by messageId", async () => {

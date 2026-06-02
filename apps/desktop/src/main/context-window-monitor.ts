@@ -38,6 +38,7 @@ export interface ContextMonitorSnapshot {
   /** Role whose occupancy is shown in the UI. */
   displayRole?: AgentRole;
   roles: ContextMonitorRoleSnapshot[];
+  instances: ThreadContextSnapshot["instances"];
 }
 
 interface RoleOccupancyState {
@@ -53,6 +54,7 @@ interface RoleOccupancyState {
 
 interface ThreadMonitorState {
   byRole: Partial<Record<AgentRole, RoleOccupancyState>>;
+  byInstance: Map<string, RoleOccupancyState & { role: AgentRole; updatedAt: number }>;
   displayRole: AgentRole;
   seenMessageIds: Set<string>;
   compactInFlight: boolean;
@@ -69,6 +71,7 @@ export class ContextWindowMonitor {
     usage: ParsedUsage,
     options?: {
       role?: AgentRole;
+      agentId?: string;
       modelId?: string;
       providerBaseUrl?: string;
       modelsDevMapping?: ModelsDevMapping;
@@ -111,8 +114,27 @@ export class ContextWindowMonitor {
       next.manualSpec = manualSpec;
     }
     state.byRole[role] = next;
+    if (role === "coder" && options?.agentId) {
+      state.byInstance.set(options.agentId, {
+        role,
+        updatedAt: Date.now(),
+        ...next,
+      });
+    }
 
     await this.refreshLimitForRole(next);
+    if (role === "coder" && options?.agentId) {
+      const instance = state.byInstance.get(options.agentId);
+      if (instance) {
+        instance.limit = next.limit;
+        instance.limitsResolved = next.limitsResolved;
+        if (next.maxOutputTokens !== undefined) {
+          instance.maxOutputTokens = next.maxOutputTokens;
+        } else {
+          delete instance.maxOutputTokens;
+        }
+      }
+    }
     this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }
@@ -188,6 +210,7 @@ export class ContextWindowMonitor {
     for (const role of SUBAGENT_ROLES) {
       delete state.byRole[role];
     }
+    state.byInstance.clear();
     this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }
@@ -239,6 +262,11 @@ export class ContextWindowMonitor {
     for (const role of SUBAGENT_ROLES) {
       delete state.byRole[role];
     }
+    for (const [agentId, instance] of state.byInstance.entries()) {
+      if (SUBAGENT_ROLES.includes(instance.role)) {
+        state.byInstance.delete(agentId);
+      }
+    }
     this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }
@@ -273,6 +301,21 @@ export class ContextWindowMonitor {
         ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
       };
     }
+    state.byInstance.clear();
+    for (const instance of snapshot.instances ?? []) {
+      if (!instance.agentId) {
+        continue;
+      }
+      state.byInstance.set(instance.agentId, {
+        role: instance.role,
+        occupied: instance.occupied,
+        limit: instance.limit,
+        limitsResolved: instance.limitsResolved,
+        updatedAt: instance.updatedAt,
+        ...(instance.modelId && { modelId: instance.modelId }),
+        ...(instance.maxOutputTokens !== undefined && { maxOutputTokens: instance.maxOutputTokens }),
+      });
+    }
     state.displayRole = snapshot.displayRole ?? "planner";
     this.refreshDisplayRole(state);
   }
@@ -282,6 +325,7 @@ export class ContextWindowMonitor {
     if (!state) {
       state = {
         byRole: {},
+        byInstance: new Map(),
         displayRole: "planner",
         seenMessageIds: new Set(),
         compactInFlight: false,
@@ -344,6 +388,7 @@ export class ContextWindowMonitor {
       limitsResolved: active?.limitsResolved ?? false,
       displayRole: state.displayRole,
       roles,
+      instances: this.toInstanceSnapshots(state),
       ...(active?.modelId && { modelId: active.modelId }),
       ...(active?.maxOutputTokens !== undefined && { maxOutputTokens: active.maxOutputTokens }),
     };
@@ -370,4 +415,31 @@ export class ContextWindowMonitor {
       ];
     });
   }
+
+  private toInstanceSnapshots(state: ThreadMonitorState): ThreadContextSnapshot["instances"] {
+    const instances = [...state.byInstance.entries()]
+      .filter(([, instance]) => instance.occupied > 0)
+      .map(([agentId, instance]) => ({
+        agentId,
+        role: instance.role,
+        occupied: instance.occupied,
+        limit: instance.limit,
+        occupancyPct: occupancyPercent(instance.occupied, instance.limit),
+        limitsResolved: instance.limitsResolved,
+        segments: [fallbackSegment(instance.occupied)],
+        updatedAt: instance.updatedAt,
+        ...(instance.modelId && { modelId: instance.modelId }),
+        ...(instance.maxOutputTokens !== undefined && { maxOutputTokens: instance.maxOutputTokens }),
+      }));
+    return instances.sort((left, right) => right.occupied - left.occupied);
+  }
+}
+
+function fallbackSegment(tokens: number): ThreadContextSnapshot["segments"][number] {
+  return {
+    key: "conversation",
+    label: "会话占用",
+    tokens,
+    color: "#ea580c",
+  };
 }

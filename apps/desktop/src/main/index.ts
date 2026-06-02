@@ -215,7 +215,7 @@ let pricingCatalogReady: Promise<void> = Promise.resolve();
 let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 
-type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role">;
+type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -2662,6 +2662,7 @@ function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
 async function processUsageBilling(input: {
   threadId: string;
   role: AgentRole;
+  agentId?: string;
   source?: BillingUsageSource;
   inputTokens: number;
   outputTokens: number;
@@ -2745,6 +2746,7 @@ async function processUsageBilling(input: {
   if (updateContext && monitorModelForRole && monitorBaseForRole) {
     await contextMonitor.updateFromUsage(input.threadId, delta, {
       role: monitorRole,
+      ...(input.agentId && { agentId: input.agentId }),
       modelId: monitorModelForRole,
       providerBaseUrl: monitorBaseForRole,
       ...(monitorRoute?.modelsDevMapping && { modelsDevMapping: monitorRoute.modelsDevMapping }),
@@ -3001,6 +3003,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
           bundle.contextUsage,
           messageId,
           modelId,
+          event.agentId,
         ).catch((error) => {
           process.stderr.write(`[eco] SDK context fallback failed: ${errorMessage(error)}\n`);
         }),
@@ -3020,6 +3023,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
         processUsageBilling({
           threadId,
           role: billingRole,
+          agentId: event.agentId,
           source: "sdk",
           inputTokens: bundle.contextUsage.inputTokens,
           outputTokens: bundle.contextUsage.outputTokens,
@@ -3050,6 +3054,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
           bundle.contextUsage,
           undefined,
           modelId,
+          event.agentId,
         ).catch((error) => {
           process.stderr.write(`[eco] SDK stream context fallback failed: ${errorMessage(error)}\n`);
         }),
@@ -3081,6 +3086,7 @@ async function updateContextFromSdkFallback(
   usage: ParsedUsage,
   messageId?: string,
   modelId?: string,
+  agentId?: string,
 ): Promise<void> {
   await pricingCatalogReady;
   const settings = providerStore.getSettings();
@@ -3093,6 +3099,7 @@ async function updateContextFromSdkFallback(
 
   await contextMonitor.updateFromUsage(threadId, usage, {
     role,
+    ...(agentId && { agentId }),
     modelId: usageRoute.modelId,
     providerBaseUrl: usageRoute.provider.baseUrl,
     ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
