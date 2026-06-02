@@ -78,6 +78,45 @@ const routes: ResolvedModelRoute[] = [
     },
     fallbacks: [],
   },
+  {
+    role: "architect",
+    primary: {
+      id: "architect-sonnet",
+      provider: "anthropic",
+      displayName: "Architect Sonnet",
+      baseUrl: "https://gateway.test",
+      modelId: "claude-sonnet-architect",
+      capabilities: ["messages_api"],
+      enabled: true,
+    },
+    fallbacks: [],
+  },
+  {
+    role: "reviewer",
+    primary: {
+      id: "reviewer-sonnet",
+      provider: "anthropic",
+      displayName: "Reviewer Sonnet",
+      baseUrl: "https://gateway.test",
+      modelId: "claude-sonnet-reviewer",
+      capabilities: ["messages_api"],
+      enabled: true,
+    },
+    fallbacks: [],
+  },
+  {
+    role: "tester",
+    primary: {
+      id: "tester-haiku",
+      provider: "anthropic",
+      displayName: "Tester Haiku",
+      baseUrl: "https://gateway.test",
+      modelId: "claude-haiku-tester",
+      capabilities: ["messages_api"],
+      enabled: true,
+    },
+    fallbacks: [],
+  },
 ];
 
 test("buildSdkProcessEnv forces local router env over inherited Anthropic auth", () => {
@@ -115,7 +154,9 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
   expect(toSdkAgentModel("claude-sonnet")).toBe("claude-sonnet");
   expect(toSdkAgentModel("claude-haiku")).toBe("claude-haiku");
   expect(toSdkAgentModel("qwen-coder-anthropic")).toBe("qwen-coder-anthropic");
-  expect(toSdkAgentModel(undefined)).toBe("inherit");
+  expect(() => toSdkAgentModel(undefined, "coder")).toThrow(
+    "Missing model id for coder subagent. Subagents must use explicit models.",
+  );
 });
 
 test("includes Agent in default allowed tools", () => {

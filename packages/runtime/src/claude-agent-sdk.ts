@@ -529,14 +529,14 @@ export function createPlanningAgentDefinitions(
       tools: exploreTools,
       ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
     },
     architect: {
       description: planningArchitectDescription,
       tools: ["Read", "Glob", "Grep"],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: planningArchitectPrompt,
-      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
   };
 
@@ -556,7 +556,7 @@ export function createQuestionAgentDefinitions(
       tools: ["Read", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
     },
   };
 
@@ -579,14 +579,14 @@ export function createExecutionAgentDefinitions(
       tools: ["Read", "Glob", "Grep"],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: executionArchitectPrompt,
-      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
     coder: {
       description: executionCoderDescription,
       tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("coder", agentSkills),
       prompt: executionCoderPrompt,
-      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
     reviewer: {
       description:
@@ -594,14 +594,14 @@ export function createExecutionAgentDefinitions(
       tools: ["Read", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
     tester: {
       description: executionTesterDescription,
       tools: ["Read", "Bash", "Glob", "Grep"],
       ...agentDefinitionSkills("tester", agentSkills),
       prompt: executionTesterPrompt,
-      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId),
+      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
     },
   };
 
@@ -612,8 +612,12 @@ export function createExecutionAgentDefinitions(
   return filtered;
 }
 
-export function toSdkAgentModel(modelId?: string): string {
-  return modelId?.trim() || "inherit";
+export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
+  const resolved = modelId?.trim();
+  if (!resolved) {
+    throw new Error(`Missing model id for ${role} subagent. Subagents must use explicit models.`);
+  }
+  return resolved;
 }
 
 export interface BuildSdkProcessEnvOptions {
@@ -1277,8 +1281,8 @@ export function formatAgentEventLine(
   event: Pick<AgentEvent, "type" | "payload" | "role">,
 ): string | null {
   if (event.type === "usage.recorded" || event.type === "todo.updated") {
-    if (event.type === "todo.updated" && isRecord(event.payload)) {
-      const sdkPayload = event.payload as SdkTodoUpdatedPayload;
+    if (event.type === "todo.updated" && isSdkTodoUpdatedPayload(event.payload)) {
+      const sdkPayload = event.payload;
       if (sdkPayload.sdkKind === "task_updated") {
         const status = sdkPayload.patch?.status;
         return status ? `Task ${status}` : null;
@@ -1618,7 +1622,7 @@ function extractStreamEventText(event: Record<string, unknown>): string | null {
   return null;
 }
 
-const SUBAGENT_ROLE_LABELS: Record<string, string> = {
+const SUBAGENT_ROLE_LABELS: Record<SubagentRole, string> = {
   explore: "探索",
   architect: "架构",
   coder: "编码",
@@ -1638,6 +1642,17 @@ export function formatSubagentLabel(role: string): string {
 
 export function isSubagentRole(role: string): role is SubagentRole {
   return (SUBAGENT_ROLES as readonly string[]).includes(role);
+}
+
+function isSdkTodoUpdatedPayload(payload: unknown): payload is SdkTodoUpdatedPayload {
+  if (!isRecord(payload)) {
+    return false;
+  }
+  const sdkKind = payload.sdkKind;
+  if (sdkKind !== "task_started" && sdkKind !== "task_updated" && sdkKind !== "task_progress") {
+    return false;
+  }
+  return typeof payload.task_id === "string" && payload.task_id.length > 0;
 }
 
 function formatAgentToolMissionMessage(input: unknown): string | null {
