@@ -862,6 +862,10 @@ function AssistantMessageBlock({
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
+  const clarificationRows = parseClarificationAnswersSummary(text);
+  if (clarificationRows) {
+    return <ClarificationAnswersCard rows={clarificationRows} />;
+  }
   return (
     <RunLogNarrative
       text={text}
@@ -870,6 +874,53 @@ function AssistantMessageBlock({
       {...(modelByRole && { modelByRole })}
       {...(usageByRole && { usageByRole })}
     />
+  );
+}
+
+const CLARIFICATION_ANSWER_PREFIX = "澄清回答：";
+
+function parseClarificationAnswersSummary(text: string): Array<{ question: string; answer: string }> | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith(CLARIFICATION_ANSWER_PREFIX)) {
+    return null;
+  }
+
+  const rest = trimmed.slice(CLARIFICATION_ANSWER_PREFIX.length).trim();
+  if (!rest) {
+    return [];
+  }
+
+  // formatClarificationAnswersSummary uses "；" between questions and " → " between question and answer.
+  const parts = rest
+    .split("；")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const rows = parts.map((part) => {
+    const segs = part.split(/\s*→\s*/u);
+    const question = (segs[0] ?? "").trim() || part.trim();
+    const answer = segs.slice(1).join(" → ").trim();
+    return { question, answer };
+  });
+
+  return rows;
+}
+
+function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; answer: string }> }) {
+  return (
+    <div className="clarification-answer-card" role="group" aria-label="澄清回答">
+      <div className="clarification-answer-header">
+        <span className="clarification-answer-title">澄清回答</span>
+      </div>
+      <div className="clarification-answer-rows">
+        {rows.map((row, index) => (
+          <div key={index} className="clarification-answer-row">
+            <div className="clarification-answer-question">{row.question}</div>
+            <div className="clarification-answer-answer">{row.answer}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
