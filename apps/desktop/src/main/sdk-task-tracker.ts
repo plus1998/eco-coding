@@ -1,4 +1,5 @@
-import type { EcoTaskTrackerHooks, SdkTodoUpdatedPayload } from "@eco/runtime";
+import type { EcoTaskTrackerHooks } from "@eco/runtime";
+import type { SdkTodoUpdatedPayload } from "@eco/runtime/sdk";
 import type { CoderTodoItem, CoderTodoStatus } from "../shared/ipc";
 import {
   completeRunningCoderTodos,

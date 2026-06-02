@@ -62,13 +62,15 @@ import {
 } from "./prompts/index.js";
 import {
   filterAgentDefinitions,
+  isSubagentRole,
   normalizeSubagentAvailability,
   SUBAGENT_ROLES,
+  type EcoOrchestrationMode,
   type SubagentAvailability,
   type SubagentRole,
 } from "./subagent-availability.js";
 
-export { SUBAGENT_ROLES, type SubagentRole };
+export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagentRole };
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -133,8 +135,6 @@ function agentDefinitionSkills(
   const skills = resolveAgentSkills(role, agentSkills);
   return skills.length > 0 ? { skills } : {};
 }
-
-export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
 
 export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 
@@ -1638,10 +1638,6 @@ export function formatSubagentLabel(role: string): string {
     return role;
   }
   return role;
-}
-
-export function isSubagentRole(role: string): role is SubagentRole {
-  return (SUBAGENT_ROLES as readonly string[]).includes(role);
 }
 
 function isSdkTodoUpdatedPayload(payload: unknown): payload is SdkTodoUpdatedPayload {

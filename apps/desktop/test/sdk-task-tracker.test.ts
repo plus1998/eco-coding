@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { SdkTodoUpdatedPayload } from "@eco/runtime";
+import type { SdkTodoUpdatedPayload } from "@eco/runtime/sdk";
 import type { CoderTodoItem } from "../src/shared/ipc";
 import { createSdkTaskTracker } from "../src/main/sdk-task-tracker";
 

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { formatAgentEventDisplay, resolveSkillDisplayName, skillNameFromPath } from "@eco/runtime";
+import { resolveSkillDisplayName, skillNameFromPath } from "@eco/runtime";
+import { formatAgentEventDisplay } from "@eco/runtime/sdk";
 
 test("skillNameFromPath reads parent directory of SKILL.md", () => {
   expect(skillNameFromPath("/Users/me/.claude/skills/pdf/SKILL.md")).toBe("pdf");

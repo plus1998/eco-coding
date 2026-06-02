@@ -1,17 +1,19 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
-import type { ClaudeAgentSdkDriver } from "@eco/runtime";
 import {
-  type AgentRuntimeDriver,
-  type EcoSdkResumeOptions,
-  extractCompactPostTokens,
-  extractSdkContextResultText,
   mergeBreakdownWithOccupancy,
   parseContextCommandHeader,
   parseContextCommandResult,
   parseUsagePayload,
+  type EcoSdkResumeOptions,
+} from "@eco/runtime";
+import {
+  extractCompactPostTokens,
+  extractSdkContextResultText,
   readSdkSlashCommands,
   sdkSupportsSlashCommand,
-} from "@eco/runtime";
+  type AgentRuntimeDriver,
+  type ClaudeAgentSdkDriver,
+} from "@eco/runtime/sdk";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
 

@@ -218,7 +218,6 @@ export type { PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../..
 export * from "./eco-sdk-hooks";
 export * from "./subagent-availability";
 export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
-export * from "./claude-agent-sdk";
 export {
   buildBuiltinOtelEnv,
   mergeResourceAttributes,

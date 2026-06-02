@@ -2,6 +2,12 @@ export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tes
 
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
+export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
+
+export function isSubagentRole(role: string): role is SubagentRole {
+  return (SUBAGENT_ROLES as readonly string[]).includes(role);
+}
+
 export type SubagentAvailability = Record<SubagentRole, boolean>;
 
 export function defaultSubagentAvailability(): SubagentAvailability {

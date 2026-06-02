@@ -1,12 +1,11 @@
+import { mergeStreamText, type AgentEvent } from "@eco/runtime";
 import {
   formatAgentEventDisplay,
   formatAgentEventLine,
   isEcoStreamFinalize,
   isEcoStreamPlaceholder,
   isUpstreamStatusActivityMessage,
-  mergeStreamText,
-  type AgentEvent,
-} from "@eco/runtime";
+} from "@eco/runtime/sdk";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role">;
 

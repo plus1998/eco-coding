@@ -7,6 +7,8 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "bun run --cwd apps/desktop dev",
+    "build": "bun run --cwd apps/desktop build",
     "test": "bun test",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",

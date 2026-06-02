@@ -7,6 +7,9 @@ export default defineConfig({
   build: {
     outDir: "dist/renderer",
     emptyOutDir: true,
+    rollupOptions: {
+      external: ["@anthropic-ai/claude-agent-sdk", "electron"],
+    },
   },
   server: {
     host: "127.0.0.1",
