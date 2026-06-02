@@ -212,7 +212,19 @@ export function mapStreamEventToEvents(
 
   if (event.type === "content_block_stop") {
     if (ctx.inToolBlock) {
-      // Tool UI was emitted at content_block_start; input_json_delta is accumulated for assistant/OTel.
+      const parsedInput = parseToolInputJson(ctx.currentToolInputJson);
+      if (ctx.currentToolName) {
+        events.push(
+          createToolStartedEvent(threadId, sessionId, role, uuid, {
+            type: "tool_use",
+            tool_name: ctx.currentToolName,
+            ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
+            ...(parsedInput && { input: parsedInput }),
+            streaming: true,
+            ...streamMeta,
+          }),
+        );
+      }
     } else if (ctx.activeBlockKind === "thinking") {
       events.push(
         createStreamDeltaEvent(threadId, sessionId, role, uuid, {
@@ -314,4 +326,17 @@ export function isEcoStreamFinalize(payload: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseToolInputJson(raw: string): Record<string, unknown> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }

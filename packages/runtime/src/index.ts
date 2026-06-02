@@ -346,7 +346,6 @@ export {
   findPlanSectionStart,
   stripPlanningTranscriptNoise,
 } from "./phase-deliverable";
-export * from "./finalize-plan";
 export {
   formatSkillActivityLabel,
   isSkillActivityLabel,

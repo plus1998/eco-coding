@@ -14,7 +14,11 @@ import type {
   EcoSdkSessionOptions,
 } from "./index";
 import type { SessionStore } from "../../persistence/src/session-store.js";
-import { parseFinalizePlanInput } from "./finalize-plan";
+import {
+  createFinalizePlanMcpServer,
+  FINALIZE_PLAN_ALLOWED_TOOL,
+  FINALIZE_PLAN_MCP_SERVER_NAME,
+} from "./finalize-plan";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
@@ -75,7 +79,7 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
-const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion", "FinalizePlan"] as const;
+const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion", FINALIZE_PLAN_ALLOWED_TOOL] as const;
 const questionAllowedTools = ["Agent", "Read", "Glob", "Grep"] as const;
 const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
@@ -368,6 +372,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const systemAppend = [ecoBasePromptAppend, phase.phaseAppend].filter(Boolean).join("\n\n");
     const session = resolveSdkSessionOptions(input.sdkSession);
     const allowedTools = mergeAllowedTools(phase.allowedTools, input.sdkSession);
+    let finalizedPlan: FinalizePlanPayload | undefined;
+    const planningMcpServer = phase.allowedTools.includes(FINALIZE_PLAN_ALLOWED_TOOL)
+      ? await createFinalizePlanMcpServer((submission) => {
+          finalizedPlan = submission;
+        })
+      : undefined;
     const queryOptions: Record<string, unknown> = {
       cwd: input.worktreePath,
       model: plannerRoute.primary.modelId,
@@ -418,6 +428,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
     }
+    if (planningMcpServer) {
+      queryOptions.mcpServers = {
+        ...(isRecord(queryOptions.mcpServers) ? (queryOptions.mcpServers as Record<string, unknown>) : {}),
+        [FINALIZE_PLAN_MCP_SERVER_NAME]: planningMcpServer,
+      };
+    }
 
     if (phase.agents) {
       queryOptions.agents = phase.agents;
@@ -436,7 +452,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
 
     let transcript = "";
-    let finalizedPlan: FinalizePlanPayload | undefined;
     let sessionCaptured = false;
     const streamCtx = createSdkStreamContext();
     for await (const message of query) {
@@ -451,10 +466,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
-        const planFromEvent = extractFinalizePlanFromEvent(event);
-        if (planFromEvent) {
-          finalizedPlan = planFromEvent;
-        }
       }
 
       if (input.signal.aborted) {
@@ -1214,23 +1225,6 @@ function inferRole(message: Record<string, unknown>): AgentRole {
 
 function isAgentRole(value: string): value is AgentRole {
   return ["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(value);
-}
-
-function extractFinalizePlanFromEvent(event: AgentEvent): FinalizePlanPayload | undefined {
-  if (event.type !== "tool.started" || !isRecord(event.payload)) {
-    return undefined;
-  }
-  if (event.payload.tool_name !== "FinalizePlan" || !isRecord(event.payload.input)) {
-    return undefined;
-  }
-  const parsed = parseFinalizePlanInput(event.payload.input);
-  if (!parsed.plan) {
-    return undefined;
-  }
-  return {
-    analysis: parsed.analysis,
-    plan: parsed.plan,
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

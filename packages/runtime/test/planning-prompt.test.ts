@@ -20,12 +20,12 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   const append = buildPlanningPhaseSystemAppend();
   expect(append).toContain("PHASE 1 — Ground in the environment");
   expect(append).toContain("AskUserQuestion");
-  expect(append).toContain("FinalizePlan");
+  expect(append).toContain("mcp__eco_plan__finalize_plan");
   expect(append).not.toMatch(/`request_user_input`/);
   expect(append).not.toContain("## Implementation Plan");
   expect(append).toContain("Agent(explore)");
   expect(append).toContain("Eco Plan Mode turn order");
-  expect(append).toContain("MUST NOT call `FinalizePlan`");
+  expect(append).toContain("MUST NOT call `mcp__eco_plan__finalize_plan`");
   expect(append).toContain("complete replacement");
 });
 
@@ -38,7 +38,7 @@ test("buildPlanningPhasePrompt enforces explore and ask on turn 1", () => {
   const prompt = buildPlanningPhasePrompt("Add caching to the API layer");
   expect(prompt).toContain("turn 1");
   expect(prompt).toContain("AskUserQuestion");
-  expect(prompt).toContain("Do NOT call FinalizePlan");
+  expect(prompt).toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
   expect(prompt).not.toContain("when decision-complete");
 });
 
@@ -46,6 +46,6 @@ test("buildPlanningContinuationPrompt requires full replacement plan", () => {
   const prompt = buildPlanningContinuationPrompt("把提示语改成可配置字段");
   expect(prompt).toContain("not turn 1");
   expect(prompt).toContain("complete replacement");
-  expect(prompt).toContain("FinalizePlan");
+  expect(prompt).toContain("mcp__eco_plan__finalize_plan");
   expect(prompt).not.toContain("turn 1).");
 });

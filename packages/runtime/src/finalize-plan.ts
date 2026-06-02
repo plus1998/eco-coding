@@ -1,14 +1,8 @@
-import type { SdkToolPermissionDecision, SdkToolPermissionRequest } from "./claude-agent-sdk";
-
 export interface SdkFinalizePlanRequest {
   analysis: string;
   plan: string;
   rawInput: Record<string, unknown>;
 }
-
-export type SdkToolPermissionHandler = (
-  request: SdkToolPermissionRequest,
-) => Promise<SdkToolPermissionDecision>;
 
 export function parseFinalizePlanInput(input: Record<string, unknown>): SdkFinalizePlanRequest {
   const analysis = typeof input.analysis === "string" ? input.analysis.trim() : "";
@@ -20,20 +14,52 @@ export function parseFinalizePlanInput(input: Record<string, unknown>): SdkFinal
   };
 }
 
-export function createFinalizePlanHandler(
-  delegate: (request: SdkFinalizePlanRequest & { toolUseId: string }) => Promise<Record<string, unknown>>,
-): SdkToolPermissionHandler {
-  return async (request) => {
-    if (request.toolName !== "FinalizePlan") {
-      return { behavior: "allow", updatedInput: request.input };
-    }
-
-    const parsed = parseFinalizePlanInput(request.input);
-    const updatedInput = await delegate({
-      ...parsed,
-      toolUseId: request.toolUseId,
-    });
-    return { behavior: "allow", updatedInput };
-  };
+export interface FinalizePlanSubmission {
+  analysis: string;
+  plan: string;
 }
 
+export const FINALIZE_PLAN_MCP_SERVER_NAME = "eco_plan";
+export const FINALIZE_PLAN_MCP_TOOL_NAME = "finalize_plan";
+export const FINALIZE_PLAN_ALLOWED_TOOL = `mcp__${FINALIZE_PLAN_MCP_SERVER_NAME}__${FINALIZE_PLAN_MCP_TOOL_NAME}`;
+
+export async function createFinalizePlanMcpServer(
+  onSubmit: (submission: FinalizePlanSubmission) => void,
+): Promise<unknown> {
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const zod = await import("zod");
+  const { tool, createSdkMcpServer } = sdk;
+  const { z } = zod;
+
+  const finalizePlanTool = tool(
+    FINALIZE_PLAN_MCP_TOOL_NAME,
+    "Submit the final implementation plan for Eco approval.",
+    {
+      analysis: z.string().describe("Final analysis summary for this plan."),
+      plan: z.string().describe("Decision-complete implementation plan."),
+    },
+    async (args) => {
+      const parsed = parseFinalizePlanInput({
+        analysis: args.analysis,
+        plan: args.plan,
+      });
+      onSubmit({
+        analysis: parsed.analysis,
+        plan: parsed.plan,
+      });
+      return {
+        content: [{ type: "text", text: "Plan submission accepted." }],
+        structuredContent: {
+          analysis: parsed.analysis,
+          plan: parsed.plan,
+        },
+      };
+    },
+  );
+
+  return createSdkMcpServer({
+    name: FINALIZE_PLAN_MCP_SERVER_NAME,
+    version: "1.0.0",
+    tools: [finalizePlanTool],
+  });
+}

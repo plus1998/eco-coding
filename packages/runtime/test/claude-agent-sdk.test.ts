@@ -189,10 +189,10 @@ test("builds phased orchestration prompts", () => {
 
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("turn 1");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("FinalizePlan");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("mcp__eco_plan__finalize_plan");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do NOT call FinalizePlan");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
@@ -770,12 +770,15 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
   });
 });
 
-test("ClaudeAgentSdkDriver emits plan.ready from FinalizePlan tool input", async () => {
+test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
-      query: () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
         async *[Symbol.asyncIterator]() {
           yield {
             type: "system",
@@ -784,56 +787,42 @@ test("ClaudeAgentSdkDriver emits plan.ready from FinalizePlan tool input", async
             uuid: "init-plan",
           };
           yield {
-            type: "assistant",
-            uuid: "assistant-plan",
-            session_id: "sess-plan",
-            message: {
-              content: [
-                {
-                  type: "tool_use",
-                  id: "tool_plan_1",
-                  name: "FinalizePlan",
-                  input: {
-                    analysis: "Need to update CSS and docs.",
-                    plan: "1. Update styles\n2. Update docs",
-                  },
-                },
-              ],
-            },
-          };
-          yield {
             type: "result",
             subtype: "success",
             session_id: "sess-plan",
             uuid: "result-plan",
           };
-        },
-        close: () => {},
-      }),
+          },
+          close: () => {},
+        };
+      },
     }),
   });
 
-  const events: string[] = [];
-  let payload: { analysis: string; plan: string; userPrompt?: string } | undefined;
-  for await (const event of driver.run({
-    threadId: "thr_plan",
-    prompt: "Add markdown rendering",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
-    events.push(event.type);
-    if (event.type === "plan.ready") {
-      payload = event.payload as { analysis: string; plan: string };
+  let error: unknown;
+  try {
+    for await (const event of driver.run({
+      threadId: "thr_plan_tool",
+      prompt: "Add markdown rendering",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    })) {
+      void event;
     }
+  } catch (caught) {
+    error = caught;
   }
-
-  expect(events).toContain("plan.ready");
-  expect(payload).toMatchObject({
-    analysis: "Need to update CSS and docs.",
-    plan: "1. Update styles\n2. Update docs",
-  });
+  expect(capturedOptions[0]?.allowedTools).toContain("mcp__eco_plan__finalize_plan");
+  expect(capturedOptions[0]?.mcpServers).toBeDefined();
+  expect(
+    Object.prototype.hasOwnProperty.call(
+      (capturedOptions[0]?.mcpServers ?? {}) as Record<string, unknown>,
+      "eco_plan",
+    ),
+  ).toBe(true);
+  expect(String(error)).toContain("未提交 FinalizePlan");
 });
 
 test("ClaudeAgentSdkDriver planning fails without FinalizePlan", async () => {
