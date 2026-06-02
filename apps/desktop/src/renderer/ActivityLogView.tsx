@@ -1110,6 +1110,11 @@ function RunLogNarrative({
   const hasBody = text.trim().length > 0;
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
   const showSubagentBadge = subagent && !omitSubagentBadge;
+  const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
+
+  if (clarificationRows) {
+    return <ClarificationAnswersCard rows={clarificationRows} />;
+  }
 
   return (
     <div className={compact ? "run-log-narrative compact" : "run-log-narrative"}>
