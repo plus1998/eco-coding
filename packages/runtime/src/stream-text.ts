@@ -39,6 +39,31 @@ function mergeWithSuffixPrefixOverlap(previous: string, incoming: string): strin
   return null;
 }
 
+/** Common English function words that start a new token when streamed as a delta. */
+const STREAM_WORD_BOUNDARY = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "in",
+  "is",
+  "it",
+  "me",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "we",
+  "with",
+]);
+
 function needsWordSeparator(previous: string, incoming: string): boolean {
   const last = previous.at(-1);
   const first = incoming.at(0);
@@ -55,7 +80,41 @@ function needsWordSeparator(previous: string, incoming: string): boolean {
   if (!/[A-Za-z0-9]/.test(last) || !/[A-Za-z0-9]/.test(first)) {
     return false;
   }
-  return !looksLikeIdentifierContinuation(previous, incoming);
+  if (looksLikeIdentifierContinuation(previous, incoming)) {
+    return false;
+  }
+  if (looksLikeLowercaseWordContinuation(previous, incoming)) {
+    return false;
+  }
+  return true;
+}
+
+/** SDK deltas can split plain lowercase words (sorter → "s" + "orter", modulo → "mod" + "ulo"). */
+function looksLikeLowercaseWordContinuation(previous: string, incoming: string): boolean {
+  const incomingWord = incoming.match(/^[a-z]+/)?.[0];
+  if (!incomingWord) {
+    return false;
+  }
+  const lastWord = previous.match(/[A-Za-z0-9_]+$/)?.[0] ?? "";
+  if (!lastWord || lastWord !== lastWord.toLowerCase()) {
+    return false;
+  }
+  if (STREAM_WORD_BOUNDARY.has(incomingWord)) {
+    return false;
+  }
+  if (lastWord.length === 1) {
+    return true;
+  }
+  if (incomingWord.length < 3) {
+    return true;
+  }
+  if (lastWord.length < 3 && incomingWord.length < 5) {
+    return true;
+  }
+  if (lastWord.length < 4 && incomingWord.length < 4) {
+    return true;
+  }
+  return false;
 }
 
 function looksLikeIdentifierContinuation(previous: string, incoming: string): boolean {

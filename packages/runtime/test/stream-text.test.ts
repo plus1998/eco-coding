@@ -30,6 +30,19 @@ test("does not add space before punctuation", () => {
   expect(mergeStreamText("setup", ".")).toBe("setup.");
 });
 
+test("does not split lowercase words across arbitrary stream chunks", () => {
+  expect(mergeStreamText("s", "orter")).toBe("sorter");
+  expect(mergeStreamText("sort", "er")).toBe("sorter");
+  expect(mergeStreamText("mod", "ulo")).toBe("modulo");
+  expect(mergeStreamText("新增 s", "orter: true")).toBe("新增 sorter: true");
+
+  let text = "";
+  for (const chunk of ["s", "ort", "er"]) {
+    text = mergeStreamText(text, chunk);
+  }
+  expect(text).toBe("sorter");
+});
+
 test("does not split camelCase or PascalCase identifiers across stream chunks", () => {
   expect(mergeStreamText("is", "Ad")).toBe("isAd");
   expect(mergeStreamText("isAd", "qx")).toBe("isAdqx");
