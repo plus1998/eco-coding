@@ -3,6 +3,7 @@ import {
   buildThreadTitleUserMessage,
   sanitizeThreadTitle,
   summarizeThreadTitleWithCoder,
+  threadTitleFromPlannerPlan,
 } from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
@@ -41,7 +42,37 @@ const routes: AnthropicProxyRoute[] = [
   },
 ];
 
-test("summarizes thread title through the coder route", async () => {
+test("threadTitleFromPlannerPlan uses plan heading with colon", () => {
+  const title = threadTitleFromPlannerPlan(
+    "## 实现计划：商品描述支持 Markdown 渲染\n\n- 改组件",
+    "实现商品描述",
+  );
+  expect(title).toBe("商品描述支持 Markdown 渲染");
+});
+
+test("threadTitleFromPlannerPlan uses Summary section", () => {
+  const title = threadTitleFromPlannerPlan(
+    `## Implementation Plan
+
+## Summary
+Add export filters to the orders API.
+
+## Key Changes
+- Update handler`,
+    "实现导出筛选",
+  );
+  expect(title).toBe("Add export filters to the orders API.");
+});
+
+test("threadTitleFromPlannerPlan uses first plan bullet", () => {
+  const title = threadTitleFromPlannerPlan(
+    "## Implementation Plan\n\n1. Read styles.css\n2. Add editor block",
+    "改样式",
+  );
+  expect(title).toBe("Read styles.css");
+});
+
+test("summarizes thread title through the coder route when no plan", async () => {
   const calls: Array<{ url: string; body: { model: string } }> = [];
   const title = await summarizeThreadTitleWithCoder(routes, "实现 TODO 列表", async (url, init) => {
     const body = JSON.parse(String(init?.body)) as { model: string };

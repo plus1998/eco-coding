@@ -1,3 +1,4 @@
+import { extractPhaseDeliverable } from "@eco/runtime";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 
@@ -13,6 +14,67 @@ export interface ThreadTitleContext {
 }
 
 const TITLE_CONTEXT_MAX_CHARS = 500;
+
+const PLAN_HEADING_WITH_TITLE =
+  /^#{1,3}\s*(?:实现计划|Implementation\s+Plan|Plan)\s*[：:]\s*(.+)$/im;
+const PLAN_HEADING_LINE = /^#{1,3}\s*(?:实现计划|Implementation\s+Plan|Plan)\s*$/im;
+const SUMMARY_SECTION = /(?:^|\n)#{1,3}\s*Summary\s*\n+([\s\S]*?)(?=\n#{1,3}\s+|\s*$)/i;
+
+/** Derive sidebar title from planner-submitted plan markdown (no extra model call). */
+export function threadTitleFromPlannerPlan(plan: string, prompt: string): string | undefined {
+  const body = extractPhaseDeliverable(plan, "plan").trim() || plan.trim();
+  if (!body) {
+    return undefined;
+  }
+
+  const colonHeading = body.match(PLAN_HEADING_WITH_TITLE);
+  if (colonHeading?.[1]?.trim()) {
+    return sanitizeThreadTitle(colonHeading[1].trim(), prompt);
+  }
+
+  const summaryMatch = body.match(SUMMARY_SECTION);
+  if (summaryMatch?.[1]) {
+    const fromSummary = firstMeaningfulPlanLine(summaryMatch[1]);
+    if (fromSummary) {
+      return sanitizeThreadTitle(fromSummary, prompt);
+    }
+  }
+
+  const afterPlanHeading = body.replace(PLAN_HEADING_LINE, "").trimStart();
+  const candidate =
+    firstMeaningfulPlanLine(afterPlanHeading !== body ? afterPlanHeading : body) ??
+    firstMeaningfulPlanLine(body);
+  if (candidate) {
+    return sanitizeThreadTitle(candidate, prompt);
+  }
+
+  return undefined;
+}
+
+function firstMeaningfulPlanLine(section: string): string | undefined {
+  for (const raw of section.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      continue;
+    }
+    if (/^#{1,6}\s/.test(line)) {
+      continue;
+    }
+    if (/^```/.test(line) || /^---+$/.test(line)) {
+      continue;
+    }
+    const bullet = line.match(/^[-*•]\s+(.+)$/);
+    if (bullet?.[1]?.trim()) {
+      return bullet[1].trim();
+    }
+    const numbered = line.match(/^\d+\.\s+(.+)$/);
+    if (numbered?.[1]?.trim()) {
+      return numbered[1].trim();
+    }
+    return line;
+  }
+  return undefined;
+}
 
 export function buildThreadTitleUserMessage(prompt: string, context?: ThreadTitleContext): string {
   const parts = [`请为下面的编码任务生成标题，中文不超过 18 个字，英文不超过 6 个词：`, "", prompt.trim()];

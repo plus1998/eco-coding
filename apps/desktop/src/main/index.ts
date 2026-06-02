@@ -99,7 +99,11 @@ import {
   computeRouteFingerprint,
   routesMatchFingerprint,
 } from "../shared/route-fingerprint";
-import { pendingThreadTitle, summarizeThreadTitleWithCoder } from "./thread-title";
+import {
+  pendingThreadTitle,
+  summarizeThreadTitleWithCoder,
+  threadTitleFromPlannerPlan,
+} from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
@@ -984,24 +988,34 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function applyThreadTitleSummary(threadId: string, prompt: string, title: string | undefined): void {
+  if (!title) {
+    return;
+  }
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || thread.prompt !== prompt || thread.title === title) {
+    return;
+  }
+
+  conversationStore.updateThreadTitle(threadId, title);
+  emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
+}
+
 function scheduleThreadTitleSummary(
   threadId: string,
   prompt: string,
   runtimeConfig: RuntimeConfig,
   context?: { plan?: string; analysis?: string },
 ): void {
+  const planText = context?.plan?.trim();
+  if (planText) {
+    applyThreadTitleSummary(threadId, prompt, threadTitleFromPlannerPlan(planText, prompt));
+    return;
+  }
+
   void summarizeThreadTitleWithCoder(runtimeConfig.routes, prompt, fetch, context)
     .then((title) => {
-      if (!title) {
-        return;
-      }
-      const thread = conversationStore.getThread(threadId);
-      if (!thread || thread.prompt !== prompt || thread.title === title) {
-        return;
-      }
-
-      conversationStore.updateThreadTitle(threadId, title);
-      emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
+      applyThreadTitleSummary(threadId, prompt, title);
     })
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
