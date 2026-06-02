@@ -189,9 +189,10 @@ test("builds phased orchestration prompts", () => {
 
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("turn 1");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("FinalizePlan");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Implementation Plan");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do NOT call FinalizePlan");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
@@ -767,4 +768,122 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
     preset: "claude_code",
     excludeDynamicSections: true,
   });
+});
+
+test("ClaudeAgentSdkDriver emits plan.ready from FinalizePlan tool input", async () => {
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-plan",
+            uuid: "init-plan",
+          };
+          yield {
+            type: "assistant",
+            uuid: "assistant-plan",
+            session_id: "sess-plan",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tool_plan_1",
+                  name: "FinalizePlan",
+                  input: {
+                    analysis: "Need to update CSS and docs.",
+                    plan: "1. Update styles\n2. Update docs",
+                  },
+                },
+              ],
+            },
+          };
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-plan",
+            uuid: "result-plan",
+          };
+        },
+        close: () => {},
+      }),
+    }),
+  });
+
+  const events: string[] = [];
+  let payload: { analysis: string; plan: string; userPrompt?: string } | undefined;
+  for await (const event of driver.run({
+    threadId: "thr_plan",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push(event.type);
+    if (event.type === "plan.ready") {
+      payload = event.payload as { analysis: string; plan: string };
+    }
+  }
+
+  expect(events).toContain("plan.ready");
+  expect(payload).toMatchObject({
+    analysis: "Need to update CSS and docs.",
+    plan: "1. Update styles\n2. Update docs",
+  });
+});
+
+test("ClaudeAgentSdkDriver planning fails without FinalizePlan", async () => {
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-plan-missing",
+            uuid: "init-plan-missing",
+          };
+          yield {
+            type: "assistant",
+            uuid: "assistant-plan-missing",
+            session_id: "sess-plan-missing",
+            message: {
+              content: [{ type: "text", text: "Here is analysis only." }],
+            },
+          };
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-plan-missing",
+            uuid: "result-plan-missing",
+          };
+        },
+        close: () => {},
+      }),
+    }),
+  });
+
+  let error: unknown;
+  try {
+    for await (const _event of driver.run({
+      threadId: "thr_plan_missing",
+      prompt: "Plan this feature",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    })) {
+      // drain
+    }
+  } catch (caught) {
+    error = caught;
+  }
+
+  expect(String(error)).toContain("未提交 FinalizePlan");
 });

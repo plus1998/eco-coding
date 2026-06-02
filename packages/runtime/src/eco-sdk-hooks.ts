@@ -11,6 +11,7 @@ import type {
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
+import { parseFinalizePlanInput, type SdkFinalizePlanRequest } from "./finalize-plan";
 import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
   isSubagentEnabled,
@@ -33,6 +34,9 @@ export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   askUserQuestion?: (
     request: SdkAskUserQuestionRequest & { toolUseId: string },
+  ) => Promise<Record<string, unknown>>;
+  finalizePlan?: (
+    request: SdkFinalizePlanRequest & { toolUseId: string },
   ) => Promise<Record<string, unknown>>;
   taskTracker?: EcoTaskTrackerHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
@@ -72,6 +76,39 @@ export function createAskUserQuestionPreToolHook(
 
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
     const parsed = parseAskUserQuestionInput(toolInput);
+    const updatedInput = await delegate({
+      ...parsed,
+      toolUseId: toolUseID ?? preInput.tool_use_id,
+    });
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput,
+      },
+    };
+  };
+}
+
+export function createFinalizePlanPreToolHook(
+  delegate: EcoHookContext["finalizePlan"],
+): HookCallback | undefined {
+  if (!delegate) {
+    return undefined;
+  }
+
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "FinalizePlan") {
+      return {};
+    }
+
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const parsed = parseFinalizePlanInput(toolInput);
     const updatedInput = await delegate({
       ...parsed,
       toolUseId: toolUseID ?? preInput.tool_use_id,
@@ -300,6 +337,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
 
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
+  pushHook(hooks, "PreToolUse", createFinalizePlanPreToolHook(ctx.finalizePlan), "FinalizePlan");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent");
   pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent");
 

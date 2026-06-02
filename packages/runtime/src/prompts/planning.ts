@@ -22,10 +22,10 @@ export function buildPlanningPhasePrompt(
     "Required for this turn:",
     `1. Explore the worktree first (${explore}).`,
     "2. Call AskUserQuestion with material clarifications — do not skip because the request looks detailed.",
-    "3. Do NOT output ## Implementation Plan or ## 实现计划 on this turn.",
+    "3. Do NOT call FinalizePlan on this turn.",
     "",
-    "Optional: brief ## Analysis Result after exploration.",
-    "Final ## Implementation Plan only on a later turn after questions are resolved (see Eco turn-order rules in system context).",
+    "Optional: brief analysis summary in plain text after exploration.",
+    "Final plan submission is only allowed on a later turn via FinalizePlan (see Eco turn-order rules in system context).",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }
@@ -41,8 +41,8 @@ export function buildPlanningContinuationPrompt(
     "",
     `You are still in Eco Plan Mode. ${buildPlanningContinuationExploreHint(availability)}`,
     "",
-    "When the spec is decision-complete, output optional `## Analysis Result` / `## 分析结果` then a **complete replacement**",
-    "`## Implementation Plan` / `## 实现计划` (full plan, not a delta patch vs any earlier draft).",
+    "When the spec is decision-complete, call `FinalizePlan` once with a **complete replacement** plan (not a delta patch).",
+    "FinalizePlan input must include `analysis` and `plan` as full strings.",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
+  createFinalizePlanPreToolHook,
   createDisabledSubagentPreToolHook,
   createReviewerScopePreToolHook,
   createTaskToolPreToolHook,
@@ -31,6 +32,33 @@ test("createAskUserQuestionPreToolHook returns updated input", async () => {
     hookEventName: "PreToolUse",
     permissionDecision: "allow",
     updatedInput: { questions: [{ question: "Q", answer: "REST" }] },
+  });
+});
+
+test("createFinalizePlanPreToolHook returns updated input", async () => {
+  const hook = createFinalizePlanPreToolHook(async () => ({
+    analysis: "normalized analysis",
+    plan: "normalized plan",
+  }));
+  expect(hook).toBeDefined();
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "FinalizePlan",
+      tool_input: { analysis: "  a  ", plan: "  p " },
+      tool_use_id: "tool_fp_1",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_fp_1",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "allow",
+    updatedInput: { analysis: "normalized analysis", plan: "normalized plan" },
   });
 });
 

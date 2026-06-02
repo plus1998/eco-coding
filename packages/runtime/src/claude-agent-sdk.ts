@@ -14,7 +14,7 @@ import type {
   EcoSdkSessionOptions,
 } from "./index";
 import type { SessionStore } from "../../persistence/src/session-store.js";
-import { extractPlanningDeliverables } from "./phase-deliverable";
+import { parseFinalizePlanInput } from "./finalize-plan";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
 import { mergeStreamText } from "./stream-text";
@@ -75,7 +75,7 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
-const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion"] as const;
+const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion", "FinalizePlan"] as const;
 const questionAllowedTools = ["Agent", "Read", "Glob", "Grep"] as const;
 const planningPermissionMode = "default" as const;
 const defaultSettingSources = ["user", "project"] as const;
@@ -167,6 +167,11 @@ export interface SdkToolPermissionRequest {
 export type SdkToolPermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
   | { behavior: "deny"; message: string; interrupt?: boolean };
+
+interface FinalizePlanPayload {
+  analysis: string;
+  plan: string;
+}
 
 export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
@@ -266,12 +271,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (input.signal.aborted) {
         return;
       }
-
-      const { analysis, plan } = extractPlanningDeliverables(planningTranscript);
+      const finalizedPlan = planningTranscript.finalizedPlan;
+      if (!finalizedPlan) {
+        throw new Error("未提交 FinalizePlan，无法生成可执行计划。");
+      }
       yield createPlanReadyEvent(input.threadId, {
         userPrompt: input.prompt,
-        analysis,
-        plan,
+        analysis: finalizedPlan.analysis,
+        plan: finalizedPlan.plan,
       });
       return;
     }
@@ -328,13 +335,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (input.signal.aborted) {
       return;
     }
-
-    const { analysis, plan } = extractPlanningDeliverables(planningTranscript);
+    const finalizedPlan = planningTranscript.finalizedPlan;
+    if (!finalizedPlan) {
+      throw new Error("未提交 FinalizePlan，无法生成可执行计划。");
+    }
 
     yield createPlanReadyEvent(input.threadId, {
       userPrompt: input.prompt,
-      analysis,
-      plan,
+      analysis: finalizedPlan.analysis,
+      plan: finalizedPlan.plan,
     });
   }
 
@@ -349,7 +358,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       maxTurns?: number;
       availability?: SubagentAvailability;
     },
-  ): AsyncGenerator<AgentEvent, string> {
+  ): AsyncGenerator<AgentEvent, { transcript: string; finalizedPlan?: FinalizePlanPayload }> {
     const sdk = await this.loadSdk();
     const plannerRoute = findRoute(input.routes, "planner") ?? input.routes[0];
     if (!plannerRoute) {
@@ -427,6 +436,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
 
     let transcript = "";
+    let finalizedPlan: FinalizePlanPayload | undefined;
     let sessionCaptured = false;
     const streamCtx = createSdkStreamContext();
     for await (const message of query) {
@@ -441,6 +451,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
+        const planFromEvent = extractFinalizePlanFromEvent(event);
+        if (planFromEvent) {
+          finalizedPlan = planFromEvent;
+        }
       }
 
       if (input.signal.aborted) {
@@ -448,7 +462,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }
     }
 
-    return transcript.trim();
+    return { transcript: transcript.trim(), ...(finalizedPlan ? { finalizedPlan } : {}) };
   }
 
   private async *runSlashCommand(
@@ -459,13 +473,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (!input.resume?.resumeSessionId) {
       throw new Error(`${command} requires an existing SDK session (resume).`);
     }
-    yield* this.runSingleSession(input, {
+    const result = yield* this.runSingleSession(input, {
       prompt: command,
       permissionMode: options.permissionMode,
       allowedTools: [],
       phaseAppend: "",
       maxTurns: 1,
     });
+    return result.transcript;
   }
 
   private async loadSdk(): Promise<ClaudeAgentSdkModule> {
@@ -1199,6 +1214,23 @@ function inferRole(message: Record<string, unknown>): AgentRole {
 
 function isAgentRole(value: string): value is AgentRole {
   return ["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(value);
+}
+
+function extractFinalizePlanFromEvent(event: AgentEvent): FinalizePlanPayload | undefined {
+  if (event.type !== "tool.started" || !isRecord(event.payload)) {
+    return undefined;
+  }
+  if (event.payload.tool_name !== "FinalizePlan" || !isRecord(event.payload.input)) {
+    return undefined;
+  }
+  const parsed = parseFinalizePlanInput(event.payload.input);
+  if (!parsed.plan) {
+    return undefined;
+  }
+  return {
+    analysis: parsed.analysis,
+    plan: parsed.plan,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
