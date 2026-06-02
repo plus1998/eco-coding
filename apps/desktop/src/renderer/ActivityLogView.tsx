@@ -866,6 +866,10 @@ function AssistantMessageBlock({
   if (clarificationRows) {
     return <ClarificationAnswersCard rows={clarificationRows} />;
   }
+  const worktreeMergeSummary = parseWorktreeMergeSummary(text);
+  if (worktreeMergeSummary) {
+    return <WorktreeMergeCard summary={worktreeMergeSummary} />;
+  }
   return (
     <RunLogNarrative
       text={text}
@@ -920,6 +924,58 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+type WorktreeMergeSummary = {
+  fileCount: number;
+  files: string[];
+};
+
+const WORKTREE_MERGE_MESSAGE_PATTERN =
+  /^已合并\s*(\d+)\s*个文件的更改到工作区（未自动提交）[：:]\s*(.*)$/u;
+
+function parseWorktreeMergeSummary(text: string): WorktreeMergeSummary | null {
+  const trimmed = text.trim();
+  const match = WORKTREE_MERGE_MESSAGE_PATTERN.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+  const fileCount = Number.parseInt(match[1] ?? "0", 10);
+  if (!Number.isFinite(fileCount) || fileCount < 0) {
+    return null;
+  }
+  const rawFiles = (match[2] ?? "").trim();
+  const files = rawFiles
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return { fileCount, files };
+}
+
+function WorktreeMergeCard({ summary }: { summary: WorktreeMergeSummary }) {
+  const hasFiles = summary.files.length > 0;
+  return (
+    <div className="worktree-merge-card" role="status" aria-label="工作区变更已合并">
+      <div className="worktree-merge-header">
+        <span className="worktree-merge-title">已应用到工作区</span>
+        <span className="worktree-merge-status">未自动提交</span>
+      </div>
+      <p className="worktree-merge-count">
+        <strong>{summary.fileCount}</strong>
+        <span>个文件变更已合并</span>
+      </p>
+      {hasFiles ? (
+        <div className="worktree-merge-files">
+          <p className="worktree-merge-files-label">涉及文件</p>
+          <ul className="worktree-merge-files-list">
+            {summary.files.map((file) => (
+              <li key={file}>{file}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1111,9 +1167,13 @@ function RunLogNarrative({
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
+  const worktreeMergeSummary = !streaming ? parseWorktreeMergeSummary(text) : null;
 
   if (clarificationRows) {
     return <ClarificationAnswersCard rows={clarificationRows} />;
+  }
+  if (worktreeMergeSummary) {
+    return <WorktreeMergeCard summary={worktreeMergeSummary} />;
   }
 
   return (
