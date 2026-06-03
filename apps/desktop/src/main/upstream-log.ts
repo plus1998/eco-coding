@@ -38,16 +38,46 @@ export function announceUpstreamLogDestination(extra?: Record<string, unknown>):
   });
 }
 
-export function headersToLoggable(headers: Headers): Record<string, string> {
+type LoggableHeadersInput =
+  | Headers
+  | Record<string, string | string[] | undefined>;
+
+function appendLoggableHeader(
+  result: Record<string, string>,
+  key: string,
+  value: string,
+): void {
+  const lower = key.toLowerCase();
+  if (lower === "x-api-key" || lower === "authorization") {
+    result[key] = redactSecret(value);
+    return;
+  }
+  result[key] = value;
+}
+
+/** Accepts fetch `Headers` or plain header maps (e.g. from `buildOpenAIHeaders`). */
+export function headersToLoggable(headers: LoggableHeadersInput): Record<string, string> {
   const result: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    const lower = key.toLowerCase();
-    if (lower === "x-api-key" || lower === "authorization") {
-      result[key] = redactSecret(value);
-      return;
+
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      appendLoggableHeader(result, key, value);
+    });
+    return result;
+  }
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) {
+      continue;
     }
-    result[key] = value;
-  });
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        appendLoggableHeader(result, key, entry);
+      }
+    } else {
+      appendLoggableHeader(result, key, value);
+    }
+  }
   return result;
 }
 
