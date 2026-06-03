@@ -1,0 +1,39 @@
+appId: com.eco.coding
+productName: Eco Coding
+copyright: Copyright © Eco Coding
+
+directories:
+  output: release
+  buildResources: packaging
+
+files:
+  - dist/**/*
+  - package.json
+
+asar: true
+asarUnpack:
+  - "**/node_modules/@anthropic-ai/**"
+
+npmRebuild: false
+nodeGypRebuild: false
+
+mac:
+  # Set CSC_NAME or identity to your Developer ID for distribution builds.
+  identity: null
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  artifactName: Eco-Coding-${version}-mac-arm64.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Eco-Coding-${version}-win-x64.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

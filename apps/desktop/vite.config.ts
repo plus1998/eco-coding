@@ -4,6 +4,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
   root: ".",
+  // Relative paths so loadFile(file://...) resolves assets next to index.html in packaged app.
+  base: "./",
   build: {
     outDir: "dist/renderer",
     emptyOutDir: true,

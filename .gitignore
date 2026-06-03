@@ -2,6 +2,7 @@
 node_modules/
 dist/
 build/
+apps/desktop/release/
 coverage/
 .turbo/
 .vite/

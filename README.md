@@ -21,6 +21,24 @@ Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the op
 
 Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you need better prompt-cache reuse across threads with different worktree paths (trades slightly weaker in-system cwd emphasis for cache hits).
 
+## Build & package
+
+```bash
+# Development
+bun run dev
+
+# Compile renderer + main + preload
+bun run build
+
+# Installers (run from repo root)
+bun run pack:mac-arm64   # macOS Apple Silicon → apps/desktop/release/Eco-Coding-*-mac-arm64.dmg
+bun run pack:win-x64     # Windows x64 NSIS → apps/desktop/release/Eco-Coding-*-win-x64.exe
+```
+
+macOS packages are unsigned by default (`identity: null` in `apps/desktop/electron-builder.yml`). For distribution, set a valid `CSC_NAME` / Developer ID and adjust signing in that file.
+
+Windows installers can be built on macOS (electron-builder downloads the Windows Electron binary). The Claude Agent SDK native CLI for Windows is included via optional dependency `@anthropic-ai/claude-agent-sdk-win32-x64`.
+
 ## Repository shape
 
 ```txt

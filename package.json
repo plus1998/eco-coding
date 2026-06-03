@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "build": "bun run --cwd apps/desktop build",
+    "pack:mac-arm64": "bun run --cwd apps/desktop pack:mac-arm64",
+    "pack:win-x64": "bun run --cwd apps/desktop pack:win-x64",
+    "pack": "bun run --cwd apps/desktop pack",
     "test": "bun test",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",

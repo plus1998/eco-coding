@@ -1,6 +1,8 @@
 {
   "name": "@eco/desktop",
   "version": "0.0.0",
+  "description": "Eco Coding desktop app",
+  "author": "Eco Coding",
   "type": "module",
   "private": true,
   "main": "dist/main/index.js",
@@ -9,16 +11,30 @@
     "dev:renderer": "vite --host 127.0.0.1 --strictPort",
     "dev:electron": "node scripts/dev.mjs",
     "build": "vite build && bun run build:main && bun run build:preload",
-    "build:main": "bun build src/main/index.ts --target=node --external electron --outdir dist/main",
-    "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs"
+    "build:main": "bun build src/main/index.ts --target=node --external electron --external @anthropic-ai/claude-agent-sdk --outdir dist/main",
+    "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
+    "pack": "bun run build && electron-builder",
+    "pack:mac-arm64": "bun run build && electron-builder --mac dmg --arm64",
+    "pack:win-x64": "bun run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.153",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.153",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.153"
+  },
+  "devDependencies": {
     "@eco/model-router": "workspace:*",
     "@eco/persistence": "workspace:*",
     "@eco/runtime": "workspace:*",
     "@eco/workspace": "workspace:*",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.0.0",
+    "electron-builder": "^26.0.12",
     "framer-motion": "^12.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
@@ -27,9 +43,5 @@
     "remark-gfm": "^4.0.1",
     "vite": "^7.0.0",
     "zustand": "^5.0.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0"
   }
 }
