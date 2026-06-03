@@ -253,7 +253,7 @@ test("planning agents include read-only explore subagent", () => {
   expect(definitions.explore).toMatchObject({
     description: expect.stringContaining("read-only"),
     prompt: expect.stringContaining("read-only"),
-    tools: expect.arrayContaining(["Grep"]),
+    tools: ["Read", "Glob", "Grep"],
     model: "claude-haiku-explore",
   });
 });
@@ -938,21 +938,19 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
     }),
   });
 
-  let error: unknown;
-  try {
-    for await (const event of driver.run({
-      threadId: "thr_plan_tool",
-      prompt: "Add markdown rendering",
-      workspacePath: "/tmp/workspace",
-      worktreePath: "/tmp/worktree",
-      routes,
-      signal: new AbortController().signal,
-    })) {
-      void event;
-    }
-  } catch (caught) {
-    error = caught;
+  const events: Array<{ type: string }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_plan_tool",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type });
   }
+  expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
+  expect(capturedOptions[0]?.permissionMode).toBe("dontAsk");
   expect(capturedOptions[0]?.allowedTools).toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.mcpServers).toBeDefined();
   expect(
@@ -961,10 +959,10 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
       "eco_plan",
     ),
   ).toBe(true);
-  expect(String(error)).toContain("未提交 FinalizePlan");
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 
-test("ClaudeAgentSdkDriver planning fails without FinalizePlan", async () => {
+test("ClaudeAgentSdkDriver planning completes without FinalizePlan", async () => {
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
@@ -997,21 +995,17 @@ test("ClaudeAgentSdkDriver planning fails without FinalizePlan", async () => {
     }),
   });
 
-  let error: unknown;
-  try {
-    for await (const _event of driver.run({
-      threadId: "thr_plan_missing",
-      prompt: "Plan this feature",
-      workspacePath: "/tmp/workspace",
-      worktreePath: "/tmp/worktree",
-      routes,
-      signal: new AbortController().signal,
-    })) {
-      // drain
-    }
-  } catch (caught) {
-    error = caught;
+  const events: Array<{ type: string }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_plan_missing",
+    prompt: "Plan this feature",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type });
   }
 
-  expect(String(error)).toContain("未提交 FinalizePlan");
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });

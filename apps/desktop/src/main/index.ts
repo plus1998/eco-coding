@@ -1714,9 +1714,6 @@ async function runCodingThreadPlanning(
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
         }
-        if (!captured) {
-          return { ok: false, reason: "未能生成可执行的计划。" };
-        }
         return { ok: true };
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1740,10 +1737,17 @@ async function runCodingThreadPlanning(
       return;
     }
 
-    updateThread(thread.id, {
-      status: "awaiting_plan",
-      message: "等待你确认计划。",
-    });
+    if (conversationStore.getPendingPlan(thread.id)) {
+      updateThread(thread.id, {
+        status: "awaiting_plan",
+        message: "等待你确认计划。",
+      });
+    } else {
+      updateThread(thread.id, {
+        status: "idle",
+        message: "计划阶段已结束。",
+      });
+    }
     requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
@@ -3019,9 +3023,6 @@ async function runThreadContinuation(
         }
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
-        }
-        if (mode === "planning" && !planningPlanCaptured) {
-          return { ok: false, reason: "未能生成可执行的计划。" };
         }
         return { ok: true };
       } catch (error) {

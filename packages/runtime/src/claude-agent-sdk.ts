@@ -87,9 +87,17 @@ interface ClaudeAgentSdkModule {
 }
 
 const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
-const planningAllowedTools = ["Agent", "Read", "Glob", "Grep", "AskUserQuestion", FINALIZE_PLAN_ALLOWED_TOOL] as const;
+const planningAllowedTools = [
+  "Agent",
+  "Read",
+  "Glob",
+  "Grep",
+  "AskUserQuestion",
+  FINALIZE_PLAN_ALLOWED_TOOL,
+] as const;
 const questionAllowedTools = ["Agent", "Read", "Glob", "Grep"] as const;
-const planningPermissionMode = "default" as const;
+/** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
+const readOnlyPermissionMode = "dontAsk" as const;
 const defaultSettingSources = ["user", "project"] as const;
 
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
@@ -249,7 +257,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
     yield* this.runSingleSession(input, {
       prompt: buildQuestionAnswerPrompt(input.prompt, availability),
-      permissionMode: "default",
+      permissionMode: readOnlyPermissionMode,
       allowedTools: [...questionAllowedTools],
       phaseAppend: buildQuestionAnswerSystemAppend(availability),
       agents: createQuestionAgentDefinitions(
@@ -280,7 +288,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
       const planningTranscript = yield* this.runSingleSession(input, {
         prompt: buildPlanningContinuationPrompt(input.prompt, availability),
-        permissionMode: planningPermissionMode,
+        permissionMode: readOnlyPermissionMode,
         allowedTools: [...planningAllowedTools],
         phaseAppend: `${buildPlanningPhaseSystemAppend(availability)}${planningResumableAppend}`,
         agents: createPlanningAgentDefinitions(
@@ -294,16 +302,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         return;
       }
       const finalizedPlan = planningTranscript.finalizedPlan;
-      if (!finalizedPlan) {
-        throw new Error(
-          "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
-        );
+      if (finalizedPlan) {
+        yield createPlanReadyEvent(input.threadId, {
+          userPrompt: input.prompt,
+          analysis: finalizedPlan.analysis,
+          plan: finalizedPlan.plan,
+        });
       }
-      yield createPlanReadyEvent(input.threadId, {
-        userPrompt: input.prompt,
-        analysis: finalizedPlan.analysis,
-        plan: finalizedPlan.plan,
-      });
       return;
     }
 
@@ -360,7 +365,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
     const planningTranscript = yield* this.runSingleSession(input, {
       prompt: buildPlanningPhasePrompt(input.prompt, availability),
-      permissionMode: planningPermissionMode,
+      permissionMode: readOnlyPermissionMode,
       allowedTools: [...planningAllowedTools],
       phaseAppend: buildPlanningPhaseSystemAppend(availability),
       agents: createPlanningAgentDefinitions(
@@ -374,17 +379,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       return;
     }
     const finalizedPlan = planningTranscript.finalizedPlan;
-    if (!finalizedPlan) {
-      throw new Error(
-        "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
-      );
+    if (finalizedPlan) {
+      yield createPlanReadyEvent(input.threadId, {
+        userPrompt: input.prompt,
+        analysis: finalizedPlan.analysis,
+        plan: finalizedPlan.plan,
+      });
     }
-
-    yield createPlanReadyEvent(input.threadId, {
-      userPrompt: input.prompt,
-      analysis: finalizedPlan.analysis,
-      plan: finalizedPlan.plan,
-    });
   }
 
   private async *runSingleSession(
@@ -579,7 +580,7 @@ export function createPlanningAgentDefinitions(
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const exploreTools = ["Read", "Glob", "Grep", "Bash"];
+  const exploreTools = ["Read", "Glob", "Grep"];
 
   const definitions = {
     explore: {
@@ -611,7 +612,7 @@ export function createQuestionAgentDefinitions(
   const definitions = {
     explore: {
       description: exploreAgentDescription,
-      tools: ["Read", "Glob", "Grep", "Bash"],
+      tools: ["Read", "Glob", "Grep"],
       ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),

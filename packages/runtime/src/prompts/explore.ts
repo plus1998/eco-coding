@@ -8,7 +8,7 @@ export const exploreAgentPrompt = [
   "",
   "Constraints:",
   "- Do not create, edit, or delete files.",
-  "- Use Bash only for read-only inspection (e.g. ls, git status, git log -n).",
+  "- Use Read, Glob, and Grep only (no shell). Prefer Glob for file discovery and Grep for content search.",
   "- Adapt depth to the thoroughness level in the delegation prompt (quick | medium | very thorough).",
   "",
   "Output:",
