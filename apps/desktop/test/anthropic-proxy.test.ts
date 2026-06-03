@@ -16,6 +16,7 @@ test("resolves provider routes by local model alias", () => {
     role: "coder",
     provider,
     modelId: "qwen-coder",
+    apiCompat: "anthropic",
     aliasModelId: createModelAlias("coder", provider.id, "qwen-coder"),
   };
 
@@ -32,6 +33,7 @@ test("createModelAlias includes explore role", () => {
     role: "explore",
     provider,
     modelId: "qwen-explore",
+    apiCompat: "anthropic",
     aliasModelId: alias,
   };
   expect(resolveProxyRoute([route], alias)).toEqual(route);
@@ -43,6 +45,7 @@ test("lists alias and upstream model ids for SDK model discovery", () => {
     role: "planner",
     provider,
     modelId: "qwen-planner",
+    apiCompat: "anthropic",
     aliasModelId: createModelAlias("planner", provider.id, "qwen-planner"),
   };
 
@@ -132,6 +135,7 @@ function createProvider(
     name,
     baseUrl,
     requestPath,
+    apiCompat: "anthropic",
     defaultModel: "sonnet",
     enabled: true,
     hasApiKey: true,

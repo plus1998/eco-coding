@@ -5355,8 +5355,43 @@ button:not(:disabled) {
 }
 
 .models-route-card-modal .models-route-card-identity {
+  display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   white-space: nowrap;
+}
+
+.models-route-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.models-route-title-sep {
+  color: #525252;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+
+.models-route-card-title .api-compat-toggle {
+  width: 20px;
+  height: 20px;
+}
+
+.models-route-role-test-button {
+  min-height: 24px;
+  padding: 2px 8px;
+  gap: 4px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.models-route-role-test-button svg {
+  width: 12px;
+  height: 12px;
 }
 
 .models-route-card-modal .models-route-card-meta {
@@ -5417,6 +5452,94 @@ button:not(:disabled) {
 
 .models-route-list-modal .models-route-field-thinking {
   grid-column: 1 / -1;
+}
+
+.models-route-card-title .api-compat-toggle-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.models-provider-endpoint-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.models-provider-endpoint-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.models-provider-request-path-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.models-provider-endpoint-inline .api-compat-toggle {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+
+.api-compat-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.api-compat-toggle:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.api-compat-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.api-compat-toggle-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.api-compat-toggle:hover:not(:disabled) .api-compat-toggle-dot {
+  transform: scale(1.12);
+}
+
+.api-compat-toggle--anthropic .api-compat-toggle-dot {
+  background-color: #cc785c;
+  box-shadow:
+    0 0 0 2px rgba(204, 120, 92, 0.3),
+    0 0 10px rgba(204, 120, 92, 0.35);
+}
+
+.api-compat-toggle--openai-responses .api-compat-toggle-dot {
+  background-color: #10a37f;
+  box-shadow:
+    0 0 0 2px rgba(16, 163, 127, 0.3),
+    0 0 10px rgba(16, 163, 127, 0.35);
+}
+
+.api-compat-toggle--openai-chat-completions .api-compat-toggle-dot {
+  background-color: #0d7ae8;
+  box-shadow:
+    0 0 0 2px rgba(13, 122, 232, 0.3),
+    0 0 10px rgba(13, 122, 232, 0.35);
 }
 
 @media (max-width: 560px) {

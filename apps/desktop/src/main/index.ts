@@ -79,6 +79,7 @@ import {
   type WorktreeStatusResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
   extractCoderTasksFromActivity,
   mergeCoderTodoItems,
@@ -1723,6 +1724,7 @@ function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig
     role: route.role,
     providerId: route.provider.id,
     modelId: route.modelId,
+    apiCompat: route.apiCompat,
   }));
 }
 
@@ -3509,6 +3511,7 @@ interface RuntimeRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  apiCompat: import("../shared/api-compat").UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
 }
 
@@ -3563,6 +3566,7 @@ function resolveRuntimeConfig(
       role: route.role,
       provider,
       modelId: route.modelId,
+      apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
       ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
       ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
     };

@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeUpstreamApiCompat } from "../src/shared/api-compat";
 import {
+  buildChatCompletionsUrl,
   buildMessagesUrl,
+  buildOpenAICompatUpstreamUrl,
   buildModelsListUrl,
   buildProviderRequestBaseUrl,
   buildProviderTestRequestBody,
+  describeProviderCompatRouting,
   normalizeRequestPath,
   parseUpstreamModelsPayload,
+  resolveModelsListUrl,
   splitBaseUrlAndRequestPath,
   buildRouteTestDedupeKey,
   testProviderConnection,
@@ -59,6 +64,79 @@ describe("buildModelsListUrl", () => {
   test("includes service path prefix (OpenCode Zen)", () => {
     expect(buildModelsListUrl("https://opencode.ai/zen")).toBe("https://opencode.ai/zen/v1/models");
     expect(buildModelsListUrl("https://opencode.ai", "/zen")).toBe("https://opencode.ai/zen/v1/models");
+  });
+
+  test("strips OpenAI-compat endpoint suffixes from baseURL", () => {
+    expect(buildModelsListUrl("https://api.example.com/v1/chat/completions")).toBe(
+      "https://api.example.com/v1/models",
+    );
+    expect(buildModelsListUrl("https://api.example.com", "/v1/responses")).toBe(
+      "https://api.example.com/v1/models",
+    );
+  });
+
+  test("returns undefined when baseURL is empty", () => {
+    expect(buildModelsListUrl("")).toBeUndefined();
+    expect(buildModelsListUrl("  ")).toBeUndefined();
+  });
+});
+
+describe("resolveModelsListUrl", () => {
+  test("rejects empty base with clear error", () => {
+    const result = resolveModelsListUrl("", "/anthropic");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("baseURL");
+    }
+  });
+});
+
+describe("describeProviderCompatRouting", () => {
+  test("documents OpenAI Responses path when apiCompat is openai_responses", () => {
+    const routing = describeProviderCompatRouting(
+      "https://api.deepseek.com",
+      "/anthropic",
+      "openai_responses",
+    );
+    expect(routing.apiCompat).toBe("openai_responses");
+    expect(routing.chatApi).toBe("openai-v1-responses");
+    expect(routing.chatUrl).toBe("https://api.deepseek.com/v1/responses");
+  });
+
+  test("documents OpenAI Chat Completions path", () => {
+    const routing = describeProviderCompatRouting(
+      "https://api.deepseek.com",
+      "",
+      "openai_chat_completions",
+    );
+    expect(routing.chatApi).toBe("openai-v1-chat-completions");
+    expect(routing.chatUrl).toBe("https://api.deepseek.com/v1/chat/completions");
+  });
+
+  test("normalizes legacy openai apiCompat to openai_responses", () => {
+    expect(normalizeUpstreamApiCompat("openai")).toBe("openai_responses");
+  });
+
+  test("buildOpenAICompatUpstreamUrl prefers /v1/responses", () => {
+    expect(buildOpenAICompatUpstreamUrl("https://api.example.com", "/zen")).toBe(
+      "https://api.example.com/zen/v1/responses",
+    );
+  });
+
+  test("buildChatCompletionsUrl targets /v1/chat/completions", () => {
+    expect(buildChatCompletionsUrl("https://api.example.com", "/zen")).toBe(
+      "https://api.example.com/zen/v1/chat/completions",
+    );
+  });
+
+  test("documents Anthropic messages path vs OpenAI models list", () => {
+    const routing = describeProviderCompatRouting("https://api.deepseek.com", "/anthropic");
+    expect(routing.modelsDiscoveryApi).toBe("openai-get-v1-models");
+    expect(routing.chatApi).toBe("anthropic-v1-messages");
+    expect(routing.modelsListUrl).toBe("https://api.deepseek.com/v1/models");
+    expect(routing.chatUrl).toBe("https://api.deepseek.com/anthropic/v1/messages");
+    expect(routing.compatNotes.some((n) => n.includes("OpenAI"))).toBe(true);
+    expect(routing.compatNotes.some((n) => n.includes("Anthropic"))).toBe(true);
   });
 });
 
@@ -222,8 +300,10 @@ describe("testProviderConnection", () => {
 
 describe("buildRouteTestDedupeKey", () => {
   test("combines provider id and model id", () => {
-    expect(buildRouteTestDedupeKey("p1", "claude-sonnet")).toBe("p1:claude-sonnet");
-    expect(buildRouteTestDedupeKey(" p1 ", " claude-sonnet ")).toBe("p1:claude-sonnet");
+    expect(buildRouteTestDedupeKey("p1", "claude-sonnet", "anthropic")).toBe("p1:claude-sonnet:anthropic");
+    expect(buildRouteTestDedupeKey(" p1 ", " claude-sonnet ", "openai_responses")).toBe(
+      "p1:claude-sonnet:openai_responses",
+    );
   });
 });
 
@@ -237,6 +317,7 @@ describe("testRoleRoutes", () => {
               name: "Test",
               baseUrl: "https://api.example.com",
               requestPath: "",
+              apiCompat: "anthropic",
               apiKey: "key",
               enabled: true,
             }
@@ -282,6 +363,7 @@ describe("testRoleRoutes", () => {
               name: "Test",
               baseUrl: "https://api.example.com",
               requestPath: "",
+              apiCompat: "anthropic",
               apiKey: "key",
               enabled: true,
             }

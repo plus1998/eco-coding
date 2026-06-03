@@ -161,7 +161,9 @@ export function ModelSelectField({
       )}
 
       {error ? (
-        <p className="model-select-hint error">获取模型列表失败，可直接输入模型 ID，或点击刷新重试</p>
+        <p className="model-select-hint error">
+          获取模型列表失败：{error}。可直接输入模型 ID，或点击刷新重试。
+        </p>
       ) : null}
     </div>
   );

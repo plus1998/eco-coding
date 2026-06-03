@@ -1,7 +1,14 @@
 import { createHash, randomInt } from "node:crypto";
 import http, { type IncomingHttpHeaders } from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
+import {
+  isOpenAICompat,
+  resolveUpstreamApiCompat,
+  type UpstreamApiCompat,
+} from "../shared/api-compat";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
+import { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
+import { forwardMessagesViaOpenAICompat } from "./model-upstream-openai";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -18,6 +25,7 @@ export interface AnthropicProxyRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  apiCompat?: UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
 }
 
@@ -54,6 +62,7 @@ export interface AnthropicProxyStartOptions {
 
 export interface AnthropicProxyResolvedRoute extends AnthropicProxyRoute {
   aliasModelId: string;
+  apiCompat: UpstreamApiCompat;
 }
 
 export interface StartedAnthropicProxy {
@@ -79,6 +88,7 @@ export async function startAnthropicModelProxy(
     role: route.role,
     provider: route.provider,
     modelId: route.modelId,
+    apiCompat: resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
     aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
@@ -139,7 +149,34 @@ export async function startAnthropicModelProxy(
         pendingImages = [];
       }
 
-      applyThinkingToMessagesBody(body, route.thinkingEffort);
+      if (!isOpenAICompat(route.apiCompat)) {
+        applyThinkingToMessagesBody(body, route.thinkingEffort);
+      }
+
+      if (isOpenAICompat(route.apiCompat)) {
+        if (onMessagesRequest && isMessagesPath(request.url) && body.stream === true) {
+          onMessagesRequest({ role: route.role, modelId: route.modelId });
+        }
+        await forwardMessagesViaOpenAICompat(request, response, {
+          route,
+          body,
+          requestedModel,
+          onUsage: onUsage
+            ? (info) =>
+                onUsage({
+                  role: info.role,
+                  providerId: info.providerId,
+                  providerName: info.providerName,
+                  providerBaseUrl: info.providerBaseUrl,
+                  modelId: info.modelId,
+                  ...(info.requestedModel && { requestedModel: info.requestedModel }),
+                  ...(info.requestId && { requestId: info.requestId }),
+                  usage: info.usage,
+                })
+            : undefined,
+        });
+        return;
+      }
 
       await forwardAnthropicRequest(
         request,
@@ -181,6 +218,7 @@ export async function startAnthropicModelProxy(
       role: entry.role,
       alias: entry.aliasModelId,
       modelId: entry.modelId,
+      apiCompat: entry.apiCompat,
       provider: entry.provider.name,
     })),
   });
@@ -423,6 +461,7 @@ async function forwardAnthropicRequest(
       provider: route.provider.name,
       providerId: route.provider.id,
       baseUrl: route.provider.baseUrl,
+      apiCompat: route.apiCompat,
     },
     model: {
       sdkRequested: requestedModel,
@@ -547,116 +586,7 @@ function buildUsageInfo(
   };
 }
 
-export interface StreamingUsageTracker {
-  push(chunk: Uint8Array): void;
-  finish(): ParsedUsage | null;
-}
-
-export function createStreamingUsageTracker(): StreamingUsageTracker {
-  let buffer = "";
-  let latest: ParsedUsage | null = null;
-
-  const processBlock = (block: string) => {
-    const dataLines = block
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice("data:".length).trimStart());
-    if (dataLines.length === 0) {
-      return;
-    }
-    const data = dataLines.join("\n").trim();
-    if (!data || data === "[DONE]") {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(data) as unknown;
-      latest = mergeStreamingUsage(latest, extractUsageFromStreamEvent(parsed));
-    } catch {
-      // Ignore malformed third-party SSE chunks; the byte stream is still forwarded unchanged.
-    }
-  };
-
-  return {
-    push(chunk) {
-      buffer += Buffer.from(chunk).toString("utf8");
-      const parts = buffer.split(/\r?\n\r?\n/);
-      buffer = parts.pop() ?? "";
-      for (const part of parts) {
-        processBlock(part);
-      }
-    },
-    finish() {
-      if (buffer.trim()) {
-        processBlock(buffer);
-      }
-      return latest;
-    },
-  };
-}
-
-function extractUsageFromStreamEvent(event: unknown): ParsedUsage | null {
-  if (!isRecord(event)) {
-    return null;
-  }
-  if (isRecord(event.message)) {
-    const fromMessage = extractUsageFromResponseBody(event.message);
-    if (fromMessage) {
-      return fromMessage;
-    }
-  }
-  return extractUsageFromResponseBody(event);
-}
-
-export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null {
-  if (!isRecord(body)) {
-    return null;
-  }
-  const usage = isRecord(body.usage) ? body.usage : body;
-  const parsed = {
-    inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens"]),
-    outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens"]),
-    cacheReadTokens: readTokenCount(usage, [
-      "cache_read_input_tokens",
-      "cacheReadInputTokens",
-      "cache_read_tokens",
-    ]),
-    cacheCreationTokens: readTokenCount(usage, [
-      "cache_creation_input_tokens",
-      "cacheCreationInputTokens",
-      "cache_creation_tokens",
-    ]),
-  };
-  return usageTotal(parsed) > 0 ? parsed : null;
-}
-
-function mergeStreamingUsage(current: ParsedUsage | null, incoming: ParsedUsage | null): ParsedUsage | null {
-  if (!incoming) {
-    return current;
-  }
-  if (!current) {
-    return incoming;
-  }
-  return {
-    inputTokens: Math.max(current.inputTokens, incoming.inputTokens),
-    outputTokens: Math.max(current.outputTokens, incoming.outputTokens),
-    cacheReadTokens: Math.max(current.cacheReadTokens, incoming.cacheReadTokens),
-    cacheCreationTokens: Math.max(current.cacheCreationTokens, incoming.cacheCreationTokens),
-  };
-}
-
-function readTokenCount(usage: Record<string, unknown>, keys: string[]): number {
-  for (const key of keys) {
-    const value = usage[key];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-  }
-  return 0;
-}
-
-function usageTotal(usage: ParsedUsage): number {
-  return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
-}
+export { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
 
 function buildUpstreamHeaders(headers: IncomingHttpHeaders, apiKey: string): Headers {
   const upstreamHeaders = new Headers();

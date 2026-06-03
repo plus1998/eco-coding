@@ -126,12 +126,18 @@ export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
 }
 
+import type { UpstreamApiCompat } from "./api-compat";
+
+export type { UpstreamApiCompat };
+
 export interface ProviderConfigInput {
   id?: string;
   name: string;
   baseUrl: string;
   /** Path prefix for Anthropic-compatible API requests, e.g. `/anthropic`. */
   requestPath?: string;
+  /** Default upstream API for this provider (role routes may override). */
+  apiCompat?: UpstreamApiCompat;
   apiKey?: string;
   defaultModel: string;
   enabled: boolean;
@@ -142,6 +148,7 @@ export interface ProviderConfigView {
   name: string;
   baseUrl: string;
   requestPath: string;
+  apiCompat: UpstreamApiCompat;
   defaultModel: string;
   enabled: boolean;
   hasApiKey: boolean;
@@ -173,6 +180,8 @@ export interface RoleRouteConfig {
   role: AgentRole;
   providerId: string;
   modelId: string;
+  /** Overrides provider default when set. */
+  apiCompat?: UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;

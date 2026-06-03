@@ -7,12 +7,14 @@ import {
 } from "@eco/runtime";
 import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
   getActiveRoutes,
   type AgentRole,
   type ModelSettingsSnapshot,
   type ModelsDevMapping,
   type RoleRouteConfig,
+  type UpstreamApiCompat,
   type RouteCapabilityHint,
   type RouteManualSpec,
   type RoutePricingHint,
@@ -24,6 +26,7 @@ export interface RuntimeRoute {
   role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
+  apiCompat: UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
@@ -75,6 +78,7 @@ export function buildResolvedProxyRoutes(routes: readonly RuntimeRoute[]): Anthr
     role: route.role,
     provider: route.provider,
     modelId: route.modelId,
+    apiCompat: route.apiCompat,
     aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
   }));
@@ -200,6 +204,7 @@ export function resolveRuntimeRoutesFromSettings(
         role: route.role,
         provider,
         modelId: route.modelId,
+        apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
         ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
         ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
         ...(route.manualSpec && { manualSpec: route.manualSpec }),

@@ -8,7 +8,8 @@ export function computeRouteFingerprint(routes: readonly RoleRouteConfig[]): str
     if (!route) {
       return `${role}:`;
     }
-    return `${role}:${route.providerId}:${route.modelId.trim()}`;
+    const compat = route.apiCompat ?? "";
+    return `${role}:${route.providerId}:${route.modelId.trim()}:${compat}`;
   }).join("|");
 }
 

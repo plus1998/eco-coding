@@ -9,6 +9,7 @@
     { "path": "packages/terminal" },
     { "path": "packages/runtime" },
     { "path": "packages/agent" },
+    { "path": "packages/openai-anthropic-bridge" },
     { "path": "apps/desktop" }
   ]
 }

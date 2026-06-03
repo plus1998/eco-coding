@@ -23,6 +23,12 @@ export function logUpstream(phase: string, payload: Record<string, unknown>): vo
   appendUpstreamLogFile(line);
 }
 
+/** Errors: stderr + upstream.log + main-process console.error (visible in Electron main devtools). */
+export function logUpstreamError(phase: string, payload: Record<string, unknown>): void {
+  logUpstream(phase, payload);
+  console.error(UPSTREAM_LOG_PREFIX, phase, payload);
+}
+
 export function announceUpstreamLogDestination(extra?: Record<string, unknown>): void {
   const filePath = getUpstreamLogFilePath();
   logUpstream("log-destination", {

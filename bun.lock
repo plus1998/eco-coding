@@ -24,6 +24,7 @@
       },
       "devDependencies": {
         "@eco/model-router": "workspace:*",
+        "@eco/openai-anthropic-bridge": "workspace:*",
         "@eco/persistence": "workspace:*",
         "@eco/runtime": "workspace:*",
         "@eco/workspace": "workspace:*",
@@ -56,6 +57,10 @@
     },
     "packages/model-router": {
       "name": "@eco/model-router",
+      "version": "0.0.0",
+    },
+    "packages/openai-anthropic-bridge": {
+      "name": "@eco/openai-anthropic-bridge",
       "version": "0.0.0",
     },
     "packages/persistence": {
@@ -178,6 +183,8 @@
     "@eco/desktop": ["@eco/desktop@workspace:apps/desktop"],
 
     "@eco/model-router": ["@eco/model-router@workspace:packages/model-router"],
+
+    "@eco/openai-anthropic-bridge": ["@eco/openai-anthropic-bridge@workspace:packages/openai-anthropic-bridge"],
 
     "@eco/persistence": ["@eco/persistence@workspace:packages/persistence"],
 

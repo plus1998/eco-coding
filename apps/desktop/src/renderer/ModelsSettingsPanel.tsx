@@ -2,6 +2,9 @@ import { DEFAULT_CONTEXT_LIMIT, formatContextLimit } from "@eco/runtime";
 import { Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import type { UpstreamModelOption } from "../shared/models";
+import { UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
+import { ApiCompatToggle } from "./ApiCompatToggle";
+import { isOpenAICompat } from "../shared/api-compat";
 import {
   AGENT_ROLES,
   SUBAGENT_ROLES,
@@ -105,6 +108,7 @@ export function ModelsSettingsPanel({
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
   const [testingRouteProfileId, setTestingRouteProfileId] = useState<string | null>(null);
+  const [testingRouteRole, setTestingRouteRole] = useState<AgentRole | null>(null);
   const [routeTestResults, setRouteTestResults] = useState<Partial<Record<AgentRole, RoleRouteTestResult>>>(
     {},
   );
@@ -146,6 +150,10 @@ export function ModelsSettingsPanel({
       try {
         const request = {
           baseUrl: target.baseUrl,
+          ...(target.requestPath !== undefined && target.requestPath !== ""
+            ? { requestPath: target.requestPath }
+            : {}),
+          ...(target.apiCompat && { apiCompat: target.apiCompat }),
           ...(target.id && { providerId: target.id }),
           ...(target.apiKey && { apiKey: target.apiKey }),
         };
@@ -332,6 +340,8 @@ export function ModelsSettingsPanel({
     setRouteProfileModalError(undefined);
     setRouteTestResults({});
     setRouteTestMessage(undefined);
+    setTestingRouteRole(null);
+    setTestingRouteProfileId(null);
     setRouteProfileForm(createBlankRouteProfileForm(settings));
   }
 
@@ -410,12 +420,73 @@ export function ModelsSettingsPanel({
     }
   }
 
+  async function testSingleRoute(route: RoleRouteConfig, profileKey?: string) {
+    if (!window.eco?.testRouteProfile) {
+      return;
+    }
+    if (!route.providerId.trim() || !route.modelId.trim()) {
+      setRouteTestMessage({
+        kind: "error",
+        message: `请先为「${ROLE_LABELS[route.role]}」选择 Provider 与模型。`,
+      });
+      return;
+    }
+
+    const testKey = profileKey ?? routeProfileForm.id ?? "__draft__";
+    setTestingRouteProfileId(testKey);
+    setTestingRouteRole(route.role);
+    setRouteTestMessage(undefined);
+
+    try {
+      const result = await window.eco.testRouteProfile({
+        routes: [
+          {
+            role: route.role,
+            providerId: route.providerId,
+            modelId: route.modelId,
+            ...(route.apiCompat && { apiCompat: route.apiCompat }),
+            ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+          },
+        ],
+      });
+      const entry = result.results[0];
+      if (entry) {
+        setRouteTestResults((current) => ({
+          ...current,
+          [route.role]: entry,
+        }));
+      }
+      if (entry?.ok) {
+        const duration =
+          entry.elapsedMs !== undefined ? `，耗时 ${formatDurationMs(entry.elapsedMs)}` : "";
+        setRouteTestMessage({
+          kind: "success",
+          message: `「${ROLE_LABELS[route.role]}」测试通过${duration}`,
+        });
+      } else {
+        setRouteTestMessage({
+          kind: "error",
+          message: `「${ROLE_LABELS[route.role]}」测试失败：${entry?.error ?? "未知错误"}`,
+        });
+      }
+    } catch (caught) {
+      setRouteTestMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setTestingRouteRole(null);
+      setTestingRouteProfileId(null);
+    }
+  }
+
   async function testRouteProfile(routes: RoleRouteConfig[], profileKey?: string) {
     if (!window.eco?.testRouteProfile) {
       return;
     }
     const testKey = profileKey ?? routeProfileForm.id ?? "__draft__";
     setTestingRouteProfileId(testKey);
+    setTestingRouteRole(null);
     setRouteTestMessage(undefined);
     setRouteTestResults({});
 
@@ -425,6 +496,7 @@ export function ModelsSettingsPanel({
           role: route.role,
           providerId: route.providerId,
           modelId: route.modelId,
+          ...(route.apiCompat && { apiCompat: route.apiCompat }),
           ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
         })),
       });
@@ -438,7 +510,10 @@ export function ModelsSettingsPanel({
         const uniqueModels = new Set(
           routes
             .filter((route) => route.providerId.trim() && route.modelId.trim())
-            .map((route) => `${route.providerId.trim()}:${route.modelId.trim()}`),
+            .map(
+              (route) =>
+                `${route.providerId.trim()}:${route.modelId.trim()}:${route.apiCompat ?? ""}`,
+            ),
         );
         const durations = result.results
           .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
@@ -469,6 +544,7 @@ export function ModelsSettingsPanel({
       });
     } finally {
       setTestingRouteProfileId(null);
+      setTestingRouteRole(null);
     }
   }
 
@@ -494,6 +570,7 @@ export function ModelsSettingsPanel({
       const result = await window.eco.testProviderConnection({
         baseUrl: target.baseUrl,
         requestPath: target.requestPath,
+        ...(target.apiCompat && { apiCompat: target.apiCompat }),
         defaultModel: target.defaultModel,
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
@@ -584,11 +661,21 @@ export function ModelsSettingsPanel({
   ) {
     setRouteProfileForm((current) => {
       const existingRoute = current.routes.find((route) => route.role === role);
+      const defaultProvider = settings.providers.find(
+        (entry) => entry.id === (patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id),
+      );
       const nextRoute: RoleRouteConfig = {
         role,
         providerId: patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id ?? "",
         modelId: patch.modelId ?? existingRoute?.modelId ?? settings.providers[0]?.defaultModel ?? "",
       };
+      if (patch.apiCompat) {
+        nextRoute.apiCompat = patch.apiCompat;
+      } else if (existingRoute?.apiCompat) {
+        nextRoute.apiCompat = existingRoute.apiCompat;
+      } else if (defaultProvider) {
+        nextRoute.apiCompat = defaultProvider.apiCompat;
+      }
       if (options?.clearThinkingEffort) {
         // omit thinkingEffort
       } else if (patch.thinkingEffort) {
@@ -862,7 +949,8 @@ export function ModelsSettingsPanel({
           busy={busy}
           canDelete={settings.routeProfiles.length > 1}
           pricingLoading={pricingLoading}
-          testing={testingRouteProfileId === (routeProfileForm.id ?? "__draft__")}
+          testingAll={testingRouteProfileId === (routeProfileForm.id ?? "__draft__") && !testingRouteRole}
+          testingRole={testingRouteRole}
           routeTestResults={routeTestResults}
           subagentSettings={subagentSettings}
           onClose={closeRouteProfileModal}
@@ -872,6 +960,12 @@ export function ModelsSettingsPanel({
           onTestAll={() =>
             void testRouteProfile(routeProfileForm.routes, routeProfileForm.id ?? "__draft__")
           }
+          onTestRole={(role) => {
+            const route = routeProfileForm.routes.find((entry) => entry.role === role);
+            if (route) {
+              void testSingleRoute(route, routeProfileForm.id ?? "__draft__");
+            }
+          }}
           onUpdateRoute={updateRouteInForm}
           onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
@@ -895,13 +989,15 @@ function RouteProfileEditorModal({
   busy,
   canDelete,
   pricingLoading,
-  testing,
+  testingAll,
+  testingRole,
   routeTestResults,
   onClose,
   onSave,
   onDelete,
   onRefreshModelsDev,
   onTestAll,
+  onTestRole,
   onUpdateRoute,
   onFetchModels,
   subagentSettings,
@@ -920,7 +1016,8 @@ function RouteProfileEditorModal({
   busy?: boolean | undefined;
   canDelete: boolean;
   pricingLoading: boolean;
-  testing: boolean;
+  testingAll: boolean;
+  testingRole: AgentRole | null;
   routeTestResults: Partial<Record<AgentRole, RoleRouteTestResult>>;
   subagentSettings: SubagentEnabledSettings;
   onClose: () => void;
@@ -928,6 +1025,7 @@ function RouteProfileEditorModal({
   onDelete: () => void;
   onRefreshModelsDev: () => void;
   onTestAll: () => void;
+  onTestRole: (role: AgentRole) => void;
   onUpdateRoute: (
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
@@ -996,10 +1094,10 @@ function RouteProfileEditorModal({
                   <button
                     type="button"
                     className="models-section-button"
-                    disabled={busy || testing}
+                    disabled={busy || testingAll || testingRole !== null}
                     onClick={onTestAll}
                   >
-                    <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
+                    <RefreshCw size={14} className={testingAll ? "model-refresh-spin" : undefined} />
                     测试全部
                   </button>
                   <button
@@ -1028,6 +1126,9 @@ function RouteProfileEditorModal({
                 Boolean(route?.modelId) &&
                 (!pricing?.pricingResolved || !capability?.contextLimitResolved);
               const roleTest = routeTestResults[role];
+              const roleTesting = testingRole === role;
+              const routeTestBusy = testingAll || testingRole !== null;
+              const canTestRole = Boolean(providerId.trim() && route?.modelId.trim());
               const subagentOff =
                 role !== "planner" &&
                 SUBAGENT_ROLES.includes(role as SubagentRole) &&
@@ -1044,8 +1145,25 @@ function RouteProfileEditorModal({
                 >
                   <div className="models-route-card-head">
                     <div className="models-route-card-identity">
-                      <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                      <span className="models-route-role-id">{role}</span>
+                      <span className="models-route-card-title">
+                        <span className="models-route-role">{ROLE_LABELS[role]}</span>
+                        <span className="models-route-title-sep" aria-hidden>
+                          ·
+                        </span>
+                        <span className="models-route-role-id">{role}</span>
+                        <span className="models-route-title-sep" aria-hidden>
+                          ·
+                        </span>
+                        <ApiCompatToggle
+                          value={
+                            route?.apiCompat ??
+                            providers.find((entry) => entry.id === providerId)?.apiCompat ??
+                            "anthropic"
+                          }
+                          disabled={busy || !providerId}
+                          onChange={(apiCompat) => onUpdateRoute(role, { apiCompat })}
+                        />
+                      </span>
                       {subagentOff ? (
                         <span className="models-subagent-off-badge">子代理已关闭</span>
                       ) : null}
@@ -1063,6 +1181,22 @@ function RouteProfileEditorModal({
                             : "测试失败"}
                         </span>
                       )}
+                      <button
+                        type="button"
+                        className="models-section-button models-route-role-test-button"
+                        disabled={busy || routeTestBusy || !canTestRole}
+                        title={
+                          !canTestRole
+                            ? "请先选择 Provider 与模型"
+                            : roleTest?.ok
+                              ? roleTest.reply
+                              : roleTest?.error
+                        }
+                        onClick={() => onTestRole(role)}
+                      >
+                        <RefreshCw size={12} className={roleTesting ? "model-refresh-spin" : undefined} />
+                        测试
+                      </button>
                     </div>
                     <div className="models-route-card-meta">
                       {pricing?.rates ? (
@@ -1152,6 +1286,7 @@ function RouteProfileEditorModal({
                           onUpdateRoute(role, {
                             providerId: nextProviderId,
                             modelId: route?.modelId || provider?.defaultModel || "",
+                            apiCompat: provider?.apiCompat,
                           });
                           if (provider) {
                             onFetchModels(provider);
@@ -1183,39 +1318,39 @@ function RouteProfileEditorModal({
                       />
                     </div>
                     <label className="mcp-field models-route-field models-route-field-thinking">
-                      <span className="mcp-field-label">思考链</span>
-                      <select
-                        className="mcp-field-input"
-                        value={route?.thinkingEffort ?? ""}
-                        disabled={busy || effortDisabled}
-                        title={
-                          effortDisabled
-                            ? "该模型在 models.dev 中标记为不支持推理"
-                            : capability && !capability.capabilitiesResolved
-                              ? "未匹配 models.dev，请自行确认"
-                              : undefined
-                        }
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          if (value === "") {
-                            onUpdateRoute(role, {}, { clearThinkingEffort: true });
-                            return;
+                        <span className="mcp-field-label">思考链</span>
+                        <select
+                          className="mcp-field-input"
+                          value={route?.thinkingEffort ?? ""}
+                          disabled={busy || effortDisabled}
+                          title={
+                            effortDisabled
+                              ? "该模型在 models.dev 中标记为不支持推理"
+                              : capability && !capability.capabilitiesResolved
+                                ? "未匹配 models.dev，请自行确认"
+                                : undefined
                           }
-                          onUpdateRoute(role, { thinkingEffort: value as ThinkingEffort });
-                        }}
-                      >
-                        {THINKING_EFFORT_OPTIONS.map((option) => (
-                          <option key={option.value || "default"} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      {effortDisabled && (
-                        <span className="models-route-field-hint">该模型不支持推理</span>
-                      )}
-                      {capability && !capability.capabilitiesResolved && !route?.modelsDevMapping && (
-                        <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
-                      )}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            if (value === "") {
+                              onUpdateRoute(role, {}, { clearThinkingEffort: true });
+                              return;
+                            }
+                            onUpdateRoute(role, { thinkingEffort: value as ThinkingEffort });
+                          }}
+                        >
+                          {THINKING_EFFORT_OPTIONS.map((option) => (
+                            <option key={option.value || "default"} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        {effortDisabled && (
+                          <span className="models-route-field-hint">该模型不支持推理</span>
+                        )}
+                        {capability && !capability.capabilitiesResolved && !route?.modelsDevMapping && (
+                          <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
+                        )}
                     </label>
                     <div className="mcp-field models-route-field models-route-field-mapping">
                       <span className="mcp-field-label">models.dev 映射</span>
@@ -1366,18 +1501,35 @@ function ProviderEditorModal({
             </span>
           </label>
 
-          <label className="mcp-field">
+          <div className="mcp-field models-provider-endpoint-row">
             <span className="mcp-field-label">请求端点</span>
-            <input
-              className="mcp-field-input"
-              value={form.requestPath ?? ""}
-              placeholder="/anthropic"
-              onChange={(event) =>
-                setForm((current) => ({ ...current, requestPath: event.target.value }))
-              }
-            />
-            <span className="mcp-field-hint">Anthropic 兼容 API 路径前缀，留空表示根路径</span>
-          </label>
+            <div className="models-provider-endpoint-inline">
+              <ApiCompatToggle
+                value={form.apiCompat ?? "anthropic"}
+                onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
+                disabled={busy}
+              />
+              <span className="models-route-title-sep" aria-hidden>
+                ·
+              </span>
+              <input
+                className="mcp-field-input models-provider-request-path-input"
+                value={form.requestPath ?? ""}
+                placeholder={isOpenAICompat(form.apiCompat ?? "anthropic") ? "/zen" : "/anthropic"}
+                disabled={busy}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, requestPath: event.target.value }))
+                }
+              />
+            </div>
+            <span className="mcp-field-hint">
+              {isOpenAICompat(form.apiCompat ?? "anthropic")
+                ? "OpenAI 网关的服务路径前缀（如 /zen）；/anthropic 仅用于 Anthropic Messages，OpenAI 模式会自动忽略"
+                : "Anthropic Messages 路径前缀，留空表示根路径"}
+              {" · "}
+              {UPSTREAM_API_COMPAT_OPTIONS.find((o) => o.value === (form.apiCompat ?? "anthropic"))?.hint}
+            </span>
+          </div>
 
           <label className="mcp-field">
             <span className="mcp-field-label">API key</span>
@@ -1624,6 +1776,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     name: provider?.name ?? "Anthropic compatible",
     baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
     requestPath: provider?.requestPath ?? "",
+    apiCompat: provider?.apiCompat ?? "anthropic",
     apiKey: "",
     defaultModel: provider?.defaultModel ?? "sonnet",
     enabled: provider?.enabled ?? true,
@@ -1643,6 +1796,7 @@ function createBlankRouteProfileForm(settings?: ModelSettingsSnapshot): RoutePro
       role,
       providerId: defaultProvider?.id ?? "",
       modelId: defaultProvider?.defaultModel ?? "",
+      apiCompat: defaultProvider?.apiCompat ?? "anthropic",
     })),
   };
 }

@@ -13,6 +13,7 @@ import {
   type RouteProfileView,
   type ThinkingEffort,
 } from "../shared/ipc";
+import { normalizeUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import { normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
 
 interface ProviderRow {
@@ -20,6 +21,7 @@ interface ProviderRow {
   name: string;
   base_url: string;
   request_path: string;
+  api_compat: string;
   api_key: string;
   default_model: string;
   enabled: number;
@@ -40,6 +42,7 @@ interface RouteRow {
   role: AgentRole;
   provider_id: string;
   model_id: string;
+  api_compat: string | null;
   thinking_effort: string | null;
   models_dev_provider_key: string | null;
   models_dev_model_id: string | null;
@@ -102,7 +105,9 @@ export class ProviderStore {
     this.migrateRoleRoutesThinkingEffort();
     this.migrateRoleRoutesModelsDevMapping();
     this.migrateRoleRoutesManualSpec();
-
+    this.migrateProviderApiCompat();
+    this.migrateRoleRoutesApiCompat();
+    this.migrateLegacyOpenaiApiCompatValues();
   }
 
   getSettings(): ModelSettingsSnapshot {
@@ -145,12 +150,13 @@ export class ProviderStore {
     this.db
       .prepare(`
         INSERT INTO provider_configs (
-          id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
           request_path = excluded.request_path,
+          api_compat = excluded.api_compat,
           api_key = excluded.api_key,
           default_model = excluded.default_model,
           enabled = excluded.enabled,
@@ -161,6 +167,7 @@ export class ProviderStore {
         input.name.trim(),
         input.baseUrl.trim(),
         normalizeRequestPath(input.requestPath),
+        normalizeUpstreamApiCompat(input.apiCompat ?? existing?.api_compat),
         apiKey,
         input.defaultModel.trim(),
         input.enabled ? 1 : 0,
@@ -301,16 +308,17 @@ export class ProviderStore {
     this.db
       .prepare(`
         INSERT INTO role_routes (
-          profile_id, role, provider_id, model_id, thinking_effort,
+          profile_id, role, provider_id, model_id, api_compat, thinking_effort,
           models_dev_provider_key, models_dev_model_id,
           manual_context_tokens, manual_input_per_m, manual_output_per_m,
           manual_cache_read_per_m, manual_cache_write_per_m,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(profile_id, role) DO UPDATE SET
           provider_id = excluded.provider_id,
           model_id = excluded.model_id,
+          api_compat = excluded.api_compat,
           thinking_effort = excluded.thinking_effort,
           models_dev_provider_key = excluded.models_dev_provider_key,
           models_dev_model_id = excluded.models_dev_model_id,
@@ -326,6 +334,7 @@ export class ProviderStore {
         route.role,
         route.providerId,
         route.modelId.trim(),
+        route.apiCompat ?? null,
         thinkingEffort,
         modelsDev?.providerKey ?? null,
         modelsDev?.modelId ?? null,
@@ -341,7 +350,7 @@ export class ProviderStore {
   private listRoutesForProfile(profileId: string): RoleRouteConfig[] {
     return this.db
       .prepare(`
-        SELECT profile_id, role, provider_id, model_id, thinking_effort,
+        SELECT profile_id, role, provider_id, model_id, api_compat, thinking_effort,
                models_dev_provider_key, models_dev_model_id,
                manual_context_tokens, manual_input_per_m, manual_output_per_m,
                manual_cache_read_per_m, manual_cache_write_per_m
@@ -484,10 +493,34 @@ export class ProviderStore {
     `);
   }
 
+  private migrateProviderApiCompat(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "api_compat")) {
+      return;
+    }
+    this.db.exec(`ALTER TABLE provider_configs ADD COLUMN api_compat TEXT NOT NULL DEFAULT 'anthropic'`);
+  }
+
+  private migrateRoleRoutesApiCompat(): void {
+    const columns = this.db.prepare("PRAGMA table_info(role_routes)").all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "api_compat")) {
+      return;
+    }
+    this.db.exec(`ALTER TABLE role_routes ADD COLUMN api_compat TEXT`);
+  }
+
+  /** Rename legacy `openai` stored value to `openai_responses`. */
+  private migrateLegacyOpenaiApiCompatValues(): void {
+    this.db.exec(`
+      UPDATE provider_configs SET api_compat = 'openai_responses' WHERE api_compat = 'openai';
+      UPDATE role_routes SET api_compat = 'openai_responses' WHERE api_compat = 'openai';
+    `);
+  }
+
   private listProviderRows(): ProviderRow[] {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
       `)
@@ -497,7 +530,7 @@ export class ProviderStore {
   private getProviderRow(id: string): ProviderRow | undefined {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_key, default_model, enabled, created_at, updated_at
+        SELECT id, name, base_url, request_path, api_compat, api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
       `)
@@ -531,6 +564,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
     name: row.name,
     baseUrl: row.base_url,
     requestPath: row.request_path ?? "",
+    apiCompat: normalizeUpstreamApiCompat(row.api_compat),
     defaultModel: row.default_model,
     enabled: row.enabled === 1,
     hasApiKey: row.api_key.length > 0,
@@ -557,10 +591,12 @@ function routeRowToConfig(row: RouteRow): RoleRouteConfig {
   const effort = parseThinkingEffort(row.thinking_effort);
   const modelsDevMapping = parseModelsDevMapping(row.models_dev_provider_key, row.models_dev_model_id);
   const manualSpec = parseManualSpecRow(row);
+  const apiCompat = row.api_compat ? normalizeUpstreamApiCompat(row.api_compat) : undefined;
   return {
     role: row.role,
     providerId: row.provider_id,
     modelId: row.model_id,
+    ...(apiCompat && { apiCompat }),
     ...(effort && { thinkingEffort: effort }),
     ...(modelsDevMapping && { modelsDevMapping }),
     ...(manualSpec && { manualSpec }),

@@ -9,12 +9,28 @@ import type {
   TestRoleRoutesResult,
   UpstreamModelOption,
 } from "../shared/models";
+import {
+  isOpenAICompat,
+  normalizeUpstreamApiCompat,
+  resolveUpstreamApiCompat,
+  type UpstreamApiCompat,
+} from "../shared/api-compat";
+import {
+  anthropicToResponses,
+  chatCompletionsResponseToResponses,
+  responsesToAnthropic,
+  responsesToChatCompletionsRequest,
+  type AnthropicRequest,
+  type ChatCompletionsResponse,
+  type ResponsesResponse,
+} from "@eco/openai-anthropic-bridge";
 import { applyThinkingToMessagesBody } from "@eco/runtime";
 import type { ThinkingEffort } from "../shared/ipc";
 import type { ProviderStore } from "./provider-store";
 import {
   headersToLoggable,
   logUpstream,
+  logUpstreamError,
   parseJsonForLog,
   redactSecret,
   truncateForLog,
@@ -24,16 +40,58 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const PROVIDER_TEST_TIMEOUT_MS = 30_000;
 const PROVIDER_TEST_MAX_TOKENS = 256;
 
+export interface ProviderCompatRoutingInfo {
+  apiCompat: UpstreamApiCompat;
+  /** This code path always uses OpenAI-style model discovery. */
+  modelsDiscoveryApi: "openai-get-v1-models";
+  /** How agent/provider tests call the upstream. */
+  chatApi: "anthropic-v1-messages" | "openai-v1-responses" | "openai-v1-chat-completions";
+  requestPath: string;
+  chatUrl: string;
+  modelsListUrl: string;
+  /** Human-readable notes for logs (OpenAI vs Anthropic surfaces). */
+  compatNotes: string[];
+}
+
 export async function listProviderUpstreamModels(
   store: ProviderStore,
   request: ListUpstreamModelsRequest,
 ): Promise<ListUpstreamModelsResult> {
+  logUpstream("models-list-request", {
+    providerId: request.providerId,
+    baseUrl: request.baseUrl,
+    requestPath: request.requestPath,
+    apiCompat: request.apiCompat,
+    hasInlineApiKey: Boolean(request.apiKey?.trim()),
+  });
+
   const resolved = resolveProviderCredentials(store, request);
   if (!resolved.ok) {
+    logUpstreamError("models-list-error", {
+      phase: "resolve-credentials",
+      providerId: request.providerId,
+      error: resolved.error,
+    });
     return resolved;
   }
 
-  return fetchUpstreamModelsFromCredentials(resolved.baseUrl, resolved.apiKey, resolved.requestPath);
+  const routing = describeProviderCompatRouting(
+    resolved.baseUrl,
+    resolved.requestPath,
+    resolved.apiCompat,
+  );
+  logUpstream("models-list-compat-routing", {
+    providerId: request.providerId,
+    ...routing,
+    hasApiKey: Boolean(resolved.apiKey.trim()),
+  });
+
+  return fetchUpstreamModelsFromCredentials(
+    resolved.baseUrl,
+    resolved.apiKey,
+    resolved.requestPath,
+    { providerId: request.providerId, routing },
+  );
 }
 
 export async function testProviderConnection(
@@ -62,11 +120,12 @@ export async function testProviderConnection(
     return { ok: false, error: "请先选择默认模型。" };
   }
 
-  const testResult = await postMessagesTest(
+  const testResult = await postUpstreamCompatTest(
     {
       providerId: request.providerId,
       baseUrl: resolved.baseUrl,
       requestPath: resolved.requestPath,
+      apiCompat: resolved.apiCompat,
       apiKey: resolved.apiKey,
       modelId,
     },
@@ -79,14 +138,19 @@ export async function testProviderConnection(
   return { ok: false, error: testResult.error };
 }
 
-/** Dedupe key for route tests: same provider + model only needs one /v1/messages call. */
-export function buildRouteTestDedupeKey(providerId: string, modelId: string): string {
-  return `${providerId.trim()}:${modelId.trim()}`;
+/** Dedupe key for route tests: same provider + model + API compat shares one upstream call. */
+export function buildRouteTestDedupeKey(
+  providerId: string,
+  modelId: string,
+  apiCompat: UpstreamApiCompat,
+): string {
+  return `${providerId.trim()}:${modelId.trim()}:${apiCompat}`;
 }
 
 interface RouteTestGroup {
   provider: NonNullable<ReturnType<ProviderStore["getProviderWithSecret"]>>;
   modelId: string;
+  apiCompat: UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
   roles: string[];
 }
@@ -132,7 +196,11 @@ export async function testRoleRoutes(
       continue;
     }
 
-    const dedupeKey = buildRouteTestDedupeKey(provider.id, modelId);
+    const apiCompat = resolveUpstreamApiCompat(
+      route.apiCompat ? normalizeUpstreamApiCompat(route.apiCompat) : undefined,
+      provider.apiCompat,
+    );
+    const dedupeKey = buildRouteTestDedupeKey(provider.id, modelId, apiCompat);
     const existing = groups.get(dedupeKey);
     if (existing) {
       existing.roles.push(route.role);
@@ -142,6 +210,7 @@ export async function testRoleRoutes(
     groups.set(dedupeKey, {
       provider,
       modelId,
+      apiCompat,
       thinkingEffort: parseRouteThinkingEffort(route.thinkingEffort),
       roles: [route.role],
     });
@@ -149,11 +218,12 @@ export async function testRoleRoutes(
 
   for (const group of groups.values()) {
     const labelRole = group.roles[0];
-    const testResult = await postMessagesTest(
+    const testResult = await postUpstreamCompatTest(
       {
         providerId: group.provider.id,
         baseUrl: group.provider.baseUrl,
         requestPath: group.provider.requestPath,
+        apiCompat: group.apiCompat,
         apiKey: group.provider.apiKey,
         modelId: group.modelId,
         role: labelRole,
@@ -194,11 +264,12 @@ type MessagesTestSuccess = { ok: true; reply: string; elapsedMs: number };
 type MessagesTestFailure = { ok: false; error: string; elapsedMs?: number };
 type MessagesTestResult = MessagesTestSuccess | MessagesTestFailure;
 
-async function postMessagesTest(
+async function postUpstreamCompatTest(
   input: {
     providerId?: string;
     baseUrl: string;
     requestPath: string;
+    apiCompat: UpstreamApiCompat;
     apiKey: string;
     modelId: string;
     role?: string;
@@ -206,18 +277,33 @@ async function postMessagesTest(
   thinkingEffort: ThinkingEffort | undefined,
   fetcher: typeof fetch,
 ): Promise<MessagesTestResult> {
-  const messagesUrl = buildMessagesUrl(input.baseUrl, input.requestPath);
-  const requestBody = buildMessagesTestRequestBody(input.modelId, thinkingEffort);
+  const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
+  const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat);
+  const isOpenAI = isOpenAICompat(input.apiCompat);
+  const upstreamUrl =
+    input.apiCompat === "openai_chat_completions"
+      ? buildChatCompletionsUrl(input.baseUrl, input.requestPath)
+      : input.apiCompat === "openai_responses"
+        ? buildOpenAICompatUpstreamUrl(input.baseUrl, input.requestPath)
+        : buildMessagesUrl(input.baseUrl, effectivePath);
+  const requestBody =
+    input.apiCompat === "openai_chat_completions"
+      ? buildChatCompletionsTestRequestBody(input.modelId)
+      : input.apiCompat === "openai_responses"
+        ? buildResponsesTestRequestBody(input.modelId)
+        : buildMessagesTestRequestBody(input.modelId, thinkingEffort);
   const requestHeaders = {
-    ...buildAnthropicHeaders(input.apiKey),
+    ...(isOpenAI ? buildOpenAIHeaders(input.apiKey) : buildAnthropicHeaders(input.apiKey)),
     "content-type": "application/json",
   };
 
   logUpstream("provider-test-start", {
     providerId: input.providerId,
     role: input.role,
+    apiCompat: input.apiCompat,
+    routing,
     baseUrl: input.baseUrl,
-    url: messagesUrl,
+    url: upstreamUrl,
     model: input.modelId,
     hasApiKey: Boolean(input.apiKey.trim()),
     apiKeyPreview: input.apiKey.trim() ? redactSecret(input.apiKey) : undefined,
@@ -231,13 +317,14 @@ async function postMessagesTest(
     logUpstream("provider-test-request", {
       providerId: input.providerId,
       role: input.role,
+      apiCompat: input.apiCompat,
       method: "POST",
-      url: messagesUrl,
+      url: upstreamUrl,
       headers: redactRequestHeaders(requestHeaders),
       body: requestBody,
     });
 
-    const response = await fetcher(messagesUrl, {
+    const response = await fetcher(upstreamUrl, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(requestBody),
@@ -273,6 +360,15 @@ async function postMessagesTest(
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw) as unknown;
+      if (isOpenAI && isRecord(parsed)) {
+        if (parsed.object === "response") {
+          parsed = responsesToAnthropic(parsed as ResponsesResponse);
+        } else if (Array.isArray(parsed.choices)) {
+          parsed = responsesToAnthropic(
+            chatCompletionsResponseToResponses(parsed as ChatCompletionsResponse),
+          );
+        }
+      }
     } catch {
       logUpstream("provider-test-error", {
         providerId: input.providerId,
@@ -364,6 +460,44 @@ export function buildMessagesUrl(baseUrl: string, requestPath?: string): string 
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/messages`;
 }
 
+/** OpenAI Chat Completions: POST `{requestBase}/v1/chat/completions`. */
+export function buildChatCompletionsUrl(baseUrl: string, requestPath?: string): string {
+  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/chat/completions`;
+}
+
+/** OpenAI Responses API: POST `{requestBase}/v1/responses` (bridge hub; preferred for OpenAI compat). */
+export function buildResponsesUrl(baseUrl: string, requestPath?: string): string {
+  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/responses`;
+}
+
+/** OpenAI Responses runtime/test URL. */
+export function buildOpenAICompatUpstreamUrl(baseUrl: string, requestPath?: string): string {
+  return buildResponsesUrl(
+    baseUrl,
+    resolveRequestPathForApiCompat(requestPath, "openai_responses"),
+  );
+}
+
+/** OpenAI Chat Completions runtime/test URL. */
+export function buildChatCompletionsUrl(baseUrl: string, requestPath?: string): string {
+  return `${buildProviderRequestBaseUrl(
+    baseUrl,
+    resolveRequestPathForApiCompat(requestPath, "openai_chat_completions"),
+  )}/v1/chat/completions`;
+}
+
+/** `/anthropic` is messages-only; OpenAI chat/models use the service root without it. */
+export function resolveRequestPathForApiCompat(
+  requestPath: string | undefined,
+  apiCompat: UpstreamApiCompat,
+): string {
+  const path = normalizeRequestPath(requestPath);
+  if (isOpenAICompat(apiCompat) && isMessagesOnlyRequestPath(path)) {
+    return "";
+  }
+  return path;
+}
+
 /** Split legacy baseURL that embedded a path suffix into origin + request path. */
 export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; requestPath: string } {
   const trimmed = fullUrl.trim();
@@ -385,8 +519,48 @@ export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; 
 /** Path prefixes used only for Anthropic Messages, not for `/v1/models` discovery. */
 const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
 
+/** Trailing path segments that are API endpoints, not service roots (OpenAI-compat gateways). */
+const API_ENDPOINT_PATH_SUFFIXES = ["/v1/chat/completions", "/v1/responses", "/v1/messages"] as const;
+
 function isMessagesOnlyRequestPath(path: string): boolean {
   return MESSAGES_ONLY_REQUEST_PATHS.has(normalizeRequestPath(path));
+}
+
+/** Strip mistaken endpoint suffixes so models discovery hits `{origin}/v1/models`, not `.../chat/completions/v1/models`. */
+export function stripApiEndpointPathSuffix(pathname: string): string {
+  let normalized = pathname.replace(/\/+$/, "") || "";
+  if (!normalized || normalized === "/") {
+    return "";
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const suffix of API_ENDPOINT_PATH_SUFFIXES) {
+      if (normalized.endsWith(suffix)) {
+        normalized = normalized.slice(0, -suffix.length).replace(/\/+$/, "") || "";
+        changed = true;
+      }
+    }
+  }
+  return normalized;
+}
+
+/** Normalize a URL or origin+path string to the service root used for GET /v1/models. */
+export function serviceRootForModelsDiscovery(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    const path = stripApiEndpointPathSuffix(parsed.pathname);
+    if (!path) {
+      return parsed.origin;
+    }
+    return `${parsed.origin}${path}`;
+  } catch {
+    return trimTrailingSlash(trimmed);
+  }
 }
 
 /**
@@ -394,35 +568,156 @@ function isMessagesOnlyRequestPath(path: string): boolean {
  * Includes `requestPath` when it is part of the API root (e.g. OpenCode `/zen`),
  * but not when it is messages-only (e.g. DeepSeek `/anthropic`).
  */
-export function buildModelsListUrl(baseUrl: string, requestPath?: string): string {
+export function buildModelsListUrl(baseUrl: string, requestPath?: string): string | undefined {
+  const resolved = resolveModelsListUrl(baseUrl, requestPath);
+  return resolved.ok ? resolved.url : undefined;
+}
+
+export function resolveModelsListUrl(
+  baseUrl: string,
+  requestPath?: string,
+):
+  | { ok: true; url: string; serviceRoot: string }
+  | { ok: false; error: string } {
+  const trimmedBase = baseUrl.trim();
+  if (!trimmedBase) {
+    return {
+      ok: false,
+      error: "baseURL 为空，无法拉取模型列表。请填写完整服务地址（例如 https://api.example.com）。",
+    };
+  }
+
   const path = normalizeRequestPath(requestPath);
   let root: string;
 
   if (path) {
+    if (!trimmedBase && !isMessagesOnlyRequestPath(path)) {
+      return {
+        ok: false,
+        error: "baseURL 为空，无法与请求路径拼接。请先填写服务根地址。",
+      };
+    }
     root = isMessagesOnlyRequestPath(path)
-      ? trimTrailingSlash(baseUrl.trim())
-      : buildProviderRequestBaseUrl(baseUrl, path);
+      ? trimTrailingSlash(trimmedBase)
+      : buildProviderRequestBaseUrl(trimmedBase, path);
   } else {
-    const split = splitBaseUrlAndRequestPath(baseUrl);
+    const split = splitBaseUrlAndRequestPath(trimmedBase);
     if (split.requestPath && isMessagesOnlyRequestPath(split.requestPath)) {
       root = split.baseUrl;
     } else {
-      root = buildProviderRequestBaseUrl(baseUrl);
+      root = buildProviderRequestBaseUrl(trimmedBase);
     }
   }
 
-  if (!root) {
-    return "/v1/models";
+  const serviceRoot = serviceRootForModelsDiscovery(root);
+  if (!serviceRoot) {
+    return {
+      ok: false,
+      error: "无法从 baseURL 解析服务根地址，请检查是否包含 https:// 与主机名。",
+    };
   }
-  return `${root}/v1/models`;
+
+  const url = `${serviceRoot}/v1/models`;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, error: `模型列表 URL 协议无效：${parsed.protocol}` };
+    }
+  } catch {
+    return {
+      ok: false,
+      error: `无法解析模型列表 URL：${url}。请填写完整的 baseURL（含 https://）。`,
+    };
+  }
+
+  return { ok: true, url, serviceRoot };
+}
+
+/** Log context: OpenAI-style /v1/models vs chat API (Anthropic Messages or OpenAI Chat). */
+export function describeProviderCompatRouting(
+  baseUrl: string,
+  requestPath?: string,
+  apiCompat: UpstreamApiCompat = "anthropic",
+): ProviderCompatRoutingInfo {
+  const path = resolveRequestPathForApiCompat(requestPath, apiCompat);
+  const listResolved = resolveModelsListUrl(baseUrl, requestPath);
+  const modelsListUrl = listResolved.ok ? listResolved.url : "(invalid)";
+  const chatUrl =
+    apiCompat === "openai_chat_completions"
+      ? buildChatCompletionsUrl(baseUrl.trim(), path)
+      : apiCompat === "openai_responses"
+        ? buildResponsesUrl(baseUrl.trim(), path)
+        : buildMessagesUrl(baseUrl.trim(), path);
+  const compatNotes: string[] = [
+    "模型列表：OpenAI 兼容 GET /v1/models。",
+    apiCompat === "openai_responses"
+      ? `对话/测试：OpenAI Responses → POST ${chatUrl}（Anthropic↔Responses 枢纽）`
+      : apiCompat === "openai_chat_completions"
+        ? `对话/测试：OpenAI Chat Completions → POST ${chatUrl}（经 Responses 桥接 Anthropic 体）`
+        : `对话/测试：Anthropic Messages API → POST ${chatUrl}`,
+  ];
+
+  if (isOpenAICompat(apiCompat) && normalizeRequestPath(requestPath) === "/anthropic") {
+    compatNotes.push(
+      "已选 OpenAI 模式：忽略 /anthropic 路径前缀，Chat 与模型列表使用 baseURL 根路径。",
+    );
+  } else if (path && isMessagesOnlyRequestPath(path)) {
+    compatNotes.push(
+      `OpenAI↔Anthropic 网关：requestPath=${path} 仅用于 Anthropic Messages；模型发现走 /v1/models（不含 ${path}）。`,
+    );
+  } else if (path) {
+    compatNotes.push(`服务路径前缀 ${path} 将拼接到上述端点之前。`);
+  } else {
+    compatNotes.push("未配置 requestPath：使用 baseURL 根路径。");
+  }
+
+  return {
+    apiCompat,
+    modelsDiscoveryApi: "openai-get-v1-models",
+    chatApi:
+      apiCompat === "openai_responses"
+        ? "openai-v1-responses"
+        : apiCompat === "openai_chat_completions"
+          ? "openai-v1-chat-completions"
+          : "anthropic-v1-messages",
+    requestPath: path,
+    chatUrl,
+    modelsListUrl,
+    compatNotes,
+  };
 }
 
 export async function fetchUpstreamModelsFromCredentials(
   baseUrl: string,
   apiKey: string,
   requestPath?: string,
+  logContext?: { providerId?: string; routing?: ProviderCompatRoutingInfo },
 ): Promise<ListUpstreamModelsResult> {
-  const modelsUrl = buildModelsListUrl(baseUrl, requestPath);
+  const listResolved = resolveModelsListUrl(baseUrl, requestPath);
+  if (!listResolved.ok) {
+    logUpstreamError("models-list-error", {
+      phase: "resolve-url",
+      providerId: logContext?.providerId,
+      baseUrl,
+      requestPath: requestPath ?? "",
+      error: listResolved.error,
+      routing: logContext?.routing,
+    });
+    return { ok: false, error: listResolved.error };
+  }
+
+  const modelsUrl = listResolved.url;
+
+  logUpstream("models-list-fetch", {
+    providerId: logContext?.providerId,
+    method: "GET",
+    url: modelsUrl,
+    serviceRoot: listResolved.serviceRoot,
+    requestPath: requestPath ?? "",
+    apiSurface: "openai-v1-models",
+    compatNotes: logContext?.routing?.compatNotes,
+    headers: redactRequestHeaders(buildAnthropicHeaders(apiKey)),
+  });
 
   try {
     const response = await fetch(modelsUrl, {
@@ -432,30 +727,70 @@ export async function fetchUpstreamModelsFromCredentials(
 
     const raw = await response.text();
     if (!response.ok) {
-      return {
-        ok: false,
-        error: formatUpstreamError(response.status, raw),
-      };
+      const error = formatUpstreamError(response.status, raw);
+      logUpstreamError("models-list-error", {
+        phase: "upstream-http",
+        providerId: logContext?.providerId,
+        url: modelsUrl,
+        status: response.status,
+        apiSurface: "openai-v1-models",
+        compatNotes: logContext?.routing?.compatNotes,
+        bodyPreview: truncateForLog(raw),
+        error,
+      });
+      return { ok: false, error };
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw) as unknown;
     } catch {
-      return { ok: false, error: "上游返回了非 JSON 响应。" };
+      const error = "上游返回了非 JSON 响应。";
+      logUpstreamError("models-list-error", {
+        phase: "parse-json",
+        providerId: logContext?.providerId,
+        url: modelsUrl,
+        error,
+        bodyPreview: truncateForLog(raw),
+      });
+      return { ok: false, error };
     }
 
     const models = parseUpstreamModelsPayload(parsed);
     if (models.length === 0) {
-      return { ok: false, error: "上游未返回可用模型列表（data 为空或格式不兼容）。" };
+      const error = "上游未返回可用模型列表（data 为空或格式不兼容）。";
+      logUpstreamError("models-list-error", {
+        phase: "empty-payload",
+        providerId: logContext?.providerId,
+        url: modelsUrl,
+        apiSurface: "openai-v1-models",
+        error,
+        bodyPreview: truncateForLog(raw),
+      });
+      return { ok: false, error };
     }
+
+    logUpstream("models-list-success", {
+      providerId: logContext?.providerId,
+      url: modelsUrl,
+      count: models.length,
+      modelIds: models.slice(0, 20).map((m) => m.id),
+      apiSurface: "openai-v1-models",
+    });
 
     return { ok: true, models: dedupeModels(models) };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    const message = error instanceof Error ? error.message : String(error);
+    logUpstreamError("models-list-error", {
+      phase: "fetch",
+      providerId: logContext?.providerId,
+      url: modelsUrl,
+      apiSurface: "openai-v1-models",
+      compatNotes: logContext?.routing?.compatNotes,
+      error: message,
+      errorName: error instanceof Error ? error.name : undefined,
+    });
+    return { ok: false, error: message };
   }
 }
 
@@ -575,6 +910,24 @@ export function buildMessagesTestRequestBody(
   return body;
 }
 
+export function buildResponsesTestRequestBody(modelId: string): Record<string, unknown> {
+  const responses = anthropicToResponses(
+    buildMessagesTestRequestBody(modelId, "off") as AnthropicRequest,
+  );
+  responses.stream = false;
+  return responses as unknown as Record<string, unknown>;
+}
+
+export function buildChatCompletionsTestRequestBody(modelId: string): Record<string, unknown> {
+  const responses = anthropicToResponses(
+    buildMessagesTestRequestBody(modelId, "off") as AnthropicRequest,
+  );
+  responses.stream = false;
+  const chatReq = responsesToChatCompletionsRequest(responses);
+  chatReq.stream = false;
+  return chatReq as unknown as Record<string, unknown>;
+}
+
 const ROUTE_THINKING_EFFORTS = new Set<ThinkingEffort>(["off", "low", "medium", "high", "xhigh", "max"]);
 
 function parseRouteThinkingEffort(value: string | undefined): ThinkingEffort | undefined {
@@ -630,7 +983,7 @@ function resolveProviderCredentials(
   store: ProviderStore,
   request: ListUpstreamModelsRequest | TestProviderConnectionRequest,
 ):
-  | { ok: true; baseUrl: string; requestPath: string; apiKey: string }
+  | { ok: true; baseUrl: string; requestPath: string; apiCompat: UpstreamApiCompat; apiKey: string }
   | { ok: false; error: string } {
   const baseUrl = request.baseUrl?.trim();
   const inlineApiKey = request.apiKey?.trim();
@@ -642,16 +995,29 @@ function resolveProviderCredentials(
     if (!provider) {
       return { ok: false, error: `找不到 Provider：${request.providerId}` };
     }
-    const resolvedBaseUrl = baseUrl || provider.baseUrl;
+    const resolvedBaseUrl = (baseUrl || provider.baseUrl).trim();
+    if (!resolvedBaseUrl) {
+      return {
+        ok: false,
+        error: `Provider「${provider.name}」的 baseURL 为空，请在设置中填写服务地址。`,
+      };
+    }
     const resolvedRequestPath =
       "requestPath" in request && request.requestPath !== undefined
         ? inlineRequestPath
-        : provider.requestPath;
+        : normalizeRequestPath(provider.requestPath);
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
+    const resolvedApiCompat = resolveUpstreamApiCompat(
+      "apiCompat" in request && request.apiCompat !== undefined
+        ? normalizeUpstreamApiCompat(request.apiCompat)
+        : undefined,
+      provider.apiCompat,
+    );
     return {
       ok: true,
       baseUrl: resolvedBaseUrl,
       requestPath: resolvedRequestPath,
+      apiCompat: resolvedApiCompat,
       apiKey: resolvedApiKey,
     };
   }
@@ -660,7 +1026,17 @@ function resolveProviderCredentials(
     return { ok: false, error: "请先填写 baseURL。" };
   }
 
-  return { ok: true, baseUrl, requestPath: inlineRequestPath, apiKey: inlineApiKey ?? "" };
+  const inlineApiCompat =
+    "apiCompat" in request && request.apiCompat !== undefined
+      ? normalizeUpstreamApiCompat(request.apiCompat)
+      : "anthropic";
+  return {
+    ok: true,
+    baseUrl,
+    requestPath: inlineRequestPath,
+    apiCompat: inlineApiCompat,
+    apiKey: inlineApiKey ?? "",
+  };
 }
 
 function formatUpstreamError(status: number, raw: string): string {
@@ -689,6 +1065,17 @@ function buildAnthropicHeaders(apiKey: string): Record<string, string> {
   const trimmedKey = apiKey.trim();
   if (trimmedKey) {
     headers["x-api-key"] = trimmedKey;
+    headers.authorization = `Bearer ${trimmedKey}`;
+  }
+  return headers;
+}
+
+export function buildOpenAIHeaders(apiKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    accept: "application/json",
+  };
+  const trimmedKey = apiKey.trim();
+  if (trimmedKey) {
     headers.authorization = `Bearer ${trimmedKey}`;
   }
   return headers;
