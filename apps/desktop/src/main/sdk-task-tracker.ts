@@ -326,7 +326,13 @@ export function createSdkTaskTracker(
       }
     },
     createHookHandlers(getStopStatus) {
+      const peekPendingCoderTodoId = (): string | undefined => {
+        const pending = todos.find((todo) => todo.status === "pending");
+        return pending?.id;
+      };
+
       return {
+        peekPendingCoderTodoId,
         onPreToolUse(toolName, input) {
           if (toolName === "TodoWrite") {
             applyTodoWrite(input);

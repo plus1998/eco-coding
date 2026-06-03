@@ -22,6 +22,7 @@ import {
 } from "./finalize-plan";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
+import { formatResumableSubagentsAppend } from "./subagent-resume.js";
 import { mergeStreamText } from "./stream-text";
 import {
   createSdkStreamContext,
@@ -216,10 +217,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const isResume = Boolean(input.resume?.resumeSessionId);
     const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
     const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
+    const resumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
     const prompt = isResume
       ? buildExecuteResumePrompt({
           ...planning,
           approvedPlanFile,
+          ...(input.resumableSubagents?.length
+            ? { resumableSubagents: input.resumableSubagents }
+            : {}),
         })
       : buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
           ...(planning.planUserEdited ? { planUserEdited: true } : {}),
@@ -229,7 +234,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
-      phaseAppend: buildExecutePhaseSystemAppend(availability),
+      phaseAppend: `${buildExecutePhaseSystemAppend(availability)}${resumableAppend}`,
       agents: createExecutionAgentDefinitions(
         input.routes,
         input.sdkSession?.agentSkills,
@@ -272,11 +277,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (mode === "planning") {
       const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
+      const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
       const planningTranscript = yield* this.runSingleSession(input, {
         prompt: buildPlanningContinuationPrompt(input.prompt, availability),
         permissionMode: planningPermissionMode,
         allowedTools: [...planningAllowedTools],
-        phaseAppend: buildPlanningPhaseSystemAppend(availability),
+        phaseAppend: `${buildPlanningPhaseSystemAppend(availability)}${planningResumableAppend}`,
         agents: createPlanningAgentDefinitions(
           input.routes,
           input.sdkSession?.agentSkills,

@@ -133,6 +133,19 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   });
 
   expect(hooks.PreToolUse?.length).toBeGreaterThanOrEqual(3);
+
+  const withResume = buildEcoSdkHooks({
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_resume",
+      onStart() {},
+      onStop() {},
+      resolveResume: () => "agent-resume-1",
+    },
+    onNotification() {},
+    onPreCompact: async () => {},
+  });
+  expect(withResume.PreToolUse?.length).toBeGreaterThanOrEqual(2);
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
   expect(hooks.SubagentStart).toHaveLength(1);

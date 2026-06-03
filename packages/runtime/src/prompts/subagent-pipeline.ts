@@ -56,7 +56,7 @@ function buildReviewerStep(availability: SubagentAvailability, step: number): st
     "   Eco prepends this session's changed file list; do not diff against main/master.",
     "   Severity policy: only fix P0/P1 issues. Do NOT spend cycles implementing P2 suggestions.",
     "   If the reviewer returns BLOCKERS (P0/P1 exist), convert ALL P0/P1 items into a single concrete fix batch and run coders once to address them.",
-    "   Then re-run Agent(reviewer) exactly once. If there are still P0/P1 issues after the second review, STOP and summarize remaining P0/P1 for the user (do not loop).",
+    "   Then re-run Agent(reviewer) exactly once (Eco auto-Resumes the same reviewer session when possible — do not restart from scratch). If there are still P0/P1 issues after the second review, STOP and summarize remaining P0/P1 for the user (do not loop).",
     "   Always summarize P2 items at the end as follow-ups; do not implement them unless the user explicitly asks.",
   ];
 }
@@ -135,6 +135,8 @@ export function buildExecutePhaseSystemAppend(
     "",
     "Never ask a subagent to spawn another subagent. You alone coordinate the pipeline.",
     "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
+    "",
+    "Subagent resume: When a prior explore/architect/coder/reviewer/tester run exists in this thread, call Agent(role) normally — Eco rewrites to Resume agent {id} unless your prompt asks for a fresh/restart pass.",
   );
   return pipeline.join("\n");
 }
@@ -254,9 +256,13 @@ export function buildPlanningExploreInstruction(availability: SubagentAvailabili
 }
 
 export function buildPlanningContinuationExploreHint(availability: SubagentAvailability): string {
-  return isSubagentEnabled(availability, "explore")
-    ? "Incorporate this message; explore or AskUserQuestion if material ambiguity remains."
-    : "Incorporate this message; explore with Read/Glob/Grep or AskUserQuestion if material ambiguity remains.";
+  const explore = isSubagentEnabled(availability, "explore")
+    ? "explore or AskUserQuestion"
+    : "Read/Glob/Grep or AskUserQuestion";
+  return [
+    `Incorporate this message; ${explore} if material ambiguity remains.`,
+    "If explore/architect already ran in this Plan Mode session, call Agent(role) again — Eco will Resume prior subagent context when available (use fresh/restart in the prompt to force a new pass).",
+  ].join(" ");
 }
 
 export function buildQuestionExploreInstruction(availability: SubagentAvailability): string {

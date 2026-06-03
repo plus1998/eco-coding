@@ -35,6 +35,11 @@ export interface EcoSdkResumeOptions {
   forkSession?: boolean;
 }
 
+export interface ResumableSubagentRef {
+  role: string;
+  agentId: string;
+}
+
 export interface AgentRuntimeRunInput {
   threadId: string;
   prompt: string;
@@ -44,6 +49,8 @@ export interface AgentRuntimeRunInput {
   signal: AbortSignal;
   sdkSession?: EcoSdkSessionOptions;
   resume?: EcoSdkResumeOptions;
+  /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
+  resumableSubagents?: readonly ResumableSubagentRef[];
 }
 
 export interface EcoPlanningContext {
@@ -217,6 +224,15 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
 
 export type { PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
 export * from "./eco-sdk-hooks";
+export {
+  buildResumeAgentPrompt,
+  createSubagentMissionCapturePreToolHook,
+  createSubagentResumePreToolHook,
+  formatResumableSubagentsAppend,
+  isFreshSubagentRequest,
+  readAgentSubagentType,
+  type SubagentResumeResolveInput,
+} from "./subagent-resume.js";
 export * from "./subagent-availability";
 export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
 export {

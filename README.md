@@ -46,6 +46,16 @@ When summarizing this conversation, always preserve:
 
 Before each compaction, Eco’s **PreCompact** hook archives the thread activity log and context snapshot to SQLite (`thread_compaction_archives`) for audit and recovery.
 
+## Subagent resume
+
+Eco persists each subagent’s SDK `agentId` when it finishes (`SubagentStop`) and, on the next `Agent(role)` call in the **same Planner session**, automatically rewrites the tool input to `Resume agent {id} and …` (see [SDK subagent resume](https://code.claude.com/docs/en/agent-sdk/subagents#resuming-subagents)). This avoids re-reading the codebase on a second reviewer pass or after an interrupted explore/architect/coder run.
+
+- **Planner session** must still be resumed (`sdk_session_id` on the thread); subagent transcripts live inside that session.
+- **Parallel coders** are matched by coder todo id / mission text when possible; otherwise the latest stopped coder instance is resumed.
+- **Force a fresh subagent** by including words like `fresh`, `restart`, or `从头开始` in the `Agent` prompt.
+
+Subagent resume state is cleared when the SDK session is reset, routes change, or you start a **fresh plan**.
+
 ## Build & package
 
 ```bash

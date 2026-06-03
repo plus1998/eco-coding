@@ -4,6 +4,7 @@ import {
   summarizeExecutePipeline,
 } from "./subagent-pipeline.js";
 import { defaultSubagentAvailability, type SubagentAvailability } from "../subagent-availability.js";
+import { formatResumableSubagentsAppend } from "../subagent-resume.js";
 
 export { buildExecuteBuildSwitchAppend, buildExecutePhaseSystemAppend };
 
@@ -63,6 +64,7 @@ export function buildExecuteResumePrompt(planning: {
   planUserEdited?: boolean;
   /** Repo-relative path, e.g. `.eco/approved-plans/thr_x.md` */
   approvedPlanFile?: string;
+  resumableSubagents?: readonly { role: string; agentId: string }[];
 }): string {
   const lines = [
     "Proceed with phase 2 execution.",
@@ -92,6 +94,7 @@ export function buildExecuteResumePrompt(planning: {
   }
 
   lines.push("", "Task: Continue phase 2 — implement the approved plan and update ## Coder Tasks.");
+  lines.push(formatResumableSubagentsAppend(planning.resumableSubagents ?? []));
 
   return lines.join("\n");
 }

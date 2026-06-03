@@ -23,6 +23,17 @@ import {
   serializeThreadRuntimeConfig,
 } from "../shared/thread-runtime-config";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
+import {
+  normalizeSubagentMissionKey,
+  resolveResumeAgentIdFromRecords,
+} from "./subagent-session-resolve.js";
+import type {
+  SubagentRunPhase,
+  SubagentSessionStatus,
+  ThreadSubagentSessionRecord,
+} from "./subagent-session-types.js";
+import { isFreshSubagentRequest } from "@eco/runtime";
+import type { SubagentRole } from "@eco/runtime";
 
 interface ThreadRow {
   id: string;
@@ -196,6 +207,22 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_compaction_archives_thread_created
         ON thread_compaction_archives(thread_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS thread_subagent_sessions (
+        thread_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        status TEXT NOT NULL,
+        todo_id TEXT,
+        mission_key TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, agent_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_subagent_sessions_thread_role_phase
+        ON thread_subagent_sessions(thread_id, role, phase, status, updated_at DESC);
     `);
     this.migrateSchema();
   }
@@ -463,9 +490,124 @@ export class ConversationStore {
          WHERE id = ?`,
       )
       .run(new Date().toISOString(), threadId);
+    this.clearSubagentSessions(threadId);
+  }
+
+  upsertSubagentSessionActive(input: {
+    threadId: string;
+    role: SubagentRole;
+    agentId: string;
+    phase: SubagentRunPhase;
+    todoId?: string;
+    missionKey?: string;
+  }): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO thread_subagent_sessions (
+           thread_id, role, agent_id, phase, status, todo_id, mission_key, updated_at
+         ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+         ON CONFLICT(thread_id, agent_id) DO UPDATE SET
+           role = excluded.role,
+           phase = excluded.phase,
+           status = 'active',
+           todo_id = COALESCE(excluded.todo_id, todo_id),
+           mission_key = COALESCE(excluded.mission_key, mission_key),
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.threadId,
+        input.role,
+        input.agentId,
+        input.phase,
+        input.todoId ?? null,
+        input.missionKey ?? null,
+        now,
+      );
+  }
+
+  markSubagentSessionStopped(threadId: string, agentId: string): void {
+    this.db
+      .prepare(
+        `UPDATE thread_subagent_sessions
+         SET status = 'stopped', updated_at = ?
+         WHERE thread_id = ? AND agent_id = ?`,
+      )
+      .run(new Date().toISOString(), threadId, agentId);
+  }
+
+  listSubagentSessions(threadId: string): ThreadSubagentSessionRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, role, agent_id, phase, status, todo_id, mission_key, updated_at
+         FROM thread_subagent_sessions
+         WHERE thread_id = ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(threadId) as Array<{
+      thread_id: string;
+      role: string;
+      agent_id: string;
+      phase: string;
+      status: string;
+      todo_id: string | null;
+      mission_key: string | null;
+      updated_at: string;
+    }>;
+
+    return rows.map((row) => ({
+      threadId: row.thread_id,
+      role: row.role as SubagentRole,
+      agentId: row.agent_id,
+      phase: row.phase as SubagentRunPhase,
+      status: row.status as SubagentSessionStatus,
+      ...(row.todo_id ? { todoId: row.todo_id } : {}),
+      ...(row.mission_key ? { missionKey: row.mission_key } : {}),
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  listResumableSubagentSessions(
+    threadId: string,
+    phase?: SubagentRunPhase,
+  ): ThreadSubagentSessionRecord[] {
+    return this.listSubagentSessions(threadId).filter(
+      (row) => row.status === "stopped" && (!phase || row.phase === phase),
+    );
+  }
+
+  resolveResumeAgentId(input: {
+    threadId: string;
+    role: SubagentRole;
+    phase: SubagentRunPhase;
+    prompt: string;
+    todoIdHint?: string;
+  }): string | undefined {
+    const records = this.listSubagentSessions(input.threadId);
+    return resolveResumeAgentIdFromRecords(records, {
+      role: input.role,
+      phase: input.phase,
+      prompt: input.prompt,
+      ...(input.todoIdHint && { todoIdHint: input.todoIdHint }),
+      freshRequest: isFreshSubagentRequest(input.prompt),
+    });
+  }
+
+  clearSubagentSessions(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_subagent_sessions WHERE thread_id = ?`).run(threadId);
+  }
+
+  clearSubagentSessionsForPhase(threadId: string, phase: SubagentRunPhase): void {
+    this.db
+      .prepare(`DELETE FROM thread_subagent_sessions WHERE thread_id = ? AND phase = ?`)
+      .run(threadId, phase);
   }
 
   saveRouteFingerprint(threadId: string, fingerprint: string): void {
+    const previous = this.getRouteFingerprint(threadId);
+    if (previous && previous !== fingerprint) {
+      this.clearSubagentSessions(threadId);
+    }
     this.db
       .prepare(
         `UPDATE threads

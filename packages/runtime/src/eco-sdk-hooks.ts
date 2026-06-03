@@ -14,6 +14,14 @@ import type {
 import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
 import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
+  createSubagentMissionCapturePreToolHook,
+  createSubagentResumePreToolHook,
+  readAgentSubagentType,
+  type SubagentResumeResolveInput,
+} from "./subagent-resume.js";
+
+export { readAgentSubagentType } from "./subagent-resume.js";
+import {
   isSubagentEnabled,
   normalizeSubagentAvailability,
   SUBAGENT_ROLES,
@@ -28,11 +36,28 @@ export interface EcoTaskTrackerHooks {
   onSubagentStart(input: { agentId: string; agentType: string }): void;
   onSubagentStop(input: { agentId: string; agentType: string }): void;
   onStop(status: "completed" | "blocked" | "cancelled"): void;
+  peekPendingCoderTodoId?: () => string | undefined;
 }
 
 export interface EcoPreCompactHookInput {
   trigger: "auto" | "manual";
   sessionId?: string;
+}
+
+export type SubagentRunPhase = "planning" | "execution" | "question";
+
+export interface EcoSubagentSessionHooks {
+  phase: SubagentRunPhase;
+  threadId: string;
+  onStart(input: { agentId: string; agentType: string }): void;
+  onStop(input: { agentId: string; agentType: string }): void;
+  resolveResume(input: SubagentResumeResolveInput): string | undefined;
+  todoIdHint?: () => string | undefined;
+  onAgentToolCapture?: (input: {
+    role: SubagentRole;
+    prompt: string;
+    todoIdHint?: string;
+  }) => void;
 }
 
 export interface EcoHookContext {
@@ -41,6 +66,7 @@ export interface EcoHookContext {
     request: SdkAskUserQuestionRequest & { toolUseId: string },
   ) => Promise<Record<string, unknown>>;
   taskTracker?: EcoTaskTrackerHooks;
+  subagentSessions?: EcoSubagentSessionHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
   onPreCompact?: (input: EcoPreCompactHookInput) => Promise<void>;
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
@@ -49,16 +75,6 @@ export interface EcoHookContext {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readAgentSubagentType(input: Record<string, unknown>): string | undefined {
-  if (typeof input.subagent_type === "string" && input.subagent_type.trim()) {
-    return input.subagent_type.trim();
-  }
-  if (typeof input.agent_type === "string" && input.agent_type.trim()) {
-    return input.agent_type.trim();
-  }
-  return undefined;
 }
 
 export function createAskUserQuestionPreToolHook(
@@ -204,30 +220,44 @@ export function createTaskCompletedHook(taskTracker: EcoTaskTrackerHooks): HookC
   };
 }
 
-export function createSubagentStartHook(taskTracker: EcoTaskTrackerHooks): HookCallback {
+export function createSubagentStartHook(
+  handlers: {
+    taskTracker?: EcoTaskTrackerHooks;
+    subagentSessions?: EcoSubagentSessionHooks;
+  },
+): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "SubagentStart") {
       return {};
     }
     const started = input as SubagentStartHookInput;
-    taskTracker.onSubagentStart({
+    const payload = {
       agentId: started.agent_id,
       agentType: started.agent_type,
-    });
+    };
+    handlers.taskTracker?.onSubagentStart(payload);
+    handlers.subagentSessions?.onStart(payload);
     return {};
   };
 }
 
-export function createSubagentStopHook(taskTracker: EcoTaskTrackerHooks): HookCallback {
+export function createSubagentStopHook(
+  handlers: {
+    taskTracker?: EcoTaskTrackerHooks;
+    subagentSessions?: EcoSubagentSessionHooks;
+  },
+): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "SubagentStop") {
       return {};
     }
     const stopped = input as SubagentStopHookInput;
-    taskTracker.onSubagentStop({
+    const payload = {
       agentId: stopped.agent_id,
       agentType: stopped.agent_type,
-    });
+    };
+    handlers.taskTracker?.onSubagentStop(payload);
+    handlers.subagentSessions?.onStop(payload);
     return {};
   };
 }
@@ -327,15 +357,44 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
 
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
-  pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent");
-  pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent");
+  pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
+  if (ctx.subagentSessions) {
+    const sessions = ctx.subagentSessions;
+    if (sessions.onAgentToolCapture) {
+      pushHook(
+        hooks,
+        "PreToolUse",
+        createSubagentMissionCapturePreToolHook(sessions.onAgentToolCapture),
+        "Agent|Task",
+      );
+    }
+    pushHook(
+      hooks,
+      "PreToolUse",
+      createSubagentResumePreToolHook(
+        sessions.threadId,
+        sessions.phase,
+        sessions.resolveResume,
+        { todoIdHint: sessions.todoIdHint },
+      ),
+      "Agent|Task",
+    );
+  }
+  pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent|Task");
+
+  const subagentHandlers = {
+    ...(ctx.taskTracker && { taskTracker: ctx.taskTracker }),
+    ...(ctx.subagentSessions && { subagentSessions: ctx.subagentSessions }),
+  };
+  if (subagentHandlers.taskTracker || subagentHandlers.subagentSessions) {
+    pushHook(hooks, "SubagentStart", createSubagentStartHook(subagentHandlers));
+    pushHook(hooks, "SubagentStop", createSubagentStopHook(subagentHandlers));
+  }
 
   if (ctx.taskTracker) {
     pushHook(hooks, "PreToolUse", createTaskToolPreToolHook(ctx.taskTracker), "TaskCreate|TaskUpdate|TodoWrite");
     pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker));
     pushHook(hooks, "TaskCompleted", createTaskCompletedHook(ctx.taskTracker));
-    pushHook(hooks, "SubagentStart", createSubagentStartHook(ctx.taskTracker));
-    pushHook(hooks, "SubagentStop", createSubagentStopHook(ctx.taskTracker));
     pushHook(hooks, "Stop", createStopHook(ctx));
   }
 

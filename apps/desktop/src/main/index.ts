@@ -25,6 +25,7 @@ import {
   type EcoHookContext,
   type SdkTodoUpdatedPayload,
 } from "@eco/runtime/sdk";
+import { isSubagentRole, type SubagentRunPhase } from "@eco/runtime";
 import {
   createRedisSessionStore,
   createSqliteSessionStore,
@@ -173,6 +174,11 @@ import {
   buildUsageRequestKey,
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
+import {
+  createSubagentSessionHooks,
+  type PendingSubagentLaunch,
+} from "./subagent-session-hooks.js";
+import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
@@ -333,7 +339,7 @@ app.whenReady().then(async () => {
       });
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
       try {
-        const driver = createSdkDriver(threadId, attemptProxy);
+        const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
         const controller = new AbortController();
         await fn(driver, controller.signal, driverRoutes);
       } finally {
@@ -1325,7 +1331,7 @@ async function runQuestionThread(
         await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
       }
       try {
-        const driver = createSdkDriver(thread.id, attemptProxy);
+        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "question");
         if (!driver.runQuestion) {
           throw new Error("Runtime driver does not support question answering.");
         }
@@ -1496,7 +1502,7 @@ async function runCodingThreadSdkDefault(
       }
 
       try {
-        const driver = createSdkDriver(thread.id, attemptProxy);
+        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
         let sdkFailure: string | undefined;
 
         for await (const event of driver.run({
@@ -1631,7 +1637,7 @@ async function runCodingThreadPlanning(
       }
 
       try {
-        const driver = createSdkDriver(thread.id, attemptProxy);
+        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
 
         let sdkFailure: string | undefined;
         let captured = false;
@@ -1820,16 +1826,22 @@ async function runCodingThreadExecution(
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
-        const driver = createSdkDriver(threadId, attemptProxy, {
-          taskTracker: {
-            ...taskHookHandlers,
-            onStop(status) {
-              stopTodosHandled = true;
-              taskHookHandlers.onStop(status);
+        const driver = createSdkDriver(
+          threadId,
+          attemptProxy,
+          {
+            peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
+            taskTracker: {
+              ...taskHookHandlers,
+              onStop(status) {
+                stopTodosHandled = true;
+                taskHookHandlers.onStop(status);
+              },
             },
+            getStopTodoStatus: () => stopStatusRef.current,
           },
-          getStopTodoStatus: () => stopStatusRef.current,
-        });
+          "execution",
+        );
 
         if (!driver.runExecution) {
           throw new Error("Runtime driver does not support execution phase.");
@@ -1852,6 +1864,7 @@ async function runCodingThreadExecution(
             signal: controller.signal,
             sdkSession: buildSdkSessionOptions(thread.id),
             ...(resume ? { resume } : {}),
+            resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
           },
           planning,
         )) {
@@ -2490,10 +2503,53 @@ function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
   return parsed;
 }
 
+function listResumableSubagentRefs(
+  threadId: string,
+  phase: SubagentRunPhase,
+): { role: string; agentId: string }[] {
+  return conversationStore.listResumableSubagentSessions(threadId, phase).map((row) => ({
+    role: row.role,
+    agentId: row.agentId,
+  }));
+}
+
+function buildSdkHookContextExtras(
+  threadId: string,
+  phase: SubagentRunPhase,
+  extras?: Partial<EcoHookContext> & { peekPendingCoderTodoId?: () => string | undefined },
+): Partial<EcoHookContext> {
+  let pendingLaunch: PendingSubagentLaunch | undefined;
+  const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
+  const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
+    ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
+    consumePendingLaunch: () => {
+      const next = pendingLaunch;
+      pendingLaunch = undefined;
+      return next;
+    },
+    onAgentToolCapture: (input) => {
+      if (!isSubagentRole(input.role)) {
+        return;
+      }
+      const missionKey = normalizeSubagentMissionKey(input.prompt);
+      const todoId =
+        input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
+      pendingLaunch = {
+        role: input.role,
+        ...(missionKey ? { missionKey } : {}),
+        ...(todoId ? { todoId } : {}),
+      };
+    },
+  });
+  const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
+  return { ...rest, subagentSessions };
+}
+
 function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
   hookContextExtras?: Partial<EcoHookContext>,
+  runPhase: SubagentRunPhase = "execution",
 ): ClaudeAgentSdkDriver {
   const endpoint = localOtelReceiver.getEndpoint();
   if (!endpoint) {
@@ -2512,7 +2568,7 @@ function createSdkDriver(
     orchestration: orchestrationModeFromSnapshot({ planModeEnabled }),
     hookContext: {
       ...createThreadHookContext(threadId),
-      ...hookContextExtras,
+      ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
     },
     otel: { endpoint, threadId },
     ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
@@ -2722,6 +2778,9 @@ async function dispatchThreadContinueAction(input: {
   }
 
   if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
+    if (action.kind === "fresh_plan") {
+      conversationStore.clearSubagentSessions(threadId);
+    }
     if (threadUsesPlanOrchestration(threadId)) {
       void runCodingThreadPlanning(
         updated,
@@ -2837,20 +2896,28 @@ async function runThreadContinuation(
       await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
 
       try {
-        const driver = createSdkDriver(thread.id, attemptProxy, {
-          ...(taskHookHandlers
-            ? {
-                taskTracker: {
-                  ...taskHookHandlers,
-                  onStop(status) {
-                    stopTodosHandled = true;
-                    taskHookHandlers.onStop(status);
+        const continuationPhase: SubagentRunPhase =
+          mode === "question" ? "question" : mode === "planning" ? "planning" : "execution";
+        const driver = createSdkDriver(
+          thread.id,
+          attemptProxy,
+          {
+            ...(taskHookHandlers
+              ? {
+                  peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
+                  taskTracker: {
+                    ...taskHookHandlers,
+                    onStop(status) {
+                      stopTodosHandled = true;
+                      taskHookHandlers.onStop(status);
+                    },
                   },
-                },
-                getStopTodoStatus: () => stopStatusRef.current,
-              }
-            : {}),
-        });
+                  getStopTodoStatus: () => stopStatusRef.current,
+                }
+              : {}),
+          },
+          continuationPhase,
+        );
         if (!driver.runQuestion && mode === "question") {
           throw new Error("Runtime driver does not support question answering.");
         }
@@ -2868,6 +2935,10 @@ async function runThreadContinuation(
           signal: controller.signal,
           sdkSession: buildSdkSessionOptions(thread.id),
           resume,
+          resumableSubagents: listResumableSubagentRefs(
+            thread.id,
+            continuationPhase,
+          ),
         };
 
         const eventStream =
