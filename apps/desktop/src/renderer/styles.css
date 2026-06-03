@@ -5367,6 +5367,7 @@ button:not(:disabled) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  overflow: visible;
 }
 
 .models-route-title-sep {
@@ -5374,6 +5375,11 @@ button:not(:disabled) {
   font-size: 13px;
   line-height: 1;
   user-select: none;
+}
+
+.models-route-card-title .api-compat-toggle-wrap {
+  width: 20px;
+  height: 20px;
 }
 
 .models-route-card-title .api-compat-toggle {
@@ -5477,10 +5483,66 @@ button:not(:disabled) {
   min-width: 0;
 }
 
+.models-provider-endpoint-inline .api-compat-toggle-wrap {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+
 .models-provider-endpoint-inline .api-compat-toggle {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
+}
+
+.api-compat-toggle-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.api-compat-toggle-tooltip {
+  z-index: 10000;
+  width: min(280px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  background: #2b2b2b;
+  color: #e5e5e5;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.api-compat-toggle-tooltip-line {
+  display: block;
+}
+
+.api-compat-toggle-tooltip-line + .api-compat-toggle-tooltip-line {
+  margin-top: 6px;
+}
+
+.api-compat-toggle-tooltip-hint {
+  color: #a3a3a3;
+  font-size: 11px;
+}
+
+.api-compat-toggle-tooltip-action {
+  color: #d4d4d4;
+}
+
+.api-compat-toggle-tooltip strong {
+  font-weight: 600;
+  color: #f5f5f5;
 }
 
 .api-compat-toggle {
