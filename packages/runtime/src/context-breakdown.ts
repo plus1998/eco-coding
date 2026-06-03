@@ -33,8 +33,8 @@ export const CONTEXT_SEGMENT_LABELS: Record<ContextSegmentKey, string> = {
   skills: "技能",
   mcp: "MCP",
   subagentDefinitions: "子代理定义",
-  conversation: "对话",
-  unattributed: "其他占用",
+  conversation: "会话",
+  unattributed: "其他",
 };
 
 /** Maps English labels from Claude Code /context output to segment keys. */
@@ -56,7 +56,15 @@ const CONTEXT_LABEL_PATTERNS: { key: ContextSegmentKey; patterns: RegExp[] }[] =
   },
   {
     key: "conversation",
-    patterns: [/^conversation$/i, /^messages?$/i, /^transcript$/i, /^chat\s*history$/i, /^对话/],
+    patterns: [
+      /^conversation$/i,
+      /^messages?$/i,
+      /^transcript$/i,
+      /^chat\s*history$/i,
+      /^session(?:\s*usage)?$/i,
+      /^对话/,
+      /^会话/,
+    ],
   },
   { key: "unattributed", patterns: [/^other(?:\s*usage)?$/i, /^unattributed$/i, /^其他/] },
 ];
@@ -162,6 +170,27 @@ function segmentFromKey(key: ContextSegmentKey, tokens: number): ContextBreakdow
   };
 }
 
+function isContextSegmentKey(key: string): key is ContextSegmentKey {
+  return key in CONTEXT_SEGMENT_LABELS;
+}
+
+/** Re-apply canonical labels/colors and merge duplicate keys (e.g. restored snapshots). */
+export function normalizeContextSegments(
+  segments: readonly ContextBreakdownSegment[],
+): ContextBreakdownSegment[] {
+  const merged = new Map<ContextSegmentKey, number>();
+  for (const segment of segments) {
+    if (segment.tokens <= 0) {
+      continue;
+    }
+    const key = isContextSegmentKey(segment.key) ? segment.key : "unattributed";
+    merged.set(key, (merged.get(key) ?? 0) + segment.tokens);
+  }
+  return [...merged.entries()]
+    .map(([key, tokens]) => segmentFromKey(key, tokens))
+    .sort((left, right) => right.tokens - left.tokens);
+}
+
 /**
  * Parse Claude Code `/context` command text output into breakdown segments.
  */
@@ -227,15 +256,21 @@ export function mergeBreakdownWithOccupancy(
   segments: ContextBreakdownSegment[],
   occupied: number,
 ): ContextBreakdownSegment[] {
-  if (segments.length === 0 && occupied > 0) {
+  const normalized = normalizeContextSegments(segments);
+  if (normalized.length === 0 && occupied > 0) {
     return [segmentFromKey("conversation", occupied)];
   }
-  const sum = segments.reduce((total, segment) => total + segment.tokens, 0);
+  const sum = normalized.reduce((total, segment) => total + segment.tokens, 0);
   if (sum === 0 && occupied > 0) {
     return [segmentFromKey("conversation", occupied)];
   }
   if (occupied > sum) {
-    return [...segments, segmentFromKey("unattributed", occupied - sum)];
+    const gap = occupied - sum;
+    const merged = new Map(normalized.map((segment) => [segment.key, segment.tokens]));
+    merged.set("unattributed", (merged.get("unattributed") ?? 0) + gap);
+    return [...merged.entries()]
+      .map(([key, tokens]) => segmentFromKey(key, tokens))
+      .sort((left, right) => right.tokens - left.tokens);
   }
-  return segments;
+  return normalized;
 }

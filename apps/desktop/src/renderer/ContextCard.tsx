@@ -1,4 +1,4 @@
-import { formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
+import { CONTEXT_SEGMENT_LABELS, formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
 import { ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
@@ -102,7 +102,9 @@ function hasDetailedBreakdown(role: ThreadRoleContextSnapshot): boolean {
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   return (
     visibleSegments.length > 1 ||
-    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话")
+    visibleSegments.some(
+      (segment) => segment.key !== "conversation" || segment.label !== CONTEXT_SEGMENT_LABELS.conversation,
+    )
   );
 }
 
@@ -176,7 +178,9 @@ function ContextRoleBody({
           {visibleSegments.map((segment) => (
             <li key={segment.key}>
               <span className="context-card-swatch" style={{ backgroundColor: segment.color }} />
-              <span className="context-card-label">{segment.label}</span>
+              <span className="context-card-label">
+                {CONTEXT_SEGMENT_LABELS[segment.key] ?? segment.label.replace(/占用$/u, "")}
+              </span>
               <span className="context-card-value">{formatTokenCount(segment.tokens)}</span>
             </li>
           ))}

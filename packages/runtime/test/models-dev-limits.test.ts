@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { mergeBreakdownWithOccupancy, parseContextCommandHeader, parseContextCommandResult } from "../src/context-breakdown";
+import {
+  mergeBreakdownWithOccupancy,
+  normalizeContextSegments,
+  parseContextCommandHeader,
+  parseContextCommandResult,
+} from "../src/context-breakdown";
 import {
   computeOccupancyRatio,
   computeWindowOccupancy,
@@ -90,11 +95,47 @@ test("parseContextCommandResult fallback conversation", () => {
   expect(segments[0]?.tokens).toBe(50_000);
 });
 
+test("parseContextCommandResult maps Chinese session usage labels", () => {
+  const segments = parseContextCommandResult(`会话占用 | 87k\n其他占用 | 9k`);
+  expect(segments.find((s) => s.key === "conversation")).toMatchObject({
+    label: "会话",
+    tokens: 87_000,
+  });
+  expect(segments.find((s) => s.key === "unattributed")).toMatchObject({
+    label: "其他",
+    tokens: 9_000,
+  });
+});
+
+test("normalizeContextSegments refreshes stale labels", () => {
+  const segments = normalizeContextSegments([
+    { key: "conversation", label: "会话占用", tokens: 87_000, color: "#ea580c" },
+    { key: "unattributed", label: "其他占用", tokens: 9_000, color: "#78716c" },
+  ]);
+  expect(segments).toEqual([
+    { key: "conversation", label: "会话", tokens: 87_000, color: "#ea580c" },
+    { key: "unattributed", label: "其他", tokens: 9_000, color: "#78716c" },
+  ]);
+});
+
 test("mergeBreakdownWithOccupancy adds unattributed gap", () => {
   const segments = mergeBreakdownWithOccupancy(
-    [{ key: "conversation", label: "对话", tokens: 520_000, color: "#ea580c" }],
+    [{ key: "conversation", label: "会话", tokens: 520_000, color: "#ea580c" }],
     840_000,
   );
+  expect(segments.find((s) => s.key === "unattributed")?.tokens).toBe(320_000);
+  expect(segments.find((s) => s.key === "unattributed")?.label).toBe("其他");
+});
+
+test("mergeBreakdownWithOccupancy merges gap into existing unattributed", () => {
+  const segments = mergeBreakdownWithOccupancy(
+    [
+      { key: "conversation", label: "会话", tokens: 520_000, color: "#ea580c" },
+      { key: "unattributed", label: "其他", tokens: 300, color: "#78716c" },
+    ],
+    840_000,
+  );
+  expect(segments.filter((s) => s.key === "unattributed")).toHaveLength(1);
   expect(segments.find((s) => s.key === "unattributed")?.tokens).toBe(320_000);
 });
 

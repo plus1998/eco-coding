@@ -1,6 +1,7 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   mergeBreakdownWithOccupancy,
+  normalizeContextSegments,
   parseContextCommandHeader,
   parseContextCommandResult,
   parseUsagePayload,
@@ -99,7 +100,7 @@ export class ContextSnapshotScheduler {
     const plannerSegments =
       plannerRole?.segments.filter((segment) => segment.tokens > 0) ?? snapshot.segments;
     if (plannerSegments.length > 0) {
-      this.lastPlannerSegments.set(threadId, plannerSegments);
+      this.lastPlannerSegments.set(threadId, normalizeContextSegments(plannerSegments));
     }
     this.options.monitor.restoreFromContextSnapshot(threadId, snapshot);
     const normalized = this.buildSnapshot(threadId);
@@ -381,12 +382,7 @@ export class ContextSnapshotScheduler {
         }
 
         if (segments.length > 0) {
-          this.lastPlannerSegments.set(threadId, segments.map((segment) => ({
-            key: segment.key,
-            label: segment.label,
-            tokens: segment.tokens,
-            color: segment.color,
-          })));
+          this.lastPlannerSegments.set(threadId, normalizeContextSegments(segments));
         }
       });
     } catch (error) {

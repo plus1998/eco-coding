@@ -333,6 +333,7 @@ export {
   CONTEXT_SEGMENT_COLORS,
   CONTEXT_SEGMENT_LABELS,
   mergeBreakdownWithOccupancy,
+  normalizeContextSegments,
   parseContextCommandHeader,
   parseContextCommandResult,
   type ContextBreakdownSegment,
