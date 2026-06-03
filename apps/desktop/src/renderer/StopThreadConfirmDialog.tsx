@@ -41,7 +41,7 @@ export function StopThreadConfirmDialog({
         </header>
         <div className="settings-modal-body">
           <p className="stop-thread-confirm-lead">
-            隔离工作树中有 {changedFiles.length} 个文件相对基线有变更。停止后请选择如何处理：
+            隔离工作树中有 {changedFiles.length} 个文件相对基线有变更。默认会保留工作树与对话，可随时继续；也可选择合并或放弃更改：
           </p>
           <ul className="stop-thread-confirm-files">
             {visibleFiles.map((file) => (
@@ -72,19 +72,19 @@ export function StopThreadConfirmDialog({
             </button>
             <button
               type="button"
-              className="plan-button"
+              className="plan-button primary"
               onClick={() => onConfirm("keep")}
               disabled={busy}
             >
-              保留，稍后合并
+              {busy ? "正在处理…" : "保留并停止"}
             </button>
             <button
               type="button"
-              className="plan-button primary"
+              className="plan-button"
               onClick={() => onConfirm("apply")}
               disabled={busy}
             >
-              {busy ? "正在处理…" : "应用到工作区并停止"}
+              应用到工作区并停止
             </button>
           </div>
         </footer>

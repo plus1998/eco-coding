@@ -30,17 +30,16 @@ export function takePendingCancelDisposition(
   return disposition;
 }
 
-/** When the UI did not send a disposition, keep changes if any exist; otherwise allow cleanup. */
+/** When the UI did not send a disposition, always keep the isolated worktree as a resumable checkpoint. */
 export async function resolveCancelDisposition(
-  plan: WorktreePlan,
+  _plan: WorktreePlan,
   explicit: WorktreeCancelDisposition | undefined,
-  changedFiles: (plan: WorktreePlan) => Promise<string[]>,
+  _changedFiles: (plan: WorktreePlan) => Promise<string[]>,
 ): Promise<WorktreeCancelDisposition> {
   if (explicit) {
     return explicit;
   }
-  const files = await changedFiles(plan);
-  return files.length > 0 ? "keep" : "discard";
+  return "keep";
 }
 
 export async function finalizeCancelledRun(
@@ -96,9 +95,9 @@ export async function finalizeCancelledRun(
     default: {
       deps.updateThread(threadId, {
         status: "idle",
-        message: "已停止。可在右侧「应用到工作区」合并更改。",
+        message: "已停止。可继续对话或换模型后重试；有改动时可在右侧「应用到工作区」合并。",
       });
-      deps.emitThreadEvent(threadId, "thread.idle", "已停止。", "system");
+      deps.emitThreadEvent(threadId, "thread.stopped", "已停止，对话检查点已保留。", "system");
     }
   }
 }

@@ -118,7 +118,11 @@ import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
-import { buildAgentPromptWithContext, isContinuableThreadStatus } from "../shared/thread-continuation";
+import {
+  buildAgentPromptWithContext,
+  isContinuableThreadStatus,
+  shouldUseInterruptedWorktree,
+} from "../shared/thread-continuation";
 import {
   computeRouteFingerprint,
   routesMatchFingerprint,
@@ -514,7 +518,7 @@ function registerIpcHandlers(): void {
     const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
     roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig);
     conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-    invalidateSdkSessionIfRoutesChanged(threadId, roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig));
+    noteSdkSessionRouteChange(threadId, roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig));
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
@@ -952,7 +956,7 @@ function registerIpcHandlers(): void {
       conversationStore.saveThreadRuntimeConfig(payload.threadId, nextConfig);
     }
     const roleRoutes = resolveRoleRoutesForThread(payload.threadId);
-    invalidateSdkSessionIfRoutesChanged(payload.threadId, roleRoutes);
+    noteSdkSessionRouteChange(payload.threadId, roleRoutes);
 
     const runtimeConfig = resolveRuntimeConfig(
       settings,
@@ -967,16 +971,25 @@ function registerIpcHandlers(): void {
     const activityLines = conversationStore.listActivityLines(payload.threadId);
     const sdkSession = conversationStore.getSdkSession(payload.threadId);
     const defaultPlan = createWorktreePlan(workspace.path, payload.threadId);
+    const worktreeOnDisk =
+      workspaceSupportsWorktree(workspace) && (await fileExists(defaultPlan.worktreePath));
+    const sessionCwd = sdkSession?.cwd?.trim();
+    const worktreeFromSession =
+      sessionCwd && (await fileExists(sessionCwd)) ? sessionCwd : undefined;
+    const worktreeExists = Boolean(worktreeFromSession || worktreeOnDisk);
+    const hasPriorActivity = threadHasResumableCheckpoint(thread, activityLines);
+
     let cwd = workspace.path;
-    if (sdkSession?.cwd) {
-      cwd = sdkSession.cwd;
-    } else if (
-      workspaceSupportsWorktree(workspace) &&
-      (await fileExists(defaultPlan.worktreePath))
-    ) {
+    if (worktreeFromSession) {
+      cwd = worktreeFromSession;
+    } else if (shouldUseInterruptedWorktree(worktreeExists, hasPriorActivity)) {
+      cwd = defaultPlan.worktreePath;
+    } else if (worktreeOnDisk) {
       cwd = defaultPlan.worktreePath;
     }
-    const canResume = Boolean(sdkSession?.sessionId && sdkSession.cwd === cwd);
+    const canResume = Boolean(
+      sdkSession?.sessionId && sessionCwd && existsSync(sessionCwd) && sessionCwd === cwd,
+    );
     const existingWorktreePlan =
       isIsolatedWorktreePlan({ workspacePath: workspace.path, worktreePath: cwd })
         ? resolveWorktreePlan(workspace.path, payload.threadId, cwd)
@@ -1229,6 +1242,52 @@ function scheduleThreadTitleSummary(
     });
 }
 
+const THREAD_INTERRUPTED_CONTINUE_HINT =
+  "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+
+function markThreadInterrupted(threadId: string, reason: string): void {
+  const summary = formatUserFacingRequestError(reason);
+  const truncated = summary.length > 240 ? `${summary.slice(0, 237)}…` : summary;
+  updateThread(threadId, {
+    status: "blocked",
+    message: `${truncated} ${THREAD_INTERRUPTED_CONTINUE_HINT}`,
+  });
+  emitThreadEvent(threadId, "thread.blocked", truncated, "system");
+}
+
+function clearSdkSessionAfterResumeFailure(threadId: string, hadResume: boolean): void {
+  if (!hadResume) {
+    return;
+  }
+  conversationStore.clearSdkSession(threadId);
+  emitThreadEvent(
+    threadId,
+    "thread.session_cleared",
+    "原 session 无法接续，已改用对话摘要续聊。",
+    "system",
+  );
+}
+
+function threadHasResumableCheckpoint(
+  thread: ThreadSummary,
+  activityLines: readonly ThreadActivityLine[],
+): boolean {
+  if (conversationStore.getSdkSession(thread.id)?.sessionId) {
+    return true;
+  }
+  if (thread.status === "idle" || thread.status === "blocked" || thread.status === "failed") {
+    return activityLines.some((line) => line.role !== "tool");
+  }
+  return activityLines.some(
+    (line) =>
+      line.role === "system" &&
+      (line.message.includes("已停止") ||
+        line.message.includes("检查点") ||
+        line.message.includes("自动重试") ||
+        line.message.includes("上游不可用")),
+  );
+}
+
 function runThreadRequestWithAutoRetry(
   threadId: string,
   signal: AbortSignal | undefined,
@@ -1238,7 +1297,7 @@ function runThreadRequestWithAutoRetry(
     signal,
     onRetryScheduled: (retryIndex, maxRetries, reason) => {
       const short = reason.length > 100 ? `${reason.slice(0, 97)}…` : reason;
-      const message = `【自动重试 ${retryIndex}/${maxRetries}】${REQUEST_AUTO_RETRY_INTERVAL_MS / 1000} 秒后重试：${short}`;
+      const message = `上游不可用，正在重试 ${retryIndex}/${maxRetries}（${REQUEST_AUTO_RETRY_INTERVAL_MS / 1000}s 后，点击停止可立即中断）：${short}`;
       emitThreadEvent(threadId, "thread.auto_retry", message, "system");
       updateThread(threadId, { status: "running", message });
     },
@@ -1327,7 +1386,7 @@ async function runQuestionThread(
       return;
     }
     if (!outcome.ok) {
-      updateThread(thread.id, { status: "failed", message: outcome.reason });
+      markThreadInterrupted(thread.id, outcome.reason);
       return;
     }
 
@@ -1335,10 +1394,7 @@ async function runQuestionThread(
     scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
-    updateThread(thread.id, {
-      status: "failed",
-      message: errorMessage(error),
-    });
+    markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
@@ -1423,6 +1479,8 @@ async function runCodingThreadSdkDefault(
       status: "running",
     });
 
+    const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
+
     const runOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
@@ -1446,7 +1504,7 @@ async function runCodingThreadSdkDefault(
       try {
         const driver = createSdkDriver(thread.id, attemptProxy);
         let sdkFailure: string | undefined;
-        const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+        const effectiveResume = resumeOptsForRun;
 
         for await (const event of driver.run({
           threadId: thread.id,
@@ -1491,11 +1549,8 @@ async function runCodingThreadSdkDefault(
     }
     if (!runOutcome.ok) {
       cancelClarificationsForThread(thread.id, runOutcome.reason);
-      updateThread(thread.id, {
-        status: "failed",
-        message: runOutcome.reason,
-      });
-      await cleanupWorktreeForThread(thread.id);
+      clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
+      markThreadInterrupted(thread.id, runOutcome.reason);
       return;
     }
 
@@ -1504,11 +1559,7 @@ async function runCodingThreadSdkDefault(
     requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
-    updateThread(thread.id, {
-      status: "failed",
-      message: errorMessage(error),
-    });
-    await cleanupWorktreeForThread(thread.id);
+    markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
@@ -1559,6 +1610,8 @@ async function runCodingThreadPlanning(
       status: "running",
     });
 
+    const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
+
     const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
@@ -1585,7 +1638,7 @@ async function runCodingThreadPlanning(
         let sdkFailure: string | undefined;
         let captured = false;
 
-        const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+        const effectiveResume = resumeOptsForRun;
 
         for await (const event of driver.run({
           threadId: thread.id,
@@ -1670,11 +1723,8 @@ async function runCodingThreadPlanning(
     }
     if (!planningOutcome.ok) {
       cancelClarificationsForThread(thread.id, planningOutcome.reason);
-      updateThread(thread.id, {
-        status: "failed",
-        message: planningOutcome.reason,
-      });
-      await cleanupWorktreeForThread(thread.id);
+      clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
+      markThreadInterrupted(thread.id, planningOutcome.reason);
       return;
     }
 
@@ -1685,11 +1735,7 @@ async function runCodingThreadPlanning(
     requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
-    updateThread(thread.id, {
-      status: "failed",
-      message: errorMessage(error),
-    });
-    await cleanupWorktreeForThread(thread.id);
+    markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
@@ -1942,13 +1988,18 @@ function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig
   }));
 }
 
-function invalidateSdkSessionIfRoutesChanged(
+function noteSdkSessionRouteChange(
   threadId: string,
   roleRoutes: readonly RoleRouteConfig[],
 ): void {
   const stored = conversationStore.getRouteFingerprint(threadId);
   if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
-    conversationStore.clearSdkSession(threadId);
+    emitThreadEvent(
+      threadId,
+      "thread.route_changed",
+      "模型路由已变更，将尝试接续原 session；若失败会自动改用对话摘要。",
+      "system",
+    );
   }
 }
 
@@ -1985,7 +2036,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   const settings = providerStore.getSettings();
   const routesOverride = resolveRoleRoutesForThread(threadId, request.routeProfileId);
 
-  invalidateSdkSessionIfRoutesChanged(threadId, routesOverride);
+  noteSdkSessionRouteChange(threadId, routesOverride);
 
   const runtimeConfig = resolveRuntimeConfigFresh(routesOverride);
   if (!runtimeConfig.ok) {
@@ -2521,15 +2572,15 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   if (!session?.sessionId) {
     return undefined;
   }
-  if (
-    !existsSync(worktreePath) ||
-    !existsSync(session.cwd) ||
-    session.cwd !== worktreePath
-  ) {
-    conversationStore.clearSdkSession(threadId);
-    return undefined;
+  const cwd = worktreePath.trim();
+  const sessionCwd = session.cwd.trim();
+  if (existsSync(sessionCwd) && sessionCwd === cwd) {
+    return { resumeSessionId: session.sessionId };
   }
-  return { resumeSessionId: session.sessionId };
+  if (existsSync(sessionCwd) && !cwd) {
+    return { resumeSessionId: session.sessionId };
+  }
+  return undefined;
 }
 
 function resolveContinuePhase(
@@ -2625,6 +2676,8 @@ async function runThreadContinuation(
       activeRuns.get(thread.id)!.worktreeReady = true;
     }
 
+    const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
+
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh();
       if (!freshConfig.ok) {
@@ -2633,7 +2686,7 @@ async function runThreadContinuation(
       recordThreadRouteFingerprint(thread.id, freshConfig.routes);
       const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
       const routes = buildDriverRoutes(attemptProxy.routes);
-      const resume = resolveResumeOptions(thread.id, cwd);
+      const resume = resumeOptsForContinuation;
       if (!resume) {
         return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
       }
@@ -2752,7 +2805,8 @@ async function runThreadContinuation(
     if (!outcome.ok) {
       stopStatusRef.current = "blocked";
       taskHookHandlers?.onStop("blocked");
-      updateThread(thread.id, { status: "failed", message: outcome.reason });
+      clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
+      markThreadInterrupted(thread.id, outcome.reason);
       return;
     }
 
@@ -2806,7 +2860,7 @@ async function runThreadContinuation(
   } catch (error) {
     stopStatusRef.current = "blocked";
     taskHookHandlers?.onStop("blocked");
-    updateThread(thread.id, { status: "failed", message: errorMessage(error) });
+    markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");

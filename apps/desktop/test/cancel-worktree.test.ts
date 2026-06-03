@@ -85,9 +85,9 @@ test("resolveCancelDisposition defaults to keep when files exist", async () => {
   );
 });
 
-test("resolveCancelDisposition defaults to discard when no files", async () => {
+test("resolveCancelDisposition defaults to keep when no files", async () => {
   await expect(resolveCancelDisposition(isolatedPlan, undefined, async () => [])).resolves.toBe(
-    "discard",
+    "keep",
   );
 });
 
@@ -107,7 +107,8 @@ test("finalizeCancelledRun keep leaves worktree intact", async () => {
   expect(calls.apply).toBe(0);
   expect(calls.cleanup).toBe(0);
   expect(calls.discard).toBe(0);
-  expect(calls.updates.at(-1)?.message).toContain("应用到工作区");
+  expect(calls.updates.at(-1)?.message).toContain("继续对话");
+  expect(calls.events).toContain("thread.stopped");
 });
 
 test("finalizeCancelledRun discard resets worktree", async () => {

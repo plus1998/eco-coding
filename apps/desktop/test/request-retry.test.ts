@@ -28,7 +28,7 @@ test("does not retry user cancel or plan business errors", () => {
   expect(isRetryableRequestFailure("未能生成可执行的计划。")).toBe(false);
 });
 
-test("retries up to 5 times before giving up", async () => {
+test("retries up to REQUEST_AUTO_RETRY_MAX times before giving up", async () => {
   let calls = 0;
   let scheduledRetries = 0;
 
@@ -49,7 +49,7 @@ test("retries up to 5 times before giving up", async () => {
   expect(scheduledRetries).toBe(REQUEST_AUTO_RETRY_MAX);
   expect(result.ok).toBe(false);
   if (!result.ok) {
-    expect(result.reason).toContain("已自动重试 5 次");
+    expect(result.reason).toContain(`已自动重试 ${REQUEST_AUTO_RETRY_MAX} 次`);
   }
 });
 

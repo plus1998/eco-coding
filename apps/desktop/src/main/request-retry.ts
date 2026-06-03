@@ -1,6 +1,7 @@
 /** Automatic retries after transient request / API failures. */
-export const REQUEST_AUTO_RETRY_MAX = 5;
+export const REQUEST_AUTO_RETRY_MAX = 2;
 export const REQUEST_AUTO_RETRY_INTERVAL_MS = 5000;
+export const REQUEST_AUTO_RETRY_MAX_ELAPSED_MS = 20_000;
 
 export type RequestAttemptResult =
   | { ok: true }
@@ -131,6 +132,7 @@ export async function runWithRequestAutoRetry(
   const retryIntervalMs = options?.retryIntervalMs ?? REQUEST_AUTO_RETRY_INTERVAL_MS;
   let lastReason = "请求失败";
   const maxRetries = REQUEST_AUTO_RETRY_MAX;
+  const started = Date.now();
 
   for (let retry = 0; retry <= maxRetries; retry += 1) {
     if (options?.signal?.aborted) {
@@ -152,7 +154,10 @@ export async function runWithRequestAutoRetry(
     }
 
     lastReason = result.reason;
-    const canRetry = retry < maxRetries && isRetryableRequestFailure(lastReason);
+    const canRetry =
+      retry < maxRetries &&
+      Date.now() - started < REQUEST_AUTO_RETRY_MAX_ELAPSED_MS &&
+      isRetryableRequestFailure(lastReason);
     if (!canRetry) {
       return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason, retry) };
     }
