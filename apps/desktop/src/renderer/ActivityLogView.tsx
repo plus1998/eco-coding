@@ -12,6 +12,7 @@ import { isGenericMissionSummary } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
   formatDuration,
+  thinkingPreviewLine,
   type ActivityActionIcon,
   type ActivityDetailBlock,
   type ActivityLogBlock,
@@ -723,7 +724,9 @@ function RequestTimingBadge({
 function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
   const [collapsed, setCollapsed] = useState(true);
   const hasBody = text.trim().length > 0;
-  const showBody = streaming || !collapsed;
+  const preview = hasBody ? thinkingPreviewLine(text) : "";
+  const showPreview = hasBody && collapsed && !streaming;
+  const showFullBody = hasBody && (streaming || !collapsed);
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
 
   return (
@@ -744,10 +747,15 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
             setCollapsed((value) => !value);
           }
         }}
-        aria-expanded={showBody}
+        aria-expanded={showFullBody}
         disabled={streaming && !hasBody}
       >
         <span className="run-log-thinking-label">Thinking</span>
+        {showPreview ? (
+          <span className="run-log-thinking-preview" title={preview}>
+            {preview}
+          </span>
+        ) : null}
         <RequestTimingBadge timing={timing} />
         {!streaming && hasBody ? (
           <ChevronDown
@@ -757,7 +765,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
           />
         ) : null}
       </button>
-      {showBody && hasBody ? (
+      {showFullBody ? (
         <div className="run-log-thinking-body">
           <MarkdownContent text={text} />
           {streaming ? <span className="run-log-cursor" aria-hidden /> : null}

@@ -69,20 +69,20 @@ test("emits one occupancy segment per independent role window", () => {
 
   const snapshot = emitted.at(-1);
   expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments).toEqual([
-    { key: "conversation", label: "会话占用", tokens: 10_000, color: "#ea580c" },
+    { key: "conversation", label: "会话", tokens: 10_000, color: "#ea580c" },
   ]);
   const coderSegments = snapshot?.roles?.find((role) => role.role === "coder")?.segments;
   expect(coderSegments).toEqual([
-    { key: "conversation", label: "会话占用", tokens: 40_000, color: "#ea580c" },
+    { key: "conversation", label: "会话", tokens: 40_000, color: "#ea580c" },
   ]);
 });
 
 test("clearSubagentState drops cached child role snapshots and segments", () => {
   const plannerSegments: ThreadContextSnapshot["segments"] = [
-    { key: "conversation", label: "会话占用", tokens: 10_000, color: "#ea580c" },
+    { key: "conversation", label: "会话", tokens: 10_000, color: "#ea580c" },
   ];
   const coderSegments: ThreadContextSnapshot["segments"] = [
-    { key: "conversation", label: "会话占用", tokens: 40_000, color: "#ea580c" },
+    { key: "conversation", label: "会话", tokens: 40_000, color: "#ea580c" },
   ];
   let monitorSnapshot: ContextMonitorSnapshot | undefined;
   const monitor = {

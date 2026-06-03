@@ -208,8 +208,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
+    const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
     const prompt = isResume
-      ? buildExecuteResumePrompt(planning)
+      ? buildExecuteResumePrompt({
+          ...planning,
+          approvedPlanFile,
+        })
       : buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
           ...(planning.planUserEdited ? { planUserEdited: true } : {}),
           availability,

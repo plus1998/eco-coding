@@ -508,6 +508,11 @@ function App() {
       return undefined;
     }
 
+    if (activeThread.status === "running") {
+      setPendingWorktreeApply(undefined);
+      return undefined;
+    }
+
     let cancelled = false;
     void window.eco.getWorktreeStatus(activeThread.id).then((status) => {
       if (cancelled) {

@@ -161,6 +161,31 @@ test("removes a git worktree and its branch", async () => {
   ]);
 });
 
+test("changedFiles falls back when merge-base diff fails", async () => {
+  const plan = createWorktreePlan("/repo", "thr_diff_fallback");
+  const runner: CommandRunner = {
+    async run(command, cwd) {
+      if (command[1] === "merge-base") {
+        return { exitCode: 0, stdout: "deadbeef\n", stderr: "" };
+      }
+      if (command[1] === "diff" && command.includes("--name-only") && command.includes("deadbeef")) {
+        return { exitCode: 1, stdout: "", stderr: "fatal: bad object deadbeef" };
+      }
+      if (command[1] === "diff" && command.includes("--name-only") && command.includes("HEAD")) {
+        return { exitCode: 0, stdout: "src/fixed.ts\n", stderr: "" };
+      }
+      if (command[1] === "ls-files") {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    },
+  };
+
+  const service = new GitWorktreeService(runner);
+  const files = await service.changedFiles(plan);
+  expect(files).toEqual(["src/fixed.ts"]);
+});
+
 test("applies approved worktree diffs back to the target workspace", async () => {
   const plan = createWorktreePlan("/repo", "thr_1");
   const calls: Array<{ command: string[]; cwd: string; stdin?: string }> = [];

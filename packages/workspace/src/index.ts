@@ -219,17 +219,6 @@ export class GitWorktreeService {
     return [...new Set([...tracked, ...untracked])];
   }
 
-  private async listTrackedChangedFiles(plan: WorktreePlan, baseSha: string): Promise<string[]> {
-    const result = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
-    if (result.exitCode !== 0) {
-      throw new Error(formatGitCommandFailure("Failed to list changed files", result));
-    }
-    return result.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
   private async listUntrackedFiles(plan: WorktreePlan): Promise<string[]> {
     const result = await this.runner.run(
       ["git", "ls-files", "--others", "--exclude-standard"],
@@ -254,14 +243,55 @@ export class GitWorktreeService {
 
   /** Diff base: merge point between workspace HEAD and the isolated branch (includes commits + dirty files). */
   private async resolveDiffBase(plan: WorktreePlan): Promise<string> {
-    const mergeBase = await this.runner.run(
-      ["git", "merge-base", "HEAD", plan.branchName],
-      plan.workspacePath,
-    );
-    if (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) {
-      return mergeBase.stdout.trim();
+    const attempts: Array<{ cwd: string; args: string[] }> = [
+      { cwd: plan.workspacePath, args: ["git", "merge-base", "HEAD", plan.branchName] },
+      { cwd: plan.worktreePath, args: ["git", "merge-base", "HEAD", plan.branchName] },
+      { cwd: plan.worktreePath, args: ["git", "merge-base", plan.branchName, "HEAD"] },
+    ];
+    for (const attempt of attempts) {
+      const mergeBase = await this.runner.run(attempt.args, attempt.cwd);
+      if (mergeBase.exitCode === 0 && mergeBase.stdout.trim()) {
+        return mergeBase.stdout.trim();
+      }
     }
     return "HEAD";
+  }
+
+  private parseNameOnlyDiff(stdout: string): string[] {
+    return stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  private async listTrackedChangedFiles(plan: WorktreePlan, baseSha: string): Promise<string[]> {
+    const diffAttempts = [
+      ["git", "diff", "--name-only", baseSha],
+      ["git", "diff", "--name-only", "HEAD"],
+      ["git", "diff", "--name-only"],
+    ] as const;
+
+    let lastFailure = { exitCode: 1, stdout: "", stderr: "" };
+    for (const args of diffAttempts) {
+      const result = await this.runner.run([...args], plan.worktreePath);
+      if (result.exitCode === 0) {
+        return this.parseNameOnlyDiff(result.stdout);
+      }
+      lastFailure = result;
+    }
+
+    const status = await this.runner.run(["git", "status", "--porcelain"], plan.worktreePath);
+    if (status.exitCode === 0) {
+      return status.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => (line.length >= 4 ? line.slice(3).trim() : line))
+        .filter(Boolean);
+    }
+    lastFailure = status;
+
+    throw new Error(formatGitCommandFailure("Failed to list changed files", lastFailure));
   }
 
   async discardWorktreeChanges(plan: WorktreePlan): Promise<void> {

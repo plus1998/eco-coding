@@ -10,6 +10,8 @@ import {
 } from "@eco/runtime";
 import {
   activityActionKey,
+  formatMcpToolDisplayName,
+  isMcpToolName,
   isReconnectActivityMessage,
   normalizeActivityActionLabel,
   shouldClearReconnectActivity,
@@ -275,9 +277,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     });
   };
 
-  const flushThinking = () => {
+  const flushThinking = ({ atEnd = false }: { atEnd?: boolean } = {}) => {
     const text = stripActivityStatusNoise(thinking.trim());
-    if (!text && !thinkingStreaming) {
+    const stillStreaming = thinkingStreaming && atEnd;
+    if (!text && !stillStreaming) {
       thinking = "";
       thinkingStreaming = false;
       return;
@@ -288,18 +291,18 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     current.details.push({
       kind: "thinking",
       text,
-      streaming: thinkingStreaming,
+      ...(stillStreaming ? { streaming: true } : {}),
     });
     thinking = "";
     thinkingStreaming = false;
   };
 
-  const flushTextBuffers = () => {
-    flushThinking();
-    flushNarrative();
+  const flushTextBuffers = (atEnd = false) => {
+    flushThinking({ atEnd });
+    flushNarrative({ atEnd });
   };
 
-  const flushNarrative = () => {
+  const flushNarrative = ({ atEnd = false }: { atEnd?: boolean } = {}) => {
     let text = narrative.trim();
     if (!text) {
       narrative = "";
@@ -334,10 +337,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     if (recentNarratives.length > 6) {
       recentNarratives.shift();
     }
+    const stillStreaming = narrativeStreaming && atEnd;
     current.details.push({
       kind: "narrative",
       text,
-      streaming: narrativeStreaming,
+      ...(stillStreaming ? { streaming: true } : {}),
       ...(narrativeSubagent && { subagent: narrativeSubagent }),
     });
     narrative = "";
@@ -543,6 +547,10 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       continue;
     }
 
+    if (isRedundantMcpToolProgressLine(line.message)) {
+      continue;
+    }
+
     const progressAction = parseProgressActionLine(line.message);
     if (progressAction) {
       flushTextBuffers();
@@ -571,10 +579,13 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       if (line.stream) {
         thinking = mergeStreamText(thinking, text);
         thinkingStreaming = true;
-      } else if (thinking) {
-        thinking += `\n\n${text}`;
       } else {
-        thinking = text;
+        if (thinking) {
+          thinking += `\n\n${text}`;
+        } else {
+          thinking = text;
+        }
+        thinkingStreaming = false;
       }
       continue;
     }
@@ -606,7 +617,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
   }
 
-  flushTextBuffers();
+  flushTextBuffers(true);
   pushSegment();
   return segments;
 }
@@ -915,6 +926,19 @@ function clampSubagentLogLine(text: string, max = 160): string {
     return oneLine;
   }
   return `${oneLine.slice(0, max - 1)}…`;
+}
+
+/** Single-line preview for collapsed thinking blocks. */
+export function thinkingPreviewLine(text: string, max = 120): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clampSubagentLogLine(plain, max);
 }
 
 /** Latest subagent step text for compact card (role shown on card chips, not repeated here). */
@@ -1284,6 +1308,11 @@ function isEphemeralToolStatusLine(message: string): boolean {
   return /^Running tool:/i.test(stripSubagentBracketPrefix(message.trim()));
 }
 
+function isRedundantMcpToolProgressLine(message: string): boolean {
+  const stripped = stripSubagentBracketPrefix(message.trim());
+  return /^Tool:\s*mcp_tool\s+\(\d+(?:\.\d+)?s\)\s*$/i.test(stripped);
+}
+
 function actionDetailFromLabel(label: string): string | undefined {
   const separator = " · ";
   const index = label.indexOf(separator);
@@ -1369,9 +1398,12 @@ const KNOWN_SDK_TOOLS = new Set([
   "Skill",
 ]);
 
+const TOOL_LINE_PATTERN =
+  /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
+
 function parseToolFailedLine(message: string): { tool: string; error?: string } | null {
   const match = stripSubagentBracketPrefix(message.trim()).match(
-    /^Tool failed:\s*([A-Za-z_]+)(?:\s*·\s*(.+))?$/i,
+    /^Tool failed:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+))?$/i,
   );
   if (!match?.[1]) {
     return null;
@@ -1384,15 +1416,13 @@ function parseToolFailedLine(message: string): { tool: string; error?: string } 
 }
 
 function parseToolLine(message: string): ParsedToolAction | null {
-  const match = message
-    .trim()
-    .match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/);
+  const match = message.trim().match(TOOL_LINE_PATTERN);
   if (!match) {
     return null;
   }
 
   const tool = match[1] ?? "";
-  if (!KNOWN_SDK_TOOLS.has(tool)) {
+  if (!KNOWN_SDK_TOOLS.has(tool) && !isMcpToolName(tool)) {
     return null;
   }
   let detail = match[2]?.trim() ?? match[3]?.trim();
@@ -1491,6 +1521,9 @@ const TOOL_VERB_LABELS: Record<string, string> = {
 function formatToolActionLabel(tool: ParsedToolAction): string {
   if (tool.tool === "Skill" || (tool.detail && tool.detail.endsWith(" 技能"))) {
     return tool.detail ? `读取 · ${tool.detail}` : "读取技能";
+  }
+  if (isMcpToolName(tool.tool)) {
+    return formatMcpToolDisplayName(tool.tool);
   }
   const verb = TOOL_VERB_LABELS[tool.tool] ?? tool.tool;
   if (tool.tool === "Agent") {

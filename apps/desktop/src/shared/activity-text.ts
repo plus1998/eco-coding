@@ -6,6 +6,10 @@ const suspiciousPatterns = [
   /[a-z](there|have|been|will|this|that|with)[a-z]/i,
 ];
 
+const ROLES_SKIP_SUSPICIOUS_LOG = new Set(["thinking", "system"]);
+
+const loggedSuspiciousActivityKeys = new Set<string>();
+
 export function repairActivityText(text: string): { text: string; repaired: boolean; suspicious: boolean } {
   let output = text;
   let repaired = false;
@@ -26,23 +30,48 @@ export function repairActivityText(text: string): { text: string; repaired: bool
   return { text: output, repaired, suspicious };
 }
 
+/** Log at most once per activity line; skips internal roles like thinking. */
+export function logSuspiciousActivityLine(
+  threadId: string,
+  line: { id: string; role: string; message: string },
+): void {
+  if (ROLES_SKIP_SUSPICIOUS_LOG.has(line.role)) {
+    return;
+  }
+
+  const key = `${threadId}:${line.id}`;
+  if (loggedSuspiciousActivityKeys.has(key)) {
+    return;
+  }
+
+  const { text, repaired, suspicious } = repairActivityText(line.message);
+  if (!suspicious && !repaired) {
+    return;
+  }
+
+  loggedSuspiciousActivityKeys.add(key);
+  console.warn("[eco][activity-text]", {
+    threadId,
+    lineId: line.id,
+    role: line.role,
+    repaired,
+    suspicious,
+    preview: text.slice(0, 240),
+    originalPreview: line.message.slice(0, 240),
+  });
+}
+
+/** @deprecated Prefer logSuspiciousActivityLine on append; listing must not re-log. */
 export function logSuspiciousActivityLines(
   threadId: string,
   lines: Array<{ id: string; role: string; message: string }>,
 ): void {
   for (const line of lines) {
-    const { text, repaired, suspicious } = repairActivityText(line.message);
-    if (!suspicious && !repaired) {
-      continue;
-    }
-    console.warn("[eco][activity-text]", {
-      threadId,
-      lineId: line.id,
-      role: line.role,
-      repaired,
-      suspicious,
-      preview: text.slice(0, 240),
-      originalPreview: line.message.slice(0, 240),
-    });
+    logSuspiciousActivityLine(threadId, line);
   }
+}
+
+/** Test-only: reset dedupe cache. */
+export function resetSuspiciousActivityLogCache(): void {
+  loggedSuspiciousActivityKeys.clear();
 }

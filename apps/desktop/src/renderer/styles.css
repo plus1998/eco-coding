@@ -2623,10 +2623,22 @@ button:not(:disabled) {
 }
 
 .run-log-thinking-label {
+  flex-shrink: 0;
   font-size: 13px;
   font-weight: 500;
   color: #737373;
   letter-spacing: 0.02em;
+}
+
+.run-log-thinking-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: #8a8a8a;
 }
 
 .run-log-thinking.streaming .run-log-thinking-label {
@@ -4098,12 +4110,6 @@ button:not(:disabled) {
 .thread-info-todos .coder-todo-list {
   margin: 0;
   padding: 0;
-}
-
-.thread-info-todos-empty {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .coder-todo-embedded .coder-todo-list {

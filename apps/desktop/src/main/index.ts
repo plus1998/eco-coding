@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  computeRequestBilling,
+  computeSavings,
   formatUsageBadge,
   parseSdkUsageBilling,
   type ParsedUsage,
@@ -95,6 +97,11 @@ import {
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
+  isWorktreeGitCwdError,
+  resolveWorktreePathHint,
+  writeApprovedPlanSnapshot,
+} from "./worktree-lifecycle";
+import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
@@ -115,8 +122,10 @@ import {
   startAnthropicModelProxy,
   type AnthropicProxyResolvedRoute,
   type AnthropicProxyStartOptions,
+  type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
 } from "./anthropic-proxy";
+import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import {
   buildPlannerModelLabel,
   lookupRouteCapabilityHints,
@@ -981,6 +990,13 @@ async function resolveThreadWorktree(
   if (!worktreeExists) {
     await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
     await gitWorktrees.createWorktree(worktreePlan);
+    return { worktreePlan, cwd: worktreePlan.worktreePath, isolated: true };
+  }
+
+  if (!(await gitWorktrees.isInsideWorktree(worktreePlan.worktreePath))) {
+    await fs.rm(worktreePlan.worktreePath, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
+    await gitWorktrees.createWorktree(worktreePlan);
   }
   return { worktreePlan, cwd: worktreePlan.worktreePath, isolated: true };
 }
@@ -1532,10 +1548,30 @@ async function runCodingThreadExecution(
     ...(options?.planUserEdited ? { planUserEdited: true } : {}),
   };
 
-  const worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
+  let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
-  activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: true });
+  activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: false });
   resetSubagentContextWindows(threadId);
+
+  const workspace = await ensureWorkspace(pending.workspacePath);
+  let executionCwd = pending.worktreePath;
+  if (workspaceSupportsWorktree(workspace) && isIsolatedWorktreePlan(worktreePlan)) {
+    const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
+    worktreePlan = resolved.worktreePlan;
+    executionCwd = resolved.cwd;
+    activeRuns.get(threadId)!.worktreePlan = worktreePlan;
+    activeRuns.get(threadId)!.worktreeReady = resolved.isolated;
+  } else {
+    activeRuns.get(threadId)!.worktreeReady = true;
+  }
+
+  try {
+    await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
+  } catch (error) {
+    process.stderr.write(
+      `[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`,
+    );
+  }
 
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
@@ -1580,16 +1616,16 @@ async function runCodingThreadExecution(
         }
 
         let sdkFailure: string | undefined;
-        const resume = resolveResumeOptions(threadId, pending.worktreePath);
+        const resume = resolveResumeOptions(threadId, executionCwd);
         if (resume) {
-          await ensureContextHeadroom(threadId, pending.worktreePath, controller.signal);
+          await ensureContextHeadroom(threadId, executionCwd, controller.signal);
         }
         for await (const event of driver.runExecution(
           {
             threadId,
             prompt: pending.userPrompt,
             workspacePath: pending.workspacePath,
-            worktreePath: pending.worktreePath,
+            worktreePath: executionCwd,
             routes: attemptRoutes,
             signal: controller.signal,
             sdkSession: buildSdkSessionOptions(),
@@ -1603,7 +1639,7 @@ async function runCodingThreadExecution(
             continue;
           }
 
-          captureSdkSessionFromEvent(threadId, event, pending.worktreePath);
+          captureSdkSessionFromEvent(threadId, event, executionCwd);
 
           if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
             todoTracker.handleTaskProgress(event.payload);
@@ -1982,19 +2018,44 @@ function resolveWorktreePlan(
   return plan;
 }
 
-async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
+function resolveWorktreeContextForThread(threadId: string): {
+  workspacePath?: string;
+  worktreePathHint?: string;
+} {
   const thread = conversationStore.getThread(threadId);
   const pending = conversationStore.getPendingPlan(threadId);
   const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
   if (!workspacePath) {
-    return { exists: false, worktreePath: "", workspacePath: "", changedFiles: [] };
+    return {};
+  }
+  const hintInput: Parameters<typeof resolveWorktreePathHint>[0] = {
+    threadId,
+    workspacePath,
+  };
+  const activePath = activeRuns.get(threadId)?.worktreePlan?.worktreePath;
+  if (activePath?.trim()) {
+    hintInput.activeWorktreePath = activePath.trim();
+  }
+  if (pending?.worktreePath?.trim()) {
+    hintInput.pendingWorktreePath = pending.worktreePath.trim();
+  }
+  const sessionCwd = conversationStore.getSdkSession(threadId)?.cwd;
+  if (sessionCwd?.trim()) {
+    hintInput.sdkSessionCwd = sessionCwd.trim();
+  }
+  return {
+    workspacePath,
+    worktreePathHint: resolveWorktreePathHint(hintInput),
+  };
+}
+
+async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
+  const { workspacePath, worktreePathHint } = resolveWorktreeContextForThread(threadId);
+  if (!workspacePath || !worktreePathHint) {
+    return { exists: false, worktreePath: "", workspacePath: workspacePath ?? "", changedFiles: [] };
   }
 
-  const plan = resolveWorktreePlan(
-    workspacePath,
-    threadId,
-    pending?.worktreePath,
-  );
+  const plan = resolveWorktreePlan(workspacePath, threadId, worktreePathHint);
   if (!isIsolatedWorktreePlan(plan)) {
     return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
   }
@@ -2006,12 +2067,25 @@ async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult
     return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
   }
 
+  if (!existsSync(plan.worktreePath)) {
+    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  }
+
   try {
+    if (!existsSync(plan.worktreePath)) {
+      return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+    }
     const changedFiles = await gitWorktrees.changedFiles(plan);
     return { exists: true, worktreePath: plan.worktreePath, workspacePath, changedFiles };
   } catch (error) {
-    console.error("Failed to read worktree status:", error);
-    return { exists: true, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+    if (!isWorktreeGitCwdError(error)) {
+      console.error("Failed to read worktree status:", error);
+    } else {
+      process.stderr.write(
+        `[eco] worktree status skipped (${plan.worktreePath}): cwd no longer valid\n`,
+      );
+    }
+    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
   }
 }
 
@@ -2093,13 +2167,11 @@ async function rollbackWorkspaceToThread(threadId: string): Promise<ThreadRollba
 }
 
 async function cleanupWorktreeForThread(threadId: string): Promise<void> {
-  const pending = conversationStore.getPendingPlan(threadId);
-  const thread = conversationStore.getThread(threadId);
-  const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
-  if (!workspacePath) {
+  const { workspacePath, worktreePathHint } = resolveWorktreeContextForThread(threadId);
+  if (!workspacePath || !worktreePathHint) {
     return;
   }
-  const plan = resolveWorktreePlan(workspacePath, threadId, pending?.worktreePath);
+  const plan = resolveWorktreePlan(workspacePath, threadId, worktreePathHint);
   if (!isIsolatedWorktreePlan(plan)) {
     return;
   }
@@ -2605,13 +2677,17 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
       ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
       ...(usage.modelId && { modelId: usage.modelId }),
       otelDedupId: dedupId,
-    }).catch((error) => {
-      process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
-    }),
+    })
+      .then(() => undefined)
+      .catch((error) => {
+        process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
+      }),
   );
 }
 
-function emitProxyUsage(info: AnthropicProxyUsageInfo & { threadId: string }): void {
+async function emitProxyUsage(
+  info: AnthropicProxyUsageInfo & { threadId: string },
+): Promise<UpstreamProxyCallBilling | null> {
   const run = activeRuns.get(info.threadId);
   const seq = (run?.proxyRequestSeq ?? 0) + 1;
   const updateContext = isProxyContextAuthoritative(info);
@@ -2636,23 +2712,33 @@ function emitProxyUsage(info: AnthropicProxyUsageInfo & { threadId: string }): v
     info.usage.cacheCreationTokens,
   ].join(":");
 
+  const billingTask = processUsageBilling({
+    threadId: info.threadId,
+    role: info.role,
+    source: "proxy",
+    inputTokens: info.usage.inputTokens,
+    outputTokens: info.usage.outputTokens,
+    cacheReadTokens: info.usage.cacheReadTokens,
+    cacheCreationTokens: info.usage.cacheCreationTokens,
+    modelId: info.modelId,
+    requestKey,
+    updateContext,
+  });
   trackUsageUpdate(
     info.threadId,
-    processUsageBilling({
-      threadId: info.threadId,
-      role: info.role,
-      source: "proxy",
-      inputTokens: info.usage.inputTokens,
-      outputTokens: info.usage.outputTokens,
-      cacheReadTokens: info.usage.cacheReadTokens,
-      cacheCreationTokens: info.usage.cacheCreationTokens,
-      modelId: info.modelId,
-      requestKey,
-      updateContext,
-    }).catch((error) => {
-      process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
-    }),
+    billingTask.then(
+      () => undefined,
+      (error) => {
+        process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
+      },
+    ),
   );
+  try {
+    return await billingTask;
+  } catch (error) {
+    process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
+    return null;
+  }
 }
 
 function isProxyContextAuthoritative(info: AnthropicProxyUsageInfo): boolean {
@@ -2706,15 +2792,14 @@ async function processUsageBilling(input: {
   requestKey?: string;
   otelDedupId?: string;
   updateContext?: boolean;
-}): Promise<void> {
+}): Promise<UpstreamProxyCallBilling | null> {
   await pricingCatalogReady;
 
-  const delta = {
+  const delta: ParsedUsage = {
     inputTokens: input.inputTokens,
     outputTokens: input.outputTokens,
     cacheReadTokens: input.cacheReadTokens,
     cacheCreationTokens: input.cacheCreationTokens,
-    ...(input.modelId && { modelId: input.modelId }),
   };
 
   if (
@@ -2724,7 +2809,7 @@ async function processUsageBilling(input: {
     delta.cacheCreationTokens === 0 &&
     input.otelCostUsd === undefined
   ) {
-    return;
+    return null;
   }
 
   const settings = providerStore.getSettings();
@@ -2789,14 +2874,28 @@ async function processUsageBilling(input: {
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
 
+  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  const requestBilling = computeRequestBilling(delta, actualRates, plannerRates);
+  const { savedUsd } = computeSavings(
+    requestBilling.plannerTokenCostUsd,
+    requestBilling.ecoCostUsd,
+  );
+  const requestBillingLog: UpstreamProxyCallBilling = {
+    ecoCostUsd: requestBilling.ecoCostUsd,
+    plannerTokenCostUsd: requestBilling.plannerTokenCostUsd,
+    savedUsd,
+    otelCostUsd: input.otelCostUsd ?? 0,
+  };
+
   const billing = threadUsageAccumulator.recordUsage({
     threadId: input.threadId,
     role: billingRole,
     source: input.source ?? "otel",
     delta,
     ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-    actualRates: resolveRatesForRoute(actualLookup, usageRoute?.manualSpec),
-    plannerRates: resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec),
+    actualRates,
+    plannerRates,
     ...(resolvedModelId && { modelId: resolvedModelId }),
     requestKey,
     ...(plannerModelLabel && { plannerModelLabel }),
@@ -2835,6 +2934,8 @@ async function processUsageBilling(input: {
       worktreePath,
     );
   }
+
+  return requestBillingLog;
 }
 
 function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRoutesFromSettings>): ResolvedModelRoute[] {
@@ -2871,14 +2972,11 @@ async function ensureContextHeadroom(
 }
 
 function resolveThreadWorktreePath(threadId: string): string | undefined {
-  const candidate =
-    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
-    conversationStore.getSdkSession(threadId)?.cwd ??
-    conversationStore.getPendingPlan(threadId)?.worktreePath;
-  if (!candidate || !existsSync(candidate)) {
+  const { workspacePath, worktreePathHint } = resolveWorktreeContextForThread(threadId);
+  if (!workspacePath || !worktreePathHint || !existsSync(worktreePathHint)) {
     return undefined;
   }
-  return candidate;
+  return worktreePathHint;
 }
 
 /** Call after activeRuns.delete so /context breakdown is not blocked as "still running". */
@@ -3067,9 +3165,11 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
           ...(modelId && { modelId }),
           messageId,
           requestKey: buildAssistantUsageRequestKey(messageId),
-        }).catch((error) => {
-          process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
-        }),
+        })
+          .then(() => undefined)
+          .catch((error) => {
+            process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
+          }),
       );
     }
     return;
@@ -3276,11 +3376,20 @@ function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
 }
 
 async function removeIsolatedWorktree(plan: WorktreePlan, threadId: string): Promise<void> {
+  const session = conversationStore.getSdkSession(threadId);
+  const sessionCwd = session?.cwd;
   try {
     await gitWorktrees.removeWorktree(plan);
     emitThreadEvent(threadId, "worktree.removed", "已清理隔离工作树。", "system");
   } catch (error) {
     console.error("Failed to remove worktree:", error);
+  } finally {
+    if (
+      sessionCwd &&
+      path.resolve(sessionCwd) === path.resolve(plan.worktreePath)
+    ) {
+      conversationStore.clearSdkSession(threadId);
+    }
   }
 }
 
@@ -3561,9 +3670,7 @@ function startRuntimeProxy(
       onUpstreamConnectionError: ({ role, error }) => {
         emitUpstreamConnectionErrorActivity(threadId, role, error);
       },
-      onUsage: (info) => {
-        emitProxyUsage({ ...info, threadId });
-      },
+      onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
     }),
   };
   return startAnthropicModelProxy(routes, options);

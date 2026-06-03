@@ -55,18 +55,43 @@ export function buildExecutePhasePrompt(
   return lines.join("\n");
 }
 
-/** Shorter execution prompt when resuming the same SDK session after planning. */
+/** Execution prompt when resuming the same SDK session after planning (plan text is always inlined). */
 export function buildExecuteResumePrompt(planning: {
+  userPrompt: string;
+  analysis: string;
   plan: string;
   planUserEdited?: boolean;
+  /** Repo-relative path, e.g. `.eco/approved-plans/thr_x.md` */
+  approvedPlanFile?: string;
 }): string {
+  const lines = [
+    "Proceed with phase 2 execution.",
+    "The approved plan below is authoritative. Do not ask the user to paste the plan again.",
+    "",
+    "User request:",
+    planning.userPrompt.trim() || "(not captured)",
+    "",
+    "Planning analysis:",
+    planning.analysis.trim() || "(no analysis captured)",
+    "",
+    "Approved plan (follow this):",
+    planning.plan.trim() || "(no plan captured)",
+  ];
+
   if (planning.planUserEdited) {
-    return [
-      "Proceed with phase 2 execution.",
-      "The user edited the approved plan before execution. Treat this plan as authoritative:",
+    lines.push(
       "",
-      planning.plan.trim() || "(no plan captured)",
-    ].join("\n");
+      "<system-reminder>",
+      "The user edited this plan in Eco before approval. Treat the approved plan text above as authoritative over any earlier planner draft in the conversation.",
+      "</system-reminder>",
+    );
   }
-  return "Proceed with phase 2 execution. Implement the approved plan from our conversation above.";
+
+  if (planning.approvedPlanFile?.trim()) {
+    lines.push("", `On-disk copy (workspace root): ${planning.approvedPlanFile.trim()}`);
+  }
+
+  lines.push("", "Task: Continue phase 2 — implement the approved plan and update ## Coder Tasks.");
+
+  return lines.join("\n");
 }

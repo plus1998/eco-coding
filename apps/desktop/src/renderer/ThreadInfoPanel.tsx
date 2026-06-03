@@ -370,10 +370,7 @@ export function ThreadInfoPanel({
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
   const showProgress =
-    todos.length > 0 ||
-    threadStatus === "running" ||
-    threadStatus === "queued" ||
-    (pendingWorktreeApply?.changedFiles.length ?? 0) > 0;
+    todos.length > 0 || (pendingWorktreeApply?.changedFiles.length ?? 0) > 0;
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -439,11 +436,7 @@ export function ThreadInfoPanel({
                 ) : null}
               </div>
             ) : null}
-            {todos.length > 0 ? (
-              <CoderTodoPanel todos={todos} embedded compact />
-            ) : (
-              <p className="thread-info-muted thread-info-todos-empty">等待 Planner 通过 SDK Task 工具更新进度…</p>
-            )}
+            {todos.length > 0 ? <CoderTodoPanel todos={todos} embedded compact /> : null}
           </section>
         ) : null}
       </div>

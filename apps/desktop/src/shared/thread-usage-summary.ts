@@ -110,7 +110,7 @@ function fallbackSegments(tokens: number): ThreadRoleContextSnapshot["segments"]
   return [
     {
       key: "conversation",
-      label: "会话占用",
+      label: "会话",
       tokens,
       color: "#ea580c",
     },

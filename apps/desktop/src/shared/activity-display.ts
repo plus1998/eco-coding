@@ -79,6 +79,36 @@ export function pathBasename(filePath: string): string {
   return parts[parts.length - 1] ?? filePath;
 }
 
+const TOOL_LINE_PATTERN =
+  /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
+
+const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
+
+const MCP_TOOL_DISPLAY_LABELS: Record<string, string> = {
+  mcp__eco_plan__finalize_plan: "提交计划",
+};
+
+export function isMcpToolName(tool: string): boolean {
+  return tool.startsWith("mcp__") || tool === "mcp_tool";
+}
+
+export function formatMcpToolDisplayName(tool: string): string {
+  const known = MCP_TOOL_DISPLAY_LABELS[tool];
+  if (known) {
+    return known;
+  }
+  const match = tool.match(MCP_TOOL_LINE_PATTERN);
+  if (match?.[1] && match[2]) {
+    const server = match[1].replace(/_/g, " ");
+    const toolName = match[2].replace(/_/g, " ");
+    return `${server} · ${toolName}`;
+  }
+  if (tool === "mcp_tool") {
+    return "MCP 工具";
+  }
+  return tool.replace(/^mcp__/, "").replace(/__/g, " · ").replace(/_/g, " ");
+}
+
 export function normalizeActivityActionLabel(raw: string): string {
   let text = stripSubagentBracketPrefix(raw.trim());
   if (!text) {
@@ -92,7 +122,7 @@ export function normalizeActivityActionLabel(raw: string): string {
     }
   }
 
-  const toolMatch = text.match(/^Tool:\s*([A-Za-z_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/);
+  const toolMatch = text.match(TOOL_LINE_PATTERN);
   if (toolMatch) {
     const tool = toolMatch[1] ?? "";
     let detail = toolMatch[2]?.trim() ?? toolMatch[3]?.trim();
@@ -100,6 +130,10 @@ export function normalizeActivityActionLabel(raw: string): string {
       detail = undefined;
     } else if (detail) {
       detail = detail.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim() || undefined;
+    }
+    if (isMcpToolName(tool)) {
+      const base = formatMcpToolDisplayName(tool);
+      return detail ? `${base} · ${detail}` : base;
     }
     const verb = TOOL_VERB_LABELS[tool] ?? tool;
     if (detail) {

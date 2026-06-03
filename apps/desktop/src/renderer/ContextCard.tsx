@@ -102,7 +102,7 @@ function hasDetailedBreakdown(role: ThreadRoleContextSnapshot): boolean {
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   return (
     visibleSegments.length > 1 ||
-    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话占用")
+    visibleSegments.some((segment) => segment.key !== "conversation" || segment.label !== "会话")
   );
 }
 

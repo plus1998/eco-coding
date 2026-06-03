@@ -438,7 +438,7 @@ export class ContextWindowMonitor {
 function fallbackSegment(tokens: number): ThreadContextSnapshot["segments"][number] {
   return {
     key: "conversation",
-    label: "会话占用",
+    label: "会话",
     tokens,
     color: "#ea580c",
   };

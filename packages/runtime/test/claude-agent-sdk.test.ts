@@ -755,9 +755,24 @@ test("createSessionCapturedEvent and init message helpers", () => {
   expect(event.payload).toEqual({ sessionId: "sess-abc", cwd: "/tmp/worktree" });
 });
 
-test("buildExecuteResumePrompt is shorter when resuming", () => {
-  expect(buildExecuteResumePrompt({ plan: "Do the thing" })).toContain("phase 2 execution");
-  expect(buildExecuteResumePrompt({ plan: "Edited", planUserEdited: true })).toContain("Edited");
+test("buildExecuteResumePrompt inlines approved plan when resuming", () => {
+  const prompt = buildExecuteResumePrompt({
+    userPrompt: "Add feature X",
+    analysis: "Needs tests",
+    plan: "Do the thing",
+    approvedPlanFile: ".eco/approved-plans/thr_1.md",
+  });
+  expect(prompt).toContain("phase 2 execution");
+  expect(prompt).toContain("Do the thing");
+  expect(prompt).toContain("Add feature X");
+  expect(prompt).toContain(".eco/approved-plans/thr_1.md");
+  expect(prompt).not.toContain("from our conversation above");
+  expect(buildExecuteResumePrompt({
+    userPrompt: "x",
+    analysis: "y",
+    plan: "Edited",
+    planUserEdited: true,
+  })).toContain("user edited this plan");
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

@@ -6,6 +6,7 @@ import {
 import {
   buildActivityLogBlocks,
   countOpenAgentDelegations,
+  thinkingPreviewLine,
   findSubagentRunLineBounds,
   isAgentElapsedProgressLine,
   isModelRequestLine,
@@ -153,7 +154,7 @@ test("keeps thinking separate from agent narrative streams", () => {
   expect(thinking?.kind).toBe("thinking");
   if (thinking?.kind === "thinking") {
     expect(thinking.text).toBe("Let me also");
-    expect(thinking.streaming).toBe(true);
+    expect(thinking.streaming).toBeFalsy();
   }
   expect(narrative?.kind).toBe("narrative");
   if (narrative?.kind === "narrative") {
@@ -853,5 +854,71 @@ test("does not treat tool elapsed duration as subagent role", () => {
   if (todoAction?.kind === "action") {
     expect(todoAction.subagent).toBe("coder");
     expect(todoAction.label).toBe("更新任务");
+  }
+});
+
+test("thinkingPreviewLine collapses markdown to one line", () => {
+  expect(
+    thinkingPreviewLine("**Plan**\n\n- item one\n- item two"),
+  ).toBe("Plan - item one - item two");
+  expect(thinkingPreviewLine("a".repeat(200)).endsWith("…")).toBe(true);
+});
+
+test("renders MCP tool calls as styled actions instead of narrative", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "plan this" },
+      { id: "1", role: "planner", message: "提交实现计划给 Eco。" },
+      { id: "2", role: "planner", message: "Tool: mcp__eco_plan__finalize_plan" },
+      { id: "3", role: "tool", message: "Tool: mcp_tool (0.0s)" },
+      { id: "4", role: "planner", message: "我会先核对当前工作树状态。" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+
+  const mcpAction = session.children.find(
+    (child) => child.kind === "action" && child.label === "提交计划",
+  );
+  expect(mcpAction?.kind).toBe("action");
+  if (mcpAction?.kind === "action") {
+    expect(mcpAction.icon).toBe("file");
+  }
+
+  const narrative = session.children.find(
+    (child) => child.kind === "narrative" && child.text.includes("mcp__eco_plan__finalize_plan"),
+  );
+  expect(narrative).toBeUndefined();
+
+  const wrapperAction = session.children.filter(
+    (child) => child.kind === "action" && child.label.includes("MCP 工具"),
+  );
+  expect(wrapperAction.length).toBe(0);
+});
+
+test("formats generic MCP tool names for display", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: mcp__github__list_issues" },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const action = session.children.find((child) => child.kind === "action");
+  expect(action?.kind).toBe("action");
+  if (action?.kind === "action") {
+    expect(action.label).toBe("github · list issues");
+    expect(action.icon).toBe("file");
   }
 });

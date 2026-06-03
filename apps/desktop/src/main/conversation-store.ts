@@ -6,7 +6,7 @@ import {
   isReconnectActivityMessage,
   shouldClearReconnectActivity,
 } from "../shared/activity-display";
-import { logSuspiciousActivityLines, repairActivityText } from "../shared/activity-text";
+import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import type {
   CoderTodoItem,
   CoderTodoStatus,
@@ -416,7 +416,9 @@ export class ConversationStore {
       this.db
         .prepare(`UPDATE thread_activity SET message = ?, stream = 0 WHERE id = ?`)
         .run(merged, last.id);
-      return { ...last, message: merged, stream: false };
+      const finalized = { ...last, message: merged, stream: false };
+      logSuspiciousActivityLine(threadId, finalized);
+      return finalized;
     }
     if (line.stream && last?.stream) {
       const merged = mergeStreamText(last.message, line.message);
@@ -443,6 +445,7 @@ export class ConversationStore {
       .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
       .run(new Date().toISOString(), threadId);
 
+    logSuspiciousActivityLine(threadId, record);
     return record;
   }
 
@@ -466,7 +469,6 @@ export class ConversationStore {
       };
     });
 
-    logSuspiciousActivityLines(threadId, lines);
     return lines;
   }
 

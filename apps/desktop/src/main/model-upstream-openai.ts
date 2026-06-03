@@ -34,7 +34,17 @@ import {
   createStreamingUsageTracker,
   extractUsageFromResponseBody,
 } from "./anthropic-usage";
-import { headersToLoggable, logUpstream, parseJsonForLog, truncateForLog } from "./upstream-log";
+import type { ParsedUsage } from "@eco/runtime";
+import {
+  buildProxyCallDebug,
+  isUpstreamLogVerbose,
+  logUpstreamProxyCall,
+  proxyCallCommonFields,
+  resolveProxyCallBilling,
+  tokensFromUsage,
+  type UpstreamProxyCallBilling,
+} from "./upstream-proxy-log";
+import { headersToLoggable, logUpstream, parseJsonForLog } from "./upstream-log";
 
 export interface OpenAICompatUsageInfo {
   role: AgentRole;
@@ -47,18 +57,24 @@ export interface OpenAICompatUsageInfo {
   usage: ParsedUsage;
 }
 
+export type OpenAICompatUsageHandler = (
+  info: OpenAICompatUsageInfo,
+) => void | Promise<UpstreamProxyCallBilling | null | undefined>;
+
 export interface OpenAICompatForwardRoute {
   role: string;
   provider: ProviderConfigSecret;
   modelId: string;
   apiCompat: UpstreamApiCompat;
+  aliasModelId: string;
 }
 
 export interface OpenAICompatForwardContext {
   route: OpenAICompatForwardRoute;
   body: Record<string, unknown>;
   requestedModel?: string;
-  onUsage?: (info: OpenAICompatUsageInfo) => void;
+  requestUrl?: string;
+  onUsage?: OpenAICompatUsageHandler;
 }
 
 function buildUpstreamHeaders(
@@ -138,27 +154,7 @@ function writeBufferedOpenAICompatToClient(
   response: http.ServerResponse,
   stream: boolean,
   anthropicMessage: AnthropicResponse,
-  onUsage?: OpenAICompatForwardContext["onUsage"],
-  usageContext?: {
-    role: string;
-    provider: OpenAICompatForwardRoute["provider"];
-    modelId: string;
-    requestedModel?: string;
-  },
 ): void {
-  const usage = extractUsageFromResponseBody(anthropicMessage);
-  if (usage && onUsage && usageContext) {
-    onUsage({
-      role: usageContext.role as AgentRole,
-      providerId: usageContext.provider.id,
-      providerName: usageContext.provider.name,
-      providerBaseUrl: usageContext.provider.baseUrl,
-      modelId: usageContext.modelId,
-      ...(usageContext.requestedModel && { requestedModel: usageContext.requestedModel }),
-      usage,
-    });
-  }
-
   if (stream) {
     response.writeHead(200, {
       "content-type": "text/event-stream",
@@ -172,6 +168,22 @@ function writeBufferedOpenAICompatToClient(
 
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(anthropicMessage));
+}
+
+function buildOpenAICompatUsageInfo(
+  route: OpenAICompatForwardRoute,
+  usage: ParsedUsage,
+  requestedModel?: string,
+): OpenAICompatUsageInfo {
+  return {
+    role: route.role as AgentRole,
+    providerId: route.provider.id,
+    providerName: route.provider.name,
+    providerBaseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    ...(requestedModel && { requestedModel }),
+    usage,
+  };
 }
 
 function parseChatCompletionsChunkBlock(block: string): ChatCompletionsChunk | null {
@@ -208,7 +220,8 @@ async function forwardMessagesViaOpenAIResponses(
   response: http.ServerResponse,
   ctx: OpenAICompatForwardContext,
 ): Promise<void> {
-  const { route, body, requestedModel, onUsage } = ctx;
+  const { route, body, requestedModel, onUsage, requestUrl } = ctx;
+  const startedAt = Date.now();
   const upstreamUrl = buildOpenAICompatUpstreamUrl(
     route.provider.baseUrl,
     route.provider.requestPath,
@@ -220,19 +233,35 @@ async function forwardMessagesViaOpenAIResponses(
 
   const requestPayload = JSON.stringify(responsesReq);
   const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
-
-  logUpstream("openai-responses-request", {
-    route: {
+  const anthropicRequestPayload = JSON.stringify(body);
+  const callCommon = () =>
+    proxyCallCommonFields({
       role: route.role,
-      provider: route.provider.name,
+      provider: route.provider,
       apiCompat: route.apiCompat,
-    },
-    url: upstreamUrl,
-    apiSurface: "openai-v1-responses",
-    model: { sdkRequested: requestedModel, upstream: route.modelId },
-    headers: headersToLoggable(upstreamHeaders),
-    body: parseJsonForLog(requestPayload),
-  });
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      requestedModel,
+      requestUrl,
+      upstreamUrl,
+      stream,
+      converted: true,
+    });
+  const failureDebug = (responseRaw?: string) =>
+    buildProxyCallDebug({
+      converted: true,
+      clientRequestRaw: anthropicRequestPayload,
+      upstreamRequestRaw: requestPayload,
+      responseRaw,
+    });
+
+  if (isUpstreamLogVerbose()) {
+    logUpstream("openai-responses-request", {
+      url: upstreamUrl,
+      headers: headersToLoggable(upstreamHeaders),
+      body: parseJsonForLog(requestPayload),
+    });
+  }
 
   let upstreamResponse: Response;
   try {
@@ -244,7 +273,15 @@ async function forwardMessagesViaOpenAIResponses(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logUpstream("openai-responses-fetch-error", { error: message });
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: 0, streaming: stream },
+      error: message,
+      debug: failureDebug(),
+    });
     throw error;
   }
 
@@ -253,9 +290,14 @@ async function forwardMessagesViaOpenAIResponses(
 
   if (!upstreamResponse.ok) {
     const responseText = await upstreamResponse.text();
-    logUpstream("openai-responses-response", {
-      status: upstreamResponse.status,
-      body: parseJsonForLog(responseText) ?? truncateForLog(responseText),
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      error: upstreamResponse.statusText || String(upstreamResponse.status),
+      debug: failureDebug(responseText),
     });
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
@@ -270,31 +312,37 @@ async function forwardMessagesViaOpenAIResponses(
     try {
       anthropicMessage = parseBufferedAnthropicMessage(responseText, route.modelId);
     } catch {
-      logUpstream("openai-responses-parse-error", { body: truncateForLog(responseText) });
+      logUpstreamProxyCall({
+        at: new Date().toISOString(),
+        ok: false,
+        elapsedMs: Date.now() - startedAt,
+        ...callCommon(),
+        http: { status: upstreamResponse.status, streaming: stream },
+        error: "无法解析 OpenAI Responses 上游响应。",
+        debug: failureDebug(responseText),
+      });
       response.writeHead(502, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "无法解析 OpenAI Responses 上游响应。" }));
       return;
     }
 
-    logUpstream("openai-responses-response", {
-      status: upstreamResponse.status,
-      stream,
-      deliveredAs: stream ? "anthropic-sse-replay" : "json",
-      body: parseJsonForLog(JSON.stringify(anthropicMessage)),
+    const usage = extractUsageFromResponseBody(anthropicMessage);
+    const billing = usage
+      ? await resolveProxyCallBilling(onUsage, buildOpenAICompatUsageInfo(route, usage, requestedModel))
+      : null;
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      ...(usage && { tokens: tokensFromUsage(usage) }),
+      billing,
     });
-    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage, onUsage, {
-      role: route.role,
-      provider: route.provider,
-      modelId: route.modelId,
-      ...(requestedModel && { requestedModel }),
-    });
+    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage);
     return;
   }
 
-  logUpstream("openai-responses-response", {
-    status: upstreamResponse.status,
-    body: stream ? "(streaming)" : "(sse-upstream-non-stream-client)",
-  });
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
@@ -347,20 +395,28 @@ async function forwardMessagesViaOpenAIResponses(
     writeAnthropicSse(finalizeResponsesAnthropicStream(anthropicState));
 
     const usage = usageTracker.finish();
-    if (usage && onUsage) {
-      onUsage({
-        role: route.role as AgentRole,
-        providerId: route.provider.id,
-        providerName: route.provider.name,
-        providerBaseUrl: route.provider.baseUrl,
-        modelId: route.modelId,
-        ...(requestedModel && { requestedModel }),
-        usage,
-      });
-    }
+    const billing = usage
+      ? await resolveProxyCallBilling(onUsage, buildOpenAICompatUsageInfo(route, usage, requestedModel))
+      : null;
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      ...(usage && { tokens: tokensFromUsage(usage) }),
+      billing,
+    });
   } catch (error) {
-    logUpstream("openai-responses-stream-error", {
-      error: error instanceof Error ? error.message : String(error),
+    const message = error instanceof Error ? error.message : String(error);
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      error: message,
+      debug: failureDebug(),
     });
   } finally {
     if (!response.writableEnded) {
@@ -374,7 +430,8 @@ async function forwardMessagesViaOpenAIChatCompletions(
   response: http.ServerResponse,
   ctx: OpenAICompatForwardContext,
 ): Promise<void> {
-  const { route, body, requestedModel, onUsage } = ctx;
+  const { route, body, requestedModel, onUsage, requestUrl } = ctx;
+  const startedAt = Date.now();
   const upstreamUrl = buildChatCompletionsUrl(route.provider.baseUrl, route.provider.requestPath);
   const responsesReq = anthropicToResponses(body as AnthropicRequest);
   responsesReq.model = route.modelId;
@@ -385,19 +442,35 @@ async function forwardMessagesViaOpenAIChatCompletions(
 
   const requestPayload = JSON.stringify(chatReq);
   const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
-
-  logUpstream("openai-chat-completions-request", {
-    route: {
+  const anthropicRequestPayload = JSON.stringify(body);
+  const callCommon = () =>
+    proxyCallCommonFields({
       role: route.role,
-      provider: route.provider.name,
+      provider: route.provider,
       apiCompat: route.apiCompat,
-    },
-    url: upstreamUrl,
-    apiSurface: "openai-v1-chat-completions",
-    model: { sdkRequested: requestedModel, upstream: route.modelId },
-    headers: headersToLoggable(upstreamHeaders),
-    body: parseJsonForLog(requestPayload),
-  });
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      requestedModel,
+      requestUrl,
+      upstreamUrl,
+      stream,
+      converted: true,
+    });
+  const failureDebug = (responseRaw?: string) =>
+    buildProxyCallDebug({
+      converted: true,
+      clientRequestRaw: anthropicRequestPayload,
+      upstreamRequestRaw: requestPayload,
+      responseRaw,
+    });
+
+  if (isUpstreamLogVerbose()) {
+    logUpstream("openai-chat-completions-request", {
+      url: upstreamUrl,
+      headers: headersToLoggable(upstreamHeaders),
+      body: parseJsonForLog(requestPayload),
+    });
+  }
 
   let upstreamResponse: Response;
   try {
@@ -409,7 +482,15 @@ async function forwardMessagesViaOpenAIChatCompletions(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logUpstream("openai-chat-completions-fetch-error", { error: message });
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: 0, streaming: stream },
+      error: message,
+      debug: failureDebug(),
+    });
     throw error;
   }
 
@@ -418,9 +499,14 @@ async function forwardMessagesViaOpenAIChatCompletions(
 
   if (!upstreamResponse.ok) {
     const responseText = await upstreamResponse.text();
-    logUpstream("openai-chat-completions-response", {
-      status: upstreamResponse.status,
-      body: parseJsonForLog(responseText) ?? truncateForLog(responseText),
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      error: upstreamResponse.statusText || String(upstreamResponse.status),
+      debug: failureDebug(responseText),
     });
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
@@ -435,38 +521,44 @@ async function forwardMessagesViaOpenAIChatCompletions(
     try {
       anthropicMessage = parseBufferedChatCompletionsMessage(responseText, route.modelId);
     } catch {
-      logUpstream("openai-chat-completions-parse-error", { body: truncateForLog(responseText) });
+      logUpstreamProxyCall({
+        at: new Date().toISOString(),
+        ok: false,
+        elapsedMs: Date.now() - startedAt,
+        ...callCommon(),
+        http: { status: upstreamResponse.status, streaming: stream },
+        error: "无法解析 OpenAI Chat Completions 上游响应。",
+        debug: failureDebug(responseText),
+      });
       response.writeHead(502, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "无法解析 OpenAI Chat Completions 上游响应。" }));
       return;
     }
 
-    logUpstream("openai-chat-completions-response", {
-      status: upstreamResponse.status,
-      stream,
-      deliveredAs: stream ? "anthropic-sse-replay" : "json",
-      body: parseJsonForLog(JSON.stringify(anthropicMessage)),
+    const usage = extractUsageFromResponseBody(anthropicMessage);
+    const billing = usage
+      ? await resolveProxyCallBilling(onUsage, buildOpenAICompatUsageInfo(route, usage, requestedModel))
+      : null;
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      ...(usage && { tokens: tokensFromUsage(usage) }),
+      billing,
     });
-    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage, onUsage, {
-      role: route.role,
-      provider: route.provider,
-      modelId: route.modelId,
-      ...(requestedModel && { requestedModel }),
-    });
+    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage);
     return;
   }
 
-  logUpstream("openai-chat-completions-response", {
-    status: upstreamResponse.status,
-    body: "(streaming)",
-  });
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
 
-  const ccToResState = newChatCompletionsToResponsesStreamState();
+  const ccToResState = newChatCompletionsToResponsesStreamState(route.modelId);
   const anthropicState = newResponsesEventToAnthropicState();
   const usageTracker = createStreamingUsageTracker();
   let sseBuffer = "";
@@ -522,20 +614,28 @@ async function forwardMessagesViaOpenAIChatCompletions(
     writeAnthropicSse(finalizeResponsesAnthropicStream(anthropicState));
 
     const usage = usageTracker.finish();
-    if (usage && onUsage) {
-      onUsage({
-        role: route.role as AgentRole,
-        providerId: route.provider.id,
-        providerName: route.provider.name,
-        providerBaseUrl: route.provider.baseUrl,
-        modelId: route.modelId,
-        ...(requestedModel && { requestedModel }),
-        usage,
-      });
-    }
+    const billing = usage
+      ? await resolveProxyCallBilling(onUsage, buildOpenAICompatUsageInfo(route, usage, requestedModel))
+      : null;
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: true,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      ...(usage && { tokens: tokensFromUsage(usage) }),
+      billing,
+    });
   } catch (error) {
-    logUpstream("openai-chat-completions-stream-error", {
-      error: error instanceof Error ? error.message : String(error),
+    const message = error instanceof Error ? error.message : String(error);
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: stream },
+      error: message,
+      debug: failureDebug(),
     });
   } finally {
     if (!response.writableEnded) {
