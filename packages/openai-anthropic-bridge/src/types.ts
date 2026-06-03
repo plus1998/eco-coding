@@ -269,6 +269,8 @@ export interface ChatMessage {
   role: string;
   content?: unknown;
   reasoning_content?: string;
+  reasoning?: string;
+  reasoning_details?: Array<{ type?: string; text?: string; format?: string; index?: number }>;
   name?: string;
   tool_calls?: ChatToolCall[];
   tool_call_id?: string;

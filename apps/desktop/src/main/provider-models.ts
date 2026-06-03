@@ -357,31 +357,38 @@ async function postUpstreamCompatTest(
       return { ok: false, error, elapsedMs };
     }
 
-    let parsed: unknown;
+    let rawParsed: unknown;
+    let normalized: unknown;
     try {
-      parsed = JSON.parse(raw) as unknown;
-      if (isOpenAI && isRecord(parsed)) {
-        if (parsed.object === "response") {
-          parsed = responsesToAnthropic(parsed as ResponsesResponse);
-        } else if (Array.isArray(parsed.choices)) {
-          parsed = responsesToAnthropic(
-            chatCompletionsResponseToResponses(parsed as ChatCompletionsResponse),
+      rawParsed = JSON.parse(raw) as unknown;
+      normalized = rawParsed;
+      if (isOpenAI && isRecord(rawParsed)) {
+        const responseModel =
+          typeof rawParsed.model === "string" ? rawParsed.model : input.modelId;
+        if (rawParsed.object === "response") {
+          normalized = responsesToAnthropic(rawParsed as ResponsesResponse, responseModel);
+        } else if (Array.isArray(rawParsed.choices)) {
+          normalized = responsesToAnthropic(
+            chatCompletionsResponseToResponses(rawParsed as ChatCompletionsResponse),
+            responseModel,
           );
         }
       }
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       logUpstream("provider-test-error", {
         providerId: input.providerId,
         role: input.role,
         phase: "parse-json",
         elapsedMs,
         error: "上游返回了非 JSON 响应。",
+        parseError: message,
         bodyRaw: truncateForLog(raw),
       });
       return { ok: false, error: "上游返回了非 JSON 响应。", elapsedMs };
     }
 
-    const reply = extractAssistantReply(parsed);
+    const reply = extractAssistantReply(rawParsed) ?? extractAssistantReply(normalized);
     if (!reply) {
       logUpstream("provider-test-error", {
         providerId: input.providerId,
@@ -389,8 +396,8 @@ async function postUpstreamCompatTest(
         phase: "parse-assistant-reply",
         elapsedMs,
         error: "上游未返回可识别的 assistant 文本。",
-        responseShape: describeResponseShape(parsed),
-        bodyJson: parsed,
+        responseShape: describeResponseShape(normalized),
+        bodyJson: normalized,
       });
       return { ok: false, error: "上游未返回可识别的 assistant 文本。", elapsedMs };
     }
@@ -875,8 +882,8 @@ function extractAssistantReply(body: unknown): string | undefined {
         continue;
       }
       const message = choice.message;
-      if (isRecord(message) && typeof message.content === "string") {
-        const text = message.content.trim();
+      if (isRecord(message)) {
+        const text = extractChatCompletionMessageText(message);
         if (text) {
           return text;
         }
@@ -887,6 +894,64 @@ function extractAssistantReply(body: unknown): string | undefined {
           return text;
         }
       }
+    }
+  }
+
+  return undefined;
+}
+
+function extractChatCompletionMessageText(message: Record<string, unknown>): string | undefined {
+  const content = message.content;
+  if (typeof content === "string") {
+    const text = content.trim();
+    if (text) {
+      return text;
+    }
+  }
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (!isRecord(block)) {
+        continue;
+      }
+      if (typeof block.text === "string") {
+        const text = block.text.trim();
+        if (text) {
+          parts.push(text);
+        }
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join("\n").trim();
+    }
+  }
+  if (typeof message.reasoning_content === "string") {
+    const text = message.reasoning_content.trim();
+    if (text) {
+      return text;
+    }
+  }
+  if (typeof message.reasoning === "string") {
+    const text = message.reasoning.trim();
+    if (text) {
+      return text;
+    }
+  }
+  if (Array.isArray(message.reasoning_details)) {
+    const parts: string[] = [];
+    for (const detail of message.reasoning_details) {
+      if (!isRecord(detail)) {
+        continue;
+      }
+      if (typeof detail.text === "string") {
+        const text = detail.text.trim();
+        if (text) {
+          parts.push(text);
+        }
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join("\n\n").trim();
     }
   }
 

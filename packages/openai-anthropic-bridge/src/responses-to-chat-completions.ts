@@ -77,7 +77,7 @@ export function responsesToChatCompletions(
     msg.tool_calls = toolCalls;
   }
   if (contentText !== '') {
-    msg.content = jsonMarshal(contentText);
+    msg.content = contentText;
   }
   if (reasoningText !== '') {
     msg.reasoning_content = reasoningText;

@@ -80,7 +80,7 @@ function responsesInputToChatMessages(
   if (bytesTrimSpace(instructions) !== '') {
     messages.push({
       role: 'system',
-      content: jsonMarshal(instructions),
+      content: instructions,
     });
   }
 
@@ -95,7 +95,7 @@ function responsesInputToChatMessages(
     if (typeof inputText === 'string') {
       messages.push({
         role: 'user',
-        content: jsonMarshal(inputText),
+        content: inputText,
       });
       return messages;
     }
@@ -150,7 +150,7 @@ function buildChatMessagesFromItems(
         if (typeof text === 'string') {
           messages.push({
             role: 'user',
-            content: jsonMarshal(text),
+            content: text,
           });
           pendingReasoning = '';
           continue;
@@ -206,7 +206,7 @@ function buildChatMessagesFromItems(
         messages.push({
           role: 'tool',
           tool_call_id: rawString(item.call_id),
-          content: jsonMarshal(rawString(item.output)),
+          content: rawString(item.output),
         });
         pendingReasoning = '';
         continue;
@@ -214,7 +214,7 @@ function buildChatMessagesFromItems(
       case 'text':
         messages.push({
           role: 'user',
-          content: jsonMarshal(rawString(item.text)),
+          content: rawString(item.text),
         });
         pendingReasoning = '';
         continue;
@@ -235,7 +235,7 @@ function buildChatMessagesFromItems(
     if (bytesTrimSpace(content ?? '') === '') {
       const text = rawString(item.text);
       if (text !== '') {
-        content = jsonMarshal(text);
+        content = text;
       }
     }
     const chatContent = responsesContentToChatContent(content, role);
@@ -397,13 +397,13 @@ function responsesContentToChatContent(
 ): unknown {
   const trimmed = bytesTrimSpace(raw ?? '');
   if (trimmed === '' || trimmed === 'null') {
-    return jsonMarshal('');
+    return '';
   }
 
   try {
     const text = jsonParse(trimmed);
     if (typeof text === 'string') {
-      return trimmed;
+      return text;
     }
   } catch {
     /* not plain string */
@@ -454,7 +454,7 @@ function parseResponsesContentPart(rawPart: unknown): Record<string, string> | n
 function responsesContentPartsToChatContent(
   rawParts: unknown[],
   role: string,
-): string {
+): unknown {
   const textParts: string[] = [];
   const chatParts: ChatContentPart[] = [];
   let hasNonText = false;
@@ -498,21 +498,21 @@ function responsesContentPartsToChatContent(
   }
 
   if (!hasNonText) {
-    return jsonMarshal(textParts.join('\n\n'));
+    return textParts.join('\n\n');
   }
   if (role !== 'user') {
-    return jsonMarshal(textParts.join('\n\n'));
+    return textParts.join('\n\n');
   }
   if (chatParts.length === 0) {
-    return jsonMarshal('');
+    return '';
   }
-  return jsonMarshal(chatParts);
+  return chatParts;
 }
 
 function chatContentFromSingleResponsesPart(
   partType: string,
   part: Record<string, string>,
-): string {
+): unknown {
   switch (partType) {
     case 'input_image':
     case 'image_url': {
@@ -520,15 +520,15 @@ function chatContentFromSingleResponsesPart(
       if (imageURL === '') {
         imageURL = rawNestedString(part.image_url, 'url');
       }
-      return jsonMarshal([
+      return [
         {
           type: 'image_url',
           image_url: { url: imageURL },
         } satisfies ChatContentPart,
-      ]);
+      ];
     }
     default:
-      return jsonMarshal(rawString(part.text));
+      return rawString(part.text);
   }
 }
 
@@ -631,16 +631,34 @@ export function chatCompletionsResponseToResponses(
   return out;
 }
 
+function chatMessageReasoningText(message: ChatMessage): string {
+  if ((message.reasoning_content ?? '').trim() !== '') {
+    return message.reasoning_content!.trim();
+  }
+  if ((message.reasoning ?? '').trim() !== '') {
+    return message.reasoning!.trim();
+  }
+  const parts: string[] = [];
+  for (const detail of message.reasoning_details ?? []) {
+    const text = detail.text?.trim() ?? '';
+    if (text !== '') {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
 function chatMessageToResponsesOutput(message: ChatMessage): ResponsesOutput[] {
   const outputs: ResponsesOutput[] = [];
-  if ((message.reasoning_content ?? '') !== '') {
+  const reasoningText = chatMessageReasoningText(message);
+  if (reasoningText !== '') {
     outputs.push({
       type: 'reasoning',
       id: generateItemId(),
       summary: [
         {
           type: 'summary_text',
-          text: message.reasoning_content!,
+          text: reasoningText,
         } satisfies ResponsesSummary,
       ],
     });
@@ -686,6 +704,27 @@ function emptyResponsesMessageOutput(): ResponsesOutput {
 }
 
 function chatMessageContentText(raw: unknown): string {
+  if (Array.isArray(raw)) {
+    const texts: string[] = [];
+    for (const part of raw) {
+      if (part !== null && typeof part === 'object' && !Array.isArray(part)) {
+        const text = (part as ChatContentPart).text;
+        if (typeof text === 'string' && text !== '') {
+          texts.push(text);
+        }
+      }
+    }
+    if (texts.length > 0) {
+      return texts.join('\n\n');
+    }
+  }
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const text = (raw as ChatContentPart).text;
+    if (typeof text === 'string') {
+      return bytesTrimSpace(text);
+    }
+  }
+
   const s = contentToRawString(raw);
   const trimmed = bytesTrimSpace(s);
   if (trimmed === '' || trimmed === 'null') {
@@ -713,7 +752,7 @@ function chatMessageContentText(raw: unknown): string {
   } catch {
     /* not parts */
   }
-  return '';
+  return trimmed;
 }
 
 export function chatUsageToResponsesUsage(
@@ -731,7 +770,7 @@ export function chatUsageToResponsesUsage(
     out.total_tokens = out.input_tokens + out.output_tokens;
   }
   if (
-    usage.prompt_tokens_details !== undefined &&
+    usage.prompt_tokens_details != null &&
     (usage.prompt_tokens_details.cached_tokens ?? 0) > 0
   ) {
     out.input_tokens_details = {

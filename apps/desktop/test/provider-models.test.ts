@@ -296,6 +296,87 @@ describe("testProviderConnection", () => {
 
     expect(result).toEqual({ ok: true, reply: "The user said hi." });
   });
+
+  test("accepts OpenAI chat completions replies without anthropic conversion loss", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async (url: string) => {
+      expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      return new Response(
+        JSON.stringify({
+          id: "gen-test",
+          object: "chat.completion",
+          model: "xiaomi/mimo-v2.5-20260422",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: "Hi there! How can I help you today?",
+                reasoning: "The user said hi.",
+              },
+            },
+          ],
+          usage: {
+            prompt_tokens: 250,
+            completion_tokens: 141,
+            total_tokens: 391,
+            prompt_tokens_details: { cached_tokens: 192 },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://openrouter.ai/api",
+        apiCompat: "openai_chat_completions",
+        defaultModel: "xiaomi/mimo-v2.5-20260422",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "Hi there! How can I help you today?" });
+  });
+
+  test("falls back to reasoning text for reasoning-only chat completions replies", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          id: "gen-test",
+          object: "chat.completion",
+          model: "xiaomi/mimo-v2.5-20260422",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning: "Hi there! How can I help you today?",
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200 },
+      );
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://openrouter.ai/api",
+        apiCompat: "openai_chat_completions",
+        defaultModel: "xiaomi/mimo-v2.5-20260422",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "Hi there! How can I help you today?" });
+  });
 });
 
 describe("buildRouteTestDedupeKey", () => {
