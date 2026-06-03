@@ -149,8 +149,24 @@ export async function startAnthropicModelProxy(
         pendingImages = [];
       }
 
-      if (!isOpenAICompat(route.apiCompat)) {
+      const countTokensRequest = isCountTokensPath(request.url);
+
+      if (!countTokensRequest && !isOpenAICompat(route.apiCompat)) {
         applyThinkingToMessagesBody(body, route.thinkingEffort);
+      }
+
+      if (countTokensRequest) {
+        await forwardAnthropicRequest(
+          request,
+          response,
+          route,
+          body,
+          requestedModel,
+          onMessagesRequest,
+          onUpstreamConnectionError,
+          onUsage,
+        );
+        return;
       }
 
       if (isOpenAICompat(route.apiCompat)) {
@@ -339,6 +355,13 @@ function isMessagesPath(url: string | undefined): boolean {
   }
   const pathname = url.split("?")[0] ?? url;
   return pathname === "/v1/messages" || pathname.endsWith("/v1/messages");
+}
+
+function isCountTokensPath(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+  return url.split("?")[0]?.includes("/count_tokens") === true;
 }
 
 export function injectImagesIntoMessagesBody(

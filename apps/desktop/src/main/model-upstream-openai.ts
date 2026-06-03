@@ -12,14 +12,18 @@ import {
   responsesToAnthropic,
   responsesToChatCompletionsRequest,
   type AnthropicRequest,
+  type AnthropicResponse,
   type ChatCompletionsChunk,
   type ChatCompletionsResponse,
   type ResponsesResponse,
   type ResponsesStreamEvent,
 } from "@eco/openai-anthropic-bridge";
 import type { AgentRole } from "../shared/ipc";
-import type { ParsedUsage } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
+import {
+  anthropicResponseToStreamEvents,
+  writeAnthropicStreamEvents,
+} from "./anthropic-stream-replay";
 import {
   buildChatCompletionsUrl,
   buildOpenAICompatUpstreamUrl,
@@ -103,6 +107,71 @@ function parseResponsesStreamEventBlock(block: string): ResponsesStreamEvent | n
   } catch {
     return null;
   }
+}
+
+function parseBufferedAnthropicMessage(
+  responseText: string,
+  modelId: string,
+): AnthropicResponse {
+  const parsed = JSON.parse(responseText) as Record<string, unknown>;
+  if (parsed.type === "message" && Array.isArray(parsed.content)) {
+    return parsed as AnthropicResponse;
+  }
+  return responsesToAnthropic(parsed as ResponsesResponse, modelId);
+}
+
+function parseBufferedChatCompletionsMessage(
+  responseText: string,
+  modelId: string,
+): AnthropicResponse {
+  const parsed = JSON.parse(responseText) as Record<string, unknown>;
+  if (parsed.type === "message" && Array.isArray(parsed.content)) {
+    return parsed as AnthropicResponse;
+  }
+  return responsesToAnthropic(
+    chatCompletionsResponseToResponses(parsed as ChatCompletionsResponse),
+    modelId,
+  );
+}
+
+function writeBufferedOpenAICompatToClient(
+  response: http.ServerResponse,
+  stream: boolean,
+  anthropicMessage: AnthropicResponse,
+  onUsage?: OpenAICompatForwardContext["onUsage"],
+  usageContext?: {
+    role: string;
+    provider: OpenAICompatForwardRoute["provider"];
+    modelId: string;
+    requestedModel?: string;
+  },
+): void {
+  const usage = extractUsageFromResponseBody(anthropicMessage);
+  if (usage && onUsage && usageContext) {
+    onUsage({
+      role: usageContext.role as AgentRole,
+      providerId: usageContext.provider.id,
+      providerName: usageContext.provider.name,
+      providerBaseUrl: usageContext.provider.baseUrl,
+      modelId: usageContext.modelId,
+      ...(usageContext.requestedModel && { requestedModel: usageContext.requestedModel }),
+      usage,
+    });
+  }
+
+  if (stream) {
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    writeAnthropicStreamEvents(response, anthropicResponseToStreamEvents(anthropicMessage));
+    response.end();
+    return;
+  }
+
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify(anthropicMessage));
 }
 
 function parseChatCompletionsChunkBlock(block: string): ChatCompletionsChunk | null {
@@ -195,12 +264,11 @@ async function forwardMessagesViaOpenAIResponses(
     return;
   }
 
-  if (!stream || !isEventStream) {
+  if (!isEventStream) {
     const responseText = await upstreamResponse.text();
-    let anthropicJson: unknown;
+    let anthropicMessage: AnthropicResponse;
     try {
-      const responsesResp = JSON.parse(responseText) as ResponsesResponse;
-      anthropicJson = responsesToAnthropic(responsesResp);
+      anthropicMessage = parseBufferedAnthropicMessage(responseText, route.modelId);
     } catch {
       logUpstream("openai-responses-parse-error", { body: truncateForLog(responseText) });
       response.writeHead(502, { "content-type": "application/json" });
@@ -208,29 +276,25 @@ async function forwardMessagesViaOpenAIResponses(
       return;
     }
 
-    const usage = extractUsageFromResponseBody(anthropicJson);
-    if (usage && onUsage) {
-      onUsage({
-        role: route.role as AgentRole,
-        providerId: route.provider.id,
-        providerName: route.provider.name,
-        providerBaseUrl: route.provider.baseUrl,
-        modelId: route.modelId,
-        ...(requestedModel && { requestedModel }),
-        usage,
-      });
-    }
-
     logUpstream("openai-responses-response", {
       status: upstreamResponse.status,
-      body: parseJsonForLog(JSON.stringify(anthropicJson)),
+      stream,
+      deliveredAs: stream ? "anthropic-sse-replay" : "json",
+      body: parseJsonForLog(JSON.stringify(anthropicMessage)),
     });
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(anthropicJson));
+    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage, onUsage, {
+      role: route.role,
+      provider: route.provider,
+      modelId: route.modelId,
+      ...(requestedModel && { requestedModel }),
+    });
     return;
   }
 
-  logUpstream("openai-responses-response", { status: upstreamResponse.status, body: "(streaming)" });
+  logUpstream("openai-responses-response", {
+    status: upstreamResponse.status,
+    body: stream ? "(streaming)" : "(sse-upstream-non-stream-client)",
+  });
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
@@ -365,13 +429,11 @@ async function forwardMessagesViaOpenAIChatCompletions(
     return;
   }
 
-  if (!stream || !isEventStream) {
+  if (!isEventStream) {
     const responseText = await upstreamResponse.text();
-    let anthropicJson: unknown;
+    let anthropicMessage: AnthropicResponse;
     try {
-      const chatResp = JSON.parse(responseText) as ChatCompletionsResponse;
-      const responsesResp = chatCompletionsResponseToResponses(chatResp);
-      anthropicJson = responsesToAnthropic(responsesResp);
+      anthropicMessage = parseBufferedChatCompletionsMessage(responseText, route.modelId);
     } catch {
       logUpstream("openai-chat-completions-parse-error", { body: truncateForLog(responseText) });
       response.writeHead(502, { "content-type": "application/json" });
@@ -379,25 +441,18 @@ async function forwardMessagesViaOpenAIChatCompletions(
       return;
     }
 
-    const usage = extractUsageFromResponseBody(anthropicJson);
-    if (usage && onUsage) {
-      onUsage({
-        role: route.role as AgentRole,
-        providerId: route.provider.id,
-        providerName: route.provider.name,
-        providerBaseUrl: route.provider.baseUrl,
-        modelId: route.modelId,
-        ...(requestedModel && { requestedModel }),
-        usage,
-      });
-    }
-
     logUpstream("openai-chat-completions-response", {
       status: upstreamResponse.status,
-      body: parseJsonForLog(JSON.stringify(anthropicJson)),
+      stream,
+      deliveredAs: stream ? "anthropic-sse-replay" : "json",
+      body: parseJsonForLog(JSON.stringify(anthropicMessage)),
     });
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify(anthropicJson));
+    writeBufferedOpenAICompatToClient(response, stream, anthropicMessage, onUsage, {
+      role: route.role,
+      provider: route.provider,
+      modelId: route.modelId,
+      ...(requestedModel && { requestedModel }),
+    });
     return;
   }
 
