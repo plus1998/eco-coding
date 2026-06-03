@@ -17,6 +17,7 @@ import {
 } from "@eco/runtime/sdk";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
+import { logContextSnapshot } from "./context-snapshot-log";
 
 const REFRESH_DEBOUNCE_MS = 3000;
 
@@ -331,6 +332,14 @@ export class ContextSnapshotScheduler {
       this.options.emitContext(threadId, pending);
     }
 
+    const startedAt = Date.now();
+    logContextSnapshot("start", {
+      threadId,
+      trigger: "scheduled",
+      resumeSessionId: resume.resumeSessionId,
+      worktreePath,
+    });
+
     try {
       this.options.emitActivity(threadId, "正在刷新上下文用量…");
       await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
@@ -359,6 +368,12 @@ export class ContextSnapshotScheduler {
           }
           if (event.type === "usage.recorded" && event.payload) {
             const text = extractSdkContextResultText(event.payload);
+            logContextSnapshot("mapped_event", {
+              threadId,
+              eventType: event.type,
+              hasResultText: Boolean(text),
+              payloadKeys: isRecord(event.payload) ? Object.keys(event.payload) : [],
+            });
             if (text) {
               contextText = text;
             }
@@ -366,10 +381,12 @@ export class ContextSnapshotScheduler {
         }
 
         if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "context")) {
+          logContextSnapshot("skip_unsupported_slash", { threadId, slashCommands });
           return;
         }
 
         if (!contextText.trim()) {
+          logContextSnapshot("no_text", { threadId });
           return;
         }
 
@@ -386,6 +403,14 @@ export class ContextSnapshotScheduler {
         if (segments.length > 0) {
           this.lastPlannerSegments.set(threadId, normalizeContextSegments(segments));
         }
+
+        logContextSnapshot("parsed", {
+          threadId,
+          header,
+          segmentCount: segments.length,
+          segments: segments.map((segment) => ({ key: segment.key, tokens: segment.tokens })),
+          occupied,
+        });
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -394,6 +419,7 @@ export class ContextSnapshotScheduler {
         `[eco] context snapshot failed: ${detail}\n`,
       );
     } finally {
+      logContextSnapshot("done", { threadId, elapsedMs: Date.now() - startedAt });
       this.refreshInFlight.delete(threadId);
       this.breakdownInFlight.delete(threadId);
       this.emitLiveFromMonitor(threadId);

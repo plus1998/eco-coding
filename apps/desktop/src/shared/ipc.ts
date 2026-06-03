@@ -534,6 +534,21 @@ export interface ThreadBillingSourceSnapshot {
   >;
 }
 
+export interface ThreadSubagentBillingSnapshot {
+  agentId: string;
+  role: AgentRole;
+  status: "active" | "stopped";
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  contextOccupied: number;
+  contextLimit?: number;
+  ecoCostUsd: number;
+  ecoCostBreakdown?: TokenCostBreakdown;
+  modelId?: string;
+}
+
 export interface ThreadBillingSnapshot {
   totalTokens: {
     input: number;
@@ -550,7 +565,7 @@ export interface ThreadBillingSnapshot {
   plannerCostBreakdown?: TokenCostBreakdown;
   plannerModelLabel?: string;
   pricingResolved: boolean;
-  /** Primary source used for the headline Eco spend; prefers proxy, then SDK, then OTel. */
+  /** Primary source used for the headline Eco spend; SDK-first when present. */
   primarySource?: BillingUsageSource;
   sourceBreakdown?: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>;
   byModel?: ThreadBillingModelSnapshot[];
@@ -567,6 +582,7 @@ export interface ThreadBillingSnapshot {
       }
     >
   >;
+  subagents?: ThreadSubagentBillingSnapshot[];
 }
 
 export interface ThreadUsageSnapshotResult {

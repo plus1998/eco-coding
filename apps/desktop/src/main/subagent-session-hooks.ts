@@ -1,6 +1,7 @@
 import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
 import { isSubagentRole, type SubagentRole } from "@eco/runtime";
 import type { ConversationStore } from "./conversation-store.js";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 
 export interface PendingSubagentLaunch {
@@ -14,6 +15,7 @@ export function createSubagentSessionHooks(
   threadId: string,
   phase: SubagentRunPhase,
   options?: {
+    metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
     consumePendingLaunch?: () => PendingSubagentLaunch | undefined;
     onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
@@ -40,9 +42,19 @@ export function createSubagentSessionHooks(
         ...(todoId && { todoId }),
         ...(missionKey && { missionKey }),
       });
+      options?.metricsRegistry?.onSubagentStart(threadId, {
+        agentId: input.agentId,
+        role: input.agentType,
+      });
     },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
+      if (isSubagentRole(input.agentType)) {
+        options?.metricsRegistry?.onSubagentStop(threadId, {
+          agentId: input.agentId,
+          role: input.agentType,
+        });
+      }
     },
     resolveResume(input) {
       return store.resolveResumeAgentId(input);

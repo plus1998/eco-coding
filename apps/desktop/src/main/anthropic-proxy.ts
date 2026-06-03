@@ -3,15 +3,15 @@ import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
-import {
-  forwardCountTokensViaBridge,
-  forwardMessagesViaBridge,
-  type BridgeForwardRoute,
-} from "./bridge-upstream";
+import { forwardMessagesViaBridge, type BridgeForwardRoute } from "./bridge-upstream";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { UpstreamModelOption } from "../shared/models";
-import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import {
+  logUpstreamProxyCall,
+  proxyCallCommonFields,
+  type UpstreamProxyCallBilling,
+} from "./upstream-proxy-log";
 import {
   announceUpstreamLogDestination,
   formatUpstreamFetchError,
@@ -54,6 +54,14 @@ export type AnthropicProxyUsageHandler = (
 
 export interface AnthropicProxyStartOptions {
   pendingImages?: readonly PromptImageAttachment[];
+  /**
+   * Local count_tokens stub: SDK context meter is authoritative via usage.recorded;
+   * return a non-zero estimate so Claude Code does not see perpetual 0 occupancy.
+   */
+  resolveCountTokensInput?: (input: {
+    role: AgentRole;
+    body: Record<string, unknown>;
+  }) => number | undefined;
   /** Non-empty: overrides SDK User-Agent on upstream requests. */
   upstreamUserAgent?: string;
   /** Fires when the local proxy forwards a streaming Messages API call upstream. */
@@ -195,7 +203,28 @@ export async function startAnthropicModelProxy(
       };
 
       if (countTokensRequest) {
-        await forwardCountTokensViaBridge(request, response, bridgeCtx);
+        const inputTokens = resolveCountTokensStubInput(body, route.role, options?.resolveCountTokensInput);
+        logUpstreamProxyCall({
+          at: new Date().toISOString(),
+          ok: true,
+          elapsedMs: 0,
+          ...proxyCallCommonFields({
+            role: route.role,
+            provider: bridgeRoute.provider,
+            apiCompat: bridgeRoute.apiCompat,
+            modelId: bridgeRoute.modelId,
+            aliasModelId: bridgeRoute.aliasModelId,
+            requestedModel,
+            requestUrl: request.url,
+            upstreamUrl: "eco://local/count_tokens-stub",
+            stream: false,
+            converted: false,
+          }),
+          http: { status: 200, streaming: false },
+          tokens: { input: inputTokens, output: 0, cacheRead: 0, cacheCreation: 0 },
+          billing: null,
+        });
+        writeJson(response, 200, { input_tokens: inputTokens });
         return;
       }
 
@@ -361,6 +390,39 @@ function isCountTokensPath(url: string | undefined): boolean {
     return false;
   }
   return url.split("?")[0]?.includes("/count_tokens") === true;
+}
+
+/** Rough token estimate from count_tokens / messages request JSON (chars / 4). */
+export function estimateInputTokensFromAnthropicBody(body: Record<string, unknown>): number {
+  const parts: string[] = [];
+  if (typeof body.system === "string") {
+    parts.push(body.system);
+  } else if (Array.isArray(body.system)) {
+    parts.push(JSON.stringify(body.system));
+  }
+  if (Array.isArray(body.tools)) {
+    parts.push(JSON.stringify(body.tools));
+  }
+  if (Array.isArray(body.messages)) {
+    parts.push(JSON.stringify(body.messages));
+  }
+  const text = parts.join("\n");
+  if (!text) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
+function resolveCountTokensStubInput(
+  body: Record<string, unknown>,
+  role: AgentRole,
+  resolve?: AnthropicProxyStartOptions["resolveCountTokensInput"],
+): number {
+  const fromHook = resolve?.({ role, body });
+  if (typeof fromHook === "number" && Number.isFinite(fromHook) && fromHook >= 0) {
+    return Math.trunc(fromHook);
+  }
+  return estimateInputTokensFromAnthropicBody(body);
 }
 
 export function injectImagesIntoMessagesBody(

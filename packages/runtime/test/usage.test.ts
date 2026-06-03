@@ -78,6 +78,31 @@ test("parseSdkContextUsage uses session usage not sum of modelUsage", () => {
   expect(usage?.cacheReadTokens).toBe(120_000);
 });
 
+test("parseSdkContextUsage picks subagent model entry instead of max occupancy", () => {
+  const usage = parseSdkContextUsage(
+    {
+      usage: { input_tokens: 1, output_tokens: 1 },
+      modelUsage: {
+        "claude-sonnet-4-6": {
+          inputTokens: 80_000,
+          outputTokens: 50,
+          cacheReadInputTokens: 400_000,
+          cacheCreationInputTokens: 0,
+        },
+        "claude-haiku-4-5": {
+          inputTokens: 5_000,
+          outputTokens: 10,
+          cacheReadInputTokens: 1_000,
+          cacheCreationInputTokens: 0,
+        },
+      },
+    },
+    { subagentModelId: "claude-haiku-4-5" },
+  );
+  expect(usage?.inputTokens).toBe(5_000);
+  expect(usage?.cacheReadTokens).toBe(1_000);
+});
+
 test("parseSdkUsageBilling prefers modelUsage cache fields for billing", () => {
   const bundle = parseSdkUsageBilling({
     total_cost_usd: 0.18,

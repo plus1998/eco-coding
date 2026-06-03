@@ -5,6 +5,7 @@ import {
   createModelAlias,
   createStreamingUsageTracker,
   extractUsageFromResponseBody,
+  estimateInputTokensFromAnthropicBody,
   injectImagesIntoMessagesBody,
   resolveProxyRoute,
 } from "../src/main/anthropic-proxy";
@@ -51,6 +52,14 @@ test("lists alias and upstream model ids for SDK model discovery", () => {
 
   const response = buildModelsListResponse([route]);
   expect(response.data.map((entry) => entry.id)).toEqual([route.aliasModelId, route.modelId]);
+});
+
+test("estimateInputTokensFromAnthropicBody counts messages and system", () => {
+  const estimate = estimateInputTokensFromAnthropicBody({
+    system: "hello",
+    messages: [{ role: "user", content: "world" }],
+  });
+  expect(estimate).toBeGreaterThan(0);
 });
 
 test("injectImagesIntoMessagesBody prepends image blocks to last user message", () => {

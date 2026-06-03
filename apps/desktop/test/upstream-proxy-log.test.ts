@@ -3,6 +3,7 @@ import {
   buildProtocolSummary,
   buildProtocolSummaryForCall,
   debugBodyFromRaw,
+  flushCountTokensProxyLogBurst,
   formatUpstreamProxyCallLog,
   isUpstreamLogVerbose,
   logUpstreamProxyCall,
@@ -53,6 +54,7 @@ test("buildProtocolSummaryForCall describes count_tokens bridge on anthropic", (
 
 test("resolveProxyOperation detects count_tokens path", () => {
   expect(resolveProxyOperation("/v1/messages/count_tokens")).toBe("count_tokens");
+  expect(resolveProxyOperation("/v1/messages")).toBe("messages");
   expect(resolveProxyOperation("/v1/messages")).toBe("messages");
 });
 
@@ -178,6 +180,53 @@ test("debugBodyFromRaw parses JSON or truncates text", () => {
   const truncated = debugBodyFromRaw(long);
   expect(typeof truncated).toBe("string");
   expect(String(truncated)).toContain("[truncated");
+});
+
+test("logUpstreamProxyCall batches count_tokens into one line unless verbose", () => {
+  const prevVerbose = process.env.ECO_UPSTREAM_LOG_VERBOSE;
+  process.env.ECO_UPSTREAM_LOG_VERBOSE = "0";
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const chunks: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stderr.write;
+
+  const stub = {
+    at: "2026-06-03T00:00:00.000Z",
+    ok: true,
+    elapsedMs: 0,
+    role: "planner",
+    provider: { id: "p1", name: "Provider" },
+    model: { upstream: "claude-sonnet-4", alias: "eco-planner-x" },
+    operation: "count_tokens" as const,
+    clientPath: "/v1/messages/count_tokens",
+    upstreamUrl: "eco://local/count_tokens-stub",
+    protocol: buildProtocolSummaryForCall({
+      apiCompat: "anthropic",
+      stream: false,
+      operation: "count_tokens",
+      converted: false,
+    }),
+    http: { status: 200, streaming: false },
+    tokens: { input: 99_000, output: 0, cacheRead: 0, cacheCreation: 0 },
+  };
+
+  try {
+    logUpstreamProxyCall(stub);
+    logUpstreamProxyCall(stub);
+    logUpstreamProxyCall(stub);
+    flushCountTokensProxyLogBurst();
+  } finally {
+    process.stderr.write = originalWrite;
+    process.env.ECO_UPSTREAM_LOG_VERBOSE = prevVerbose;
+  }
+
+  const text = chunks.join("");
+  expect(text).not.toContain("proxy-call 成功 0ms");
+  expect(text).toContain("count_tokens-stub ×3");
+  expect(text).toContain("role=planner");
+  expect(text).toContain("99k");
 });
 
 test("isUpstreamLogVerbose respects ECO_UPSTREAM_LOG_VERBOSE", () => {

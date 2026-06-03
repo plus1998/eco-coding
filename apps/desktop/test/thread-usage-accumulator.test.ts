@@ -168,7 +168,7 @@ test("ThreadUsageAccumulator keeps separate source totals for proxy otel and sdk
   });
 
   const billing = accumulator.getSnapshot("t1");
-  expect(billing?.primarySource).toBe("proxy");
+  expect(billing?.primarySource).toBe("sdk");
   expect(billing?.totalTokens.input).toBe(10_000);
   expect(billing?.sourceBreakdown?.otel?.reportedCostUsd).toBeCloseTo(0.2);
   expect(billing?.sourceBreakdown?.sdk?.reportedCostUsd).toBeCloseTo(0.19);

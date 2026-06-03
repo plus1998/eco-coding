@@ -7,6 +7,17 @@ import { getUpstreamLogFilePath, parseJsonForLog, truncateForLog } from "./upstr
 const UPSTREAM_LOG_PREFIX = "[eco-upstream]";
 const PROXY_CALL_PHASE = "proxy-call";
 
+interface CountTokensBurstBucket {
+  role: string;
+  count: number;
+  tokenValues: number[];
+}
+
+let countTokensBurstBuckets = new Map<string, CountTokensBurstBucket>();
+let countTokensFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
+const COUNT_TOKENS_FLUSH_MS = 400;
+
 export interface UpstreamProxyProtocolSummary {
   client: "anthropic-messages";
   upstream: UpstreamApiCompat;
@@ -292,7 +303,52 @@ export function formatUpstreamProxyCallLog(summary: UpstreamProxyCallLog): strin
   return `${lines.join("\n")}\n`;
 }
 
+export function flushCountTokensProxyLogBurst(): void {
+  if (countTokensFlushTimer) {
+    clearTimeout(countTokensFlushTimer);
+    countTokensFlushTimer = undefined;
+  }
+  if (countTokensBurstBuckets.size === 0) {
+    return;
+  }
+  const buckets = countTokensBurstBuckets;
+  countTokensBurstBuckets = new Map();
+  for (const bucket of buckets.values()) {
+    const unique = [...new Set(bucket.tokenValues)];
+    const tokenLabel =
+      unique.length === 1
+        ? formatTokenCount(unique[0]!)
+        : `${formatTokenCount(Math.min(...bucket.tokenValues))}–${formatTokenCount(Math.max(...bucket.tokenValues))}`;
+    const line = `${UPSTREAM_LOG_PREFIX} count_tokens-stub ×${bucket.count} role=${bucket.role} tokens=${tokenLabel}\n`;
+    process.stderr.write(line);
+    appendProxyLogFile(line);
+  }
+}
+
+function noteCountTokensProxyCall(summary: UpstreamProxyCallLog): void {
+  const role = summary.role;
+  const tokens = summary.tokens?.input ?? 0;
+  const bucket = countTokensBurstBuckets.get(role) ?? { role, count: 0, tokenValues: [] };
+  bucket.count += 1;
+  bucket.tokenValues.push(tokens);
+  countTokensBurstBuckets.set(role, bucket);
+  if (countTokensFlushTimer) {
+    clearTimeout(countTokensFlushTimer);
+  }
+  countTokensFlushTimer = setTimeout(() => {
+    countTokensFlushTimer = undefined;
+    flushCountTokensProxyLogBurst();
+  }, COUNT_TOKENS_FLUSH_MS);
+}
+
 export function logUpstreamProxyCall(summary: UpstreamProxyCallLog): void {
+  if (summary.operation === "count_tokens" && !isUpstreamLogVerbose()) {
+    noteCountTokensProxyCall(summary);
+    return;
+  }
+  if (summary.operation === "messages") {
+    flushCountTokensProxyLogBurst();
+  }
   const text = formatUpstreamProxyCallLog(summary);
   process.stderr.write(text);
   appendProxyLogFile(text);

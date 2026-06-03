@@ -25,6 +25,7 @@ import { formatSubagentMissionMessage } from "./agent-mission";
 import { formatResumableSubagentsAppend } from "./subagent-resume.js";
 import { mergeStreamText } from "./stream-text";
 import {
+  applySubagentUsageAttribution,
   createSdkStreamContext,
   mapStreamEventToEvents,
   type SdkStreamContext,
@@ -81,6 +82,7 @@ const FINALIZE_PLAN_RETRY_PROMPT =
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
+  getContextUsage?: () => Promise<Record<string, unknown>>;
 };
 
 interface ClaudeAgentSdkModule {
@@ -148,7 +150,6 @@ export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
-  maxTurns?: number;
   /** Default: analyze_plan_execute (plan in one session → subagents execute). */
   orchestration?: EcoOrchestrationMode;
   /**
@@ -163,6 +164,8 @@ export interface ClaudeAgentSdkDriverOptions {
   hookContext?: EcoHookContext;
   /** Mirror SDK session transcripts to external storage (mutually exclusive with file checkpointing). */
   sessionStore?: SessionStore;
+  /** Optional probe logging for `/context` and `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
+  onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
 }
 
 export interface SdkToolPermissionRequest {
@@ -306,7 +309,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             availability,
           ),
           availability,
-          maxTurns: 2,
         });
         finalizedPlan = retryTranscript.finalizedPlan;
       }
@@ -402,7 +404,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           availability,
         ),
         availability,
-        maxTurns: 2,
       });
       finalizedPlan = retryTranscript.finalizedPlan;
     }
@@ -427,7 +428,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools: string[];
       phaseAppend: string;
       agents?: Record<string, unknown>;
-      maxTurns?: number;
       availability?: SubagentAvailability;
     },
   ): AsyncGenerator<AgentEvent, { transcript: string; finalizedPlan?: FinalizePlanPayload }> {
@@ -509,11 +509,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       queryOptions.agents = phase.agents;
     }
 
-    const maxTurns = phase.maxTurns ?? this.options.maxTurns;
-    if (maxTurns !== undefined) {
-      queryOptions.maxTurns = maxTurns;
-    }
-
     const query = sdk.query({
       prompt: phase.prompt,
       options: queryOptions,
@@ -523,8 +518,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     let transcript = "";
     let sessionCaptured = false;
-    const streamCtx = createSdkStreamContext();
+    const resolveSubagent = this.options.hookContext?.subagentAttribution?.resolveAgentId;
+    const streamCtx = createSdkStreamContext({
+      ...(resolveSubagent && {
+        resolveSubagentAgentId: (input) =>
+          resolveSubagent({
+            role: input.role,
+            sessionId: input.sessionId,
+            ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+          }),
+      }),
+    });
+    const contextSlash = phase.prompt.trim() === "/context";
     for await (const message of query) {
+      if (contextSlash) {
+        this.options.onContextProbe?.("raw_sdk_message", summarizeSdkMessageForProbe(message));
+      }
       if (!sessionCaptured && isSdkInitMessage(message)) {
         const sessionId = readSdkSessionId(message);
         if (sessionId) {
@@ -540,6 +549,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
       if (input.signal.aborted) {
         break;
+      }
+    }
+
+    if (contextSlash && typeof query.getContextUsage === "function") {
+      try {
+        const usage = await query.getContextUsage();
+        this.options.onContextProbe?.("getContextUsage", {
+          usage: usage as unknown as Record<string, unknown>,
+        });
+      } catch (error) {
+        this.options.onContextProbe?.("getContextUsage_error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
@@ -559,7 +581,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: options.permissionMode,
       allowedTools: [],
       phaseAppend: "",
-      maxTurns: 1,
     });
     return result.transcript;
   }
@@ -1122,19 +1143,26 @@ export function mapSdkMessageToEvents(
   }
 
   if (message.type === "result") {
+    const resultPayload: Record<string, unknown> = {
+      type: "result",
+      totalCostUsd: message.total_cost_usd,
+      usage: message.usage,
+      modelUsage: message.modelUsage,
+      subtype: message.subtype,
+      ...(typeof message.result === "string" && { result: message.result }),
+    };
+    const attributed = applySubagentUsageAttribution(
+      { role, sessionId, payload: resultPayload },
+      streamCtx,
+    );
     return [
       createAgentEvent({
         id: `${uuid}:usage`,
         threadId,
-        agentId: sessionId,
+        agentId: attributed.agentId,
         role,
         type: "usage.recorded",
-        payload: {
-          totalCostUsd: message.total_cost_usd,
-          usage: message.usage,
-          modelUsage: message.modelUsage,
-          subtype: message.subtype,
-        },
+        payload: attributed.payload,
       }),
     ];
   }
@@ -1209,18 +1237,23 @@ function mapAssistantMessageToEvents(
     const nested = message.message;
     const messageId = typeof nested.id === "string" ? nested.id : undefined;
     if (isRecord(nested.usage)) {
+      const assistantPayload: Record<string, unknown> = {
+        usage: nested.usage,
+        ...(messageId && { messageId }),
+        ...(typeof nested.model === "string" && { model: nested.model }),
+      };
+      const attributed = applySubagentUsageAttribution(
+        { role, sessionId, payload: assistantPayload },
+        streamCtx,
+      );
       events.push(
         createAgentEvent({
           id: `${uuid}:assistant-usage`,
           threadId,
-          agentId: sessionId,
+          agentId: attributed.agentId,
           role,
           type: "usage.recorded",
-          payload: {
-            usage: nested.usage,
-            ...(messageId && { messageId }),
-            ...(typeof nested.model === "string" && { model: nested.model }),
-          },
+          payload: attributed.payload,
         }),
       );
     }
@@ -1832,6 +1865,30 @@ function pathBasename(filePath: string): string {
 
 export function isStreamableAgentEventType(type: AgentEventType): boolean {
   return type === "message.delta";
+}
+
+function summarizeSdkMessageForProbe(message: unknown): Record<string, unknown> {
+  if (!isRecord(message)) {
+    return { raw: message };
+  }
+  const summary: Record<string, unknown> = {
+    type: message.type,
+    ...(typeof message.subtype === "string" && { subtype: message.subtype }),
+    ...(typeof message.session_id === "string" && { session_id: message.session_id }),
+  };
+  if (typeof message.result === "string") {
+    const text = message.result;
+    summary.resultLength = text.length;
+    summary.result =
+      text.length > 16_000 ? `${text.slice(0, 16_000)}…[truncated]` : text;
+  }
+  if (message.usage !== undefined) {
+    summary.usage = message.usage;
+  }
+  if (message.modelUsage !== undefined) {
+    summary.modelUsage = message.modelUsage;
+  }
+  return summary;
 }
 
 export {

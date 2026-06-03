@@ -3,8 +3,12 @@ import type { ThreadStatus } from "./ipc";
 
 export const planExecutionFailurePrefix = "执行失败，已回退更改。";
 
-export const genericThreadFailureHint =
-  "连接上游模型失败或请求未完成。请检查 Provider 的 Base URL、API Key 与网络；详细日志见控制台 [eco-upstream]。";
+/** Shown only when the retry banner has no concrete failure text from the backend. */
+export const retryBannerNoDetailHint =
+  "未记录具体错误详情。请查看 ~/.eco-coding/logs/upstream.log 或终端中的 [eco-upstream] 日志。";
+
+const threadInterruptedContinueSuffix =
+  "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
 
 const operationalThreadMessagePatterns = [
   /^已清理隔离工作树/,
@@ -41,6 +45,15 @@ export function shouldUpdateThreadSummaryFromLiveEvent(eventType: string): boole
   return eventType.startsWith("thread.");
 }
 
+/** Strip the standard suffix appended by markThreadInterrupted for banner display. */
+export function stripThreadInterruptedSuffix(message: string): string {
+  const trimmed = message.trim();
+  if (trimmed.endsWith(threadInterruptedContinueSuffix)) {
+    return trimmed.slice(0, -threadInterruptedContinueSuffix.length).trim();
+  }
+  return trimmed;
+}
+
 export function isOperationalThreadMessage(message: string): boolean {
   const trimmed = message.trim();
   if (!trimmed) {
@@ -49,33 +62,35 @@ export function isOperationalThreadMessage(message: string): boolean {
   return operationalThreadMessagePatterns.some((pattern) => pattern.test(trimmed));
 }
 
-export function resolveRetryBannerDetail(threadMessage: string, status: ThreadStatus): string {
+export function resolveRetryBannerDetail(
+  threadMessage: string,
+  status: ThreadStatus,
+): string | undefined {
   const planFailure = extractPlanFailureMessage(threadMessage);
   if (planFailure) {
     return planFailure;
   }
+  const core = stripThreadInterruptedSuffix(threadMessage);
   if (
     (status === "failed" || status === "blocked") &&
-    threadMessage.trim() &&
-    !isOperationalThreadMessage(threadMessage)
+    core &&
+    !isOperationalThreadMessage(core)
   ) {
-    return threadMessage.trim();
+    return core;
   }
-  if (status === "blocked") {
-    return "模型路由未就绪或会话无法启动。请检查设置中的路由方案与 Provider 配置。";
-  }
-  return genericThreadFailureHint;
+  return undefined;
 }
 
 export const quotaRetryBannerHint =
   "同一上游已自动重试多次仍失败。请通过输入区「切换路由方案」或下方选择备用方案，换用其他 Provider 后重试；跨服务商续聊将使用对话记录重建上下文。";
 
-export const defaultRetryBannerHint =
-  "工作区更改已回退（如有）。可重试同一需求；若仍出现 HTTP 200 空响应，请检查模型代理或上游 API 配置。";
-
-export function resolveRetryBannerHint(detail: string): string {
+/** Optional second line; only when the failure type warrants specific guidance. */
+export function resolveRetryBannerHint(detail: string | undefined): string | undefined {
+  if (!detail?.trim()) {
+    return undefined;
+  }
   if (isQuotaOrRateLimitFailure(detail)) {
     return quotaRetryBannerHint;
   }
-  return defaultRetryBannerHint;
+  return undefined;
 }

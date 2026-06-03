@@ -3352,6 +3352,118 @@ button:not(:disabled) {
   background: #222222;
 }
 
+.context-card:not(.context-card-empty) {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 48vh);
+  overflow: hidden;
+}
+
+.context-card-main {
+  flex-shrink: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #333333;
+}
+
+.context-card-main-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.context-card-main-badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(234, 88, 12, 0.18);
+  color: #fdba74;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.context-card-main-model {
+  min-width: 0;
+  overflow: hidden;
+  color: #d4d4d4;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-card-has-subagents .context-card-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  max-height: min(160px, 24vh);
+  padding-top: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.context-card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.context-card-role-body-main .context-card-bar {
+  height: 7px;
+}
+
+.context-card-subagent-row {
+  border-left: 2px solid #64748b;
+  padding-left: 8px;
+}
+
+.context-card-subagent-row-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.context-card-subagent-row-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.context-card-subagent-row-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  color: #cbd5e1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-card-subagent-row-tokens {
+  color: #64748b;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.context-card-bar-subagent {
+  height: 4px;
+  margin-bottom: 0;
+  border-radius: 3px;
+  background: #2a3038;
+}
+
 .context-card-empty {
   padding: 10px 12px;
 }
@@ -3364,9 +3476,14 @@ button:not(:disabled) {
 
 .context-card-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.context-card:not(.context-card-empty) .context-card-header {
+  margin-bottom: 6px;
 }
 
 .context-card-title {
@@ -3470,76 +3587,6 @@ button:not(:disabled) {
   background: #3a3a3a;
 }
 
-.context-card-subagents-group {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #333;
-}
-
-.context-card-subagents-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: #242424;
-  color: #d4d4d4;
-  cursor: pointer;
-  text-align: left;
-}
-
-.context-card-subagents-toggle:hover {
-  border-color: #3a3a3a;
-  background: #292929;
-}
-
-.context-card-subagents-chevron {
-  flex-shrink: 0;
-  color: #8f8f8f;
-  transition: transform 0.15s ease;
-}
-
-.context-card-subagents-chevron.open {
-  transform: rotate(180deg);
-}
-
-.context-card-subagents-toggle-label {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #e5e5e5;
-}
-
-.context-card-subagents-collapsed-hint {
-  min-width: 0;
-  overflow: hidden;
-  color: #8f8f8f;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.context-card-subagents-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 10px;
-}
-
-.context-card-subagent-entry-title {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #a3a3a3;
-}
-
-.context-card-subagent-entry .context-card-summary {
-  margin-top: 0;
-}
 
 .context-card-role-main {
   display: flex;

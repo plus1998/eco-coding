@@ -9,6 +9,7 @@ import {
 } from "../shared/activity-display";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import type {
+  AgentRole,
   CoderTodoItem,
   CoderTodoStatus,
   ThreadActivityLine,
@@ -17,6 +18,7 @@ import type {
   ThreadRuntimeConfig,
   ThreadStatus,
   ThreadSummary,
+  TokenCostBreakdown,
 } from "../shared/ipc";
 import {
   parseThreadRuntimeConfigJson,
@@ -87,6 +89,26 @@ export interface ThreadMetricsRecord {
   threadId: string;
   accumulator?: SerializedThreadUsageState;
   context?: ThreadContextSnapshot;
+  updatedAt: string;
+}
+
+export type SubagentMetricsStatus = "active" | "stopped";
+
+export interface ThreadSubagentMetricsRecord {
+  threadId: string;
+  agentId: string;
+  role: AgentRole;
+  status: SubagentMetricsStatus;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  contextOccupied: number;
+  contextLimit?: number;
+  ecoCostUsd: number;
+  ecoCostBreakdown: TokenCostBreakdown;
+  modelId?: string;
+  lastRequestKey?: string;
   updatedAt: string;
 }
 
@@ -223,6 +245,26 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_subagent_sessions_thread_role_phase
         ON thread_subagent_sessions(thread_id, role, phase, status, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS thread_subagent_metrics (
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        context_occupied INTEGER NOT NULL DEFAULT 0,
+        context_limit INTEGER,
+        eco_cost_usd REAL NOT NULL DEFAULT 0,
+        eco_cost_breakdown_json TEXT,
+        model_id TEXT,
+        last_request_key TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, agent_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
     `);
     this.migrateSchema();
   }
@@ -242,6 +284,28 @@ export class ConversationStore {
     if (!names.has("runtime_config_json")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
     }
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_subagent_metrics (
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        context_occupied INTEGER NOT NULL DEFAULT 0,
+        context_limit INTEGER,
+        eco_cost_usd REAL NOT NULL DEFAULT 0,
+        eco_cost_breakdown_json TEXT,
+        model_id TEXT,
+        last_request_key TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, agent_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+    `);
   }
 
   saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
@@ -534,6 +598,119 @@ export class ConversationStore {
          WHERE thread_id = ? AND agent_id = ?`,
       )
       .run(new Date().toISOString(), threadId, agentId);
+  }
+
+  upsertSubagentMetrics(
+    threadId: string,
+    input: {
+      agentId: string;
+      role: AgentRole;
+      status: SubagentMetricsStatus;
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheCreationTokens: number;
+      contextOccupied: number;
+      contextLimit?: number;
+      ecoCostUsd: number;
+      ecoCostBreakdown: TokenCostBreakdown;
+      modelId?: string;
+      lastRequestKey?: string;
+    },
+  ): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO thread_subagent_metrics (
+           thread_id, agent_id, role, status,
+           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+           context_occupied, context_limit, eco_cost_usd, eco_cost_breakdown_json,
+           model_id, last_request_key, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, agent_id) DO UPDATE SET
+           role = excluded.role,
+           status = excluded.status,
+           input_tokens = excluded.input_tokens,
+           output_tokens = excluded.output_tokens,
+           cache_read_tokens = excluded.cache_read_tokens,
+           cache_creation_tokens = excluded.cache_creation_tokens,
+           context_occupied = excluded.context_occupied,
+           context_limit = excluded.context_limit,
+           eco_cost_usd = excluded.eco_cost_usd,
+           eco_cost_breakdown_json = excluded.eco_cost_breakdown_json,
+           model_id = excluded.model_id,
+           last_request_key = excluded.last_request_key,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        threadId,
+        input.agentId,
+        input.role,
+        input.status,
+        input.inputTokens,
+        input.outputTokens,
+        input.cacheReadTokens,
+        input.cacheCreationTokens,
+        input.contextOccupied,
+        input.contextLimit ?? null,
+        input.ecoCostUsd,
+        JSON.stringify(input.ecoCostBreakdown),
+        input.modelId ?? null,
+        input.lastRequestKey ?? null,
+        now,
+      );
+  }
+
+  listSubagentMetrics(threadId: string): ThreadSubagentMetricsRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, agent_id, role, status,
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                context_occupied, context_limit, eco_cost_usd, eco_cost_breakdown_json,
+                model_id, last_request_key, updated_at
+         FROM thread_subagent_metrics
+         WHERE thread_id = ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(threadId) as Array<{
+      thread_id: string;
+      agent_id: string;
+      role: string;
+      status: string;
+      input_tokens: number;
+      output_tokens: number;
+      cache_read_tokens: number;
+      cache_creation_tokens: number;
+      context_occupied: number;
+      context_limit: number | null;
+      eco_cost_usd: number;
+      eco_cost_breakdown_json: string | null;
+      model_id: string | null;
+      last_request_key: string | null;
+      updated_at: string;
+    }>;
+
+    return rows.map((row) => ({
+      threadId: row.thread_id,
+      agentId: row.agent_id,
+      role: row.role as AgentRole,
+      status: row.status as SubagentMetricsStatus,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      cacheReadTokens: row.cache_read_tokens,
+      cacheCreationTokens: row.cache_creation_tokens,
+      contextOccupied: row.context_occupied,
+      ...(row.context_limit !== null && { contextLimit: row.context_limit }),
+      ecoCostUsd: row.eco_cost_usd,
+      ecoCostBreakdown: parseEcoCostBreakdownJson(row.eco_cost_breakdown_json),
+      ...(row.model_id && { modelId: row.model_id }),
+      ...(row.last_request_key && { lastRequestKey: row.last_request_key }),
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  clearSubagentMetrics(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_subagent_metrics WHERE thread_id = ?`).run(threadId);
   }
 
   listSubagentSessions(threadId: string): ThreadSubagentSessionRecord[] {
@@ -990,6 +1167,25 @@ function rowToThreadMetrics(row: {
     ...(accumulator && { accumulator }),
     ...(context && { context }),
   };
+}
+
+function parseEcoCostBreakdownJson(raw: string | null): TokenCostBreakdown {
+  const empty = { inputUsd: 0, outputUsd: 0, cacheReadUsd: 0, cacheCreationUsd: 0, totalUsd: 0 };
+  if (!raw) {
+    return empty;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<TokenCostBreakdown>;
+    return {
+      inputUsd: parsed.inputUsd ?? 0,
+      outputUsd: parsed.outputUsd ?? 0,
+      cacheReadUsd: parsed.cacheReadUsd ?? 0,
+      cacheCreationUsd: parsed.cacheCreationUsd ?? 0,
+      totalUsd: parsed.totalUsd ?? 0,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {

@@ -163,10 +163,27 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
   const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
+  const subagents = billing?.subagents ?? [];
+
   return (
     <ExpandableBillingSection title="用量明细" summary={summary}>
       <ViewToggle view={view} onChange={setView} compact={false} />
       <BreakdownRows view={view} breakdown={breakdown} compact={false} />
+      {subagents.length > 0 ? (
+        <ul className="usage-breakdown-list usage-breakdown-subagents">
+          {subagents.map((row) => (
+            <li key={row.agentId} className="usage-breakdown-row" title={`子代理 ${row.agentId}`}>
+              <span className="usage-breakdown-label">
+                {formatRoleModelLabel(row.role)} · {row.agentId.slice(0, 8)}
+              </span>
+              <span className="usage-breakdown-tokens">
+                ↑{row.inputTokens} ↓{row.outputTokens}
+              </span>
+              <span className="usage-breakdown-cost">{formatCostUsd(row.ecoCostUsd)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </ExpandableBillingSection>
   );
 }

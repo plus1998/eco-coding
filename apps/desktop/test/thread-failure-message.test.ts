@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import {
   buildPlanExecutionFailureMessage,
   extractPlanFailureMessage,
-  genericThreadFailureHint,
   planExecutionFailurePrefix,
   quotaRetryBannerHint,
   resolveRetryBannerDetail,
   resolveRetryBannerHint,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
+  stripThreadInterruptedSuffix,
 } from "../src/shared/thread-failure-message";
 import { formatUserFacingRequestError } from "../src/main/request-retry";
 
@@ -45,7 +45,7 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores worktree cleanup notices", 
 });
 
 test("resolveRetryBannerDetail ignores operational cleanup message on failed thread", () => {
-  expect(resolveRetryBannerDetail("已清理隔离工作树。", "failed")).toBe(genericThreadFailureHint);
+  expect(resolveRetryBannerDetail("已清理隔离工作树。", "failed")).toBeUndefined();
 });
 
 test("resolveRetryBannerDetail keeps formatted upstream error", () => {
@@ -59,13 +59,18 @@ test("resolveRetryBannerDetail surfaces route config errors for blocked threads"
   ).toBe("Configure a planner route before starting a coding thread.");
 });
 
-test("resolveRetryBannerDetail uses blocked fallback when message is operational", () => {
-  expect(resolveRetryBannerDetail("Local model router ready: http://127.0.0.1:1", "blocked")).toContain(
-    "模型路由未就绪",
-  );
+test("resolveRetryBannerDetail returns undefined when blocked message is operational only", () => {
+  expect(resolveRetryBannerDetail("Local model router ready: http://127.0.0.1:1", "blocked")).toBeUndefined();
 });
 
-test("resolveRetryBannerHint suggests switching routes for quota failures", () => {
+test("stripThreadInterruptedSuffix removes continue hint suffix", () => {
+  expect(
+    stripThreadInterruptedSuffix("API error 可在下方继续对话、切换模型后重试，或点击「重试此次请求」。"),
+  ).toBe("API error");
+});
+
+test("resolveRetryBannerHint only adds guidance for quota failures", () => {
   expect(resolveRetryBannerHint("API Error: 429 rate limit exceeded")).toBe(quotaRetryBannerHint);
-  expect(resolveRetryBannerHint("fetch failed")).not.toBe(quotaRetryBannerHint);
+  expect(resolveRetryBannerHint("fetch failed")).toBeUndefined();
+  expect(resolveRetryBannerHint(undefined)).toBeUndefined();
 });

@@ -21,7 +21,7 @@ import { createEmptyUsage, type UsageRequestRecord } from "./usage-request-types
 
 export type { ThreadBillingSnapshot };
 
-const BILLING_SOURCE_PRIORITY: BillingUsageSource[] = ["proxy", "sdk", "otel"];
+const BILLING_SOURCE_PRIORITY: BillingUsageSource[] = ["sdk", "proxy", "otel"];
 
 export interface RecordUsageInput {
   threadId: string;
@@ -35,6 +35,8 @@ export interface RecordUsageInput {
   requestKey?: string;
   plannerModelLabel?: string;
   source?: BillingUsageSource;
+  /** When true, only updates sourceBreakdown slot; headline totals use SDK primary. */
+  reconciliationOnly?: boolean;
 }
 
 export interface RecordRunUsageModel {
@@ -122,14 +124,23 @@ export interface SerializedThreadUsageState {
 export class ThreadUsageAccumulator {
   private readonly states = new Map<string, ThreadUsageAccumulatorState>();
 
+  hasSeenRequestKey(threadId: string, requestKey: string): boolean {
+    return this.states.get(threadId)?.seenRequestKeys.has(requestKey) ?? false;
+  }
+
   recordUsage(input: RecordUsageInput): ThreadBillingSnapshot {
     const state = this.getOrCreateState(input.threadId);
 
     if (input.requestKey && state.seenRequestKeys.has(input.requestKey)) {
       return this.toSnapshot(state, input.plannerModelLabel);
     }
-    if (input.requestKey) {
+    if (input.requestKey && !input.reconciliationOnly) {
       state.seenRequestKeys.add(input.requestKey);
+    } else if (input.requestKey && input.reconciliationOnly) {
+      const sdkKey = input.requestKey.replace(/^(proxy|otel):/, "sdk:");
+      if (state.seenRequestKeys.has(input.requestKey) || state.seenRequestKeys.has(sdkKey)) {
+        return this.toSnapshot(state, input.plannerModelLabel);
+      }
     }
 
     const source = input.source ?? "otel";

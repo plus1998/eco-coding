@@ -1,5 +1,5 @@
 import { CONTEXT_SEGMENT_LABELS, formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
-import { ChevronDown, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 
@@ -17,6 +17,14 @@ const SUBAGENT_ROLE_SHORT: Record<string, string> = {
   coder: "编码",
   reviewer: "审查",
   tester: "测试",
+};
+
+const SUBAGENT_ACCENT: Record<string, string> = {
+  explore: "#38bdf8",
+  architect: "#c084fc",
+  coder: "#4ade80",
+  reviewer: "#fb923c",
+  tester: "#f472b6",
 };
 
 function shortAgentId(agentId: string): string {
@@ -108,13 +116,100 @@ function hasDetailedBreakdown(role: ThreadRoleContextSnapshot): boolean {
   );
 }
 
-function formatSubagentsCollapsedSummary(roles: ThreadRoleContextSnapshot[]): string {
-  return roles
-    .map((role) => {
-      const short = SUBAGENT_ROLE_SHORT[role.role] ?? role.role;
-      return `${short} ${formatContextK(role.occupied)}/${formatContextK(role.limit)}`;
-    })
-    .join(" · ");
+interface FlatSubagentRow {
+  key: string;
+  role: ThreadRoleContextSnapshot["role"];
+  title: string;
+  snapshot: ThreadRoleContextSnapshot;
+}
+
+function buildFlatSubagentRows(
+  instanceEntries: ThreadContextSnapshot["instances"],
+  subagentRoles: ThreadRoleContextSnapshot[],
+): FlatSubagentRow[] {
+  const instances = [...(instanceEntries ?? [])]
+    .filter((instance) => instance.role !== "planner" && instance.occupied > 0)
+    .sort((left, right) => right.occupied - left.occupied);
+
+  if (instances.length > 0) {
+    return instances.map((instance) => ({
+      key: instance.agentId,
+      role: instance.role,
+      title: `${SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role} #${shortAgentId(instance.agentId)}`,
+      snapshot: {
+        role: instance.role,
+        occupied: instance.occupied,
+        limit: instance.limit,
+        occupancyPct: instance.occupancyPct,
+        limitsResolved: instance.limitsResolved,
+        segments: instance.segments,
+        ...(instance.modelId && { modelId: instance.modelId }),
+        ...(instance.maxOutputTokens !== undefined && { maxOutputTokens: instance.maxOutputTokens }),
+      },
+    }));
+  }
+
+  return subagentRoles.map((role) => ({
+    key: role.role,
+    role: role.role,
+    title: formatRoleModelLabel(role.role, role.modelId),
+    snapshot: role,
+  }));
+}
+
+function subagentAccent(role: string): string {
+  return SUBAGENT_ACCENT[role] ?? "#64748b";
+}
+
+function SubagentContextRow({ row }: { row: FlatSubagentRow }) {
+  const role = row.snapshot;
+  const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
+  const occupied = role.occupied;
+  const limit = role.limit;
+  const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
+  const freeTokens = Math.max(limit - occupied, 0);
+  const accent = subagentAccent(row.role);
+
+  return (
+    <article
+      className="context-card-subagent-row"
+      style={{ borderLeftColor: accent }}
+      aria-label={`${row.title} 上下文`}
+    >
+      <div className="context-card-subagent-row-head">
+        <span className="context-card-subagent-row-dot" style={{ backgroundColor: accent }} aria-hidden />
+        <span className="context-card-subagent-row-title">{row.title}</span>
+        <span className={pctClass(role.occupancyPct)}>{formatOccupancyLabel(role.occupancyPct)}</span>
+        <span className="context-card-subagent-row-tokens">
+          ~{formatContextK(occupied)}/{formatContextK(limit)}
+        </span>
+      </div>
+      <div
+        className="context-card-bar context-card-bar-subagent"
+        role="img"
+        aria-label={`${row.title} 约 ${formatContextK(occupied)} / ${formatContextK(limit)}`}
+      >
+        {occupied > 0 ? (
+          <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
+            {visibleSegments.map((segment) => (
+              <span
+                key={segment.key}
+                className="context-card-bar-segment"
+                style={{ flexGrow: segment.tokens, backgroundColor: segment.color }}
+              />
+            ))}
+            {occupied > segmentTotal ? (
+              <span
+                className="context-card-bar-segment context-card-bar-segment-gap"
+                style={{ flexGrow: occupied - segmentTotal }}
+              />
+            ) : null}
+          </span>
+        ) : null}
+        {freeTokens > 0 ? <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} /> : null}
+      </div>
+    </article>
+  );
 }
 
 function ContextRoleBody({
@@ -135,7 +230,7 @@ function ContextRoleBody({
   const roleLabel = formatRoleModelLabel(role.role, role.modelId);
 
   return (
-    <>
+    <div className="context-card-role-body context-card-role-body-main">
       <div className="context-card-summary">
         <span className={pctClass(role.occupancyPct)}>{formatOccupancyLabel(role.occupancyPct)}</span>
         <span className="context-card-tokens">
@@ -192,13 +287,12 @@ function ContextRoleBody({
           上限未匹配 models.dev，按 {formatContextK(role.limit)} 估算
         </p>
       ) : null}
-    </>
+    </div>
   );
 }
 
 export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
-  const [subagentsOpen, setSubagentsOpen] = useState(false);
 
   if (!context) {
     if (!showWhenEmpty) {
@@ -214,20 +308,16 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const roles = contextRoles(context);
   const planner = resolvePlannerSnapshot(context, roles);
   const subagentRoles = roles.filter((role) => role.role !== "planner");
-  const instanceEntries = [...(context.instances ?? [])]
-    .filter((instance) => instance.role !== "planner" && instance.occupied > 0)
-    .sort((left, right) => right.occupied - left.occupied);
+  const flatSubagents = buildFlatSubagentRows(context.instances, subagentRoles);
   const plannerDetailed = hasDetailedBreakdown(planner);
   const showPlannerRefreshing = Boolean(context.breakdownRefreshing);
+  const hasSubagents = flatSubagents.length > 0;
 
   return (
-    <div className="context-card">
+    <div className={hasSubagents ? "context-card context-card-has-subagents" : "context-card"}>
       <div className="context-card-header">
         <div className="context-card-title-group">
           <h4 className="context-card-title">Context</h4>
-          <span className="context-card-role-badge">
-            {formatRoleModelLabel(planner.role, planner.modelId)}
-          </span>
         </div>
         <div className="context-card-header-actions">
           {plannerDetailed ? (
@@ -254,71 +344,23 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
         </div>
       </div>
 
-      <ContextRoleBody
-        role={planner}
-        detailsOpen={plannerDetailsOpen}
-        showRefreshing={showPlannerRefreshing}
-      />
-
-      {instanceEntries.length > 0 ? (
-        <div className="context-card-subagents-group">
-          <div className="context-card-subagents-body" aria-label="子代理上下文">
-            {instanceEntries.map((instance) => (
-              <section key={instance.agentId} className="context-card-subagent-entry">
-                <h5 className="context-card-subagent-entry-title">
-                  {(SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role) + ` #${shortAgentId(instance.agentId)}`}
-                </h5>
-                <ContextRoleBody
-                  role={{
-                    role: instance.role,
-                    occupied: instance.occupied,
-                    limit: instance.limit,
-                    occupancyPct: instance.occupancyPct,
-                    limitsResolved: instance.limitsResolved,
-                    segments: instance.segments,
-                    ...(instance.modelId && { modelId: instance.modelId }),
-                    ...(instance.maxOutputTokens !== undefined && { maxOutputTokens: instance.maxOutputTokens }),
-                  }}
-                  detailsOpen={false}
-                />
-              </section>
-            ))}
-          </div>
+      <section className="context-card-main" aria-label="主 Agent 上下文">
+        <div className="context-card-main-head">
+          <span className="context-card-main-badge">主 Agent</span>
+          <span className="context-card-main-model">{formatRoleModelLabel(planner.role, planner.modelId)}</span>
         </div>
-      ) : subagentRoles.length > 0 ? (
-        <div className="context-card-subagents-group">
-          <button
-            type="button"
-            className="context-card-subagents-toggle"
-            onClick={() => setSubagentsOpen((open) => !open)}
-            aria-expanded={subagentsOpen}
-            aria-label={subagentsOpen ? "收起子代理上下文" : "展开子代理上下文"}
-          >
-            <ChevronDown
-              size={14}
-              className={subagentsOpen ? "context-card-subagents-chevron open" : "context-card-subagents-chevron"}
-              aria-hidden
-            />
-            <span className="context-card-subagents-toggle-label">子代理</span>
-            {!subagentsOpen ? (
-              <span className="context-card-subagents-collapsed-hint" title={formatSubagentsCollapsedSummary(subagentRoles)}>
-                {formatSubagentsCollapsedSummary(subagentRoles)}
-              </span>
-            ) : null}
-          </button>
+        <ContextRoleBody
+          role={planner}
+          detailsOpen={plannerDetailsOpen}
+          showRefreshing={showPlannerRefreshing}
+        />
+      </section>
 
-          {subagentsOpen ? (
-            <div className="context-card-subagents-body" aria-label="子代理上下文">
-              {subagentRoles.map((role) => (
-                <section key={role.role} className="context-card-subagent-entry">
-                  <h5 className="context-card-subagent-entry-title">
-                    {formatRoleModelLabel(role.role, role.modelId)}
-                  </h5>
-                  <ContextRoleBody role={role} detailsOpen={false} />
-                </section>
-              ))}
-            </div>
-          ) : null}
+      {hasSubagents ? (
+        <div className="context-card-scroll" aria-label="子代理上下文">
+          {flatSubagents.map((row) => (
+            <SubagentContextRow key={row.key} row={row} />
+          ))}
         </div>
       ) : null}
     </div>

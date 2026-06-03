@@ -66,6 +66,7 @@ import {
   extractPlanFailureMessage,
   resolveRetryBannerDetail,
   resolveRetryBannerHint,
+  retryBannerNoDetailHint,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
@@ -1760,7 +1761,11 @@ function App() {
                       <strong>
                         {activeThread?.status === "blocked" ? "会话受阻" : "此次请求失败"}
                       </strong>
-                      <p>{retryBannerDetail}</p>
+                      {retryBannerDetail ? (
+                        <p>{retryBannerDetail}</p>
+                      ) : (
+                        <p className="thread-retry-banner-hint">{retryBannerNoDetailHint}</p>
+                      )}
                       {retryBannerHint ? (
                         <p className="thread-retry-banner-hint">{retryBannerHint}</p>
                       ) : null}

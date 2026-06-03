@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
   computeRequestBilling,
   computeSavings,
+  computeWindowOccupancy,
   formatUsageBadge,
+  parseSdkContextUsage,
   parseSdkUsageBilling,
   type ParsedUsage,
   type EcoPlanningContext,
@@ -144,6 +146,7 @@ import { createConversationStore, type ConversationStore } from "./conversation-
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
   createModelAlias,
+  estimateInputTokensFromAnthropicBody,
   startAnthropicModelProxy,
   type AnthropicProxyResolvedRoute,
   type AnthropicProxyStartOptions,
@@ -160,13 +163,14 @@ import {
   resolveUsageRoute,
 } from "./billing-resolver";
 import {
-  buildAssistantUsageRequestKey,
   buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
+  isSubagentBillingRole,
   nextOtelRequestDedupId,
-  shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
 } from "./billing-orchestration";
+import { logContextSnapshot } from "./context-snapshot-log";
+import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
@@ -178,6 +182,7 @@ import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
+import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
@@ -256,11 +261,14 @@ interface ActiveThreadRun {
   proxyRequestSeq?: number;
   /** Roles whose context window has been captured by the proxy during this run. */
   proxyContextRolesSeen?: Set<AgentRole>;
+  /** Latest proxy-reported window occupancy per role (for count_tokens local stub). */
+  lastProxyContextByRole?: Partial<Record<AgentRole, number>>;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
+let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingUsageUpdates = new Map<string, Set<Promise<void>>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
@@ -299,6 +307,7 @@ app.whenReady().then(async () => {
   providerStore = await createProviderStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
   agentSkillsStore = await createAgentSkillsStore(dbPath);
   subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
@@ -1239,6 +1248,7 @@ const THREAD_INTERRUPTED_CONTINUE_HINT =
 function markThreadInterrupted(threadId: string, reason: string): void {
   const summary = formatUserFacingRequestError(reason);
   const truncated = summary.length > 240 ? `${summary.slice(0, 237)}…` : summary;
+  process.stderr.write(`[eco] thread blocked (${threadId}): ${truncated}\n`);
   updateThread(threadId, {
     status: "blocked",
     message: `${truncated} ${THREAD_INTERRUPTED_CONTINUE_HINT}`,
@@ -2520,7 +2530,18 @@ function buildSdkHookContextExtras(
 ): Partial<EcoHookContext> {
   let pendingLaunch: PendingSubagentLaunch | undefined;
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
+  const subagentAttribution = {
+    resolveAgentId: (input: { role: AgentRole; parentToolUseId?: string; sessionId: string }) =>
+      subagentMetricsRegistry.resolveAgentId(threadId, {
+        role: input.role,
+        ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      }),
+    onTaskToolUse: (toolUseId: string) => {
+      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId);
+    },
+  };
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
+    metricsRegistry: subagentMetricsRegistry,
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
     consumePendingLaunch: () => {
       const next = pendingLaunch;
@@ -2542,7 +2563,7 @@ function buildSdkHookContextExtras(
     },
   });
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
-  return { ...rest, subagentSessions };
+  return { ...rest, subagentSessions, subagentAttribution };
 }
 
 function createSdkDriver(
@@ -2569,6 +2590,9 @@ function createSdkDriver(
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
+    },
+    onContextProbe: (phase, detail) => {
+      logContextSnapshot(phase, { threadId, ...detail });
     },
     otel: { endpoint, threadId },
     ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
@@ -2780,6 +2804,7 @@ async function dispatchThreadContinueAction(input: {
   if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
     if (action.kind === "fresh_plan") {
       conversationStore.clearSubagentSessions(threadId);
+      subagentMetricsRegistry.clearThread(threadId);
     }
     if (threadUsesPlanOrchestration(threadId)) {
       void runCodingThreadPlanning(
@@ -3097,6 +3122,15 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   const worktreePath =
     activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
     conversationStore.getSdkSession(threadId)?.cwd;
+  if (event.type === "tool.started" && isRecord(event.payload)) {
+    const toolName =
+      typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
+    const toolUseId =
+      typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
+    if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
+      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId);
+    }
+  }
   handleSdkContextSideEffects(threadId, event, worktreePath);
   sdkStreamBridge.handleEvent(threadId, event, (id, type, message, role, stream) => {
     emitThreadEvent(id, type, message, role as AgentRole | "system" | "thinking" | "tool" | "user", stream);
@@ -3171,6 +3205,8 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
       ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
       ...(usage.modelId && { modelId: usage.modelId }),
       otelDedupId: dedupId,
+      reconciliationOnly: true,
+      updateContext: false,
     })
       .then(() => undefined)
       .catch((error) => {
@@ -3184,16 +3220,11 @@ async function emitProxyUsage(
 ): Promise<UpstreamProxyCallBilling | null> {
   const run = activeRuns.get(info.threadId);
   const seq = (run?.proxyRequestSeq ?? 0) + 1;
-  const updateContext = isProxyContextAuthoritative(info);
   if (run) {
     run.proxyRequestSeq = seq;
     run.proxyTokenBilled = true;
-    if (updateContext && !run.proxyContextRolesSeen) {
-      run.proxyContextRolesSeen = new Set();
-    }
-    if (updateContext) {
-      run.proxyContextRolesSeen?.add(info.role);
-    }
+    const occupied = computeWindowOccupancy(info.usage);
+    run.lastProxyContextByRole = { ...run.lastProxyContextByRole, [info.role]: occupied };
   }
   const requestKey = [
     "proxy",
@@ -3206,9 +3237,13 @@ async function emitProxyUsage(
     info.usage.cacheCreationTokens,
   ].join(":");
 
+  const billingRole = normalizeBillingRole(info.role);
+  const subagentAgentId = isSubagentBillingRole(billingRole)
+    ? subagentMetricsRegistry.resolveAgentId(info.threadId, { role: billingRole })
+    : undefined;
   const billingTask = processUsageBilling({
     threadId: info.threadId,
-    role: info.role,
+    role: billingRole,
     source: "proxy",
     inputTokens: info.usage.inputTokens,
     outputTokens: info.usage.outputTokens,
@@ -3216,7 +3251,8 @@ async function emitProxyUsage(
     cacheCreationTokens: info.usage.cacheCreationTokens,
     modelId: info.modelId,
     requestKey,
-    updateContext,
+    reconciliationOnly: true,
+    ...(subagentAgentId && { agentId: subagentAgentId }),
   });
   trackUsageUpdate(
     info.threadId,
@@ -3233,32 +3269,6 @@ async function emitProxyUsage(
     process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
     return null;
   }
-}
-
-function isProxyContextAuthoritative(info: AnthropicProxyUsageInfo): boolean {
-  const requestedModel = info.requestedModel?.trim();
-  if (!requestedModel) {
-    return true;
-  }
-  if (requestedModel === createModelAlias(info.role, info.providerId, info.modelId)) {
-    return true;
-  }
-  if (requestedModel !== info.modelId) {
-    return false;
-  }
-
-  const runtimeConfig = resolveRuntimeConfig(
-    providerStore.getSettings(),
-    providerStore.listProvidersWithSecrets(),
-  );
-  if (!runtimeConfig.ok) {
-    return false;
-  }
-
-  const sameUpstreamModelRoutes = runtimeConfig.routes.filter(
-    (route) => route.provider.id === info.providerId && route.modelId === info.modelId,
-  );
-  return sameUpstreamModelRoutes.length === 1 && sameUpstreamModelRoutes[0]?.role === info.role;
 }
 
 function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
@@ -3286,6 +3296,7 @@ async function processUsageBilling(input: {
   requestKey?: string;
   otelDedupId?: string;
   updateContext?: boolean;
+  reconciliationOnly?: boolean;
 }): Promise<UpstreamProxyCallBilling | null> {
   await pricingCatalogReady;
 
@@ -3351,7 +3362,8 @@ async function processUsageBilling(input: {
   const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
   const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
   const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
-  const updateContext = input.updateContext ?? shouldUpdateContextFromUsageSource(input.source);
+  const updateContext =
+    input.updateContext ?? shouldUpdateContextFromUsageSource(input.source, input.role);
   if (updateContext && monitorModelForRole && monitorBaseForRole) {
     await contextMonitor.updateFromUsage(input.threadId, delta, {
       role: monitorRole,
@@ -3380,18 +3392,22 @@ async function processUsageBilling(input: {
     otelCostUsd: input.otelCostUsd ?? 0,
   };
 
-  const billing = threadUsageAccumulator.recordUsage({
-    threadId: input.threadId,
-    role: billingRole,
-    source: input.source ?? "otel",
-    delta,
-    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-    actualRates,
-    plannerRates,
-    ...(resolvedModelId && { modelId: resolvedModelId }),
-    requestKey,
-    ...(plannerModelLabel && { plannerModelLabel }),
-  });
+  const billing = enrichBillingSnapshot(
+    input.threadId,
+    threadUsageAccumulator.recordUsage({
+      threadId: input.threadId,
+      role: billingRole,
+      source: input.source ?? "otel",
+      delta,
+      ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+      actualRates,
+      plannerRates,
+      ...(resolvedModelId && { modelId: resolvedModelId }),
+      requestKey,
+      ...(plannerModelLabel && { plannerModelLabel }),
+      ...(input.reconciliationOnly && { reconciliationOnly: true }),
+    }),
+  );
 
   const parsed = {
     inputTokens: delta.inputTokens,
@@ -3513,11 +3529,28 @@ async function schedulePostRunCompactionIfNeeded(
 
 function resetSubagentContextWindows(threadId: string): void {
   contextScheduler.clearSubagentState(threadId);
-  const snapshot = contextMonitor.clearSubagentRoles(threadId);
-  if (snapshot) {
-    contextScheduler.emitLiveFromMonitor(threadId);
-    schedulePersistThreadMetrics(threadId);
-  }
+  contextScheduler.emitLiveFromMonitor(threadId);
+}
+
+function enrichBillingSnapshot(
+  threadId: string,
+  billing: ReturnType<ThreadUsageAccumulator["recordUsage"]>,
+): ReturnType<ThreadUsageAccumulator["recordUsage"]> {
+  const subagents = subagentMetricsRegistry.listEntries(threadId).map((entry) => ({
+    agentId: entry.agentId,
+    role: entry.role,
+    status: entry.status,
+    inputTokens: entry.usage.inputTokens,
+    outputTokens: entry.usage.outputTokens,
+    cacheReadTokens: entry.usage.cacheReadTokens,
+    cacheCreationTokens: entry.usage.cacheCreationTokens,
+    contextOccupied: entry.contextOccupied,
+    ...(entry.contextLimit !== undefined && { contextLimit: entry.contextLimit }),
+    ecoCostUsd: entry.ecoCostUsd,
+    ecoCostBreakdown: entry.ecoCostBreakdown,
+    ...(entry.modelId && { modelId: entry.modelId }),
+  }));
+  return subagents.length > 0 ? { ...billing, subagents } : billing;
 }
 
 function requestThreadContextRefresh(threadId: string, immediate = true): void {
@@ -3575,6 +3608,19 @@ function loadThreadMetricsFromStore(): void {
     }
     if (record.context) {
       contextScheduler.restoreSnapshot(record.threadId, record.context);
+    }
+    subagentMetricsRegistry.restoreFromStore(record.threadId);
+    for (const entry of subagentMetricsRegistry.listEntries(record.threadId)) {
+      if (entry.contextOccupied <= 0 && entry.usage.inputTokens <= 0) {
+        continue;
+      }
+      void contextMonitor
+        .updateFromUsage(record.threadId, entry.usage, {
+          role: entry.role,
+          agentId: entry.agentId,
+          ...(entry.modelId && { modelId: entry.modelId }),
+        })
+        .catch(() => undefined);
     }
   }
 }
@@ -3651,86 +3697,79 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     return;
   }
 
-  const messageId =
-    isRecord(event.payload) && typeof event.payload.messageId === "string"
-      ? event.payload.messageId
+  let billingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
+  const parentToolUseId =
+    isRecord(event.payload) && typeof event.payload.parent_tool_use_id === "string"
+      ? event.payload.parent_tool_use_id
       : undefined;
-  const billingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
-  const run = activeRuns.get(threadId);
+  const explicitSubagentId =
+    isRecord(event.payload) && typeof event.payload.subagentAgentId === "string"
+      ? event.payload.subagentAgentId
+      : undefined;
+  const subagentAgentId = subagentMetricsRegistry.resolveAgentId(threadId, {
+    role: billingRole,
+    ...(explicitSubagentId && { subagentAgentId: explicitSubagentId }),
+    ...(parentToolUseId && { parentToolUseId }),
+  });
+  if (subagentAgentId) {
+    const entryRole = subagentMetricsRegistry.roleForAgentId(threadId, subagentAgentId);
+    if (entryRole && isSubagentBillingRole(entryRole)) {
+      billingRole = entryRole;
+    }
+  }
 
   if (!bundle.authoritative) {
-    const modelId =
-      isRecord(event.payload) && typeof event.payload.model === "string"
-        ? event.payload.model
-        : bundle.models[0]?.modelId;
-    if (shouldUseSdkContextFallback(billingRole, run)) {
-      trackUsageUpdate(
-        threadId,
-        updateContextFromSdkFallback(
-          threadId,
-          billingRole,
-          bundle.contextUsage,
-          messageId,
-          modelId,
-          event.agentId,
-        ).catch((error) => {
-          process.stderr.write(`[eco] SDK context fallback failed: ${errorMessage(error)}\n`);
-        }),
-      );
-    }
-
-    if (
-      messageId &&
-      shouldBillAssistantSubagentUsage({
-        role: billingRole,
-        messageId,
-        otelTokenBilled: run?.otelTokenBilled,
-      })
-    ) {
-      trackUsageUpdate(
-        threadId,
-        processUsageBilling({
-          threadId,
-          role: billingRole,
-          agentId: event.agentId,
-          source: "sdk",
-          inputTokens: bundle.contextUsage.inputTokens,
-          outputTokens: bundle.contextUsage.outputTokens,
-          cacheReadTokens: bundle.contextUsage.cacheReadTokens,
-          cacheCreationTokens: bundle.contextUsage.cacheCreationTokens,
-          ...(modelId && { modelId }),
-          messageId,
-          requestKey: buildAssistantUsageRequestKey(messageId),
-        })
-          .then(() => undefined)
-          .catch((error) => {
-            process.stderr.write(`[eco] assistant usage billing failed: ${errorMessage(error)}\n`);
-          }),
-      );
-    }
     return;
   }
+
+  if (
+    isSubagentBillingRole(billingRole) &&
+    bundle.authoritative &&
+    !isSdkIncrementalStreamUsage(bundle.authoritative, event.payload) &&
+    !subagentAgentId
+  ) {
+    logEcoDiag("sdk.usage_miss", {
+      threadId: shortThreadId(threadId),
+      role: billingRole,
+      eventId: event.id.slice(-12),
+      parentToolUseId: parentToolUseId?.slice(-12),
+      explicitSubagentId: explicitSubagentId?.slice(-12) ?? null,
+    });
+  }
+
+  logEcoDiagThrottled(
+    `sdk-usage:${threadId}:${billingRole}`,
+    "sdk.usage",
+    {
+      threadId: shortThreadId(threadId),
+      role: billingRole,
+      subagentAgentId: subagentAgentId?.slice(-12) ?? null,
+      explicit: Boolean(explicitSubagentId),
+      parentToolUseId: parentToolUseId?.slice(-12) ?? null,
+      stream: isSdkIncrementalStreamUsage(bundle.authoritative, event.payload),
+      inputTokens: bundle.models[0]?.usage.inputTokens,
+      outputTokens: bundle.models[0]?.usage.outputTokens,
+    },
+    500,
+  );
 
   if (isSdkIncrementalStreamUsage(bundle.authoritative, event.payload)) {
     const modelId =
       isRecord(event.payload) && typeof event.payload.model === "string"
         ? event.payload.model
         : bundle.models[0]?.modelId;
-    if (shouldUseSdkContextFallback(billingRole, run)) {
-      trackUsageUpdate(
-        threadId,
-        updateContextFromSdkFallback(
-          threadId,
-          billingRole,
-          bundle.contextUsage,
-          undefined,
-          modelId,
-          event.agentId,
-        ).catch((error) => {
-          process.stderr.write(`[eco] SDK stream context fallback failed: ${errorMessage(error)}\n`);
-        }),
-      );
-    }
+    const streamContextUsage =
+      subagentAgentId && modelId
+        ? (parseSdkContextUsage(event.payload, { subagentModelId: modelId }) ?? bundle.contextUsage)
+        : bundle.contextUsage;
+    trackUsageUpdate(
+      threadId,
+      updateContextFromSdkUsage(threadId, billingRole, streamContextUsage, modelId, subagentAgentId).catch(
+        (error) => {
+          process.stderr.write(`[eco] SDK stream context update failed: ${errorMessage(error)}\n`);
+        },
+      ),
+    );
     return;
   }
 
@@ -3741,23 +3780,21 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       role: billingRole,
       requestKey: `sdk-result:${event.id}`,
       bundle,
+      usagePayload: event.payload,
+      ...(subagentAgentId && { subagentAgentId }),
+      ...(parentToolUseId && { parentToolUseId }),
     }).catch((error) => {
       process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
     }),
   );
 }
 
-function shouldUseSdkContextFallback(role: AgentRole, run: ActiveThreadRun | undefined): boolean {
-  return run?.proxyContextRolesSeen?.has(role) !== true;
-}
-
-async function updateContextFromSdkFallback(
+async function updateContextFromSdkUsage(
   threadId: string,
   role: AgentRole,
   usage: ParsedUsage,
-  messageId?: string,
   modelId?: string,
-  agentId?: string,
+  subagentAgentId?: string,
 ): Promise<void> {
   await pricingCatalogReady;
   const runtimeRoutes = resolveRuntimeRoutesForThread(threadId);
@@ -3768,11 +3805,10 @@ async function updateContextFromSdkFallback(
 
   await contextMonitor.updateFromUsage(threadId, usage, {
     role,
-    ...(agentId && { agentId }),
+    ...(subagentAgentId && { agentId: subagentAgentId }),
     modelId: usageRoute.modelId,
     providerBaseUrl: usageRoute.provider.baseUrl,
     ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-    ...(messageId && { messageId }),
   });
   contextScheduler.emitLiveFromMonitor(threadId);
 }
@@ -3782,6 +3818,9 @@ async function processSdkRunBilling(input: {
   role: AgentRole;
   requestKey: string;
   bundle: NonNullable<ReturnType<typeof parseSdkUsageBilling>>;
+  usagePayload?: unknown;
+  subagentAgentId?: string;
+  parentToolUseId?: string;
 }): Promise<void> {
   await pricingCatalogReady;
 
@@ -3822,31 +3861,83 @@ async function processSdkRunBilling(input: {
     }),
   );
 
-  // SDK result modelUsage is a billing aggregate; context windows are updated only from per-session usage.
-  const billing = threadUsageAccumulator.recordRunUsage({
-    threadId: input.threadId,
-    role: input.role,
-    source: "sdk",
-    requestKey: input.requestKey,
-    models,
-    ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
-    ...(plannerModelLabel && { plannerModelLabel }),
-  });
+  const primaryModel = models[0];
+  let billingRole = primaryModel?.role ?? input.role;
+  const resolvedSubagentId =
+    input.subagentAgentId ??
+    subagentMetricsRegistry.resolveAgentId(input.threadId, {
+      role: billingRole,
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    });
+  if (resolvedSubagentId) {
+    const entryRole = subagentMetricsRegistry.roleForAgentId(input.threadId, resolvedSubagentId);
+    if (entryRole && isSubagentBillingRole(entryRole)) {
+      billingRole = entryRole;
+    }
+  }
+
+  const contextUsage =
+    resolvedSubagentId && primaryModel?.modelId && input.usagePayload
+      ? (parseSdkContextUsage(input.usagePayload, { subagentModelId: primaryModel.modelId }) ??
+        input.bundle.contextUsage)
+      : input.bundle.contextUsage;
+
+  const usageRoute = resolveUsageRoute(billingRole, primaryModel?.modelId, runtimeRoutes);
+  if (usageRoute && shouldUpdateContextFromUsageSource("sdk", billingRole)) {
+    await contextMonitor.updateFromUsage(input.threadId, contextUsage, {
+      role: billingRole,
+      ...(resolvedSubagentId && { agentId: resolvedSubagentId }),
+      modelId: usageRoute.modelId,
+      providerBaseUrl: usageRoute.provider.baseUrl,
+      ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
+    });
+  }
+
+  if (resolvedSubagentId && isSubagentBillingRole(billingRole)) {
+    const roleSnap = contextMonitor.getSnapshot(input.threadId);
+    const instance = roleSnap?.instances?.find((row) => row.agentId === resolvedSubagentId);
+    for (const model of models) {
+      const billingDelta = computeRequestBilling(model.usage, model.actualRates, model.plannerRates);
+      subagentMetricsRegistry.recordSdkUsage(input.threadId, {
+        role: model.role ?? billingRole,
+        agentId: resolvedSubagentId,
+        usage: model.usage,
+        contextOccupied: instance?.occupied ?? computeWindowOccupancy(contextUsage),
+        ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
+        billing: billingDelta,
+        ...(model.modelId && { modelId: model.modelId }),
+        requestKey: input.requestKey,
+      });
+    }
+  }
+
+  const billing = enrichBillingSnapshot(
+    input.threadId,
+    threadUsageAccumulator.recordRunUsage({
+      threadId: input.threadId,
+      role: input.role,
+      source: "sdk",
+      requestKey: input.requestKey,
+      models,
+      ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
+      ...(plannerModelLabel && { plannerModelLabel }),
+    }),
+  );
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
-  const contextUsage = input.bundle.contextUsage;
   const snapshot = buildUsageSnapshotForRole({
     usage: contextUsage,
-    role: input.role,
+    role: billingRole,
     ...(monitorSnap && { monitorSnap }),
     fallbackContext: "none",
+    ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
   });
 
   emitThreadEvent(
     input.threadId,
     "thread.usage_updated",
     formatUsageBadge(contextUsage),
-    input.role,
+    billingRole,
     false,
     { usage: snapshot, totalCostUsd: billing.otelCostUsd, billing },
   );
@@ -4260,6 +4351,51 @@ function startRuntimeProxy(
         emitUpstreamConnectionErrorActivity(threadId, role, error);
       },
       onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
+      resolveCountTokensInput: ({ role, body }) => {
+        const run = activeRuns.get(threadId);
+        const fromProxy = run?.lastProxyContextByRole?.[role];
+        if (typeof fromProxy === "number" && fromProxy > 0) {
+          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+            threadId: shortThreadId(threadId),
+            role,
+            source: "proxy_role",
+            tokens: fromProxy,
+          });
+          return fromProxy;
+        }
+        const monitorSnap = contextMonitor.getSnapshot(threadId);
+        const roleSnap = monitorSnap?.roles.find((entry) => entry.role === role);
+        const fromMonitorRole = roleSnap?.occupied;
+        if (typeof fromMonitorRole === "number" && fromMonitorRole > 0) {
+          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+            threadId: shortThreadId(threadId),
+            role,
+            source: "monitor_role",
+            tokens: fromMonitorRole,
+            displayRole: monitorSnap?.displayRole,
+          });
+          return fromMonitorRole;
+        }
+        const fromMonitorTop = monitorSnap?.occupied;
+        if (typeof fromMonitorTop === "number" && fromMonitorTop > 0) {
+          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+            threadId: shortThreadId(threadId),
+            role,
+            source: "monitor_display",
+            tokens: fromMonitorTop,
+            displayRole: monitorSnap?.displayRole,
+          });
+          return fromMonitorTop;
+        }
+        const estimated = estimateInputTokensFromAnthropicBody(body);
+        logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+          threadId: shortThreadId(threadId),
+          role,
+          source: "body_estimate",
+          tokens: estimated,
+        });
+        return estimated;
+      },
     }),
   };
   return startAnthropicModelProxy(routes, options);

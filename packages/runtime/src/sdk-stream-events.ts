@@ -3,6 +3,7 @@ import {
   type AgentRole,
   createAgentEvent,
 } from "../../shared/src";
+import { isSubagentRole } from "./subagent-availability.js";
 
 export type EcoStreamBlockKind = "text" | "thinking" | "tool_use";
 
@@ -14,16 +15,54 @@ export interface SdkStreamContext {
   currentToolName?: string;
   currentToolInputJson: string;
   parentToolUseId: string | null;
+  activeSubagentRole?: AgentRole;
   emittedToolUseIds: Set<string>;
+  resolveSubagentAgentId?: (input: {
+    role: AgentRole;
+    parentToolUseId?: string;
+    sessionId: string;
+  }) => string | undefined;
 }
 
-export function createSdkStreamContext(): SdkStreamContext {
+export function createSdkStreamContext(options?: {
+  resolveSubagentAgentId?: SdkStreamContext["resolveSubagentAgentId"];
+}): SdkStreamContext {
   return {
     inToolBlock: false,
     activeBlockKind: null,
     currentToolInputJson: "",
     parentToolUseId: null,
     emittedToolUseIds: new Set(),
+    ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
+  };
+}
+
+/** Attach subagent agent_id to usage events when desktop attribution resolver is wired. */
+export function applySubagentUsageAttribution(
+  input: {
+    role: AgentRole;
+    sessionId: string;
+    payload: Record<string, unknown>;
+  },
+  streamCtx?: SdkStreamContext,
+): { agentId: string; payload: Record<string, unknown> } {
+  const parentToolUseId = streamCtx?.parentToolUseId ?? undefined;
+  const attributionRole = streamCtx?.activeSubagentRole ?? input.role;
+  const subagentAgentId = streamCtx?.resolveSubagentAgentId?.({
+    role: attributionRole,
+    sessionId: input.sessionId,
+    ...(parentToolUseId && { parentToolUseId }),
+  });
+  if (!subagentAgentId) {
+    return { agentId: input.sessionId, payload: input.payload };
+  }
+  return {
+    agentId: subagentAgentId,
+    payload: {
+      ...input.payload,
+      subagentAgentId,
+      ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
+    },
   };
 }
 
@@ -89,6 +128,20 @@ function slimRawStreamEvent(event: Record<string, unknown>): Record<string, unkn
   return slim;
 }
 
+function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, unknown>): void {
+  const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
+  const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
+  if (subagentType && isSubagentRole(subagentType)) {
+    ctx.activeSubagentRole = subagentType;
+  } else if (agentType && isSubagentRole(agentType)) {
+    ctx.activeSubagentRole = agentType;
+  }
+}
+
+function effectiveStreamRole(ctx: SdkStreamContext, fallback: AgentRole): AgentRole {
+  return ctx.activeSubagentRole ?? fallback;
+}
+
 export function mapStreamEventToEvents(
   message: Record<string, unknown>,
   threadId: string,
@@ -102,6 +155,9 @@ export function mapStreamEventToEvents(
   if (parentToolUseId) {
     ctx.parentToolUseId = parentToolUseId;
   }
+
+  noteStreamSubagentRole(ctx, message);
+  const streamRole = effectiveStreamRole(ctx, role);
 
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
@@ -130,7 +186,7 @@ export function mapStreamEventToEvents(
         ctx.emittedToolUseIds.add(ctx.currentToolUseId);
       }
       events.push(
-        createToolStartedEvent(threadId, sessionId, role, uuid, {
+        createToolStartedEvent(threadId, sessionId, streamRole, uuid, {
           tool_name: block.name,
           ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
           streaming: true,
@@ -143,7 +199,7 @@ export function mapStreamEventToEvents(
       ctx.inToolBlock = false;
       ctx.activeBlockKind = "thinking";
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "thinking",
           streamPlaceholder: true,
@@ -156,7 +212,7 @@ export function mapStreamEventToEvents(
       ctx.inToolBlock = false;
       ctx.activeBlockKind = "text";
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "text",
           streamPlaceholder: true,
@@ -183,7 +239,7 @@ export function mapStreamEventToEvents(
         return events;
       }
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "text",
           text,
@@ -198,7 +254,7 @@ export function mapStreamEventToEvents(
         return events;
       }
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "thinking",
           text: thinking,
@@ -215,7 +271,7 @@ export function mapStreamEventToEvents(
       const parsedInput = parseToolInputJson(ctx.currentToolInputJson);
       if (ctx.currentToolName) {
         events.push(
-          createToolStartedEvent(threadId, sessionId, role, uuid, {
+          createToolStartedEvent(threadId, sessionId, streamRole, uuid, {
             type: "tool_use",
             tool_name: ctx.currentToolName,
             ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
@@ -227,7 +283,7 @@ export function mapStreamEventToEvents(
       }
     } else if (ctx.activeBlockKind === "thinking") {
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "thinking",
           streamFinalize: true,
@@ -236,7 +292,7 @@ export function mapStreamEventToEvents(
       );
     } else if (ctx.activeBlockKind === "text") {
       events.push(
-        createStreamDeltaEvent(threadId, sessionId, role, uuid, {
+        createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
           type: "eco_stream",
           blockKind: "text",
           streamFinalize: true,
@@ -253,14 +309,18 @@ export function mapStreamEventToEvents(
   }
 
   if (event.type === "message_delta" && isRecord(event.usage)) {
+    const attributed = applySubagentUsageAttribution(
+      { role: streamRole, sessionId, payload: { usage: event.usage } },
+      ctx,
+    );
     events.push(
       createAgentEvent({
         id: `${uuid}:stream-usage`,
         threadId,
-        agentId: sessionId,
-        role,
+        agentId: attributed.agentId,
+        role: streamRole,
         type: "usage.recorded",
-        payload: { usage: event.usage },
+        payload: attributed.payload,
       }),
     );
   }

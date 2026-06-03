@@ -8,6 +8,7 @@ import {
 } from "@eco/runtime";
 import type { AgentRole, ModelsDevMapping, RouteManualSpec, ThreadContextSnapshot } from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import { logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
@@ -113,19 +114,23 @@ export class ContextWindowMonitor {
     if (manualSpec) {
       next.manualSpec = manualSpec;
     }
-    state.byRole[role] = next;
-    if (role === "coder" && options?.agentId) {
-      state.byInstance.set(options.agentId, {
+    const subagentAgentId =
+      options?.agentId && role !== "planner" && SUBAGENT_ROLES.includes(role) ? options.agentId : undefined;
+    if (subagentAgentId) {
+      state.byInstance.set(subagentAgentId, {
         role,
         updatedAt: Date.now(),
         ...next,
       });
+    } else {
+      state.byRole[role] = next;
     }
 
     await this.refreshLimitForRole(next);
-    if (role === "coder" && options?.agentId) {
-      const instance = state.byInstance.get(options.agentId);
+    if (subagentAgentId) {
+      const instance = state.byInstance.get(subagentAgentId);
       if (instance) {
+        instance.occupied = occupancy;
         instance.limit = next.limit;
         instance.limitsResolved = next.limitsResolved;
         if (next.maxOutputTokens !== undefined) {
@@ -136,7 +141,21 @@ export class ContextWindowMonitor {
       }
     }
     this.refreshDisplayRole(state);
-    return this.toSnapshot(state);
+    const snapshot = this.toSnapshot(state);
+    const prevOccupied = subagentAgentId
+      ? state.byInstance.get(subagentAgentId)?.occupied
+      : prev?.occupied;
+    logEcoDiagThrottled(`context:${threadId}`, "context.update", {
+      threadId: shortThreadId(threadId),
+      role,
+      agentId: subagentAgentId ? subagentAgentId.slice(-12) : null,
+      target: subagentAgentId ? "instance" : "role",
+      occupied: occupancy,
+      prevOccupied: prevOccupied ?? null,
+      displayRole: state.displayRole,
+      snapshot: snapshotContextFields(snapshot),
+    });
+    return snapshot;
   }
 
   async updateOccupied(

@@ -43,8 +43,17 @@ export function nextOtelRequestDedupId(currentSeq: number | undefined): {
   return { seq, dedupId: String(seq) };
 }
 
-export function shouldUpdateContextFromUsageSource(source: BillingUsageSource | undefined): boolean {
-  return source === "proxy";
+export function shouldUpdateContextFromUsageSource(
+  source: BillingUsageSource | undefined,
+  role?: AgentRole,
+): boolean {
+  if (source === "sdk") {
+    return true;
+  }
+  if (source === "proxy" && role && isSubagentBillingRole(role)) {
+    return true;
+  }
+  return false;
 }
 
 export function buildUsageSnapshotForRole(input: {

@@ -81,10 +81,14 @@ test("buildAssistantUsageRequestKey is stable per message", () => {
   expect(buildAssistantUsageRequestKey("msg_abc")).toBe("sdk-assistant:msg_abc");
 });
 
-test("shouldUpdateContextFromUsageSource only accepts proxy request usage", () => {
-  expect(shouldUpdateContextFromUsageSource("proxy")).toBe(true);
-  expect(shouldUpdateContextFromUsageSource("sdk")).toBe(false);
+test("shouldUpdateContextFromUsageSource accepts SDK and proxy subagent usage", () => {
+  expect(shouldUpdateContextFromUsageSource("sdk")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("sdk", "planner")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("proxy", "explore")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("proxy", "planner")).toBe(false);
+  expect(shouldUpdateContextFromUsageSource("proxy")).toBe(false);
   expect(shouldUpdateContextFromUsageSource("otel")).toBe(false);
+  expect(shouldUpdateContextFromUsageSource("otel", "explore")).toBe(false);
 });
 
 test("buildUsageSnapshotForRole uses the matching role window instead of display occupancy", () => {

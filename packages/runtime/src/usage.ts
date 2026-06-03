@@ -109,19 +109,33 @@ function hasBillableOrContextTokens(usage: ParsedUsage): boolean {
 
 /**
  * Session context fill for the context meter (not billing totals).
- * Uses top-level `usage` on SDK results; per-model entries are not summed.
+ * Uses top-level `usage` on SDK results; planner runs may pick max occupancy across modelUsage.
  */
-export function parseSdkContextUsage(payload: unknown): ParsedUsage | null {
+export function parseSdkContextUsage(
+  payload: unknown,
+  options?: { subagentModelId?: string },
+): ParsedUsage | null {
   if (!isRecord(payload)) {
     return null;
   }
 
   const topLevel = parseUsagePayload(payload);
+  const modelBillings = parseSdkModelUsageBilling(payload);
+
+  if (options?.subagentModelId && modelBillings?.length) {
+    const match = modelBillings.find((entry) => entry.modelId === options.subagentModelId);
+    if (match) {
+      return match.usage;
+    }
+    if (modelBillings.length === 1) {
+      return modelBillings[0]!.usage;
+    }
+  }
+
   if (topLevel && hasBillableOrContextTokens(topLevel)) {
     return topLevel;
   }
 
-  const modelBillings = parseSdkModelUsageBilling(payload);
   if (!modelBillings || modelBillings.length === 0) {
     return topLevel;
   }

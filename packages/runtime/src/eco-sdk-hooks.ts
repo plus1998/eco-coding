@@ -21,6 +21,7 @@ import {
 } from "./subagent-resume.js";
 
 export { readAgentSubagentType } from "./subagent-resume.js";
+import type { AgentRole } from "../../shared/src";
 import {
   isSubagentEnabled,
   normalizeSubagentAvailability,
@@ -60,6 +61,15 @@ export interface EcoSubagentSessionHooks {
   }) => void;
 }
 
+export interface EcoSubagentAttributionHooks {
+  resolveAgentId?(input: {
+    role: AgentRole;
+    parentToolUseId?: string;
+    sessionId: string;
+  }): string | undefined;
+  onTaskToolUse?(toolUseId: string): void;
+}
+
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   askUserQuestion?: (
@@ -67,6 +77,7 @@ export interface EcoHookContext {
   ) => Promise<Record<string, unknown>>;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
+  subagentAttribution?: EcoSubagentAttributionHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
   onPreCompact?: (input: EcoPreCompactHookInput) => Promise<void>;
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
@@ -176,6 +187,28 @@ export function createReviewerScopePreToolHook(
         },
       },
     };
+  };
+}
+
+export function createSubagentToolAttributionPreToolHook(
+  attribution?: EcoSubagentAttributionHooks,
+): HookCallback | undefined {
+  if (!attribution?.onTaskToolUse) {
+    return undefined;
+  }
+  const onTaskToolUse = attribution.onTaskToolUse;
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (
+      typeof toolUseID === "string" &&
+      (preInput.tool_name === "Task" || preInput.tool_name === "Agent")
+    ) {
+      onTaskToolUse(toolUseID);
+    }
+    return {};
   };
 }
 
@@ -381,6 +414,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createSubagentToolAttributionPreToolHook(ctx.subagentAttribution), "Agent|Task");
 
   const subagentHandlers = {
     ...(ctx.taskTracker && { taskTracker: ctx.taskTracker }),
