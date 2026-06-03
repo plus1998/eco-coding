@@ -21,6 +21,31 @@ Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the op
 
 Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you need better prompt-cache reuse across threads with different worktree paths (trades slightly weaker in-system cwd emphasis for cache hits).
 
+## Context compaction
+
+Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event; Eco updates the context meter and refreshes the `/context` breakdown.
+
+Two layers work together:
+
+1. **SDK auto-compaction** — runs inside the agent loop while a session is active (no extra setup).
+2. **Eco preflight compaction** — before resuming a stored SDK session, if planner occupancy is at or above ~85% of the effective limit (catalog limit minus Claude Code’s autocompact buffer and output reserve), Eco runs `/compact` on a separate short-lived driver call so the next turn does not start on a full window. After a run ends, Eco may run the same step if the thread is still over threshold.
+
+Persistent instructions that must survive compaction belong in **`CLAUDE.md`**, not only in the first user message, because compaction replaces early turns with a summary while `CLAUDE.md` is re-injected every request via `settingSources`.
+
+Add a free-form section to your workspace `CLAUDE.md` telling the compactor what to keep, for example:
+
+```markdown
+# Summary instructions
+
+When summarizing this conversation, always preserve:
+- The current task objective and acceptance criteria
+- File paths that have been read or modified
+- Test results and error messages
+- Decisions made and the reasoning behind them
+```
+
+Before each compaction, Eco’s **PreCompact** hook archives the thread activity log and context snapshot to SQLite (`thread_compaction_archives`) for audit and recovery.
+
 ## Build & package
 
 ```bash

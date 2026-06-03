@@ -26,6 +26,7 @@ import {
   getDefaultAllowedTools,
   inferActivityRole,
   isSdkInitMessage,
+  isCompactBoundarySdkMessage,
   mapSdkMessageToEvents,
   buildSdkProcessEnv,
   mergeAllowedTools,
@@ -651,6 +652,51 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     behavior: "deny",
     message: "Approval required",
     interrupt: true,
+  });
+});
+
+test("maps SDK compact_boundary system messages", () => {
+  const message = {
+    type: "system",
+    subtype: "compact_boundary",
+    uuid: "sdk_compact_1",
+    session_id: "session_1",
+    compact_metadata: {
+      trigger: "auto",
+      pre_tokens: 180_000,
+      post_tokens: 42_000,
+    },
+  };
+  expect(isCompactBoundarySdkMessage(message)).toBe(true);
+
+  const events = mapSdkMessageToEvents(message, "thr_1");
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "agent.started",
+    payload: {
+      type: "system",
+      subtype: "compact_boundary",
+      compact_metadata: {
+        trigger: "auto",
+        pre_tokens: 180_000,
+        post_tokens: 42_000,
+      },
+    },
+  });
+});
+
+test("maps standalone compact_boundary message type", () => {
+  const message = {
+    type: "compact_boundary",
+    uuid: "sdk_compact_2",
+    session_id: "session_1",
+    compact_metadata: { trigger: "manual", pre_tokens: 100_000 },
+  };
+  expect(isCompactBoundarySdkMessage(message)).toBe(true);
+  const events = mapSdkMessageToEvents(message, "thr_1");
+  expect(events[0]?.payload).toMatchObject({
+    subtype: "compact_boundary",
+    compact_metadata: { trigger: "manual", pre_tokens: 100_000 },
   });
 });
 

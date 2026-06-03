@@ -3,6 +3,7 @@ import type {
   HookCallbackMatcher,
   HookEvent,
   NotificationHookInput,
+  PreCompactHookInput,
   PreToolUseHookInput,
   StopHookInput,
   SubagentStartHookInput,
@@ -29,6 +30,11 @@ export interface EcoTaskTrackerHooks {
   onStop(status: "completed" | "blocked" | "cancelled"): void;
 }
 
+export interface EcoPreCompactHookInput {
+  trigger: "auto" | "manual";
+  sessionId?: string;
+}
+
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   askUserQuestion?: (
@@ -36,6 +42,7 @@ export interface EcoHookContext {
   ) => Promise<Record<string, unknown>>;
   taskTracker?: EcoTaskTrackerHooks;
   onNotification?: (input: { message: string; title?: string; notificationType: string }) => void;
+  onPreCompact?: (input: EcoPreCompactHookInput) => Promise<void>;
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
   subagentAvailability?: SubagentAvailability;
 }
@@ -244,6 +251,26 @@ export function createStopHook(ctx: EcoHookContext): HookCallback | undefined {
   };
 }
 
+export function createPreCompactHook(
+  onPreCompact: EcoHookContext["onPreCompact"],
+): HookCallback | undefined {
+  if (!onPreCompact) {
+    return undefined;
+  }
+
+  return async (input) => {
+    if (input.hook_event_name !== "PreCompact") {
+      return {};
+    }
+    const preInput = input as PreCompactHookInput;
+    await onPreCompact({
+      trigger: preInput.trigger,
+      sessionId: preInput.session_id,
+    });
+    return {};
+  };
+}
+
 export function createNotificationHook(
   onNotification: EcoHookContext["onNotification"],
 ): HookCallback | undefined {
@@ -313,6 +340,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   }
 
   pushHook(hooks, "Notification", createNotificationHook(ctx.onNotification));
+  pushHook(hooks, "PreCompact", createPreCompactHook(ctx.onPreCompact));
 
   return hooks;
 }

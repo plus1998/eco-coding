@@ -1320,6 +1320,10 @@ async function runQuestionThread(
         message: `Local model router ready: ${attemptProxy.baseUrl}`,
       });
       const routes = buildDriverRoutes(attemptProxy.routes);
+      const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+      if (effectiveResume) {
+        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+      }
       try {
         const driver = createSdkDriver(thread.id, attemptProxy);
         if (!driver.runQuestion) {
@@ -1335,7 +1339,7 @@ async function runQuestionThread(
           routes,
           signal: controller.signal,
           sdkSession: buildSdkSessionOptions(thread.id),
-          ...(resume ? { resume } : {}),
+          ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
@@ -1486,10 +1490,14 @@ async function runCodingThreadSdkDefault(
         `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
       );
 
+      const effectiveResume = resumeOptsForRun;
+      if (effectiveResume) {
+        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+      }
+
       try {
         const driver = createSdkDriver(thread.id, attemptProxy);
         let sdkFailure: string | undefined;
-        const effectiveResume = resumeOptsForRun;
 
         for await (const event of driver.run({
           threadId: thread.id,
@@ -1617,13 +1625,16 @@ async function runCodingThreadPlanning(
         `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${attemptProxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
       );
 
+      const effectiveResume = resumeOptsForRun;
+      if (effectiveResume) {
+        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+      }
+
       try {
         const driver = createSdkDriver(thread.id, attemptProxy);
 
         let sdkFailure: string | undefined;
         let captured = false;
-
-        const effectiveResume = resumeOptsForRun;
 
         for await (const event of driver.run({
           threadId: thread.id,
@@ -1827,7 +1838,9 @@ async function runCodingThreadExecution(
         let sdkFailure: string | undefined;
         const resume = resolveResumeOptions(threadId, executionCwd);
         if (resume) {
-          void ensureContextHeadroom(threadId, executionCwd, controller.signal);
+          await ensureContextHeadroom(threadId, executionCwd, controller.signal, {
+            ignoreRunningGuard: true,
+          });
         }
         for await (const event of driver.runExecution(
           {
@@ -2675,7 +2688,7 @@ async function dispatchThreadContinueAction(input: {
 
   if (action.kind === "resume_sdk") {
     void (async () => {
-      void ensureContextHeadroom(threadId, cwd, new AbortController().signal);
+      await ensureContextHeadroom(threadId, cwd, new AbortController().signal);
       const planningContext =
         action.phase === "execution"
           ? await resolvePlanningContextForThread(threadId, workspace.path)
@@ -2821,7 +2834,7 @@ async function runThreadContinuation(
         return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
       }
 
-      void ensureContextHeadroom(thread.id, cwd, controller.signal);
+      await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
 
       try {
         const driver = createSdkDriver(thread.id, attemptProxy, {
@@ -3368,6 +3381,7 @@ async function ensureContextHeadroom(
   threadId: string,
   worktreePath: string,
   signal: AbortSignal,
+  options?: { ignoreRunningGuard?: boolean },
 ): Promise<void> {
   try {
     const roleRoutes = resolveRoleRoutesForThread(threadId);
@@ -3383,7 +3397,7 @@ async function ensureContextHeadroom(
       return;
     }
     const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
-    await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
+    await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal, options);
   } catch (error) {
     const detail = errorMessage(error);
     process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${detail}\n`);
@@ -3411,7 +3425,19 @@ function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   const path = worktreePath ?? resolveThreadWorktreePath(threadId);
   if (path) {
     scheduleContextBreakdownRefresh(threadId, path, true);
+    void schedulePostRunCompactionIfNeeded(threadId, path);
   }
+}
+
+/** Run deferred /compact when the thread is idle but still above the occupancy threshold. */
+async function schedulePostRunCompactionIfNeeded(
+  threadId: string,
+  worktreePath: string,
+): Promise<void> {
+  if (!contextMonitor.shouldCompact(threadId)) {
+    return;
+  }
+  await ensureContextHeadroom(threadId, worktreePath, new AbortController().signal);
 }
 
 function resetSubagentContextWindows(threadId: string): void {
@@ -3994,6 +4020,52 @@ function recordUserPrompt(threadId: string, prompt: string): void {
   emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
 }
 
+function archiveThreadContextBeforeCompaction(
+  threadId: string,
+  trigger: "auto" | "manual",
+  sessionId?: string,
+): void {
+  try {
+    const activityLines = conversationStore.listActivityLines(threadId);
+    const context = contextScheduler.getDisplaySnapshot(threadId);
+    const sdkSession = conversationStore.getSdkSession(threadId);
+    const pendingPlan = conversationStore.getPendingPlan(threadId);
+    conversationStore.saveCompactionArchive(threadId, {
+      trigger,
+      ...(sessionId && { sessionId }),
+      payload: {
+        archivedAt: new Date().toISOString(),
+        activityLineCount: activityLines.length,
+        activityLines,
+        ...(context && { context }),
+        ...(sdkSession && { sdkSession }),
+        ...(pendingPlan && {
+          pendingPlan: {
+            userPrompt: pendingPlan.userPrompt,
+            analysis: pendingPlan.analysis,
+            plan: pendingPlan.plan,
+            workspacePath: pendingPlan.workspacePath,
+            worktreePath: pendingPlan.worktreePath,
+          },
+        }),
+      },
+    });
+    const triggerLabel = trigger === "manual" ? "手动" : "自动";
+    emitThreadEvent(
+      threadId,
+      "otel.activity",
+      `压缩前已归档上下文（${triggerLabel}）`,
+      "system",
+      false,
+    );
+    contextMonitor.markCompactInFlight(threadId);
+  } catch (error) {
+    process.stderr.write(
+      `[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`,
+    );
+  }
+}
+
 function createThreadHookContext(threadId: string): EcoHookContext {
   return {
     askUserQuestion: async (parsed) => {
@@ -4044,6 +4116,9 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       if (notificationType === "idle_prompt") {
         updateThread(threadId, { status: "running", message: message.trim() || "Agent 等待输入…" });
       }
+    },
+    onPreCompact: async (input) => {
+      archiveThreadContextBeforeCompaction(threadId, input.trigger, input.sessionId);
     },
   };
 }

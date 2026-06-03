@@ -75,3 +75,31 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   });
   expect(store.getThread("thr_test")?.runtimeConfig?.planModeEnabled).toBe(false);
 });
+
+test.skipIf(!sqliteAvailable)("saves and lists compaction archives", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compaction-archive-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_compact",
+    title: "Compact",
+    prompt: "hello",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  store.saveThread(thread);
+
+  store.saveCompactionArchive("thr_compact", {
+    trigger: "auto",
+    sessionId: "sess_1",
+    payload: { activityLineCount: 2, activityLines: [{ id: "a1", role: "system", message: "hi" }] },
+  });
+
+  const archives = store.listCompactionArchives("thr_compact");
+  expect(archives).toHaveLength(1);
+  expect(archives[0]?.trigger).toBe("auto");
+  expect(archives[0]?.sessionId).toBe("sess_1");
+  expect(archives[0]?.payload.activityLineCount).toBe(2);
+});

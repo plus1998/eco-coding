@@ -150,11 +150,12 @@ export class ContextSnapshotScheduler {
     _routes: readonly ResolvedModelRoute[],
     worktreePath: string,
     _signal: AbortSignal,
+    options?: { ignoreRunningGuard?: boolean },
   ): Promise<void> {
     if (!this.options.monitor.shouldCompact(threadId)) {
       return;
     }
-    if (this.options.isThreadRunning(threadId)) {
+    if (!options?.ignoreRunningGuard && this.options.isThreadRunning(threadId)) {
       return;
     }
 

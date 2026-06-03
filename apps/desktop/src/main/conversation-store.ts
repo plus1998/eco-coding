@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
@@ -76,6 +77,15 @@ export interface ThreadMetricsRecord {
   accumulator?: SerializedThreadUsageState;
   context?: ThreadContextSnapshot;
   updatedAt: string;
+}
+
+export interface ThreadCompactionArchiveRecord {
+  id: string;
+  threadId: string;
+  trigger: "auto" | "manual";
+  sessionId?: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
 }
 
 interface AppliedDiffRow {
@@ -173,6 +183,19 @@ export class ConversationStore {
         updated_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS thread_compaction_archives (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        session_id TEXT,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_compaction_archives_thread_created
+        ON thread_compaction_archives(thread_id, created_at DESC);
     `);
     this.migrateSchema();
   }
@@ -269,6 +292,78 @@ export class ConversationStore {
     }
 
     return rowToThreadMetrics(row);
+  }
+
+  saveCompactionArchive(
+    threadId: string,
+    input: {
+      trigger: "auto" | "manual";
+      sessionId?: string;
+      payload: Record<string, unknown>;
+    },
+  ): ThreadCompactionArchiveRecord {
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO thread_compaction_archives (id, thread_id, trigger, session_id, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        threadId,
+        input.trigger,
+        input.sessionId ?? null,
+        JSON.stringify(input.payload),
+        createdAt,
+      );
+    return {
+      id,
+      threadId,
+      trigger: input.trigger,
+      ...(input.sessionId && { sessionId: input.sessionId }),
+      payload: input.payload,
+      createdAt,
+    };
+  }
+
+  listCompactionArchives(threadId: string, limit = 20): ThreadCompactionArchiveRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, thread_id, trigger, session_id, payload_json, created_at
+         FROM thread_compaction_archives
+         WHERE thread_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(threadId, limit) as Array<{
+      id: string;
+      thread_id: string;
+      trigger: string;
+      session_id: string | null;
+      payload_json: string;
+      created_at: string;
+    }>;
+
+    return rows.map((row) => {
+      let payload: Record<string, unknown> = {};
+      try {
+        const parsed = JSON.parse(row.payload_json) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          payload = parsed as Record<string, unknown>;
+        }
+      } catch {
+        payload = { raw: row.payload_json };
+      }
+      return {
+        id: row.id,
+        threadId: row.thread_id,
+        trigger: row.trigger === "manual" ? "manual" : "auto",
+        ...(row.session_id && { sessionId: row.session_id }),
+        payload,
+        createdAt: row.created_at,
+      };
+    });
   }
 
   listThreadMetrics(): ThreadMetricsRecord[] {

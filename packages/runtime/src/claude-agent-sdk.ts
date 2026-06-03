@@ -31,6 +31,8 @@ import {
 } from "./sdk-stream-events.js";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
+
+export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
 import type { ThinkingEffort } from "./thinking-options.js";
 import {
@@ -1006,6 +1008,43 @@ function mapTaskSystemMessageToEvents(
   ];
 }
 
+export function isCompactBoundarySdkMessage(message: unknown): boolean {
+  if (!isRecord(message)) {
+    return false;
+  }
+  return (
+    (message.type === "system" && message.subtype === "compact_boundary") ||
+    message.type === "compact_boundary"
+  );
+}
+
+function mapCompactBoundaryToEvents(
+  message: Record<string, unknown>,
+  threadId: string,
+  sessionId: string,
+  role: AgentRole,
+  uuid: string,
+): AgentEvent[] {
+  const compactMetadata = isRecord(message.compact_metadata) ? message.compact_metadata : undefined;
+  return [
+    createAgentEvent({
+      id: `${uuid}:compact`,
+      threadId,
+      agentId: sessionId,
+      role,
+      type: "agent.started",
+      payload: {
+        type: "system",
+        subtype: "compact_boundary",
+        ...(typeof message.compacted_summary === "string" && {
+          compacted_summary: message.compacted_summary,
+        }),
+        ...(compactMetadata && { compact_metadata: compactMetadata }),
+      },
+    }),
+  ];
+}
+
 export function mapSdkMessageToEvents(
   message: unknown,
   threadId: string,
@@ -1018,6 +1057,10 @@ export function mapSdkMessageToEvents(
   const uuid = typeof message.uuid === "string" ? message.uuid : crypto.randomUUID();
   const sessionId = typeof message.session_id === "string" ? message.session_id : "unknown-session";
   const role = inferRole(message);
+
+  if (isCompactBoundarySdkMessage(message)) {
+    return mapCompactBoundaryToEvents(message, threadId, sessionId, role, uuid);
+  }
 
   if (message.type === "system" && message.subtype === "init") {
     return [
@@ -1098,26 +1141,6 @@ export function mapSdkMessageToEvents(
       message.subtype === "task_progress"
     ) {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
-    }
-    if (message.subtype === "compact_boundary") {
-      const compactMetadata = isRecord(message.compact_metadata) ? message.compact_metadata : undefined;
-      return [
-        createAgentEvent({
-          id: `${uuid}:compact`,
-          threadId,
-          agentId: sessionId,
-          role,
-          type: "agent.started",
-          payload: {
-            type: "system",
-            subtype: "compact_boundary",
-            ...(typeof message.compacted_summary === "string" && {
-              compacted_summary: message.compacted_summary,
-            }),
-            ...(compactMetadata && { compact_metadata: compactMetadata }),
-          },
-        }),
-      ];
     }
     if (
       message.subtype === "status" ||

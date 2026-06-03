@@ -240,6 +240,68 @@ Messages: 9.6k tokens
   expect(snapshot?.breakdownRefreshing).toBeUndefined();
 });
 
+test("ensureHeadroom runs while thread is running when ignoreRunningGuard is set", async () => {
+  let compactCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => true,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => {},
+    updateFromUsage: async () => ({}),
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => true,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async (_threadId, fn) => {
+      compactCalled = true;
+      const driver = {
+        compactSession: async function* () {
+          yield {
+            type: "agent.started",
+            payload: { subtype: "compact_boundary", compact_metadata: { post_tokens: 10_000 } },
+          };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, []);
+    },
+    emitContext: () => {},
+    emitActivity: () => {},
+  });
+
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal, {
+    ignoreRunningGuard: true,
+  });
+  expect(compactCalled).toBe(true);
+});
+
+test("ensureHeadroom skips while thread is running without ignoreRunningGuard", async () => {
+  let compactCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => true,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => {},
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => true,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async () => {
+      compactCalled = true;
+    },
+    emitContext: () => {},
+    emitActivity: () => {},
+  });
+
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+  expect(compactCalled).toBe(false);
+});
+
 test("emits activity when context snapshot refresh fails", async () => {
   const activities: string[] = [];
   const monitor = {

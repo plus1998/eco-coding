@@ -3,10 +3,11 @@ import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
+  createPreCompactHook,
   createReviewerScopePreToolHook,
   createTaskToolPreToolHook,
 } from "../src/eco-sdk-hooks";
-import type { PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import type { PreCompactHookInput, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 
 test("createAskUserQuestionPreToolHook returns updated input", async () => {
   const hook = createAskUserQuestionPreToolHook(async () => ({
@@ -128,6 +129,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
       onStop() {},
     },
     onNotification() {},
+    onPreCompact: async () => {},
   });
 
   expect(hooks.PreToolUse?.length).toBeGreaterThanOrEqual(3);
@@ -137,4 +139,28 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);
   expect(hooks.Notification).toHaveLength(1);
+  expect(hooks.PreCompact).toHaveLength(1);
+});
+
+test("createPreCompactHook delegates trigger and session id", async () => {
+  const calls: Array<{ trigger: string; sessionId?: string }> = [];
+  const hook = createPreCompactHook(async (input) => {
+    calls.push(input);
+  });
+  expect(hook).toBeDefined();
+
+  await hook!(
+    {
+      hook_event_name: "PreCompact",
+      trigger: "auto",
+      custom_instructions: null,
+      session_id: "sess_compact",
+      cwd: "/tmp",
+      transcript_path: "/tmp/transcript.jsonl",
+    } satisfies PreCompactHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(calls).toEqual([{ trigger: "auto", sessionId: "sess_compact" }]);
 });
