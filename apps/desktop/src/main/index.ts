@@ -1019,8 +1019,7 @@ function registerIpcHandlers(): void {
 
     if (canResume && continuePhase) {
       void (async () => {
-        const headroomController = new AbortController();
-        await ensureContextHeadroom(payload.threadId, cwd, headroomController.signal);
+        void ensureContextHeadroom(payload.threadId, cwd, new AbortController().signal);
         if (!threadUsesPlanOrchestration(payload.threadId) && continuePhase !== "question") {
           await runCodingThreadSdkDefault(
             updated,
@@ -1842,7 +1841,7 @@ async function runCodingThreadExecution(
         let sdkFailure: string | undefined;
         const resume = resolveResumeOptions(threadId, executionCwd);
         if (resume) {
-          await ensureContextHeadroom(threadId, executionCwd, controller.signal);
+          void ensureContextHeadroom(threadId, executionCwd, controller.signal);
         }
         for await (const event of driver.runExecution(
           {
@@ -2691,7 +2690,7 @@ async function runThreadContinuation(
         return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
       }
 
-      await ensureContextHeadroom(thread.id, cwd, controller.signal);
+      void ensureContextHeadroom(thread.id, cwd, controller.signal);
 
       try {
         const driver = createSdkDriver(thread.id, attemptProxy, {
@@ -3233,22 +3232,38 @@ function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRo
   }));
 }
 
+/** Best-effort compaction before resume; failures must not block the main agent run. */
 async function ensureContextHeadroom(
   threadId: string,
   worktreePath: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const roleRoutes = resolveRoleRoutesForThread(threadId);
-  const runtimeConfig = resolveRuntimeConfig(
-    providerStore.getSettings(),
-    providerStore.listProvidersWithSecrets(),
-    roleRoutes,
-  );
-  if (!runtimeConfig.ok) {
-    throw new Error(runtimeConfig.reason);
+  try {
+    const roleRoutes = resolveRoleRoutesForThread(threadId);
+    const runtimeConfig = resolveRuntimeConfig(
+      providerStore.getSettings(),
+      providerStore.listProvidersWithSecrets(),
+      roleRoutes,
+    );
+    if (!runtimeConfig.ok) {
+      process.stderr.write(
+        `[eco] context headroom skipped for ${threadId}: ${runtimeConfig.reason}\n`,
+      );
+      return;
+    }
+    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+    await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
+  } catch (error) {
+    const detail = errorMessage(error);
+    process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${detail}\n`);
+    emitThreadEvent(
+      threadId,
+      "otel.activity",
+      `上下文压缩已跳过：${detail}`,
+      "system",
+      false,
+    );
   }
-  const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
-  await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal);
 }
 
 function resolveThreadWorktreePath(threadId: string): string | undefined {
