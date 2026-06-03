@@ -7,12 +7,14 @@ export {
   convertAnthropicToResponsesInput,
   convertAnthropicToolChoiceToResponses,
   convertAnthropicToolsToResponses,
+  extractAnthropicRequestToolNames,
   fromResponsesCallID,
   isAnthropicBillingHeaderText,
   isReasoningModel,
   mapAnthropicEffortToResponses,
   minMaxOutputTokens,
   normalizeToolParameters,
+  normalizeFunctionCallNameForRequest,
   toResponsesCallID,
 } from './anthropic-to-responses.js';
 

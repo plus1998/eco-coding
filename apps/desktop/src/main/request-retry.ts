@@ -24,7 +24,11 @@ export function isRetryableRequestFailure(reason: string): boolean {
   ) {
     return false;
   }
-  if (text.includes("未能生成可执行的计划") || text.includes("找不到待批准的计划")) {
+  if (
+    text.includes("未能生成可执行的计划") ||
+    text.includes("找不到待批准的计划") ||
+    text.includes("未提交 FinalizePlan")
+  ) {
     return false;
   }
   if (normalized.includes("permission denied") || text.includes("权限")) {
@@ -76,12 +80,18 @@ export function formatUserFacingRequestError(reason: string): string {
   if (normalized.includes("terminated")) {
     return "上游模型连接中断（流式响应未完成）。请检查 Provider 的 Base URL、API Key 与网络后重试。";
   }
+  if (text.includes("未提交 FinalizePlan")) {
+    return "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换 Planner 模型。";
+  }
 
   return text;
 }
 
-export function appendAutoRetryExhaustedHint(reason: string): string {
-  const hint = `（已自动重试 ${REQUEST_AUTO_RETRY_MAX} 次，可手动点击「重试此次请求」）`;
+export function appendAutoRetryExhaustedHint(reason: string, retriesAttempted = 0): string {
+  if (retriesAttempted <= 0) {
+    return reason;
+  }
+  const hint = `（已自动重试 ${retriesAttempted} 次，可手动点击「重试此次请求」）`;
   if (reason.includes("已自动重试")) {
     return reason;
   }
@@ -144,9 +154,9 @@ export async function runWithRequestAutoRetry(
     lastReason = result.reason;
     const canRetry = retry < maxRetries && isRetryableRequestFailure(lastReason);
     if (!canRetry) {
-      return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason) };
+      return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason, retry) };
     }
   }
 
-  return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason) };
+  return { ok: false, reason: appendAutoRetryExhaustedHint(lastReason, maxRetries) };
 }

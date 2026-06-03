@@ -29,6 +29,7 @@ import {
 } from "./upstream-proxy-log";
 import {
   announceUpstreamLogDestination,
+  formatUpstreamFetchError,
   headersToLoggable,
   logUpstream,
   logUpstreamError,
@@ -801,5 +802,5 @@ function trimTrailingSlash(value: string): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatUpstreamFetchError(error);
 }

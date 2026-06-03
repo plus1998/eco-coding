@@ -18,6 +18,7 @@ import {
   createFinalizePlanMcpServer,
   FINALIZE_PLAN_ALLOWED_TOOL,
   FINALIZE_PLAN_MCP_SERVER_NAME,
+  isFinalizePlanSubmissionComplete,
 } from "./finalize-plan";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
@@ -71,6 +72,9 @@ import {
 } from "./subagent-availability.js";
 
 export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagentRole };
+
+const FINALIZE_PLAN_RETRY_PROMPT =
+  "Call `mcp__eco_plan__finalize_plan` now with non-empty `analysis` and `plan` fields containing your decision-complete implementation plan. Do not reply with prose only — the tool call is required.";
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -280,9 +284,27 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (input.signal.aborted) {
         return;
       }
-      const finalizedPlan = planningTranscript.finalizedPlan;
+      let finalizedPlan = planningTranscript.finalizedPlan;
+      if (!finalizedPlan && !input.signal.aborted) {
+        const retryTranscript = yield* this.runSingleSession(input, {
+          prompt: FINALIZE_PLAN_RETRY_PROMPT,
+          permissionMode: planningPermissionMode,
+          allowedTools: [...planningAllowedTools],
+          phaseAppend: buildPlanningPhaseSystemAppend(availability),
+          agents: createPlanningAgentDefinitions(
+            input.routes,
+            input.sdkSession?.agentSkills,
+            availability,
+          ),
+          availability,
+          maxTurns: 2,
+        });
+        finalizedPlan = retryTranscript.finalizedPlan;
+      }
       if (!finalizedPlan) {
-        throw new Error("未提交 FinalizePlan，无法生成可执行计划。");
+        throw new Error(
+          "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
+        );
       }
       yield createPlanReadyEvent(input.threadId, {
         userPrompt: input.prompt,
@@ -344,9 +366,27 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (input.signal.aborted) {
       return;
     }
-    const finalizedPlan = planningTranscript.finalizedPlan;
+    let finalizedPlan = planningTranscript.finalizedPlan;
+    if (!finalizedPlan && !input.signal.aborted) {
+      const retryTranscript = yield* this.runSingleSession(input, {
+        prompt: FINALIZE_PLAN_RETRY_PROMPT,
+        permissionMode: planningPermissionMode,
+        allowedTools: [...planningAllowedTools],
+        phaseAppend: buildPlanningPhaseSystemAppend(availability),
+        agents: createPlanningAgentDefinitions(
+          input.routes,
+          input.sdkSession?.agentSkills,
+          availability,
+        ),
+        availability,
+        maxTurns: 2,
+      });
+      finalizedPlan = retryTranscript.finalizedPlan;
+    }
     if (!finalizedPlan) {
-      throw new Error("未提交 FinalizePlan，无法生成可执行计划。");
+      throw new Error(
+        "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
+      );
     }
 
     yield createPlanReadyEvent(input.threadId, {
@@ -380,7 +420,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     let finalizedPlan: FinalizePlanPayload | undefined;
     const planningMcpServer = phase.allowedTools.includes(FINALIZE_PLAN_ALLOWED_TOOL)
       ? await createFinalizePlanMcpServer((submission) => {
-          finalizedPlan = submission;
+          if (isFinalizePlanSubmissionComplete(submission)) {
+            finalizedPlan = submission;
+          }
         })
       : undefined;
     const queryOptions: Record<string, unknown> = {

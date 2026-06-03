@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseFinalizePlanInput } from "../src/finalize-plan";
+import { parseFinalizePlanInput, isFinalizePlanSubmissionComplete } from "../src/finalize-plan";
 
 test("parseFinalizePlanInput trims strings and defaults missing fields", () => {
   const parsed = parseFinalizePlanInput({
@@ -19,5 +19,11 @@ test("parseFinalizePlanInput returns empty strings for non-string fields", () =>
   } as unknown as Record<string, unknown>);
   expect(parsed.analysis).toBe("");
   expect(parsed.plan).toBe("");
+});
+
+test("isFinalizePlanSubmissionComplete requires both analysis and plan", () => {
+  expect(isFinalizePlanSubmissionComplete({ analysis: "a", plan: "b" })).toBe(true);
+  expect(isFinalizePlanSubmissionComplete({ analysis: "", plan: "b" })).toBe(false);
+  expect(isFinalizePlanSubmissionComplete({ analysis: "a", plan: "  " })).toBe(false);
 });
 

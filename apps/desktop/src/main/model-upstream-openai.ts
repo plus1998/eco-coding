@@ -4,6 +4,7 @@ import {
   anthropicToResponsesInputTokensBody,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
+  extractAnthropicRequestToolNames,
   finalizeChatCompletionsResponsesStream,
   finalizeResponsesAnthropicStream,
   newChatCompletionsToResponsesStreamState,
@@ -49,7 +50,7 @@ import {
   tokensFromUsage,
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
-import { headersToLoggable, logUpstream, logUpstreamError, parseJsonForLog } from "./upstream-log";
+import { headersToLoggable, logUpstream, logUpstreamError, parseJsonForLog, formatUpstreamFetchError } from "./upstream-log";
 
 export interface OpenAICompatUsageInfo {
   role: AgentRole;
@@ -135,18 +136,22 @@ function parseResponsesStreamEventBlock(block: string): ResponsesStreamEvent | n
 function parseBufferedAnthropicMessage(
   responseText: string,
   modelId: string,
+  requestBody?: AnthropicRequest,
 ): AnthropicResponse {
+  const toolNames = requestBody ? extractAnthropicRequestToolNames(requestBody) : [];
   const parsed = JSON.parse(responseText) as Record<string, unknown>;
   if (parsed.type === "message" && Array.isArray(parsed.content)) {
     return parsed as AnthropicResponse;
   }
-  return responsesToAnthropic(parsed as ResponsesResponse, modelId);
+  return responsesToAnthropic(parsed as ResponsesResponse, modelId, toolNames);
 }
 
 function parseBufferedChatCompletionsMessage(
   responseText: string,
   modelId: string,
+  requestBody?: AnthropicRequest,
 ): AnthropicResponse {
+  const toolNames = requestBody ? extractAnthropicRequestToolNames(requestBody) : [];
   const parsed = JSON.parse(responseText) as Record<string, unknown>;
   if (parsed.type === "message" && Array.isArray(parsed.content)) {
     return parsed as AnthropicResponse;
@@ -154,6 +159,7 @@ function parseBufferedChatCompletionsMessage(
   return responsesToAnthropic(
     chatCompletionsResponseToResponses(parsed as ChatCompletionsResponse),
     modelId,
+    toolNames,
   );
 }
 
@@ -277,7 +283,7 @@ export async function forwardCountTokensViaOpenAICompat(
       signal: request.signal as AbortSignal | undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -313,7 +319,7 @@ export async function forwardCountTokensViaOpenAICompat(
   try {
     anthropicCount = responsesInputTokensToAnthropicCount(JSON.parse(responseText));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -360,7 +366,9 @@ async function forwardMessagesViaOpenAIResponses(
     route.provider.baseUrl,
     route.provider.requestPath,
   );
-  const responsesReq = anthropicToResponses(body as AnthropicRequest);
+  const anthropicRequest = body as AnthropicRequest;
+  const requestToolNames = extractAnthropicRequestToolNames(anthropicRequest);
+  const responsesReq = anthropicToResponses(anthropicRequest);
   responsesReq.model = route.modelId;
   const stream = body.stream === true;
   responsesReq.stream = stream;
@@ -406,7 +414,7 @@ async function forwardMessagesViaOpenAIResponses(
       signal: request.signal as AbortSignal | undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -444,7 +452,7 @@ async function forwardMessagesViaOpenAIResponses(
     const responseText = await upstreamResponse.text();
     let anthropicMessage: AnthropicResponse;
     try {
-      anthropicMessage = parseBufferedAnthropicMessage(responseText, route.modelId);
+      anthropicMessage = parseBufferedAnthropicMessage(responseText, route.modelId, anthropicRequest);
     } catch {
       logUpstreamProxyCall({
         at: new Date().toISOString(),
@@ -483,7 +491,7 @@ async function forwardMessagesViaOpenAIResponses(
     connection: "keep-alive",
   });
 
-  const anthropicState = newResponsesEventToAnthropicState();
+  const anthropicState = newResponsesEventToAnthropicState(requestToolNames);
   const usageTracker = createStreamingUsageTracker();
   let sseBuffer = "";
 
@@ -542,7 +550,7 @@ async function forwardMessagesViaOpenAIResponses(
       billing,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -567,7 +575,9 @@ async function forwardMessagesViaOpenAIChatCompletions(
   const { route, body, requestedModel, onUsage, requestUrl } = ctx;
   const startedAt = Date.now();
   const upstreamUrl = buildChatCompletionsUrl(route.provider.baseUrl, route.provider.requestPath);
-  const responsesReq = anthropicToResponses(body as AnthropicRequest);
+  const anthropicRequest = body as AnthropicRequest;
+  const requestToolNames = extractAnthropicRequestToolNames(anthropicRequest);
+  const responsesReq = anthropicToResponses(anthropicRequest);
   responsesReq.model = route.modelId;
   const stream = body.stream === true;
   const chatReq = responsesToChatCompletionsRequest(responsesReq);
@@ -615,7 +625,7 @@ async function forwardMessagesViaOpenAIChatCompletions(
       signal: request.signal as AbortSignal | undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,
@@ -653,7 +663,7 @@ async function forwardMessagesViaOpenAIChatCompletions(
     const responseText = await upstreamResponse.text();
     let anthropicMessage: AnthropicResponse;
     try {
-      anthropicMessage = parseBufferedChatCompletionsMessage(responseText, route.modelId);
+      anthropicMessage = parseBufferedChatCompletionsMessage(responseText, route.modelId, anthropicRequest);
     } catch {
       logUpstreamProxyCall({
         at: new Date().toISOString(),
@@ -693,7 +703,7 @@ async function forwardMessagesViaOpenAIChatCompletions(
   });
 
   const ccToResState = newChatCompletionsToResponsesStreamState(route.modelId);
-  const anthropicState = newResponsesEventToAnthropicState();
+  const anthropicState = newResponsesEventToAnthropicState(requestToolNames);
   const sseSequence = newAnthropicStreamSequenceState();
   const sseViolations: string[] = [];
   const usageTracker = createStreamingUsageTracker();
@@ -783,7 +793,7 @@ async function forwardMessagesViaOpenAIChatCompletions(
       });
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
       at: new Date().toISOString(),
       ok: false,

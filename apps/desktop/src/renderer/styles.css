@@ -4237,11 +4237,9 @@ button:not(:disabled) {
 }
 
 .composer-route-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 40;
-  width: min(320px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 10px;
   border: 1px solid #3a3a3a;
   border-radius: 12px;
@@ -4264,8 +4262,13 @@ button:not(:disabled) {
   margin: 0;
   padding: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .composer-route-popover-item {

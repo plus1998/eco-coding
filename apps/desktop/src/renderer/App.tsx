@@ -646,8 +646,8 @@ function App() {
   const [retryRouteProfileId, setRetryRouteProfileId] = useState<string>("");
 
   useEffect(() => {
-    setRetryRouteProfileId(alternateRouteProfiles[0]?.id ?? "");
-  }, [activeThread?.id, alternateRouteProfiles]);
+    setRetryRouteProfileId("");
+  }, [activeThread?.id]);
 
   const canRetryThread = Boolean(
     activeThread &&
@@ -1713,6 +1713,7 @@ function App() {
                             disabled={retryBusy}
                             onChange={(event) => setRetryRouteProfileId(event.target.value)}
                           >
+                            <option value="">请选择…</option>
                             {alternateRouteProfiles.map((profile) => (
                               <option key={profile.id} value={profile.id}>
                                 {profile.name}

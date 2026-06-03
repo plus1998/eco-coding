@@ -104,6 +104,32 @@ export function truncateForLog(raw: string): string {
   return `${raw.slice(0, MAX_LOG_BODY_CHARS)}\n… [truncated ${raw.length - MAX_LOG_BODY_CHARS} chars]`;
 }
 
+/** Unwrap undici/Node fetch errors (often only "fetch failed" at the top). */
+export function formatUpstreamFetchError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const parts: string[] = [];
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const message = current.message.trim();
+    if (message && !parts.includes(message)) {
+      parts.push(message);
+    }
+    const code = (current as NodeJS.ErrnoException).code;
+    if (typeof code === "string" && code.length > 0 && !parts.some((part) => part.includes(code))) {
+      parts.push(`[${code}]`);
+    }
+    current = current.cause;
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "fetch failed";
+}
+
 function appendUpstreamLogFile(line: string): void {
   try {
     const filePath = getUpstreamLogFilePath();

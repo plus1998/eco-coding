@@ -1,4 +1,4 @@
-import { fromResponsesCallID } from './anthropic-to-responses.js';
+import { fromResponsesCallID, normalizeFunctionCallNameForRequest } from './anthropic-to-responses.js';
 import { jsonMarshal, jsonParse } from './json.js';
 import type {
   AnthropicContentBlock,
@@ -19,6 +19,7 @@ import type {
 export function responsesToAnthropic(
   resp: ResponsesResponse,
   model: string,
+  requestToolNames: readonly string[] = [],
 ): AnthropicResponse {
   const out: AnthropicResponse = {
     id: resp.id,
@@ -65,9 +66,9 @@ export function responsesToAnthropic(
         blocks.push({
           type: 'tool_use',
           id: fromResponsesCallID(item.call_id ?? ''),
-          name: item.name,
+          name: normalizeFunctionCallNameForRequest(item.name ?? '', requestToolNames),
           input: sanitizeAnthropicToolUseInput(
-            item.name ?? '',
+            normalizeFunctionCallNameForRequest(item.name ?? '', requestToolNames),
             item.arguments ?? '',
           ),
         });
@@ -222,9 +223,12 @@ export interface ResponsesEventToAnthropicState {
   responseId: string;
   model: string;
   created: number;
+  requestToolNames: readonly string[];
 }
 
-export function newResponsesEventToAnthropicState(): ResponsesEventToAnthropicState {
+export function newResponsesEventToAnthropicState(
+  requestToolNames: readonly string[] = [],
+): ResponsesEventToAnthropicState {
   return {
     messageStartSent: false,
     messageStopSent: false,
@@ -242,6 +246,7 @@ export function newResponsesEventToAnthropicState(): ResponsesEventToAnthropicSt
     responseId: '',
     model: '',
     created: Math.floor(Date.now() / 1000),
+    requestToolNames,
   };
 }
 
@@ -369,7 +374,10 @@ function resToAnthHandleOutputItemAdded(
       state.outputIndexToBlockIdx.set(evt.output_index ?? 0, idx);
       state.contentBlockOpen = true;
       state.currentBlockType = 'tool_use';
-      state.currentToolName = evt.item.name ?? '';
+      state.currentToolName = normalizeFunctionCallNameForRequest(
+        evt.item.name ?? '',
+        state.requestToolNames,
+      );
       state.currentToolArgs = '';
       state.currentToolHadDelta = false;
       state.hasToolCall = true;
@@ -380,7 +388,7 @@ function resToAnthHandleOutputItemAdded(
         content_block: {
           type: 'tool_use',
           id: fromResponsesCallID(evt.item.call_id ?? ''),
-          name: evt.item.name,
+          name: state.currentToolName,
           input: {},
         },
       });
@@ -609,11 +617,40 @@ function resToAnthHandleOutputItemDone(
   }
 
   switch (evt.item.type) {
-    case 'function_call':
+    case 'function_call': {
+      const toolName = normalizeFunctionCallNameForRequest(
+        evt.item.name ?? state.currentToolName,
+        state.requestToolNames,
+      );
       if (state.currentBlockType === 'tool_use') {
-        return closeCurrentBlock(state);
+        return emitPendingToolUseArguments(evt, state);
       }
-      return [];
+
+      const events: AnthropicStreamEvent[] = [];
+      events.push(...closeCurrentBlock(state));
+
+      const idx = state.contentBlockIndex;
+      state.outputIndexToBlockIdx.set(evt.output_index ?? 0, idx);
+      state.contentBlockOpen = true;
+      state.currentBlockType = 'tool_use';
+      state.currentToolName = toolName;
+      state.currentToolArgs = '';
+      state.currentToolHadDelta = false;
+      state.hasToolCall = true;
+
+      events.push({
+        type: 'content_block_start',
+        index: idx,
+        content_block: {
+          type: 'tool_use',
+          id: fromResponsesCallID(evt.item.call_id ?? ''),
+          name: toolName,
+          input: {},
+        },
+      });
+      events.push(...emitPendingToolUseArguments(evt, state));
+      return events;
+    }
     case 'reasoning':
       if (state.currentBlockType === 'thinking') {
         return closeCurrentBlock(state);
@@ -748,6 +785,39 @@ function clearOutputIndexMappingsForBlock(
       state.outputIndexToBlockIdx.delete(outputIndex);
     }
   }
+}
+
+function emitPendingToolUseArguments(
+  evt: ResponsesStreamEvent,
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  const args = evt.item?.arguments ?? evt.arguments ?? state.currentToolArgs;
+  const events: AnthropicStreamEvent[] = [];
+
+  if (args !== '' && !state.currentToolHadDelta) {
+    const idx =
+      state.outputIndexToBlockIdx.get(evt.output_index ?? 0) ?? state.contentBlockIndex;
+    let raw = args;
+    if (state.currentToolName === 'Read') {
+      const sanitized = sanitizeAnthropicToolUseInput(state.currentToolName, raw);
+      raw = typeof sanitized === 'string' ? sanitized : jsonMarshal(sanitized);
+    }
+    if (raw !== '' && raw !== '{}') {
+      events.push({
+        type: 'content_block_delta',
+        index: idx,
+        delta: {
+          type: 'input_json_delta',
+          partial_json: raw,
+        },
+      });
+    }
+  }
+
+  if (state.contentBlockOpen && state.currentBlockType === 'tool_use') {
+    events.push(...closeCurrentBlock(state));
+  }
+  return events;
 }
 
 function closeCurrentBlock(

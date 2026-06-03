@@ -13,6 +13,7 @@ describe("isWorktreeGitCwdError", () => {
         new Error("Failed to list untracked files: fatal: Unable to read current working directory"),
       ),
     ).toBe(true);
+    expect(isWorktreeGitCwdError(new Error("Failed to list untracked files:"))).toBe(true);
   });
 
   test("ignores unrelated git errors", () => {

@@ -373,3 +373,39 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
   }
   return out;
 }
+
+export function extractAnthropicRequestToolNames(req: AnthropicRequest): string[] {
+  const names: string[] = [];
+  for (const tool of req.tools ?? []) {
+    if (typeof tool.name === 'string' && tool.name.trim() !== '') {
+      names.push(tool.name.trim());
+    }
+  }
+  return names;
+}
+
+/** Map upstream function names back to Anthropic/SDK tool ids (e.g. MCP prefixes). */
+export function normalizeFunctionCallNameForRequest(
+  name: string,
+  requestToolNames: readonly string[],
+): string {
+  const trimmed = name.trim();
+  if (trimmed === '' || requestToolNames.length === 0) {
+    return trimmed;
+  }
+  if (requestToolNames.includes(trimmed)) {
+    return trimmed;
+  }
+  const suffix = `__${trimmed}`;
+  const bySuffix = requestToolNames.find((tool) => tool.endsWith(suffix));
+  if (bySuffix) {
+    return bySuffix;
+  }
+  const doubleUnderscore = requestToolNames.find(
+    (tool) => tool.replace(/^mcp__/, '').replace(/__/g, '_') === trimmed.replace(/_/g, '_'),
+  );
+  if (doubleUnderscore) {
+    return doubleUnderscore;
+  }
+  return trimmed;
+}

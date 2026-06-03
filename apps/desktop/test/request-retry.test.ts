@@ -71,8 +71,16 @@ test("succeeds on later attempt without exhausting retries", async () => {
 });
 
 test("appendAutoRetryExhaustedHint is idempotent", () => {
-  const once = appendAutoRetryExhaustedHint("API Error");
-  expect(appendAutoRetryExhaustedHint(once)).toBe(once);
+  const once = appendAutoRetryExhaustedHint("API Error", 3);
+  expect(appendAutoRetryExhaustedHint(once, 3)).toBe(once);
+});
+
+test("appendAutoRetryExhaustedHint skips hint when no retries happened", () => {
+  expect(appendAutoRetryExhaustedHint("未提交 FinalizePlan", 0)).toBe("未提交 FinalizePlan");
+});
+
+test("does not retry FinalizePlan business errors", () => {
+  expect(isRetryableRequestFailure("未提交 FinalizePlan，无法生成可执行计划。")).toBe(false);
 });
 
 test("REQUEST_AUTO_RETRY_INTERVAL_MS is 5 seconds", () => {

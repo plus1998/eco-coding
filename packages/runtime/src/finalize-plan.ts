@@ -14,6 +14,12 @@ export function parseFinalizePlanInput(input: Record<string, unknown>): SdkFinal
   };
 }
 
+export function isFinalizePlanSubmissionComplete(
+  submission: Pick<FinalizePlanSubmission, "analysis" | "plan">,
+): boolean {
+  return submission.analysis.trim().length > 0 && submission.plan.trim().length > 0;
+}
+
 export interface FinalizePlanSubmission {
   analysis: string;
   plan: string;
@@ -43,15 +49,27 @@ export async function createFinalizePlanMcpServer(
         analysis: args.analysis,
         plan: args.plan,
       });
-      onSubmit({
+      const submission = {
         analysis: parsed.analysis,
         plan: parsed.plan,
-      });
+      };
+      if (!isFinalizePlanSubmissionComplete(submission)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "finalize_plan requires non-empty analysis and plan strings.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      onSubmit(submission);
       return {
         content: [{ type: "text", text: "Plan submission accepted." }],
         structuredContent: {
-          analysis: parsed.analysis,
-          plan: parsed.plan,
+          analysis: submission.analysis,
+          plan: submission.plan,
         },
       };
     },

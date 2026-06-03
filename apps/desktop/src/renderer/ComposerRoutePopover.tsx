@@ -1,6 +1,32 @@
 import { Check, ChevronRight, Settings2, SlidersHorizontal } from "lucide-react";
-import { type RefObject, useEffect, useRef } from "react";
+import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ModelSettingsSnapshot, RouteProfileView } from "../shared/ipc";
+
+const POPOVER_WIDTH = 320;
+const VIEWPORT_MARGIN = 8;
+const ANCHOR_GAP = 8;
+const MIN_POPOVER_HEIGHT = 120;
+
+function clampPopoverLeft(anchorLeft: number, width: number): number {
+  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
+  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
+}
+
+function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const spaceAbove = rect.top - VIEWPORT_MARGIN;
+  const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - ANCHOR_GAP);
+  return {
+    position: "fixed",
+    left: clampPopoverLeft(rect.left, width),
+    bottom: window.innerHeight - rect.top + ANCHOR_GAP,
+    width,
+    maxHeight,
+    zIndex: 10000,
+  };
+}
 
 interface ComposerRoutePopoverProps {
   open: boolean;
@@ -24,6 +50,28 @@ export function ComposerRoutePopover({
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
+
+  const updatePanelPosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) {
+      return;
+    }
+    setPanelStyle(popoverStyleForAnchor(anchor));
+  }, [anchorRef]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    updatePanelPosition();
+    window.addEventListener("resize", updatePanelPosition);
+    window.addEventListener("scroll", updatePanelPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePanelPosition);
+      window.removeEventListener("scroll", updatePanelPosition, true);
+    };
+  }, [open, updatePanelPosition, settings.routeProfiles.length]);
 
   useEffect(() => {
     if (!open) {
@@ -53,8 +101,14 @@ export function ComposerRoutePopover({
     return null;
   }
 
-  return (
-    <div ref={panelRef} className="composer-route-popover" role="dialog" aria-label="切换路由方案">
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="composer-route-popover"
+      role="dialog"
+      aria-label="切换路由方案"
+      style={panelStyle}
+    >
       <p className="composer-route-popover-title">路由方案</p>
       <ul className="composer-route-popover-list">
         {settings.routeProfiles.map((profile) => (
@@ -83,7 +137,8 @@ export function ComposerRoutePopover({
         打开完整模型设置
         <ChevronRight size={14} />
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

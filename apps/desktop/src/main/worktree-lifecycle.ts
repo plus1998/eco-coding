@@ -55,7 +55,8 @@ export function isWorktreeGitCwdError(error: unknown): boolean {
   return (
     /unable to read current working directory/i.test(message) ||
     /not a git repository/i.test(message) ||
-    /fatal:.*does not exist/i.test(message)
+    /fatal:.*does not exist/i.test(message) ||
+    /failed to list untracked files/i.test(message)
   );
 }
 
