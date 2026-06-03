@@ -35,7 +35,12 @@ function createDeps(overrides?: Partial<Parameters<typeof finalizeCancelledRun>[
     changedFiles: async () => ["src/a.ts"],
     applyWorktreeChanges: async () => {
       calls.apply += 1;
-      return { files: ["src/a.ts"], message: "merged", diff: "diff" };
+      return {
+        files: ["src/a.ts"],
+        diff: "diff",
+        threadMessage: "已合并 1 个文件到工作区（未自动提交）",
+        activityMessage: "__eco_worktree_merge__\n{}",
+      };
     },
     saveAppliedDiff: () => {
       calls.save += 1;

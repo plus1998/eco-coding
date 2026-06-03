@@ -86,8 +86,15 @@ import {
   type ThreadContextSnapshot,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
+  type ThreadAppliedDiffResult,
+  type ThreadRevertAppliedDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import {
+  buildWorktreeMergeSummary,
+  formatWorktreeMergeThreadMessage,
+  serializeWorktreeMergeMessage,
+} from "../shared/worktree-merge";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
   extractCoderTasksFromActivity,
@@ -1099,6 +1106,20 @@ function registerIpcHandlers(): void {
     return rollbackWorkspaceToThread(threadId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.threadGetAppliedDiff, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return getThreadAppliedDiff(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadRevertAppliedDiff, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return revertThreadAppliedDiff(threadId);
+  });
+
   ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => providerStore.getSettings().providers);
 
   ipcMain.on("message", (event) => {
@@ -1333,10 +1354,10 @@ async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreeP
     });
 
     try {
-      const { files, message, diff } = await applyWorktreeChanges(worktreePlan);
+      const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
       conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
-      updateThread(threadId, { status: "completed", message });
-      emitThreadEvent(threadId, "worktree.applied", message, "system");
+      updateThread(threadId, { status: "completed", message: threadMessage });
+      emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
       process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
       await cleanupWorktreeForThread(threadId);
     } catch (applyError) {
@@ -1841,10 +1862,10 @@ async function runCodingThreadExecution(
       });
 
       try {
-        const { files, message, diff } = await applyWorktreeChanges(worktreePlan);
+        const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
         conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
-        updateThread(threadId, { status: "completed", message });
-        emitThreadEvent(threadId, "worktree.applied", message, "system");
+        updateThread(threadId, { status: "completed", message: threadMessage });
+        emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
         process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
       } catch (applyError) {
         const detail = errorMessage(applyError);
@@ -2225,21 +2246,24 @@ async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult
 
 async function applyWorktreeChanges(
   plan: WorktreePlan,
-): Promise<{ files: string[]; message: string; diff: string }> {
+): Promise<{ files: string[]; diff: string; threadMessage: string; activityMessage: string }> {
   if (!(await fileExists(plan.worktreePath))) {
     throw new Error(`找不到隔离工作树：${plan.worktreePath}`);
   }
 
   const { files, diff } = await gitWorktrees.collectWorktreeChanges(plan);
   if (files.length === 0) {
-    return { files: [], diff: "", message: "执行完成，工作树内无相对基线的文件变更。" };
+    const emptyMessage = "执行完成，工作树内无相对基线的文件变更。";
+    return { files: [], diff: "", threadMessage: emptyMessage, activityMessage: emptyMessage };
   }
 
   await gitWorktrees.applyWorktreeDiff(plan, diff, files);
+  const summary = buildWorktreeMergeSummary(diff, files);
   return {
     files,
     diff,
-    message: `已合并 ${files.length} 个文件的更改到工作区（未自动提交）：${files.join(", ")}`,
+    threadMessage: formatWorktreeMergeThreadMessage(files.length),
+    activityMessage: serializeWorktreeMergeMessage(summary),
   };
 }
 
@@ -2250,12 +2274,12 @@ async function applyWorktreeForThread(threadId: string): Promise<WorktreeApplyRe
   }
 
   const plan = resolveWorktreePlan(status.workspacePath, threadId, status.worktreePath);
-  const { files, message, diff } = await applyWorktreeChanges(plan);
+  const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(plan);
   conversationStore.saveAppliedDiff(threadId, plan.workspacePath, diff, files);
   await cleanupWorktreeForThread(threadId);
-  updateThread(threadId, { status: "completed", message });
-  emitThreadEvent(threadId, "worktree.applied", message, "system");
-  return { ok: true, files, message };
+  updateThread(threadId, { status: "completed", message: threadMessage });
+  emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
+  return { ok: true, files, message: threadMessage };
 }
 
 async function rollbackWorkspaceToThread(threadId: string): Promise<ThreadRollbackResult> {
@@ -2298,6 +2322,54 @@ async function rollbackWorkspaceToThread(threadId: string): Promise<ThreadRollba
       : `已回滚 ${laterDiffs.length} 个后续对话的变更。`;
   updateThread(threadId, { status: "idle", message });
   return { ok: true, revertedThreads: laterDiffs.length, files: changedFiles, message };
+}
+
+async function getThreadAppliedDiff(threadId: string): Promise<ThreadAppliedDiffResult> {
+  const record = conversationStore.getAppliedDiff(threadId);
+  if (!record) {
+    throw new Error("该对话没有已应用到工作区的变更记录。");
+  }
+  const stats = buildWorktreeMergeSummary(record.diff, record.files);
+  return {
+    diff: record.diff,
+    files: record.files,
+    fileStats: stats.files,
+    totalAdditions: stats.totalAdditions,
+    totalDeletions: stats.totalDeletions,
+    ...(record.rolledBackAt && { rolledBackAt: record.rolledBackAt }),
+  };
+}
+
+async function revertThreadAppliedDiff(threadId: string): Promise<ThreadRevertAppliedDiffResult> {
+  const record = conversationStore.getAppliedDiff(threadId);
+  if (!record) {
+    throw new Error("该对话没有可撤销的已应用变更。");
+  }
+  if (record.rolledBackAt) {
+    throw new Error("该对话的变更已撤销。");
+  }
+  if (!record.diff.trim()) {
+    conversationStore.markAppliedDiffRolledBack(threadId);
+    return { ok: true, files: record.files, message: "已撤销应用到工作区的变更。" };
+  }
+
+  const result = await runGitCommand(
+    ["git", "apply", "-R", "--whitespace=nowarn", "-"],
+    record.workspacePath,
+    { stdin: record.diff },
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(`撤销失败：${result.stderr || result.stdout}`);
+  }
+
+  conversationStore.markAppliedDiffRolledBack(threadId);
+  const message =
+    record.files.length > 0
+      ? `已撤销 ${record.files.length} 个文件的合并变更。`
+      : "已撤销应用到工作区的变更。";
+  updateThread(threadId, { status: "idle", message });
+  emitThreadEvent(threadId, "worktree.reverted", message, "system");
+  return { ok: true, files: record.files, message };
 }
 
 async function cleanupWorktreeForThread(threadId: string): Promise<void> {
@@ -2681,10 +2753,10 @@ async function runThreadContinuation(
           message: "代理执行完成，正在合并工作树更改…",
         });
         try {
-          const { files, message, diff } = await applyWorktreeChanges(worktreePlan);
+          const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
           conversationStore.saveAppliedDiff(thread.id, worktreePlan.workspacePath, diff, files);
-          updateThread(thread.id, { status: "completed", message });
-          emitThreadEvent(thread.id, "worktree.applied", message, "system");
+          updateThread(thread.id, { status: "completed", message: threadMessage });
+          emitThreadEvent(thread.id, "worktree.applied", activityMessage, "system");
           await cleanupWorktreeForThread(thread.id);
         } catch (applyError) {
           const detail = errorMessage(applyError);

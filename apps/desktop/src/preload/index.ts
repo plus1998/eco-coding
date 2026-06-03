@@ -44,6 +44,8 @@ import {
   type ThreadUsageSnapshotResult,
   type ThreadCancelRequest,
   type ThreadRollbackResult,
+  type ThreadAppliedDiffResult,
+  type ThreadRevertAppliedDiffResult,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadUpdateRuntimeConfigRequest,
@@ -175,6 +177,12 @@ const api = {
   },
   rollbackToThread(threadId: string): Promise<ThreadRollbackResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRollbackTo, threadId);
+  },
+  getThreadAppliedDiff(threadId: string): Promise<ThreadAppliedDiffResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadGetAppliedDiff, threadId);
+  },
+  revertThreadAppliedDiff(threadId: string): Promise<ThreadRevertAppliedDiffResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRevertAppliedDiff, threadId);
   },
   getPendingPlan(threadId: string): Promise<ThreadPendingPlan | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetPendingPlan, threadId);

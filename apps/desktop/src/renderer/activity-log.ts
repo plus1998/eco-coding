@@ -19,6 +19,9 @@ import {
 } from "../shared/activity-display";
 import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
+import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
+
+export type { WorktreeMergeSummary };
 
 export { isReconnectActivityMessage };
 
@@ -49,7 +52,8 @@ export type ActivityDetailBlock =
   | { kind: "thinking"; text: string; streaming?: boolean }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string }
-  | { kind: "tool-failed"; tool: string; error?: string; subagent?: string };
+  | { kind: "tool-failed"; tool: string; error?: string; subagent?: string }
+  | { kind: "worktree-merge"; summary: WorktreeMergeSummary };
 
 export type ActivityLogBlock =
   | { kind: "user-prompt"; text: string; lineId: string }
@@ -79,7 +83,8 @@ export type ActivityLogBlock =
       text: string;
       streaming?: boolean;
       subagent?: string;
-    };
+    }
+  | { kind: "worktree-merge"; summary: WorktreeMergeSummary; threadId?: string };
 
 interface ParsedToolAction {
   tool: string;
@@ -174,6 +179,10 @@ export function buildActivityLogBlocks(
         });
       }
     }
+
+    if (segment.worktreeMerge) {
+      output.push({ kind: "worktree-merge", summary: segment.worktreeMerge });
+    }
   }
 
   return output;
@@ -182,6 +191,7 @@ export function buildActivityLogBlocks(
 interface ActivitySegment {
   userLines: ThreadActivityLine[];
   details: ActivityDetailBlock[];
+  worktreeMerge?: WorktreeMergeSummary;
 }
 
 function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] {
@@ -562,6 +572,13 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       continue;
     }
 
+    const worktreeMerge = parseWorktreeMergeMessage(line.message);
+    if (worktreeMerge) {
+      flushTextBuffers();
+      current.worktreeMerge = worktreeMerge;
+      continue;
+    }
+
     if (isEphemeralToolStatusLine(line.message)) {
       continue;
     }
@@ -592,14 +609,19 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     if (isNarrativeLine(line)) {
       flushThinking();
+      const mergeInLine = parseWorktreeMergeMessage(line.message);
+      if (mergeInLine) {
+        flushNarrative();
+        current.worktreeMerge = mergeInLine;
+        continue;
+      }
       noteNarrativeRole(line);
       const text = line.stream ? line.message : stripSubagentBracketPrefix(line.message);
       if (line.stream) {
         narrative = mergeStreamText(narrative, text);
         narrativeStreaming = true;
-      } else if (narrative) {
-        narrative += `\n\n${text}`;
       } else {
+        flushNarrative();
         narrative = text;
       }
       continue;

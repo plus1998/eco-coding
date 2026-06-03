@@ -6,7 +6,7 @@ export interface FinalizeCancelledRunDeps {
   changedFiles: (plan: WorktreePlan) => Promise<string[]>;
   applyWorktreeChanges: (
     plan: WorktreePlan,
-  ) => Promise<{ files: string[]; message: string; diff: string }>;
+  ) => Promise<{ files: string[]; diff: string; threadMessage: string; activityMessage: string }>;
   saveAppliedDiff: (threadId: string, workspacePath: string, diff: string, files: string[]) => void;
   discardWorktreeChanges: (plan: WorktreePlan) => Promise<void>;
   cleanupWorktreeForThread: (threadId: string) => Promise<void>;
@@ -63,11 +63,11 @@ export async function finalizeCancelledRun(
   switch (disposition) {
     case "apply": {
       try {
-        const { files, message, diff } = await deps.applyWorktreeChanges(worktreePlan);
+        const { files, diff, threadMessage, activityMessage } = await deps.applyWorktreeChanges(worktreePlan);
         deps.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
         await deps.cleanupWorktreeForThread(threadId);
-        deps.updateThread(threadId, { status: "completed", message });
-        deps.emitThreadEvent(threadId, "worktree.applied", message, "system");
+        deps.updateThread(threadId, { status: "completed", message: threadMessage });
+        deps.emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
       } catch (applyError) {
         const detail = applyError instanceof Error ? applyError.message : String(applyError);
         deps.updateThread(threadId, {

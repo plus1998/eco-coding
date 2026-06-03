@@ -17,7 +17,9 @@ import {
   type ActivityDetailBlock,
   type ActivityLogBlock,
 } from "./activity-log";
+import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
+import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import { useStreamRequestTiming } from "./useStreamRequestTiming";
 
 const SUBAGENT_ROLE_SHORT: Record<string, string> = {
@@ -179,6 +181,9 @@ export function ActivityLogView({
           if (block.kind === "work-session" && block.inlineContent) {
             return `p:${block.sessionKey ?? ""}:${block.children.length}:${block.running ? 1 : 0}`;
           }
+          if (block.kind === "worktree-merge") {
+            return `w:${block.summary.fileCount}:${block.summary.files.length}`;
+          }
           return "";
         })
         .filter(Boolean)
@@ -207,6 +212,7 @@ export function ActivityLogView({
           {...(usageByRole && { usageByRole })}
           {...(context && { context })}
           {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
+          {...(thread?.id && { threadId: thread.id })}
         />
       ))}
     </div>
@@ -220,6 +226,7 @@ function RunLogBlock({
   usageByRole,
   context,
   onPlannerLayoutChange,
+  threadId,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
@@ -227,6 +234,7 @@ function RunLogBlock({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   onPlannerLayoutChange?: () => void;
+  threadId?: string;
 }) {
   if (block.kind === "user-prompt") {
     return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
@@ -250,6 +258,15 @@ function RunLogBlock({
         {...(block.subagent && { subagent: block.subagent })}
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
+        {...(threadId && { threadId })}
+      />
+    );
+  }
+  if (block.kind === "worktree-merge") {
+    return (
+      <WorkspaceChangesCard
+        summary={block.summary}
+        {...(threadId && { threadId })}
       />
     );
   }
@@ -674,6 +691,12 @@ function DetailBlock({
       />
     );
   }
+  if (block.kind === "worktree-merge") {
+    return <WorkspaceChangesCard summary={block.summary} />;
+  }
+  if (block.kind !== "narrative") {
+    return null;
+  }
   return (
     <RunLogNarrative
       text={block.text}
@@ -863,20 +886,22 @@ function AssistantMessageBlock({
   subagent,
   modelByRole,
   usageByRole,
+  threadId,
 }: {
   text: string;
   streaming?: boolean;
   subagent?: string;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  threadId?: string;
 }) {
   const clarificationRows = parseClarificationAnswersSummary(text);
   if (clarificationRows) {
     return <ClarificationAnswersCard rows={clarificationRows} />;
   }
-  const worktreeMergeSummary = parseWorktreeMergeSummary(text);
+  const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
   if (worktreeMergeSummary) {
-    return <WorktreeMergeCard summary={worktreeMergeSummary} />;
+    return <WorkspaceChangesCard summary={worktreeMergeSummary} {...(threadId && { threadId })} />;
   }
   return (
     <RunLogNarrative
@@ -932,58 +957,6 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-type WorktreeMergeSummary = {
-  fileCount: number;
-  files: string[];
-};
-
-const WORKTREE_MERGE_MESSAGE_PATTERN =
-  /^已合并\s*(\d+)\s*个文件的更改到工作区（未自动提交）[：:]\s*(.*)$/u;
-
-function parseWorktreeMergeSummary(text: string): WorktreeMergeSummary | null {
-  const trimmed = text.trim();
-  const match = WORKTREE_MERGE_MESSAGE_PATTERN.exec(trimmed);
-  if (!match) {
-    return null;
-  }
-  const fileCount = Number.parseInt(match[1] ?? "0", 10);
-  if (!Number.isFinite(fileCount) || fileCount < 0) {
-    return null;
-  }
-  const rawFiles = (match[2] ?? "").trim();
-  const files = rawFiles
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return { fileCount, files };
-}
-
-function WorktreeMergeCard({ summary }: { summary: WorktreeMergeSummary }) {
-  const hasFiles = summary.files.length > 0;
-  return (
-    <div className="worktree-merge-card" role="status" aria-label="工作区变更已合并">
-      <div className="worktree-merge-header">
-        <span className="worktree-merge-title">已应用到工作区</span>
-        <span className="worktree-merge-status">未自动提交</span>
-      </div>
-      <p className="worktree-merge-count">
-        <strong>{summary.fileCount}</strong>
-        <span>个文件变更已合并</span>
-      </p>
-      {hasFiles ? (
-        <div className="worktree-merge-files">
-          <p className="worktree-merge-files-label">涉及文件</p>
-          <ul className="worktree-merge-files-list">
-            {summary.files.map((file) => (
-              <li key={file}>{file}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1175,13 +1148,13 @@ function RunLogNarrative({
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
-  const worktreeMergeSummary = !streaming ? parseWorktreeMergeSummary(text) : null;
+  const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
 
   if (clarificationRows) {
     return <ClarificationAnswersCard rows={clarificationRows} />;
   }
   if (worktreeMergeSummary) {
-    return <WorktreeMergeCard summary={worktreeMergeSummary} />;
+    return <WorkspaceChangesCard summary={worktreeMergeSummary} />;
   }
 
   return (

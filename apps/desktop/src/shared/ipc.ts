@@ -17,6 +17,8 @@ export const IPC_CHANNELS = {
   threadActivityList: "thread:activity-list",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
+  threadGetAppliedDiff: "thread:get-applied-diff",
+  threadRevertAppliedDiff: "thread:revert-applied-diff",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
@@ -345,6 +347,27 @@ export interface WorktreeStatusResult {
 }
 
 export interface WorktreeApplyResult {
+  ok: true;
+  files: string[];
+  message: string;
+}
+
+export interface ThreadAppliedDiffFileStat {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface ThreadAppliedDiffResult {
+  diff: string;
+  files: string[];
+  fileStats: ThreadAppliedDiffFileStat[];
+  totalAdditions: number;
+  totalDeletions: number;
+  rolledBackAt?: string;
+}
+
+export interface ThreadRevertAppliedDiffResult {
   ok: true;
   files: string[];
   message: string;

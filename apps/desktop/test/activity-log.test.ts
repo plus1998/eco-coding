@@ -4,6 +4,10 @@ import {
   shouldClearReconnectActivity,
 } from "../src/shared/activity-display";
 import {
+  buildWorktreeMergeSummary,
+  serializeWorktreeMergeMessage,
+} from "../src/shared/worktree-merge";
+import {
   buildActivityLogBlocks,
   countOpenAgentDelegations,
   thinkingPreviewLine,
@@ -921,4 +925,39 @@ test("formats generic MCP tool names for display", () => {
     expect(action.label).toBe("github · list issues");
     expect(action.icon).toBe("file");
   }
+});
+
+test("emits dedicated worktree-merge block instead of narrative markdown", () => {
+  const summary = buildWorktreeMergeSummary(
+    `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
++x
+`,
+    ["src/a.ts"],
+  );
+  const mergeMessage = serializeWorktreeMergeMessage(summary);
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "implement" },
+      { id: "1", role: "planner", message: "Tool: Write · src/a.ts" },
+      { id: "2", role: "system", message: mergeMessage },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const mergeBlock = blocks.find((block) => block.kind === "worktree-merge");
+  expect(mergeBlock?.kind).toBe("worktree-merge");
+  if (mergeBlock?.kind === "worktree-merge") {
+    expect(mergeBlock.summary.files).toHaveLength(1);
+    expect(mergeBlock.summary.totalAdditions).toBe(1);
+  }
+
+  const markdownNarrative = blocks.find(
+    (block) =>
+      block.kind === "assistant-message" &&
+      block.text.includes("__eco_worktree_merge__"),
+  );
+  expect(markdownNarrative).toBeUndefined();
 });
