@@ -49,6 +49,58 @@ export async function writeApprovedPlanSnapshot(
   return filePath;
 }
 
+function sectionBody(markdown: string, heading: string): string {
+  const pattern = new RegExp(`## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, "i");
+  const match = markdown.match(pattern);
+  return match?.[1]?.trim() ?? "";
+}
+
+/** Parse `.eco/approved-plans/<thread>.md` written by {@link formatApprovedPlanDocument}. */
+export function parseApprovedPlanDocument(text: string): ApprovedPlanSnapshot | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const userPrompt = sectionBody(trimmed, "User request");
+  const analysis = sectionBody(trimmed, "Planning analysis");
+  const plan = sectionBody(trimmed, "Approved plan");
+  if (!plan) {
+    return undefined;
+  }
+  const planUserEdited = /edited this plan in Eco before approval/i.test(trimmed);
+  return {
+    userPrompt: userPrompt === "(not captured)" ? "" : userPrompt,
+    analysis: analysis === "(no analysis captured)" ? "" : analysis,
+    plan,
+    ...(planUserEdited ? { planUserEdited: true } : {}),
+  };
+}
+
+export async function readApprovedPlanSnapshot(
+  workspacePath: string,
+  threadId: string,
+): Promise<ApprovedPlanSnapshot | undefined> {
+  const filePath = approvedPlanFilePath(workspacePath, threadId);
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    return parseApprovedPlanDocument(text);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function approvedPlanSnapshotExists(
+  workspacePath: string,
+  threadId: string,
+): Promise<boolean> {
+  try {
+    await fs.access(approvedPlanFilePath(workspacePath, threadId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Git failed because the process cwd (worktree directory) no longer exists or is invalid. */
 export function isWorktreeGitCwdError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);

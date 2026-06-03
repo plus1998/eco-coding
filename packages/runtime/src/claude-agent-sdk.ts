@@ -265,6 +265,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   async *runContinuation(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
+    planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
     if (mode === "planning") {
       const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
@@ -334,8 +335,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
+    const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
+    let executionPrompt = input.prompt;
+    if (planning) {
+      const base = buildExecuteResumePrompt({
+        ...planning,
+        approvedPlanFile,
+      });
+      const followUp = input.prompt.trim();
+      executionPrompt =
+        followUp && followUp !== planning.userPrompt.trim()
+          ? `${base}\n\nUser follow-up:\n${followUp}`
+          : base;
+    }
     yield* this.runSingleSession(input, {
-      prompt: input.prompt,
+      prompt: executionPrompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
       phaseAppend: buildExecutePhaseSystemAppend(availability),

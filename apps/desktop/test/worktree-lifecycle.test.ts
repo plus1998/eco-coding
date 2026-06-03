@@ -3,6 +3,7 @@ import {
   approvedPlanFilePath,
   formatApprovedPlanDocument,
   isWorktreeGitCwdError,
+  parseApprovedPlanDocument,
   resolveWorktreePathHint,
 } from "../src/main/worktree-lifecycle";
 
@@ -35,6 +36,9 @@ describe("approved plan snapshot", () => {
     expect(doc).toContain("fix bug");
     expect(doc).toContain("## Steps");
     expect(doc).toContain("edited this plan");
+    const parsed = parseApprovedPlanDocument(doc);
+    expect(parsed?.plan).toContain("## Steps");
+    expect(parsed?.planUserEdited).toBe(true);
   });
 });
 

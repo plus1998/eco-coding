@@ -61,6 +61,7 @@ export interface AgentRuntimeDriver {
   runContinuation?(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
+    planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
   compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;

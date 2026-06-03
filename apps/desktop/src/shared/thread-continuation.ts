@@ -15,6 +15,173 @@ export function isContinuableThreadStatus(status: ThreadStatus): status is Conti
   return (CONTINUABLE_THREAD_STATUSES as readonly string[]).includes(status);
 }
 
+export type ThreadContinueAction =
+  | { kind: "resume_execution" }
+  | { kind: "resume_sdk"; phase: "planning" | "execution" | "question" }
+  | { kind: "revise_plan" }
+  | { kind: "fresh_plan" }
+  | { kind: "question"; resume: boolean };
+
+export interface ThreadContinueRoutingInput {
+  intent: "question" | "coding";
+  followUp: string;
+  canResume: boolean;
+  usesPlanOrchestration: boolean;
+  hasPendingPlan: boolean;
+  hasApprovedPlanOnDisk: boolean;
+  enteredExecutionPhase: boolean;
+  hasCoderTodos: boolean;
+  hasAppliedDiff: boolean;
+  threadStatus: ThreadStatus;
+  activityLines: readonly ActivityContextLine[];
+}
+
+const PLAN_REVISION_PATTERNS = [
+  /改计划/,
+  /修改计划/,
+  /重新规划/,
+  /重做计划/,
+  /换方案/,
+  /修订计划/,
+  /重新制定/,
+  /\b(replan|revise\s+(the\s+)?plan)\b/i,
+];
+
+/** User explicitly wants a new planning pass instead of resuming execution. */
+export function userRequestsPlanRevision(followUp: string): boolean {
+  const text = followUp.trim();
+  if (!text) {
+    return false;
+  }
+  return PLAN_REVISION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export interface ContinuePhaseInput {
+  intent: "question" | "coding";
+  threadStatus: ThreadStatus;
+  hasPendingPlan: boolean;
+  hasApprovedPlanOnDisk: boolean;
+  enteredExecutionPhase: boolean;
+  hasCoderTodos: boolean;
+  hasAppliedDiff: boolean;
+  activityLines: readonly ActivityContextLine[];
+}
+
+const EXECUTION_ACTIVITY_MARKERS = [
+  "计划已进入执行阶段",
+  "子代理执行",
+  "执行完成",
+  "继续执行",
+] as const;
+
+/** Whether the thread has entered phase-2 execution (approved plan or coder work). */
+export function threadEnteredExecutionPhase(
+  input: Omit<ContinuePhaseInput, "intent">,
+): boolean {
+  if (input.hasApprovedPlanOnDisk || input.hasCoderTodos || input.hasAppliedDiff) {
+    return true;
+  }
+  if (input.threadStatus === "completed") {
+    return true;
+  }
+  return input.activityLines.some((line) =>
+    EXECUTION_ACTIVITY_MARKERS.some((marker) => line.message.includes(marker)),
+  );
+}
+
+export function resolveContinuePhase(input: ContinuePhaseInput): "planning" | "execution" | "question" {
+  if (input.intent === "question") {
+    return "question";
+  }
+  if (input.hasAppliedDiff || input.threadStatus === "completed") {
+    return "execution";
+  }
+  if (threadEnteredExecutionPhase(input)) {
+    return "execution";
+  }
+  if (input.hasPendingPlan && input.threadStatus === "awaiting_plan") {
+    return "planning";
+  }
+  return "planning";
+}
+
+export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): ThreadContinueAction {
+  const wantsRevision = userRequestsPlanRevision(input.followUp);
+
+  if (input.intent === "question") {
+    return { kind: "question", resume: input.canResume };
+  }
+
+  if (!input.usesPlanOrchestration) {
+    return input.canResume
+      ? { kind: "resume_sdk", phase: "execution" }
+      : { kind: "fresh_plan" };
+  }
+
+  if (wantsRevision) {
+    return input.canResume ? { kind: "resume_sdk", phase: "planning" } : { kind: "revise_plan" };
+  }
+
+  const enteredExecution = input.enteredExecutionPhase;
+
+  if (input.hasPendingPlan && enteredExecution) {
+    return { kind: "resume_execution" };
+  }
+
+  if (!input.hasPendingPlan && input.hasApprovedPlanOnDisk && enteredExecution) {
+    return { kind: "resume_execution" };
+  }
+
+  if (input.canResume) {
+    const phase = resolveContinuePhase({
+      intent: input.intent,
+      threadStatus: input.threadStatus,
+      hasPendingPlan: input.hasPendingPlan,
+      hasApprovedPlanOnDisk: input.hasApprovedPlanOnDisk,
+      enteredExecutionPhase: enteredExecution,
+      hasCoderTodos: input.hasCoderTodos,
+      hasAppliedDiff: input.hasAppliedDiff,
+      activityLines: input.activityLines,
+    });
+    return { kind: "resume_sdk", phase };
+  }
+
+  if (enteredExecution && input.hasApprovedPlanOnDisk) {
+    return { kind: "resume_execution" };
+  }
+
+  if (input.hasPendingPlan && input.threadStatus === "awaiting_plan" && !enteredExecution) {
+    return { kind: "revise_plan" };
+  }
+
+  return { kind: "fresh_plan" };
+}
+
+export function continueStatusMessage(
+  action: ThreadContinueAction,
+  intent: "question" | "coding",
+): string {
+  if (action.kind === "question") {
+    return "正在回答…";
+  }
+  if (action.kind === "resume_execution") {
+    return "正在按计划执行…";
+  }
+  if (action.kind === "resume_sdk") {
+    if (action.phase === "question") {
+      return "正在回答…";
+    }
+    if (action.phase === "execution") {
+      return "正在继续执行…";
+    }
+    return "正在分析并制定计划…";
+  }
+  if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
+    return intent === "question" ? "正在回答…" : "正在分析并制定计划…";
+  }
+  return "正在分析并制定计划…";
+}
+
 /** Agent turn prompt: keep the original task and add the latest user message. */
 export function buildThreadTurnPrompt(threadPrompt: string, followUp: string): string {
   const original = threadPrompt.trim();

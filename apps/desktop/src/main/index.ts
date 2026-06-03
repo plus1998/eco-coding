@@ -110,7 +110,9 @@ import {
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
+  approvedPlanSnapshotExists,
   isWorktreeGitCwdError,
+  readApprovedPlanSnapshot,
   resolveWorktreePathHint,
   writeApprovedPlanSnapshot,
 } from "./worktree-lifecycle";
@@ -120,8 +122,12 @@ import {
 } from "../shared/thread-failure-message";
 import {
   buildAgentPromptWithContext,
+  continueStatusMessage,
   isContinuableThreadStatus,
+  resolveThreadContinueAction,
   shouldUseInterruptedWorktree,
+  threadEnteredExecutionPhase,
+  type ThreadContinueAction,
 } from "../shared/thread-continuation";
 import {
   computeRouteFingerprint,
@@ -945,9 +951,6 @@ function registerIpcHandlers(): void {
     if (thread.status === "running" || thread.status === "queued") {
       throw new Error("Wait for the current run to finish.");
     }
-    if (thread.status === "awaiting_plan") {
-      await dismissPendingPlan(payload.threadId, "已忽略原计划。");
-    }
 
     const workspace = await ensureWorkspace(thread.workspacePath);
     const settings = providerStore.getSettings();
@@ -967,6 +970,7 @@ function registerIpcHandlers(): void {
     if (!runtimeConfig.ok) {
       throw new Error(runtimeConfig.reason);
     }
+    const runtime: RuntimeConfig = { routes: runtimeConfig.routes };
 
     const intent = classifyThreadIntent(prompt);
     const activityLines = conversationStore.listActivityLines(payload.threadId);
@@ -995,90 +999,66 @@ function registerIpcHandlers(): void {
       isIsolatedWorktreePlan({ workspacePath: workspace.path, worktreePath: cwd })
         ? resolveWorktreePlan(workspace.path, payload.threadId, cwd)
         : undefined;
-    const continuePhase = canResume ? resolveContinuePhase(thread, intent) : undefined;
-    const agentPrompt = canResume
-      ? prompt
-      : buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
-    const statusMessage =
-      continuePhase === "question"
-        ? "正在回答…"
-        : continuePhase === "execution"
-          ? "正在继续执行…"
-          : "正在分析并制定计划…";
+
+    const hasPendingPlan = Boolean(conversationStore.getPendingPlan(payload.threadId));
+    const hasApprovedPlanOnDisk = await approvedPlanSnapshotExists(workspace.path, payload.threadId);
+    const hasCoderTodos = conversationStore.listCoderTodos(payload.threadId).length > 0;
+    const hasAppliedDiff = Boolean(conversationStore.getAppliedDiff(payload.threadId));
+    const enteredExecutionPhase = threadEnteredExecutionPhase({
+      threadStatus: thread.status,
+      hasPendingPlan,
+      hasApprovedPlanOnDisk,
+      enteredExecutionPhase: false,
+      hasCoderTodos,
+      hasAppliedDiff,
+      activityLines,
+    });
+
+    const continueAction = resolveThreadContinueAction({
+      intent,
+      followUp: prompt,
+      canResume,
+      usesPlanOrchestration: threadUsesPlanOrchestration(payload.threadId),
+      hasPendingPlan,
+      hasApprovedPlanOnDisk,
+      enteredExecutionPhase,
+      hasCoderTodos,
+      hasAppliedDiff,
+      threadStatus: thread.status,
+      activityLines,
+    });
+
+    const agentPrompt =
+      continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
+        ? prompt
+        : buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
+    const statusMessage = continueStatusMessage(continueAction, intent);
 
     updateThread(payload.threadId, {
       status: "running",
-      message: intent === "question" && !canResume ? "正在回答…" : statusMessage,
+      message: statusMessage,
     });
     recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
       ...thread,
       status: "running",
-      message: intent === "question" && !canResume ? "正在回答…" : statusMessage,
+      message: statusMessage,
     };
 
-    if (canResume && continuePhase) {
-      void (async () => {
-        void ensureContextHeadroom(payload.threadId, cwd, new AbortController().signal);
-        if (!threadUsesPlanOrchestration(payload.threadId) && continuePhase !== "question") {
-          await runCodingThreadSdkDefault(
-            updated,
-            workspace,
-            runtimeConfig,
-            agentPrompt,
-            existingWorktreePlan,
-            resolveResumeOptions(payload.threadId, cwd),
-            payload.attachments,
-            roleRoutes,
-          );
-          return;
-        }
-        await runThreadContinuation(
-          updated,
-          workspace,
-          runtimeConfig,
-          agentPrompt,
-          continuePhase,
-          existingWorktreePlan,
-          payload.attachments,
-          roleRoutes,
-        );
-      })();
-    } else if (intent === "question") {
-      void runQuestionThread(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        cwd !== workspace.path ? cwd : undefined,
-        undefined,
-        payload.attachments,
-        roleRoutes,
-      );
-    } else if (threadUsesPlanOrchestration(payload.threadId)) {
-      void runCodingThreadPlanning(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        existingWorktreePlan,
-        undefined,
-        payload.attachments,
-        roleRoutes,
-      );
-    } else {
-      void runCodingThreadSdkDefault(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        existingWorktreePlan,
-        undefined,
-        payload.attachments,
-        roleRoutes,
-      );
-    }
+    void dispatchThreadContinueAction({
+      threadId: payload.threadId,
+      action: continueAction,
+      updated,
+      workspace,
+      runtimeConfig: runtime,
+      agentPrompt,
+      cwd,
+      ...(existingWorktreePlan ? { existingWorktreePlan } : {}),
+      ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+      roleRoutes,
+    });
+
     return {
       thread: ensureThreadRuntimeConfig(conversationStore.getThread(payload.threadId) ?? updated),
     } satisfies ThreadContinueResult;
@@ -2588,27 +2568,171 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   return undefined;
 }
 
-function resolveContinuePhase(
-  thread: ThreadSummary,
-  intent: "question" | "coding",
-): "planning" | "execution" | "question" {
-  if (intent === "question") {
-    return "question";
+async function ensurePendingPlanForExecution(
+  threadId: string,
+  workspacePath: string,
+  worktreePath: string,
+  routesJson: string,
+): Promise<boolean> {
+  if (conversationStore.getPendingPlan(threadId)) {
+    return true;
   }
-  if (conversationStore.getAppliedDiff(thread.id) || thread.status === "completed") {
-    return "execution";
+  const snapshot = await readApprovedPlanSnapshot(workspacePath, threadId);
+  if (!snapshot?.plan.trim()) {
+    return false;
   }
-  const activity = conversationStore.listActivityLines(thread.id);
-  const executed = activity.some(
-    (line) =>
-      line.message.includes("子代理执行") ||
-      line.message.includes("执行完成") ||
-      line.message.includes("继续执行"),
-  );
-  if (executed) {
-    return "execution";
+  const thread = conversationStore.getThread(threadId);
+  conversationStore.savePendingPlan({
+    threadId,
+    userPrompt: snapshot.userPrompt.trim() || thread?.prompt.trim() || "",
+    analysis: snapshot.analysis,
+    plan: snapshot.plan,
+    workspacePath,
+    worktreePath,
+    routesJson,
+  });
+  return true;
+}
+
+async function resolvePlanningContextForThread(
+  threadId: string,
+  workspacePath: string,
+): Promise<EcoPlanningContext | undefined> {
+  const pending = conversationStore.getPendingPlan(threadId);
+  if (pending) {
+    return {
+      userPrompt: pending.userPrompt,
+      analysis: pending.analysis,
+      plan: pending.plan,
+    };
   }
-  return "planning";
+  const snapshot = await readApprovedPlanSnapshot(workspacePath, threadId);
+  if (!snapshot) {
+    return undefined;
+  }
+  return {
+    userPrompt: snapshot.userPrompt,
+    analysis: snapshot.analysis,
+    plan: snapshot.plan,
+    ...(snapshot.planUserEdited ? { planUserEdited: true } : {}),
+  };
+}
+
+async function dispatchThreadContinueAction(input: {
+  threadId: string;
+  action: ThreadContinueAction;
+  updated: ThreadSummary;
+  workspace: WorkspaceInfo;
+  runtimeConfig: RuntimeConfig;
+  agentPrompt: string;
+  cwd: string;
+  existingWorktreePlan?: WorktreePlan;
+  attachments?: PromptImageAttachment[];
+  roleRoutes: readonly RoleRouteConfig[];
+}): Promise<void> {
+  const {
+    threadId,
+    action,
+    updated,
+    workspace,
+    runtimeConfig,
+    agentPrompt,
+    cwd,
+    existingWorktreePlan,
+    attachments,
+    roleRoutes,
+  } = input;
+
+  if (action.kind === "resume_execution") {
+    const worktreePath = existingWorktreePlan?.worktreePath ?? cwd;
+    const ok = await ensurePendingPlanForExecution(
+      threadId,
+      workspace.path,
+      worktreePath,
+      "[]",
+    );
+    if (!ok) {
+      markThreadInterrupted(threadId, "找不到可恢复的执行计划，请重新描述需求。");
+      return;
+    }
+    void runCodingThreadExecution(threadId, runtimeConfig, { routesOverride: roleRoutes });
+    return;
+  }
+
+  if (action.kind === "question") {
+    void runQuestionThread(
+      updated,
+      workspace,
+      runtimeConfig,
+      agentPrompt,
+      cwd !== workspace.path ? cwd : undefined,
+      action.resume ? resolveResumeOptions(threadId, cwd) : undefined,
+      attachments,
+      roleRoutes,
+    );
+    return;
+  }
+
+  if (action.kind === "resume_sdk") {
+    void (async () => {
+      void ensureContextHeadroom(threadId, cwd, new AbortController().signal);
+      const planningContext =
+        action.phase === "execution"
+          ? await resolvePlanningContextForThread(threadId, workspace.path)
+          : undefined;
+      if (!threadUsesPlanOrchestration(threadId) && action.phase !== "question") {
+        await runCodingThreadSdkDefault(
+          updated,
+          workspace,
+          runtimeConfig,
+          agentPrompt,
+          existingWorktreePlan,
+          resolveResumeOptions(threadId, cwd),
+          attachments,
+          roleRoutes,
+        );
+        return;
+      }
+      await runThreadContinuation(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        action.phase,
+        existingWorktreePlan,
+        attachments,
+        roleRoutes,
+        planningContext,
+      );
+    })();
+    return;
+  }
+
+  if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
+    if (threadUsesPlanOrchestration(threadId)) {
+      void runCodingThreadPlanning(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        existingWorktreePlan,
+        undefined,
+        attachments,
+        roleRoutes,
+      );
+    } else {
+      void runCodingThreadSdkDefault(
+        updated,
+        workspace,
+        runtimeConfig,
+        agentPrompt,
+        existingWorktreePlan,
+        undefined,
+        attachments,
+        roleRoutes,
+      );
+    }
+  }
 }
 
 async function runThreadContinuation(
@@ -2620,6 +2744,7 @@ async function runThreadContinuation(
   existingWorktreePlan?: WorktreePlan,
   attachments?: PromptImageAttachment[],
   routesOverride?: readonly RoleRouteConfig[],
+  planningContext?: EcoPlanningContext,
 ): Promise<void> {
   if (!threadUsesPlanOrchestration(thread.id) && mode !== "question") {
     await runCodingThreadSdkDefault(
@@ -2735,7 +2860,7 @@ async function runThreadContinuation(
         const eventStream =
           mode === "question"
             ? driver.runQuestion!(runInput)
-            : driver.runContinuation!(runInput, mode);
+            : driver.runContinuation!(runInput, mode, planningContext);
 
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
