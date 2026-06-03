@@ -9,6 +9,9 @@ coverage/
 *.log
 *.tsbuildinfo
 
+# Local reference clones
+.codex-ref/
+
 # Runtime state
 .eco/
 worktrees/

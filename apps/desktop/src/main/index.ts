@@ -129,7 +129,8 @@ import {
 } from "../shared/route-fingerprint";
 import {
   pendingThreadTitle,
-  summarizeThreadTitleWithCoder,
+  shouldReplaceAutoThreadTitle,
+  summarizeThreadTitle,
   threadTitleFromPlannerPlan,
 } from "./thread-title";
 import { createConversationStore, type ConversationStore } from "./conversation-store";
@@ -1207,12 +1208,12 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-function applyThreadTitleSummary(threadId: string, prompt: string, title: string | undefined): void {
+function applyThreadTitleSummary(threadId: string, title: string | undefined): void {
   if (!title) {
     return;
   }
   const thread = conversationStore.getThread(threadId);
-  if (!thread || thread.prompt !== prompt || thread.title === title) {
+  if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
 
@@ -1222,19 +1223,24 @@ function applyThreadTitleSummary(threadId: string, prompt: string, title: string
 
 function scheduleThreadTitleSummary(
   threadId: string,
-  prompt: string,
   runtimeConfig: RuntimeConfig,
   context?: { plan?: string; analysis?: string },
 ): void {
-  const planText = context?.plan?.trim();
-  if (planText) {
-    applyThreadTitleSummary(threadId, prompt, threadTitleFromPlannerPlan(planText, prompt));
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
 
-  void summarizeThreadTitleWithCoder(runtimeConfig.routes, prompt, fetch, context)
+  const prompt = thread.prompt;
+  const planText = context?.plan?.trim();
+  if (planText) {
+    applyThreadTitleSummary(threadId, threadTitleFromPlannerPlan(planText, prompt));
+    return;
+  }
+
+  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch, context)
     .then((title) => {
-      applyThreadTitleSummary(threadId, prompt, title);
+      applyThreadTitleSummary(threadId, title);
     })
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
@@ -1390,7 +1396,7 @@ async function runQuestionThread(
     }
 
     updateThread(thread.id, { status: "completed", message: "回答完成。" });
-    scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
+    scheduleThreadTitleSummary(thread.id, runtimeConfig);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
@@ -1554,7 +1560,7 @@ async function runCodingThreadSdkDefault(
     }
 
     await completeCodingThreadRun(thread.id, worktreePlan);
-    scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig);
+    scheduleThreadTitleSummary(thread.id, runtimeConfig);
     requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
@@ -1680,7 +1686,7 @@ async function runCodingThreadPlanning(
                 },
               },
             );
-            scheduleThreadTitleSummary(thread.id, prompt, runtimeConfig, {
+            scheduleThreadTitleSummary(thread.id, runtimeConfig, {
               plan: event.payload.plan,
               analysis: event.payload.analysis,
             });
@@ -2763,7 +2769,7 @@ async function runThreadContinuation(
                 },
               },
             );
-            scheduleThreadTitleSummary(thread.id, followUp, runtimeConfig, {
+            scheduleThreadTitleSummary(thread.id, runtimeConfig, {
               plan: event.payload.plan,
               analysis: event.payload.analysis,
             });
@@ -2838,7 +2844,7 @@ async function runThreadContinuation(
 
     if (mode === "question") {
       updateThread(thread.id, { status: "completed", message: "回答完成。" });
-      scheduleThreadTitleSummary(thread.id, followUp, runtimeConfig);
+      scheduleThreadTitleSummary(thread.id, runtimeConfig);
       return;
     }
 

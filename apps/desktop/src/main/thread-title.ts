@@ -1,10 +1,14 @@
 import { extractPhaseDeliverable } from "@eco/runtime";
+import type { AgentRole } from "../shared/ipc";
 import type { AnthropicProxyRoute } from "./anthropic-proxy";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const TITLE_TIMEOUT_MS = 15_000;
 export const pendingThreadTitle = "新编码任务";
+
+/** Prefer explore for title LLM (cheap); fall back to planner then coder. */
+const TITLE_ROUTE_ROLES: readonly AgentRole[] = ["explore", "planner", "coder"];
 
 type Fetcher = typeof fetch;
 
@@ -19,6 +23,13 @@ const PLAN_HEADING_WITH_TITLE =
   /^#{1,3}\s*(?:实现计划|Implementation\s+Plan|Plan)\s*[：:]\s*(.+)$/im;
 const PLAN_HEADING_LINE = /^#{1,3}\s*(?:实现计划|Implementation\s+Plan|Plan)\s*$/im;
 const SUMMARY_SECTION = /(?:^|\n)#{1,3}\s*Summary\s*\n+([\s\S]*?)(?=\n#{1,3}\s+|\s*$)/i;
+
+/** Reject model refusals / internal capability messages (Codex #11396 class of bugs). */
+const TITLE_REFUSAL_PATTERN =
+  /(?:对不起|抱歉|无法|不能|只能生成|I\s*(?:can't|cannot)|I\s*am\s*unable|unable\s+to)/i;
+
+/** Reject structured-artifact garbage sometimes appended to titles (Codex #17627). */
+const TITLE_GARBAGE_SUFFIX_PATTERN = /[\]})'"]{3,}$/;
 
 /** Derive sidebar title from planner-submitted plan markdown (no extra model call). */
 export function threadTitleFromPlannerPlan(plan: string, prompt: string): string | undefined {
@@ -77,7 +88,12 @@ function firstMeaningfulPlanLine(section: string): string | undefined {
 }
 
 export function buildThreadTitleUserMessage(prompt: string, context?: ThreadTitleContext): string {
-  const parts = [`请为下面的编码任务生成标题，中文不超过 18 个字，英文不超过 6 个词：`, "", prompt.trim()];
+  const parts = [
+    "请为下面的编码任务或问题生成一个简短的概括性标题。",
+    "中文不超过 18 个字，英文不超过 6 个词。",
+    "",
+    prompt.trim(),
+  ];
   if (context?.analysis?.trim()) {
     parts.push("", "## 分析摘要", truncateTitleContext(context.analysis.trim()));
   }
@@ -87,14 +103,26 @@ export function buildThreadTitleUserMessage(prompt: string, context?: ThreadTitl
   return parts.join("\n");
 }
 
-export async function summarizeThreadTitleWithCoder(
+export function resolveThreadTitleRoute(
+  routes: readonly AnthropicProxyRoute[],
+): AnthropicProxyRoute | undefined {
+  for (const role of TITLE_ROUTE_ROLES) {
+    const route = routes.find((entry) => entry.role === role);
+    if (route) {
+      return route;
+    }
+  }
+  return undefined;
+}
+
+export async function summarizeThreadTitle(
   routes: readonly AnthropicProxyRoute[],
   prompt: string,
   fetcher: Fetcher = fetch,
   context?: ThreadTitleContext,
 ): Promise<string | undefined> {
-  const coderRoute = routes.find((route) => route.role === "coder");
-  if (!coderRoute) {
+  const titleRoute = resolveThreadTitleRoute(routes);
+  if (!titleRoute) {
     return undefined;
   }
 
@@ -105,21 +133,24 @@ export async function summarizeThreadTitleWithCoder(
       "content-type": "application/json",
       "anthropic-version": ANTHROPIC_VERSION,
     };
-    const apiKey = coderRoute.provider.apiKey.trim();
+    const apiKey = titleRoute.provider.apiKey.trim();
     if (apiKey) {
       titleHeaders["x-api-key"] = apiKey;
     }
     const response = await fetcher(
-      `${buildProviderRequestBaseUrl(coderRoute.provider.baseUrl, coderRoute.provider.requestPath)}/v1/messages`,
+      `${buildProviderRequestBaseUrl(titleRoute.provider.baseUrl, titleRoute.provider.requestPath)}/v1/messages`,
       {
         method: "POST",
         headers: titleHeaders,
         body: JSON.stringify({
-          model: coderRoute.modelId,
+          model: titleRoute.modelId,
           max_tokens: 48,
           temperature: 0,
-          system:
-            "你是编码任务标题生成器。用 coder 视角总结用户任务，输出一个简短标题。只输出标题，不要解释，不要照抄用户原文。",
+          system: [
+            "你是会话标题生成器。根据用户任务概括意图，只输出一行标题。",
+            "不要解释、不要引号、不要 markdown、不要照抄用户原文。",
+            "不要输出拒绝、道歉或能力限制类语句。",
+          ].join(" "),
           messages: [
             {
               role: "user",
@@ -142,6 +173,9 @@ export async function summarizeThreadTitleWithCoder(
   }
 }
 
+/** @deprecated Use summarizeThreadTitle — titles now use the explore route when configured. */
+export const summarizeThreadTitleWithCoder = summarizeThreadTitle;
+
 export function sanitizeThreadTitle(title: string | undefined, prompt: string): string | undefined {
   const cleaned = (title ?? "")
     .split("\n")
@@ -156,11 +190,19 @@ export function sanitizeThreadTitle(title: string | undefined, prompt: string): 
     return undefined;
   }
 
+  if (TITLE_REFUSAL_PATTERN.test(cleaned) || TITLE_GARBAGE_SUFFIX_PATTERN.test(cleaned)) {
+    return undefined;
+  }
+
   if (normalizeTitle(cleaned) === normalizeTitle(prompt)) {
     return undefined;
   }
 
   return cleaned.length > 42 ? `${cleaned.slice(0, 39)}...` : cleaned;
+}
+
+export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
+  return currentTitle === pendingThreadTitle;
 }
 
 function extractTitleText(body: unknown): string | undefined {
@@ -178,10 +220,6 @@ function extractTitleText(body: unknown): string | undefined {
 
 function normalizeTitle(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
 }
 
 function truncateTitleContext(text: string): string {

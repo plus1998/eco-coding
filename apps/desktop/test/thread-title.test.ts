@@ -1,13 +1,31 @@
 import { expect, test } from "bun:test";
 import {
   buildThreadTitleUserMessage,
+  resolveThreadTitleRoute,
   sanitizeThreadTitle,
-  summarizeThreadTitleWithCoder,
+  shouldReplaceAutoThreadTitle,
+  summarizeThreadTitle,
   threadTitleFromPlannerPlan,
 } from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
 const routes: AnthropicProxyRoute[] = [
+  {
+    role: "explore",
+    provider: {
+      id: "p0",
+      name: "Provider",
+      baseUrl: "https://explore.test/",
+      requestPath: "",
+      defaultModel: "explore-model",
+      enabled: true,
+      hasApiKey: true,
+      apiKey: "explore-key",
+      createdAt: "",
+      updatedAt: "",
+    },
+    modelId: "explore-model",
+  },
   {
     role: "planner",
     provider: {
@@ -42,6 +60,11 @@ const routes: AnthropicProxyRoute[] = [
   },
 ];
 
+test("resolveThreadTitleRoute prefers explore over planner and coder", () => {
+  expect(resolveThreadTitleRoute(routes)?.role).toBe("explore");
+  expect(resolveThreadTitleRoute(routes.filter((r) => r.role !== "explore"))?.role).toBe("planner");
+});
+
 test("threadTitleFromPlannerPlan uses plan heading with colon", () => {
   const title = threadTitleFromPlannerPlan(
     "## 实现计划：商品描述支持 Markdown 渲染\n\n- 改组件",
@@ -72,9 +95,9 @@ test("threadTitleFromPlannerPlan uses first plan bullet", () => {
   expect(title).toBe("Read styles.css");
 });
 
-test("summarizes thread title through the coder route when no plan", async () => {
+test("summarizes thread title through the explore route when no plan", async () => {
   const calls: Array<{ url: string; body: { model: string } }> = [];
-  const title = await summarizeThreadTitleWithCoder(routes, "实现 TODO 列表", async (url, init) => {
+  const title = await summarizeThreadTitle(routes, "实现 TODO 列表", async (url, init) => {
     const body = JSON.parse(String(init?.body)) as { model: string };
     calls.push({
       url: String(url),
@@ -86,12 +109,19 @@ test("summarizes thread title through the coder route when no plan", async () =>
   });
 
   expect(title).toBe("任务 TODO 面板");
-  expect(calls).toEqual([{ url: "https://coder.test/v1/messages", body: { model: "coder-model" } }]);
+  expect(calls).toEqual([{ url: "https://explore.test/v1/messages", body: { model: "explore-model" } }]);
 });
 
-test("rejects empty or copied thread titles", () => {
+test("rejects empty, copied, refusal, or garbage thread titles", () => {
   expect(sanitizeThreadTitle("实现 TODO 列表", "实现 TODO 列表")).toBeUndefined();
   expect(sanitizeThreadTitle("标题：\"任务状态面板\"", "实现 TODO 列表")).toBe("任务状态面板");
+  expect(sanitizeThreadTitle("对不起我不能，只能生成任务标题。", "找 skills")).toBeUndefined();
+  expect(sanitizeThreadTitle("导出筛选功能 })]}'}}}", "实现导出")).toBeUndefined();
+});
+
+test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
+  expect(shouldReplaceAutoThreadTitle("新编码任务")).toBe(true);
+  expect(shouldReplaceAutoThreadTitle("已命名会话")).toBe(false);
 });
 
 test("buildThreadTitleUserMessage includes plan context", () => {
