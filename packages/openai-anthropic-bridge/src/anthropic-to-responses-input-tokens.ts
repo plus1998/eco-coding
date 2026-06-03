@@ -30,9 +30,19 @@ export function responsesInputTokensToAnthropicCount(
     throw new Error('responses input_tokens response is not an object');
   }
   const record = raw as Record<string, unknown>;
-  const tokens = record.input_tokens;
-  if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens < 0) {
-    throw new Error('responses input_tokens response missing input_tokens');
+
+  const direct = record.input_tokens;
+  if (typeof direct === 'number' && Number.isFinite(direct) && direct >= 0) {
+    return { input_tokens: Math.trunc(direct) };
   }
-  return { input_tokens: Math.trunc(tokens) };
+
+  const usage = record.usage;
+  if (usage !== null && usage !== undefined && typeof usage === 'object') {
+    const usageTokens = (usage as Record<string, unknown>).input_tokens;
+    if (typeof usageTokens === 'number' && Number.isFinite(usageTokens) && usageTokens >= 0) {
+      return { input_tokens: Math.trunc(usageTokens) };
+    }
+  }
+
+  throw new Error('responses input_tokens response missing input_tokens');
 }

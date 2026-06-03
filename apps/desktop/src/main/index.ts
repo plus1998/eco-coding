@@ -832,7 +832,6 @@ function registerIpcHandlers(): void {
       return {} satisfies ThreadUsageSnapshotResult;
     }
     const id = threadId.trim();
-    requestThreadContextRefresh(id, false);
     const billing = threadUsageAccumulator.getSnapshot(id);
     const context = contextScheduler.getDisplaySnapshot(id);
     return {
@@ -3104,9 +3103,11 @@ async function ensureContextHeadroom(
   worktreePath: string,
   signal: AbortSignal,
 ): Promise<void> {
+  const roleRoutes = resolveRoleRoutesForThread(threadId);
   const runtimeConfig = resolveRuntimeConfig(
     providerStore.getSettings(),
     providerStore.listProvidersWithSecrets(),
+    roleRoutes,
   );
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
@@ -3155,12 +3156,25 @@ function scheduleContextBreakdownRefresh(
   worktreePath: string,
   immediate = false,
 ): void {
+  let roleRoutes: RoleRouteConfig[];
+  try {
+    roleRoutes = resolveRoleRoutesForThread(threadId);
+  } catch (error) {
+    process.stderr.write(
+      `[eco] context breakdown skipped for ${threadId}: ${errorMessage(error)}\n`,
+    );
+    return;
+  }
+
   const runtimeConfig = resolveRuntimeConfig(
     providerStore.getSettings(),
     providerStore.listProvidersWithSecrets(),
+    roleRoutes,
   );
   if (!runtimeConfig.ok) {
-    emitThreadEvent(threadId, "thread.blocked", runtimeConfig.reason, "system", false);
+    process.stderr.write(
+      `[eco] context breakdown skipped for ${threadId}: ${runtimeConfig.reason}\n`,
+    );
     return;
   }
   contextScheduler.scheduleBreakdownRefresh(

@@ -1683,10 +1683,16 @@ function App() {
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />
-                {canRetryThread && !showPlanApproval && (planFailureMessage || activeThread?.status === "failed") ? (
+                {canRetryThread &&
+                !showPlanApproval &&
+                (planFailureMessage ||
+                  activeThread?.status === "failed" ||
+                  activeThread?.status === "blocked") ? (
                   <div className="thread-retry-banner" role="alert">
                     <div className="thread-retry-banner-body">
-                      <strong>此次请求失败</strong>
+                      <strong>
+                        {activeThread?.status === "blocked" ? "会话受阻" : "此次请求失败"}
+                      </strong>
                       <p>{retryBannerDetail}</p>
                       {retryBannerHint ? (
                         <p className="thread-retry-banner-hint">{retryBannerHint}</p>

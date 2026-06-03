@@ -53,6 +53,18 @@ test("resolveRetryBannerDetail keeps formatted upstream error", () => {
   expect(resolveRetryBannerDetail(detail, "failed")).toBe(detail);
 });
 
+test("resolveRetryBannerDetail surfaces route config errors for blocked threads", () => {
+  expect(
+    resolveRetryBannerDetail("Configure a planner route before starting a coding thread.", "blocked"),
+  ).toBe("Configure a planner route before starting a coding thread.");
+});
+
+test("resolveRetryBannerDetail uses blocked fallback when message is operational", () => {
+  expect(resolveRetryBannerDetail("Local model router ready: http://127.0.0.1:1", "blocked")).toContain(
+    "模型路由未就绪",
+  );
+});
+
 test("resolveRetryBannerHint suggests switching routes for quota failures", () => {
   expect(resolveRetryBannerHint("API Error: 429 rate limit exceeded")).toBe(quotaRetryBannerHint);
   expect(resolveRetryBannerHint("fetch failed")).not.toBe(quotaRetryBannerHint);

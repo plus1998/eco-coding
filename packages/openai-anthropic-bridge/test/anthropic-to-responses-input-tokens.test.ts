@@ -39,6 +39,20 @@ describe('anthropic → responses input_tokens', () => {
     ).toEqual({ input_tokens: 2095 });
   });
 
+  test('maps full responses.create payload when provider omits input_tokens envelope', () => {
+    expect(
+      responsesInputTokensToAnthropicCount({
+        object: 'response',
+        status: 'completed',
+        usage: {
+          input_tokens: 173,
+          output_tokens: 27,
+          total_tokens: 200,
+        },
+      }),
+    ).toEqual({ input_tokens: 173 });
+  });
+
   test('rejects invalid input_tokens response', () => {
     expect(() => responsesInputTokensToAnthropicCount({ object: 'x' })).toThrow();
   });

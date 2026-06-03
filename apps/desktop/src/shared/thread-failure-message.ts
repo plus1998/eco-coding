@@ -54,8 +54,15 @@ export function resolveRetryBannerDetail(threadMessage: string, status: ThreadSt
   if (planFailure) {
     return planFailure;
   }
-  if (status === "failed" && threadMessage.trim() && !isOperationalThreadMessage(threadMessage)) {
+  if (
+    (status === "failed" || status === "blocked") &&
+    threadMessage.trim() &&
+    !isOperationalThreadMessage(threadMessage)
+  ) {
     return threadMessage.trim();
+  }
+  if (status === "blocked") {
+    return "模型路由未就绪或会话无法启动。请检查设置中的路由方案与 Provider 配置。";
   }
   return genericThreadFailureHint;
 }
