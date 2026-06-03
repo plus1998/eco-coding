@@ -10,6 +10,7 @@ import {
 import {
   buildActivityLogBlocks,
   countOpenAgentDelegations,
+  stripTrailingPendingRequestBlocks,
   thinkingPreviewLine,
   findSubagentRunLineBounds,
   isAgentElapsedProgressLine,
@@ -686,6 +687,58 @@ test("keeps model-request as the last step when still waiting", () => {
   );
   expect(requests).toHaveLength(1);
   expect(session.children[session.children.length - 1]?.kind).toBe("model-request");
+});
+
+test("strips trailing model-request when thread is idle", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "hi" },
+      { id: "1", role: "planner", message: "Requesting model…" },
+    ],
+    { status: "idle", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  if (session?.kind === "work-session") {
+    expect(session.children.some((child) => child.kind === "model-request")).toBe(false);
+  } else {
+    expect(session).toBeUndefined();
+  }
+});
+
+test("strips trailing model-request when thread is awaiting_plan", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "hi" },
+      { id: "1", role: "tool", message: "Tool: Read · src/api.ts" },
+      { id: "2", role: "planner", message: "Requesting model…" },
+    ],
+    { status: "awaiting_plan", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind === "work-session") {
+    expect(session.children.some((child) => child.kind === "model-request")).toBe(false);
+    expect(session.children[session.children.length - 1]?.kind).toBe("action");
+  }
+});
+
+test("stripTrailingPendingRequestBlocks removes only trailing request placeholders", () => {
+  expect(
+    stripTrailingPendingRequestBlocks([
+      { kind: "action", icon: "file", label: "Read" },
+      { kind: "model-request", role: "planner" },
+    ]),
+  ).toEqual([{ kind: "action", icon: "file", label: "Read" }]);
+
+  expect(
+    stripTrailingPendingRequestBlocks([
+      { kind: "model-request" },
+      { kind: "action", icon: "file", label: "Read" },
+      { kind: "agent-request", subagent: "explore" },
+    ]),
+  ).toEqual([{ kind: "model-request" }, { kind: "action", icon: "file", label: "Read" }]);
 });
 
 test("shows model-request row for Requesting model status line", () => {

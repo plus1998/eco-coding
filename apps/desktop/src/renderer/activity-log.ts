@@ -110,6 +110,22 @@ const systemNoisePatterns = [
 
 const terminalStatuses = new Set<ThreadStatus>(["completed", "failed", "blocked", "idle", "awaiting_plan"]);
 
+/** Remove trailing ephemeral request placeholders when a run has finished. */
+export function stripTrailingPendingRequestBlocks(
+  details: readonly ActivityDetailBlock[],
+): ActivityDetailBlock[] {
+  const result = [...details];
+  while (result.length > 0) {
+    const last = result[result.length - 1];
+    if (last?.kind === "model-request" || last?.kind === "agent-request") {
+      result.pop();
+    } else {
+      break;
+    }
+  }
+  return result;
+}
+
 export function buildActivityLogBlocks(
   lines: ThreadActivityLine[],
   options: { status?: ThreadStatus; createdAt?: string },
@@ -148,7 +164,14 @@ export function buildActivityLogBlocks(
       continue;
     }
 
-    const { processBlocks, summaryBlock } = partitionSessionBlocks(segment.details, isTerminal && !isRunning);
+    const segmentDetails =
+      isTerminal && !isRunning
+        ? stripTrailingPendingRequestBlocks(segment.details)
+        : segment.details;
+    const { processBlocks, summaryBlock } = partitionSessionBlocks(
+      segmentDetails,
+      isTerminal && !isRunning,
+    );
     const isLastSegment = segment === segments[segments.length - 1];
     const segmentRunning = isRunning && isLastSegment;
 

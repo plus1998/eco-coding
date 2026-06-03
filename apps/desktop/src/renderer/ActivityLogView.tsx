@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type {
   ThreadActivityLine,
   ThreadContextSnapshot,
+  ThreadStatus,
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
@@ -31,6 +32,10 @@ const SUBAGENT_ROLE_SHORT: Record<string, string> = {
 };
 
 const SUBAGENT_ROLES = new Set(Object.keys(SUBAGENT_ROLE_SHORT));
+
+function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
+  return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
+}
 
 function isSubagentDisplayRole(role?: string): boolean {
   return Boolean(role && SUBAGENT_ROLES.has(role));
@@ -213,6 +218,7 @@ export function ActivityLogView({
           {...(context && { context })}
           {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
           {...(thread?.id && { threadId: thread.id })}
+          {...(thread?.status && { threadStatus: thread.status })}
         />
       ))}
     </div>
@@ -227,6 +233,7 @@ function RunLogBlock({
   context,
   onPlannerLayoutChange,
   threadId,
+  threadStatus,
 }: {
   block: ActivityLogBlock;
   onRestorePrompt?: (prompt: string) => void;
@@ -235,6 +242,7 @@ function RunLogBlock({
   context?: ThreadContextSnapshot;
   onPlannerLayoutChange?: () => void;
   threadId?: string;
+  threadStatus?: ThreadStatus;
 }) {
   if (block.kind === "user-prompt") {
     return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
@@ -247,6 +255,7 @@ function RunLogBlock({
         {...(usageByRole && { usageByRole })}
         {...(context && { context })}
         {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
+        {...(threadStatus && { threadStatus })}
       />
     );
   }
@@ -408,13 +417,16 @@ function WorkSessionBlock({
   usageByRole,
   context,
   onPlannerLayoutChange,
+  threadStatus,
 }: {
   block: Extract<ActivityLogBlock, { kind: "work-session" }>;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   onPlannerLayoutChange?: () => void;
+  threadStatus?: ThreadStatus;
 }) {
+  const requestActive = isThreadRequestActive(block.running, threadStatus);
   const [expanded, setExpanded] = useState(() =>
     block.compactSubagentMode ? false : !block.defaultCollapsed,
   );
@@ -520,6 +532,7 @@ function WorkSessionBlock({
                   key={`${child.kind}-${index}`}
                   block={child}
                   hideSubagentIdentity
+                  requestActive={requestActive}
                   {...(modelByRole && { modelByRole })}
                   {...(usageByRole && { usageByRole })}
                 />
@@ -554,6 +567,7 @@ function WorkSessionBlock({
               <DetailBlock
                 key={`${child.kind}-${index}`}
                 block={child}
+                requestActive={requestActive}
                 {...(modelByRole && { modelByRole })}
                 {...(usageByRole && { usageByRole })}
               />
@@ -591,6 +605,7 @@ function WorkSessionBlock({
             <DetailBlock
               key={`${child.kind}-${index}`}
               block={child}
+              requestActive={requestActive}
               {...(modelByRole && { modelByRole })}
               {...(usageByRole && { usageByRole })}
             />
@@ -621,11 +636,13 @@ function DetailBlock({
   modelByRole,
   usageByRole,
   hideSubagentIdentity,
+  requestActive = false,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   hideSubagentIdentity?: boolean;
+  requestActive?: boolean;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -646,6 +663,7 @@ function DetailBlock({
   if (block.kind === "model-request") {
     return (
       <ModelRequestBlock
+        active={requestActive}
         {...(block.role && { role: block.role })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -655,6 +673,7 @@ function DetailBlock({
   if (block.kind === "agent-request") {
     return (
       <AgentRequestBlock
+        active={requestActive}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -965,12 +984,14 @@ function ModelRequestBlock({
   role,
   modelByRole,
   omitRoleLabel,
+  active = false,
 }: {
   role?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
+  active?: boolean;
 }) {
-  const timing = useStreamRequestTiming(true, false);
+  const timing = useStreamRequestTiming(active, false);
   const roleLabel = omitRoleLabel
     ? "请求中"
     : role
@@ -992,12 +1013,14 @@ function AgentRequestBlock({
   subagent,
   modelByRole,
   omitRoleLabel,
+  active = false,
 }: {
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
+  active?: boolean;
 }) {
-  const timing = useStreamRequestTiming(true, false);
+  const timing = useStreamRequestTiming(active, false);
   const roleLabel = omitRoleLabel
     ? "请求中"
     : subagent

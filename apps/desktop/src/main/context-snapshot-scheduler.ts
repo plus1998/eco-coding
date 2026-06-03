@@ -331,6 +331,7 @@ export class ContextSnapshotScheduler {
     }
 
     try {
+      this.options.emitActivity(threadId, "正在刷新上下文用量…");
       await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
         const driverRoutesList = driverRoutes;
         if (!driver.contextSnapshot) {

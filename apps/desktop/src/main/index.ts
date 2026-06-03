@@ -317,7 +317,9 @@ app.whenReady().then(async () => {
       if (!runtimeConfig.ok) {
         throw new Error(runtimeConfig.reason);
       }
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId, {
+        emitRequestActivity: false,
+      });
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
       try {
         const driver = createSdkDriver(threadId, attemptProxy);
@@ -3895,15 +3897,19 @@ function startRuntimeProxy(
   routes: RuntimeRoute[],
   attachments?: PromptImageAttachment[],
   threadId?: string,
+  proxyThreadOptions?: { emitRequestActivity?: boolean },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
   const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
+  const emitRequestActivity = proxyThreadOptions?.emitRequestActivity !== false;
   const options: AnthropicProxyStartOptions = {
     ...(upstreamUserAgent && { upstreamUserAgent }),
     ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
     ...(threadId && {
-      onMessagesRequest: ({ role }) => {
-        emitUpstreamModelRequestActivity(threadId, role);
-      },
+      ...(emitRequestActivity && {
+        onMessagesRequest: ({ role }) => {
+          emitUpstreamModelRequestActivity(threadId, role);
+        },
+      }),
       onUpstreamConnectionError: ({ role, error }) => {
         emitUpstreamConnectionErrorActivity(threadId, role, error);
       },
