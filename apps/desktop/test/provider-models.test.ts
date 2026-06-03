@@ -4,6 +4,7 @@ import {
   buildChatCompletionsUrl,
   buildMessagesUrl,
   buildOpenAICompatUpstreamUrl,
+  buildResponsesInputTokensUrl,
   buildModelsListUrl,
   buildProviderRequestBaseUrl,
   buildProviderTestRequestBody,
@@ -120,6 +121,15 @@ describe("describeProviderCompatRouting", () => {
   test("buildOpenAICompatUpstreamUrl prefers /v1/responses", () => {
     expect(buildOpenAICompatUpstreamUrl("https://api.example.com", "/zen")).toBe(
       "https://api.example.com/zen/v1/responses",
+    );
+  });
+
+  test("buildResponsesInputTokensUrl targets /v1/responses/input_tokens", () => {
+    expect(buildResponsesInputTokensUrl("https://api.example.com", "/zen")).toBe(
+      "https://api.example.com/zen/v1/responses/input_tokens",
+    );
+    expect(buildResponsesInputTokensUrl("https://api.deepseek.com", "/anthropic")).toBe(
+      "https://api.deepseek.com/v1/responses/input_tokens",
     );
   });
 

@@ -1,6 +1,7 @@
 import http, { type IncomingHttpHeaders } from "node:http";
 import {
   anthropicToResponses,
+  anthropicToResponsesInputTokensBody,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
   finalizeChatCompletionsResponsesStream,
@@ -11,6 +12,7 @@ import {
   newAnthropicStreamSequenceState,
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
+  responsesInputTokensToAnthropicCount,
   responsesToAnthropic,
   responsesToChatCompletionsRequest,
   type AnthropicRequest,
@@ -30,6 +32,7 @@ import {
   buildChatCompletionsUrl,
   buildOpenAICompatUpstreamUrl,
   buildOpenAIHeaders,
+  buildResponsesInputTokensUrl,
 } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import {
@@ -215,6 +218,133 @@ export async function forwardMessagesViaOpenAICompat(
     return forwardMessagesViaOpenAIChatCompletions(request, response, ctx);
   }
   return forwardMessagesViaOpenAIResponses(request, response, ctx);
+}
+
+export async function forwardCountTokensViaOpenAICompat(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  ctx: OpenAICompatForwardContext,
+): Promise<void> {
+  const { route, body, requestedModel, requestUrl } = ctx;
+  const startedAt = Date.now();
+  const upstreamUrl = buildResponsesInputTokensUrl(
+    route.provider.baseUrl,
+    route.provider.requestPath,
+  );
+  const upstreamBody = anthropicToResponsesInputTokensBody(body as AnthropicRequest);
+  upstreamBody.model = route.modelId;
+
+  const requestPayload = JSON.stringify(upstreamBody);
+  const anthropicRequestPayload = JSON.stringify(body);
+  const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+  const callCommon = () =>
+    proxyCallCommonFields({
+      role: route.role,
+      provider: route.provider,
+      apiCompat: route.apiCompat,
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      requestedModel,
+      requestUrl,
+      upstreamUrl,
+      stream: false,
+      converted: true,
+    });
+  const failureDebug = (responseRaw?: string) =>
+    buildProxyCallDebug({
+      converted: true,
+      clientRequestRaw: anthropicRequestPayload,
+      upstreamRequestRaw: requestPayload,
+      responseRaw,
+    });
+
+  if (isUpstreamLogVerbose()) {
+    logUpstream("openai-responses-input-tokens-request", {
+      url: upstreamUrl,
+      headers: headersToLoggable(upstreamHeaders),
+      body: parseJsonForLog(requestPayload),
+    });
+  }
+
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: upstreamHeaders,
+      body: requestPayload,
+      signal: request.signal as AbortSignal | undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: 0, streaming: false },
+      error: message,
+      debug: failureDebug(),
+    });
+    throw error;
+  }
+
+  const responseText = await upstreamResponse.text();
+
+  if (!upstreamResponse.ok) {
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: false },
+      error: upstreamResponse.statusText || String(upstreamResponse.status),
+      debug: failureDebug(responseText),
+    });
+    response.writeHead(upstreamResponse.status, {
+      "content-type": upstreamResponse.headers.get("content-type") ?? "application/json",
+    });
+    response.end(responseText);
+    return;
+  }
+
+  let anthropicCount: { input_tokens: number };
+  try {
+    anthropicCount = responsesInputTokensToAnthropicCount(JSON.parse(responseText));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logUpstreamProxyCall({
+      at: new Date().toISOString(),
+      ok: false,
+      elapsedMs: Date.now() - startedAt,
+      ...callCommon(),
+      http: { status: upstreamResponse.status, streaming: false },
+      error: `无法解析 OpenAI Responses input_tokens 响应：${message}`,
+      debug: failureDebug(responseText),
+    });
+    response.writeHead(502, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({ error: "无法解析 OpenAI Responses input_tokens 响应。" }),
+    );
+    return;
+  }
+
+  logUpstreamProxyCall({
+    at: new Date().toISOString(),
+    ok: true,
+    elapsedMs: Date.now() - startedAt,
+    ...callCommon(),
+    http: { status: upstreamResponse.status, streaming: false },
+    tokens: {
+      input: anthropicCount.input_tokens,
+      output: 0,
+      cacheRead: 0,
+      cacheCreation: 0,
+    },
+    billing: null,
+  });
+
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify(anthropicCount));
 }
 
 async function forwardMessagesViaOpenAIResponses(

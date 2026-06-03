@@ -28,16 +28,26 @@ test("buildProtocolSummary for openai chat completions bridge", () => {
   expect(summary.path).toBe("anthropic → openai-chat-completions → anthropic-sse");
 });
 
-test("buildProtocolSummaryForCall describes count_tokens passthrough on openai compat", () => {
+test("buildProtocolSummaryForCall describes count_tokens bridge on openai compat", () => {
   const summary = buildProtocolSummaryForCall({
     apiCompat: "openai_responses",
+    stream: false,
+    operation: "count_tokens",
+    converted: true,
+  });
+  expect(summary.converted).toBe(true);
+  expect(summary.path).toContain("input_tokens");
+});
+
+test("buildProtocolSummaryForCall describes count_tokens passthrough on anthropic", () => {
+  const summary = buildProtocolSummaryForCall({
+    apiCompat: "anthropic",
     stream: false,
     operation: "count_tokens",
     converted: false,
   });
   expect(summary.converted).toBe(false);
   expect(summary.path).toContain("计 Token 直通");
-  expect(summary.path).toContain("OpenAI");
 });
 
 test("resolveProxyOperation detects count_tokens path", () => {

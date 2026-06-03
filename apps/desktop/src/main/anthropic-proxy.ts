@@ -8,7 +8,10 @@ import {
 } from "../shared/api-compat";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
 import { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
-import { forwardMessagesViaOpenAICompat } from "./model-upstream-openai";
+import {
+  forwardCountTokensViaOpenAICompat,
+  forwardMessagesViaOpenAICompat,
+} from "./model-upstream-openai";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -151,19 +154,38 @@ export async function startAnthropicModelProxy(
       const upstreamModel = route.modelId;
       body.model = upstreamModel;
 
-      if (isMessagesPath(request.url) && pendingImages.length > 0 && !imagesInjected) {
+      const countTokensRequest = isCountTokensPath(request.url);
+
+      if (
+        (isMessagesPath(request.url) || countTokensRequest) &&
+        pendingImages.length > 0 &&
+        !imagesInjected
+      ) {
         injectImagesIntoMessagesBody(body, pendingImages);
         imagesInjected = true;
         pendingImages = [];
       }
-
-      const countTokensRequest = isCountTokensPath(request.url);
 
       if (!countTokensRequest && !isOpenAICompat(route.apiCompat)) {
         applyThinkingToMessagesBody(body, route.thinkingEffort);
       }
 
       if (countTokensRequest) {
+        if (isOpenAICompat(route.apiCompat)) {
+          await forwardCountTokensViaOpenAICompat(request, response, {
+            route: {
+              role: route.role,
+              provider: route.provider,
+              modelId: route.modelId,
+              apiCompat: route.apiCompat,
+              aliasModelId: route.aliasModelId,
+            },
+            body,
+            requestUrl: request.url,
+            requestedModel,
+          });
+          return;
+        }
         await forwardAnthropicRequest(
           request,
           response,

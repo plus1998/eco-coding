@@ -477,6 +477,14 @@ export function buildResponsesUrl(baseUrl: string, requestPath?: string): string
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/responses`;
 }
 
+/** OpenAI Responses token counting: POST `{requestBase}/v1/responses/input_tokens`. */
+export function buildResponsesInputTokensUrl(baseUrl: string, requestPath?: string): string {
+  return `${buildProviderRequestBaseUrl(
+    baseUrl,
+    resolveRequestPathForApiCompat(requestPath, "openai_responses"),
+  )}/v1/responses/input_tokens`;
+}
+
 /** OpenAI Responses runtime/test URL. */
 export function buildOpenAICompatUpstreamUrl(baseUrl: string, requestPath?: string): string {
   return buildResponsesUrl(

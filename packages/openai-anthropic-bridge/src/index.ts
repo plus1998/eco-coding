@@ -41,6 +41,11 @@ export {
 export { responsesToAnthropicRequest } from './responses-to-anthropic-request.js';
 
 export {
+  anthropicToResponsesInputTokensBody,
+  responsesInputTokensToAnthropicCount,
+} from './anthropic-to-responses-input-tokens.js';
+
+export {
   checkAnthropicStreamEvent,
   newAnthropicStreamSequenceState,
   validateAnthropicStreamEvents,

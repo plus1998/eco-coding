@@ -88,6 +88,14 @@ export function buildProtocolSummaryForCall(input: {
   /** Whether the proxy transformed the body before upstream fetch. */
   converted: boolean;
 }): UpstreamProxyProtocolSummary {
+  if (input.operation === "count_tokens" && input.converted) {
+    return {
+      client: "anthropic-messages",
+      upstream: "openai_responses",
+      converted: true,
+      path: "anthropic → openai-responses/input_tokens → anthropic-json",
+    };
+  }
   if (input.operation === "count_tokens" && !input.converted) {
     const configured = API_COMPAT_THEME[input.apiCompat]?.label ?? input.apiCompat;
     return {
