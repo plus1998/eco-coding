@@ -18,6 +18,9 @@ export type ListUpstreamModelsResult =
   | { ok: true; models: UpstreamModelOption[] }
   | { ok: false; error: string };
 
+/** Thinking effort sent on connectivity tests (always disabled). */
+export const ROUTE_TEST_THINKING_EFFORT = "off" as const;
+
 export interface TestProviderConnectionRequest {
   providerId?: string;
   baseUrl?: string;
@@ -25,6 +28,7 @@ export interface TestProviderConnectionRequest {
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
   defaultModel?: string;
+  thinkingEffort?: typeof ROUTE_TEST_THINKING_EFFORT;
 }
 
 export type TestProviderConnectionResult =

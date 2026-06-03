@@ -9,6 +9,7 @@ import type {
   TestRoleRoutesResult,
   UpstreamModelOption,
 } from "../shared/models";
+import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
   isOpenAICompat,
   normalizeUpstreamApiCompat,
@@ -129,7 +130,7 @@ export async function testProviderConnection(
       apiKey: resolved.apiKey,
       modelId,
     },
-    undefined,
+    resolveRouteTestThinkingEffort(request.thinkingEffort),
     fetcher,
   );
   if (testResult.ok) {
@@ -151,7 +152,7 @@ interface RouteTestGroup {
   provider: NonNullable<ReturnType<ProviderStore["getProviderWithSecret"]>>;
   modelId: string;
   apiCompat: UpstreamApiCompat;
-  thinkingEffort?: ThinkingEffort;
+  thinkingEffort: ThinkingEffort;
   roles: string[];
 }
 
@@ -211,7 +212,7 @@ export async function testRoleRoutes(
       provider,
       modelId,
       apiCompat,
-      thinkingEffort: parseRouteThinkingEffort(route.thinkingEffort),
+      thinkingEffort: resolveRouteTestThinkingEffort(route.thinkingEffort),
       roles: [route.role],
     });
   }
@@ -274,7 +275,7 @@ async function postUpstreamCompatTest(
     modelId: string;
     role?: string;
   },
-  thinkingEffort: ThinkingEffort | undefined,
+  thinkingEffort: ThinkingEffort,
   fetcher: typeof fetch,
 ): Promise<MessagesTestResult> {
   const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
@@ -967,7 +968,7 @@ function extractChatCompletionMessageText(message: Record<string, unknown>): str
 }
 
 export function buildProviderTestRequestBody(modelId: string): Record<string, unknown> {
-  return buildMessagesTestRequestBody(modelId, "off");
+  return buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT);
 }
 
 export function buildMessagesTestRequestBody(
@@ -985,7 +986,7 @@ export function buildMessagesTestRequestBody(
 
 export function buildResponsesTestRequestBody(modelId: string): Record<string, unknown> {
   const responses = anthropicToResponses(
-    buildMessagesTestRequestBody(modelId, "off") as AnthropicRequest,
+    buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT) as AnthropicRequest,
   );
   responses.stream = false;
   return responses as unknown as Record<string, unknown>;
@@ -993,7 +994,7 @@ export function buildResponsesTestRequestBody(modelId: string): Record<string, u
 
 export function buildChatCompletionsTestRequestBody(modelId: string): Record<string, unknown> {
   const responses = anthropicToResponses(
-    buildMessagesTestRequestBody(modelId, "off") as AnthropicRequest,
+    buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT) as AnthropicRequest,
   );
   responses.stream = false;
   const chatReq = responsesToChatCompletionsRequest(responses);
@@ -1008,6 +1009,14 @@ function parseRouteThinkingEffort(value: string | undefined): ThinkingEffort | u
     return undefined;
   }
   return ROUTE_THINKING_EFFORTS.has(value as ThinkingEffort) ? (value as ThinkingEffort) : undefined;
+}
+
+/** Connectivity tests disable thinking; callers should pass `ROUTE_TEST_THINKING_EFFORT` explicitly. */
+function resolveRouteTestThinkingEffort(value: string | undefined): ThinkingEffort {
+  if (parseRouteThinkingEffort(value) === ROUTE_TEST_THINKING_EFFORT) {
+    return ROUTE_TEST_THINKING_EFFORT;
+  }
+  return ROUTE_TEST_THINKING_EFFORT;
 }
 
 function describeResponseShape(body: unknown): Record<string, unknown> {

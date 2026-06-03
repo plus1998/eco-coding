@@ -1,7 +1,7 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit } from "@eco/runtime";
 import { Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
-import type { UpstreamModelOption } from "../shared/models";
+import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { isOpenAICompat } from "../shared/api-compat";
@@ -445,7 +445,7 @@ export function ModelsSettingsPanel({
             providerId: route.providerId,
             modelId: route.modelId,
             ...(route.apiCompat && { apiCompat: route.apiCompat }),
-            ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+            thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
           },
         ],
       });
@@ -497,7 +497,7 @@ export function ModelsSettingsPanel({
           providerId: route.providerId,
           modelId: route.modelId,
           ...(route.apiCompat && { apiCompat: route.apiCompat }),
-          ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+          thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
         })),
       });
       setRouteTestResults(
@@ -572,6 +572,7 @@ export function ModelsSettingsPanel({
         requestPath: target.requestPath,
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         defaultModel: target.defaultModel,
+        thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
       });

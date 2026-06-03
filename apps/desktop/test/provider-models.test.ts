@@ -462,8 +462,11 @@ describe("testRoleRoutes", () => {
     } as unknown as ProviderStore;
 
     let callCount = 0;
-    const fetcher = async () => {
+    const fetcher = async (_url: string, init?: RequestInit) => {
       callCount += 1;
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        thinking: { type: "disabled" },
+      });
       return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
     };
 
@@ -471,8 +474,8 @@ describe("testRoleRoutes", () => {
       store,
       {
         routes: [
-          { role: "planner", providerId: "p1", modelId: "model-a" },
-          { role: "coder", providerId: "p1", modelId: "model-b", thinkingEffort: "low" },
+          { role: "planner", providerId: "p1", modelId: "model-a", thinkingEffort: "off" },
+          { role: "coder", providerId: "p1", modelId: "model-b", thinkingEffort: "off" },
         ],
       },
       fetcher,
@@ -482,5 +485,39 @@ describe("testRoleRoutes", () => {
     expect(result.passed).toBe(2);
     expect(result.failed).toBe(0);
     expect(result.results.map((entry) => entry.ok)).toEqual([true, true]);
+  });
+
+  test("ignores non-off thinkingEffort on route test requests", async () => {
+    const store = {
+      getProviderWithSecret: (id: string) =>
+        id === "p1"
+          ? {
+              id: "p1",
+              name: "Test",
+              baseUrl: "https://api.example.com",
+              requestPath: "",
+              apiCompat: "anthropic",
+              apiKey: "key",
+              enabled: true,
+            }
+          : undefined,
+    } as unknown as ProviderStore;
+
+    const fetcher = async (_url: string, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        thinking: { type: "disabled" },
+      });
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+    };
+
+    const result = await testRoleRoutes(
+      store,
+      {
+        routes: [{ role: "coder", providerId: "p1", modelId: "model-b", thinkingEffort: "low" }],
+      },
+      fetcher,
+    );
+
+    expect(result.passed).toBe(1);
   });
 });
