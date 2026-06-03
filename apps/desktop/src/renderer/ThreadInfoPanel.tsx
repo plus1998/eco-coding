@@ -1,4 +1,5 @@
-import { DollarSign, Folder, GitBranch, HardDrive, HelpCircle, ListTodo, Package, X } from "lucide-react";
+import { DollarSign, Folder, GitBranch, HardDrive, ListTodo, Package, X } from "lucide-react";
+import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import { useEffect, useState } from "react";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type {
@@ -191,38 +192,18 @@ function BillingFloatingCard({
           <li>
             <span className="thread-info-billing-row-label">
               <span>① 未编排</span>
-              <span className="thread-info-help-wrap">
-                <button
-                  type="button"
-                  className="thread-info-help"
-                  aria-describedby="thread-info-unorchestrated-help-tip"
-                  aria-label="未编排说明"
-                >
-                  <HelpCircle size={12} aria-hidden />
-                </button>
-                <span id="thread-info-unorchestrated-help-tip" className="thread-info-help-tooltip" role="tooltip">
-                  假设全部 token 均按主模型（{plannerLabel}）models.dev 单价估算，未做角色编排
-                </span>
-              </span>
+              <ThreadInfoHelpButton label="未编排说明">
+                假设全部 token 均按主模型（{plannerLabel}）models.dev 单价估算，未做角色编排
+              </ThreadInfoHelpButton>
             </span>
             <span>{formatCostUsd(billing.plannerTokenCostUsd)}</span>
           </li>
           <li className="thread-info-billing-eco">
             <span className="thread-info-billing-row-label">
               <span>② 经济编程</span>
-              <span className="thread-info-help-wrap">
-                <button
-                  type="button"
-                  className="thread-info-help"
-                  aria-describedby="thread-info-eco-help-tip"
-                  aria-label="经济编程说明"
-                >
-                  <HelpCircle size={12} aria-hidden />
-                </button>
-                <span id="thread-info-eco-help-tip" className="thread-info-help-tooltip" role="tooltip">
-                  Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
-                </span>
-              </span>
+              <ThreadInfoHelpButton label="经济编程说明">
+                Eco-Coding通过前沿模型做计划、拆分任务、审查，经济模型进行执行任务、测试等编排方案进行Token的节约
+              </ThreadInfoHelpButton>
             </span>
             <strong>{formatCostUsd(billing.ecoCostUsd)}</strong>
           </li>

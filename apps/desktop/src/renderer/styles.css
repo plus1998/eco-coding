@@ -3463,12 +3463,7 @@ button:not(:disabled) {
 }
 
 .thread-info-help-tooltip {
-  position: absolute;
-  top: 50%;
-  right: calc(100% + 8px);
-  left: auto;
-  z-index: 200;
-  width: min(248px, calc(30vw - 40px));
+  width: min(248px, calc(100vw - 16px));
   max-width: 248px;
   padding: 10px 12px;
   border: 1px solid #404040;
@@ -3484,25 +3479,6 @@ button:not(:disabled) {
   text-align: left;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
   pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-50%);
-  transition:
-    opacity 0.12s ease,
-    visibility 0.12s ease;
-}
-
-.thread-info-help-wrap:hover .thread-info-help-tooltip,
-.thread-info-help-wrap:focus-within .thread-info-help-tooltip {
-  opacity: 1;
-  visibility: visible;
-}
-
-.thread-info-billing-card .thread-info-help-tooltip {
-  top: calc(100% + 8px);
-  right: auto;
-  left: 0;
-  transform: none;
 }
 
 .thread-info-billing-tokens {
