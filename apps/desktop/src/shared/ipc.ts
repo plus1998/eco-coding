@@ -655,4 +655,6 @@ export interface ThreadActivityLine {
   role: string;
   message: string;
   stream?: boolean;
+  /** Sub-agent instance id (SDK session_id / SubagentStart agent_id). */
+  agentId?: string;
 }

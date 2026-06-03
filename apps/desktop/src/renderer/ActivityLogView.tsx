@@ -1,5 +1,5 @@
-import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Terminal } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ThreadActivityLine,
   ThreadContextSnapshot,
@@ -7,7 +7,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { formatRoleModelLabel, formatTokenCount, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
@@ -17,6 +17,7 @@ import {
   type ActivityActionIcon,
   type ActivityDetailBlock,
   type ActivityLogBlock,
+  type SubagentRunItem,
 } from "./activity-log";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
@@ -58,83 +59,6 @@ function shouldOmitSubagentIdentity(
     return isSubagentDisplayRole(block.subagent);
   }
   return false;
-}
-
-function extractSubagentRolesFromChildren(children: readonly ActivityDetailBlock[]): string[] {
-  const roles = new Set<string>();
-  for (const child of children) {
-    if (child.kind === "subagent-mission") {
-      roles.add(child.subagent);
-      continue;
-    }
-    if (
-      (child.kind === "action" ||
-        child.kind === "narrative" ||
-        child.kind === "tool-failed" ||
-        child.kind === "agent-request") &&
-      child.subagent
-    ) {
-      roles.add(child.subagent);
-    }
-  }
-  return [...roles];
-}
-
-function buildSubagentChips(
-  roles: readonly string[],
-  modelByRole?: Record<string, string>,
-): Array<{ role: string; label: string }> {
-  const counts = new Map<string, number>();
-  for (const role of roles) {
-    counts.set(role, (counts.get(role) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([role, count]) => {
-    const full = formatRoleModelLabel(role, modelByRole?.[role]);
-    const short = SUBAGENT_ROLE_SHORT[role] ?? full.split(" · ")[0] ?? full;
-    return {
-      role,
-      label: count > 1 ? `${short} ×${count}` : short,
-    };
-  });
-}
-
-type SubagentMetaEntry = {
-  role: string;
-  modelShort?: string;
-  contextText?: string;
-};
-
-function formatContextCapacityText(occupied: number, limit?: number): string | undefined {
-  if (limit !== undefined && limit > 0) {
-    return `${formatTokenCount(occupied)} / ${formatTokenCount(limit)}`;
-  }
-  if (occupied > 0) {
-    return formatTokenCount(occupied);
-  }
-  return undefined;
-}
-
-function buildSubagentMetaEntries(
-  roles: readonly string[],
-  modelByRole?: Record<string, string>,
-  usageByRole?: Record<string, ThreadUsageSnapshot>,
-  context?: ThreadContextSnapshot,
-): SubagentMetaEntry[] {
-  const uniqueRoles = [...new Set(roles)];
-  return uniqueRoles.map((role) => {
-    const roleContext = context?.roles?.find((entry) => entry.role === role);
-    const usage = usageByRole?.[role];
-    const modelId = roleContext?.modelId ?? usage?.modelId ?? modelByRole?.[role];
-    const occupied = roleContext?.occupied ?? usage?.contextTokens ?? 0;
-    const limit = roleContext?.limit ?? usage?.contextLimit;
-    const contextText = formatContextCapacityText(occupied, limit);
-    const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
-    return {
-      role,
-      ...(modelShort && { modelShort }),
-      ...(contextText && { contextText }),
-    };
-  });
 }
 
 interface ActivityLogViewProps {
@@ -207,6 +131,8 @@ export function ActivityLogView({
           key={
             block.kind === "work-session" && block.sessionKey
               ? block.sessionKey
+              : block.kind === "subagent-run-group"
+                ? `subagent-group-${block.items.map((item) => item.sessionKey).join("-")}`
               : block.kind === "user-prompt"
                 ? `user-${block.lineId}`
                 : `${block.kind}-${index}`
@@ -253,9 +179,21 @@ function RunLogBlock({
         block={block}
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
-        {...(context && { context })}
         {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
         {...(threadStatus && { threadStatus })}
+      />
+    );
+  }
+  if (block.kind === "subagent-run-group") {
+    return (
+      <SubagentRunGroup
+        block={block}
+        requestActive={isThreadRequestActive(
+          block.items.some((item) => item.running),
+          threadStatus,
+        )}
+        {...(modelByRole && { modelByRole })}
+        {...(usageByRole && { usageByRole })}
       />
     );
   }
@@ -282,132 +220,122 @@ function RunLogBlock({
   return null;
 }
 
-function SubagentClusterCard({
-  sessionKey,
-  running,
-  roles,
-  logLine,
-  metaEntries,
-  durationMs = 0,
-  onToggle,
+function SubagentRunRow({
+  item,
   expanded,
+  onToggle,
+  requestActive,
+  modelByRole,
+  usageByRole,
 }: {
-  sessionKey?: string;
-  running: boolean;
-  roles: readonly string[];
-  logLine?: string;
-  metaEntries: SubagentMetaEntry[];
-  durationMs?: number;
-  onToggle: () => void;
+  item: SubagentRunItem;
   expanded: boolean;
+  onToggle: () => void;
+  requestActive: boolean;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
 }) {
-  const [liveDurationMs, setLiveDurationMs] = useState(durationMs);
+  const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
+  const durationMs = item.runDurationMs ?? 0;
 
   useEffect(() => {
-    if (!running) {
+    if (!item.running) {
       setLiveDurationMs(durationMs);
       return;
     }
-
     const baselineMs = durationMs;
     const anchorAt = Date.now();
     const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [running, durationMs, sessionKey]);
+  }, [durationMs, item.running, item.sessionKey]);
 
-  const chips = buildSubagentChips(roles);
-  const agentCount = roles.length;
-  const singleMeta = metaEntries.length === 1 ? metaEntries[0] : undefined;
-  const elapsedMs = running ? liveDurationMs : durationMs;
+  const badge = SUBAGENT_ROLE_SHORT[item.role] ?? item.role;
+  const statusText = item.statusLine?.trim() || (item.running ? "工作中" : "点击查看执行详情");
+  const elapsedMs = item.running ? liveDurationMs : durationMs;
   const durationLabel =
-    elapsedMs !== undefined && (running || elapsedMs > 0)
-      ? running
-        ? formatDuration(elapsedMs)
-        : `用时 ${formatDuration(elapsedMs)}`
-      : undefined;
-  const fallbackText = running
-    ? agentCount > 1
-      ? `${agentCount} 个子代理工作中`
-      : "工作中"
-    : "点击查看执行详情";
-  const displayLog = logLine?.trim() || fallbackText;
+    elapsedMs > 0 ? (item.running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
 
   return (
-    <button
-      type="button"
-      className="subagent-cluster-card"
-      onClick={onToggle}
-      aria-expanded={expanded}
-    >
-      <div className="subagent-cluster-body">
-        <div className="subagent-cluster-top">
-          {chips.length > 0 ? (
-            <div className="subagent-cluster-chips">
-              {chips.map((chip) => (
-                <span key={`${chip.role}-${chip.label}`} className="subagent-cluster-chip">
-                  {chip.label}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="subagent-cluster-heading">子代理</span>
-          )}
-          {singleMeta && (singleMeta.modelShort || singleMeta.contextText) ? (
-            <div className="subagent-cluster-inline-meta">
-              {singleMeta.modelShort ? (
-                <span className="subagent-cluster-inline-model" title={singleMeta.modelShort}>
-                  {singleMeta.modelShort}
-                </span>
-              ) : null}
-              {singleMeta.contextText ? (
-                <span className="subagent-cluster-inline-ctx" title="上下文占用 / 窗口容量">
-                  {singleMeta.contextText}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="subagent-cluster-trail">
-            {durationLabel ? (
-              <span className="subagent-cluster-duration" aria-live={running ? "polite" : undefined}>
-                {durationLabel}
-              </span>
-            ) : null}
-            {running ? <span className="subagent-cluster-loading" aria-hidden /> : null}
+    <div className="subagent-run-row-wrap">
+      <button
+        type="button"
+        className="subagent-run-row"
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <Sparkles size={14} className="subagent-run-icon" aria-hidden />
+        <div className="subagent-run-main">
+          <div className="subagent-run-title-row">
+            <span className="subagent-run-title">{item.title}</span>
+            <span className="subagent-run-badge">{badge}</span>
+            {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
+            {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
             <ChevronDown
               size={16}
-              className={expanded ? "subagent-cluster-chevron open" : "subagent-cluster-chevron"}
+              className={expanded ? "subagent-run-chevron open" : "subagent-run-chevron"}
               aria-hidden
             />
           </div>
+          <p className="subagent-run-status" title={statusText}>
+            {statusText}
+          </p>
         </div>
-        {metaEntries.length > 1 ? (
-          <div className="subagent-cluster-meta">
-            {metaEntries.map((entry) => (
-              <div key={entry.role} className="subagent-cluster-meta-row">
-                <span className="subagent-cluster-meta-chip">{SUBAGENT_ROLE_SHORT[entry.role] ?? entry.role}</span>
-                {entry.modelShort ? (
-                  <span className="subagent-cluster-meta-model" title={entry.modelShort}>
-                    {entry.modelShort}
-                  </span>
-                ) : null}
-                {entry.contextText ? (
-                  <span className="subagent-cluster-meta-ctx" title="上下文占用 / 窗口容量">
-                    {entry.contextText}
-                  </span>
-                ) : null}
-              </div>
+      </button>
+      {expanded && item.children.length > 0 ? (
+        <div className="work-session-details-compact">
+          <p className="work-session-details-compact-title">子代理执行详情</p>
+          <div className="work-session-details-compact-scroll">
+            {item.children.map((child, index) => (
+              <DetailBlock
+                key={`${item.sessionKey}-${child.kind}-${index}`}
+                block={child}
+                hideSubagentIdentity
+                requestActive={requestActive}
+                {...(modelByRole && { modelByRole })}
+                {...(usageByRole && { usageByRole })}
+              />
             ))}
           </div>
-        ) : null}
-      </div>
-      <div className="subagent-cluster-log-row">
-        <span className="subagent-cluster-log" title={displayLog}>
-          {displayLog}
-        </span>
-      </div>
-    </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SubagentRunGroup({
+  block,
+  requestActive,
+  modelByRole,
+  usageByRole,
+}: {
+  block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
+  requestActive: boolean;
+  modelByRole?: Record<string, string>;
+  usageByRole?: Record<string, ThreadUsageSnapshot>;
+}) {
+  const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
+
+  return (
+    <section className={`subagent-run-group${block.parallel ? " parallel" : ""}`}>
+      {block.items.map((item) => (
+        <SubagentRunRow
+          key={item.sessionKey}
+          item={item}
+          expanded={Boolean(expandedKeys[item.sessionKey])}
+          requestActive={requestActive}
+          {...(modelByRole && { modelByRole })}
+          {...(usageByRole && { usageByRole })}
+          onToggle={() => {
+            setExpandedKeys((current) => ({
+              ...current,
+              [item.sessionKey]: !current[item.sessionKey],
+            }));
+          }}
+        />
+      ))}
+    </section>
   );
 }
 
@@ -415,59 +343,17 @@ function WorkSessionBlock({
   block,
   modelByRole,
   usageByRole,
-  context,
   onPlannerLayoutChange,
   threadStatus,
 }: {
   block: Extract<ActivityLogBlock, { kind: "work-session" }>;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
-  context?: ThreadContextSnapshot;
   onPlannerLayoutChange?: () => void;
   threadStatus?: ThreadStatus;
 }) {
   const requestActive = isThreadRequestActive(block.running, threadStatus);
-  const [expanded, setExpanded] = useState(() =>
-    block.compactSubagentMode ? false : !block.defaultCollapsed,
-  );
-  const subagentDetailsScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollSubagentDetailsToEnd = useCallback(() => {
-    const container = subagentDetailsScrollRef.current;
-    if (!container) {
-      return;
-    }
-    container.scrollTop = container.scrollHeight;
-  }, []);
-
-  useEffect(() => {
-    if (block.compactSubagentMode) {
-      setExpanded(false);
-    }
-  }, [block.compactSubagentMode, block.sessionKey]);
-
-  const subagentDetailsSignature = useMemo(
-    () =>
-      block.compactSubagentMode
-        ? `${block.sessionKey ?? ""}:${block.children.length}:${block.latestSubagentLogLine ?? ""}:${block.running ? 1 : 0}`
-        : "",
-    [
-      block.children.length,
-      block.compactSubagentMode,
-      block.latestSubagentLogLine,
-      block.running,
-      block.sessionKey,
-    ],
-  );
-
-  useLayoutEffect(() => {
-    if (!block.compactSubagentMode || !expanded) {
-      return;
-    }
-    scrollSubagentDetailsToEnd();
-    const frame = requestAnimationFrame(scrollSubagentDetailsToEnd);
-    return () => cancelAnimationFrame(frame);
-  }, [block.compactSubagentMode, expanded, scrollSubagentDetailsToEnd, subagentDetailsSignature]);
+  const [expanded, setExpanded] = useState(() => !block.defaultCollapsed);
 
   useLayoutEffect(() => {
     if (!block.inlineContent) {
@@ -482,14 +368,6 @@ function WorkSessionBlock({
     onPlannerLayoutChange,
   ]);
 
-  const displayRoles = block.subagentRunRole
-    ? block.running && block.activeSubagents && block.activeSubagents.length > 0
-      ? block.activeSubagents.filter((role) => role === block.subagentRunRole)
-      : [block.subagentRunRole]
-    : block.activeSubagents && block.activeSubagents.length > 0
-      ? block.activeSubagents
-      : extractSubagentRolesFromChildren(block.children);
-  const metaEntries = buildSubagentMetaEntries(displayRoles, modelByRole, usageByRole, context);
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
     : "";
@@ -501,48 +379,6 @@ function WorkSessionBlock({
   const label = block.running
     ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
     : `已处理 ${formatDuration(block.durationMs)}`;
-
-  if (block.compactSubagentMode) {
-    return (
-      <section className="work-session work-session-compact">
-        <SubagentClusterCard
-          {...(block.sessionKey && { sessionKey: block.sessionKey })}
-          running={block.running}
-          roles={displayRoles}
-          metaEntries={metaEntries}
-          durationMs={block.runDurationMs ?? 0}
-          {...(block.latestSubagentLogLine && { logLine: block.latestSubagentLogLine })}
-          expanded={expanded}
-          onToggle={() => {
-            setExpanded((current) => {
-              const next = !current;
-              if (next) {
-                requestAnimationFrame(scrollSubagentDetailsToEnd);
-              }
-              return next;
-            });
-          }}
-        />
-        {expanded && block.children.length > 0 ? (
-          <div className="work-session-details-compact">
-            <p className="work-session-details-compact-title">子代理执行详情</p>
-            <div ref={subagentDetailsScrollRef} className="work-session-details-compact-scroll">
-              {block.children.map((child, index) => (
-                <DetailBlock
-                  key={`${child.kind}-${index}`}
-                  block={child}
-                  hideSubagentIdentity
-                  requestActive={requestActive}
-                  {...(modelByRole && { modelByRole })}
-                  {...(usageByRole && { usageByRole })}
-                />
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </section>
-    );
-  }
 
   if (block.inlineContent) {
     const showRunningHint =
@@ -792,7 +628,13 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
         aria-expanded={showFullBody}
         disabled={streaming && !hasBody}
       >
-        <span className="run-log-thinking-label">Thinking</span>
+        <span className="run-log-thinking-label">
+          {timing.phase === "waiting" && timing.elapsedMs > 0
+            ? `思考 ${formatDuration(timing.elapsedMs)}`
+            : timing.phase === "streaming" && timing.elapsedMs > 0
+              ? `思考 ${formatDuration(timing.elapsedMs)}`
+              : "思考"}
+        </span>
         {showPreview ? (
           <span className="run-log-thinking-preview" title={preview}>
             {preview}

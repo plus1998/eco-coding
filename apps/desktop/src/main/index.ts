@@ -190,6 +190,7 @@ import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
+import { resolveActivityAgentId } from "./activity-agent-id";
 import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import {
   createSubagentSettingsStore,
@@ -3133,9 +3134,27 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     }
   }
   handleSdkContextSideEffects(threadId, event, worktreePath);
-  sdkStreamBridge.handleEvent(threadId, event, (id, type, message, role, stream) => {
-    emitThreadEvent(id, type, message, role as AgentRole | "system" | "thinking" | "tool" | "user", stream);
+  const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId;
+  const activityAgentId = resolveActivityAgentId(threadId, event, {
+    ...(plannerSessionId && { plannerSessionId }),
+    metricsRegistry: subagentMetricsRegistry,
   });
+  sdkStreamBridge.handleEvent(
+    threadId,
+    event,
+    (id, type, message, role, stream, agentId) => {
+      emitThreadEvent(
+        id,
+        type,
+        message,
+        role as AgentRole | "system" | "thinking" | "tool" | "user",
+        stream,
+        agentId ? { agentId } : undefined,
+      );
+    },
+    undefined,
+    ...(activityAgentId && { activityAgentId }),
+  );
 }
 
 function emitOtelActivity(line: OtelActivityLine): void {
@@ -4098,6 +4117,7 @@ function emitThreadEvent(
     modelUsage?: Record<string, ThreadModelUsageEntry>;
     billing?: ThreadBillingSnapshot;
     context?: ThreadContextSnapshot;
+    agentId?: string;
   },
 ): void {
   const trimmed = message.trim();
@@ -4137,6 +4157,7 @@ function emitThreadEvent(
       role: String(role),
       message: displayMessage,
       stream,
+      ...(extras?.agentId?.trim() && { agentId: extras.agentId.trim() }),
     });
   }
 

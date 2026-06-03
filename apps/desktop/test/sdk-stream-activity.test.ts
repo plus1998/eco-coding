@@ -12,6 +12,48 @@ test("suppresses redundant OTel tool line after SDK tool start", () => {
   expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: Read · styles.css")).toBe(false);
 });
 
+test("keeps parallel subagent narrative streams isolated by agentId", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ message: string; role: string; agentId?: string }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "coder",
+      agentId: "agent_a",
+      payload: { type: "eco_stream", blockKind: "text", text: "alpha", streamPlaceholder: true },
+    },
+    (_threadId, _type, message, role, stream, agentId) => {
+      emitted.push({ message, role, ...(agentId && { agentId }) });
+      expect(stream).toBe(true);
+    },
+    undefined,
+    { activityAgentId: "agent_a" },
+  );
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "coder",
+      agentId: "agent_b",
+      payload: { type: "eco_stream", blockKind: "text", text: "beta", streamPlaceholder: true },
+    },
+    (_threadId, _type, message, role, stream, agentId) => {
+      emitted.push({ message, role, ...(agentId && { agentId }) });
+      expect(stream).toBe(true);
+    },
+    undefined,
+    { activityAgentId: "agent_b" },
+  );
+
+  expect(emitted).toEqual([
+    { message: "", role: "coder", agentId: "agent_a" },
+    { message: "", role: "coder", agentId: "agent_b" },
+  ]);
+});
+
 test("emits Requesting model status from agent.started events", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; role: string }> = [];

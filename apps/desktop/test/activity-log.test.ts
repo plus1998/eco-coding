@@ -13,15 +13,38 @@ import {
   stripTrailingPendingRequestBlocks,
   thinkingPreviewLine,
   findSubagentRunLineBounds,
+  findSubagentRunLineBoundsByAgentId,
+  groupSubagentRunItems,
   isAgentElapsedProgressLine,
   isModelRequestLine,
   isReconnectActivityMessage,
+  partitionDetailsIntoRuns,
   resolveActiveSubagents,
   resolveLatestSubagentLogLine,
   resolveSubagentRunDurationMs,
+  resolveSubagentRunTitle,
   sessionAwaitingFirstToken,
   shouldScrollMainActivityFeedForLine,
+  type ActivityLogBlock,
+  type SubagentRunItem,
 } from "../src/renderer/activity-log";
+
+function subagentGroups(
+  blocks: ActivityLogBlock[],
+): Extract<ActivityLogBlock, { kind: "subagent-run-group" }>[] {
+  return blocks.filter(
+    (block): block is Extract<ActivityLogBlock, { kind: "subagent-run-group" }> =>
+      block.kind === "subagent-run-group",
+  );
+}
+
+function subagentItems(blocks: ActivityLogBlock[]): SubagentRunItem[] {
+  return subagentGroups(blocks).flatMap((group) => group.items);
+}
+
+function plannerSession(blocks: ActivityLogBlock[]) {
+  return blocks.find((block) => block.kind === "work-session" && block.inlineContent);
+}
 
 test("only planner-side activity lines scroll the main feed", () => {
   expect(shouldScrollMainActivityFeedForLine({ role: "planner", message: "hi", id: "1" })).toBe(true);
@@ -48,16 +71,13 @@ test("groups narrative and compact tool summaries into collapsible work session"
   );
 
   expect(blocks.some((block) => block.kind === "user-prompt")).toBe(true);
-  const session = blocks.find(
-    (block) => block.kind === "work-session" && !block.compactSubagentMode,
-  );
+  const session = plannerSession(blocks);
   expect(session?.kind).toBe("work-session");
   if (session?.kind !== "work-session") {
     return;
   }
   expect(session.defaultCollapsed).toBe(false);
   expect(session.inlineContent).toBe(true);
-  expect(session.compactSubagentMode).toBeFalsy();
   expect(session.children.some((child) => child.kind === "action" && child.label.includes("styles.css"))).toBe(
     true,
   );
@@ -78,15 +98,10 @@ test("collapses work session while subagent is running", () => {
     createdAt: new Date().toISOString(),
   });
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
-    return;
-  }
-  expect(session.running).toBe(true);
-  expect(session.compactSubagentMode).toBe(true);
-  expect(session.defaultCollapsed).toBe(true);
-  expect(session.activeSubagents).toContain("coder");
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("coder");
+  expect(item?.running).toBe(true);
+  expect(item?.statusLine).toContain("package.json");
 });
 
 test("keeps planner-only work session expanded while running", () => {
@@ -104,7 +119,6 @@ test("keeps planner-only work session expanded while running", () => {
     return;
   }
   expect(session.running).toBe(true);
-  expect(session.compactSubagentMode).toBeFalsy();
   expect(session.defaultCollapsed).toBe(false);
 });
 
@@ -143,19 +157,15 @@ test("keeps thinking separate from agent narrative streams", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const plannerSession = blocks.find(
-    (block) => block.kind === "work-session" && !block.compactSubagentMode,
-  );
-  const coderSession = blocks.find(
-    (block) => block.kind === "work-session" && block.compactSubagentMode,
-  );
-  expect(plannerSession?.kind).toBe("work-session");
-  expect(coderSession?.kind).toBe("work-session");
-  if (plannerSession?.kind !== "work-session" || coderSession?.kind !== "work-session") {
+  const planner = plannerSession(blocks);
+  const coderItem = subagentItems(blocks)[0];
+  expect(planner?.kind).toBe("work-session");
+  expect(coderItem?.role).toBe("coder");
+  if (planner?.kind !== "work-session" || !coderItem) {
     return;
   }
-  const thinking = plannerSession.children.find((child) => child.kind === "thinking");
-  const narrative = coderSession.children.find((child) => child.kind === "narrative");
+  const thinking = planner.children.find((child) => child.kind === "thinking");
+  const narrative = coderItem.children.find((child) => child.kind === "narrative");
   expect(thinking?.kind).toBe("thinking");
   if (thinking?.kind === "thinking") {
     expect(thinking.text).toBe("Let me also");
@@ -203,16 +213,9 @@ test("shows active subagent while running", () => {
     createdAt: new Date().toISOString(),
   });
 
-  const session = blocks.find(
-    (block) => block.kind === "work-session" && block.compactSubagentMode && block.running,
-  );
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind === "work-session") {
-    expect(session.subagentRunRole).toBe("coder");
-    expect(session.activeSubagent).toBe("coder");
-    expect(session.compactSubagentMode).toBe(true);
-    expect(session.activeSubagents).toContain("coder");
-  }
+  const item = subagentItems(blocks).find((entry) => entry.running);
+  expect(item?.role).toBe("coder");
+  expect(item?.running).toBe(true);
   expect(resolveActiveSubagents(lines, "running")).toContain("coder");
 });
 
@@ -239,13 +242,11 @@ test("shows planner work inline when subagent cards exist", () => {
     { status: "completed", createdAt: new Date(Date.now() - 3_334_000).toISOString() },
   );
 
-  const plannerSession = blocks.find(
-    (block) => block.kind === "work-session" && !block.compactSubagentMode,
-  );
-  expect(plannerSession?.kind).toBe("work-session");
-  if (plannerSession?.kind === "work-session") {
-    expect(plannerSession.inlineContent).toBe(true);
-    expect(plannerSession.defaultCollapsed).toBe(false);
+  const plannerBlock = plannerSession(blocks);
+  expect(plannerBlock?.kind).toBe("work-session");
+  if (plannerBlock?.kind === "work-session") {
+    expect(plannerBlock.inlineContent).toBe(true);
+    expect(plannerBlock.defaultCollapsed).toBe(false);
   }
 });
 
@@ -267,20 +268,17 @@ test("isolates each subagent run into its own compact work session", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const compactSessions = blocks.filter(
-    (block): block is Extract<typeof block, { kind: "work-session" }> =>
-      block.kind === "work-session" && Boolean(block.compactSubagentMode),
-  );
-  expect(compactSessions).toHaveLength(2);
-  expect(compactSessions[0]?.subagentRunRole).toBe("coder");
-  expect(compactSessions[1]?.subagentRunRole).toBe("reviewer");
-  expect(compactSessions[0]?.running).toBe(false);
-  expect(compactSessions[1]?.running).toBe(true);
+  const items = subagentItems(blocks);
+  expect(items).toHaveLength(2);
+  expect(items[0]?.role).toBe("coder");
+  expect(items[1]?.role).toBe("reviewer");
+  expect(items[0]?.running).toBe(false);
+  expect(items[1]?.running).toBe(true);
   expect(
     blocks.some(
       (block) =>
         block.kind === "work-session" &&
-        !block.compactSubagentMode &&
+        block.inlineContent &&
         block.children.some((child) => child.kind === "phase"),
     ),
   ).toBe(true);
@@ -300,12 +298,9 @@ test("uses compact mode for reviewer subagent work", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind === "work-session") {
-    expect(session.compactSubagentMode).toBe(true);
-    expect(session.defaultCollapsed).toBe(true);
-  }
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("reviewer");
+  expect(item?.title).toContain("src/api.ts");
 });
 
 test("shows user prompt as a preserved node", () => {
@@ -339,18 +334,18 @@ test("shows subagent mission before tool steps", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("reviewer");
+  if (!item) {
     return;
   }
-  const mission = session.children.find((child) => child.kind === "subagent-mission");
+  const mission = item.children.find((child) => child.kind === "subagent-mission");
   expect(mission?.kind).toBe("subagent-mission");
   if (mission?.kind === "subagent-mission") {
     expect(mission.subagent).toBe("reviewer");
     expect(mission.summary).toContain("src/api.ts");
   }
-  expect(session.activeMissionSummary).toContain("src/api.ts");
+  expect(item.title).toContain("src/api.ts");
 });
 
 test("resolves subagent run duration from agent elapsed lines", () => {
@@ -398,14 +393,9 @@ test("attaches run duration to completed subagent work session", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const coderSession = blocks.find(
-    (block) => block.kind === "work-session" && block.subagentRunRole === "coder",
-  );
-  expect(coderSession?.kind).toBe("work-session");
-  if (coderSession?.kind === "work-session") {
-    expect(coderSession.runDurationMs).toBe(8000);
-    expect(coderSession.running).toBe(false);
-  }
+  const coderItem = subagentItems(blocks).find((item) => item.role === "coder");
+  expect(coderItem?.runDurationMs).toBe(8000);
+  expect(coderItem?.running).toBe(false);
 });
 
 test("does not split subagent run on interleaved planner model-request lines", () => {
@@ -423,14 +413,9 @@ test("does not split subagent run on interleaved planner model-request lines", (
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const reviewerSessions = blocks.filter(
-    (block) => block.kind === "work-session" && block.subagentRunRole === "reviewer",
-  );
-  expect(reviewerSessions).toHaveLength(1);
-  const plannerSeparators = blocks.filter(
-    (block) => block.kind === "work-session" && !block.compactSubagentMode,
-  );
-  expect(plannerSeparators).toHaveLength(0);
+  const reviewerItems = subagentItems(blocks).filter((item) => item.role === "reviewer");
+  expect(reviewerItems).toHaveLength(1);
+  expect(plannerSession(blocks)).toBeUndefined();
 });
 
 test("isolates repeated reviewer missions into separate compact cards with distinct durations", () => {
@@ -449,13 +434,10 @@ test("isolates repeated reviewer missions into separate compact cards with disti
     { status: "completed", createdAt: new Date().toISOString() },
   );
 
-  const reviewerSessions = blocks.filter(
-    (block): block is Extract<typeof block, { kind: "work-session" }> =>
-      block.kind === "work-session" && block.subagentRunRole === "reviewer",
-  );
-  expect(reviewerSessions).toHaveLength(2);
-  expect(reviewerSessions[0]?.runDurationMs).toBe(10_000);
-  expect(reviewerSessions[1]?.runDurationMs).toBe(22_000);
+  const reviewerItems = subagentItems(blocks).filter((item) => item.role === "reviewer");
+  expect(reviewerItems).toHaveLength(2);
+  expect(reviewerItems[0]?.runDurationMs).toBe(10_000);
+  expect(reviewerItems[1]?.runDurationMs).toBe(22_000);
 });
 
 test("resolves latest subagent log line for compact card", () => {
@@ -469,11 +451,8 @@ test("resolves latest subagent log line for compact card", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind === "work-session") {
-    expect(session.latestSubagentLogLine).toBe("编辑 · src/api.ts");
-  }
+  const item = subagentItems(blocks)[0];
+  expect(item?.statusLine).toBe("编辑 · src/api.ts");
   expect(resolveLatestSubagentLogLine([
     { kind: "action", icon: "file", label: "读取 · a.ts", subagent: "coder" },
     { kind: "action", icon: "edit", label: "编辑 · b.ts", subagent: "coder" },
@@ -492,11 +471,9 @@ test("shows each subagent tool step with role and target", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const sessions = blocks.filter((block) => block.kind === "work-session" && block.compactSubagentMode);
-  expect(sessions.length).toBeGreaterThanOrEqual(2);
-  const actions = sessions.flatMap((session) =>
-    session.kind === "work-session" ? session.children.filter((child) => child.kind === "action") : [],
-  );
+  const items = subagentItems(blocks);
+  expect(items.length).toBeGreaterThanOrEqual(2);
+  const actions = items.flatMap((item) => item.children.filter((child) => child.kind === "action"));
   expect(actions.length).toBeGreaterThanOrEqual(3);
   const coderRead = actions.find(
     (child) => child.kind === "action" && child.subagent === "coder" && child.label.includes("src/api.ts"),
@@ -543,11 +520,8 @@ test("collapses read progress and grep tool on the same file", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  const actions =
-    session?.kind === "work-session"
-      ? session.children.filter((child) => child.kind === "action")
-      : [];
+  const item = subagentItems(blocks)[0];
+  const actions = item ? item.children.filter((child) => child.kind === "action") : [];
   expect(actions).toHaveLength(1);
   expect(actions[0]?.kind).toBe("action");
   if (actions[0]?.kind === "action") {
@@ -803,14 +777,8 @@ test("shows agent-request row while subagent has no output yet", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find(
-    (block) => block.kind === "work-session" && block.compactSubagentMode && block.running,
-  );
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind === "work-session") {
-    expect(session.children.some((child) => child.kind === "agent-request")).toBe(true);
-    expect(session.awaitingFirstToken).toBe(true);
-  }
+  const item = subagentItems(blocks)[0];
+  expect(item?.children.some((child) => child.kind === "agent-request")).toBe(true);
 });
 
 test("clears awaiting once subagent streams narrative", () => {
@@ -823,12 +791,8 @@ test("clears awaiting once subagent streams narrative", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind === "work-session") {
-    expect(session.children.some((child) => child.kind === "agent-request")).toBe(false);
-    expect(session.awaitingFirstToken).toBeUndefined();
-  }
+  const item = subagentItems(blocks)[0];
+  expect(item?.children.some((child) => child.kind === "agent-request")).toBe(false);
 });
 
 test("renders tool failed lines as tool-failed blocks", () => {
@@ -840,12 +804,11 @@ test("renders tool failed lines as tool-failed blocks", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
-    return;
+  const item = subagentItems(blocks)[0];
+  if (!item) {
+    throw new Error("expected subagent item");
   }
-  const failed = session.children.find((child) => child.kind === "tool-failed");
+  const failed = item.children.find((child) => child.kind === "tool-failed");
   expect(failed).toMatchObject({
     kind: "tool-failed",
     tool: "Read",
@@ -868,12 +831,11 @@ test("upgrades weak agent mission with @mission payload", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
-    return;
+  const item = subagentItems(blocks)[0];
+  if (!item) {
+    throw new Error("expected subagent item");
   }
-  const missions = session.children.filter((child) => child.kind === "subagent-mission");
+  const missions = item.children.filter((child) => child.kind === "subagent-mission");
   expect(missions).toHaveLength(1);
   if (missions[0]?.kind === "subagent-mission") {
     expect(missions[0].prompt).toContain("src/api.ts");
@@ -892,19 +854,17 @@ test("does not treat tool elapsed duration as subagent role", () => {
     { status: "running", createdAt: new Date().toISOString() },
   );
 
-  const session = blocks.find((block) => block.kind === "work-session");
-  expect(session?.kind).toBe("work-session");
-  if (session?.kind !== "work-session") {
-    return;
+  const item = subagentItems(blocks)[0];
+  if (!item) {
+    throw new Error("expected subagent item");
   }
-  expect(session.activeSubagent).toBe("coder");
-  const mission = session.children.find((child) => child.kind === "subagent-mission");
+  const mission = item.children.find((child) => child.kind === "subagent-mission");
   expect(mission?.kind).toBe("subagent-mission");
   if (mission?.kind === "subagent-mission") {
     expect(mission.subagent).toBe("coder");
     expect(mission.summary).not.toContain("32.5s");
   }
-  const todoAction = session.children.find(
+  const todoAction = item.children.find(
     (child) => child.kind === "action" && child.label.includes("更新任务"),
   );
   expect(todoAction?.kind).toBe("action");
@@ -1051,4 +1011,63 @@ test("emits dedicated worktree-merge block instead of narrative markdown", () =>
       block.text.includes("__eco_worktree_merge__"),
   );
   expect(markdownNarrative).toBeUndefined();
+});
+
+test("partitions parallel coder runs by agentId", () => {
+  const missionA = formatSubagentMissionMessage("coder", "Implement billing API");
+  const missionB = formatSubagentMissionMessage("coder", "Implement context API");
+  const lines = [
+    { id: "u1", role: "user", message: "go" },
+    { id: "1", role: "planner", message: missionA },
+    { id: "2", role: "planner", message: missionB },
+    { id: "3", role: "coder", message: "Tool: Read · billing.ts", agentId: "agent_a" },
+    { id: "4", role: "coder", message: "Tool: Read · context.ts", agentId: "agent_b" },
+    { id: "5", role: "coder", message: "Tool: Edit · billing.ts", agentId: "agent_a" },
+  ];
+  const blocks = buildActivityLogBlocks(lines, {
+    status: "running",
+    createdAt: new Date().toISOString(),
+  });
+
+  const items = subagentItems(blocks);
+  expect(items).toHaveLength(2);
+  expect(items[0]?.agentId).toBe("agent_a");
+  expect(items[1]?.agentId).toBe("agent_b");
+  expect(items[0]?.children.some((child) => child.kind === "action" && child.label.includes("billing.ts"))).toBe(
+    true,
+  );
+  expect(items[1]?.children.some((child) => child.kind === "action" && child.label.includes("context.ts"))).toBe(
+    true,
+  );
+  expect(findSubagentRunLineBoundsByAgentId(lines, "agent_a")?.start).toBe(3);
+});
+
+test("groups parallel subagent rows into one run group", () => {
+  const missionA = formatSubagentMissionMessage("explore", "Explore billing");
+  const missionB = formatSubagentMissionMessage("explore", "Explore context");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionA },
+      { id: "2", role: "planner", message: missionB },
+      { id: "3", role: "explore", message: "Tool: Read · billing.ts", agentId: "agent_a", stream: true },
+      { id: "4", role: "explore", message: "Tool: Read · context.ts", agentId: "agent_b", stream: true },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const groups = subagentGroups(blocks);
+  expect(groups).toHaveLength(1);
+  expect(groups[0]?.parallel).toBe(true);
+  expect(groups[0]?.items).toHaveLength(2);
+  expect(resolveSubagentRunTitle(groups[0]!.items[0]!.children, "explore")).toContain("billing");
+});
+
+test("resolveSubagentRunTitle falls back to role", () => {
+  expect(
+    resolveSubagentRunTitle(
+      [{ kind: "action", icon: "file", label: "读取 · a.ts", subagent: "coder" }],
+      "coder",
+    ),
+  ).toBe("coder");
 });

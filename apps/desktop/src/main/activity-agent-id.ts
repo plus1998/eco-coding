@@ -1,0 +1,72 @@
+import { isSubagentRole } from "@eco/runtime";
+import { inferActivityRole } from "@eco/runtime/sdk";
+import type { AgentRole } from "@eco/shared";
+import type { AgentEvent } from "@eco/shared";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
+
+type ActivityAgentEvent = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readParentToolUseId(payload: unknown): string | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  const direct = payload.parent_tool_use_id;
+  if (typeof direct === "string" && direct.trim()) {
+    return direct.trim();
+  }
+  return undefined;
+}
+
+function readBillingRole(role: string): AgentRole | undefined {
+  return isSubagentRole(role) ? role : undefined;
+}
+
+/** Resolve sub-agent instance id for activity persistence. */
+export function resolveActivityAgentId(
+  threadId: string,
+  event: ActivityAgentEvent,
+  options: {
+    plannerSessionId?: string;
+    metricsRegistry?: SubagentMetricsRegistry;
+  },
+): string | undefined {
+  const displayRole = inferActivityRole(event);
+  const billingRole = readBillingRole(displayRole);
+  if (!billingRole) {
+    return undefined;
+  }
+
+  const explicitAgentId = event.agentId?.trim();
+  const plannerSessionId = options.plannerSessionId?.trim();
+  if (
+    explicitAgentId &&
+    explicitAgentId !== "unknown-session" &&
+    explicitAgentId !== plannerSessionId
+  ) {
+    return explicitAgentId;
+  }
+
+  const parentToolUseId = readParentToolUseId(event.payload);
+  if (parentToolUseId && options.metricsRegistry) {
+    const resolved = options.metricsRegistry.resolveAgentId(threadId, {
+      role: billingRole,
+      parentToolUseId,
+    });
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return undefined;
+}
+
+export function activityStreamKey(threadId: string, agentId?: string, role?: string): string {
+  if (agentId?.trim()) {
+    return `${threadId}:${agentId.trim()}`;
+  }
+  return `${threadId}:${role ?? "planner"}`;
+}

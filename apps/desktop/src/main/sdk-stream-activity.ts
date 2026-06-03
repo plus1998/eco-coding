@@ -6,8 +6,9 @@ import {
   isEcoStreamPlaceholder,
   isUpstreamStatusActivityMessage,
 } from "@eco/runtime/sdk";
+import { activityStreamKey } from "./activity-agent-id.js";
 
-type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role">;
+type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
 
 export interface SdkToolActivityRecord {
   toolName: string;
@@ -23,22 +24,40 @@ interface PendingStreamDelta {
   role: string;
   message: string;
   stream: boolean;
+  agentId?: string;
   timer: ReturnType<typeof setTimeout> | null;
 }
+
+export type SdkActivityEmit = (
+  threadId: string,
+  type: string,
+  message: string,
+  role: string,
+  stream: boolean,
+  agentId?: string,
+) => void;
 
 export class SdkStreamActivityBridge {
   private readonly recentSdkTools = new Map<string, SdkToolActivityRecord[]>();
   private readonly pendingDeltas = new Map<string, PendingStreamDelta>();
-  private readonly lastStreamLine = new Map<string, { role: string; message: string }>();
+  private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
 
   resetThread(threadId: string): void {
     this.recentSdkTools.delete(threadId);
-    this.lastStreamLine.delete(threadId);
-    const pending = this.pendingDeltas.get(threadId);
-    if (pending?.timer) {
-      clearTimeout(pending.timer);
+    for (const key of [...this.lastStreamLine.keys()]) {
+      if (key.startsWith(`${threadId}:`)) {
+        this.lastStreamLine.delete(key);
+      }
     }
-    this.pendingDeltas.delete(threadId);
+    for (const key of [...this.pendingDeltas.keys()]) {
+      if (key.startsWith(`${threadId}:`)) {
+        const pending = this.pendingDeltas.get(key);
+        if (pending?.timer) {
+          clearTimeout(pending.timer);
+        }
+        this.pendingDeltas.delete(key);
+      }
+    }
   }
 
   noteSdkToolActivity(threadId: string, payload: unknown): void {
@@ -102,9 +121,12 @@ export class SdkStreamActivityBridge {
   handleEvent(
     threadId: string,
     event: AgentEventLike,
-    emit: (threadId: string, type: string, message: string, role: string, stream: boolean) => void,
+    emit: SdkActivityEmit,
     emitUsage?: (threadId: string, event: AgentEventLike) => void,
+    options?: { activityAgentId?: string },
   ): void {
+    const activityAgentId = options?.activityAgentId;
+
     if (event.type === "usage.recorded") {
       emitUsage?.(threadId, event);
       return;
@@ -124,7 +146,7 @@ export class SdkStreamActivityBridge {
         return;
       }
       this.flushPending(threadId, emit);
-      emit(threadId, event.type, display.message, String(display.role), false);
+      emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
       return;
     }
 
@@ -145,48 +167,66 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
+    const streamKey = activityStreamKey(threadId, activityAgentId, role);
 
     if (event.payload && isEcoStreamFinalize(event.payload)) {
       this.flushPending(threadId, emit);
-      const last = this.lastStreamLine.get(threadId);
-      emit(threadId, event.type, last?.message ?? message, last?.role ?? role, false);
-      this.lastStreamLine.delete(threadId);
+      const last = this.lastStreamLine.get(streamKey);
+      emit(
+        threadId,
+        event.type,
+        last?.message ?? message,
+        last?.role ?? role,
+        false,
+        last?.agentId ?? activityAgentId,
+      );
+      this.lastStreamLine.delete(streamKey);
       return;
     }
 
     if (event.payload && isEcoStreamPlaceholder(event.payload)) {
       this.flushPending(threadId, emit);
-      this.lastStreamLine.set(threadId, { role, message: "" });
-      emit(threadId, event.type, message, role, true);
+      this.lastStreamLine.set(streamKey, { role, message: "", ...(activityAgentId && { agentId: activityAgentId }) });
+      emit(threadId, event.type, message, role, true, activityAgentId);
       return;
     }
 
     if (event.type === "message.delta" && stream) {
-      const previous = this.lastStreamLine.get(threadId)?.message ?? "";
+      const previous = this.lastStreamLine.get(streamKey)?.message ?? "";
       const accumulated = mergeStreamText(previous, message);
-      this.lastStreamLine.set(threadId, { role, message: accumulated });
-      this.scheduleThrottledDelta(threadId, event.type, accumulated, role, stream, emit);
+      this.lastStreamLine.set(streamKey, {
+        role,
+        message: accumulated,
+        ...(activityAgentId && { agentId: activityAgentId }),
+      });
+      this.scheduleThrottledDelta(threadId, streamKey, event.type, accumulated, role, stream, activityAgentId, emit);
       return;
     }
 
     this.flushPending(threadId, emit);
     if (stream) {
-      this.lastStreamLine.set(threadId, { role, message });
+      this.lastStreamLine.set(streamKey, {
+        role,
+        message,
+        ...(activityAgentId && { agentId: activityAgentId }),
+      });
     } else {
-      this.lastStreamLine.delete(threadId);
+      this.lastStreamLine.delete(streamKey);
     }
-    emit(threadId, event.type, message, role, stream);
+    emit(threadId, event.type, message, role, stream, activityAgentId);
   }
 
   private scheduleThrottledDelta(
     threadId: string,
+    streamKey: string,
     type: string,
     message: string,
     role: string,
     stream: boolean,
-    emit: (threadId: string, type: string, message: string, role: string, stream: boolean) => void,
+    agentId: string | undefined,
+    emit: SdkActivityEmit,
   ): void {
-    const pendingExisting = this.pendingDeltas.get(threadId);
+    const pendingExisting = this.pendingDeltas.get(streamKey);
     if (pendingExisting?.timer) {
       clearTimeout(pendingExisting.timer);
     }
@@ -194,27 +234,30 @@ export class SdkStreamActivityBridge {
       role,
       message,
       stream,
+      ...(agentId && { agentId }),
       timer: setTimeout(() => {
-        this.pendingDeltas.delete(threadId);
-        emit(threadId, type, message, role, stream);
+        this.pendingDeltas.delete(streamKey);
+        emit(threadId, type, message, role, stream, agentId);
       }, STREAM_THROTTLE_MS),
     };
-    this.pendingDeltas.set(threadId, pending);
+    this.pendingDeltas.set(streamKey, pending);
   }
 
-  private flushPending(
-    threadId: string,
-    emit: (threadId: string, type: string, message: string, role: string, stream: boolean) => void,
-  ): void {
-    const pending = this.pendingDeltas.get(threadId);
-    if (!pending) {
-      return;
+  private flushPending(threadId: string, emit: SdkActivityEmit): void {
+    for (const [streamKey, pending] of [...this.pendingDeltas.entries()]) {
+      if (!streamKey.startsWith(`${threadId}:`)) {
+        continue;
+      }
+      if (pending.timer) {
+        clearTimeout(pending.timer);
+      }
+      this.pendingDeltas.delete(streamKey);
+      this.lastStreamLine.set(streamKey, {
+        role: pending.role,
+        message: pending.message,
+        ...(pending.agentId && { agentId: pending.agentId }),
+      });
+      emit(threadId, "message.delta", pending.message, pending.role, pending.stream, pending.agentId);
     }
-    if (pending.timer) {
-      clearTimeout(pending.timer);
-    }
-    this.pendingDeltas.delete(threadId);
-    this.lastStreamLine.set(threadId, { role: pending.role, message: pending.message });
-    emit(threadId, "message.delta", pending.message, pending.role, pending.stream);
   }
 }

@@ -63,6 +63,7 @@ interface ActivityRow {
   role: string;
   message: string;
   stream: number;
+  agent_id: string | null;
   created_at: string;
 }
 
@@ -283,6 +284,12 @@ export class ConversationStore {
     }
     if (!names.has("runtime_config_json")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
+    }
+
+    const activityColumns = this.db.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{ name: string }>;
+    const activityNames = new Set(activityColumns.map((column) => column.name));
+    if (!activityNames.has("agent_id")) {
+      this.db.exec(`ALTER TABLE thread_activity ADD COLUMN agent_id TEXT`);
     }
 
     this.db.exec(`
@@ -838,6 +845,18 @@ export class ConversationStore {
     }
   }
 
+  private activityLineMatchesForMerge(
+    last: ThreadActivityLine & { id: string },
+    line: Omit<ThreadActivityLine, "id"> & { id?: string },
+  ): boolean {
+    if (last.role !== line.role) {
+      return false;
+    }
+    const lastAgentId = last.agentId?.trim() ?? "";
+    const nextAgentId = line.agentId?.trim() ?? "";
+    return lastAgentId === nextAgentId;
+  }
+
   appendActivityLine(
     threadId: string,
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
@@ -854,7 +873,7 @@ export class ConversationStore {
       this.clearReconnectActivityLines(threadId);
       last = this.getLastActivityLine(threadId);
     }
-    if (!line.stream && last?.stream && last.role === line.role) {
+    if (!line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
       const merged = line.message.trim()
         ? mergeStreamText(last.message, line.message)
         : last.message;
@@ -865,7 +884,7 @@ export class ConversationStore {
       logSuspiciousActivityLine(threadId, finalized);
       return finalized;
     }
-    if (line.stream && last?.stream) {
+    if (line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
       const merged = mergeStreamText(last.message, line.message);
       this.db
         .prepare(`UPDATE thread_activity SET message = ? WHERE id = ?`)
@@ -878,13 +897,22 @@ export class ConversationStore {
       role: line.role,
       message: line.message,
       ...(line.stream !== undefined && { stream: line.stream }),
+      ...(line.agentId?.trim() && { agentId: line.agentId.trim() }),
     };
     this.db
       .prepare(
-        `INSERT INTO thread_activity (id, thread_id, role, message, stream, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO thread_activity (id, thread_id, role, message, stream, agent_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(record.id, threadId, record.role, record.message, line.stream ? 1 : 0, new Date().toISOString());
+      .run(
+        record.id,
+        threadId,
+        record.role,
+        record.message,
+        line.stream ? 1 : 0,
+        record.agentId ?? null,
+        new Date().toISOString(),
+      );
 
     this.db
       .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
@@ -897,7 +925,7 @@ export class ConversationStore {
   listActivityLines(threadId: string): ThreadActivityLine[] {
     const rows = this.db
       .prepare(
-        `SELECT id, role, message, stream
+        `SELECT id, role, message, stream, agent_id
          FROM thread_activity
          WHERE thread_id = ?
          ORDER BY created_at ASC`,
@@ -911,6 +939,7 @@ export class ConversationStore {
         role: row.role,
         message: repaired ? text : row.message,
         stream: row.stream === 1,
+        ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
       };
     });
 
@@ -1076,7 +1105,7 @@ export class ConversationStore {
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, role, message, stream
+        `SELECT id, role, message, stream, agent_id
          FROM thread_activity
          WHERE thread_id = ?
          ORDER BY created_at DESC
@@ -1093,6 +1122,7 @@ export class ConversationStore {
       role: row.role,
       message: row.message,
       stream: row.stream === 1,
+      ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
     };
   }
 }
