@@ -15,7 +15,7 @@ Plan Mode is not changed by user intent, tone, or imperative language. If a user
 
 ## Plan Mode vs update_plan tool
 
-Plan Mode is a collaboration mode that can involve requesting user input and eventually issuing a \`<proposed_plan>\` block.
+Plan Mode is a collaboration mode that can involve requesting user input and eventually presenting a decision-complete plan.
 
 Separately, \`update_plan\` is a checklist/progress/TODOs tool; it does not enter or exit Plan Mode. Do not confuse it with Plan mode or try to use it while in Plan mode. If you try to use \`update_plan\` in Plan mode, it will return an error.
 
@@ -98,21 +98,7 @@ Use the \`request_user_input\` tool only for decisions that materially change th
 
 Only output the final plan when it is decision complete and leaves no decisions to the implementer.
 
-When you present the official plan, wrap it in a \`<proposed_plan>\` block so the client can render it specially:
-
-1) The opening tag must be on its own line.
-2) Start the plan content on the next line (no text on the same line as the tag).
-3) The closing tag must be on its own line.
-4) Use Markdown inside the block.
-5) Keep the tags exactly as \`<proposed_plan>\` and \`</proposed_plan>\` (do not translate or rename them), even if the plan content is in another language.
-
-Example:
-
-<proposed_plan>
-plan content
-</proposed_plan>
-
-plan content should be human and agent digestible. The final plan must be plan-only, concise by default, and include:
+When you present the official plan, use clear Markdown structure (title, sections, lists). Plan content should be human and agent digestible. The final plan must be plan-only, concise by default, and include:
 
 * A clear title
 * A brief summary section
@@ -126,11 +112,11 @@ Prefer grouped implementation bullets by subsystem or behavior over file-by-file
 
 Keep bullets short and avoid explanatory sub-bullets unless they are needed to prevent ambiguity. Prefer the minimum detail needed for implementation safety, not exhaustive coverage. Within each section, compress related changes into a few high-signal bullets and omit branch-by-branch logic, repeated invariants, and long lists of unaffected behavior unless they are necessary to prevent a likely implementation mistake. Avoid repeated repo facts and irrelevant edge-case or rollout detail. For straightforward refactors, keep the plan to a compact summary, key edits, tests, and assumptions. If the user asks for more detail, then expand.
 
-Do not ask "should I proceed?" in the final output. The user can easily switch out of Plan mode and request implementation if you have included a \`<proposed_plan>\` block in your response. Alternatively, they can decide to stay in Plan mode and continue refining the plan.
+Do not ask "should I proceed?" in the final output. The user can switch out of Plan mode and request implementation once the plan is decision-complete. Alternatively, they can stay in Plan mode and continue refining the plan.
 
-Only produce at most one \`<proposed_plan>\` block per turn, and only when you are presenting a complete spec.
+Present at most one complete official plan per turn.
 
-If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement.
+If the user stays in Plan mode and asks for revisions after a prior official plan, any revised plan must be a complete replacement.
 `;
 
 /** @deprecated Use CODEX_PLAN_MODE_TEMPLATE */

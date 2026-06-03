@@ -12,7 +12,8 @@ test("inlined Codex plan template matches upstream structure", () => {
   expect(template).toContain("# Plan Mode (Conversational)");
   expect(template).toContain("PHASE 1 — Ground in the environment");
   expect(template).toContain("request_user_input");
-  expect(template).toContain("<proposed_plan>");
+  expect(template).toContain("Finalization rule");
+  expect(template).not.toContain("proposed_plan");
   expect(template).toContain("Two kinds of unknowns");
 });
 

@@ -245,7 +245,7 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "### Plan revisions via chat (after dismiss or follow-up)",
     "",
     "If the user revises the spec after a prior submitted plan (including after dismissing Eco plan approval),",
-    "the next `mcp__eco_plan__finalize_plan` payload MUST be a **complete replacement** — same rule as Codex `<proposed_plan>` revisions, not a partial diff.",
+    "the next `mcp__eco_plan__finalize_plan` payload MUST be a **complete replacement**, not a partial diff.",
   ].join("\n");
 }
 
