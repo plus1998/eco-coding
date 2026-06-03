@@ -16,6 +16,8 @@ const operationalThreadMessagePatterns = [
   /^Local model router ready:/i,
   /^状态已更新$/,
   /^计划阶段已结束/,
+  /^上下文已更新$/,
+  /^正在刷新上下文用量/,
   /^执行已结束/,
   /^回答已结束/,
   /^Creating isolated worktree/i,
@@ -41,7 +43,17 @@ export function resolveThreadMessageFromLiveEvent(eventType: string, eventMessag
   return eventMessage;
 }
 
+const threadSummaryMessageExclusions = new Set([
+  "thread.context_updated",
+  "thread.usage_updated",
+  "thread.todos_updated",
+  "thread.title_updated",
+]);
+
 export function shouldUpdateThreadSummaryFromLiveEvent(eventType: string): boolean {
+  if (threadSummaryMessageExclusions.has(eventType)) {
+    return false;
+  }
   return eventType.startsWith("thread.");
 }
 

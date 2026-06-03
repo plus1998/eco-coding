@@ -1769,16 +1769,11 @@ function App() {
                       {retryBannerHint ? (
                         <p className="thread-retry-banner-hint">{retryBannerHint}</p>
                       ) : null}
-                      {selectedRouteProfile ? (
-                        <p className="thread-retry-banner-route">
-                          当前路由方案：{selectedRouteProfile.name}
-                        </p>
-                      ) : null}
                     </div>
                     <div className="thread-retry-banner-actions">
                       {alternateRouteProfiles.length > 0 ? (
                         <label className="thread-retry-banner-route-picker">
-                          <span>备用路由方案</span>
+                          <span>路由方案</span>
                           <select
                             className="mcp-field-input"
                             value={retryRouteProfileId}

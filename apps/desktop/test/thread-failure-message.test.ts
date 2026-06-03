@@ -44,6 +44,18 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores worktree cleanup notices", 
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.failed")).toBe(true);
 });
 
+test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry", () => {
+  expect(shouldUpdateThreadSummaryFromLiveEvent("thread.context_updated")).toBe(false);
+  expect(shouldUpdateThreadSummaryFromLiveEvent("thread.usage_updated")).toBe(false);
+});
+
+test("resolveRetryBannerDetail keeps blocked reason after context refresh message would have applied", () => {
+  const blocked =
+    "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+  expect(resolveRetryBannerDetail(blocked, "blocked")).toContain("规划阶段未完成");
+  expect(resolveRetryBannerDetail("上下文已更新", "blocked")).toBeUndefined();
+});
+
 test("resolveRetryBannerDetail ignores operational cleanup message on failed thread", () => {
   expect(resolveRetryBannerDetail("已清理隔离工作树。", "failed")).toBeUndefined();
 });

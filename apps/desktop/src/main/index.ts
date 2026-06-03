@@ -3510,6 +3510,10 @@ function resolveThreadWorktreePath(threadId: string): string | undefined {
 /** Call after activeRuns.delete so /context breakdown is not blocked as "still running". */
 function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   contextScheduler.emitLiveFromMonitor(threadId);
+  const thread = conversationStore.getThread(threadId);
+  if (thread?.status === "blocked" || thread?.status === "failed") {
+    return;
+  }
   const path = worktreePath ?? resolveThreadWorktreePath(threadId);
   if (path) {
     scheduleContextBreakdownRefresh(threadId, path, true);
@@ -3598,7 +3602,7 @@ function scheduleContextBreakdownRefresh(
 }
 
 function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {
-  emitThreadEvent(threadId, "thread.context_updated", "上下文已更新", "system", false, { context });
+  emitThreadEvent(threadId, "thread.context_updated", "", "system", false, { context });
   schedulePersistThreadMetrics(threadId);
 }
 

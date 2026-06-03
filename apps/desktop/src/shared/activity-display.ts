@@ -42,6 +42,9 @@ export function shouldClearReconnectActivity(line: { message: string; role: stri
   if (/^Requesting model/i.test(trimmed)) {
     return true;
   }
+  if (/^正在刷新上下文用量/.test(trimmed)) {
+    return false;
+  }
   if (/^Tool(?: failed)?:/i.test(trimmed)) {
     return true;
   }
