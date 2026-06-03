@@ -17,15 +17,10 @@ import {
   type UpstreamApiCompat,
 } from "../shared/api-compat";
 import {
-  anthropicToResponses,
-  chatCompletionsResponseToResponses,
-  responsesToAnthropic,
-  responsesToChatCompletionsRequest,
-  type AnthropicRequest,
-  type ChatCompletionsResponse,
-  type ResponsesResponse,
-} from "@eco/openai-anthropic-bridge";
-import { applyThinkingToMessagesBody } from "@eco/runtime";
+  buildBridgeProviderTestAnthropicRequest,
+  buildBridgeProviderTestUpstreamBody,
+  parseBridgeProviderTestReply,
+} from "./bridge-provider-test";
 import type { ThinkingEffort } from "../shared/ipc";
 import type { ProviderStore } from "./provider-store";
 import {
@@ -289,19 +284,18 @@ async function postUpstreamCompatTest(
 ): Promise<MessagesTestResult> {
   const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
   const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat);
-  const isOpenAI = isOpenAICompat(input.apiCompat);
+  const anthropicRequest = buildBridgeProviderTestAnthropicRequest(input.modelId, thinkingEffort);
+  const { body: requestBody, preferStream } = buildBridgeProviderTestUpstreamBody(
+    input.apiCompat,
+    anthropicRequest,
+    input.modelId,
+  );
   const upstreamUrl =
     input.apiCompat === "openai_chat_completions"
       ? buildChatCompletionsUrl(input.baseUrl, input.requestPath)
       : input.apiCompat === "openai_responses"
         ? buildOpenAICompatUpstreamUrl(input.baseUrl, input.requestPath)
         : buildMessagesUrl(input.baseUrl, effectivePath);
-  const requestBody =
-    input.apiCompat === "openai_chat_completions"
-      ? buildChatCompletionsTestRequestBody(input.modelId)
-      : input.apiCompat === "openai_responses"
-        ? buildResponsesTestRequestBody(input.modelId)
-        : buildMessagesTestRequestBody(input.modelId, thinkingEffort);
   const requestHeaders = buildProviderDirectUpstreamHeaders({
     apiKey: input.apiKey,
     apiCompat: input.apiCompat,
@@ -342,7 +336,6 @@ async function postUpstreamCompatTest(
       signal: controller.signal,
     });
 
-    const raw = await response.text();
     const elapsedMs = Date.now() - startedAt;
     logUpstream("provider-test-response", {
       providerId: input.providerId,
@@ -351,11 +344,11 @@ async function postUpstreamCompatTest(
       ok: response.ok,
       elapsedMs,
       headers: headersToLoggable(response.headers),
-      bodyRaw: truncateForLog(raw),
-      bodyJson: parseJsonForLog(raw),
+      preferStream,
     });
 
     if (!response.ok) {
+      const raw = await response.text();
       const error = formatUpstreamError(response.status, raw);
       logUpstream("provider-test-error", {
         providerId: input.providerId,
@@ -364,53 +357,30 @@ async function postUpstreamCompatTest(
         status: response.status,
         elapsedMs,
         error,
+        bodyRaw: truncateForLog(raw),
       });
       return { ok: false, error, elapsedMs };
     }
 
-    let rawParsed: unknown;
-    let normalized: unknown;
-    try {
-      rawParsed = JSON.parse(raw) as unknown;
-      normalized = rawParsed;
-      if (isOpenAI && isRecord(rawParsed)) {
-        const responseModel =
-          typeof rawParsed.model === "string" ? rawParsed.model : input.modelId;
-        if (rawParsed.object === "response") {
-          normalized = responsesToAnthropic(rawParsed as ResponsesResponse, responseModel);
-        } else if (Array.isArray(rawParsed.choices)) {
-          normalized = responsesToAnthropic(
-            chatCompletionsResponseToResponses(rawParsed as ChatCompletionsResponse),
-            responseModel,
-          );
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logUpstream("provider-test-error", {
-        providerId: input.providerId,
-        role: input.role,
-        phase: "parse-json",
-        elapsedMs,
-        error: "上游返回了非 JSON 响应。",
-        parseError: message,
-        bodyRaw: truncateForLog(raw),
-      });
-      return { ok: false, error: "上游返回了非 JSON 响应。", elapsedMs };
-    }
+    const reply = await parseBridgeProviderTestReply({
+      apiCompat: input.apiCompat,
+      modelId: input.modelId,
+      anthropicRequest,
+      response,
+    });
 
-    const reply = extractAssistantReply(rawParsed) ?? extractAssistantReply(normalized);
     if (!reply) {
+      const error = "上游未返回可识别的 assistant 文本。";
       logUpstream("provider-test-error", {
         providerId: input.providerId,
         role: input.role,
         phase: "parse-assistant-reply",
         elapsedMs,
-        error: "上游未返回可识别的 assistant 文本。",
-        responseShape: describeResponseShape(normalized),
-        bodyJson: normalized,
+        error,
+        apiCompat: input.apiCompat,
+        preferStream,
       });
-      return { ok: false, error: "上游未返回可识别的 assistant 文本。", elapsedMs };
+      return { ok: false, error, elapsedMs };
     }
 
     logUpstream("provider-test-success", {
@@ -420,6 +390,8 @@ async function postUpstreamCompatTest(
       model: input.modelId,
       replyPreview: truncateForLog(reply),
       replyLength: reply.length,
+      apiCompat: input.apiCompat,
+      preferStream,
     });
     return { ok: true, reply, elapsedMs };
   } catch (error) {
@@ -874,121 +846,6 @@ export function parseUpstreamModelsPayload(payload: unknown): UpstreamModelOptio
   return models;
 }
 
-function extractAssistantReply(body: unknown): string | undefined {
-  if (!isRecord(body)) {
-    return undefined;
-  }
-
-  if (Array.isArray(body.content)) {
-    const textParts: string[] = [];
-    const thinkingParts: string[] = [];
-    for (const block of body.content) {
-      if (!isRecord(block)) {
-        continue;
-      }
-      if (block.type === "text" && typeof block.text === "string") {
-        const text = block.text.trim();
-        if (text) {
-          textParts.push(text);
-        }
-      }
-      if (block.type === "thinking" && typeof block.thinking === "string") {
-        const text = block.thinking.trim();
-        if (text) {
-          thinkingParts.push(text);
-        }
-      }
-    }
-    if (textParts.length > 0) {
-      return textParts.join("\n").trim();
-    }
-    if (thinkingParts.length > 0) {
-      return thinkingParts.join("\n").trim();
-    }
-  }
-
-  if (Array.isArray(body.choices)) {
-    for (const choice of body.choices) {
-      if (!isRecord(choice)) {
-        continue;
-      }
-      const message = choice.message;
-      if (isRecord(message)) {
-        const text = extractChatCompletionMessageText(message);
-        if (text) {
-          return text;
-        }
-      }
-      if (typeof choice.text === "string") {
-        const text = choice.text.trim();
-        if (text) {
-          return text;
-        }
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function extractChatCompletionMessageText(message: Record<string, unknown>): string | undefined {
-  const content = message.content;
-  if (typeof content === "string") {
-    const text = content.trim();
-    if (text) {
-      return text;
-    }
-  }
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      if (!isRecord(block)) {
-        continue;
-      }
-      if (typeof block.text === "string") {
-        const text = block.text.trim();
-        if (text) {
-          parts.push(text);
-        }
-      }
-    }
-    if (parts.length > 0) {
-      return parts.join("\n").trim();
-    }
-  }
-  if (typeof message.reasoning_content === "string") {
-    const text = message.reasoning_content.trim();
-    if (text) {
-      return text;
-    }
-  }
-  if (typeof message.reasoning === "string") {
-    const text = message.reasoning.trim();
-    if (text) {
-      return text;
-    }
-  }
-  if (Array.isArray(message.reasoning_details)) {
-    const parts: string[] = [];
-    for (const detail of message.reasoning_details) {
-      if (!isRecord(detail)) {
-        continue;
-      }
-      if (typeof detail.text === "string") {
-        const text = detail.text.trim();
-        if (text) {
-          parts.push(text);
-        }
-      }
-    }
-    if (parts.length > 0) {
-      return parts.join("\n\n").trim();
-    }
-  }
-
-  return undefined;
-}
-
 export function buildProviderTestRequestBody(modelId: string): Record<string, unknown> {
   return buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT);
 }
@@ -997,31 +854,20 @@ export function buildMessagesTestRequestBody(
   modelId: string,
   thinkingEffort?: ThinkingEffort,
 ): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    model: modelId,
-    max_tokens: PROVIDER_TEST_MAX_TOKENS,
-    messages: [{ role: "user", content: "hi" }],
-  };
-  applyThinkingToMessagesBody(body, thinkingEffort ?? "off");
-  return body;
+  return buildBridgeProviderTestAnthropicRequest(
+    modelId,
+    thinkingEffort ?? "off",
+  ) as unknown as Record<string, unknown>;
 }
 
 export function buildResponsesTestRequestBody(modelId: string): Record<string, unknown> {
-  const responses = anthropicToResponses(
-    buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT) as AnthropicRequest,
-  );
-  responses.stream = false;
-  return responses as unknown as Record<string, unknown>;
+  const anthropicRequest = buildBridgeProviderTestAnthropicRequest(modelId, ROUTE_TEST_THINKING_EFFORT);
+  return buildBridgeProviderTestUpstreamBody("openai_responses", anthropicRequest, modelId).body;
 }
 
 export function buildChatCompletionsTestRequestBody(modelId: string): Record<string, unknown> {
-  const responses = anthropicToResponses(
-    buildMessagesTestRequestBody(modelId, ROUTE_TEST_THINKING_EFFORT) as AnthropicRequest,
-  );
-  responses.stream = false;
-  const chatReq = responsesToChatCompletionsRequest(responses);
-  chatReq.stream = false;
-  return chatReq as unknown as Record<string, unknown>;
+  const anthropicRequest = buildBridgeProviderTestAnthropicRequest(modelId, ROUTE_TEST_THINKING_EFFORT);
+  return buildBridgeProviderTestUpstreamBody("openai_chat_completions", anthropicRequest, modelId).body;
 }
 
 const ROUTE_THINKING_EFFORTS = new Set<ThinkingEffort>(["off", "low", "medium", "high", "xhigh", "max"]);
@@ -1039,35 +885,6 @@ function resolveRouteTestThinkingEffort(value: string | undefined): ThinkingEffo
     return ROUTE_TEST_THINKING_EFFORT;
   }
   return ROUTE_TEST_THINKING_EFFORT;
-}
-
-function describeResponseShape(body: unknown): Record<string, unknown> {
-  if (!isRecord(body)) {
-    return { shape: typeof body };
-  }
-
-  const content = body.content;
-  return {
-    topLevelKeys: Object.keys(body),
-    contentKind: Array.isArray(content) ? "array" : typeof content,
-    contentLength: Array.isArray(content) ? content.length : undefined,
-    contentBlocks: Array.isArray(content)
-      ? content.map((block) =>
-          isRecord(block)
-            ? {
-                type: block.type,
-                keys: Object.keys(block),
-                textPreview:
-                  typeof block.text === "string" ? truncateForLog(block.text.slice(0, 240)) : undefined,
-              }
-            : typeof block,
-        )
-      : typeof content === "string"
-        ? truncateForLog(content.slice(0, 240))
-        : undefined,
-    choicesLength: Array.isArray(body.choices) ? body.choices.length : undefined,
-    messageKeys: isRecord(body.message) ? Object.keys(body.message) : undefined,
-  };
 }
 
 function redactRequestHeaders(headers: Record<string, string>): Record<string, string> {

@@ -217,22 +217,27 @@ describe("buildProviderTestRequestBody", () => {
 });
 
 describe("buildOpenAICompatTestRequestBody", () => {
-  test("chat completions test omits reasoning_effort when thinking is off", () => {
-    expect(buildChatCompletionsTestRequestBody("gpt-5.2")).toEqual({
+  test("chat completions test uses bridge with streaming", () => {
+    expect(buildChatCompletionsTestRequestBody("gpt-5.2")).toMatchObject({
       model: "gpt-5.2",
-      messages: [{ role: "user", content: "hi" }],
-      max_completion_tokens: 256,
-      stream: false,
+      stream: true,
     });
+    expect(buildChatCompletionsTestRequestBody("gpt-5.2").messages).toEqual([
+      { role: "user", content: "hi" },
+    ]);
+    expect(buildChatCompletionsTestRequestBody("gpt-5.2")).not.toHaveProperty("reasoning_effort");
   });
 
-  test("responses test omits reasoning when thinking is off", () => {
-    expect(buildResponsesTestRequestBody("gpt-5.2")).toMatchObject({
+  test("responses test uses bridge anthropicToResponses with streaming", () => {
+    const body = buildResponsesTestRequestBody("gpt-5.2");
+    expect(body).toMatchObject({
       model: "gpt-5.2",
+      stream: true,
+      store: false,
       max_output_tokens: 256,
-      stream: false,
     });
-    expect(buildResponsesTestRequestBody("gpt-5.2").reasoning).toBeUndefined();
+    expect(body.include).toEqual(["reasoning.encrypted_content"]);
+    expect(typeof body.input).toBe("string");
   });
 });
 
@@ -294,6 +299,7 @@ describe("testProviderConnection", () => {
         max_tokens: 256,
         messages: [{ role: "user", content: "hi" }],
         thinking: { type: "disabled" },
+        stream: false,
       });
       return new Response(
         JSON.stringify({ content: [{ type: "text", text: "Hello! How can I help?" }] }),
@@ -333,6 +339,7 @@ describe("testProviderConnection", () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true });
       expect(JSON.parse(String(init?.body))).not.toHaveProperty("reasoning_effort");
       return new Response(
         JSON.stringify({
@@ -372,6 +379,106 @@ describe("testProviderConnection", () => {
     );
 
     expect(result).toEqual({ ok: true, reply: "Hi there! How can I help you today?" });
+  });
+
+  test("succeeds for OpenAI Responses buffered JSON via bridge", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async (url: string, init?: RequestInit) => {
+      expect(url).toBe("https://api.example.com/v1/responses");
+      expect(JSON.parse(String(init?.body))).toMatchObject({ stream: true });
+      return new Response(
+        JSON.stringify({
+          id: "resp_test",
+          object: "response",
+          status: "completed",
+          model: "gpt-5.4",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "Hello from responses API" }],
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://api.example.com",
+        apiCompat: "openai_responses",
+        defaultModel: "gpt-5.4",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "Hello from responses API" });
+  });
+
+  test("succeeds for OpenAI Responses SSE via bridge stream parser", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const sse = [
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","output_index":0,"delta":"Hi"}',
+      "",
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","output_index":0,"delta":"!"}',
+      "",
+      "event: response.completed",
+      'data: {"type":"response.completed","response":{"status":"completed"}}',
+      "",
+    ].join("\n");
+
+    const fetcher = async (url: string) => {
+      expect(url).toBe("https://api.example.com/v1/responses");
+      return new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://api.example.com",
+        apiCompat: "openai_responses",
+        defaultModel: "gpt-5.4",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: true, reply: "Hi!" });
+  });
+
+  test("fails when Responses stream and buffered body have no text", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          id: "resp_empty",
+          object: "response",
+          status: "completed",
+          model: "gpt-5.4",
+          output: [],
+          usage: { input_tokens: 47, output_tokens: 11, total_tokens: 58 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://api.example.com",
+        apiCompat: "openai_responses",
+        defaultModel: "gpt-5.4",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: false, error: "上游未返回可识别的 assistant 文本。" });
   });
 
   test("falls back to reasoning text for reasoning-only chat completions replies", async () => {
