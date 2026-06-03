@@ -116,6 +116,30 @@ test("emits thinking placeholder and finalize stream events", () => {
   expect(finalize.streamFinalize).toBe(true);
 });
 
+test("expands serialized content array delivered as one text_delta", () => {
+  const ctx = createSdkStreamContext();
+  const payload =
+    '[{"type":"text","text":"Inspect admin tabs."},{"type":"tool_use","id":"toolu_x","name":"Read","input":{"file_path":"/tmp/main.tsx"}}]';
+  const events = mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_embed",
+      session_id: "sess",
+      event: {
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: payload },
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+  expect(events.some((event) => event.type === "message.delta" && event.payload?.type === "eco_stream")).toBe(
+    true,
+  );
+  expect(events.some((event) => event.type === "tool.started")).toBe(true);
+  expect(events.some((event) => event.payload?.text === payload)).toBe(false);
+});
+
 test("skips duplicate assistant tool_use when stream already emitted", () => {
   const ctx = createSdkStreamContext();
   mapSdkMessageToEvents(

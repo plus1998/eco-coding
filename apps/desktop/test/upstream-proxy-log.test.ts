@@ -13,9 +13,9 @@ import {
 
 test("buildProtocolSummary for anthropic bridge", () => {
   const summary = buildProtocolSummary("anthropic", true);
-  expect(summary.converted).toBe(true);
+  expect(summary.converted).toBe(false);
   expect(summary.upstream).toBe("anthropic");
-  expect(summary.path).toBe("anthropic → responses-ir → anthropic → anthropic-sse");
+  expect(summary.path).toBe("anthropic → anthropic → anthropic-sse");
 });
 
 test("buildProtocolSummary for openai responses bridge", () => {
@@ -40,16 +40,16 @@ test("buildProtocolSummaryForCall describes count_tokens bridge on openai compat
   expect(summary.path).toContain("input_tokens");
 });
 
-test("buildProtocolSummaryForCall describes count_tokens bridge on anthropic", () => {
+test("buildProtocolSummaryForCall describes count_tokens passthrough on anthropic", () => {
   const summary = buildProtocolSummaryForCall({
     apiCompat: "anthropic",
     stream: false,
     operation: "count_tokens",
-    converted: true,
+    converted: false,
   });
-  expect(summary.converted).toBe(true);
-  expect(summary.path).toContain("responses-ir");
+  expect(summary.converted).toBe(false);
   expect(summary.path).toContain("anthropic-count");
+  expect(summary.path).not.toContain("responses-ir");
 });
 
 test("resolveProxyOperation detects count_tokens path", () => {

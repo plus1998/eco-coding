@@ -32,6 +32,7 @@ import {
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
+import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
@@ -1230,8 +1231,64 @@ function mapAssistantMessageToEvents(
   if (!isRecord(message.message) || !Array.isArray(message.message.content)) {
     return events;
   }
-  for (const [index, block] of message.message.content.entries()) {
-    if (!isRecord(block) || block.type !== "tool_use" || typeof block.name !== "string") {
+  const content = expandAssistantMessageContent(
+    message.message.content.filter((block): block is Record<string, unknown> => isRecord(block)),
+  );
+  for (const [index, block] of content.entries()) {
+    if (!isRecord(block)) {
+      continue;
+    }
+    if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+      events.push(
+        createAgentEvent({
+          id: `${uuid}:text:${index}`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "message.delta",
+          payload: {
+            type: "eco_stream",
+            blockKind: "text",
+            text: block.text,
+            streamFinalize: true,
+            ...(typeof message.parent_tool_use_id === "string" && {
+              parent_tool_use_id: message.parent_tool_use_id,
+            }),
+            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          },
+        }),
+      );
+      continue;
+    }
+    if (
+      block.type === "thinking" &&
+      typeof block.thinking === "string" &&
+      block.thinking.trim()
+    ) {
+      events.push(
+        createAgentEvent({
+          id: `${uuid}:thinking:${index}`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "message.delta",
+          payload: {
+            type: "eco_stream",
+            blockKind: "thinking",
+            text: block.thinking,
+            streamFinalize: true,
+            ...(typeof message.parent_tool_use_id === "string" && {
+              parent_tool_use_id: message.parent_tool_use_id,
+            }),
+            ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+            ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+          },
+        }),
+      );
+      continue;
+    }
+    if (block.type !== "tool_use" || typeof block.name !== "string") {
       continue;
     }
 

@@ -1,3 +1,4 @@
+import { normalizeAnthropicContentBlocks } from "@eco/runtime/anthropic-content-normalize";
 import {
   responsesAnthropicEventToSse,
   type AnthropicContentBlock,
@@ -27,8 +28,9 @@ export function anthropicResponseToStreamEvents(message: AnthropicResponse): Ant
     },
   ];
 
-  for (let index = 0; index < message.content.length; index += 1) {
-    const block = message.content[index];
+  const content = normalizeAnthropicContentBlocks(message.content);
+  for (let index = 0; index < content.length; index += 1) {
+    const block = content[index];
     if (!block) {
       continue;
     }

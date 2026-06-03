@@ -5,8 +5,6 @@ import {
 } from "../src/main/bridge-provider-test";
 import { ROUTE_TEST_THINKING_EFFORT } from "../src/shared/models";
 
-const BRIDGE_USER_CONTENT = '[{"type":"text","text":"hi"}]';
-
 function mockAnthropicUpstreamMessage(text: string): Response {
   return new Response(
     JSON.stringify({
@@ -21,13 +19,17 @@ function mockAnthropicUpstreamMessage(text: string): Response {
   );
 }
 
-function expectBridgeAnthropicUpstreamBody(body: unknown, modelId: string): void {
+function expectAnthropicNativeUpstreamBody(body: unknown, modelId: string): void {
   expect(body).toMatchObject({
     model: modelId,
     max_tokens: 256,
-    stream: false,
-    messages: [{ role: "user", content: BRIDGE_USER_CONTENT }],
+    messages: [{ role: "user", content: "hi" }],
+    thinking: { type: "disabled" },
   });
+  expect(body).not.toHaveProperty("stream");
+  expect(body).not.toHaveProperty("input");
+  expect(body).not.toHaveProperty("store");
+  expect(body).not.toHaveProperty("parallel_tool_calls");
 }
 import { normalizeUpstreamApiCompat } from "../src/shared/api-compat";
 import {
@@ -247,13 +249,13 @@ describe("buildProviderTestRequestBody", () => {
 });
 
 describe("buildProviderTestRequestBody", () => {
-  test("anthropic test body is normalized via responses IR", () => {
+  test("anthropic test body stays native without responses IR", () => {
     const anthropicRequest = buildBridgeProviderTestAnthropicRequest(
       "claude-sonnet-4-6",
       ROUTE_TEST_THINKING_EFFORT,
     );
     const { body } = buildBridgeProviderTestUpstreamBody("anthropic", anthropicRequest, "claude-sonnet-4-6");
-    expectBridgeAnthropicUpstreamBody(body, "claude-sonnet-4-6");
+    expectAnthropicNativeUpstreamBody(body, "claude-sonnet-4-6");
   });
 });
 
@@ -315,7 +317,7 @@ describe("testProviderConnection", () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.deepseek.com/anthropic/v1/messages");
-      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "deepseek-chat");
+      expectAnthropicNativeUpstreamBody(JSON.parse(String(init?.body)), "deepseek-chat");
       return mockAnthropicUpstreamMessage("ok");
     };
 
@@ -336,7 +338,7 @@ describe("testProviderConnection", () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.example.com/v1/messages");
-      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "claude-sonnet-4-6");
+      expectAnthropicNativeUpstreamBody(JSON.parse(String(init?.body)), "claude-sonnet-4-6");
       return mockAnthropicUpstreamMessage("Hello! How can I help?");
     };
 
@@ -632,7 +634,7 @@ describe("testRoleRoutes", () => {
     let callCount = 0;
     const fetcher = async (_url: string, init?: RequestInit) => {
       callCount += 1;
-      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), callCount === 1 ? "model-a" : "model-b");
+      expectAnthropicNativeUpstreamBody(JSON.parse(String(init?.body)), callCount === 1 ? "model-a" : "model-b");
       return mockAnthropicUpstreamMessage("ok");
     };
 
@@ -670,7 +672,7 @@ describe("testRoleRoutes", () => {
     } as unknown as ProviderStore;
 
     const fetcher = async (_url: string, init?: RequestInit) => {
-      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "model-b");
+      expectAnthropicNativeUpstreamBody(JSON.parse(String(init?.body)), "model-b");
       return mockAnthropicUpstreamMessage("ok");
     };
 

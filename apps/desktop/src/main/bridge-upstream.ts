@@ -2,8 +2,6 @@ import http from "node:http";
 import {
   anthropicEventToResponsesEvents,
   anthropicToResponses,
-  anthropicToResponsesInputTokensBody,
-  anthropicToResponsesResponse,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
   extractAnthropicRequestToolNames,
@@ -17,9 +15,7 @@ import {
   newAnthropicStreamSequenceState,
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
-  responsesInputTokensToAnthropicCount,
   responsesToAnthropic,
-  responsesToAnthropicRequest,
   responsesToChatCompletionsRequest,
   type AnthropicRequest,
   type AnthropicResponse,
@@ -30,7 +26,7 @@ import {
   type ResponsesStreamEvent,
 } from "@eco/openai-anthropic-bridge";
 import type { AgentRole } from "../shared/ipc";
-import { isOpenAICompat, type UpstreamApiCompat } from "../shared/api-compat";
+import type { UpstreamApiCompat } from "../shared/api-compat";
 import {
   anthropicResponseToStreamEvents,
   writeAnthropicStreamEvents,
@@ -39,7 +35,6 @@ import {
   buildChatCompletionsUrl,
   buildOpenAICompatUpstreamUrl,
   buildProviderRequestBaseUrl,
-  buildResponsesInputTokensUrl,
 } from "./provider-models";
 import { buildProxyUpstreamHeaders } from "./upstream-request-headers";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -97,8 +92,6 @@ export type BridgeUsageHandler = (
   info: BridgeUsageInfo,
 ) => void | Promise<UpstreamProxyCallBilling | null | undefined>;
 
-export type BridgeUpstreamOperation = "messages" | "count_tokens";
-
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -134,23 +127,82 @@ function buildBridgeUsageInfo(
   };
 }
 
-/** Responses IR → upstream wire format (all apiCompat). */
+function bridgeProxyCallCommonFields(input: {
+  route: BridgeForwardRoute;
+  requestedModel: string | undefined;
+  requestUrl: string | undefined;
+  upstreamUrl: string;
+  stream: boolean;
+  converted: boolean;
+}) {
+  return proxyCallCommonFields({
+    role: input.route.role,
+    provider: input.route.provider,
+    apiCompat: input.route.apiCompat,
+    modelId: input.route.modelId,
+    aliasModelId: input.route.aliasModelId,
+    ...(input.requestedModel && { requestedModel: input.requestedModel }),
+    ...(input.requestUrl && { requestUrl: input.requestUrl }),
+    upstreamUrl: input.upstreamUrl,
+    stream: input.stream,
+    converted: input.converted,
+  });
+}
+
+function bridgeProxyDebugField(input: {
+  converted: boolean;
+  clientRequestRaw: string;
+  upstreamRequestRaw: string;
+  responseRaw?: string;
+}): { debug: NonNullable<ReturnType<typeof buildProxyCallDebug>> } | Record<string, never> {
+  const debug = buildProxyCallDebug({
+    converted: input.converted,
+    clientRequestRaw: input.clientRequestRaw,
+    upstreamRequestRaw: input.upstreamRequestRaw,
+    ...(input.responseRaw !== undefined && { responseRaw: input.responseRaw }),
+  });
+  return debug ? { debug } : {};
+}
+
+function bridgeFetchInit(
+  request: http.IncomingMessage,
+  headers: Record<string, string>,
+  body: string,
+): RequestInit {
+  const signal = (request as http.IncomingMessage & { signal?: AbortSignal }).signal;
+  return {
+    method: "POST",
+    headers,
+    body,
+    ...(signal && { signal }),
+  };
+}
+
+/** Anthropic apiCompat: substitute routed model only (no Responses IR). */
+export function buildAnthropicPassthroughPayload(
+  body: Record<string, unknown>,
+  modelId: string,
+): Record<string, unknown> {
+  return { ...body, model: modelId };
+}
+
+/** Responses IR → upstream wire format (OpenAI-compat apiCompat only). */
 export function buildBridgeUpstreamMessagesPayload(
   apiCompat: UpstreamApiCompat,
   anthropicRequest: AnthropicRequest,
   modelId: string,
   stream: boolean,
 ): Record<string, unknown> {
+  if (apiCompat === "anthropic") {
+    return buildAnthropicPassthroughPayload(
+      anthropicRequest as unknown as Record<string, unknown>,
+      modelId,
+    );
+  }
+
   const responsesReq = anthropicToResponses(anthropicRequest);
   responsesReq.model = modelId;
   responsesReq.stream = stream;
-
-  if (apiCompat === "anthropic") {
-    const normalized = responsesToAnthropicRequest(responsesReq);
-    normalized.model = modelId;
-    normalized.stream = stream;
-    return normalized as unknown as Record<string, unknown>;
-  }
 
   if (apiCompat === "openai_responses") {
     return responsesReq as unknown as Record<string, unknown>;
@@ -162,44 +214,12 @@ export function buildBridgeUpstreamMessagesPayload(
   return chatReq as unknown as Record<string, unknown>;
 }
 
-export function buildBridgeUpstreamCountTokensPayload(
-  apiCompat: UpstreamApiCompat,
-  anthropicRequest: AnthropicRequest,
-  modelId: string,
-): Record<string, unknown> {
-  if (isOpenAICompat(apiCompat)) {
-    const body = anthropicToResponsesInputTokensBody(anthropicRequest);
-    body.model = modelId;
-    return body;
-  }
-
-  const responsesReq = anthropicToResponses(anthropicRequest);
-  responsesReq.model = modelId;
-  const normalized = responsesToAnthropicRequest(responsesReq);
-  normalized.model = modelId;
-  if (!(anthropicRequest.max_tokens > 0)) {
-    const raw = normalized as unknown as Record<string, unknown>;
-    delete raw.max_tokens;
-  }
-  return normalized as unknown as Record<string, unknown>;
-}
-
 export function resolveBridgeUpstreamUrl(
   apiCompat: UpstreamApiCompat,
-  operation: BridgeUpstreamOperation,
   baseUrl: string,
   requestPath: string,
   clientRequestUrl?: string,
 ): string {
-  if (operation === "count_tokens") {
-    if (isOpenAICompat(apiCompat)) {
-      return buildResponsesInputTokensUrl(baseUrl, requestPath);
-    }
-    const root = buildProviderRequestBaseUrl(baseUrl, requestPath);
-    const path = clientRequestUrl?.split("?")[0] ?? "/v1/messages/count_tokens";
-    return `${trimTrailingSlash(root)}${path.startsWith("/") ? path : `/${path}`}`;
-  }
-
   if (apiCompat === "openai_chat_completions") {
     return buildChatCompletionsUrl(baseUrl, requestPath);
   }
@@ -305,30 +325,24 @@ function parseBufferedOpenAIMessage(
   const toolNames = requestBody ? extractAnthropicRequestToolNames(requestBody) : [];
   const parsed = JSON.parse(responseText) as Record<string, unknown>;
   if (parsed.type === "message" && Array.isArray(parsed.content)) {
-    return parsed as AnthropicResponse;
+    return parsed as unknown as AnthropicResponse;
   }
   if (apiCompat === "openai_chat_completions" && Array.isArray(parsed.choices)) {
     return responsesToAnthropic(
-      chatCompletionsResponseToResponses(parsed as ChatCompletionsResponse),
+      chatCompletionsResponseToResponses(parsed as unknown as ChatCompletionsResponse, modelId),
       modelId,
       toolNames,
     );
   }
-  return responsesToAnthropic(parsed as ResponsesResponse, modelId, toolNames);
+  return responsesToAnthropic(parsed as unknown as ResponsesResponse, modelId, toolNames);
 }
 
-function normalizeBufferedAnthropicUpstreamMessage(
-  responseText: string,
-  modelId: string,
-  requestBody?: AnthropicRequest,
-): AnthropicResponse {
-  const toolNames = requestBody ? extractAnthropicRequestToolNames(requestBody) : [];
-  const parsed = JSON.parse(responseText) as AnthropicResponse;
+function parseBufferedAnthropicUpstreamMessage(responseText: string): AnthropicResponse {
+  const parsed = JSON.parse(responseText) as Record<string, unknown>;
   if (parsed.type !== "message" || !Array.isArray(parsed.content)) {
     throw new Error("not anthropic message");
   }
-  const responsesForm = anthropicToResponsesResponse(parsed);
-  return responsesToAnthropic(responsesForm, modelId, toolNames);
+  return parsed as unknown as AnthropicResponse;
 }
 
 function writeBufferedAnthropicToClient(
@@ -349,149 +363,6 @@ function writeBufferedAnthropicToClient(
 
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(anthropicMessage));
-}
-
-export async function forwardCountTokensViaBridge(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  ctx: BridgeForwardContext,
-): Promise<void> {
-  const { route, body, requestedModel, requestUrl } = ctx;
-  const startedAt = Date.now();
-  const anthropicRequest = body as AnthropicRequest;
-  const upstreamUrl = resolveBridgeUpstreamUrl(
-    route.apiCompat,
-    "count_tokens",
-    route.provider.baseUrl,
-    route.provider.requestPath,
-    requestUrl,
-  );
-  const upstreamBody = buildBridgeUpstreamCountTokensPayload(
-    route.apiCompat,
-    anthropicRequest,
-    route.modelId,
-  );
-  const requestPayload = JSON.stringify(upstreamBody);
-  const anthropicRequestPayload = JSON.stringify(body);
-  const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
-  const callCommon = () =>
-    proxyCallCommonFields({
-      role: route.role,
-      provider: route.provider,
-      apiCompat: route.apiCompat,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
-      requestedModel,
-      requestUrl,
-      upstreamUrl,
-      stream: false,
-      converted: true,
-    });
-  const failureDebug = (responseRaw?: string) =>
-    buildProxyCallDebug({
-      converted: true,
-      clientRequestRaw: anthropicRequestPayload,
-      upstreamRequestRaw: requestPayload,
-      responseRaw,
-    });
-
-  const logTag = isOpenAICompat(route.apiCompat)
-    ? "openai-responses-input-tokens-request"
-    : "anthropic-count-tokens-request";
-  if (isUpstreamLogVerbose()) {
-    logUpstream(logTag, {
-      url: upstreamUrl,
-      headers: headersToLoggable(upstreamHeaders),
-      body: parseJsonForLog(requestPayload),
-    });
-  }
-
-  let upstreamResponse: Response;
-  try {
-    upstreamResponse = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: requestPayload,
-      signal: request.signal as AbortSignal | undefined,
-    });
-  } catch (error) {
-    const message = formatUpstreamFetchError(error);
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: false,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: 0, streaming: false },
-      error: message,
-      debug: failureDebug(),
-    });
-    throw error;
-  }
-
-  const responseText = await upstreamResponse.text();
-
-  if (!upstreamResponse.ok) {
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: false,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: false },
-      error: upstreamResponse.statusText || String(upstreamResponse.status),
-      debug: failureDebug(responseText),
-    });
-    response.writeHead(upstreamResponse.status, {
-      "content-type": upstreamResponse.headers.get("content-type") ?? "application/json",
-    });
-    response.end(responseText);
-    return;
-  }
-
-  let anthropicCount: { input_tokens: number };
-  try {
-    if (isOpenAICompat(route.apiCompat)) {
-      anthropicCount = responsesInputTokensToAnthropicCount(JSON.parse(responseText));
-    } else {
-      const parsed = JSON.parse(responseText) as Record<string, unknown>;
-      if (typeof parsed.input_tokens === "number") {
-        anthropicCount = { input_tokens: Math.trunc(parsed.input_tokens) };
-      } else {
-        anthropicCount = responsesInputTokensToAnthropicCount(parsed);
-      }
-    }
-  } catch (error) {
-    const message = formatUpstreamFetchError(error);
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: false,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: false },
-      error: `无法解析 count_tokens 响应：${message}`,
-      debug: failureDebug(responseText),
-    });
-    response.writeHead(502, { "content-type": "application/json" });
-    response.end(JSON.stringify({ error: "无法解析 count_tokens 响应。" }));
-    return;
-  }
-
-  logUpstreamProxyCall({
-    at: new Date().toISOString(),
-    ok: true,
-    elapsedMs: Date.now() - startedAt,
-    ...callCommon(),
-    http: { status: upstreamResponse.status, streaming: false },
-    tokens: {
-      input: anthropicCount.input_tokens,
-      output: 0,
-      cacheRead: 0,
-      cacheCreation: 0,
-    },
-    billing: null,
-  });
-
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(JSON.stringify(anthropicCount));
 }
 
 export async function forwardMessagesViaBridge(
@@ -515,12 +386,10 @@ async function forwardAnthropicNativeMessages(
 ): Promise<void> {
   const { route, body, requestedModel, onUsage, requestUrl } = ctx;
   const startedAt = Date.now();
-  const anthropicRequest = body as AnthropicRequest;
-  const requestToolNames = extractAnthropicRequestToolNames(anthropicRequest);
+  const anthropicRequest = body as unknown as AnthropicRequest;
   const stream = body.stream === true;
   const upstreamUrl = resolveBridgeUpstreamUrl(
     route.apiCompat,
-    "messages",
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
@@ -535,24 +404,20 @@ async function forwardAnthropicNativeMessages(
   const anthropicRequestPayload = JSON.stringify(body);
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const callCommon = () =>
-    proxyCallCommonFields({
-      role: route.role,
-      provider: route.provider,
-      apiCompat: route.apiCompat,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
+    bridgeProxyCallCommonFields({
+      route,
       requestedModel,
       requestUrl,
       upstreamUrl,
       stream,
-      converted: true,
+      converted: false,
     });
   const failureDebug = (responseRaw?: string) =>
-    buildProxyCallDebug({
-      converted: true,
+    bridgeProxyDebugField({
+      converted: false,
       clientRequestRaw: anthropicRequestPayload,
       upstreamRequestRaw: requestPayload,
-      responseRaw,
+      ...(responseRaw !== undefined && { responseRaw }),
     });
 
   if (isUpstreamLogVerbose()) {
@@ -565,12 +430,7 @@ async function forwardAnthropicNativeMessages(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: requestPayload,
-      signal: request.signal as AbortSignal | undefined,
-    });
+    upstreamResponse = await fetch(upstreamUrl, bridgeFetchInit(request, upstreamHeaders, requestPayload));
   } catch (error) {
     const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
@@ -580,7 +440,7 @@ async function forwardAnthropicNativeMessages(
       ...callCommon(),
       http: { status: 0, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
     throw error;
   }
@@ -601,7 +461,7 @@ async function forwardAnthropicNativeMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: upstreamResponse.statusText || String(upstreamResponse.status),
-      debug: failureDebug(responseText),
+      ...failureDebug(responseText),
     });
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
@@ -612,29 +472,12 @@ async function forwardAnthropicNativeMessages(
 
   if (!isEventStream) {
     const responseText = await upstreamResponse.text();
-    let anthropicMessage: AnthropicResponse;
+    let usage: ParsedUsage | null = null;
     try {
-      anthropicMessage = normalizeBufferedAnthropicUpstreamMessage(
-        responseText,
-        route.modelId,
-        anthropicRequest,
-      );
+      usage = extractUsageFromResponseBody(JSON.parse(responseText));
     } catch {
-      logUpstreamProxyCall({
-        at: new Date().toISOString(),
-        ok: false,
-        elapsedMs: Date.now() - startedAt,
-        ...callCommon(),
-        http: { status: upstreamResponse.status, streaming: stream },
-        error: "无法解析 Anthropic 上游响应。",
-        debug: failureDebug(responseText),
-      });
-      response.writeHead(502, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: "无法解析 Anthropic 上游响应。" }));
-      return;
+      usage = null;
     }
-
-    const usage = extractUsageFromResponseBody(anthropicMessage);
     const billing = usage
       ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel, requestId))
       : null;
@@ -647,7 +490,9 @@ async function forwardAnthropicNativeMessages(
       ...(usage && { tokens: tokensFromUsage(usage) }),
       billing,
     });
-    writeBufferedAnthropicToClient(response, stream, anthropicMessage);
+
+    response.writeHead(200, { "content-type": contentType || "application/json" });
+    response.end(responseText);
     return;
   }
 
@@ -657,36 +502,7 @@ async function forwardAnthropicNativeMessages(
     connection: "keep-alive",
   });
 
-  const anthToResState = newAnthropicEventToResponsesState();
-  const anthropicState = newResponsesEventToAnthropicState(requestToolNames);
-  const sseSequence = newAnthropicStreamSequenceState();
   const usageTracker = createStreamingUsageTracker();
-  let sseBuffer = "";
-
-  const writeConvertedAnthropicSse = (
-    events: ReturnType<typeof responsesEventToAnthropicEvents>,
-  ) => {
-    for (const anthropicEvent of events) {
-      const violation = checkAnthropicStreamEvent(sseSequence, anthropicEvent);
-      if (violation) {
-        logUpstreamError("sdk-stream-sequence", {
-          role: route.role,
-          modelId: route.modelId,
-          violation,
-        });
-      }
-      const sse = responsesAnthropicEventToSse(anthropicEvent);
-      usageTracker.push(Buffer.from(sse, "utf8"));
-      response.write(sse);
-    }
-  };
-
-  const processUpstreamAnthropicEvent = (evt: AnthropicStreamEvent) => {
-    const responsesEvents = anthropicEventToResponsesEvents(evt, anthToResState);
-    for (const responsesEvent of responsesEvents) {
-      writeConvertedAnthropicSse(responsesEventToAnthropicEvents(responsesEvent, anthropicState));
-    }
-  };
 
   try {
     if (!upstreamResponse.body) {
@@ -695,31 +511,10 @@ async function forwardAnthropicNativeMessages(
     }
 
     for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
-      sseBuffer += Buffer.from(chunk).toString("utf8");
-      const { blocks, remainder } = splitSseBlocks(sseBuffer);
-      sseBuffer = remainder;
-      for (const block of blocks) {
-        const evt = parseAnthropicStreamEventBlock(block);
-        if (evt) {
-          processUpstreamAnthropicEvent(evt);
-        }
-      }
+      const bytes = Buffer.from(chunk);
+      usageTracker.push(bytes);
+      response.write(bytes);
     }
-
-    if (sseBuffer.trim()) {
-      const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
-      for (const block of blocks) {
-        const evt = parseAnthropicStreamEventBlock(block);
-        if (evt) {
-          processUpstreamAnthropicEvent(evt);
-        }
-      }
-    }
-
-    for (const responsesEvent of finalizeAnthropicResponsesStream(anthToResState)) {
-      writeConvertedAnthropicSse(responsesEventToAnthropicEvents(responsesEvent, anthropicState));
-    }
-    writeConvertedAnthropicSse(finalizeResponsesAnthropicStream(anthropicState));
 
     const usage = usageTracker.finish();
     const billing = usage
@@ -743,7 +538,7 @@ async function forwardAnthropicNativeMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
   } finally {
     if (!response.writableEnded) {
@@ -759,12 +554,11 @@ async function forwardOpenAIResponsesMessages(
 ): Promise<void> {
   const { route, body, requestedModel, onUsage, requestUrl } = ctx;
   const startedAt = Date.now();
-  const anthropicRequest = body as AnthropicRequest;
+  const anthropicRequest = body as unknown as AnthropicRequest;
   const requestToolNames = extractAnthropicRequestToolNames(anthropicRequest);
   const stream = body.stream === true;
   const upstreamUrl = resolveBridgeUpstreamUrl(
     route.apiCompat,
-    "messages",
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
@@ -779,12 +573,8 @@ async function forwardOpenAIResponsesMessages(
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const anthropicRequestPayload = JSON.stringify(body);
   const callCommon = () =>
-    proxyCallCommonFields({
-      role: route.role,
-      provider: route.provider,
-      apiCompat: route.apiCompat,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
+    bridgeProxyCallCommonFields({
+      route,
       requestedModel,
       requestUrl,
       upstreamUrl,
@@ -792,11 +582,11 @@ async function forwardOpenAIResponsesMessages(
       converted: true,
     });
   const failureDebug = (responseRaw?: string) =>
-    buildProxyCallDebug({
+    bridgeProxyDebugField({
       converted: true,
       clientRequestRaw: anthropicRequestPayload,
       upstreamRequestRaw: requestPayload,
-      responseRaw,
+      ...(responseRaw !== undefined && { responseRaw }),
     });
 
   if (isUpstreamLogVerbose()) {
@@ -809,12 +599,7 @@ async function forwardOpenAIResponsesMessages(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: requestPayload,
-      signal: request.signal as AbortSignal | undefined,
-    });
+    upstreamResponse = await fetch(upstreamUrl, bridgeFetchInit(request, upstreamHeaders, requestPayload));
   } catch (error) {
     const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
@@ -824,7 +609,7 @@ async function forwardOpenAIResponsesMessages(
       ...callCommon(),
       http: { status: 0, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
     throw error;
   }
@@ -841,7 +626,7 @@ async function forwardOpenAIResponsesMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: upstreamResponse.statusText || String(upstreamResponse.status),
-      debug: failureDebug(responseText),
+      ...failureDebug(responseText),
     });
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
@@ -868,7 +653,7 @@ async function forwardOpenAIResponsesMessages(
         ...callCommon(),
         http: { status: upstreamResponse.status, streaming: stream },
         error: "无法解析 OpenAI Responses 上游响应。",
-        debug: failureDebug(responseText),
+        ...failureDebug(responseText),
       });
       response.writeHead(502, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "无法解析 OpenAI Responses 上游响应。" }));
@@ -963,7 +748,7 @@ async function forwardOpenAIResponsesMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
   } finally {
     if (!response.writableEnded) {
@@ -979,12 +764,11 @@ async function forwardOpenAIChatCompletionsMessages(
 ): Promise<void> {
   const { route, body, requestedModel, onUsage, requestUrl } = ctx;
   const startedAt = Date.now();
-  const anthropicRequest = body as AnthropicRequest;
+  const anthropicRequest = body as unknown as AnthropicRequest;
   const requestToolNames = extractAnthropicRequestToolNames(anthropicRequest);
   const stream = body.stream === true;
   const upstreamUrl = resolveBridgeUpstreamUrl(
     route.apiCompat,
-    "messages",
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
@@ -999,12 +783,8 @@ async function forwardOpenAIChatCompletionsMessages(
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const anthropicRequestPayload = JSON.stringify(body);
   const callCommon = () =>
-    proxyCallCommonFields({
-      role: route.role,
-      provider: route.provider,
-      apiCompat: route.apiCompat,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
+    bridgeProxyCallCommonFields({
+      route,
       requestedModel,
       requestUrl,
       upstreamUrl,
@@ -1012,11 +792,11 @@ async function forwardOpenAIChatCompletionsMessages(
       converted: true,
     });
   const failureDebug = (responseRaw?: string) =>
-    buildProxyCallDebug({
+    bridgeProxyDebugField({
       converted: true,
       clientRequestRaw: anthropicRequestPayload,
       upstreamRequestRaw: requestPayload,
-      responseRaw,
+      ...(responseRaw !== undefined && { responseRaw }),
     });
 
   if (isUpstreamLogVerbose()) {
@@ -1029,12 +809,7 @@ async function forwardOpenAIChatCompletionsMessages(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: requestPayload,
-      signal: request.signal as AbortSignal | undefined,
-    });
+    upstreamResponse = await fetch(upstreamUrl, bridgeFetchInit(request, upstreamHeaders, requestPayload));
   } catch (error) {
     const message = formatUpstreamFetchError(error);
     logUpstreamProxyCall({
@@ -1044,7 +819,7 @@ async function forwardOpenAIChatCompletionsMessages(
       ...callCommon(),
       http: { status: 0, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
     throw error;
   }
@@ -1061,7 +836,7 @@ async function forwardOpenAIChatCompletionsMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: upstreamResponse.statusText || String(upstreamResponse.status),
-      debug: failureDebug(responseText),
+      ...failureDebug(responseText),
     });
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
@@ -1088,7 +863,7 @@ async function forwardOpenAIChatCompletionsMessages(
         ...callCommon(),
         http: { status: upstreamResponse.status, streaming: stream },
         error: "无法解析 OpenAI Chat Completions 上游响应。",
-        debug: failureDebug(responseText),
+        ...failureDebug(responseText),
       });
       response.writeHead(502, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: "无法解析 OpenAI Chat Completions 上游响应。" }));
@@ -1215,7 +990,7 @@ async function forwardOpenAIChatCompletionsMessages(
       ...callCommon(),
       http: { status: upstreamResponse.status, streaming: stream },
       error: message,
-      debug: failureDebug(),
+      ...failureDebug(),
     });
   } finally {
     if (!response.writableEnded) {
@@ -1381,8 +1156,8 @@ function parseBridgeProbeBufferedReply(
 ): string | undefined {
   try {
     if (apiCompat === "anthropic") {
-      const normalized = normalizeBufferedAnthropicUpstreamMessage(raw, modelId, anthropicRequest);
-      return extractTextFromAnthropicMessage(normalized);
+      const message = parseBufferedAnthropicUpstreamMessage(raw);
+      return extractTextFromAnthropicMessage(message);
     }
     const anthropic = parseBufferedOpenAIMessage(raw, apiCompat, modelId, anthropicRequest);
     return extractTextFromAnthropicMessage(anthropic);
@@ -1409,26 +1184,4 @@ function extractTextFromAnthropicMessage(message: AnthropicResponse): string | u
     return thinkingParts.join("\n").trim();
   }
   return undefined;
-}
-
-/** Back-compat aliases for model-upstream-openai importers. */
-export type OpenAICompatForwardRoute = BridgeForwardRoute;
-export type OpenAICompatForwardContext = BridgeForwardContext;
-export type OpenAICompatUsageInfo = BridgeUsageInfo;
-export type OpenAICompatUsageHandler = BridgeUsageHandler;
-
-export async function forwardMessagesViaOpenAICompat(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  ctx: OpenAICompatForwardContext,
-): Promise<void> {
-  return forwardMessagesViaBridge(request, response, ctx);
-}
-
-export async function forwardCountTokensViaOpenAICompat(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  ctx: OpenAICompatForwardContext,
-): Promise<void> {
-  return forwardCountTokensViaBridge(request, response, ctx);
 }

@@ -3,6 +3,7 @@ import {
   type AgentRole,
   createAgentEvent,
 } from "../../shared/src";
+import { tryParseSerializedAnthropicContentBlocks } from "./anthropic-content-normalize.js";
 import { isSubagentRole } from "./subagent-availability.js";
 
 export type EcoStreamBlockKind = "text" | "thinking" | "tool_use";
@@ -236,6 +237,54 @@ export function mapStreamEventToEvents(
     if (delta.type === "text_delta" && typeof delta.text === "string") {
       const text = delta.text;
       if (!text) {
+        return events;
+      }
+      const embedded = tryParseSerializedAnthropicContentBlocks(text);
+      if (embedded) {
+        for (const [index, block] of embedded.entries()) {
+          if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+            events.push(
+              createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
+                type: "eco_stream",
+                blockKind: "text",
+                text: block.text,
+                streamFinalize: true,
+                ...streamMeta,
+              }),
+            );
+          } else if (
+            block.type === "thinking" &&
+            typeof block.thinking === "string" &&
+            block.thinking.trim()
+          ) {
+            events.push(
+              createStreamDeltaEvent(threadId, sessionId, streamRole, uuid, {
+                type: "eco_stream",
+                blockKind: "thinking",
+                text: block.thinking,
+                streamFinalize: true,
+                ...streamMeta,
+              }),
+            );
+          } else if (block.type === "tool_use" && typeof block.name === "string") {
+            const toolUseId = typeof block.id === "string" ? block.id : undefined;
+            if (toolUseId && ctx.emittedToolUseIds.has(toolUseId)) {
+              continue;
+            }
+            if (toolUseId) {
+              ctx.emittedToolUseIds.add(toolUseId);
+            }
+            events.push(
+              createToolStartedEvent(threadId, sessionId, streamRole, `${uuid}:embedded:${index}`, {
+                type: "tool_use",
+                tool_name: block.name,
+                ...(toolUseId && { tool_use_id: toolUseId }),
+                ...(isRecord(block.input) && { input: block.input }),
+                ...streamMeta,
+              }),
+            );
+          }
+        }
         return events;
       }
       events.push(

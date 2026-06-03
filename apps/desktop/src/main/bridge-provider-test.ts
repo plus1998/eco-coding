@@ -4,7 +4,6 @@ import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { ThinkingEffort } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
-  buildBridgeUpstreamCountTokensPayload,
   buildBridgeUpstreamMessagesPayload,
   parseBridgeProbeReply,
 } from "./bridge-upstream";
@@ -21,10 +20,10 @@ export function buildBridgeProviderTestAnthropicRequest(
     messages: [{ role: "user", content: "hi" }],
   };
   applyThinkingToMessagesBody(body, thinkingEffort);
-  return body as AnthropicRequest;
+  return body as unknown as AnthropicRequest;
 }
 
-/** Same conversion chain as proxy forwarders; OpenAI compat probes use streaming. */
+/** Same wire-shape rules as proxy forwarders; OpenAI compat probes use streaming. */
 export function buildBridgeProviderTestUpstreamBody(
   apiCompat: UpstreamApiCompat,
   anthropicRequest: AnthropicRequest,
@@ -33,14 +32,6 @@ export function buildBridgeProviderTestUpstreamBody(
   const stream = apiCompat !== "anthropic";
   const body = buildBridgeUpstreamMessagesPayload(apiCompat, anthropicRequest, modelId, stream);
   return { body, preferStream: stream };
-}
-
-export function buildBridgeProviderTestCountTokensBody(
-  apiCompat: UpstreamApiCompat,
-  anthropicRequest: AnthropicRequest,
-  modelId: string,
-): Record<string, unknown> {
-  return buildBridgeUpstreamCountTokensPayload(apiCompat, anthropicRequest, modelId);
 }
 
 export async function parseBridgeProviderTestReply(params: {

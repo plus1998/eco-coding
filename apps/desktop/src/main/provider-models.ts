@@ -451,11 +451,6 @@ export function buildMessagesUrl(baseUrl: string, requestPath?: string): string 
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/messages`;
 }
 
-/** OpenAI Chat Completions: POST `{requestBase}/v1/chat/completions`. */
-export function buildChatCompletionsUrl(baseUrl: string, requestPath?: string): string {
-  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/chat/completions`;
-}
-
 /** OpenAI Responses API: POST `{requestBase}/v1/responses` (bridge hub; preferred for OpenAI compat). */
 export function buildResponsesUrl(baseUrl: string, requestPath?: string): string {
   return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/responses`;
