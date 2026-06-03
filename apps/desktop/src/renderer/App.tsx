@@ -707,6 +707,27 @@ function App() {
     return () => cancelAnimationFrame(frame);
   }, [activityLines, activeThread?.id, scrollActivityFeedToEnd]);
 
+  useLayoutEffect(() => {
+    if (
+      !canRetryThread ||
+      showPlanApproval ||
+      !activeThread ||
+      (!planFailureMessage && activeThread.status !== "failed")
+    ) {
+      return;
+    }
+    scrollActivityFeedToEnd(true);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeThread?.id,
+    activeThread?.status,
+    canRetryThread,
+    planFailureMessage,
+    scrollActivityFeedToEnd,
+    showPlanApproval,
+  ]);
+
   function withoutReconnectActivityLines(lines: ActivityLine[]): ActivityLine[] {
     return lines.filter((entry) => !isReconnectActivityMessage(entry.message));
   }
@@ -1553,6 +1574,16 @@ function App() {
                 </header>
               )}
               <div className="activity-messages">
+                <ActivityLogView
+                  lines={activityLines}
+                  {...(activeThread && { thread: activeThread })}
+                  onRestorePrompt={restorePrompt}
+                  onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
+                  {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
+                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                  {...(activeThread &&
+                    contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
+                />
                 {canRetryThread && !showPlanApproval && (planFailureMessage || activeThread?.status === "failed") ? (
                   <div className="thread-retry-banner" role="alert">
                     <div className="thread-retry-banner-body">
@@ -1618,16 +1649,6 @@ function App() {
                     </div>
                   </div>
                 ) : null}
-                <ActivityLogView
-                  lines={activityLines}
-                  {...(activeThread && { thread: activeThread })}
-                  onRestorePrompt={restorePrompt}
-                  onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
-                  {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
-                  {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                  {...(activeThread &&
-                    contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
-                />
                 {showClarification && pendingClarification ? (
                   <ClarificationPanel
                     request={pendingClarification}

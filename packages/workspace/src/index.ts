@@ -137,6 +137,11 @@ export interface CommandRunner {
 export class GitWorktreeService {
   constructor(private readonly runner: CommandRunner) {}
 
+  async isInsideWorktree(worktreePath: string): Promise<boolean> {
+    const result = await this.runner.run(["git", "rev-parse", "--is-inside-work-tree"], worktreePath);
+    return result.exitCode === 0 && result.stdout.trim() === "true";
+  }
+
   async ensureGitRepository(workspacePath: string): Promise<void> {
     const result = await this.runner.run(["git", "rev-parse", "--show-toplevel"], workspacePath);
     if (result.exitCode !== 0) {
@@ -185,7 +190,7 @@ export class GitWorktreeService {
 
     const nameResult = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
     if (nameResult.exitCode !== 0) {
-      throw new Error(`Failed to list changed files: ${nameResult.stderr || nameResult.stdout}`);
+      throw new Error(formatGitCommandFailure("Failed to list changed files", nameResult));
     }
     const files = nameResult.stdout
       .split("\n")
@@ -217,7 +222,7 @@ export class GitWorktreeService {
   private async listTrackedChangedFiles(plan: WorktreePlan, baseSha: string): Promise<string[]> {
     const result = await this.runner.run(["git", "diff", "--name-only", baseSha], plan.worktreePath);
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to list changed files: ${result.stderr || result.stdout}`);
+      throw new Error(formatGitCommandFailure("Failed to list changed files", result));
     }
     return result.stdout
       .split("\n")
@@ -331,4 +336,12 @@ function pickStrictestDecision(decisions: PolicyDecision[]): PolicyDecision {
 
 function riskRank(riskLevel: ApprovalRiskLevel): number {
   return { low: 0, medium: 1, high: 2, critical: 3 }[riskLevel];
+}
+
+function formatGitCommandFailure(
+  prefix: string,
+  result: { exitCode: number; stdout: string; stderr: string },
+): string {
+  const detail = result.stderr.trim() || result.stdout.trim() || `git exited with code ${result.exitCode}`;
+  return `${prefix}: ${detail}`;
 }

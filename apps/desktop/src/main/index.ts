@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -270,6 +271,12 @@ app.whenReady().then(async () => {
     monitor: contextMonitor,
     isThreadRunning: (threadId) => activeRuns.has(threadId),
     getResume: (threadId, worktreePath) => resolveResumeOptions(threadId, worktreePath),
+    isWorktreePathReady: async (worktreePath) => {
+      if (!(await fileExists(worktreePath))) {
+        return false;
+      }
+      return gitWorktrees.isInsideWorktree(worktreePath);
+    },
     withSdkDriver: async (threadId, fn) => {
       const runtimeConfig = resolveRuntimeConfig(
         providerStore.getSettings(),
@@ -1995,6 +2002,9 @@ async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult
   if (!exists) {
     return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
   }
+  if (!(await gitWorktrees.isInsideWorktree(plan.worktreePath))) {
+    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  }
 
   try {
     const changedFiles = await gitWorktrees.changedFiles(plan);
@@ -2215,7 +2225,11 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   if (!session?.sessionId) {
     return undefined;
   }
-  if (session.cwd !== worktreePath) {
+  if (
+    !existsSync(worktreePath) ||
+    !existsSync(session.cwd) ||
+    session.cwd !== worktreePath
+  ) {
     conversationStore.clearSdkSession(threadId);
     return undefined;
   }
@@ -2857,11 +2871,14 @@ async function ensureContextHeadroom(
 }
 
 function resolveThreadWorktreePath(threadId: string): string | undefined {
-  return (
+  const candidate =
     activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
     conversationStore.getSdkSession(threadId)?.cwd ??
-    conversationStore.getPendingPlan(threadId)?.worktreePath
-  );
+    conversationStore.getPendingPlan(threadId)?.worktreePath;
+  if (!candidate || !existsSync(candidate)) {
+    return undefined;
+  }
+  return candidate;
 }
 
 /** Call after activeRuns.delete so /context breakdown is not blocked as "still running". */

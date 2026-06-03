@@ -28,6 +28,8 @@ export interface ContextSnapshotSchedulerOptions {
   monitor: ContextWindowMonitor;
   isThreadRunning: (threadId: string) => boolean;
   getResume: (threadId: string, worktreePath: string) => EcoSdkResumeOptions | undefined;
+  /** When set, skip /context refresh if the worktree path is missing or no longer a git worktree. */
+  isWorktreePathReady?: (worktreePath: string) => Promise<boolean>;
   withSdkDriver: (
     threadId: string,
     fn: (driver: SdkDriver, signal: AbortSignal, routes: readonly ResolvedModelRoute[]) => Promise<void>,
@@ -152,6 +154,10 @@ export class ContextSnapshotScheduler {
       return;
     }
     if (this.options.isThreadRunning(threadId)) {
+      return;
+    }
+
+    if (this.options.isWorktreePathReady && !(await this.options.isWorktreePathReady(worktreePath))) {
       return;
     }
 
@@ -301,6 +307,11 @@ export class ContextSnapshotScheduler {
     }
 
     if (this.refreshInFlight.has(threadId)) {
+      return;
+    }
+
+    if (this.options.isWorktreePathReady && !(await this.options.isWorktreePathReady(worktreePath))) {
+      this.emitLiveFromMonitor(threadId);
       return;
     }
 
