@@ -367,6 +367,7 @@ async function postUpstreamCompatTest(
       modelId: input.modelId,
       anthropicRequest,
       response,
+      preferStream,
     });
 
     if (!reply) {

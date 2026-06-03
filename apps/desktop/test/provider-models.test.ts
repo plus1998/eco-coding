@@ -1,4 +1,34 @@
 import { describe, expect, test } from "bun:test";
+import {
+  buildBridgeProviderTestAnthropicRequest,
+  buildBridgeProviderTestUpstreamBody,
+} from "../src/main/bridge-provider-test";
+import { ROUTE_TEST_THINKING_EFFORT } from "../src/shared/models";
+
+const BRIDGE_USER_CONTENT = '[{"type":"text","text":"hi"}]';
+
+function mockAnthropicUpstreamMessage(text: string): Response {
+  return new Response(
+    JSON.stringify({
+      type: "message",
+      role: "assistant",
+      model: "test",
+      content: [{ type: "text", text }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }),
+    { status: 200 },
+  );
+}
+
+function expectBridgeAnthropicUpstreamBody(body: unknown, modelId: string): void {
+  expect(body).toMatchObject({
+    model: modelId,
+    max_tokens: 256,
+    stream: false,
+    messages: [{ role: "user", content: BRIDGE_USER_CONTENT }],
+  });
+}
 import { normalizeUpstreamApiCompat } from "../src/shared/api-compat";
 import {
   buildChatCompletionsUrl,
@@ -216,6 +246,17 @@ describe("buildProviderTestRequestBody", () => {
   });
 });
 
+describe("buildProviderTestRequestBody", () => {
+  test("anthropic test body is normalized via responses IR", () => {
+    const anthropicRequest = buildBridgeProviderTestAnthropicRequest(
+      "claude-sonnet-4-6",
+      ROUTE_TEST_THINKING_EFFORT,
+    );
+    const { body } = buildBridgeProviderTestUpstreamBody("anthropic", anthropicRequest, "claude-sonnet-4-6");
+    expectBridgeAnthropicUpstreamBody(body, "claude-sonnet-4-6");
+  });
+});
+
 describe("buildOpenAICompatTestRequestBody", () => {
   test("chat completions test uses bridge with streaming", () => {
     expect(buildChatCompletionsTestRequestBody("gpt-5.2")).toMatchObject({
@@ -272,9 +313,10 @@ describe("testProviderConnection", () => {
 
   test("uses request path for messages endpoint", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
-    const fetcher = async (url: string) => {
+    const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.deepseek.com/anthropic/v1/messages");
-      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "deepseek-chat");
+      return mockAnthropicUpstreamMessage("ok");
     };
 
     const result = await testProviderConnection(
@@ -294,17 +336,8 @@ describe("testProviderConnection", () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://api.example.com/v1/messages");
-      expect(JSON.parse(String(init?.body))).toEqual({
-        model: "claude-sonnet-4-6",
-        max_tokens: 256,
-        messages: [{ role: "user", content: "hi" }],
-        thinking: { type: "disabled" },
-        stream: false,
-      });
-      return new Response(
-        JSON.stringify({ content: [{ type: "text", text: "Hello! How can I help?" }] }),
-        { status: 200 },
-      );
+      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "claude-sonnet-4-6");
+      return mockAnthropicUpstreamMessage("Hello! How can I help?");
     };
 
     const result = await testProviderConnection(
@@ -321,7 +354,12 @@ describe("testProviderConnection", () => {
     const fetcher = async () =>
       new Response(
         JSON.stringify({
+          type: "message",
+          role: "assistant",
+          model: "qwen3",
           content: [{ type: "thinking", thinking: "The user said hi." }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 1, output_tokens: 1 },
         }),
         { status: 200 },
       );
@@ -548,7 +586,7 @@ describe("testRoleRoutes", () => {
     let callCount = 0;
     const fetcher = async () => {
       callCount += 1;
-      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+      return mockAnthropicUpstreamMessage("ok");
     };
 
     const result = await testRoleRoutes(
@@ -594,10 +632,8 @@ describe("testRoleRoutes", () => {
     let callCount = 0;
     const fetcher = async (_url: string, init?: RequestInit) => {
       callCount += 1;
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        thinking: { type: "disabled" },
-      });
-      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), callCount === 1 ? "model-a" : "model-b");
+      return mockAnthropicUpstreamMessage("ok");
     };
 
     const result = await testRoleRoutes(
@@ -634,10 +670,8 @@ describe("testRoleRoutes", () => {
     } as unknown as ProviderStore;
 
     const fetcher = async (_url: string, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        thinking: { type: "disabled" },
-      });
-      return new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), { status: 200 });
+      expectBridgeAnthropicUpstreamBody(JSON.parse(String(init?.body)), "model-b");
+      return mockAnthropicUpstreamMessage("ok");
     };
 
     const result = await testRoleRoutes(

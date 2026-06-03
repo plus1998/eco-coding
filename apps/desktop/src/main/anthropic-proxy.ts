@@ -1,39 +1,22 @@
 import { createHash, randomInt } from "node:crypto";
 import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
-import {
-  isOpenAICompat,
-  resolveUpstreamApiCompat,
-  type UpstreamApiCompat,
-} from "../shared/api-compat";
+import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
-import { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
 import {
-  forwardCountTokensViaOpenAICompat,
-  forwardMessagesViaOpenAICompat,
-} from "./model-upstream-openai";
-import { buildProxyUpstreamHeaders, proxyUpstreamHeadersToFetch } from "./upstream-request-headers";
+  forwardCountTokensViaBridge,
+  forwardMessagesViaBridge,
+  type BridgeForwardRoute,
+} from "./bridge-upstream";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
-import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { UpstreamModelOption } from "../shared/models";
-import {
-  buildProxyCallDebug,
-  debugBodyFromRaw,
-  isUpstreamLogVerbose,
-  logUpstreamProxyCall,
-  proxyCallCommonFields,
-  resolveProxyCallBilling,
-  tokensFromUsage,
-  type UpstreamProxyCallBilling,
-} from "./upstream-proxy-log";
+import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import {
   announceUpstreamLogDestination,
   formatUpstreamFetchError,
-  headersToLoggable,
   logUpstream,
   logUpstreamError,
-  parseJsonForLog,
 } from "./upstream-log";
 
 export interface AnthropicProxyRoute {
@@ -174,81 +157,52 @@ export async function startAnthropicModelProxy(
         applyThinkingToMessagesBody(body, route.thinkingEffort);
       }
 
-      if (countTokensRequest) {
-        if (isOpenAICompat(route.apiCompat)) {
-          await forwardCountTokensViaOpenAICompat(request, response, {
-            route: {
-              role: route.role,
-              provider: route.provider,
-              modelId: route.modelId,
-              apiCompat: route.apiCompat,
-              aliasModelId: route.aliasModelId,
-            },
-            body,
-            requestUrl: request.url,
-            requestedModel,
-            ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
-          });
-          return;
-        }
-        await forwardAnthropicRequest(
-          request,
-          response,
-          route,
-          body,
-          requestedModel,
-          upstreamUserAgent,
-          onMessagesRequest,
-          onUpstreamConnectionError,
-          onUsage,
-        );
-        return;
-      }
-
-      if (isOpenAICompat(route.apiCompat)) {
-        if (onMessagesRequest && isMessagesPath(request.url) && body.stream === true) {
-          onMessagesRequest({ role: route.role, modelId: route.modelId });
-        }
-        await forwardMessagesViaOpenAICompat(request, response, {
-          route: {
-            role: route.role,
-            provider: route.provider,
-            modelId: route.modelId,
-            apiCompat: route.apiCompat,
-            aliasModelId: route.aliasModelId,
-          },
-          body,
-          requestUrl: request.url,
-          requestedModel,
-          ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
-          onUsage: onUsage
-            ? async (info) =>
-                (await onUsage({
-                  role: info.role,
-                  providerId: info.providerId,
-                  providerName: info.providerName,
-                  providerBaseUrl: info.providerBaseUrl,
-                  modelId: info.modelId,
-                  ...(info.requestedModel && { requestedModel: info.requestedModel }),
-                  ...(info.requestId && { requestId: info.requestId }),
-                  usage: info.usage,
-                })) ?? null
-            : undefined,
-        });
-        return;
-      }
-
-      await forwardAnthropicRequest(
-        request,
-        response,
-        route,
+      const bridgeRoute: BridgeForwardRoute = {
+        role: route.role,
+        provider: route.provider,
+        modelId: route.modelId,
+        apiCompat: route.apiCompat,
+        aliasModelId: route.aliasModelId,
+      };
+      const bridgeCtx = {
+        route: bridgeRoute,
         body,
+        requestUrl: request.url,
         requestedModel,
-        upstreamUserAgent,
-        onMessagesRequest,
-        onUpstreamConnectionError,
-        onUsage,
-      );
+        ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+        onUsage: onUsage
+          ? async (info: {
+              role: AgentRole;
+              providerId: string;
+              providerName: string;
+              providerBaseUrl: string;
+              modelId: string;
+              requestedModel?: string;
+              requestId?: string;
+              usage: ParsedUsage;
+            }) =>
+              (await onUsage({
+                role: info.role,
+                providerId: info.providerId,
+                providerName: info.providerName,
+                providerBaseUrl: info.providerBaseUrl,
+                modelId: info.modelId,
+                ...(info.requestedModel && { requestedModel: info.requestedModel }),
+                ...(info.requestId && { requestId: info.requestId }),
+                usage: info.usage,
+              })) ?? null
+          : undefined,
+      };
+
+      if (countTokensRequest) {
+        await forwardCountTokensViaBridge(request, response, bridgeCtx);
+        return;
+      }
+
+      if (onMessagesRequest && isMessagesPath(request.url) && body.stream === true) {
+        onMessagesRequest({ role: route.role, modelId: route.modelId });
+      }
+      await forwardMessagesViaBridge(request, response, bridgeCtx);
     } catch (error) {
       if (request.aborted) {
         logUpstream("handler-aborted", { error: errorMessage(error) });
@@ -504,229 +458,7 @@ function listen(server: http.Server, port: number): Promise<void> {
   });
 }
 
-async function forwardAnthropicRequest(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  route: AnthropicProxyResolvedRoute,
-  body: Record<string, unknown>,
-  requestedModel: string | undefined,
-  upstreamUserAgent: string | undefined,
-  onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void,
-  onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void,
-  onUsage?: AnthropicProxyUsageHandler,
-): Promise<void> {
-  const startedAt = Date.now();
-  const stream = body.stream === true;
-  const upstreamRoot = buildProviderRequestBaseUrl(route.provider.baseUrl, route.provider.requestPath);
-  const upstreamUrl = `${trimTrailingSlash(upstreamRoot)}${request.url ?? ""}`;
-  const requestPayload = JSON.stringify(body);
-  const upstreamHeaders = proxyUpstreamHeadersToFetch(
-    buildProxyUpstreamHeaders({
-      clientHeaders: request.headers,
-      apiKey: route.provider.apiKey,
-      apiCompat: route.apiCompat,
-      ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
-    }),
-  );
-  const callCommon = () =>
-    proxyCallCommonFields({
-      role: route.role,
-      provider: route.provider,
-      apiCompat: route.apiCompat,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
-      requestedModel,
-      requestUrl: request.url,
-      upstreamUrl,
-      stream,
-      converted: false,
-    });
-
-  if (onMessagesRequest && isMessagesPath(request.url) && stream) {
-    onMessagesRequest({ role: route.role, modelId: route.modelId });
-  }
-
-  if (isUpstreamLogVerbose()) {
-    logUpstream("request", {
-      route: {
-        role: route.role,
-        provider: route.provider.name,
-        providerId: route.provider.id,
-        apiCompat: route.apiCompat,
-      },
-      url: upstreamUrl,
-      headers: headersToLoggable(upstreamHeaders),
-      body: parseJsonForLog(requestPayload),
-    });
-  }
-
-  const upstreamAbort = linkClientAbortToUpstream(request, response);
-
-  let upstreamResponse: Response;
-  try {
-    upstreamResponse = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: requestPayload,
-      signal: upstreamAbort.signal,
-    });
-  } catch (error) {
-    if (upstreamAbort.signal.aborted) {
-      return;
-    }
-    const fetchError = errorMessage(error);
-    if (onUpstreamConnectionError && isMessagesPath(request.url)) {
-      onUpstreamConnectionError({ role: route.role, error: fetchError });
-    }
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: false,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: 0, streaming: stream },
-      error: fetchError,
-      debug: buildProxyCallDebug({
-        converted: false,
-        upstreamRequestRaw: requestPayload,
-      }),
-    });
-    throw error;
-  } finally {
-    upstreamAbort.dispose();
-  }
-
-  const contentType = upstreamResponse.headers.get("content-type") ?? "";
-  const isEventStream = contentType.includes("text/event-stream");
-  const requestId = upstreamResponse.headers.get("x-request-id") ?? upstreamResponse.headers.get("request-id") ?? undefined;
-
-  if (!upstreamResponse.ok || !isEventStream) {
-    const responseText = await upstreamResponse.text();
-    const parsedBody = parseJsonForLog(responseText);
-    const usage =
-      upstreamResponse.ok && isMessagesPath(request.url) ? extractUsageFromResponseBody(parsedBody) : null;
-    const billing =
-      usage && onUsage && isMessagesPath(request.url)
-        ? await resolveProxyCallBilling(onUsage, buildUsageInfo(route, usage, requestedModel, requestId))
-        : null;
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: upstreamResponse.ok,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: stream },
-      ...(usage && { tokens: tokensFromUsage(usage) }),
-      billing,
-      ...(!upstreamResponse.ok && { error: upstreamResponse.statusText || String(upstreamResponse.status) }),
-      ...(!upstreamResponse.ok && {
-        debug: buildProxyCallDebug({
-          converted: false,
-          upstreamRequestRaw: requestPayload,
-          responseRaw: responseText,
-        }),
-      }),
-    });
-    if (isUpstreamLogVerbose()) {
-      logUpstream("response", {
-        status: upstreamResponse.status,
-        body: parsedBody ?? debugBodyFromRaw(responseText),
-      });
-    }
-    response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers));
-    response.end(responseText);
-    return;
-  }
-
-  response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers));
-  if (!upstreamResponse.body) {
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: true,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: stream },
-      billing: null,
-    });
-    response.end();
-    return;
-  }
-
-  const usageTracker = createStreamingUsageTracker();
-  try {
-    for await (const chunk of upstreamResponse.body as unknown as AsyncIterable<Uint8Array>) {
-      if (onUsage && isMessagesPath(request.url)) {
-        usageTracker.push(chunk);
-      }
-      if (!response.write(chunk)) {
-        await waitForDrain(response);
-      }
-    }
-    const usage = usageTracker.finish();
-    const billing =
-      usage && onUsage && isMessagesPath(request.url)
-        ? await resolveProxyCallBilling(onUsage, buildUsageInfo(route, usage, requestedModel, requestId))
-        : null;
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: true,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: stream },
-      ...(usage && { tokens: tokensFromUsage(usage) }),
-      billing,
-    });
-  } catch (error) {
-    if (upstreamAbort.signal.aborted) {
-      return;
-    }
-    const streamError = errorMessage(error);
-    if (onUpstreamConnectionError && isMessagesPath(request.url)) {
-      onUpstreamConnectionError({ role: route.role, error: streamError });
-    }
-    logUpstreamProxyCall({
-      at: new Date().toISOString(),
-      ok: false,
-      elapsedMs: Date.now() - startedAt,
-      ...callCommon(),
-      http: { status: upstreamResponse.status, streaming: stream },
-      error: streamError,
-      debug: buildProxyCallDebug({
-        converted: false,
-        upstreamRequestRaw: requestPayload,
-      }),
-    });
-  } finally {
-    endHttpResponse(response);
-  }
-}
-
-function buildUsageInfo(
-  route: AnthropicProxyResolvedRoute,
-  usage: ParsedUsage,
-  requestedModel?: string,
-  requestId?: string,
-): AnthropicProxyUsageInfo {
-  return {
-    role: route.role,
-    providerId: route.provider.id,
-    providerName: route.provider.name,
-    providerBaseUrl: route.provider.baseUrl,
-    modelId: route.modelId,
-    ...(requestedModel && { requestedModel }),
-    ...(requestId && { requestId }),
-    usage,
-  };
-}
-
 export { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
-
-function responseHeaders(headers: Headers): Record<string, string> {
-  const passthrough: Record<string, string> = {};
-  for (const name of ["content-type", "cache-control", "x-request-id", "request-id"]) {
-    const value = headers.get(name);
-    if (value) passthrough[name] = value;
-  }
-  return passthrough;
-}
 
 async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -756,49 +488,12 @@ function endHttpResponse(response: http.ServerResponse): void {
   }
 }
 
-function waitForDrain(response: http.ServerResponse): Promise<void> {
-  if (response.writableEnded || response.writableFinished) {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    response.once("drain", resolve);
-  });
-}
-
-function linkClientAbortToUpstream(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-): { signal: AbortSignal; dispose: () => void } {
-  const controller = new AbortController();
-  const abort = () => {
-    if (!controller.signal.aborted) {
-      controller.abort();
-    }
-  };
-  request.once("aborted", abort);
-  response.once("close", () => {
-    if (!response.writableFinished) {
-      abort();
-    }
-  });
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      request.off("aborted", abort);
-    },
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isAddressInUse(error: unknown): boolean {
   return isRecord(error) && error.code === "EADDRINUSE";
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
 }
 
 function errorMessage(error: unknown): string {

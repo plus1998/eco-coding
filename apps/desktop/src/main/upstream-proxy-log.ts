@@ -89,20 +89,19 @@ export function buildProtocolSummaryForCall(input: {
   converted: boolean;
 }): UpstreamProxyProtocolSummary {
   if (input.operation === "count_tokens" && input.converted) {
+    if (input.apiCompat === "anthropic") {
+      return {
+        client: "anthropic-messages",
+        upstream: "anthropic",
+        converted: true,
+        path: "anthropic → responses-ir → anthropic-count → anthropic-json",
+      };
+    }
     return {
       client: "anthropic-messages",
       upstream: "openai_responses",
       converted: true,
-      path: "anthropic → openai-responses/input_tokens → anthropic-json",
-    };
-  }
-  if (input.operation === "count_tokens" && !input.converted) {
-    const configured = API_COMPAT_THEME[input.apiCompat]?.label ?? input.apiCompat;
-    return {
-      client: "anthropic-messages",
-      upstream: input.apiCompat,
-      converted: false,
-      path: `Anthropic 计 Token 直通（未做 OpenAI 转换；路由配置为 ${configured}）`,
+      path: "anthropic → responses-ir → openai-responses/input_tokens → anthropic-json",
     };
   }
   return buildProtocolSummary(input.apiCompat, input.stream);
@@ -158,8 +157,8 @@ export function buildProtocolSummary(
     return {
       client: "anthropic-messages",
       upstream: "anthropic",
-      converted: false,
-      path: `anthropic → ${delivery}`,
+      converted: true,
+      path: `anthropic → responses-ir → anthropic → ${delivery}`,
     };
   }
   if (apiCompat === "openai_responses") {
