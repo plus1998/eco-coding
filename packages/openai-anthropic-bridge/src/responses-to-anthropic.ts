@@ -257,7 +257,7 @@ export function responsesEventToAnthropicEvents(
     case 'response.output_text.delta':
       return resToAnthHandleTextDelta(evt, state);
     case 'response.output_text.done':
-      return resToAnthHandleBlockDone(state);
+      return resToAnthHandleTextBlockDone(state);
     case 'response.function_call_arguments.delta':
       return resToAnthHandleFuncArgsDelta(evt, state);
     case 'response.function_call_arguments.done':
@@ -267,7 +267,7 @@ export function responsesEventToAnthropicEvents(
     case 'response.reasoning_summary_text.delta':
       return resToAnthHandleReasoningDelta(evt, state);
     case 'response.reasoning_summary_text.done':
-      return resToAnthHandleBlockDone(state);
+      return resToAnthHandleReasoningBlockDone(state);
     case 'response.completed':
     case 'response.done':
     case 'response.incomplete':
@@ -422,6 +422,12 @@ function resToAnthHandleTextDelta(
     return [];
   }
 
+  // Upstream may emit assistant text after tool_calls started; closing tool_use here
+  // leaves stale outputIndexToBlockIdx and breaks SDK (content_block_delta at closed index).
+  if (state.contentBlockOpen && state.currentBlockType === 'tool_use') {
+    return [];
+  }
+
   const events: AnthropicStreamEvent[] = [];
 
   if (!state.contentBlockOpen || state.currentBlockType !== 'text') {
@@ -474,6 +480,14 @@ function resToAnthHandleFuncArgsDelta(
     return [];
   }
 
+  if (
+    !state.contentBlockOpen ||
+    state.currentBlockType !== 'tool_use' ||
+    blockIdx !== state.contentBlockIndex
+  ) {
+    return [];
+  }
+
   return [
     {
       type: 'content_block_delta',
@@ -491,7 +505,7 @@ function resToAnthHandleFuncArgsDone(
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
   if (state.currentBlockType !== 'tool_use') {
-    return resToAnthHandleBlockDone(state);
+    return [];
   }
 
   let raw = evt.arguments ?? '';
@@ -540,6 +554,14 @@ function resToAnthHandleReasoningDelta(
     return [];
   }
 
+  if (
+    !state.contentBlockOpen ||
+    state.currentBlockType !== 'thinking' ||
+    blockIdx !== state.contentBlockIndex
+  ) {
+    return [];
+  }
+
   return [
     {
       type: 'content_block_delta',
@@ -552,10 +574,19 @@ function resToAnthHandleReasoningDelta(
   ];
 }
 
-function resToAnthHandleBlockDone(
+function resToAnthHandleTextBlockDone(
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
-  if (!state.contentBlockOpen) {
+  if (!state.contentBlockOpen || state.currentBlockType !== 'text') {
+    return [];
+  }
+  return closeCurrentBlock(state);
+}
+
+function resToAnthHandleReasoningBlockDone(
+  state: ResponsesEventToAnthropicState,
+): AnthropicStreamEvent[] {
+  if (!state.contentBlockOpen || state.currentBlockType !== 'thinking') {
     return [];
   }
   return closeCurrentBlock(state);
@@ -573,10 +604,29 @@ function resToAnthHandleOutputItemDone(
     return resToAnthHandleWebSearchDone(evt, state);
   }
 
-  if (state.contentBlockOpen) {
-    return closeCurrentBlock(state);
+  if (!state.contentBlockOpen) {
+    return [];
   }
-  return [];
+
+  switch (evt.item.type) {
+    case 'function_call':
+      if (state.currentBlockType === 'tool_use') {
+        return closeCurrentBlock(state);
+      }
+      return [];
+    case 'reasoning':
+      if (state.currentBlockType === 'thinking') {
+        return closeCurrentBlock(state);
+      }
+      return [];
+    case 'message':
+      if (state.currentBlockType === 'text') {
+        return closeCurrentBlock(state);
+      }
+      return [];
+    default:
+      return [];
+  }
 }
 
 function resToAnthHandleWebSearchDone(
@@ -689,6 +739,17 @@ function resToAnthHandleCompleted(
   return events;
 }
 
+function clearOutputIndexMappingsForBlock(
+  state: ResponsesEventToAnthropicState,
+  blockIdx: number,
+): void {
+  for (const [outputIndex, mapped] of state.outputIndexToBlockIdx) {
+    if (mapped === blockIdx) {
+      state.outputIndexToBlockIdx.delete(outputIndex);
+    }
+  }
+}
+
 function closeCurrentBlock(
   state: ResponsesEventToAnthropicState,
 ): AnthropicStreamEvent[] {
@@ -697,10 +758,12 @@ function closeCurrentBlock(
   }
   const idx = state.contentBlockIndex;
   state.contentBlockOpen = false;
+  state.currentBlockType = '';
   state.contentBlockIndex++;
   state.currentToolName = '';
   state.currentToolArgs = '';
   state.currentToolHadDelta = false;
+  clearOutputIndexMappingsForBlock(state, idx);
   return [
     {
       type: 'content_block_stop',

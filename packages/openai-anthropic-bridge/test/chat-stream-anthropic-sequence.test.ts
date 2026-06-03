@@ -221,6 +221,170 @@ describe('chat stream → anthropic SSE sequence', () => {
     );
   });
 
+  test('mimo-style: content after tool_calls in stream does not break tool block index', () => {
+    const chunks: ChatCompletionsChunk[] = [
+      {
+        id: 'chatcmpl-mimo',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mimo-v2.5-free',
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: 'plan ' },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-mimo',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mimo-v2.5-free',
+        choices: [
+          {
+            index: 0,
+            delta: { content: 'draft ' },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-mimo',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mimo-v2.5-free',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_x',
+                  type: 'function',
+                  function: { name: 'Read', arguments: '{"file_path":"' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-mimo',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mimo-v2.5-free',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: 'trailing ',
+              tool_calls: [
+                {
+                  index: 0,
+                  function: { arguments: 'a.ts"}' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-mimo',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mimo-v2.5-free',
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: 'tool_calls',
+          },
+        ],
+      },
+    ];
+
+    const events = pipeChatStreamToAnthropicEvents(chunks);
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+    const toolStarts = events.filter(
+      (e) => e.type === 'content_block_start' && e.content_block?.type === 'tool_use',
+    );
+    expect(toolStarts.length).toBe(1);
+    const toolIdx = toolStarts[0]?.index;
+    const toolDeltas = events.filter(
+      (e) =>
+        e.type === 'content_block_delta' &&
+        e.delta?.type === 'input_json_delta' &&
+        e.index === toolIdx,
+    );
+    expect(toolDeltas.length).toBeGreaterThan(0);
+  });
+
+  test('finalize message output_text.done does not close open tool_use block', () => {
+    const ccState = newChatCompletionsToResponsesStreamState('mimo-v2.5-free');
+    const anthState = newResponsesEventToAnthropicState();
+    const events: AnthropicStreamEvent[] = [];
+
+    const push = (resEvts: ReturnType<typeof chatCompletionsChunkToResponsesEvents>) => {
+      for (const resEvt of resEvts) {
+        events.push(...responsesEventToAnthropicEvents(resEvt, anthState));
+      }
+    };
+
+    push(
+      chatCompletionsChunkToResponsesEvents(
+        {
+          id: 'c1',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'mimo-v2.5-free',
+          choices: [
+            {
+              index: 0,
+              delta: { content: 'hi' },
+              finish_reason: null,
+            },
+          ],
+        },
+        ccState,
+      ),
+    );
+    push(
+      chatCompletionsChunkToResponsesEvents(
+        {
+          id: 'c1',
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'mimo-v2.5-free',
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_y',
+                    type: 'function',
+                    function: { name: 'Grep', arguments: '{"pattern":"x"}' },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+        ccState,
+      ),
+    );
+    push(finalizeChatCompletionsResponsesStream(ccState));
+    events.push(...finalizeResponsesAnthropicStream(anthState));
+
+    expect(validateAnthropicStreamEvents(events)).toEqual([]);
+  });
+
   test('text content_block_start on wire includes empty text (SDK #1528)', () => {
     const events = pipeJsonChunksToAnthropicEvents([
       `{"choices":[{"index":0,"delta":{"content":"hi"}}]}`,
