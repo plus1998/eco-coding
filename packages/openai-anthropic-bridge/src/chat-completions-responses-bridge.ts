@@ -248,6 +248,18 @@ function buildChatMessagesFromItems(
   return messages;
 }
 
+/** Match sub2api json.RawMessage: quote scalars, keep embedded JSON text as-is. */
+function encodeRawItemFieldValue(v: unknown): string {
+  if (typeof v === 'string') {
+    const trimmed = bytesTrimSpace(v);
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      return trimmed;
+    }
+    return jsonMarshal(v);
+  }
+  return jsonMarshal(v);
+}
+
 function parseRawItemMap(raw: string): Record<string, string> | null {
   const trimmed = bytesTrimSpace(raw);
   if (trimmed === '' || trimmed === 'null') {
@@ -263,7 +275,7 @@ function parseRawItemMap(raw: string): Record<string, string> | null {
       if (v === undefined) {
         continue;
       }
-      out[k] = typeof v === 'string' ? v : jsonMarshal(v);
+      out[k] = encodeRawItemFieldValue(v);
     }
     return out;
   } catch {
@@ -444,7 +456,7 @@ function parseResponsesContentPart(rawPart: unknown): Record<string, string> | n
       if (v === undefined) {
         continue;
       }
-      out[k] = jsonMarshal(v);
+      out[k] = encodeRawItemFieldValue(v);
     }
     return out;
   }
@@ -863,7 +875,11 @@ export function chatCompletionsChunkToResponsesEvents(
   events.push(...ensureChatToResponsesCreated(state));
 
   for (const choice of chunk.choices) {
-    const reasoning = choice.delta.reasoning_content;
+    const reasoning =
+      choice.delta.reasoning_content ??
+      (choice.delta.reasoning !== undefined && choice.delta.reasoning !== ''
+        ? choice.delta.reasoning
+        : undefined);
     if (reasoning !== undefined && reasoning !== '') {
       events.push(...ensureChatReasoningItem(state));
       state.reasoning += reasoning;

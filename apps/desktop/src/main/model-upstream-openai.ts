@@ -7,6 +7,8 @@ import {
   finalizeResponsesAnthropicStream,
   newChatCompletionsToResponsesStreamState,
   newResponsesEventToAnthropicState,
+  checkAnthropicStreamEvent,
+  newAnthropicStreamSequenceState,
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
   responsesToAnthropic,
@@ -44,7 +46,7 @@ import {
   tokensFromUsage,
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
-import { headersToLoggable, logUpstream, parseJsonForLog } from "./upstream-log";
+import { headersToLoggable, logUpstream, logUpstreamError, parseJsonForLog } from "./upstream-log";
 
 export interface OpenAICompatUsageInfo {
   role: AgentRole;
@@ -560,11 +562,17 @@ async function forwardMessagesViaOpenAIChatCompletions(
 
   const ccToResState = newChatCompletionsToResponsesStreamState(route.modelId);
   const anthropicState = newResponsesEventToAnthropicState();
+  const sseSequence = newAnthropicStreamSequenceState();
+  const sseViolations: string[] = [];
   const usageTracker = createStreamingUsageTracker();
   let sseBuffer = "";
 
   const writeAnthropicSse = (events: ReturnType<typeof responsesEventToAnthropicEvents>) => {
     for (const anthropicEvent of events) {
+      const violation = checkAnthropicStreamEvent(sseSequence, anthropicEvent);
+      if (violation) {
+        sseViolations.push(`${anthropicEvent.type}: ${violation}`);
+      }
       const sse = responsesAnthropicEventToSse(anthropicEvent);
       usageTracker.push(Buffer.from(sse, "utf8"));
       response.write(sse);
@@ -613,6 +621,12 @@ async function forwardMessagesViaOpenAIChatCompletions(
     }
     writeAnthropicSse(finalizeResponsesAnthropicStream(anthropicState));
 
+    if (sseSequence.open.size > 0) {
+      sseViolations.push(
+        `流结束仍有未关闭的 content block: ${[...sseSequence.open].join(", ")}`,
+      );
+    }
+
     const usage = usageTracker.finish();
     const billing = usage
       ? await resolveProxyCallBilling(onUsage, buildOpenAICompatUsageInfo(route, usage, requestedModel))
@@ -626,6 +640,16 @@ async function forwardMessagesViaOpenAIChatCompletions(
       ...(usage && { tokens: tokensFromUsage(usage) }),
       billing,
     });
+    if (sseViolations.length > 0) {
+      logUpstreamError("sdk-stream-sequence", {
+        role: route.role,
+        modelId: route.modelId,
+        aliasModelId: route.aliasModelId,
+        violations: sseViolations.slice(0, 8),
+        violationCount: sseViolations.length,
+        hint: "上游 HTTP 200 但合成的 Anthropic SSE 不符合 SDK 要求，可能导致 Content block not found",
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logUpstreamProxyCall({

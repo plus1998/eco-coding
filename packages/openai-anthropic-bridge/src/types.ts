@@ -366,5 +366,7 @@ export interface ChatDelta {
   role?: string;
   content?: string;
   reasoning_content?: string;
+  /** Some OpenAI-compatible providers (e.g. DeepSeek) use `reasoning` in stream deltas. */
+  reasoning?: string;
   tool_calls?: ChatToolCall[];
 }

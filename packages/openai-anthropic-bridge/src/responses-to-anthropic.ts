@@ -381,7 +381,7 @@ function resToAnthHandleOutputItemAdded(
           type: 'tool_use',
           id: fromResponsesCallID(evt.item.call_id ?? ''),
           name: evt.item.name,
-          input: '{}',
+          input: {},
         },
       });
       return events;
@@ -511,7 +511,8 @@ function resToAnthHandleFuncArgsDone(
     raw = sanitizedStr;
   }
 
-  const idx = state.contentBlockIndex;
+  const idx =
+    state.outputIndexToBlockIdx.get(evt.output_index ?? 0) ?? state.contentBlockIndex;
   const events: AnthropicStreamEvent[] = [
     {
       type: 'content_block_delta',

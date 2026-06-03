@@ -5,7 +5,7 @@ import {
   type OtelActivityLine,
   type OtelUsageUpdate,
 } from "@eco/runtime";
-import { logUpstream } from "./upstream-log";
+import { logUpstream, logUpstreamError } from "./upstream-log";
 
 export interface OtelReceiverCallbacks {
   onActivity: (line: OtelActivityLine) => void;
@@ -91,6 +91,7 @@ function handleTraces(body: Buffer, callbacks: OtelReceiverCallbacks): void {
   const payload = parseJsonBody(body);
   logUpstream("otel-traces", summarizePayload(payload));
   for (const line of parseOtelTracesPayload(payload)) {
+    logSdkActivityIfRelevant(line);
     callbacks.onActivity(line);
   }
 }
@@ -100,11 +101,34 @@ function handleLogs(body: Buffer, callbacks: OtelReceiverCallbacks): void {
   logUpstream("otel-logs", summarizePayload(payload));
   const { lines, usage } = parseOtelLogsPayload(payload);
   for (const line of lines) {
+    logSdkActivityIfRelevant(line);
     callbacks.onActivity(line);
   }
   for (const record of usage) {
     callbacks.onUsage(record);
   }
+}
+
+/** Surface Claude SDK api_error lines in eco-upstream (proxy-call only logs HTTP success). */
+function logSdkActivityIfRelevant(line: OtelActivityLine): void {
+  const message = line.message.trim();
+  if (!message) {
+    return;
+  }
+  const isApiError =
+    message.startsWith("API error") ||
+    message.includes("Content block not found") ||
+    message.includes("Streaming fallback") ||
+    message.includes("streaming fallback") ||
+    message.includes("non-streaming fallback");
+  if (!isApiError) {
+    return;
+  }
+  logUpstreamError("sdk-api-error", {
+    threadId: line.threadId,
+    role: line.role,
+    message,
+  });
 }
 
 function parseJsonBody(body: Buffer): unknown {

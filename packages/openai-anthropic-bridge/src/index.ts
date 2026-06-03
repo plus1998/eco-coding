@@ -40,6 +40,13 @@ export {
 
 export { responsesToAnthropicRequest } from './responses-to-anthropic-request.js';
 
+export {
+  checkAnthropicStreamEvent,
+  newAnthropicStreamSequenceState,
+  validateAnthropicStreamEvents,
+  type AnthropicStreamSequenceState,
+} from './anthropic-stream-sequence.js';
+
 // Chat Completions ↔ Responses
 export { chatCompletionsToResponses } from './chat-completions-to-responses.js';
 
