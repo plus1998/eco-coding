@@ -488,7 +488,7 @@ export class ConversationStore {
       .prepare(
         `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
-         ORDER BY updated_at DESC`,
+         ORDER BY created_at DESC`,
       )
       .all() as unknown as ThreadRow[];
 

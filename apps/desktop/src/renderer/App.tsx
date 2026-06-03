@@ -102,6 +102,7 @@ import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
 const recentProjectsStorageKey = "eco.recent-projects";
+const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
@@ -140,7 +141,8 @@ function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
-  const [expandedProjectPaths, setExpandedProjectPaths] = useState<Set<string>>(() => new Set());
+  const [collapsedProjectPaths, setCollapsedProjectPaths] = useState<Set<string>>(() => new Set());
+  const [expandedProjectThreadPaths, setExpandedProjectThreadPaths] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -427,6 +429,19 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem(collapsedProjectsStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setCollapsedProjectPaths(new Set(parsed));
+      }
+    } catch {
+      window.localStorage.removeItem(collapsedProjectsStorageKey);
+    }
+  }, []);
+
   const projects = useMemo(() => {
     const merged = new Map<string, RecentProject>();
     for (const project of recentProjects) {
@@ -462,11 +477,6 @@ function App() {
       bucket.push(thread);
       grouped.set(thread.workspacePath, bucket);
     }
-    for (const bucket of grouped.values()) {
-      bucket.sort((a, b) =>
-        (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
-      );
-    }
     return grouped;
   }, [threads]);
 
@@ -474,16 +484,17 @@ function App() {
     () =>
       projects.map((project) => {
         const projectThreads = threadsByProject.get(project.path) ?? [];
-        const expanded = expandedProjectPaths.has(project.path);
-        const visibleCount = expanded ? projectThreads.length : sidebarThreadsCollapsed;
+        const threadsExpanded = expandedProjectThreadPaths.has(project.path);
+        const visibleCount = threadsExpanded ? projectThreads.length : sidebarThreadsCollapsed;
         return {
           project,
           projectThreads,
+          collapsed: collapsedProjectPaths.has(project.path),
           visibleThreads: projectThreads.slice(0, visibleCount),
-          hasMore: !expanded && projectThreads.length > visibleCount,
+          hasMore: !threadsExpanded && projectThreads.length > visibleCount,
         };
       }),
-    [expandedProjectPaths, projects, threadsByProject],
+    [collapsedProjectPaths, expandedProjectThreadPaths, projects, threadsByProject],
   );
 
   const currentProjectPath = selectedProjectPath ?? workspace?.path ?? projects[0]?.path;
@@ -893,6 +904,15 @@ function App() {
         setWorkspace(result.workspace);
         setSelectedProjectPath(result.workspace.path);
         registerImportedProject(result.workspace.path, result.workspace.name);
+        setCollapsedProjectPaths((current) => {
+          if (!current.has(result.workspace!.path)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(result.workspace!.path);
+          window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+          return next;
+        });
         setSelectedThreadId(undefined);
         setActivityByThread({});
         setTodosByThread({});
@@ -1320,12 +1340,42 @@ function App() {
   function selectThread(thread: ThreadSummary) {
     setSelectedThreadId(thread.id);
     setSelectedProjectPath(thread.workspacePath);
+    setCollapsedProjectPaths((current) => {
+      if (!current.has(thread.workspacePath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(thread.workspacePath);
+      window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    const projectThreads = threads.filter((item) => item.workspacePath === thread.workspacePath);
+    const threadIndex = projectThreads.findIndex((item) => item.id === thread.id);
+    if (threadIndex >= sidebarThreadsCollapsed) {
+      expandProjectThreads(thread.workspacePath);
+    }
   }
 
   function expandProjectThreads(projectPath: string) {
-    setExpandedProjectPaths((current) => {
+    setExpandedProjectThreadPaths((current) => {
+      if (current.has(projectPath)) {
+        return current;
+      }
       const next = new Set(current);
       next.add(projectPath);
+      return next;
+    });
+  }
+
+  function toggleProjectCollapsed(projectPath: string) {
+    setCollapsedProjectPaths((current) => {
+      const next = new Set(current);
+      if (next.has(projectPath)) {
+        next.delete(projectPath);
+      } else {
+        next.add(projectPath);
+      }
+      window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
   }
@@ -1557,65 +1607,82 @@ function App() {
           <MessageSquarePlus size={18} />
           新对话
         </button>
+        <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
+          <FolderOpen size={18} />
+          打开项目…
+        </button>
 
         <div className="sidebar-section sidebar-section-grow">
           <div className="sidebar-section-label">项目</div>
           {projectTree.length > 0 ? (
             <div className="project-tree">
-              {projectTree.map(({ project, visibleThreads, hasMore }) => (
+              {projectTree.map(({ project, projectThreads, collapsed, visibleThreads, hasMore }) => (
                 <div key={project.path} className="project-group">
-                  <button
-                    type="button"
-                    className={
-                      currentProjectPath === project.path && !activeThread
-                        ? "project-group-header active"
-                        : "project-group-header"
-                    }
-                    onClick={() => switchProject(project.path)}
-                  >
-                    <Folder size={16} />
-                    <span>{project.name}</span>
-                  </button>
-                  {visibleThreads.map((thread) => (
-                    <button
-                      key={thread.id}
-                      type="button"
-                      className={activeThread?.id === thread.id ? "chat-item nested active" : "chat-item nested"}
-                      onClick={() => selectThread(thread)}
-                    >
-                      <span className="chat-item-title">{thread.title}</span>
-                      <span className="chat-item-meta">
-                        <span className={`status-dot ${thread.status}`} title={thread.status} />
-                        <span className="chat-item-time">
-                          {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                  {hasMore ? (
+                  <div className="project-group-row">
                     <button
                       type="button"
-                      className="project-expand"
-                      onClick={() => expandProjectThreads(project.path)}
+                      className="project-folder-toggle"
+                      aria-expanded={!collapsed}
+                      aria-label={collapsed ? "展开项目" : "折叠项目"}
+                      onClick={() => toggleProjectCollapsed(project.path)}
                     >
-                      展开显示
+                      {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
                     </button>
+                    <button
+                      type="button"
+                      className={
+                        currentProjectPath === project.path && !activeThread
+                          ? "project-group-header active"
+                          : "project-group-header"
+                      }
+                      onClick={() => switchProject(project.path)}
+                    >
+                      <span>{project.name}</span>
+                    </button>
+                  </div>
+                  {!collapsed ? (
+                    projectThreads.length > 0 ? (
+                      <>
+                        {visibleThreads.map((thread) => (
+                          <button
+                            key={thread.id}
+                            type="button"
+                            className={
+                              activeThread?.id === thread.id ? "chat-item nested active" : "chat-item nested"
+                            }
+                            onClick={() => selectThread(thread)}
+                          >
+                            <span className="chat-item-title">{thread.title}</span>
+                            <span className="chat-item-meta">
+                              {thread.status === "running" ||
+                              thread.status === "failed" ||
+                              thread.status === "blocked" ? (
+                                <span className={`status-dot ${thread.status}`} title={thread.status} />
+                              ) : null}
+                              <span className="chat-item-time">
+                                {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                        {hasMore ? (
+                          <button
+                            type="button"
+                            className="project-expand"
+                            onClick={() => expandProjectThreads(project.path)}
+                          >
+                            展开显示
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="project-empty">暂无对话</p>
+                    )
                   ) : null}
                 </div>
               ))}
-              <button type="button" className="project-open muted" onClick={openWorkspace} disabled={isOpening}>
-                <FolderOpen size={16} />
-                <span>打开项目…</span>
-              </button>
             </div>
-          ) : (
-            <div className="project-tree">
-              <button type="button" className="project-open muted" onClick={openWorkspace} disabled={isOpening}>
-                <FolderOpen size={16} />
-                <span>打开项目…</span>
-              </button>
-            </div>
-          )}
+          ) : null}
         </div>
 
         <button

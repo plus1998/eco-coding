@@ -76,6 +76,38 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   expect(store.getThread("thr_test")?.runtimeConfig?.planModeEnabled).toBe(false);
 });
 
+test.skipIf(!sqliteAvailable)("listThreads keeps creation order when updated_at changes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-order-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+
+  const older: ThreadSummary = {
+    id: "thr_old",
+    title: "Older",
+    prompt: "one",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+  const newer: ThreadSummary = {
+    id: "thr_new",
+    title: "Newer",
+    prompt: "two",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: "2024-06-01T00:00:00.000Z",
+    updatedAt: "2024-06-01T00:00:00.000Z",
+  };
+
+  store.saveThread(older);
+  store.saveThread(newer);
+  store.saveThread({ ...older, updatedAt: "2025-01-01T00:00:00.000Z" });
+
+  expect(store.listThreads().map((thread) => thread.id)).toEqual(["thr_new", "thr_old"]);
+});
+
 test.skipIf(!sqliteAvailable)("saves and lists compaction archives", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compaction-archive-"));
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));

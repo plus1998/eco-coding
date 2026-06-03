@@ -118,6 +118,11 @@ button:not(:disabled) {
   background: #2a2a2a;
 }
 
+.sidebar-action.muted {
+  color: #8a8a8a;
+  font-weight: 400;
+}
+
 .sidebar-section {
   display: flex;
   flex-direction: column;
@@ -161,6 +166,29 @@ button:not(:disabled) {
   gap: 2px;
 }
 
+.project-group-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-folder-toggle {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: #8a8a8a;
+}
+
+.project-folder-toggle:hover {
+  background: #2a2a2a;
+  color: #d4d4d4;
+}
+
 .project-group-header,
 .project-open,
 .chat-item {
@@ -177,10 +205,19 @@ button:not(:disabled) {
 }
 
 .project-group-header {
-  padding: 4px 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 0;
   color: #8a8a8a;
   font-size: 13px;
   font-weight: 500;
+}
+
+.project-empty {
+  margin: 0;
+  padding: 2px 12px 4px 36px;
+  color: #6b6b6b;
+  font-size: 12px;
 }
 
 .project-group-header span,
@@ -243,7 +280,7 @@ button:not(:disabled) {
 
 .project-expand {
   width: 100%;
-  padding: 4px 12px 4px 28px;
+  padding: 4px 12px 4px 36px;
   border-radius: 6px;
   color: #6b6b6b;
   font-size: 12px;
