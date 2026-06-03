@@ -77,9 +77,6 @@ import {
 
 export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagentRole };
 
-const FINALIZE_PLAN_RETRY_PROMPT =
-  "Call `mcp__eco_plan__finalize_plan` now with non-empty `analysis` and `plan` fields containing your decision-complete implementation plan. Do not reply with prose only — the tool call is required.";
-
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
@@ -296,22 +293,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (input.signal.aborted) {
         return;
       }
-      let finalizedPlan = planningTranscript.finalizedPlan;
-      if (!finalizedPlan && !input.signal.aborted) {
-        const retryTranscript = yield* this.runSingleSession(input, {
-          prompt: FINALIZE_PLAN_RETRY_PROMPT,
-          permissionMode: planningPermissionMode,
-          allowedTools: [...planningAllowedTools],
-          phaseAppend: buildPlanningPhaseSystemAppend(availability),
-          agents: createPlanningAgentDefinitions(
-            input.routes,
-            input.sdkSession?.agentSkills,
-            availability,
-          ),
-          availability,
-        });
-        finalizedPlan = retryTranscript.finalizedPlan;
-      }
+      const finalizedPlan = planningTranscript.finalizedPlan;
       if (!finalizedPlan) {
         throw new Error(
           "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
@@ -391,22 +373,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (input.signal.aborted) {
       return;
     }
-    let finalizedPlan = planningTranscript.finalizedPlan;
-    if (!finalizedPlan && !input.signal.aborted) {
-      const retryTranscript = yield* this.runSingleSession(input, {
-        prompt: FINALIZE_PLAN_RETRY_PROMPT,
-        permissionMode: planningPermissionMode,
-        allowedTools: [...planningAllowedTools],
-        phaseAppend: buildPlanningPhaseSystemAppend(availability),
-        agents: createPlanningAgentDefinitions(
-          input.routes,
-          input.sdkSession?.agentSkills,
-          availability,
-        ),
-        availability,
-      });
-      finalizedPlan = retryTranscript.finalizedPlan;
-    }
+    const finalizedPlan = planningTranscript.finalizedPlan;
     if (!finalizedPlan) {
       throw new Error(
         "未提交 FinalizePlan，无法生成可执行计划。模型需调用 mcp__eco_plan__finalize_plan 提交 analysis 与 plan。",
