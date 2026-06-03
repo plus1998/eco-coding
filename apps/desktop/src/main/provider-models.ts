@@ -37,7 +37,7 @@ import {
 } from "./upstream-log";
 
 const ANTHROPIC_VERSION = "2023-06-01";
-const PROVIDER_TEST_TIMEOUT_MS = 120_000;
+const PROVIDER_TEST_TIMEOUT_MS = 10_000;
 const PROVIDER_TEST_MAX_TOKENS = 256;
 
 export interface ProviderCompatRoutingInfo {

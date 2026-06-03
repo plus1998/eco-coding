@@ -410,7 +410,7 @@ function responsesContentToChatContent(
   }
 
   try {
-    const rawParts = jsonParse(trimmed) as string[];
+    const rawParts = jsonParse(trimmed) as unknown[];
     if (Array.isArray(rawParts)) {
       return responsesContentPartsToChatContent(rawParts, role);
     }
@@ -430,8 +430,29 @@ function responsesContentToChatContent(
   return trimmed;
 }
 
+function parseResponsesContentPart(rawPart: unknown): Record<string, string> | null {
+  if (typeof rawPart === 'string') {
+    try {
+      return jsonParse(bytesTrimSpace(rawPart)) as Record<string, string>;
+    } catch {
+      return null;
+    }
+  }
+  if (rawPart !== null && typeof rawPart === 'object' && !Array.isArray(rawPart)) {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawPart as Record<string, unknown>)) {
+      if (v === undefined) {
+        continue;
+      }
+      out[k] = jsonMarshal(v);
+    }
+    return out;
+  }
+  return null;
+}
+
 function responsesContentPartsToChatContent(
-  rawParts: string[],
+  rawParts: unknown[],
   role: string,
 ): string {
   const textParts: string[] = [];
@@ -439,10 +460,8 @@ function responsesContentPartsToChatContent(
   let hasNonText = false;
 
   for (const rawPart of rawParts) {
-    let part: Record<string, string>;
-    try {
-      part = jsonParse(bytesTrimSpace(rawPart)) as Record<string, string>;
-    } catch {
+    const part = parseResponsesContentPart(rawPart);
+    if (part === null) {
       continue;
     }
     const partType = rawString(part.type);

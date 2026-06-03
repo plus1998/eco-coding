@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { anthropicToResponses } from '../src/anthropic-to-responses.js';
 import { responsesToAnthropicRequest } from '../src/responses-to-anthropic-request.js';
+import { responsesToChatCompletionsRequest } from '../src/chat-completions-responses-bridge.js';
 import { chatCompletionsToResponses } from '../src/chat-completions-to-responses.js';
 import { responsesToChatCompletions } from '../src/responses-to-chat-completions.js';
 import type { ChatCompletionsRequest, ResponsesResponse } from '../src/types.js';
@@ -59,5 +60,17 @@ describe('roundtrip', () => {
     expect(back.model).toBe('claude-sonnet-4');
     expect(back.max_tokens).toBe(256);
     expect(back.messages.length).toBeGreaterThan(0);
+  });
+
+  test('anthropic user text survives anthropic → responses → chat completions', () => {
+    const responsesReq = anthropicToResponses({
+      model: 'glm-5.1',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    responsesReq.stream = false;
+
+    const chatReq = responsesToChatCompletionsRequest(responsesReq);
+    expect(chatReq.messages).toEqual([{ role: 'user', content: '"hi"' }]);
   });
 });
