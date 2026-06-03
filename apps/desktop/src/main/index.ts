@@ -434,6 +434,15 @@ function resolveRoleRoutesForThread(
   return roleRoutesForThreadConfig(settings, config);
 }
 
+function resolveRuntimeRoutesForThread(
+  threadId: string,
+): ReturnType<typeof resolveRuntimeRoutesFromSettings> {
+  const settings = providerStore.getSettings();
+  const providers = providerStore.listProvidersWithSecrets();
+  const roleRoutes = resolveRoleRoutesForThread(threadId);
+  return resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
+}
+
 function threadUsesPlanOrchestration(threadId: string): boolean {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
@@ -3027,9 +3036,7 @@ async function processUsageBilling(input: {
     return null;
   }
 
-  const settings = providerStore.getSettings();
-  const providers = providerStore.listProvidersWithSecrets();
-  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
   const usageRoute = resolveUsageRoute(input.role, input.modelId, runtimeRoutes);
   const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
 
@@ -3454,9 +3461,7 @@ async function updateContextFromSdkFallback(
   agentId?: string,
 ): Promise<void> {
   await pricingCatalogReady;
-  const settings = providerStore.getSettings();
-  const providers = providerStore.listProvidersWithSecrets();
-  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const runtimeRoutes = resolveRuntimeRoutesForThread(threadId);
   const usageRoute = resolveUsageRoute(role, modelId, runtimeRoutes);
   if (!usageRoute) {
     return;
@@ -3481,9 +3486,7 @@ async function processSdkRunBilling(input: {
 }): Promise<void> {
   await pricingCatalogReady;
 
-  const settings = providerStore.getSettings();
-  const providers = providerStore.listProvidersWithSecrets();
-  const runtimeRoutes = resolveRuntimeRoutesFromSettings(settings, providers);
+  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
   const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
   const plannerLookup = plannerRoute
     ? await pricingCache.lookupForRoute({

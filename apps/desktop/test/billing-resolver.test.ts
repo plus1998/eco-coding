@@ -2,10 +2,12 @@ import { expect, test } from "bun:test";
 import {
   manualSpecToRates,
   resolveRatesForRoute,
+  resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
 } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { createModelAlias } from "../src/main/anthropic-proxy";
+import type { ModelSettingsSnapshot } from "../src/shared/ipc";
 
 test("resolveUsageRoute maps eco alias to route", () => {
   const provider = createProvider();
@@ -113,6 +115,52 @@ test("resolveRatesForRoute falls back to manual spec", () => {
   expect(resolveRatesForRoute(null, { inputPerM: 4, outputPerM: 8 })).toEqual({
     input: 4,
     output: 8,
+  });
+});
+
+test("resolveRuntimeRoutesFromSettings returns empty routes without override", () => {
+  const provider = createProvider();
+  const settings: ModelSettingsSnapshot = {
+    providers: [
+      {
+        id: provider.id,
+        name: provider.name,
+        baseUrl: provider.baseUrl,
+        requestPath: provider.requestPath,
+        apiCompat: provider.apiCompat,
+        defaultModel: provider.defaultModel,
+        enabled: provider.enabled,
+        hasApiKey: provider.hasApiKey,
+        createdAt: provider.createdAt,
+        updatedAt: provider.updatedAt,
+      },
+    ],
+    routeProfiles: [],
+  };
+  expect(resolveRuntimeRoutesFromSettings(settings, [provider])).toEqual([]);
+});
+
+test("resolveRuntimeRoutesFromSettings preserves manualSpec and modelsDevMapping", () => {
+  const provider = createProvider();
+  const settings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
+  const routes = resolveRuntimeRoutesFromSettings(settings, [provider], [
+    {
+      role: "planner",
+      providerId: provider.id,
+      modelId: "vendor-model",
+      modelsDevMapping: { providerKey: "anthropic", modelId: "claude-sonnet-4" },
+      manualSpec: { inputPerM: 3, outputPerM: 15, contextTokens: 200_000 },
+    },
+  ]);
+  expect(routes).toHaveLength(1);
+  expect(routes[0]?.modelsDevMapping).toEqual({
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+  });
+  expect(routes[0]?.manualSpec).toEqual({
+    inputPerM: 3,
+    outputPerM: 15,
+    contextTokens: 200_000,
   });
 });
 
