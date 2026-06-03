@@ -45,6 +45,7 @@ import {
   type ThreadRollbackResult,
   type ThreadStartRequest,
   type ThreadStartResult,
+  type ThreadUpdateRuntimeConfigRequest,
   type ThreadSummary,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
@@ -95,8 +96,10 @@ const api = {
   deleteRouteProfile(profileId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileDelete, profileId);
   },
-  setActiveRouteProfile(profileId: string): Promise<RouteProfileView> {
-    return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileSetActive, profileId);
+  updateThreadRuntimeConfig(
+    request: ThreadUpdateRuntimeConfigRequest,
+  ): Promise<{ thread: ThreadSummary }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);
   },
   getRoutePricing(routes?: RoleRouteConfig[]): Promise<RoutePricingHint[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing, routes);

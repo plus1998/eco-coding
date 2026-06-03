@@ -30,9 +30,11 @@ import {
 import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
-  getActiveRouteProfile,
-  getActiveRoutes,
+  buildThreadRuntimeConfigFromDefaults,
+  getDefaultRouteProfileId,
+  getRoutesForProfile,
   type AgentRole,
+  type ThreadRuntimeConfig,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
@@ -183,6 +185,7 @@ function App() {
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
+  const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
 
   useEffect(() => {
     if (!window.eco) {
@@ -546,16 +549,56 @@ function App() {
     }
   }, [activeThread?.id]);
 
+  const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
+    if (!subagentSettings || !workflowSettings || settings.routeProfiles.length === 0) {
+      return undefined;
+    }
+    try {
+      return buildThreadRuntimeConfigFromDefaults({
+        settings,
+        subagentDefaults: subagentSettings,
+        workflowDefaults: workflowSettings,
+        routeProfileId: composerRuntimeConfig?.routeProfileId ?? getDefaultRouteProfileId(settings),
+      });
+    } catch {
+      return undefined;
+    }
+  }, [settings, subagentSettings, workflowSettings, composerRuntimeConfig?.routeProfileId]);
+
   useEffect(() => {
-    if (!window.eco?.getRouteCapabilities) {
+    if (activeThread?.runtimeConfig) {
+      setComposerRuntimeConfig(activeThread.runtimeConfig);
       return;
     }
-    void window.eco.getRouteCapabilities().then((hints) => {
+    const defaults = buildComposerDefaultConfig();
+    if (defaults) {
+      setComposerRuntimeConfig(defaults);
+    }
+  }, [
+    activeThread?.id,
+    activeThread?.runtimeConfig,
+    buildComposerDefaultConfig,
+    settings.routeProfiles,
+    subagentSettings,
+    workflowSettings,
+  ]);
+
+  const activeRoutes = useMemo(() => {
+    const profileId = composerRuntimeConfig?.routeProfileId;
+    if (!profileId) {
+      return [];
+    }
+    return getRoutesForProfile(settings, profileId) ?? [];
+  }, [settings, composerRuntimeConfig?.routeProfileId]);
+
+  useEffect(() => {
+    if (!window.eco?.getRouteCapabilities || activeRoutes.length === 0) {
+      return;
+    }
+    void window.eco.getRouteCapabilities(activeRoutes).then((hints) => {
       setPlannerCapability(hints.find((hint) => hint.role === "planner"));
     });
-  }, [settings.routeProfiles, settings.providers]);
-
-  const activeRoutes = useMemo(() => getActiveRoutes(settings), [settings]);
+  }, [activeRoutes, settings.providers]);
   const providerById = useMemo(
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
     [settings.providers],
@@ -589,8 +632,11 @@ function App() {
     : undefined;
   const retryBannerHint = retryBannerDetail ? resolveRetryBannerHint(retryBannerDetail) : undefined;
   const alternateRouteProfiles = useMemo(
-    () => settings.routeProfiles.filter((profile) => !profile.isActive),
-    [settings.routeProfiles],
+    () =>
+      settings.routeProfiles.filter(
+        (profile) => profile.id !== composerRuntimeConfig?.routeProfileId,
+      ),
+    [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
   );
   const [retryRouteProfileId, setRetryRouteProfileId] = useState<string>("");
 
@@ -632,14 +678,17 @@ function App() {
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
-  const activeRouteProfile = useMemo(() => getActiveRouteProfile(settings), [settings]);
-  const canEditPreChatConfig = !activeThread;
-  const canSwitchRouteProfile =
+  const selectedRouteProfile = useMemo(
+    () =>
+      settings.routeProfiles.find((profile) => profile.id === composerRuntimeConfig?.routeProfileId),
+    [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
+  );
+  const canEditComposerConfig =
     !activeThread ||
-    (activeThread &&
-      isContinuableThreadStatus(activeThread.status) &&
+    (threadAcceptsInput &&
       activeThread.status !== "running" &&
       activeThread.status !== "queued");
+  const canSwitchRouteProfile = canEditComposerConfig;
   const agentModelLabels = useMemo(
     () =>
       AGENT_ROLES.map((role) => {
@@ -868,11 +917,17 @@ function App() {
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
     const messagePrompt =
       prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+    if (!composerRuntimeConfig) {
+      setError("请先配置角色路由方案。");
+      setIsStarting(false);
+      return;
+    }
     try {
       if (activeThread && isContinuableThreadStatus(activeThread.status)) {
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
+          runtimeConfig: composerRuntimeConfig,
           ...(attachments && { attachments }),
         });
         setThreads((current) =>
@@ -883,6 +938,7 @@ function App() {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
           prompt: messagePrompt,
+          runtimeConfig: composerRuntimeConfig,
           ...(attachments && { attachments }),
         });
         setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
@@ -1092,17 +1148,21 @@ function App() {
     setSettingsOpen(true);
   }
 
-  async function activateRouteProfile(profileId: string) {
-    if (!window.eco) {
+  async function persistComposerRuntimeConfig(next: ThreadRuntimeConfig): Promise<void> {
+    setComposerRuntimeConfig(next);
+    if (!activeThread || !window.eco || !canEditComposerConfig) {
       return;
     }
     setIsSavingSettings(true);
     setError(undefined);
     try {
-      await window.eco.setActiveRouteProfile(profileId);
-      const modelSettings = await window.eco.getModelSettings();
-      setSettings(modelSettings);
-      setComposerRoutePopoverOpen(false);
+      const result = await window.eco.updateThreadRuntimeConfig({
+        threadId: activeThread.id,
+        runtimeConfig: next,
+      });
+      setThreads((current) =>
+        current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -1110,18 +1170,32 @@ function App() {
     }
   }
 
-  async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
-    if (!subagentSettings || role === "coder") {
+  async function selectComposerRouteProfile(profileId: string) {
+    if (!composerRuntimeConfig) {
       return;
     }
-    await saveSubagentSettings({ ...subagentSettings, [role]: enabled });
+    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, routeProfileId: profileId };
+    await persistComposerRuntimeConfig(next);
+    setComposerRoutePopoverOpen(false);
+  }
+
+  async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
+    if (!composerRuntimeConfig || role === "coder") {
+      return;
+    }
+    const next: ThreadRuntimeConfig = {
+      ...composerRuntimeConfig,
+      subagentEnabled: { ...composerRuntimeConfig.subagentEnabled, [role]: enabled },
+    };
+    await persistComposerRuntimeConfig(next);
   }
 
   async function toggleComposerPlanMode(enabled: boolean) {
-    if (!workflowSettings || !canEditPreChatConfig) {
+    if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
     }
-    await saveWorkflowSettings({ ...workflowSettings, planModeEnabled: enabled });
+    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, planModeEnabled: enabled };
+    await persistComposerRuntimeConfig(next);
   }
 
   async function saveWorkflowSettings(next: WorkflowSettingsSnapshot) {
@@ -1378,7 +1452,7 @@ function App() {
               buttonRef={composerRouteButtonRef}
               open={composerRoutePopoverOpen}
               disabled={!canSwitchRouteProfile || isSavingSettings}
-              profileName={activeRouteProfile?.name}
+              profileName={selectedRouteProfile?.name}
               onToggle={() => {
                 if (!canSwitchRouteProfile) {
                   return;
@@ -1392,26 +1466,27 @@ function App() {
               busy={isSavingSettings}
               anchorRef={composerRouteButtonRef}
               onClose={() => setComposerRoutePopoverOpen(false)}
-              onSelectProfile={activateRouteProfile}
+              onSelectProfile={selectComposerRouteProfile}
+              selectedProfileId={composerRuntimeConfig?.routeProfileId}
               onOpenFullSettings={() => openModelsSettings("routes")}
             />
           </div>
           <div className="composer-agent-labels">
-            {workflowSettings ? (
+            {composerRuntimeConfig ? (
               <ComposerPlanModeToggle
-                planModeEnabled={workflowSettings.planModeEnabled}
+                planModeEnabled={composerRuntimeConfig.planModeEnabled}
                 plannerModelId={plannerModelLabel?.modelId}
                 plannerTitle={plannerModelLabel?.title}
-                canEdit={canEditPreChatConfig}
-                saving={isSavingWorkflowSettings}
+                canEdit={canEditComposerConfig}
+                saving={isSavingSettings}
                 onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
               />
             ) : null}
             <ComposerAgentModels
               labels={agentModelLabels}
-              subagentSettings={subagentSettings}
-              canEditSubagents={canEditPreChatConfig}
-              subagentSaving={isSavingSubagentSettings}
+              subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}
+              canEditSubagents={canEditComposerConfig}
+              subagentSaving={isSavingSettings}
               onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
             />
           </div>
@@ -1597,9 +1672,9 @@ function App() {
                       {retryBannerHint ? (
                         <p className="thread-retry-banner-hint">{retryBannerHint}</p>
                       ) : null}
-                      {activeRouteProfile ? (
+                      {selectedRouteProfile ? (
                         <p className="thread-retry-banner-route">
-                          当前路由方案：{activeRouteProfile.name}
+                          当前路由方案：{selectedRouteProfile.name}
                         </p>
                       ) : null}
                     </div>

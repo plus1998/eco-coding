@@ -219,28 +219,18 @@ export class ProviderStore {
     const existing = input.id ? this.getRouteProfileRow(input.id) : undefined;
     const id = input.id ?? createRouteProfileId(input.name);
     const createdAt = existing?.created_at ?? now;
-    const shouldActivate = input.isActive ?? !existing;
-
-    if (shouldActivate) {
-      this.db.prepare("UPDATE route_profiles SET is_active = 0").run();
-    }
 
     this.db
       .prepare(`
         INSERT INTO route_profiles (id, name, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, 0, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
-          is_active = excluded.is_active,
           updated_at = excluded.updated_at
       `)
-      .run(id, input.name.trim(), shouldActivate ? 1 : (existing?.is_active ?? 0), createdAt, now);
+      .run(id, input.name.trim(), createdAt, now);
 
     this.saveProfileRoutes(id, input.routes);
-
-    if (!this.listRouteProfileRows().some((profile) => profile.is_active === 1)) {
-      this.setActiveRouteProfile(id);
-    }
 
     return profileRowToView(
       this.getRouteProfileRow(id) ?? fail(`Route profile ${id} was not saved`),
@@ -260,27 +250,6 @@ export class ProviderStore {
 
     this.db.prepare("DELETE FROM role_routes WHERE profile_id = ?").run(id);
     this.db.prepare("DELETE FROM route_profiles WHERE id = ?").run(id);
-
-    if (target.is_active === 1) {
-      const fallback = profiles.find((profile) => profile.id !== id);
-      if (fallback) {
-        this.setActiveRouteProfile(fallback.id);
-      }
-    }
-  }
-
-  setActiveRouteProfile(id: string): RouteProfileView {
-    if (!this.getRouteProfileRow(id)) {
-      throw new Error(`找不到路由配置：${id}`);
-    }
-    this.db.prepare("UPDATE route_profiles SET is_active = 0").run();
-    this.db
-      .prepare("UPDATE route_profiles SET is_active = 1, updated_at = ? WHERE id = ?")
-      .run(new Date().toISOString(), id);
-    return profileRowToView(
-      this.getRouteProfileRow(id) ?? fail(`Route profile ${id} was not saved`),
-      this.listRoutesForProfile(id),
-    );
   }
 
   private saveProfileRoutes(profileId: string, routes: RoleRouteConfig[]): void {
@@ -542,7 +511,7 @@ export class ProviderStore {
       .prepare(`
         SELECT id, name, is_active, created_at, updated_at
         FROM route_profiles
-        ORDER BY is_active DESC, updated_at DESC, name ASC
+        ORDER BY updated_at DESC, name ASC
       `)
       .all() as unknown as RouteProfileRow[];
   }
@@ -580,7 +549,6 @@ function profileRowToView(row: RouteProfileRow, routes: RoleRouteConfig[]): Rout
   return {
     id: row.id,
     name: row.name,
-    isActive: row.is_active === 1,
     routes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

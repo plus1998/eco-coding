@@ -5,6 +5,7 @@ import type { ModelSettingsSnapshot, RouteProfileView } from "../shared/ipc";
 interface ComposerRoutePopoverProps {
   open: boolean;
   settings: ModelSettingsSnapshot;
+  selectedProfileId?: string | undefined;
   busy?: boolean | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -15,6 +16,7 @@ interface ComposerRoutePopoverProps {
 export function ComposerRoutePopover({
   open,
   settings,
+  selectedProfileId,
   busy,
   anchorRef,
   onClose,
@@ -59,6 +61,7 @@ export function ComposerRoutePopover({
           <RouteProfileOption
             key={profile.id}
             profile={profile}
+            selected={profile.id === selectedProfileId}
             disabled={busy}
             onSelect={() => void onSelectProfile(profile.id)}
           />
@@ -86,10 +89,12 @@ export function ComposerRoutePopover({
 
 function RouteProfileOption({
   profile,
+  selected,
   disabled,
   onSelect,
 }: {
   profile: RouteProfileView;
+  selected: boolean;
   disabled?: boolean | undefined;
   onSelect: () => void;
 }) {
@@ -98,15 +103,13 @@ function RouteProfileOption({
       <button
         type="button"
         className={
-          profile.isActive
-            ? "composer-route-popover-item active"
-            : "composer-route-popover-item"
+          selected ? "composer-route-popover-item active" : "composer-route-popover-item"
         }
-        disabled={disabled || profile.isActive}
+        disabled={disabled || selected}
         onClick={onSelect}
       >
         <span className="composer-route-popover-item-name">{profile.name}</span>
-        {profile.isActive ? (
+        {selected ? (
           <span className="composer-route-popover-item-check" aria-hidden>
             <Check size={14} />
             当前

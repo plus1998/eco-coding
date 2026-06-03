@@ -51,8 +51,14 @@ import {
   type TestRoleRoutesRequest,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
-  getActiveRoutes,
   type RoleRouteConfig,
+  type ThreadRuntimeConfig,
+  type ThreadRuntimeConfigInput,
+  type ThreadUpdateRuntimeConfigRequest,
+  isThreadRuntimeConfig,
+  normalizeThreadRuntimeConfig,
+  buildThreadRuntimeConfigFromDefaults,
+  getRoutesForProfile,
   type RouteProfileInput,
   type AgentSkillAssignments,
   type ClarificationSubmitPayload,
@@ -166,7 +172,6 @@ import {
   isWorkflowSettingsSnapshot,
   normalizeWorkflowSettingsSnapshot,
   orchestrationModeFromSnapshot,
-  usesPlanOrchestration as workflowUsesPlan,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
@@ -287,14 +292,16 @@ app.whenReady().then(async () => {
       return gitWorktrees.isInsideWorktree(worktreePath);
     },
     withSdkDriver: async (threadId, fn) => {
+      const roleRoutes = resolveRoleRoutesForThread(threadId);
       const runtimeConfig = resolveRuntimeConfig(
         providerStore.getSettings(),
         providerStore.listProvidersWithSecrets(),
+        roleRoutes,
       );
       if (!runtimeConfig.ok) {
         throw new Error(runtimeConfig.reason);
       }
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined);
+      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId);
       const driverRoutes = buildDriverRoutes(attemptProxy.routes);
       try {
         const driver = createSdkDriver(threadId, attemptProxy);
@@ -322,6 +329,7 @@ app.whenReady().then(async () => {
     onActivity: emitOtelActivity,
     onUsage: emitOtelUsage,
   });
+  backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
   registerIpcHandlers();
   await createMainWindow();
@@ -343,6 +351,78 @@ app.on("will-quit", () => {
   flushAllThreadMetrics();
   void closeSdkSessionStore?.();
 });
+
+function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
+  return buildThreadRuntimeConfigFromDefaults({
+    settings: providerStore.getSettings(),
+    subagentDefaults: subagentSettingsStore.get(),
+    workflowDefaults: workflowSettingsStore.get(),
+  });
+}
+
+function ensureThreadRuntimeConfig(thread: ThreadSummary): ThreadSummary {
+  if (thread.runtimeConfig) {
+    return thread;
+  }
+  const config = buildDefaultThreadRuntimeConfig();
+  conversationStore.saveThreadRuntimeConfig(thread.id, config);
+  return { ...thread, runtimeConfig: config };
+}
+
+function hydrateThreads(threads: ThreadSummary[]): ThreadSummary[] {
+  return threads.map(ensureThreadRuntimeConfig);
+}
+
+function backfillThreadRuntimeConfigs(): void {
+  hydrateThreads(conversationStore.listThreads());
+}
+
+function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
+  if (!isThreadRuntimeConfig(value)) {
+    throw new Error("Invalid thread runtime configuration.");
+  }
+  return normalizeThreadRuntimeConfig(value);
+}
+
+function roleRoutesForThreadConfig(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+): RoleRouteConfig[] {
+  const routes = getRoutesForProfile(settings, config.routeProfileId);
+  if (!routes) {
+    throw new Error(`找不到路由配置：${config.routeProfileId}`);
+  }
+  return routes;
+}
+
+function resolveRoleRoutesForThread(
+  threadId: string,
+  routeProfileIdOverride?: string,
+): RoleRouteConfig[] {
+  const settings = providerStore.getSettings();
+  if (routeProfileIdOverride) {
+    const routes = getRoutesForProfile(settings, routeProfileIdOverride);
+    if (!routes) {
+      throw new Error(`找不到路由配置：${routeProfileIdOverride}`);
+    }
+    return routes;
+  }
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  const config = ensureThreadRuntimeConfig(thread).runtimeConfig;
+  if (!config) {
+    throw new Error("Thread runtime configuration is missing.");
+  }
+  return roleRoutesForThreadConfig(settings, config);
+}
+
+function threadUsesPlanOrchestration(threadId: string): boolean {
+  const thread = conversationStore.getThread(threadId);
+  const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
+  return config?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
+}
 
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.workspaceOpen, async () => {
@@ -382,7 +462,34 @@ function registerIpcHandlers(): void {
     return workspace;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadList, async () => conversationStore.listThreads());
+  ipcMain.handle(IPC_CHANNELS.threadList, async () => hydrateThreads(conversationStore.listThreads()));
+
+  ipcMain.handle(IPC_CHANNELS.threadUpdateRuntimeConfig, async (_event, payload: unknown) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof (payload as ThreadUpdateRuntimeConfigRequest).threadId !== "string"
+    ) {
+      throw new Error("Thread id is required.");
+    }
+    const request = payload as ThreadUpdateRuntimeConfigRequest;
+    const threadId = request.threadId.trim();
+    if (!threadId) {
+      throw new Error("Thread id is required.");
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (thread.status === "running" || thread.status === "queued") {
+      throw new Error("请等待当前运行结束后再修改配置。");
+    }
+    const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
+    roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig);
+    conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+    invalidateSdkSessionIfRoutesChanged(threadId, roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig));
+    return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
+  });
 
   ipcMain.handle(IPC_CHANNELS.threadActivityList, async (_event, threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
@@ -460,15 +567,6 @@ function registerIpcHandlers(): void {
     providerStore.deleteRouteProfile(profileId.trim());
     emitSettingsUpdated();
     return { ok: true as const };
-  });
-
-  ipcMain.handle(IPC_CHANNELS.modelRouteProfileSetActive, async (_event, profileId: unknown) => {
-    if (typeof profileId !== "string" || !profileId.trim()) {
-      throw new Error("Route profile id is required.");
-    }
-    const profile = providerStore.setActiveRouteProfile(profileId.trim());
-    emitSettingsUpdated();
-    return profile;
   });
 
   ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {
@@ -613,9 +711,13 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
+    const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+    const settings = providerStore.getSettings();
+    const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfig(
-      providerStore.getSettings(),
+      settings,
       providerStore.listProvidersWithSecrets(),
+      roleRoutes,
     );
     const intent = classifyThreadIntent(prompt);
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
@@ -633,6 +735,7 @@ function registerIpcHandlers(): void {
           ? "正在回答…"
           : "正在启动 Claude Agent SDK…"
         : runtimeConfig.reason,
+      runtimeConfig: threadRuntime,
     };
 
     conversationStore.saveThread(thread);
@@ -642,11 +745,11 @@ function registerIpcHandlers(): void {
     if (runtimeConfig.ok) {
       const attachments = payload.attachments;
       if (intent === "question") {
-        void runQuestionThread(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
-      } else if (workflowUsesPlan(workflowSettingsStore.get())) {
-        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
+        void runQuestionThread(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
+      } else if (threadRuntime.planModeEnabled) {
+        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
       } else {
-        void runCodingThreadSdkDefault(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments);
+        void runCodingThreadSdkDefault(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
       }
     }
 
@@ -746,9 +849,11 @@ function registerIpcHandlers(): void {
       throw new Error("计划内容不能为空。");
     }
 
+    const roleRoutes = resolveRoleRoutesForThread(threadId);
     const runtimeConfig = resolveRuntimeConfig(
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
+      roleRoutes,
     );
     if (!runtimeConfig.ok) {
       throw new Error(runtimeConfig.reason);
@@ -758,8 +863,8 @@ function registerIpcHandlers(): void {
       status: "running",
       message: "正在按计划执行…",
     });
-    void runCodingThreadExecution(threadId, runtimeConfig);
-    return { thread: conversationStore.getThread(threadId) ?? thread };
+    void runCodingThreadExecution(threadId, runtimeConfig, { routesOverride: roleRoutes });
+    return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
   ipcMain.handle(IPC_CHANNELS.threadDismissPlan, async (_event, threadId: unknown) => {
@@ -792,12 +897,18 @@ function registerIpcHandlers(): void {
 
     const workspace = await ensureWorkspace(thread.workspacePath);
     const settings = providerStore.getSettings();
-    const roleRoutes = getActiveRoutes(settings);
+    if (payload.runtimeConfig) {
+      const nextConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+      roleRoutesForThreadConfig(settings, nextConfig);
+      conversationStore.saveThreadRuntimeConfig(payload.threadId, nextConfig);
+    }
+    const roleRoutes = resolveRoleRoutesForThread(payload.threadId);
     invalidateSdkSessionIfRoutesChanged(payload.threadId, roleRoutes);
 
     const runtimeConfig = resolveRuntimeConfig(
       settings,
       providerStore.listProvidersWithSecrets(),
+      roleRoutes,
     );
     if (!runtimeConfig.ok) {
       throw new Error(runtimeConfig.reason);
@@ -848,7 +959,7 @@ function registerIpcHandlers(): void {
       void (async () => {
         const headroomController = new AbortController();
         await ensureContextHeadroom(payload.threadId, cwd, headroomController.signal);
-        if (!usesPlanOrchestration() && continuePhase !== "question") {
+        if (!threadUsesPlanOrchestration(payload.threadId) && continuePhase !== "question") {
           await runCodingThreadSdkDefault(
             updated,
             workspace,
@@ -857,6 +968,7 @@ function registerIpcHandlers(): void {
             existingWorktreePlan,
             resolveResumeOptions(payload.threadId, cwd),
             payload.attachments,
+            roleRoutes,
           );
           return;
         }
@@ -868,6 +980,7 @@ function registerIpcHandlers(): void {
           continuePhase,
           existingWorktreePlan,
           payload.attachments,
+          roleRoutes,
         );
       })();
     } else if (intent === "question") {
@@ -879,8 +992,9 @@ function registerIpcHandlers(): void {
         cwd !== workspace.path ? cwd : undefined,
         undefined,
         payload.attachments,
+        roleRoutes,
       );
-    } else if (workflowUsesPlan(workflowSettingsStore.get())) {
+    } else if (threadUsesPlanOrchestration(payload.threadId)) {
       void runCodingThreadPlanning(
         updated,
         workspace,
@@ -889,6 +1003,7 @@ function registerIpcHandlers(): void {
         existingWorktreePlan,
         undefined,
         payload.attachments,
+        roleRoutes,
       );
     } else {
       void runCodingThreadSdkDefault(
@@ -899,9 +1014,12 @@ function registerIpcHandlers(): void {
         existingWorktreePlan,
         undefined,
         payload.attachments,
+        roleRoutes,
       );
     }
-    return { thread: conversationStore.getThread(payload.threadId) ?? updated } satisfies ThreadContinueResult;
+    return {
+      thread: ensureThreadRuntimeConfig(conversationStore.getThread(payload.threadId) ?? updated),
+    } satisfies ThreadContinueResult;
   });
 
   ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, payload: unknown) => {
@@ -1109,7 +1227,7 @@ async function runQuestionThread(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(),
+          sdkSession: buildSdkSessionOptions(thread.id),
           ...(resume ? { resume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1175,9 +1293,6 @@ async function runQuestionThread(
   }
 }
 
-function usesPlanOrchestration(): boolean {
-  return workflowUsesPlan(workflowSettingsStore.get());
-}
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   if (isIsolatedWorktreePlan(worktreePlan)) {
@@ -1277,7 +1392,7 @@ async function runCodingThreadSdkDefault(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(),
+          sdkSession: buildSdkSessionOptions(thread.id),
           ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1416,7 +1531,7 @@ async function runCodingThreadPlanning(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(),
+          sdkSession: buildSdkSessionOptions(thread.id),
           ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1628,7 +1743,7 @@ async function runCodingThreadExecution(
             worktreePath: executionCwd,
             routes: attemptRoutes,
             signal: controller.signal,
-            sdkSession: buildSdkSessionOptions(),
+            sdkSession: buildSdkSessionOptions(thread.id),
             ...(resume ? { resume } : {}),
           },
           planning,
@@ -1755,13 +1870,6 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
   throw new Error("Thread id is required.");
 }
 
-function roleRoutesForProfile(
-  settings: ModelSettingsSnapshot,
-  routeProfileId: string,
-): RoleRouteConfig[] | undefined {
-  return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
-}
-
 function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig[] {
   return routes.map((route) => ({
     role: route.role,
@@ -1812,14 +1920,9 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   }
 
   const settings = providerStore.getSettings();
-  const routesOverride = request.routeProfileId
-    ? roleRoutesForProfile(settings, request.routeProfileId)
-    : undefined;
-  if (request.routeProfileId && !routesOverride) {
-    throw new Error(`找不到路由配置：${request.routeProfileId}`);
-  }
+  const routesOverride = resolveRoleRoutesForThread(threadId, request.routeProfileId);
 
-  invalidateSdkSessionIfRoutesChanged(threadId, routesOverride ?? getActiveRoutes(settings));
+  invalidateSdkSessionIfRoutesChanged(threadId, routesOverride);
 
   const runtimeConfig = resolveRuntimeConfigFresh(routesOverride);
   if (!runtimeConfig.ok) {
@@ -1906,7 +2009,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
       undefined,
       routesOverride,
     );
-  } else if (workflowUsesPlan(workflowSettingsStore.get())) {
+  } else if (threadUsesPlanOrchestration(threadId)) {
     void runCodingThreadPlanning(
       updated,
       workspace,
@@ -1929,7 +2032,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
       routesOverride,
     );
   }
-  return { thread: updated };
+  return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? updated) };
 }
 
 /** After a crash, SQLite may still say running while activeRuns is empty. */
@@ -2233,10 +2336,17 @@ function createSdkDriver(
   if (!endpoint) {
     throw new Error("Local OTel receiver is not ready.");
   }
+  const storedThread = conversationStore.getThread(threadId);
+  if (!storedThread) {
+    throw new Error("Thread was not found.");
+  }
+  const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
+  const planModeEnabled =
+    threadConfig?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
-    orchestration: orchestrationModeFromSnapshot(workflowSettingsStore.get()),
+    orchestration: orchestrationModeFromSnapshot({ planModeEnabled }),
     hookContext: {
       ...createThreadHookContext(threadId),
       ...hookContextExtras,
@@ -2339,8 +2449,9 @@ async function runThreadContinuation(
   mode: "planning" | "execution" | "question",
   existingWorktreePlan?: WorktreePlan,
   attachments?: PromptImageAttachment[],
+  routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
-  if (!usesPlanOrchestration() && mode !== "question") {
+  if (!threadUsesPlanOrchestration(thread.id) && mode !== "question") {
     await runCodingThreadSdkDefault(
       thread,
       workspace,
@@ -2349,6 +2460,7 @@ async function runThreadContinuation(
       existingWorktreePlan,
       undefined,
       attachments,
+      routesOverride,
     );
     return;
   }
@@ -2444,7 +2556,7 @@ async function runThreadContinuation(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(),
+          sdkSession: buildSdkSessionOptions(thread.id),
           resume,
         };
 
@@ -3335,10 +3447,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function buildSdkSessionOptions(): EcoSdkSessionOptions {
+function buildSdkSessionOptions(threadId: string): EcoSdkSessionOptions {
   const mcp = mcpStore.buildSdkConfig();
   const assignments = agentSkillsStore.getAssignments();
-  const enabledSubagents = subagentSettingsStore.get();
+  const thread = conversationStore.getThread(threadId);
+  const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? subagentSettingsStore.get();
   return {
     settingSources: ["user", "project"],
     skills: assignments.planner,
@@ -3682,7 +3796,7 @@ function resolveRuntimeConfig(
   routesOverride?: readonly RoleRouteConfig[],
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
-  const activeRoutes = routesOverride ?? getActiveRoutes(settings);
+  const activeRoutes = routesOverride ?? [];
   const routes = activeRoutes.map((route): RuntimeRoute | undefined => {
     const provider = providersById.get(route.providerId);
     if (!provider) return undefined;

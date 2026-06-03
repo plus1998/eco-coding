@@ -635,22 +635,6 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function activateRouteProfile(profileId: string) {
-    if (!window.eco) {
-      return;
-    }
-    setPanelError(undefined);
-    onSavingChange?.(true);
-    try {
-      await window.eco.setActiveRouteProfile(profileId);
-      await refreshSettings();
-    } catch (caught) {
-      setPanelError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      onSavingChange?.(false);
-    }
-  }
-
   function updateRouteInForm(
     role: AgentRole,
     patch: Partial<RoleRouteConfig>,
@@ -727,7 +711,7 @@ export function ModelsSettingsPanel({
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
-          配置 Provider、子代理开关与角色路由方案。新线程将使用当前启用的方案与子代理设置。
+          配置 Provider、子代理默认值与角色路由模板。新对话在输入区选择方案；子代理与计划模式按对话独立保存。
         </p>
       </header>
 
@@ -845,7 +829,7 @@ export function ModelsSettingsPanel({
           <div className="models-section-intro">
             <h2 className="models-section-title">角色路由</h2>
             <p className="models-section-desc">
-              可保存多套角色路由配置，并选择其中一套作为当前启用。线程运行到对应角色时，会调用启用配置中的路线。
+              可保存多套角色路由模板。每个对话在输入区选择方案；运行到对应角色时使用该对话绑定的路线。
             </p>
             <p className="models-section-meta">
               能力、上下文与参考单价优先来自 models.dev；未匹配时可手动填写，并用「测试」验证各角色模型能否调用
@@ -873,9 +857,6 @@ export function ModelsSettingsPanel({
                   <RouteProfilePreview profile={profile} />
                 </div>
                 <div className="mcp-server-actions">
-                  <span className={profile.isActive ? "models-provider-badge on" : "models-provider-badge"}>
-                    {profile.isActive ? "当前启用" : "未启用"}
-                  </span>
                   <button
                     type="button"
                     className="models-section-button"
@@ -888,16 +869,6 @@ export function ModelsSettingsPanel({
                     />
                     测试
                   </button>
-                  {!profile.isActive && (
-                    <button
-                      type="button"
-                      className="models-section-button"
-                      disabled={busy}
-                      onClick={() => void activateRouteProfile(profile.id)}
-                    >
-                      启用
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="mcp-icon-button"
@@ -1072,20 +1043,6 @@ function RouteProfileEditorModal({
                 />
               </label>
 
-              <label className="mcp-field models-toggle-field">
-                <span className="mcp-field-label">保存后立即启用</span>
-                <label className="mcp-toggle" title={form.isActive ? "启用" : "不启用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.isActive ?? false}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, isActive: event.target.checked }))
-                    }
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
-              </label>
             </div>
 
             <section className="models-route-profile-section">
@@ -1792,7 +1749,6 @@ function createBlankRouteProfileForm(settings?: ModelSettingsSnapshot): RoutePro
   const defaultProvider = settings?.providers[0];
   return {
     name: "",
-    isActive: false,
     routes: AGENT_ROLES.map((role) => ({
       role,
       providerId: defaultProvider?.id ?? "",
@@ -1806,7 +1762,6 @@ function routeProfileToForm(profile: RouteProfileView): RouteProfileInput {
   return {
     id: profile.id,
     name: profile.name,
-    isActive: profile.isActive,
     routes: profile.routes.map((route) => ({ ...route })),
   };
 }

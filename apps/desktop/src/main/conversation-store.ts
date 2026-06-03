@@ -13,9 +13,14 @@ import type {
   ThreadActivityLine,
   ThreadContextSnapshot,
   ThreadPendingPlan,
+  ThreadRuntimeConfig,
   ThreadStatus,
   ThreadSummary,
 } from "../shared/ipc";
+import {
+  parseThreadRuntimeConfigJson,
+  serializeThreadRuntimeConfig,
+} from "../shared/thread-runtime-config";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 
 interface ThreadRow {
@@ -30,6 +35,7 @@ interface ThreadRow {
   sdk_session_id: string | null;
   sdk_cwd: string | null;
   routes_fingerprint: string | null;
+  runtime_config_json: string | null;
 }
 
 export interface ThreadSdkSession {
@@ -183,6 +189,26 @@ export class ConversationStore {
     if (!names.has("routes_fingerprint")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN routes_fingerprint TEXT`);
     }
+    if (!names.has("runtime_config_json")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN runtime_config_json TEXT`);
+    }
+  }
+
+  saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET runtime_config_json = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(serializeThreadRuntimeConfig(config), new Date().toISOString(), threadId);
+  }
+
+  getThreadRuntimeConfig(threadId: string): ThreadRuntimeConfig | undefined {
+    const row = this.db
+      .prepare(`SELECT runtime_config_json FROM threads WHERE id = ?`)
+      .get(threadId) as { runtime_config_json: string | null } | undefined;
+    return parseThreadRuntimeConfigJson(row?.runtime_config_json);
   }
 
   saveThreadMetrics(
@@ -263,17 +289,21 @@ export class ConversationStore {
 
   saveThread(thread: ThreadSummary): void {
     const now = new Date().toISOString();
+    const runtimeConfigJson = thread.runtimeConfig
+      ? serializeThreadRuntimeConfig(thread.runtimeConfig)
+      : null;
     this.db
       .prepare(
-        `INSERT INTO threads (id, title, prompt, workspace_path, status, message, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO threads (id, title, prompt, workspace_path, status, message, created_at, updated_at, runtime_config_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            prompt = excluded.prompt,
            workspace_path = excluded.workspace_path,
            status = excluded.status,
            message = excluded.message,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           runtime_config_json = COALESCE(excluded.runtime_config_json, threads.runtime_config_json)`,
       )
       .run(
         thread.id,
@@ -284,6 +314,7 @@ export class ConversationStore {
         thread.message,
         thread.createdAt,
         now,
+        runtimeConfigJson,
       );
   }
 
@@ -360,7 +391,7 @@ export class ConversationStore {
   listThreads(): ThreadSummary[] {
     const rows = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          ORDER BY updated_at DESC`,
       )
@@ -372,7 +403,7 @@ export class ConversationStore {
   getThread(threadId: string): ThreadSummary | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd
+        `SELECT id, title, prompt, workspace_path, status, message, created_at, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          WHERE id = ?`,
       )
@@ -725,6 +756,7 @@ function rowToThreadMetrics(row: {
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {
+  const runtimeConfig = parseThreadRuntimeConfigJson(row.runtime_config_json);
   return {
     id: row.id,
     title: row.title,
@@ -737,5 +769,6 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     ...(row.sdk_session_id && row.sdk_cwd
       ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd }
       : {}),
+    ...(runtimeConfig ? { runtimeConfig } : {}),
   };
 }

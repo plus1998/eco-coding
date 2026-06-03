@@ -11,8 +11,8 @@ export const IPC_CHANNELS = {
   modelRouteProfileTest: "model-route-profile:test",
   modelRouteProfileSave: "model-route-profile:save",
   modelRouteProfileDelete: "model-route-profile:delete",
-  modelRouteProfileSetActive: "model-route-profile:set-active",
   threadStart: "thread:start",
+  threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
   threadCancel: "thread:cancel",
@@ -127,6 +127,7 @@ export interface WorkflowSettingsSnapshot {
 }
 
 import type { UpstreamApiCompat } from "./api-compat";
+import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
 
 export type { UpstreamApiCompat };
 
@@ -190,7 +191,6 @@ export interface RoleRouteConfig {
 export interface RouteProfileView {
   id: string;
   name: string;
-  isActive: boolean;
   routes: RoleRouteConfig[];
   createdAt: string;
   updatedAt: string;
@@ -200,8 +200,16 @@ export interface RouteProfileInput {
   id?: string;
   name: string;
   routes: RoleRouteConfig[];
-  isActive?: boolean;
 }
+
+export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
+export {
+  buildThreadRuntimeConfigFromDefaults,
+  getDefaultRouteProfileId,
+  getRoutesForProfile,
+  isThreadRuntimeConfig,
+  normalizeThreadRuntimeConfig,
+} from "./thread-runtime-config";
 
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
@@ -212,14 +220,6 @@ export interface PromptImageAttachment {
 export interface ModelSettingsSnapshot {
   providers: ProviderConfigView[];
   routeProfiles: RouteProfileView[];
-}
-
-export function getActiveRouteProfile(settings: ModelSettingsSnapshot): RouteProfileView | undefined {
-  return settings.routeProfiles.find((profile) => profile.isActive) ?? settings.routeProfiles[0];
-}
-
-export function getActiveRoutes(settings: ModelSettingsSnapshot): RoleRouteConfig[] {
-  return getActiveRouteProfile(settings)?.routes ?? [];
 }
 
 export type ThreadStatus =
@@ -262,12 +262,20 @@ export interface ThreadSummary {
   sdkSessionId?: string;
   /** Worktree path used as SDK cwd when the session was created. */
   sdkCwd?: string;
+  /** Per-thread route profile, subagent, and plan mode (snapshotted at start). */
+  runtimeConfig?: ThreadRuntimeConfig;
 }
 
 export interface ThreadStartRequest {
   workspacePath: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  runtimeConfig: ThreadRuntimeConfigInput;
+}
+
+export interface ThreadUpdateRuntimeConfigRequest {
+  threadId: string;
+  runtimeConfig: ThreadRuntimeConfigInput;
 }
 
 export interface ThreadStartResult {
@@ -278,6 +286,8 @@ export interface ThreadContinueRequest {
   threadId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  /** Optional update before sending the next message. */
+  runtimeConfig?: ThreadRuntimeConfigInput;
 }
 
 export interface ThreadContinueResult {
@@ -286,7 +296,7 @@ export interface ThreadContinueResult {
 
 export interface ThreadRetryRequest {
   threadId: string;
-  /** Retry with this route profile's routes without changing the global active profile. */
+  /** One-off retry with another route profile template. */
   routeProfileId?: string;
 }
 

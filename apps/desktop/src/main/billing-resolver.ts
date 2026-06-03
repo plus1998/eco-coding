@@ -9,7 +9,6 @@ import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute }
 import type { ProviderConfigSecret } from "./provider-store";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
-  getActiveRoutes,
   type AgentRole,
   type ModelSettingsSnapshot,
   type ModelsDevMapping,
@@ -193,7 +192,7 @@ export function resolveRuntimeRoutesFromSettings(
   routesOverride?: readonly RoleRouteConfig[],
 ): RuntimeRoute[] {
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
-  const sourceRoutes = routesOverride ?? getActiveRoutes(settings);
+  const sourceRoutes = routesOverride ?? [];
   return sourceRoutes.flatMap((route) => {
     const provider = providersById.get(route.providerId);
     if (!provider) {
