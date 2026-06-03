@@ -89,6 +89,31 @@ export function normalizeToolParameters(schema: unknown): unknown {
   return { ...m, properties: {} };
 }
 
+/** Map Anthropic thinking/effort fields to OpenAI Responses reasoning, when enabled. */
+export function resolveAnthropicReasoningForResponses(
+  req: AnthropicRequest,
+): ResponsesReasoning | undefined {
+  if (req.thinking?.type === 'disabled') {
+    return undefined;
+  }
+
+  let effort: string | undefined;
+  if (req.output_config?.effort !== undefined && req.output_config.effort !== '') {
+    effort = req.output_config.effort;
+  } else if (req.effort !== undefined && req.effort !== '') {
+    effort = req.effort;
+  }
+
+  if (effort === undefined) {
+    return undefined;
+  }
+
+  return {
+    effort: mapAnthropicEffortToResponses(effort),
+    summary: 'auto',
+  };
+}
+
 export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
   const input = convertAnthropicToResponsesInput(req.system, req.messages);
 
@@ -120,14 +145,10 @@ export function anthropicToResponses(req: AnthropicRequest): ResponsesRequest {
     out.tools = convertAnthropicToolsToResponses(req.tools);
   }
 
-  let effort = 'medium';
-  if (req.output_config?.effort !== undefined && req.output_config.effort !== '') {
-    effort = req.output_config.effort;
+  const reasoning = resolveAnthropicReasoningForResponses(req);
+  if (reasoning !== undefined) {
+    out.reasoning = reasoning;
   }
-  out.reasoning = {
-    effort: mapAnthropicEffortToResponses(effort),
-    summary: 'auto',
-  };
 
   if (req.tool_choice !== undefined) {
     out.tool_choice = convertAnthropicToolChoiceToResponses(req.tool_choice);

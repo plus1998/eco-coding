@@ -11,6 +11,8 @@ export interface AnthropicRequest {
   top_p?: number;
   stop_sequences?: string[];
   thinking?: AnthropicThinking;
+  /** Top-level effort from Claude Agent SDK / local proxy injection. */
+  effort?: string;
   tool_choice?: unknown;
   metadata?: unknown;
   output_config?: AnthropicOutputConfig;

@@ -8,6 +8,8 @@ import {
   buildModelsListUrl,
   buildProviderRequestBaseUrl,
   buildProviderTestRequestBody,
+  buildChatCompletionsTestRequestBody,
+  buildResponsesTestRequestBody,
   describeProviderCompatRouting,
   normalizeRequestPath,
   parseUpstreamModelsPayload,
@@ -214,6 +216,26 @@ describe("buildProviderTestRequestBody", () => {
   });
 });
 
+describe("buildOpenAICompatTestRequestBody", () => {
+  test("chat completions test omits reasoning_effort when thinking is off", () => {
+    expect(buildChatCompletionsTestRequestBody("gpt-5.2")).toEqual({
+      model: "gpt-5.2",
+      messages: [{ role: "user", content: "hi" }],
+      max_completion_tokens: 256,
+      stream: false,
+    });
+  });
+
+  test("responses test omits reasoning when thinking is off", () => {
+    expect(buildResponsesTestRequestBody("gpt-5.2")).toMatchObject({
+      model: "gpt-5.2",
+      max_output_tokens: 256,
+      stream: false,
+    });
+    expect(buildResponsesTestRequestBody("gpt-5.2").reasoning).toBeUndefined();
+  });
+});
+
 describe("testProviderConnection", () => {
   test("requires default model", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
@@ -309,8 +331,9 @@ describe("testProviderConnection", () => {
 
   test("accepts OpenAI chat completions replies without anthropic conversion loss", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
-    const fetcher = async (url: string) => {
+    const fetcher = async (url: string, init?: RequestInit) => {
       expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(JSON.parse(String(init?.body))).not.toHaveProperty("reasoning_effort");
       return new Response(
         JSON.stringify({
           id: "gen-test",

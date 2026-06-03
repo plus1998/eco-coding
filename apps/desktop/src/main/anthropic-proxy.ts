@@ -169,7 +169,7 @@ export async function startAnthropicModelProxy(
         pendingImages = [];
       }
 
-      if (!countTokensRequest && !isOpenAICompat(route.apiCompat)) {
+      if (!countTokensRequest) {
         applyThinkingToMessagesBody(body, route.thinkingEffort);
       }
 

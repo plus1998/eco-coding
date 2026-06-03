@@ -98,4 +98,48 @@ describe('anthropicToResponses', () => {
     const out = items.find((i) => i.type === 'function_call_output');
     expect(out?.output).toContain('Sunny');
   });
+
+  test('omits reasoning when thinking is disabled', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'disabled' },
+    });
+
+    expect(resp.reasoning).toBeUndefined();
+  });
+
+  test('maps output_config effort to reasoning', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+      output_config: { effort: 'high' },
+    });
+
+    expect(resp.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+  });
+
+  test('maps top-level effort to reasoning and max to xhigh', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+      effort: 'max',
+      thinking: { type: 'adaptive' },
+    });
+
+    expect(resp.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' });
+  });
+
+  test('omits reasoning when no effort is configured', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+
+    expect(resp.reasoning).toBeUndefined();
+  });
 });
