@@ -36,6 +36,7 @@ import {
   redactSecret,
   truncateForLog,
 } from "./upstream-log";
+import { buildProviderDirectUpstreamHeaders } from "./upstream-request-headers";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const PROVIDER_TEST_TIMEOUT_MS = 10_000;
@@ -57,6 +58,7 @@ export interface ProviderCompatRoutingInfo {
 export async function listProviderUpstreamModels(
   store: ProviderStore,
   request: ListUpstreamModelsRequest,
+  upstreamUserAgent?: string,
 ): Promise<ListUpstreamModelsResult> {
   logUpstream("models-list-request", {
     providerId: request.providerId,
@@ -92,6 +94,8 @@ export async function listProviderUpstreamModels(
     resolved.apiKey,
     resolved.requestPath,
     { providerId: request.providerId, routing },
+    resolved.apiCompat,
+    upstreamUserAgent,
   );
 }
 
@@ -99,6 +103,7 @@ export async function testProviderConnection(
   store: ProviderStore,
   request: TestProviderConnectionRequest,
   fetcher: typeof fetch = fetch,
+  upstreamUserAgent?: string,
 ): Promise<TestProviderConnectionResult> {
   const resolved = resolveProviderCredentials(store, request);
   if (!resolved.ok) {
@@ -132,6 +137,7 @@ export async function testProviderConnection(
     },
     resolveRouteTestThinkingEffort(request.thinkingEffort),
     fetcher,
+    upstreamUserAgent,
   );
   if (testResult.ok) {
     return { ok: true, reply: testResult.reply };
@@ -160,6 +166,7 @@ export async function testRoleRoutes(
   store: ProviderStore,
   request: TestRoleRoutesRequest,
   fetcher: typeof fetch = fetch,
+  upstreamUserAgent?: string,
 ): Promise<TestRoleRoutesResult> {
   const resultsByRole = new Map<string, RoleRouteTestResult>();
   const groups = new Map<string, RouteTestGroup>();
@@ -231,6 +238,7 @@ export async function testRoleRoutes(
       },
       group.thinkingEffort,
       fetcher,
+      upstreamUserAgent,
     );
 
     const shared: RoleRouteTestResult = {
@@ -277,6 +285,7 @@ async function postUpstreamCompatTest(
   },
   thinkingEffort: ThinkingEffort,
   fetcher: typeof fetch,
+  upstreamUserAgent?: string,
 ): Promise<MessagesTestResult> {
   const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
   const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat);
@@ -293,10 +302,11 @@ async function postUpstreamCompatTest(
       : input.apiCompat === "openai_responses"
         ? buildResponsesTestRequestBody(input.modelId)
         : buildMessagesTestRequestBody(input.modelId, thinkingEffort);
-  const requestHeaders = {
-    ...(isOpenAI ? buildOpenAIHeaders(input.apiKey) : buildAnthropicHeaders(input.apiKey)),
-    "content-type": "application/json",
-  };
+  const requestHeaders = buildProviderDirectUpstreamHeaders({
+    apiKey: input.apiKey,
+    apiCompat: input.apiCompat,
+    ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+  });
 
   logUpstream("provider-test-start", {
     providerId: input.providerId,
@@ -708,6 +718,8 @@ export async function fetchUpstreamModelsFromCredentials(
   apiKey: string,
   requestPath?: string,
   logContext?: { providerId?: string; routing?: ProviderCompatRoutingInfo },
+  apiCompat: UpstreamApiCompat = "anthropic",
+  upstreamUserAgent?: string,
 ): Promise<ListUpstreamModelsResult> {
   const listResolved = resolveModelsListUrl(baseUrl, requestPath);
   if (!listResolved.ok) {
@@ -732,13 +744,23 @@ export async function fetchUpstreamModelsFromCredentials(
     requestPath: requestPath ?? "",
     apiSurface: "openai-v1-models",
     compatNotes: logContext?.routing?.compatNotes,
-    headers: redactRequestHeaders(buildAnthropicHeaders(apiKey)),
+    headers: redactRequestHeaders(
+      buildProviderDirectUpstreamHeaders({
+        apiKey,
+        apiCompat,
+        ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+      }),
+    ),
   });
 
   try {
     const response = await fetch(modelsUrl, {
       method: "GET",
-      headers: buildAnthropicHeaders(apiKey),
+      headers: buildProviderDirectUpstreamHeaders({
+        apiKey,
+        apiCompat,
+        ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+      }),
     });
 
     const raw = await response.text();
@@ -1139,7 +1161,7 @@ function formatUpstreamError(status: number, raw: string): string {
   return snippet ? `上游 ${status}：${snippet}` : `上游请求失败（HTTP ${status}）。`;
 }
 
-function buildAnthropicHeaders(apiKey: string): Record<string, string> {
+export function buildAnthropicHeaders(apiKey: string): Record<string, string> {
   const headers: Record<string, string> = {
     accept: "application/json",
     "anthropic-version": ANTHROPIC_VERSION,

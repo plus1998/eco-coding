@@ -46,6 +46,8 @@ export const IPC_CHANNELS = {
   subagentSettingsSave: "subagent-settings:save",
   workflowSettingsGet: "workflow-settings:get",
   workflowSettingsSave: "workflow-settings:save",
+  proxyBridgeSettingsGet: "proxy-bridge-settings:get",
+  proxyBridgeSettingsSave: "proxy-bridge-settings:save",
   sessionSyncSettingsGet: "session-sync-settings:get",
   sessionSyncSettingsSave: "session-sync-settings:save",
   sessionSyncTestConnection: "session-sync:test-connection",
@@ -124,6 +126,11 @@ export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+}
+
+export interface ProxyBridgeSettingsSnapshot {
+  /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
+  upstreamUserAgent?: string;
 }
 
 import type { UpstreamApiCompat } from "./api-compat";

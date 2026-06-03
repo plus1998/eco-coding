@@ -43,6 +43,7 @@ import {
   type AgentSkillAssignments,
   type SubagentEnabledSettings,
   type SubagentRole,
+  type ProxyBridgeSettingsSnapshot,
   type WorkflowSettingsSnapshot,
   type ClarificationRequest,
   type CoderTodoItem,
@@ -151,9 +152,11 @@ function App() {
   const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
   const [subagentSettings, setSubagentSettings] = useState<SubagentEnabledSettings | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot | null>(null);
+  const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
   const [isSavingSubagentSettings, setIsSavingSubagentSettings] = useState(false);
   const [isSavingWorkflowSettings, setIsSavingWorkflowSettings] = useState(false);
+  const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("providers");
   const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
@@ -201,7 +204,8 @@ function App() {
       window.eco.getSessionSyncSettings(),
       window.eco.getSubagentSettings(),
       window.eco.getWorkflowSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents, workflow]) => {
+      window.eco.getProxyBridgeSettings(),
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents, workflow, proxyBridge]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -213,6 +217,7 @@ function App() {
       setSessionSyncSettings(sessionSync);
       setSubagentSettings(subagents);
       setWorkflowSettings(workflow);
+      setProxyBridgeSettings(proxyBridge);
     });
 
     return window.eco.onThreadEvent((event) => {
@@ -1212,6 +1217,20 @@ function App() {
     }
   }
 
+  async function saveProxyBridgeSettings(next: ProxyBridgeSettingsSnapshot) {
+    if (!window.eco) return;
+    setIsSavingProxyBridgeSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveProxyBridgeSettings(next);
+      setProxyBridgeSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingProxyBridgeSettings(false);
+    }
+  }
+
   async function saveSubagentSettings(next: SubagentEnabledSettings) {
     if (!window.eco) return;
     setIsSavingSubagentSettings(true);
@@ -1845,19 +1864,22 @@ function App() {
             )}
 
             {settingsSection === "models" &&
-              (subagentSettings && workflowSettings ? (
+              (subagentSettings && workflowSettings && proxyBridgeSettings ? (
                 <ModelsSettingsPanel
                   settings={settings}
                   subagentSettings={subagentSettings}
                   workflowSettings={workflowSettings}
+                  proxyBridgeSettings={proxyBridgeSettings}
                   subagentSettingsSaving={isSavingSubagentSettings}
                   workflowSettingsSaving={isSavingWorkflowSettings}
+                  proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                   initialTab={modelsSettingsTab}
                   busy={isSavingSettings}
                   onSettingsChange={setSettings}
                   onSavingChange={setIsSavingSettings}
                   onSubagentSettingsChange={(next) => void saveSubagentSettings(next)}
                   onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
+                  onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                 />
               ) : (
                 <p className="settings-empty-hint">正在加载模型与工作流配置…</p>

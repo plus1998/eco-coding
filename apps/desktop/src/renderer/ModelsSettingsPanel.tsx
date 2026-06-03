@@ -29,8 +29,9 @@ import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { RoutePricingDisplay } from "./RoutePricingDisplay";
 import { AppMessage, formatDurationMs, type AppMessageKind } from "./AppMessage";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
+import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import { WorkflowSettingsSection } from "./WorkflowSettingsSection";
-import type { WorkflowSettingsSnapshot } from "../shared/ipc";
+import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 
 export type ModelsSettingsTab = "providers" | "subagents" | "routes";
 
@@ -44,13 +45,16 @@ interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   subagentSettings: SubagentEnabledSettings;
   workflowSettings: WorkflowSettingsSnapshot;
+  proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
   subagentSettingsSaving?: boolean | undefined;
   workflowSettingsSaving?: boolean | undefined;
+  proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
   onSubagentSettingsChange: (settings: SubagentEnabledSettings) => void;
   onWorkflowSettingsChange: (settings: WorkflowSettingsSnapshot) => void;
+  onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
 
@@ -82,13 +86,16 @@ export function ModelsSettingsPanel({
   settings,
   subagentSettings,
   workflowSettings,
+  proxyBridgeSettings,
   subagentSettingsSaving,
   workflowSettingsSaving,
+  proxyBridgeSettingsSaving,
   busy,
   initialTab = "providers",
   onSettingsChange,
   onSubagentSettingsChange,
   onWorkflowSettingsChange,
+  onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(initialTab);
@@ -759,6 +766,12 @@ export function ModelsSettingsPanel({
       )}
 
       {activeTab === "providers" && (
+      <>
+      <ProxyBridgeSettingsSection
+        settings={proxyBridgeSettings}
+        disabled={busy || proxyBridgeSettingsSaving}
+        onSave={onProxyBridgeSettingsChange}
+      />
       <section className="mcp-list-section">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">Provider</span>
@@ -821,6 +834,7 @@ export function ModelsSettingsPanel({
           </ul>
         )}
       </section>
+      </>
       )}
 
       {activeTab === "routes" && (

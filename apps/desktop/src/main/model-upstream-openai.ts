@@ -1,4 +1,4 @@
-import http, { type IncomingHttpHeaders } from "node:http";
+import http from "node:http";
 import {
   anthropicToResponses,
   anthropicToResponsesInputTokensBody,
@@ -31,9 +31,9 @@ import {
 import {
   buildChatCompletionsUrl,
   buildOpenAICompatUpstreamUrl,
-  buildOpenAIHeaders,
   buildResponsesInputTokensUrl,
 } from "./provider-models";
+import { buildProxyUpstreamHeaders } from "./upstream-request-headers";
 import type { ProviderConfigSecret } from "./provider-store";
 import {
   createStreamingUsageTracker,
@@ -79,19 +79,21 @@ export interface OpenAICompatForwardContext {
   body: Record<string, unknown>;
   requestedModel?: string;
   requestUrl?: string;
+  upstreamUserAgent?: string;
   onUsage?: OpenAICompatUsageHandler;
 }
 
-function buildUpstreamHeaders(
-  clientHeaders: IncomingHttpHeaders,
-  apiKey: string,
+function buildOpenAICompatUpstreamHeaders(
+  request: http.IncomingMessage,
+  route: OpenAICompatForwardRoute,
+  upstreamUserAgent?: string,
 ): Record<string, string> {
-  const headers = buildOpenAIHeaders(apiKey);
-  const contentType = clientHeaders["content-type"];
-  if (typeof contentType === "string") {
-    headers["content-type"] = contentType;
-  }
-  return headers;
+  return buildProxyUpstreamHeaders({
+    clientHeaders: request.headers,
+    apiKey: route.provider.apiKey,
+    apiCompat: route.apiCompat,
+    ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+  });
 }
 
 function splitSseBlocks(buffer: string): { blocks: string[]; remainder: string } {
@@ -236,7 +238,7 @@ export async function forwardCountTokensViaOpenAICompat(
 
   const requestPayload = JSON.stringify(upstreamBody);
   const anthropicRequestPayload = JSON.stringify(body);
-  const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+  const upstreamHeaders = buildOpenAICompatUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const callCommon = () =>
     proxyCallCommonFields({
       role: route.role,
@@ -364,7 +366,7 @@ async function forwardMessagesViaOpenAIResponses(
   responsesReq.stream = stream;
 
   const requestPayload = JSON.stringify(responsesReq);
-  const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+  const upstreamHeaders = buildOpenAICompatUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const anthropicRequestPayload = JSON.stringify(body);
   const callCommon = () =>
     proxyCallCommonFields({
@@ -573,7 +575,7 @@ async function forwardMessagesViaOpenAIChatCompletions(
   chatReq.stream = stream;
 
   const requestPayload = JSON.stringify(chatReq);
-  const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+  const upstreamHeaders = buildOpenAICompatUpstreamHeaders(request, route, ctx.upstreamUserAgent);
   const anthropicRequestPayload = JSON.stringify(body);
   const callCommon = () =>
     proxyCallCommonFields({

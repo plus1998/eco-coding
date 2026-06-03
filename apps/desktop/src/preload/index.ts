@@ -28,6 +28,7 @@ import {
   type SkillsListResult,
   type AgentSkillAssignments,
   type SubagentEnabledSettings,
+  type ProxyBridgeSettingsSnapshot,
   type WorkflowSettingsSnapshot,
   type ClarificationAnswers,
   type ClarificationRequest,
@@ -142,6 +143,12 @@ const api = {
   },
   saveWorkflowSettings(settings: WorkflowSettingsSnapshot): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsSave, settings);
+  },
+  getProxyBridgeSettings(): Promise<ProxyBridgeSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsGet);
+  },
+  saveProxyBridgeSettings(settings: ProxyBridgeSettingsSnapshot): Promise<ProxyBridgeSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsSave, settings);
   },
   getSessionSyncSettings(): Promise<SessionSyncSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncSettingsGet);

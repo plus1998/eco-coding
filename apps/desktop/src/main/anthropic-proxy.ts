@@ -1,5 +1,5 @@
 import { createHash, randomInt } from "node:crypto";
-import http, { type IncomingHttpHeaders } from "node:http";
+import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import {
   isOpenAICompat,
@@ -12,6 +12,7 @@ import {
   forwardCountTokensViaOpenAICompat,
   forwardMessagesViaOpenAICompat,
 } from "./model-upstream-openai";
+import { buildProxyUpstreamHeaders, proxyUpstreamHeadersToFetch } from "./upstream-request-headers";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import { buildProviderRequestBaseUrl } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -69,6 +70,8 @@ export type AnthropicProxyUsageHandler = (
 
 export interface AnthropicProxyStartOptions {
   pendingImages?: readonly PromptImageAttachment[];
+  /** Non-empty: overrides SDK User-Agent on upstream requests. */
+  upstreamUserAgent?: string;
   /** Fires when the local proxy forwards a streaming Messages API call upstream. */
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
   /** Fires when the upstream fetch fails before a response body is returned. */
@@ -90,7 +93,6 @@ export interface StartedAnthropicProxy {
 }
 
 const LOCAL_PROXY_API_KEY = "eco-local-model-router";
-const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_PENDING_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -101,6 +103,7 @@ export async function startAnthropicModelProxy(
   const onMessagesRequest = options?.onMessagesRequest;
   const onUpstreamConnectionError = options?.onUpstreamConnectionError;
   const onUsage = options?.onUsage;
+  const upstreamUserAgent = options?.upstreamUserAgent?.trim() || undefined;
   const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
     role: route.role,
     provider: route.provider,
@@ -183,6 +186,7 @@ export async function startAnthropicModelProxy(
             body,
             requestUrl: request.url,
             requestedModel,
+            ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
           });
           return;
         }
@@ -192,6 +196,7 @@ export async function startAnthropicModelProxy(
           route,
           body,
           requestedModel,
+          upstreamUserAgent,
           onMessagesRequest,
           onUpstreamConnectionError,
           onUsage,
@@ -214,6 +219,7 @@ export async function startAnthropicModelProxy(
           body,
           requestUrl: request.url,
           requestedModel,
+          ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
           onUsage: onUsage
             ? async (info) =>
                 (await onUsage({
@@ -237,6 +243,7 @@ export async function startAnthropicModelProxy(
         route,
         body,
         requestedModel,
+        upstreamUserAgent,
         onMessagesRequest,
         onUpstreamConnectionError,
         onUsage,
@@ -501,7 +508,8 @@ async function forwardAnthropicRequest(
   response: http.ServerResponse,
   route: AnthropicProxyResolvedRoute,
   body: Record<string, unknown>,
-  requestedModel?: string,
+  requestedModel: string | undefined,
+  upstreamUserAgent: string | undefined,
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void,
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void,
   onUsage?: AnthropicProxyUsageHandler,
@@ -511,7 +519,14 @@ async function forwardAnthropicRequest(
   const upstreamRoot = buildProviderRequestBaseUrl(route.provider.baseUrl, route.provider.requestPath);
   const upstreamUrl = `${trimTrailingSlash(upstreamRoot)}${request.url ?? ""}`;
   const requestPayload = JSON.stringify(body);
-  const upstreamHeaders = buildUpstreamHeaders(request.headers, route.provider.apiKey);
+  const upstreamHeaders = proxyUpstreamHeadersToFetch(
+    buildProxyUpstreamHeaders({
+      clientHeaders: request.headers,
+      apiKey: route.provider.apiKey,
+      apiCompat: route.apiCompat,
+      ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+    }),
+  );
   const callCommon = () =>
     proxyCallCommonFields({
       role: route.role,
@@ -702,22 +717,6 @@ function buildUsageInfo(
 }
 
 export { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
-
-function buildUpstreamHeaders(headers: IncomingHttpHeaders, apiKey: string): Headers {
-  const upstreamHeaders = new Headers();
-  for (const name of ["accept", "anthropic-beta", "anthropic-version", "user-agent"]) {
-    const value = headers[name];
-    if (typeof value === "string") upstreamHeaders.set(name, value);
-  }
-  upstreamHeaders.set("content-type", "application/json");
-  upstreamHeaders.set("anthropic-version", upstreamHeaders.get("anthropic-version") ?? ANTHROPIC_VERSION);
-  const trimmedKey = apiKey.trim();
-  if (trimmedKey) {
-    upstreamHeaders.set("x-api-key", trimmedKey);
-    upstreamHeaders.set("authorization", `Bearer ${trimmedKey}`);
-  }
-  return upstreamHeaders;
-}
 
 function responseHeaders(headers: Headers): Record<string, string> {
   const passthrough: Record<string, string> = {};

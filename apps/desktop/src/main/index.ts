@@ -174,6 +174,13 @@ import {
   orchestrationModeFromSnapshot,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
+import {
+  createProxyBridgeSettingsStore,
+  isProxyBridgeSettingsSnapshot,
+  normalizeProxyBridgeSettingsSnapshot,
+  resolveUpstreamUserAgentOverride,
+  type ProxyBridgeSettingsStore,
+} from "./proxy-bridge-settings-store";
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
@@ -208,6 +215,7 @@ let conversationStore: ConversationStore;
 let agentSkillsStore: AgentSkillsStore;
 let subagentSettingsStore: SubagentSettingsStore;
 let workflowSettingsStore: WorkflowSettingsStore;
+let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let sessionSyncStore: SessionSyncStore;
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
@@ -270,6 +278,7 @@ app.whenReady().then(async () => {
   agentSkillsStore = await createAgentSkillsStore(dbPath);
   subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+  proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
@@ -537,21 +546,35 @@ function registerIpcHandlers(): void {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid models list request." } as const;
     }
-    return listProviderUpstreamModels(providerStore, payload);
+    return listProviderUpstreamModels(
+      providerStore,
+      payload,
+      resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.modelProviderTest, async (_event, payload: TestProviderConnectionRequest) => {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid provider test request." } as const;
     }
-    return testProviderConnection(providerStore, payload);
+    return testProviderConnection(
+      providerStore,
+      payload,
+      fetch,
+      resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.modelRouteProfileTest, async (_event, payload: TestRoleRoutesRequest) => {
     if (!payload || typeof payload !== "object" || !Array.isArray(payload.routes)) {
       return { results: [], passed: 0, failed: 0 };
     }
-    return testRoleRoutes(providerStore, payload);
+    return testRoleRoutes(
+      providerStore,
+      payload,
+      fetch,
+      resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.modelRouteProfileSave, async (_event, payload: RouteProfileInput) => {
@@ -651,6 +674,15 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid workflow settings.");
     }
     return workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());
+
+  ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsSave, async (_event, payload: unknown) => {
+    if (!isProxyBridgeSettingsSnapshot(payload)) {
+      throw new Error("Invalid proxy bridge settings.");
+    }
+    return proxyBridgeSettingsStore.save(normalizeProxyBridgeSettingsSnapshot(payload));
   });
 
   ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
@@ -3775,7 +3807,9 @@ function startRuntimeProxy(
   attachments?: PromptImageAttachment[],
   threadId?: string,
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
+  const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
   const options: AnthropicProxyStartOptions = {
+    ...(upstreamUserAgent && { upstreamUserAgent }),
     ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
     ...(threadId && {
       onMessagesRequest: ({ role }) => {
