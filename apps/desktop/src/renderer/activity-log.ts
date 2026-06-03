@@ -1426,23 +1426,6 @@ function isNarrativeLine(line: ThreadActivityLine): boolean {
   return ["planner", "explore", "architect", "coder", "reviewer", "tester", "system"].includes(line.role);
 }
 
-const KNOWN_SDK_TOOLS = new Set([
-  "Read",
-  "Write",
-  "Edit",
-  "MultiEdit",
-  "Grep",
-  "Glob",
-  "Bash",
-  "Agent",
-  "TodoWrite",
-  "TaskCreate",
-  "TaskUpdate",
-  "TaskList",
-  "AskUserQuestion",
-  "Skill",
-]);
-
 const TOOL_LINE_PATTERN =
   /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
 
@@ -1467,7 +1450,7 @@ function parseToolLine(message: string): ParsedToolAction | null {
   }
 
   const tool = match[1] ?? "";
-  if (!KNOWN_SDK_TOOLS.has(tool) && !isMcpToolName(tool)) {
+  if (!tool) {
     return null;
   }
   let detail = match[2]?.trim() ?? match[3]?.trim();
@@ -1492,7 +1475,7 @@ function parseToolLine(message: string): ParsedToolAction | null {
 }
 
 function categorizeTool(tool: string): ParsedToolAction["category"] {
-  if (tool === "Agent") {
+  if (tool === "Agent" || tool.startsWith("Task") || tool === "TodoWrite") {
     return "agent";
   }
   if (tool === "Bash") {
@@ -1528,9 +1511,11 @@ function parseProgressActionLine(message: string): ParsedToolAction | null {
     return null;
   }
 
-  const toolLine = parseToolLine(stripped.startsWith("Tool:") ? stripped : `Tool: ${stripped}`);
-  if (toolLine) {
-    return toolLine;
+  if (stripped.startsWith("Tool:")) {
+    const toolLine = parseToolLine(stripped);
+    if (toolLine) {
+      return toolLine;
+    }
   }
 
   const normalized = normalizeActivityActionLabel(stripped);
@@ -1559,6 +1544,7 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   TaskCreate: "创建任务",
   TaskUpdate: "更新任务",
   TaskList: "列出任务",
+  TaskOutput: "读取任务输出",
   AskUserQuestion: "澄清问题",
   Skill: "读取技能",
 };

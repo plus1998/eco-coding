@@ -162,6 +162,7 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   TaskCreate: "创建任务",
   TaskUpdate: "更新任务",
   TaskList: "列出任务",
+  TaskOutput: "读取任务输出",
   AskUserQuestion: "澄清问题",
   Skill: "读取技能",
 };

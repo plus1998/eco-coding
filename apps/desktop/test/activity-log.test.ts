@@ -958,6 +958,44 @@ test("renders MCP tool calls as styled actions instead of narrative", () => {
   expect(wrapperAction.length).toBe(0);
 });
 
+test("renders TaskOutput and other SDK tools as styled actions", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: TaskOutput" },
+      { id: "2", role: "tool", message: "Tool: SwitchMode · plan" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+
+  const taskOutput = session.children.find(
+    (child) => child.kind === "action" && child.label === "读取任务输出",
+  );
+  expect(taskOutput?.kind).toBe("action");
+  if (taskOutput?.kind === "action") {
+    expect(taskOutput.icon).toBe("agent");
+  }
+
+  const switchMode = session.children.find(
+    (child) => child.kind === "action" && child.label === "SwitchMode · plan",
+  );
+  expect(switchMode?.kind).toBe("action");
+  if (switchMode?.kind === "action") {
+    expect(switchMode.icon).toBe("file");
+  }
+
+  const rawNarrative = session.children.find(
+    (child) => child.kind === "narrative" && child.text.includes("Tool: TaskOutput"),
+  );
+  expect(rawNarrative).toBeUndefined();
+});
+
 test("formats generic MCP tool names for display", () => {
   const blocks = buildActivityLogBlocks(
     [
