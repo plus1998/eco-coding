@@ -307,6 +307,31 @@ test("uses compact mode for reviewer subagent work", () => {
   expect(item?.statusLine).toContain("src/api.ts");
 });
 
+test("assigns unique planner session keys across user segments", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "a" },
+      { id: "1", role: "planner", message: "checking files" },
+      { id: "2", role: "tool", message: "Tool: Read · a.ts" },
+      { id: "3", role: "planner", message: "done planning summary" },
+      { id: "u2", role: "user", message: "b" },
+      { id: "4", role: "planner", message: "round two check" },
+      { id: "5", role: "tool", message: "Tool: Read · b.ts" },
+      { id: "6", role: "planner", message: "round two summary" },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const plannerKeys = blocks
+    .filter(
+      (block): block is Extract<ActivityLogBlock, { kind: "work-session" }> =>
+        block.kind === "work-session" && Boolean(block.sessionKey),
+    )
+    .map((block) => block.sessionKey);
+  expect(plannerKeys).toEqual(["planner-0", "planner-1"]);
+  expect(new Set(plannerKeys).size).toBe(plannerKeys.length);
+});
+
 test("shows user prompt as a preserved node", () => {
   const blocks = buildActivityLogBlocks(
     [

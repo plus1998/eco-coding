@@ -194,6 +194,7 @@ export function buildActivityLogBlocks(
   const activeMissionSummary = resolveActiveMissionSummary(lines, activeSubagent);
 
   const output: ActivityLogBlock[] = [];
+  let plannerRunIndex = 0;
 
   for (const segment of segments) {
     for (const userLine of segment.userLines) {
@@ -229,21 +230,26 @@ export function buildActivityLogBlocks(
     const isLastSegment = segment === segments[segments.length - 1];
     const segmentRunning = isRunning && isLastSegment;
 
-    pushWorkSessionsFromRuns(output, partitionDetailsIntoRuns(processBlocks, {
-      ...(options.subagentTimingsByAgentId && {
-        subagentTimingsByAgentId: options.subagentTimingsByAgentId,
+    plannerRunIndex = pushWorkSessionsFromRuns(
+      output,
+      partitionDetailsIntoRuns(processBlocks, {
+        ...(options.subagentTimingsByAgentId && {
+          subagentTimingsByAgentId: options.subagentTimingsByAgentId,
+        }),
       }),
-    }), {
-      durationMs,
-      segmentRunning,
-      lines,
-      status: options.status,
-      activeSubagent,
-      activeMissionSummary,
-      ...(options.subagentTimingsByAgentId && {
-        subagentTimingsByAgentId: options.subagentTimingsByAgentId,
-      }),
-    });
+      {
+        durationMs,
+        segmentRunning,
+        lines,
+        status: options.status,
+        activeSubagent,
+        activeMissionSummary,
+        plannerRunIndex,
+        ...(options.subagentTimingsByAgentId && {
+          subagentTimingsByAgentId: options.subagentTimingsByAgentId,
+        }),
+      },
+    );
 
     if (summaryBlock) {
       output.push({
@@ -1164,10 +1170,11 @@ function pushWorkSessionsFromRuns(
     activeSubagent?: string;
     activeMissionSummary?: string;
     subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+    plannerRunIndex: number;
   },
-): void {
+): number {
   const hasSubagentRuns = runs.some((run) => run.kind === "subagent");
-  let plannerRunIndex = 0;
+  let plannerRunIndex = options.plannerRunIndex;
   const pendingSubagentItems: SubagentRunItem[] = [];
   const pendingMissionRuns: Extract<DetailRun, { kind: "subagent" }>[] = [];
 
@@ -1429,6 +1436,7 @@ function pushWorkSessionsFromRuns(
   }
 
   flushSubagentGroups();
+  return plannerRunIndex;
 }
 
 function resolveSubagentRunDurationMsByAgentId(lines: ThreadActivityLine[], agentId: string): number {
