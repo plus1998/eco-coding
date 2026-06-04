@@ -65,9 +65,13 @@ bun run dev
 # Compile renderer + main + preload
 bun run build
 
+# App icons (from repo-root logo.png → apps/desktop/packaging/)
+bun run icons
+
 # Installers (run from repo root)
 bun run pack:mac-arm64   # macOS Apple Silicon → apps/desktop/release/Eco-Coding-*-mac-arm64.dmg
 bun run pack:win-x64     # Windows x64 NSIS → apps/desktop/release/Eco-Coding-*-win-x64.exe
+bun run pack             # also Linux AppImage when built on a supported host
 ```
 
 macOS packages are unsigned by default (`identity: null` in `apps/desktop/electron-builder.yml`). For distribution, set a valid `CSC_NAME` / Developer ID and adjust signing in that file.

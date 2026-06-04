@@ -13,6 +13,7 @@
     "build": "vite build && bun run build:main && bun run build:preload",
     "build:main": "bun build src/main/index.ts --target=node --external electron --external @anthropic-ai/claude-agent-sdk --outdir dist/main",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
+    "icons": "node scripts/generate-icons.mjs",
     "pack": "bun run build && electron-builder",
     "pack:mac-arm64": "bun run build && electron-builder --mac dmg --arm64",
     "pack:win-x64": "bun run build && electron-builder --win nsis --x64"

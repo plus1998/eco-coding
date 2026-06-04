@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
     "build": "bun run --cwd apps/desktop build",
+    "icons": "bun run --cwd apps/desktop icons",
     "pack:mac-arm64": "bun run --cwd apps/desktop pack:mac-arm64",
     "pack:win-x64": "bun run --cwd apps/desktop pack:win-x64",
     "pack": "bun run --cwd apps/desktop pack",

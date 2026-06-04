@@ -41,7 +41,7 @@ import {
   type CommandRunner,
   type WorktreePlan,
 } from "@eco/workspace";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, type NativeImage } from "electron";
 import {
   AGENT_ROLES,
   type AgentRole,
@@ -240,6 +240,30 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
+
+const packagingDir = path.join(__dirname, "../../packaging");
+
+function loadAppIcon(): NativeImage | undefined {
+  const candidates =
+    process.platform === "win32"
+      ? ["icon.ico", "icon.png"]
+      : process.platform === "darwin"
+        ? ["icon.icns", "icon.png"]
+        : ["icon.png", "icon.ico"];
+  for (const name of candidates) {
+    const iconPath = path.join(packagingDir, name);
+    if (!existsSync(iconPath)) {
+      continue;
+    }
+    const image = nativeImage.createFromPath(iconPath);
+    if (!image.isEmpty()) {
+      return image;
+    }
+  }
+  return undefined;
+}
+
+const appIcon = loadAppIcon();
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
@@ -293,6 +317,7 @@ async function createMainWindow(): Promise<void> {
     minHeight: 720,
     titleBarStyle: "hiddenInset",
     backgroundColor: "#212121",
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -309,6 +334,9 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  if (appIcon && process.platform === "darwin") {
+    app.dock?.setIcon(appIcon);
+  }
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
