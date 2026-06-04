@@ -672,8 +672,8 @@ function App() {
   const composerSkillPopoverOpen = Boolean(composerSkillSlash) && slashPickerSkills.length > 0;
 
   useEffect(() => {
-    setComposerSkillActiveIndex(0);
-  }, [composerSkillSlash?.query, composerSkillSlash?.start]);
+    setComposerSkillActiveIndex(Math.max(0, composerSkillMatches.length - 1));
+  }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
   const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
     if (!subagentSettings || !workflowSettings || settings.routeProfiles.length === 0) {

@@ -19,7 +19,7 @@ export function filterUserSkills(query: string, userSkills: readonly SkillInfo[]
     matches.push({ skill, ranges: result.ranges, score: result.score });
   }
 
-  return matches.sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name));
+  return matches.sort((a, b) => a.score - b.score || a.skill.name.localeCompare(b.skill.name));
 }
 
 function scoreFuzzyMatch(
