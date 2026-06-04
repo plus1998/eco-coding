@@ -36,7 +36,7 @@ import {
 } from "@eco/persistence";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
-  createWorktreePlan,
+  createSessionPlan,
   GitWorktreeService,
   type CommandRunner,
   type WorktreePlan,
@@ -90,6 +90,8 @@ import {
   type WorktreeStatusResult,
   type ThreadAppliedDiffResult,
   type ThreadRevertAppliedDiffResult,
+  type ThreadRewindCheckpointRequest,
+  type ThreadRewindCheckpointResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import {
@@ -127,7 +129,6 @@ import {
   continueStatusMessage,
   isContinuableThreadStatus,
   resolveThreadContinueAction,
-  shouldUseInterruptedWorktree,
   threadEnteredExecutionPhase,
   type ThreadContinueAction,
 } from "../shared/thread-continuation";
@@ -220,7 +221,6 @@ import {
 import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
-import { workspaceSupportsWorktree } from "../shared/workspace-readiness";
 import {
   finalizeCancelledRun,
   parseThreadCancelRequest,
@@ -332,12 +332,7 @@ app.whenReady().then(async () => {
     monitor: contextMonitor,
     isThreadRunning: (threadId) => activeRuns.has(threadId),
     getResume: (threadId, worktreePath) => resolveResumeOptions(threadId, worktreePath),
-    isWorktreePathReady: async (worktreePath) => {
-      if (!(await fileExists(worktreePath))) {
-        return false;
-      }
-      return gitWorktrees.isInsideWorktree(worktreePath);
-    },
+    isWorktreePathReady: async (worktreePath) => fileExists(worktreePath),
     withSdkDriver: (threadId, fn) => withThreadSdkDriver(threadId, fn),
     emitContext: emitThreadContextUpdated,
     emitActivity: (threadId, message) => {
@@ -757,14 +752,25 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
-    return getWorktreeStatus(threadId);
+    return getWorkspaceChangeStatus(threadId);
   });
 
   ipcMain.handle(IPC_CHANNELS.worktreeApply, async (_event, threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
-    return applyWorktreeForThread(threadId);
+    return { ok: true, files: [], message: "变更已在项目目录中，无需合并。" } satisfies WorktreeApplyResult;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadRewindCheckpoint, async (_event, payload: unknown) => {
+    return rewindThreadToCheckpoint(payload);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadListCheckpoints, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return conversationStore.listFileCheckpoints(threadId.trim());
   });
 
   ipcMain.handle(IPC_CHANNELS.mcpServerDelete, async (_event, serverId: unknown) => {
@@ -1014,30 +1020,10 @@ function registerIpcHandlers(): void {
     const intent = classifyThreadIntent(prompt);
     const activityLines = conversationStore.listActivityLines(payload.threadId);
     const sdkSession = conversationStore.getSdkSession(payload.threadId);
-    const defaultPlan = createWorktreePlan(workspace.path, payload.threadId);
-    const worktreeOnDisk =
-      workspaceSupportsWorktree(workspace) && (await fileExists(defaultPlan.worktreePath));
-    const sessionCwd = sdkSession?.cwd?.trim();
-    const worktreeFromSession =
-      sessionCwd && (await fileExists(sessionCwd)) ? sessionCwd : undefined;
-    const worktreeExists = Boolean(worktreeFromSession || worktreeOnDisk);
     const hasPriorActivity = threadHasResumableCheckpoint(thread, activityLines);
-
-    let cwd = workspace.path;
-    if (worktreeFromSession) {
-      cwd = worktreeFromSession;
-    } else if (shouldUseInterruptedWorktree(worktreeExists, hasPriorActivity)) {
-      cwd = defaultPlan.worktreePath;
-    } else if (worktreeOnDisk) {
-      cwd = defaultPlan.worktreePath;
-    }
-    const canResume = Boolean(
-      sdkSession?.sessionId && sessionCwd && existsSync(sessionCwd) && sessionCwd === cwd,
-    );
-    const existingWorktreePlan =
-      isIsolatedWorktreePlan({ workspacePath: workspace.path, worktreePath: cwd })
-        ? resolveWorktreePlan(workspace.path, payload.threadId, cwd)
-        : undefined;
+    const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
+    const canResume = Boolean(sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path);
+    const existingWorktreePlan = createSessionPlan(workspace.path, payload.threadId);
 
     const hasPendingPlan = Boolean(conversationStore.getPendingPlan(payload.threadId));
     const hasApprovedPlanOnDisk = await approvedPlanSnapshotExists(workspace.path, payload.threadId);
@@ -1194,28 +1180,27 @@ async function resolveThreadWorktree(
   threadId: string,
   existingWorktreePlan?: WorktreePlan,
 ): Promise<ThreadWorktreeResolution> {
-  const worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, threadId);
-  if (!workspaceSupportsWorktree(workspace)) {
-    return { worktreePlan, cwd: workspace.path, isolated: false };
-  }
-
-  const worktreeExists = await fileExists(worktreePlan.worktreePath);
-  if (!worktreeExists) {
-    await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
-    await gitWorktrees.createWorktree(worktreePlan);
-    return { worktreePlan, cwd: worktreePlan.worktreePath, isolated: true };
-  }
-
-  if (!(await gitWorktrees.isInsideWorktree(worktreePlan.worktreePath))) {
-    await fs.rm(worktreePlan.worktreePath, { recursive: true, force: true });
-    await fs.mkdir(path.dirname(worktreePlan.worktreePath), { recursive: true });
-    await gitWorktrees.createWorktree(worktreePlan);
-  }
-  return { worktreePlan, cwd: worktreePlan.worktreePath, isolated: true };
+  const worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, threadId);
+  return { worktreePlan, cwd: workspace.path, isolated: false };
 }
 
-function isIsolatedWorktreePlan(plan: Pick<WorktreePlan, "workspacePath" | "worktreePath">): boolean {
-  return path.resolve(plan.worktreePath) !== path.resolve(plan.workspacePath);
+function isIsolatedWorktreePlan(_plan: Pick<WorktreePlan, "workspacePath" | "worktreePath">): boolean {
+  return false;
+}
+
+function normalizeSessionCwd(workspacePath: string, sessionCwd?: string): string {
+  const workspace = path.resolve(workspacePath);
+  const cwd = sessionCwd?.trim();
+  if (!cwd) {
+    return workspace;
+  }
+  if (path.resolve(cwd) === workspace) {
+    return workspace;
+  }
+  if (cwd.includes(`${path.sep}.eco${path.sep}worktrees${path.sep}`)) {
+    return workspace;
+  }
+  return cwd;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -1341,7 +1326,7 @@ async function runQuestionThread(
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
-  activeRuns.set(thread.id, { controller, worktreePlan: createWorktreePlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
+  activeRuns.set(thread.id, { controller, worktreePlan: createSessionPlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
   resetSubagentContextWindows(thread.id);
 
   try {
@@ -1442,33 +1427,20 @@ async function runQuestionThread(
 
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
-  if (isIsolatedWorktreePlan(worktreePlan)) {
-    updateThread(threadId, {
-      status: "idle",
-      message: "代理执行完成，正在合并工作树更改…",
-    });
-
-    try {
-      const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
-      conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
-      updateThread(threadId, { status: "completed", message: threadMessage });
-      emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
-      process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
-      await cleanupWorktreeForThread(threadId);
-    } catch (applyError) {
-      const detail = errorMessage(applyError);
-      process.stderr.write(`[eco] worktree apply failed: ${detail}\n`);
-      updateThread(threadId, {
-        status: "completed",
-        message: `执行已完成，但未能合并到工作区：${detail}。可点击「应用到工作区」重试，或手动处理 ${worktreePlan.worktreePath}。`,
-      });
-      emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
-    }
-    return;
-  }
-
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
   emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
+  try {
+    const { files, diff } = await gitWorktrees.collectWorktreeChanges(worktreePlan);
+    if (files.length > 0) {
+      conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
+      const summary = buildWorktreeMergeSummary(diff, files);
+      emitThreadEvent(threadId, "workspace.changes", serializeWorktreeMergeMessage(summary), "system");
+    }
+  } catch (error) {
+    process.stderr.write(
+      `[eco] workspace diff snapshot failed: ${errorMessage(error)}\n`,
+    );
+  }
 }
 
 async function runCodingThreadSdkDefault(
@@ -1484,12 +1456,12 @@ async function runCodingThreadSdkDefault(
   const controller = new AbortController();
   activeRuns.set(thread.id, {
     controller,
-    worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
+    worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
 
-  let worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
+  let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
 
   try {
     const { worktreePlan: resolvedPlan, cwd, isolated } = await resolveThreadWorktree(
@@ -1501,9 +1473,7 @@ async function runCodingThreadSdkDefault(
     activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
     activeRuns.get(thread.id)!.worktreeReady = true;
     updateThread(thread.id, {
-      message: isolated
-        ? `Isolated worktree ready: ${worktreePlan.worktreePath}`
-        : `Working in project directory: ${workspace.path}`,
+      message: `Working in project directory: ${workspace.path}`,
       status: "running",
     });
 
@@ -1621,7 +1591,7 @@ async function runCodingThreadPlanning(
   const controller = new AbortController();
   activeRuns.set(thread.id, {
     controller,
-    worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
+    worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
@@ -1635,9 +1605,7 @@ async function runCodingThreadPlanning(
     activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
     activeRuns.get(thread.id)!.worktreeReady = true;
     updateThread(thread.id, {
-      message: isolated
-        ? `Isolated worktree ready: ${worktreePlan.worktreePath}`
-        : `Working in project directory: ${workspace.path}`,
+      message: `Working in project directory: ${workspace.path}`,
       status: "running",
     });
 
@@ -1814,16 +1782,11 @@ async function runCodingThreadExecution(
   resetSubagentContextWindows(threadId);
 
   const workspace = await ensureWorkspace(pending.workspacePath);
-  let executionCwd = pending.worktreePath;
-  if (workspaceSupportsWorktree(workspace) && isIsolatedWorktreePlan(worktreePlan)) {
-    const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
-    worktreePlan = resolved.worktreePlan;
-    executionCwd = resolved.cwd;
-    activeRuns.get(threadId)!.worktreePlan = worktreePlan;
-    activeRuns.get(threadId)!.worktreeReady = resolved.isolated;
-  } else {
-    activeRuns.get(threadId)!.worktreeReady = true;
-  }
+  const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
+  worktreePlan = resolved.worktreePlan;
+  const executionCwd = resolved.cwd;
+  activeRuns.get(threadId)!.worktreePlan = worktreePlan;
+  activeRuns.get(threadId)!.worktreeReady = true;
 
   try {
     await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
@@ -1973,34 +1936,7 @@ async function runCodingThreadExecution(
       taskHookHandlers.onStop("completed");
     }
 
-    if (isIsolatedWorktreePlan(worktreePlan)) {
-      updateThread(threadId, {
-        status: "idle",
-        message: "代理执行完成，正在合并工作树更改…",
-      });
-
-      try {
-        const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
-        conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
-        updateThread(threadId, { status: "completed", message: threadMessage });
-        emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
-        process.stderr.write(`[eco] worktree apply ok (${files.length} files): ${files.join(", ")}\n`);
-      } catch (applyError) {
-        const detail = errorMessage(applyError);
-        process.stderr.write(`[eco] worktree apply failed: ${detail}\n`);
-        updateThread(threadId, {
-          status: "completed",
-          message: `执行已完成，但未能合并到工作区：${detail}。可点击「应用到工作区」重试，或手动处理 ${worktreePlan.worktreePath}。`,
-        });
-        emitThreadEvent(threadId, "worktree.apply_failed", detail, "system");
-        return;
-      }
-
-      await cleanupWorktreeForThread(threadId);
-    } else {
-      updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
-      emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
-    }
+    await completeCodingThreadRun(threadId, worktreePlan);
   } catch (error) {
     stopStatusRef.current = "blocked";
     if (!stopTodosHandled) {
@@ -2158,17 +2094,8 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     message: runningMessage,
   };
   const sdkSession = conversationStore.getSdkSession(threadId);
-  const defaultPlan = createWorktreePlan(workspace.path, threadId);
-  let cwd = workspace.path;
-  if (sdkSession?.cwd) {
-    cwd = sdkSession.cwd;
-  } else if (workspaceSupportsWorktree(workspace) && (await fileExists(defaultPlan.worktreePath))) {
-    cwd = defaultPlan.worktreePath;
-  }
-  const existingWorktreePlan =
-    isIsolatedWorktreePlan({ workspacePath: workspace.path, worktreePath: cwd })
-      ? resolveWorktreePlan(workspace.path, threadId, cwd)
-      : undefined;
+  const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
+  const existingWorktreePlan = createSessionPlan(workspace.path, threadId);
   const resume = resolveResumeOptions(threadId, cwd);
   const agentPrompt = resume
     ? prompt
@@ -2221,7 +2148,7 @@ function recoverOrphanedRunningThreads(): void {
     }
     updateThread(thread.id, {
       status: "idle",
-      message: "应用已意外退出。可在本对话继续发送消息；若右侧有改动可合并到工作区。",
+      message: "应用已意外退出。可在本对话继续发送消息。",
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
   }
@@ -2284,16 +2211,8 @@ async function dismissPendingPlan(threadId: string, message: string): Promise<vo
   emitThreadEvent(threadId, "thread.idle", message, "system");
 }
 
-function resolveWorktreePlan(
-  workspacePath: string,
-  threadId: string,
-  worktreePath?: string,
-): WorktreePlan {
-  const plan = createWorktreePlan(workspacePath, threadId);
-  if (worktreePath?.trim()) {
-    return { ...plan, worktreePath: worktreePath.trim() };
-  }
-  return plan;
+function resolveWorktreePlan(workspacePath: string, threadId: string, _worktreePath?: string): WorktreePlan {
+  return createSessionPlan(workspacePath, threadId);
 }
 
 function resolveWorktreeContextForThread(threadId: string): {
@@ -2327,43 +2246,72 @@ function resolveWorktreeContextForThread(threadId: string): {
   };
 }
 
-async function getWorktreeStatus(threadId: string): Promise<WorktreeStatusResult> {
-  const { workspacePath, worktreePathHint } = resolveWorktreeContextForThread(threadId);
-  if (!workspacePath || !worktreePathHint) {
-    return { exists: false, worktreePath: "", workspacePath: workspacePath ?? "", changedFiles: [] };
+async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindCheckpointResult> {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid rewind request.");
   }
-
-  const plan = resolveWorktreePlan(workspacePath, threadId, worktreePathHint);
-  if (!isIsolatedWorktreePlan(plan)) {
-    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  const record = payload as ThreadRewindCheckpointRequest;
+  const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
+  const userMessageId =
+    typeof record.userMessageId === "string" ? record.userMessageId.trim() : "";
+  if (!threadId || !userMessageId) {
+    throw new Error("threadId and userMessageId are required.");
   }
-  const exists = await fileExists(plan.worktreePath);
-  if (!exists) {
-    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  const thread = conversationStore.getThread(threadId);
+  if (!thread?.workspacePath) {
+    throw new Error("找不到该对话的工作区。");
   }
-  if (!(await gitWorktrees.isInsideWorktree(plan.worktreePath))) {
-    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  const resume = resolveResumeOptions(threadId, thread.workspacePath);
+  if (!resume?.resumeSessionId) {
+    throw new Error("没有可恢复的 SDK 会话，无法回滚文件。");
   }
-
-  if (!existsSync(plan.worktreePath)) {
-    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
-  }
-
-  try {
-    if (!existsSync(plan.worktreePath)) {
-      return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  await withThreadSdkDriver(threadId, async (driver) => {
+    const routes = resolveRuntimeConfigFresh();
+    if (!routes.ok) {
+      throw new Error(routes.reason);
     }
-    const changedFiles = await gitWorktrees.changedFiles(plan);
-    return { exists: true, worktreePath: plan.worktreePath, workspacePath, changedFiles };
-  } catch (error) {
-    if (!isWorktreeGitCwdError(error)) {
-      console.error("Failed to read worktree status:", error);
-    } else {
-      process.stderr.write(
-        `[eco] worktree status skipped (${plan.worktreePath}): cwd no longer valid\n`,
+    const proxy = await startRuntimeProxy(routes.routes, undefined, threadId);
+    try {
+      const built = buildDriverRoutes(proxy.routes);
+      await driver.rewindSessionFiles(
+        {
+          threadId,
+          prompt: "",
+          workspacePath: thread.workspacePath,
+          worktreePath: thread.workspacePath,
+          routes: built,
+          signal: AbortSignal.timeout(120_000),
+          sdkSession: await buildSdkSessionOptions(threadId, ""),
+          resume,
+        },
+        userMessageId,
       );
+    } finally {
+      await proxy.close();
     }
-    return { exists: false, worktreePath: plan.worktreePath, workspacePath, changedFiles: [] };
+  });
+  emitThreadEvent(threadId, "thread.files_rewound", `已回滚文件到检查点 ${userMessageId.slice(0, 8)}…`, "system");
+  return { ok: true, message: "文件已回滚到所选检查点。" };
+}
+
+async function getWorkspaceChangeStatus(threadId: string): Promise<WorktreeStatusResult> {
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = thread?.workspacePath;
+  if (!workspacePath) {
+    return { exists: false, worktreePath: "", workspacePath: "", changedFiles: [] };
+  }
+  const plan = createSessionPlan(workspacePath, threadId);
+  try {
+    const changedFiles = await gitWorktrees.changedFiles(plan);
+    return {
+      exists: changedFiles.length > 0,
+      worktreePath: workspacePath,
+      workspacePath,
+      changedFiles,
+    };
+  } catch (error) {
+    console.error("Failed to read workspace change status:", error);
+    return { exists: false, worktreePath: workspacePath, workspacePath, changedFiles: [] };
   }
 }
 
@@ -2391,7 +2339,7 @@ async function applyWorktreeChanges(
 }
 
 async function applyWorktreeForThread(threadId: string): Promise<WorktreeApplyResult> {
-  const status = await getWorktreeStatus(threadId);
+  const status = await getWorkspaceChangeStatus(threadId);
   if (!status.exists) {
     throw new Error("该对话没有可合并的隔离工作树。");
   }
@@ -2509,13 +2457,6 @@ async function cleanupWorktreeForThread(threadId: string): Promise<void> {
 
 function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
   return {
-    isIsolatedWorktreePlan,
-    changedFiles: (plan) => gitWorktrees.changedFiles(plan),
-    applyWorktreeChanges,
-    saveAppliedDiff: (threadId, workspacePath, diff, files) =>
-      conversationStore.saveAppliedDiff(threadId, workspacePath, diff, files),
-    discardWorktreeChanges: (plan) => gitWorktrees.discardWorktreeChanges(plan),
-    cleanupWorktreeForThread,
     updateThread: (threadId, patch) => updateThread(threadId, patch),
     emitThreadEvent: (threadId, type, message, role) =>
       emitThreadEvent(threadId, type, message, role),
@@ -2714,6 +2655,13 @@ function captureSdkSessionFromEvent(
   event: { type: string; payload: unknown },
   worktreePath: string,
 ): void {
+  if (event.type === "file.checkpoint") {
+    const payload = event.payload;
+    if (payload && typeof payload === "object" && typeof (payload as { userMessageId?: string }).userMessageId === "string") {
+      conversationStore.saveFileCheckpoint(threadId, (payload as { userMessageId: string }).userMessageId);
+    }
+    return;
+  }
   if (event.type !== "session.captured") {
     return;
   }
@@ -2727,12 +2675,15 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   if (!session?.sessionId) {
     return undefined;
   }
-  const cwd = worktreePath.trim();
-  const sessionCwd = session.cwd.trim();
-  if (existsSync(sessionCwd) && sessionCwd === cwd) {
-    return { resumeSessionId: session.sessionId };
-  }
-  if (existsSync(sessionCwd) && !cwd) {
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = thread?.workspacePath;
+  const sessionCwd = workspacePath
+    ? normalizeSessionCwd(workspacePath, session.cwd)
+    : session.cwd.trim();
+  const cwd = workspacePath
+    ? normalizeSessionCwd(workspacePath, worktreePath || session.cwd)
+    : worktreePath.trim();
+  if (existsSync(sessionCwd) && (!cwd || sessionCwd === cwd || path.resolve(sessionCwd) === path.resolve(cwd))) {
     return { resumeSessionId: session.sessionId };
   }
   return undefined;
@@ -2941,7 +2892,7 @@ async function runThreadContinuation(
   const controller = new AbortController();
   activeRuns.set(thread.id, {
     controller,
-    worktreePlan: existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id),
+    worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
@@ -2949,7 +2900,7 @@ async function runThreadContinuation(
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
   let planningPlanCaptured = false;
-  let worktreePlan = existingWorktreePlan ?? createWorktreePlan(workspace.path, thread.id);
+  let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
   let cwd = workspace.path;
   const todoTracker =
     mode === "execution"
@@ -2969,15 +2920,6 @@ async function runThreadContinuation(
       const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
       worktreePlan = resolved.worktreePlan;
       cwd = resolved.cwd;
-      activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
-      activeRuns.get(thread.id)!.worktreeReady = true;
-    } else if (
-      existingWorktreePlan &&
-      isIsolatedWorktreePlan(existingWorktreePlan) &&
-      (await fileExists(existingWorktreePlan.worktreePath))
-    ) {
-      worktreePlan = existingWorktreePlan;
-      cwd = existingWorktreePlan.worktreePath;
       activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
       activeRuns.get(thread.id)!.worktreeReady = true;
     } else {
@@ -3129,28 +3071,7 @@ async function runThreadContinuation(
 
     if (mode === "execution") {
       taskHookHandlers?.onStop("completed");
-      if (isIsolatedWorktreePlan(worktreePlan)) {
-        updateThread(thread.id, {
-          status: "idle",
-          message: "代理执行完成，正在合并工作树更改…",
-        });
-        try {
-          const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(worktreePlan);
-          conversationStore.saveAppliedDiff(thread.id, worktreePlan.workspacePath, diff, files);
-          updateThread(thread.id, { status: "completed", message: threadMessage });
-          emitThreadEvent(thread.id, "worktree.applied", activityMessage, "system");
-          await cleanupWorktreeForThread(thread.id);
-        } catch (applyError) {
-          const detail = errorMessage(applyError);
-          updateThread(thread.id, {
-            status: "completed",
-            message: `执行已完成，但未能合并到工作区：${detail}`,
-          });
-        }
-      } else {
-        updateThread(thread.id, { status: "completed", message: "执行完成，变更已写入项目目录。" });
-        emitThreadEvent(thread.id, "thread.completed", "执行完成。", "system");
-      }
+      await completeCodingThreadRun(thread.id, worktreePlan);
       return;
     }
 

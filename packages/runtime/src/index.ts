@@ -74,6 +74,8 @@ export interface AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
   compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  /** Restores workspace files to a checkpoint user message (requires resume + file checkpointing). */
+  rewindSessionFiles?(input: AgentRuntimeRunInput, userMessageId: string): Promise<void>;
 }
 
 export interface RunningThread {

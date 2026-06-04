@@ -20,7 +20,7 @@ export function buildPlanningPhasePrompt(
     "You are in Plan Mode (session start).",
     "",
     "Required workflow (explore before finalize — same assistant turn is allowed):",
-    `1. Explore the worktree first (${explore}).`,
+    `1. Explore the repository first (${explore}).`,
     "2. For facts outside the repo (docs, API versions, third-party behavior), use WebSearch and WebFetch after step 1 — not instead of it.",
     "3. If material ambiguity remains, call AskUserQuestion — do not ask things discoverable from the repo.",
     "4. When the spec is decision-complete, call `mcp__eco_plan__finalize_plan` with full `analysis` and `plan` strings.",

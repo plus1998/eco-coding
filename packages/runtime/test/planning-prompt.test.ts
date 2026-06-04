@@ -41,7 +41,7 @@ test("planningPhaseSystemAppend is built from inlined Codex template", () => {
 test("buildPlanningPhasePrompt enforces explore-before-finalize sequential workflow", () => {
   const prompt = buildPlanningPhasePrompt("Add caching to the API layer");
   expect(prompt).toContain("explore before finalize");
-  expect(prompt).toContain("Explore the worktree first");
+  expect(prompt).toContain("Explore the repository first");
   expect(prompt).toContain("WebSearch");
   expect(prompt).toContain("WebFetch");
   expect(prompt).toContain("material ambiguity");

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   type CommandRunner,
+  createSessionPlan,
   createWorktreePlan,
   evaluateCommand,
   evaluateFileWrite,
@@ -111,6 +112,12 @@ test("builds stable worktree plans", () => {
   const plan = createWorktreePlan("/repo", "thread:123");
   expect(plan.worktreePath).toBe("/repo/.eco/worktrees/thread-123");
   expect(plan.branchName).toBe("eco/thread-123");
+});
+
+test("createSessionPlan uses workspace path for direct editing", () => {
+  const plan = createSessionPlan("/repo", "thread:123");
+  expect(plan.worktreePath).toBe("/repo");
+  expect(plan.workspacePath).toBe("/repo");
 });
 
 test("checks path containment safely", () => {

@@ -31,17 +31,12 @@ test("resolves requested role routes before starting workers", () => {
   expect(routes[0]?.primary.modelId).toBe("claude-sonnet");
 });
 
-test("creates worktree before starting a thread worker", async () => {
-  const order: string[] = [];
+test("starts thread worker in workspace without isolated worktree", async () => {
   const driver: AgentRuntimeDriver = {
     async *run() {},
   };
   const supervisor = new ThreadSupervisor(new InMemoryEventStore(), driver);
-  const orchestrator = new ThreadOrchestrator(supervisor, {
-    async createWorktree() {
-      order.push("worktree");
-    },
-  });
+  const orchestrator = new ThreadOrchestrator(supervisor);
 
   const result = await orchestrator.start({
     threadId: "thr_1",
@@ -53,11 +48,10 @@ test("creates worktree before starting a thread worker", async () => {
     modelProfiles: profiles,
   });
 
-  order.push("started");
   await result.running.done;
 
-  expect(order).toEqual(["worktree", "started"]);
-  expect(result.worktree.worktreePath).toBe("/repo/.eco/worktrees/thr_1");
+  expect(result.worktree.worktreePath).toBe("/repo");
+  expect(result.worktree.workspacePath).toBe("/repo");
 });
 
 test("turns risky SDK Bash tools into pending approvals", async () => {

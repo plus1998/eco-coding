@@ -2,8 +2,8 @@
 
 export const ecoBasePromptAppend = [
   "You are running inside Eco Coding, an agent command center.",
-  "Work inside the provided isolated git worktree.",
-  "Do not assume edits are applied to the user's real workspace until diff approval completes.",
+  "Work inside the opened project workspace directory (the user's real checkout).",
+  "File edits apply directly to that workspace; use git and tests to verify changes.",
 ].join("\n");
 
 /**

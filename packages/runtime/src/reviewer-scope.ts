@@ -9,11 +9,11 @@ export function formatReviewerScopeAppend(changedFiles: readonly string[]): stri
   const list =
     paths.length > 0
       ? paths.map((file) => `- ${file}`).join("\n")
-      : "- (none — worktree matches HEAD; confirm coders finished before PASS)";
+      : "- (none — workspace matches HEAD; confirm coders finished before PASS)";
 
   return [
     REVIEWER_SCOPE_SECTION_TITLE,
-    "Eco injected this list from the isolated worktree (session diff vs HEAD).",
+    "Eco injected this list from the workspace (session diff vs HEAD).",
     "Review ONLY these paths. Do NOT diff against main/master or audit unrelated history.",
     "You may run `git diff HEAD -- <path>` for line context on these files only.",
     "",
@@ -40,7 +40,7 @@ function readAgentSubagentType(input: Record<string, unknown>): string | undefin
   return undefined;
 }
 
-/** Injects worktree changed-files into Agent(reviewer) delegation prompts. */
+/** Injects workspace changed-files into Agent(reviewer) delegation prompts. */
 export function createReviewerScopeToolHandler(
   resolveChangedFiles: () => Promise<readonly string[]>,
 ): SdkToolPermissionHandler {

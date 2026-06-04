@@ -1,13 +1,11 @@
-import type { WorktreeCancelDisposition } from "../shared/ipc";
-
-const MAX_VISIBLE_FILES = 8;
-
 export interface StopThreadConfirmDialogProps {
   changedFiles: string[];
   busy: boolean;
-  onConfirm: (disposition: WorktreeCancelDisposition) => void;
+  onConfirm: () => void;
   onDismiss: () => void;
 }
+
+const MAX_VISIBLE_FILES = 8;
 
 export function StopThreadConfirmDialog({
   changedFiles,
@@ -36,12 +34,12 @@ export function StopThreadConfirmDialog({
       >
         <header className="settings-modal-header">
           <h2 id="stop-thread-confirm-title" className="settings-modal-title">
-            停止前是否合并更改？
+            停止运行？
           </h2>
         </header>
         <div className="settings-modal-body">
           <p className="stop-thread-confirm-lead">
-            隔离工作树中有 {changedFiles.length} 个文件相对基线有变更。默认会保留工作树与对话，可随时继续；也可选择合并或放弃更改：
+            工作区中有 {changedFiles.length} 个文件相对基线有变更。停止后可在活动日志用检查点回滚文件。
           </p>
           <ul className="stop-thread-confirm-files">
             {visibleFiles.map((file) => (
@@ -64,27 +62,11 @@ export function StopThreadConfirmDialog({
           <div className="settings-modal-footer-actions stop-thread-confirm-actions">
             <button
               type="button"
-              className="plan-button"
-              onClick={() => onConfirm("discard")}
-              disabled={busy}
-            >
-              放弃更改并停止
-            </button>
-            <button
-              type="button"
               className="plan-button primary"
-              onClick={() => onConfirm("keep")}
+              onClick={onConfirm}
               disabled={busy}
             >
-              {busy ? "正在处理…" : "保留并停止"}
-            </button>
-            <button
-              type="button"
-              className="plan-button"
-              onClick={() => onConfirm("apply")}
-              disabled={busy}
-            >
-              应用到工作区并停止
+              {busy ? "正在停止…" : "停止"}
             </button>
           </div>
         </footer>

@@ -57,6 +57,11 @@ export interface ThreadSdkSession {
   cwd: string;
 }
 
+export interface FileCheckpointRecord {
+  userMessageId: string;
+  createdAt: string;
+}
+
 interface ActivityRow {
   id: string;
   thread_id: string;
@@ -348,6 +353,16 @@ export class ConversationStore {
       SET ended_at = updated_at
       WHERE status = 'stopped' AND ended_at IS NULL
     `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
+        thread_id TEXT NOT NULL,
+        user_message_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, user_message_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+    `);
   }
 
   saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
@@ -597,6 +612,35 @@ export class ConversationStore {
       )
       .run(new Date().toISOString(), threadId);
     this.clearSubagentSessions(threadId);
+  }
+
+  saveFileCheckpoint(threadId: string, userMessageId: string): void {
+    const id = userMessageId.trim();
+    if (!id) {
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO thread_file_checkpoints (thread_id, user_message_id, created_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(thread_id, user_message_id) DO NOTHING`,
+      )
+      .run(threadId, id, new Date().toISOString());
+  }
+
+  listFileCheckpoints(threadId: string): FileCheckpointRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT user_message_id, created_at
+         FROM thread_file_checkpoints
+         WHERE thread_id = ?
+         ORDER BY created_at ASC`,
+      )
+      .all(threadId) as Array<{ user_message_id: string; created_at: string }>;
+    return rows.map((row) => ({
+      userMessageId: row.user_message_id,
+      createdAt: row.created_at,
+    }));
   }
 
   upsertSubagentSessionActive(input: {

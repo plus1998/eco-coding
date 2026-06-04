@@ -26,7 +26,7 @@ const request: ThreadStartRequest = {
   ],
   worktree: {
     workspacePath: "/repo",
-    worktreePath: "/repo/.eco/worktrees/thr_1",
+    worktreePath: "/repo",
     branchName: "eco/thr_1",
   },
 };

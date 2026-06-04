@@ -49,6 +49,9 @@ import {
   type ThreadRollbackResult,
   type ThreadAppliedDiffResult,
   type ThreadRevertAppliedDiffResult,
+  type FileCheckpointRecord,
+  type ThreadRewindCheckpointRequest,
+  type ThreadRewindCheckpointResult,
   type ThreadStartRequest,
   type ThreadStartResult,
   type ThreadUpdateRuntimeConfigRequest,
@@ -219,6 +222,12 @@ const api = {
   },
   applyWorktree(threadId: string): Promise<WorktreeApplyResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.worktreeApply, threadId);
+  },
+  listFileCheckpoints(threadId: string): Promise<FileCheckpointRecord[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadListCheckpoints, threadId);
+  },
+  rewindToCheckpoint(request: ThreadRewindCheckpointRequest): Promise<ThreadRewindCheckpointResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRewindCheckpoint, request);
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);

@@ -3,6 +3,7 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   applyResumeToQueryOptions,
   applySessionStoreToQueryOptions,
+  readSdkUserMessageCheckpointId,
   appendToPhaseTranscript,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
@@ -214,10 +215,10 @@ test("execution architect prompt requires Coder Tasks section", () => {
   });
 });
 
-test("reviewer prompt limits scope to current worktree diff", () => {
+test("reviewer prompt limits scope to current session workspace diff", () => {
   const definitions = createExecutionAgentDefinitions(routes);
   expect(definitions.reviewer).toMatchObject({
-    description: expect.stringContaining("worktree"),
+    description: expect.stringContaining("workspace"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
   });
   expect(executePhaseSystemAppend).toContain("Eco prepends");
@@ -783,10 +784,19 @@ test("applySessionStoreToQueryOptions disables file checkpointing", () => {
   applySessionStoreToQueryOptions(withStore, { append: async () => {}, load: async () => null });
   expect(withStore.sessionStore).toBeDefined();
   expect(withStore.enableFileCheckpointing).toBeUndefined();
+  expect(withStore.extraArgs).toBeUndefined();
 
   const withoutStore: Record<string, unknown> = {};
   applySessionStoreToQueryOptions(withoutStore);
   expect(withoutStore.enableFileCheckpointing).toBe(true);
+  expect(withoutStore.extraArgs).toEqual({ "replay-user-messages": null });
+});
+
+test("readSdkUserMessageCheckpointId reads user message uuid", () => {
+  expect(readSdkUserMessageCheckpointId({ type: "assistant" })).toBeUndefined();
+  expect(
+    readSdkUserMessageCheckpointId({ type: "user", uuid: "msg-checkpoint-1" }),
+  ).toBe("msg-checkpoint-1");
 });
 
 test("createSessionCapturedEvent and init message helpers", () => {

@@ -37,6 +37,7 @@ export type AgentEventType =
   | "thread.completed"
   | "thread.failed"
   | "session.captured"
+  | "file.checkpoint"
   | "agent.started"
   | "agent.completed"
   | "agent.failed"

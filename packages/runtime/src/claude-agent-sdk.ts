@@ -82,6 +82,7 @@ export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagen
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
+  rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
 interface ClaudeAgentSdkModule {
@@ -278,6 +279,54 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
 
+  async rewindSessionFiles(input: AgentRuntimeRunInput, userMessageId: string): Promise<void> {
+    if (!input.resume?.resumeSessionId) {
+      throw new Error("rewindFiles requires an existing SDK session (resume).");
+    }
+    const sdk = await this.loadSdk();
+    const plannerRoute = input.routes.find((route) => route.role === "planner") ?? input.routes[0];
+    if (!plannerRoute) {
+      throw new Error("At least one model route is required to rewind files");
+    }
+    const sessionCwd = input.workspacePath.trim() || input.worktreePath;
+    const queryOptions: Record<string, unknown> = {
+      cwd: sessionCwd,
+      model: plannerRoute.primary.modelId,
+      fallbackModel: plannerRoute.fallbacks[0]?.modelId,
+      permissionMode: "dontAsk",
+      allowedTools: [],
+      systemPrompt: { type: "preset", preset: "claude_code", append: "" },
+      tools: { type: "preset", preset: "claude_code" },
+      env: buildSdkProcessEnv({
+        apiKey: this.options.apiKey,
+        baseUrl: this.options.baseUrl,
+        ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
+      }),
+      settings: {
+        env: {
+          ANTHROPIC_API_KEY: this.options.apiKey,
+          ANTHROPIC_BASE_URL: this.options.baseUrl.replace(/\/+$/, ""),
+        },
+      },
+    };
+    applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
+    applyResumeToQueryOptions(queryOptions, input.resume);
+    const query = sdk.query({ prompt: "", options: queryOptions });
+    try {
+      for await (const _message of query) {
+        if (input.signal.aborted) {
+          break;
+        }
+      }
+      if (typeof query.rewindFiles !== "function") {
+        throw new Error("SDK rewindFiles is not available (enable file checkpointing and update the SDK).");
+      }
+      await query.rewindFiles(userMessageId);
+    } finally {
+      query.close?.();
+    }
+  }
+
   async *runContinuation(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
@@ -412,8 +461,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }
         })
       : undefined;
+    const sessionCwd = input.workspacePath.trim() || input.worktreePath;
     const queryOptions: Record<string, unknown> = {
-      cwd: input.worktreePath,
+      cwd: sessionCwd,
       model: plannerRoute.primary.modelId,
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
@@ -503,8 +553,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         if (sessionId) {
           sessionCaptured = true;
           activeSessionId = sessionId;
-          yield createSessionCapturedEvent(input.threadId, sessionId, input.worktreePath);
+          yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd);
         }
+      }
+
+      const checkpointId = readSdkUserMessageCheckpointId(message);
+      if (checkpointId) {
+        yield createFileCheckpointEvent(input.threadId, checkpointId);
       }
 
       let pendingContextEvents: AgentEvent[] = [];
@@ -692,7 +747,7 @@ export function createExecutionAgentDefinitions(
     },
     reviewer: {
       description:
-        "Pipeline step 4: review only this session's worktree changes against the approved plan (not full repo history).",
+        "Pipeline step 4: review only this session's workspace changes against the approved plan (not full repo history).",
       tools: ["Read", "Glob", "Grep", "Bash"],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
@@ -775,9 +830,34 @@ export function applySessionStoreToQueryOptions(
   if (sessionStore) {
     queryOptions.sessionStore = sessionStore;
     delete queryOptions.enableFileCheckpointing;
+    delete queryOptions.extraArgs;
     return;
   }
   queryOptions.enableFileCheckpointing = true;
+  queryOptions.extraArgs = {
+    ...(isRecord(queryOptions.extraArgs) ? (queryOptions.extraArgs as Record<string, unknown>) : {}),
+    "replay-user-messages": null,
+  };
+}
+
+export function readSdkUserMessageCheckpointId(message: unknown): string | undefined {
+  if (!isRecord(message) || message.type !== "user") {
+    return undefined;
+  }
+  return typeof message.uuid === "string" && message.uuid.trim() ? message.uuid.trim() : undefined;
+}
+
+export function createFileCheckpointEvent(
+  threadId: string,
+  userMessageId: string,
+): AgentEvent {
+  return createAgentEvent({
+    type: "file.checkpoint",
+    threadId,
+    role: "planner",
+    agentId: "eco-checkpoint",
+    payload: { userMessageId },
+  });
 }
 
 export function readSdkSessionId(message: unknown): string | undefined {

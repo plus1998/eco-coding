@@ -8,18 +8,18 @@ The first version focuses on a router-first command center:
 - Anthropic-compatible model endpoints only.
 - Worker-per-thread isolation.
 - SQLite event storage with secrets kept in the system keychain.
-- Git worktree based editing with diff approval before applying changes.
+- Direct workspace editing with SDK file checkpointing for rewind; session diffs tracked via git in the opened project.
 
 ## System prompt and project context
 
-Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: worktree isolation, plan/execute orchestration, and deliverable headings the UI parses.
+Eco uses the Claude Agent SDK **`claude_code` preset** for the main Planner session. That preset is the same built-in coding system prompt Claude Code uses (tool usage, coding philosophy, safety, tone). Eco only **appends** product-specific rules on top: plan/execute orchestration, and deliverable headings the UI parses.
 
 Project conventions belong in **`CLAUDE.md`** (or `.claude/CLAUDE.md`) in the opened workspace, not in Eco's code. The runtime loads them automatically via `settingSources: ["user", "project"]`:
 
-- **Project** — `CLAUDE.md` / `.claude/CLAUDE.md` in the workspace (including the isolated worktree cwd)
+- **Project** — `CLAUDE.md` / `.claude/CLAUDE.md` in the workspace cwd
 - **User** — `~/.claude/CLAUDE.md` for personal defaults
 
-Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you need better prompt-cache reuse across threads with different worktree paths (trades slightly weaker in-system cwd emphasis for cache hits).
+Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you need better prompt-cache reuse across threads (trades slightly weaker in-system cwd emphasis for cache hits).
 
 ## Context compaction
 

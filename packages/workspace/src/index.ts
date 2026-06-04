@@ -127,6 +127,21 @@ export function createWorktreePlan(workspacePath: string, threadId: string): Wor
   };
 }
 
+/** Direct-edit session: agent cwd is the opened workspace (no isolated worktree). */
+export function createSessionPlan(workspacePath: string, threadId: string): WorktreePlan {
+  const safeThreadId = threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
+  const resolved = path.resolve(workspacePath);
+  return {
+    workspacePath: resolved,
+    worktreePath: resolved,
+    branchName: `eco/${safeThreadId}`,
+  };
+}
+
+export function isDirectWorkspacePlan(plan: Pick<WorktreePlan, "workspacePath" | "worktreePath">): boolean {
+  return path.resolve(plan.worktreePath) === path.resolve(plan.workspacePath);
+}
+
 export interface CommandRunner {
   run(
     command: string[],

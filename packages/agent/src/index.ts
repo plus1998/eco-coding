@@ -8,7 +8,7 @@ import type {
   ThreadSupervisor,
 } from "../../runtime/src";
 import type { AgentRole, AgentRoleRoute, ModelProfile } from "../../shared/src";
-import { createWorktreePlan, type GitWorktreeService, type WorktreePlan } from "../../workspace/src";
+import { createSessionPlan, type WorktreePlan } from "../../workspace/src";
 
 export interface StartThreadInput {
   threadId: string;
@@ -27,15 +27,11 @@ export interface StartThreadResult {
 }
 
 export class ThreadOrchestrator {
-  constructor(
-    private readonly supervisor: ThreadSupervisor,
-    private readonly worktreeService: Pick<GitWorktreeService, "createWorktree">,
-  ) {}
+  constructor(private readonly supervisor: ThreadSupervisor) {}
 
   async start(input: StartThreadInput): Promise<StartThreadResult> {
     const routes = resolveRoutes(input.roles, input.roleRoutes, input.modelProfiles);
-    const worktree = createWorktreePlan(input.workspacePath, input.threadId);
-    await this.worktreeService.createWorktree(worktree);
+    const worktree = createSessionPlan(input.workspacePath, input.threadId);
 
     const request: ThreadStartRequest = {
       threadId: input.threadId,

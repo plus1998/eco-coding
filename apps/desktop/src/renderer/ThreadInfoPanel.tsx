@@ -32,11 +32,9 @@ interface ThreadInfoPanelProps {
   gitBranch?: string;
   dirtyFileCount?: number;
   todos: CoderTodoItem[];
-  pendingWorktreeApply?: { changedFiles: string[] };
+  workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
-  onApplyWorktree?: () => void;
-  worktreeApplyBusy?: boolean;
 }
 
 function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
@@ -329,11 +327,9 @@ export function ThreadInfoPanel({
   gitBranch,
   dirtyFileCount,
   todos,
-  pendingWorktreeApply,
+  workspaceDirtyFiles,
   threadStatus,
   usageSummary,
-  onApplyWorktree,
-  worktreeApplyBusy,
 }: ThreadInfoPanelProps) {
   const projectLabel = workspacePath?.split("/").filter(Boolean).pop() ?? workspace?.name ?? "未打开项目";
   const billing = usageSummary?.billing;
@@ -351,7 +347,7 @@ export function ThreadInfoPanel({
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
   const showProgress =
-    todos.length > 0 || (pendingWorktreeApply?.changedFiles.length ?? 0) > 0;
+    todos.length > 0 || (workspaceDirtyFiles?.length ?? 0) > 0;
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -395,26 +391,18 @@ export function ThreadInfoPanel({
               <ListTodo size={14} aria-hidden />
               进度
             </h3>
-            {pendingWorktreeApply && pendingWorktreeApply.changedFiles.length > 0 ? (
+            {workspaceDirtyFiles && workspaceDirtyFiles.length > 0 ? (
               <div className="thread-info-worktree-embed">
-                <p className="thread-info-worktree-embed-title">待合并 {pendingWorktreeApply.changedFiles.length} 个文件</p>
+                <p className="thread-info-worktree-embed-title">
+                  工作区未提交变更 {workspaceDirtyFiles.length} 个文件
+                </p>
                 <ul className="thread-info-file-list">
-                  {pendingWorktreeApply.changedFiles.map((file) => (
+                  {workspaceDirtyFiles.map((file) => (
                     <li key={file}>
                       <code>{file}</code>
                     </li>
                   ))}
                 </ul>
-                {onApplyWorktree ? (
-                  <button
-                    type="button"
-                    className="plan-button primary thread-info-apply"
-                    onClick={onApplyWorktree}
-                    disabled={worktreeApplyBusy}
-                  >
-                    {worktreeApplyBusy ? "正在合并…" : "应用到工作区"}
-                  </button>
-                ) : null}
               </div>
             ) : null}
             {todos.length > 0 ? <CoderTodoPanel todos={todos} embedded compact /> : null}

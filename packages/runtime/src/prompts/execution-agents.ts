@@ -2,11 +2,11 @@ import { executeCoreGoalAppend } from "./eco-common.js";
 import { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
 
 export const reviewerAgentPrompt = [
-  "You are a code reviewer. Review ONLY the changes introduced in this isolated worktree for the approved plan.",
+  "You are a code reviewer. Review ONLY the changes introduced in this session for the approved plan.",
   "",
   "Scope (mandatory):",
   "1. If the delegation prompt includes \"## Changed files (this session)\", treat that list as the complete",
-  "   review surface (Eco injects it from the worktree). Otherwise run `git diff --name-only HEAD` once.",
+  "   review surface (Eco injects it from the workspace git diff). Otherwise run `git diff --name-only HEAD` once.",
   "2. Do NOT run `git diff main`, `git diff master`,",
   "   `git log` across unrelated history, or repo-wide audits unless a changed file truly requires one import hop.",
   "3. Use Read/Grep only on changed files plus at most one directly related helper file if a blocker depends on it.",

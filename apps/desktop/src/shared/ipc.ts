@@ -22,6 +22,8 @@ export const IPC_CHANNELS = {
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",
   threadRevertAppliedDiff: "thread:revert-applied-diff",
+  threadRewindCheckpoint: "thread:rewind-checkpoint",
+  threadListCheckpoints: "thread:list-checkpoints",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
@@ -355,6 +357,21 @@ export interface WorktreeStatusResult {
 export interface WorktreeApplyResult {
   ok: true;
   files: string[];
+  message: string;
+}
+
+export interface FileCheckpointRecord {
+  userMessageId: string;
+  createdAt: string;
+}
+
+export interface ThreadRewindCheckpointRequest {
+  threadId: string;
+  userMessageId: string;
+}
+
+export interface ThreadRewindCheckpointResult {
+  ok: boolean;
   message: string;
 }
 

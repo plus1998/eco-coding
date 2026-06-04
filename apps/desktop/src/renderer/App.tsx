@@ -58,7 +58,6 @@ import {
   type ThreadContextSnapshot,
   type ThreadSummary,
   type ThreadUsageSnapshot,
-  type WorktreeCancelDisposition,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
@@ -218,11 +217,7 @@ function App() {
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
   const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
-  const [pendingWorktreeApply, setPendingWorktreeApply] = useState<{
-    worktreePath: string;
-    changedFiles: string[];
-  }>();
-  const [worktreeApplyBusy, setWorktreeApplyBusy] = useState(false);
+  const [workspaceDirtyFiles, setWorkspaceDirtyFiles] = useState<string[]>([]);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [rollbackBusy, setRollbackBusy] = useState(false);
@@ -630,12 +625,12 @@ function App() {
 
   useEffect(() => {
     if (!activeThread?.id || !window.eco) {
-      setPendingWorktreeApply(undefined);
+      setWorkspaceDirtyFiles([]);
       return undefined;
     }
 
     if (activeThread.status === "running") {
-      setPendingWorktreeApply(undefined);
+      setWorkspaceDirtyFiles([]);
       return undefined;
     }
 
@@ -644,14 +639,7 @@ function App() {
       if (cancelled) {
         return;
       }
-      if (status.exists && status.changedFiles.length > 0) {
-        setPendingWorktreeApply({
-          worktreePath: status.worktreePath,
-          changedFiles: status.changedFiles,
-        });
-      } else {
-        setPendingWorktreeApply(undefined);
-      }
+      setWorkspaceDirtyFiles(status.exists ? status.changedFiles : []);
     });
 
     return () => {
@@ -1237,33 +1225,14 @@ function App() {
     }
   }
 
-  async function applyPendingWorktree() {
-    if (!activeThread || !window.eco) {
-      return;
-    }
-    setError(undefined);
-    setWorktreeApplyBusy(true);
-    try {
-      await window.eco.applyWorktree(activeThread.id);
-      setPendingWorktreeApply(undefined);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setWorktreeApplyBusy(false);
-    }
-  }
-
-  async function performCancel(worktreeDisposition?: WorktreeCancelDisposition) {
+  async function performCancel() {
     if (!activeThread || !window.eco) {
       return;
     }
     setError(undefined);
     setCancelBusy(true);
     try {
-      await window.eco.cancelThread({
-        threadId: activeThread.id,
-        ...(worktreeDisposition ? { worktreeDisposition } : {}),
-      });
+      await window.eco.cancelThread({ threadId: activeThread.id });
       setStopConfirm(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -1283,7 +1252,7 @@ function App() {
         setStopConfirm({ changedFiles: status.changedFiles });
         return;
       }
-      await performCancel("keep");
+      await performCancel();
     } catch (caught) {
       setError(errorMessage(caught));
     }
@@ -1298,7 +1267,7 @@ function App() {
     try {
       await window.eco.rollbackToThread(activeThread.id);
       setThreads(await window.eco.listThreads());
-      setPendingWorktreeApply(undefined);
+      setWorkspaceDirtyFiles([]);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2099,9 +2068,7 @@ function App() {
           todos={coderTodos}
           threadStatus={activeThread.status}
           usageSummary={threadUsageSummary}
-          {...(pendingWorktreeApply && { pendingWorktreeApply })}
-          onApplyWorktree={() => void applyPendingWorktree()}
-          worktreeApplyBusy={worktreeApplyBusy}
+          {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
         />
       ) : null}
 
@@ -2109,7 +2076,7 @@ function App() {
         <StopThreadConfirmDialog
           changedFiles={stopConfirm.changedFiles}
           busy={cancelBusy}
-          onConfirm={(disposition) => void performCancel(disposition)}
+          onConfirm={() => void performCancel()}
           onDismiss={() => {
             if (!cancelBusy) {
               setStopConfirm(undefined);
