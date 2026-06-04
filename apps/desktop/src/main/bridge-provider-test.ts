@@ -6,6 +6,7 @@ import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
   buildBridgeUpstreamMessagesPayload,
   parseBridgeProbeReply,
+  type BridgeProbeParseResult,
 } from "./bridge-upstream";
 
 const PROVIDER_TEST_MAX_TOKENS = 256;
@@ -40,6 +41,6 @@ export async function parseBridgeProviderTestReply(params: {
   anthropicRequest: AnthropicRequest;
   response: Response;
   preferStream: boolean;
-}): Promise<string | undefined> {
+}): Promise<BridgeProbeParseResult> {
   return parseBridgeProbeReply(params);
 }

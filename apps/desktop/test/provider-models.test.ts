@@ -521,6 +521,35 @@ describe("testProviderConnection", () => {
     expect(result).toEqual({ ok: false, error: "上游未返回可识别的 assistant 文本。" });
   });
 
+  test("surfaces upstream error from Responses SSE error events", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    const sse = [
+      'data: {"error":{"message":"model not found","type":"invalid_request_error"}}',
+      "",
+      "event: response.failed",
+      'data: {"type":"response.failed","response":{"error":{"message":"model not found","code":"model_not_found"}}}',
+      "",
+    ].join("\n");
+
+    const fetcher = async () =>
+      new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://api.example.com",
+        apiCompat: "openai_responses",
+        defaultModel: "gpt-5.4",
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({ ok: false, error: "上游错误：model not found" });
+  });
+
   test("falls back to reasoning text for reasoning-only chat completions replies", async () => {
     const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
     const fetcher = async () =>

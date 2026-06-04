@@ -262,11 +262,50 @@ export function parseResponsesStreamEventBlock(block: string): ResponsesStreamEv
     if (!parsed.type && eventType) {
       parsed.type = eventType as ResponsesStreamEvent["type"];
     }
+    if (!parsed.type) {
+      const raw = parsed as ResponsesStreamEvent & Record<string, unknown>;
+      if (isRecord(raw.error)) {
+        parsed.type = "error";
+      } else if (raw.response !== undefined) {
+        parsed.type = "response.created";
+      }
+    }
     return parsed;
   } catch {
     return null;
   }
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Extract a human-readable message from Responses API SSE error / failed events. */
+export function extractResponsesStreamEventError(evt: ResponsesStreamEvent): string | undefined {
+  if (evt.response?.error?.message?.trim()) {
+    return evt.response.error.message.trim();
+  }
+
+  const nested = evt as ResponsesStreamEvent & Record<string, unknown>;
+  if (isRecord(nested.error) && typeof nested.error.message === "string" && nested.error.message.trim()) {
+    return nested.error.message.trim();
+  }
+
+  if (typeof nested.message === "string" && nested.message.trim()) {
+    return nested.message.trim();
+  }
+
+  if (typeof evt.code === "string" && evt.code.trim()) {
+    return evt.code.trim();
+  }
+
+  return undefined;
+}
+
+export type BridgeProbeParseResult = {
+  reply?: string;
+  upstreamError?: string;
+};
 
 export function parseAnthropicStreamEventBlock(block: string): AnthropicStreamEvent | null {
   let eventType = "";
@@ -1006,7 +1045,7 @@ export async function parseBridgeProbeReply(params: {
   anthropicRequest: AnthropicRequest;
   response: Response;
   preferStream: boolean;
-}): Promise<string | undefined> {
+}): Promise<BridgeProbeParseResult> {
   const contentType = params.response.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
 
@@ -1015,12 +1054,33 @@ export async function parseBridgeProbeReply(params: {
   }
 
   const raw = await params.response.text();
-  return parseBridgeProbeBufferedReply(
+  const reply = parseBridgeProbeBufferedReply(
     raw,
     params.apiCompat,
     params.modelId,
     params.anthropicRequest,
   );
+  if (reply) {
+    return { reply };
+  }
+  const bufferedError = extractResponsesStreamEventErrorFromBody(raw);
+  if (bufferedError) {
+    return { upstreamError: bufferedError };
+  }
+  return {};
+}
+
+function extractResponsesStreamEventErrorFromBody(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as ResponsesStreamEvent;
+    return extractResponsesStreamEventError(parsed);
+  } catch {
+    return undefined;
+  }
 }
 
 async function collectBridgeProbeStreamReply(params: {
@@ -1028,10 +1088,11 @@ async function collectBridgeProbeStreamReply(params: {
   modelId: string;
   anthropicRequest: AnthropicRequest;
   response: Response;
-}): Promise<string | undefined> {
+}): Promise<BridgeProbeParseResult> {
   const toolNames = extractAnthropicRequestToolNames(params.anthropicRequest);
   const textParts: string[] = [];
   const thinkingParts: string[] = [];
+  const streamErrors: string[] = [];
   let sseBuffer = "";
 
   const pushText = (events: ReturnType<typeof responsesEventToAnthropicEvents>) => {
@@ -1056,9 +1117,14 @@ async function collectBridgeProbeStreamReply(params: {
       sseBuffer = remainder;
       for (const block of blocks) {
         const responsesEvent = parseResponsesStreamEventBlock(block);
-        if (responsesEvent) {
-          pushText(responsesEventToAnthropicEvents(responsesEvent, state));
+        if (!responsesEvent) {
+          continue;
         }
+        const streamError = extractResponsesStreamEventError(responsesEvent);
+        if (streamError) {
+          streamErrors.push(streamError);
+        }
+        pushText(responsesEventToAnthropicEvents(responsesEvent, state));
       }
     }
     if (sseBuffer.trim()) {
@@ -1066,6 +1132,10 @@ async function collectBridgeProbeStreamReply(params: {
       for (const block of blocks) {
         const responsesEvent = parseResponsesStreamEventBlock(block);
         if (responsesEvent) {
+          const streamError = extractResponsesStreamEventError(responsesEvent);
+          if (streamError) {
+            streamErrors.push(streamError);
+          }
           pushText(responsesEventToAnthropicEvents(responsesEvent, state));
         }
       }
@@ -1139,13 +1209,17 @@ async function collectBridgeProbeStreamReply(params: {
 
   const text = textParts.join("").trim();
   if (text) {
-    return text;
+    return { reply: text };
   }
   const thinking = thinkingParts.join("").trim();
   if (thinking) {
-    return thinking;
+    return { reply: thinking };
   }
-  return undefined;
+  const upstreamError = streamErrors.at(-1);
+  if (upstreamError) {
+    return { upstreamError };
+  }
+  return {};
 }
 
 function parseBridgeProbeBufferedReply(

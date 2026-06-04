@@ -34,7 +34,7 @@ import {
 import { buildProviderDirectUpstreamHeaders } from "./upstream-request-headers";
 
 const ANTHROPIC_VERSION = "2023-06-01";
-const PROVIDER_TEST_TIMEOUT_MS = 10_000;
+const PROVIDER_TEST_TIMEOUT_MS = 15_000;
 const PROVIDER_TEST_MAX_TOKENS = 256;
 
 export interface ProviderCompatRoutingInfo {
@@ -362,7 +362,7 @@ async function postUpstreamCompatTest(
       return { ok: false, error, elapsedMs };
     }
 
-    const reply = await parseBridgeProviderTestReply({
+    const parsed = await parseBridgeProviderTestReply({
       apiCompat: input.apiCompat,
       modelId: input.modelId,
       anthropicRequest,
@@ -370,6 +370,21 @@ async function postUpstreamCompatTest(
       preferStream,
     });
 
+    if (parsed.upstreamError) {
+      const error = `上游错误：${parsed.upstreamError}`;
+      logUpstream("provider-test-error", {
+        providerId: input.providerId,
+        role: input.role,
+        phase: "upstream-stream",
+        elapsedMs,
+        error,
+        apiCompat: input.apiCompat,
+        preferStream,
+      });
+      return { ok: false, error, elapsedMs };
+    }
+
+    const reply = parsed.reply;
     if (!reply) {
       const error = "上游未返回可识别的 assistant 文本。";
       logUpstream("provider-test-error", {
