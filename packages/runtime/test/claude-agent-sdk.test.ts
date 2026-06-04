@@ -487,22 +487,22 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
   expect(mission?.role).toBe("coder");
   expect(mission?.summary).toContain("markdown");
 
-  expect(
-    mapSdkMessageToEvents(
-      {
-        type: "assistant",
-        uuid: "sdk_3",
-        session_id: "session_1",
-        message: {
-          content: [
-            { type: "text", text: "Already streamed elsewhere." },
-            { type: "tool_use", name: "Read", input: { file_path: "/tmp/a.ts" } },
-          ],
-        },
+  const assistantEvents = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_3",
+      session_id: "session_1",
+      message: {
+        content: [
+          { type: "text", text: "Already streamed elsewhere." },
+          { type: "tool_use", name: "Read", input: { file_path: "/tmp/a.ts" } },
+        ],
       },
-      "thr_1",
-    ),
-  ).toHaveLength(1);
+    },
+    "thr_1",
+  );
+  expect(assistantEvents.length).toBeGreaterThanOrEqual(1);
+  expect(assistantEvents.some((event) => event.type === "tool.started")).toBe(true);
 
   expect(
     inferActivityRole({

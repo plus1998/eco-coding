@@ -278,20 +278,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
 
-  /** Reads context breakdown via SDK `getContextUsage()`. */
-  async *fetchContextUsage(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    if (!input.resume?.resumeSessionId) {
-      throw new Error("fetchContextUsage requires an existing SDK session (resume).");
-    }
-    yield* this.runSingleSession(input, {
-      prompt: "",
-      permissionMode: "dontAsk",
-      allowedTools: [],
-      phaseAppend: "",
-      contextUsageOnly: true,
-    });
-  }
-
   async *runContinuation(
     input: AgentRuntimeRunInput,
     mode: "planning" | "execution" | "question",
@@ -407,8 +393,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: string;
       agents?: Record<string, unknown>;
       availability?: SubagentAvailability;
-      /** Open resume session, call `getContextUsage()`, close — no slash commands. */
-      contextUsageOnly?: boolean;
     },
   ): AsyncGenerator<AgentEvent, { transcript: string; finalizedPlan?: FinalizePlanPayload }> {
     const sdk = await this.loadSdk();
@@ -511,35 +495,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }),
     });
     const slashPrompt = phase.prompt.trim().startsWith("/");
+    const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
-    let contextUsageOnlyFetched = false;
     for await (const message of query) {
-      if (phase.contextUsageOnly) {
-        if (!contextUsageOnlyFetched) {
-          contextUsageOnlyFetched = true;
-          if (isSdkInitMessage(message)) {
-            const sessionId = readSdkSessionId(message);
-            if (sessionId) {
-              activeSessionId = sessionId;
-            }
-          } else if (isRecord(message) && typeof message.session_id === "string") {
-            activeSessionId = message.session_id;
-          }
-          const events = await this.collectContextUsageEvents(
-            query,
-            input.threadId,
-            activeSessionId !== "unknown-session"
-              ? activeSessionId
-              : (input.resume?.resumeSessionId ?? activeSessionId),
-          );
-          for (const contextEvent of events) {
-            yield contextEvent;
-          }
-          query.close?.();
-        }
-        break;
-      }
-
       if (!sessionCaptured && isSdkInitMessage(message)) {
         const sessionId = readSdkSessionId(message);
         if (sessionId) {
@@ -553,7 +511,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (
         isRecord(message) &&
         message.type === "result" &&
-        !slashPrompt &&
+        (!slashPrompt || slashCommand === "/compact") &&
         !contextUsageCollected &&
         typeof query.getContextUsage === "function"
       ) {

@@ -463,10 +463,6 @@ export interface ThreadContextSnapshot {
   roles?: ThreadRoleContextSnapshot[];
   instances?: ThreadContextInstanceSnapshot[];
   updatedAt: number;
-  /** @deprecated Use breakdownRefreshing. */
-  stale?: boolean;
-  /** True while Eco fetches getContextUsage to refresh segment breakdown (meter stays live). */
-  breakdownRefreshing?: boolean;
   maxOutputTokens?: number;
 }
 

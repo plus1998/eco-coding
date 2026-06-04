@@ -154,7 +154,7 @@ test("clearSubagentState drops cached child role snapshots and segments", () => 
   expect(snapshot?.segments).toEqual(plannerSegments);
 });
 
-test("refreshBreakdownNow applies getContextUsage breakdown and planner segments", async () => {
+test("applySdkContextUsageBreakdown updates planner segments from getContextUsage payload", async () => {
   const emitted: ThreadContextSnapshot[] = [];
   let monitorSnapshot: ContextMonitorSnapshot = {
     occupied: 36_000,
@@ -194,56 +194,31 @@ test("refreshBreakdownNow applies getContextUsage breakdown and planner segments
   const scheduler = new ContextSnapshotScheduler({
     monitor,
     isThreadRunning: () => false,
-    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async (_threadId, fn) => {
-      const driver = {
-        fetchContextUsage: async function* () {
-          yield {
-            type: "usage.recorded",
-            payload: {
-              type: "sdk_context_usage",
-              ecoSdkContextUsage: {
-                totalTokens: 76_000,
-                maxTokens: 200_000,
-                percentage: 38,
-                model: "claude-sonnet-4",
-                categories: [
-                  { name: "System prompt", tokens: 2700, color: "#aaa" },
-                  { name: "System tools", tokens: 16_800, color: "#bbb" },
-                  { name: "Messages", tokens: 9600, color: "#ccc" },
-                ],
-              },
-            },
-          };
-        },
-      };
-      await fn(driver as never, new AbortController().signal, [
-        {
-          role: "planner",
-          primary: {
-            id: "planner:p1",
-            provider: "custom",
-            displayName: "Planner",
-            baseUrl: "https://api.example",
-            modelId: "claude-sonnet-4",
-            capabilities: ["messages_api"],
-            enabled: true,
-          },
-          fallbacks: [],
-        },
-      ]);
-    },
+    getResume: () => undefined,
+    withSdkDriver: async () => {},
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
     emitActivity: () => {},
   });
 
-  scheduler.scheduleBreakdownRefresh("t1", [], "/tmp", true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  scheduler.applySdkContextUsageBreakdown("t1", {
+    totalTokens: 31_528,
+    maxTokens: 200_000,
+    percentage: 16,
+    messageBreakdown: {
+      userMessageTokens: 2098,
+      assistantMessageTokens: 270,
+      toolCallTokens: 28,
+      toolResultTokens: 42,
+      attachmentTokens: 1672,
+      unattributedTokens: 27_418,
+    },
+  });
 
   const snapshot = emitted.at(-1);
-  expect(snapshot?.occupied).toBe(76_000);
-  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments.length).toBeGreaterThan(1);
-  expect(snapshot?.breakdownRefreshing).toBeUndefined();
+  expect(snapshot?.occupied).toBe(31_528);
+  expect(snapshot?.roles?.find((role) => role.role === "planner")?.segments.some((s) => s.label === "未归因上下文")).toBe(
+    true,
+  );
 });
 
 test("ensureHeadroom runs while thread is running when ignoreRunningGuard is set", async () => {
@@ -308,47 +283,77 @@ test("ensureHeadroom skips while thread is running without ignoreRunningGuard", 
   expect(compactCalled).toBe(false);
 });
 
-test("emits activity when context snapshot refresh fails", async () => {
-  const activities: string[] = [];
+test("ensureHeadroom applies sdk_context_usage from compact session events", async () => {
+  const emitted: ThreadContextSnapshot[] = [];
+  let monitorSnapshot: ContextMonitorSnapshot = {
+    occupied: 90_000,
+    limit: 200_000,
+    ratio: 0.45,
+    occupancyPct: 45,
+    limitsResolved: true,
+    displayRole: "planner",
+    roles: [
+      {
+        role: "planner",
+        occupied: 90_000,
+        limit: 200_000,
+        ratio: 0.45,
+        occupancyPct: 45,
+        limitsResolved: true,
+      },
+    ],
+  };
   const monitor = {
-    getSnapshot: () => ({
-      occupied: 12_000,
-      limit: 200_000,
-      ratio: 0.06,
-      occupancyPct: 6,
-      limitsResolved: true,
-      displayRole: "planner",
-      roles: [
-        {
-          role: "planner",
-          occupied: 12_000,
-          limit: 200_000,
-          ratio: 0.06,
-          occupancyPct: 6,
-          limitsResolved: true,
-        },
-      ],
-    }),
+    getSnapshot: () => monitorSnapshot,
+    updateOccupied: async (_threadId: string, role: "planner", occupied: number) => {
+      monitorSnapshot = {
+        ...monitorSnapshot,
+        occupied,
+        roles: monitorSnapshot.roles.map((entry) =>
+          entry.role === role ? { ...entry, occupied, occupancyPct: Math.round((occupied / entry.limit) * 100) } : entry,
+        ),
+      };
+      return monitorSnapshot;
+    },
     restoreFromContextSnapshot: () => {},
     clearThread: () => {},
-    shouldCompact: () => false,
+    shouldCompact: () => true,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => {},
+    updateFromUsage: async () => monitorSnapshot,
   } as unknown as ContextWindowMonitor;
   const scheduler = new ContextSnapshotScheduler({
     monitor,
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
-    withSdkDriver: async () => {
-      throw new Error("Route planner references a missing provider.");
+    withSdkDriver: async (_threadId, fn) => {
+      const driver = {
+        compactSession: async function* () {
+          yield {
+            type: "usage.recorded",
+            payload: {
+              type: "sdk_context_usage",
+              ecoSdkContextUsage: {
+                totalTokens: 40_000,
+                maxTokens: 200_000,
+                percentage: 20,
+                messageBreakdown: {
+                  userMessageTokens: 5000,
+                  assistantMessageTokens: 1000,
+                  unattributedTokens: 34_000,
+                },
+              },
+            },
+          };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, []);
     },
-    emitContext: () => {},
-    emitActivity: (_threadId, message) => activities.push(message),
+    emitContext: (_threadId, snapshot) => emitted.push(snapshot),
+    emitActivity: () => {},
   });
 
-  scheduler.scheduleBreakdownRefresh("t1", [], "/tmp", true);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  expect(activities.some((entry) => entry.includes("Context snapshot failed:"))).toBe(true);
-  expect(
-    activities.some((entry) => entry.includes("Route planner references a missing provider.")),
-  ).toBe(true);
+  await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
+  const snapshot = emitted.at(-1);
+  expect(snapshot?.occupied).toBe(40_000);
 });

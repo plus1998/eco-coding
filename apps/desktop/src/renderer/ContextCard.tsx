@@ -214,11 +214,9 @@ function SubagentContextRow({ row }: { row: FlatSubagentRow }) {
 function ContextRoleBody({
   role,
   detailsOpen,
-  showRefreshing,
 }: {
   role: ThreadRoleContextSnapshot;
   detailsOpen: boolean;
-  showRefreshing?: boolean;
 }) {
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   const occupied = role.occupied;
@@ -265,8 +263,6 @@ function ContextRoleBody({
         {freeTokens > 0 ? <span className="context-card-bar-free" style={{ flexGrow: freeTokens }} /> : null}
       </div>
 
-      {showRefreshing && detailed ? <p className="context-card-stale">正在拉取分项明细…</p> : null}
-
       {detailed && detailsOpen ? (
         <ul className="context-card-breakdown">
           {visibleSegments.map((segment) => (
@@ -307,7 +303,6 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const subagentRoles = roles.filter((role) => role.role !== "planner");
   const flatSubagents = buildFlatSubagentRows(context.instances, subagentRoles);
   const plannerDetailed = hasDetailedBreakdown(planner);
-  const showPlannerRefreshing = Boolean(context.breakdownRefreshing);
   const hasSubagents = flatSubagents.length > 0;
 
   return (
@@ -346,11 +341,7 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
           <span className="context-card-main-badge">主 Agent</span>
           <span className="context-card-main-model">{formatRoleModelLabel(planner.role, planner.modelId)}</span>
         </div>
-        <ContextRoleBody
-          role={planner}
-          detailsOpen={plannerDetailsOpen}
-          showRefreshing={showPlannerRefreshing}
-        />
+        <ContextRoleBody role={planner} detailsOpen={plannerDetailsOpen} />
       </section>
 
       {hasSubagents ? (

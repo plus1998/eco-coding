@@ -1396,7 +1396,6 @@ async function runQuestionThread(
         if (sdkFailure) {
           return { ok: false, reason: sdkFailure };
         }
-        requestThreadContextRefresh(thread.id, true);
         return { ok: true };
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1589,7 +1588,6 @@ async function runCodingThreadSdkDefault(
 
     await completeCodingThreadRun(thread.id, worktreePlan);
     scheduleThreadTitleSummary(thread.id, runtimeConfig);
-    requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
@@ -1766,7 +1764,6 @@ async function runCodingThreadPlanning(
         message: "计划阶段已结束。",
       });
     }
-    requestThreadContextRefresh(thread.id, true);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
@@ -3169,7 +3166,6 @@ async function runThreadContinuation(
           status: "awaiting_plan",
           message: "等待你确认计划。",
         });
-        requestThreadContextRefresh(thread.id, true);
       } else {
         updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
       }
@@ -3543,14 +3539,6 @@ async function processUsageBilling(input: {
 
   schedulePersistThreadMetrics(input.threadId);
   contextScheduler.emitLiveFromMonitor(input.threadId);
-  const worktreePath = resolveThreadWorktreePath(input.threadId);
-  if (worktreePath && !activeRuns.has(input.threadId)) {
-    contextScheduler.scheduleBreakdownRefresh(
-      input.threadId,
-      buildDriverRoutesFromRuntime(runtimeRoutes),
-      worktreePath,
-    );
-  }
 
   return requestBillingLog;
 }
@@ -3615,7 +3603,7 @@ function resolveThreadWorktreePath(threadId: string): string | undefined {
   return worktreePathHint;
 }
 
-/** Call after activeRuns.delete so getContextUsage refresh is not blocked as "still running". */
+/** Call after activeRuns.delete to refresh the context meter from monitor state. */
 function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   contextScheduler.emitLiveFromMonitor(threadId);
   const thread = conversationStore.getThread(threadId);
@@ -3624,9 +3612,6 @@ function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   }
   const path = worktreePath ?? resolveThreadWorktreePath(threadId);
   if (path) {
-    if (!contextScheduler.hasRecentSdkContextUsage(threadId)) {
-      scheduleContextBreakdownRefresh(threadId, path, true);
-    }
     void schedulePostRunCompactionIfNeeded(threadId, path);
   }
 }
@@ -3666,49 +3651,6 @@ function enrichBillingSnapshot(
     ...(entry.modelId && { modelId: entry.modelId }),
   }));
   return subagents.length > 0 ? { ...billing, subagents } : billing;
-}
-
-function requestThreadContextRefresh(threadId: string, immediate = true): void {
-  contextScheduler.emitLiveFromMonitor(threadId);
-  const worktreePath = resolveThreadWorktreePath(threadId);
-  if (!worktreePath) {
-    return;
-  }
-  scheduleContextBreakdownRefresh(threadId, worktreePath, immediate);
-}
-
-function scheduleContextBreakdownRefresh(
-  threadId: string,
-  worktreePath: string,
-  immediate = false,
-): void {
-  let roleRoutes: RoleRouteConfig[];
-  try {
-    roleRoutes = resolveRoleRoutesForThread(threadId);
-  } catch (error) {
-    process.stderr.write(
-      `[eco] context breakdown skipped for ${threadId}: ${errorMessage(error)}\n`,
-    );
-    return;
-  }
-
-  const runtimeConfig = resolveRuntimeConfig(
-    providerStore.getSettings(),
-    providerStore.listProvidersWithSecrets(),
-    roleRoutes,
-  );
-  if (!runtimeConfig.ok) {
-    process.stderr.write(
-      `[eco] context breakdown skipped for ${threadId}: ${runtimeConfig.reason}\n`,
-    );
-    return;
-  }
-  contextScheduler.scheduleBreakdownRefresh(
-    threadId,
-    buildDriverRoutesFromRuntime(runtimeConfig.routes),
-    worktreePath,
-    immediate,
-  );
 }
 
 function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {
@@ -3800,9 +3742,6 @@ function handleSdkContextSideEffects(
     const postTokens = extractCompactPostTokens(payload);
     contextMonitor.markCompactCompleted(threadId, postTokens);
     contextScheduler.emitLiveFromMonitor(threadId);
-    if (worktreePath) {
-      scheduleContextBreakdownRefresh(threadId, worktreePath, true);
-    }
     return;
   }
   if (payload.type === "system" && payload.subtype === "status" && payload.status === "compacting") {
@@ -4075,14 +4014,6 @@ async function processSdkRunBilling(input: {
 
   schedulePersistThreadMetrics(input.threadId);
   contextScheduler.emitLiveFromMonitor(input.threadId);
-  const worktreePath = resolveThreadWorktreePath(input.threadId);
-  if (worktreePath && !activeRuns.has(input.threadId)) {
-    contextScheduler.scheduleBreakdownRefresh(
-      input.threadId,
-      buildDriverRoutesFromRuntime(runtimeRoutes),
-      worktreePath,
-    );
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

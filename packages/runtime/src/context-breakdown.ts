@@ -537,6 +537,35 @@ export function parseSdkGetContextUsageBreakdown(payload: unknown): SdkContextUs
   };
 }
 
+/** Align cached SDK breakdown rows to live monitor occupancy without merging by key. */
+export function alignBreakdownSegmentsToOccupied(
+  segments: ContextBreakdownSegment[],
+  occupied: number,
+): ContextBreakdownSegment[] {
+  const filtered = segments.filter((segment) => segment.tokens > 0);
+  if (filtered.length === 0) {
+    return occupied > 0 ? [segmentFromKey("conversation", occupied)] : [];
+  }
+  const sum = filtered.reduce((total, segment) => total + segment.tokens, 0);
+  if (sum === 0) {
+    return occupied > 0 ? [segmentFromKey("conversation", occupied)] : [];
+  }
+  let rows = filtered;
+  if (occupied > sum) {
+    rows = [
+      ...filtered,
+      buildBreakdownSegment("unattributed", "未归因上下文", occupied - sum),
+    ];
+  } else if (occupied < sum) {
+    const factor = occupied / sum;
+    rows = filtered.map((segment) => ({
+      ...segment,
+      tokens: Math.max(1, Math.round(segment.tokens * factor)),
+    }));
+  }
+  return rows.sort((left, right) => right.tokens - left.tokens);
+}
+
 export function mergeBreakdownWithOccupancy(
   segments: ContextBreakdownSegment[],
   occupied: number,

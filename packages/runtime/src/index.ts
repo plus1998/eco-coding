@@ -74,8 +74,6 @@ export interface AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
   compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
-  /** SDK `getContextUsage()` on an existing session (requires resume). */
-  fetchContextUsage?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
 }
 
 export interface RunningThread {
@@ -352,6 +350,7 @@ export {
   CONTEXT_SEGMENT_COLORS,
   CONTEXT_SEGMENT_LABELS,
   contextSegmentDisplayLabel,
+  alignBreakdownSegmentsToOccupied,
   mergeBreakdownWithOccupancy,
   normalizeContextSegments,
   parseContextCommandHeader,
