@@ -94,6 +94,22 @@ function findSubsequenceRanges(
   return { ranges, consecutiveBonus };
 }
 
+/** Bold subsequence matches of `query` inside `label` (for humanized display names). */
+export function highlightQueryInLabel(
+  query: string,
+  label: string,
+): Array<{ text: string; match: boolean }> {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return [{ text: label, match: false }];
+  }
+  const found = findSubsequenceRanges(normalized, label.toLowerCase());
+  if (!found) {
+    return [{ text: label, match: false }];
+  }
+  return highlightSkillName(label, found.ranges);
+}
+
 export function highlightSkillName(
   name: string,
   ranges: Array<{ start: number; end: number }>,

@@ -41,3 +41,10 @@ test("formatSkillDisplayName humanizes kebab-case ids", () => {
   expect(formatSkillDisplayName("vue-router-best-practices")).toBe("Vue Router Best Practices");
   expect(formatSkillDisplayName("pdf")).toBe("pdf");
 });
+
+test("slash menu highlights query on display label", async () => {
+  const { highlightQueryInLabel } = await import("../src/renderer/skill-fuzzy");
+  const parts = highlightQueryInLabel("vr", "Vue Router Best Practices");
+  expect(parts.some((part) => part.match)).toBe(true);
+  expect(parts.map((part) => part.text).join("")).toBe("Vue Router Best Practices");
+});

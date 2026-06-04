@@ -191,9 +191,27 @@ button:not(:disabled) {
 .project-group-row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   position: relative;
+}
+
+.project-group-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 8px 2px 4px;
+  border-radius: 10px;
+}
+
+.project-group-main:hover {
+  background: #2a2a2a;
+}
+
+.project-group-main.active {
+  background: #333;
 }
 
 .project-group-row.dragging {
@@ -246,14 +264,18 @@ button:not(:disabled) {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   color: #8a8a8a;
 }
 
 .project-folder-toggle:hover {
-  background: #2a2a2a;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d4d4d4;
+}
+
+.project-group-main.active .project-folder-toggle {
   color: #d4d4d4;
 }
 
@@ -275,10 +297,15 @@ button:not(:disabled) {
 .project-group-header {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px 4px 0;
+  padding: 4px 0;
   color: #8a8a8a;
   font-size: 13px;
   font-weight: 500;
+}
+
+.project-group-main:hover .project-group-header,
+.project-group-main.active .project-group-header {
+  color: #e8e8e8;
 }
 
 .project-empty {
@@ -296,14 +323,16 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
-.project-group-header:hover,
+.project-group-header:hover {
+  color: #fff;
+}
+
 .project-open:hover,
 .chat-item:hover {
   background: #2a2a2a;
   color: #fff;
 }
 
-.project-group-header.active,
 .chat-item.active {
   background: #333;
   color: #fff;

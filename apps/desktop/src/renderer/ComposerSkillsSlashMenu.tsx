@@ -1,7 +1,8 @@
 import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SkillInfo } from "../shared/skills";
-import { highlightSkillName, type SkillFuzzyMatch } from "./skill-fuzzy";
+import { formatSkillDisplayName } from "./composer-skills";
+import { highlightQueryInLabel, type SkillFuzzyMatch } from "./skill-fuzzy";
 import { layoutSlashMenu, SkillMenuRow } from "./composer-skills-ui";
 
 interface ComposerSkillsSlashMenuProps {
@@ -109,7 +110,8 @@ export function ComposerSkillsSlashMenu({
       ) : (
         <ul ref={listRef} className="composer-skill-menu-list">
           {matches.map((match, index) => {
-            const titleParts = highlightSkillName(match.skill.name, match.ranges);
+            const displayName = formatSkillDisplayName(match.skill.name, match.skill);
+            const titleParts = highlightQueryInLabel(query, displayName);
             return (
               <SkillMenuRow
                 key={match.skill.skillFilePath}

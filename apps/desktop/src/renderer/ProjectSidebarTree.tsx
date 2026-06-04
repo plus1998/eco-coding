@@ -2,6 +2,7 @@ import { Folder, FolderOpen, GripVertical } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
+import { formatSkillDisplayName } from "./composer-skills";
 import { formatRelativeTime } from "./relative-time";
 
 const PROJECT_DRAG_MIME = "application/x-eco-project-path";
@@ -180,6 +181,7 @@ export function ProjectSidebarTree({
         if (dropTarget?.path === project.path && dropTarget.position === "after") {
           rowClassNames.push("drop-after");
         }
+        const isProjectActive = currentProjectPath === project.path && !activeThreadId;
 
         return (
           <div key={project.path} className="project-group">
@@ -198,26 +200,24 @@ export function ProjectSidebarTree({
               >
                 <GripVertical size={14} />
               </button>
-              <button
-                type="button"
-                className="project-folder-toggle"
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? "展开项目" : "折叠项目"}
-                onClick={() => onToggleProjectCollapsed(project.path)}
-              >
-                {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
-              </button>
-              <button
-                type="button"
-                className={
-                  currentProjectPath === project.path && !activeThreadId
-                    ? "project-group-header active"
-                    : "project-group-header"
-                }
-                onClick={() => onSwitchProject(project.path)}
-              >
-                <span>{project.name}</span>
-              </button>
+              <div className={isProjectActive ? "project-group-main active" : "project-group-main"}>
+                <button
+                  type="button"
+                  className="project-folder-toggle"
+                  aria-expanded={!collapsed}
+                  aria-label={collapsed ? "展开项目" : "折叠项目"}
+                  onClick={() => onToggleProjectCollapsed(project.path)}
+                >
+                  {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
+                </button>
+                <button
+                  type="button"
+                  className="project-group-header"
+                  onClick={() => onSwitchProject(project.path)}
+                >
+                  <span>{formatSkillDisplayName(project.name)}</span>
+                </button>
+              </div>
             </div>
             {!collapsed ? (
               projectThreads.length > 0 ? (
