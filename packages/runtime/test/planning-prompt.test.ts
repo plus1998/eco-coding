@@ -25,8 +25,10 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).not.toMatch(/`request_user_input`/);
   expect(append).not.toContain("## Implementation Plan");
   expect(append).toContain("Agent(explore)");
-  expect(append).toContain("Eco Plan Mode turn order");
-  expect(append).toContain("MUST NOT call `mcp__eco_plan__finalize_plan`");
+  expect(append).toContain("Eco Plan Mode workflow");
+  expect(append).toContain("Explore first");
+  expect(append).toContain("Clarify when needed");
+  expect(append).not.toContain("MUST NOT call `mcp__eco_plan__finalize_plan`");
   expect(append).toContain("complete replacement");
 });
 
@@ -35,18 +37,23 @@ test("planningPhaseSystemAppend is built from inlined Codex template", () => {
   expect(planningPhaseSystemAppend).not.toContain("adq_account");
 });
 
-test("buildPlanningPhasePrompt enforces explore and ask on turn 1", () => {
+test("buildPlanningPhasePrompt enforces explore-before-finalize sequential workflow", () => {
   const prompt = buildPlanningPhasePrompt("Add caching to the API layer");
-  expect(prompt).toContain("turn 1");
+  expect(prompt).toContain("explore before finalize");
+  expect(prompt).toContain("Explore the worktree first");
+  expect(prompt).toContain("material ambiguity");
   expect(prompt).toContain("AskUserQuestion");
-  expect(prompt).toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
-  expect(prompt).not.toContain("when decision-complete");
+  expect(prompt).toContain("mcp__eco_plan__finalize_plan");
+  expect(prompt).toContain("one assistant turn");
+  expect(prompt).not.toContain("turn 1");
+  expect(prompt).not.toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
 });
 
 test("buildPlanningContinuationPrompt requires full replacement plan", () => {
   const prompt = buildPlanningContinuationPrompt("把提示语改成可配置字段");
-  expect(prompt).toContain("not turn 1");
+  expect(prompt).toContain("same Plan Mode session");
   expect(prompt).toContain("complete replacement");
   expect(prompt).toContain("mcp__eco_plan__finalize_plan");
-  expect(prompt).not.toContain("turn 1).");
+  expect(prompt).not.toContain("not turn 1");
+  expect(prompt).not.toContain("turn 1");
 });

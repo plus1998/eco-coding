@@ -229,12 +229,13 @@ test("builds phased orchestration prompts", () => {
   const analysis = "## 分析结果\n\nNeed to extend styles.css";
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("turn 1");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("explore before finalize");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("mcp__eco_plan__finalize_plan");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
+  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode workflow");
+  expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");

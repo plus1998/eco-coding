@@ -32,7 +32,7 @@ export function WorkflowSettingsSection({ settings, disabled, onChange }: Workfl
           </div>
           <p className="models-subagent-card-desc">
             {enabled
-              ? "探索代码库 → AskUserQuestion → 计划确认 → 按已启用子代理走执行流水线。"
+              ? "探索代码库 → 必要时澄清 → 计划确认 → 按已启用子代理走执行流水线。"
               : "单次会话、无计划确认；主会话按 Claude Code 预设调度下方已启用的子代理。"}
           </p>
         </div>

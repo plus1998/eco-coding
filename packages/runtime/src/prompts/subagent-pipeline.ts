@@ -189,7 +189,7 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
       ]
     : [];
 
-  const turn1Explore = isSubagentEnabled(availability, "explore")
+  const exploreFirstRule = isSubagentEnabled(availability, "explore")
     ? "- **Explore first**: run at least one targeted pass with Read, Glob, Grep, and/or `Agent(explore)` before asking the user anything answerable from the repo."
     : "- **Explore first**: run at least one targeted pass with Read, Glob, and/or Grep before asking the user anything answerable from the repo. Do not call Agent(explore).";
 
@@ -219,28 +219,18 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "",
     formatAvailableSubagentsLine(availability),
     "",
-    "## Eco Plan Mode turn order (mandatory — overrides one-shot planning)",
+    "## Eco Plan Mode workflow (mandatory ordering)",
     "",
-    "A detailed user message is **not** permission to skip PHASE 1–2 or to finalize in one turn.",
+    "A detailed user message is **not** permission to skip exploration. A clear request may proceed to finalize after exploration without extra clarification.",
     "",
-    "### Turn 1 (first assistant reply after the user request)",
+    "### Required order",
     "",
-    turn1Explore,
-    "- **Do not finalize**: MUST NOT call `mcp__eco_plan__finalize_plan` on turn 1.",
-    "- **Do not one-shot**: MUST NOT combine full exploration + final plan in the same turn.",
-    "- **Ask next**: after exploration, call **`AskUserQuestion`** with 2–5 high-impact questions (Codex PHASE 2 intent + PHASE 3 implementation). Include preferences/tradeoffs (scope, defaults, validation bounds, rollout, test depth) even when the user already proposed an approach.",
-    "- Optional: short `## Analysis Result` / `## 分析结果` summarizing repo facts and open assumptions — not a substitute for `AskUserQuestion`.",
+    exploreFirstRule,
+    "- **Clarify when needed**: after exploration, call **`AskUserQuestion`** only for material preferences/tradeoffs that exploration cannot resolve (Codex PHASE 2–3). Do not ask questions answerable from the repo.",
+    "- **Submit when ready**: call `mcp__eco_plan__finalize_plan` once decision-complete per Codex Finalization rule (unanswered preference questions use recommended defaults recorded under Assumptions).",
     "",
-    "### Middle turns",
-    "",
-    "- Incorporate answers; explore more if needed; call `AskUserQuestion` again while material ambiguity remains.",
-    "- Still MUST NOT call `mcp__eco_plan__finalize_plan` until decision-complete per Codex Finalization rule.",
-    "",
-    "### Final turn only",
-    "",
-    "- Call `mcp__eco_plan__finalize_plan` once spec is decision-complete (unanswered preference questions use recommended defaults recorded under Assumptions).",
-    "",
-    "If you have not called `AskUserQuestion` at least once in this Plan Mode session, you are not ready for the final plan (except truly trivial one-line doc fixes with zero tradeoffs).",
+    "Exploration, clarification, and finalization may occur in the same assistant turn, but `mcp__eco_plan__finalize_plan` must come after exploration completes in that turn.",
+    "Optional: short `## Analysis Result` / `## 分析结果` summarizing repo facts and open assumptions.",
     "",
     "### Plan revisions via chat (after dismiss or follow-up)",
     "",

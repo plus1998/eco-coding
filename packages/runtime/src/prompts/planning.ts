@@ -17,15 +17,15 @@ export function buildPlanningPhasePrompt(
     "User request:",
     userPrompt.trim(),
     "",
-    "You are in Plan Mode (session start — this is turn 1).",
+    "You are in Plan Mode (session start).",
     "",
-    "Required for this turn:",
+    "Required workflow (explore before finalize — same assistant turn is allowed):",
     `1. Explore the worktree first (${explore}).`,
-    "2. Call AskUserQuestion with material clarifications — do not skip because the request looks detailed.",
-    "3. Do NOT call `mcp__eco_plan__finalize_plan` on this turn.",
+    "2. If material ambiguity remains, call AskUserQuestion — do not ask things discoverable from the repo.",
+    "3. When the spec is decision-complete, call `mcp__eco_plan__finalize_plan` with full `analysis` and `plan` strings.",
     "",
+    "You may complete exploration, clarification, and plan submission in one assistant turn as long as exploration runs before `mcp__eco_plan__finalize_plan`.",
     "Optional: brief analysis summary in plain text after exploration.",
-    "Final plan submission is only allowed on a later turn via `mcp__eco_plan__finalize_plan` (see Eco turn-order rules in system context).",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }
@@ -36,7 +36,7 @@ export function buildPlanningContinuationPrompt(
   availability: SubagentAvailability = defaultSubagentAvailability(),
 ): string {
   return [
-    "User follow-up (same Plan Mode session — not turn 1):",
+    "User follow-up (same Plan Mode session):",
     userPrompt.trim(),
     "",
     `You are still in Eco Plan Mode. ${buildPlanningContinuationExploreHint(availability)}`,
