@@ -1220,12 +1220,17 @@ function pushWorkSessionsFromRuns(
       const existingIndex = pendingSubagentItems.findIndex((entry) => entry.agentId === item.agentId);
       if (existingIndex >= 0) {
         const existing = pendingSubagentItems[existingIndex]!;
+        const mergedChildren = [...existing.children, ...item.children];
+        const mergedDuration = Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0);
         pendingSubagentItems[existingIndex] = {
           ...existing,
           running: existing.running || item.running,
-          children: [...existing.children, ...item.children],
-          ...(item.statusLine && { statusLine: item.statusLine }),
-          runDurationMs: Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0) || undefined,
+          children: mergedChildren,
+          statusLine:
+            resolveSubagentRunStatusLine(mergedChildren, existing.role) ??
+            item.statusLine ??
+            existing.statusLine,
+          ...(mergedDuration > 0 && { runDurationMs: mergedDuration }),
         };
         return;
       }
@@ -1233,11 +1238,45 @@ function pushWorkSessionsFromRuns(
     pendingSubagentItems.push(item);
   };
 
+  const mergeMissionOnlyRunIntoItems = (
+    missionRun: Extract<DetailRun, { kind: "subagent" }>,
+  ): boolean => {
+    if (!isMissionOnlyRun(missionRun)) {
+      return false;
+    }
+    const role = missionRun.role;
+    for (let index = pendingSubagentItems.length - 1; index >= 0; index -= 1) {
+      const entry = pendingSubagentItems[index];
+      if (!entry || entry.role !== role) {
+        continue;
+      }
+      if (
+        missionRun.agentId &&
+        entry.agentId &&
+        missionRun.agentId !== entry.agentId
+      ) {
+        continue;
+      }
+      const mergedChildren = [...entry.children, ...missionRun.blocks];
+      pendingSubagentItems[index] = {
+        ...entry,
+        ...(missionRun.agentId && !entry.agentId && { agentId: missionRun.agentId }),
+        children: mergedChildren,
+        statusLine: resolveSubagentRunStatusLine(mergedChildren, role) ?? entry.statusLine,
+      };
+      return true;
+    }
+    return false;
+  };
+
   const buildItemFromRun = (
     run: Extract<DetailRun, { kind: "subagent" }>,
     segmentRunning: boolean,
   ): SubagentRunItem | undefined => {
     if (isMissionOnlyRun(run)) {
+      if (mergeMissionOnlyRunIntoItems(run)) {
+        return undefined;
+      }
       const completedDurationMs = resolveSubagentRunDurationMsForItem(
         run.agentId,
         run.role,
@@ -1245,16 +1284,16 @@ function pushWorkSessionsFromRuns(
         options.lines,
         options.subagentTimingsByAgentId,
       );
-      if (completedDurationMs > 0) {
+      if (completedDurationMs > 0 && run.agentId) {
         const role = run.role;
         const title = resolveSubagentRunDisplayTitle(role);
         const statusLine = resolveSubagentRunStatusLine(run.blocks, role);
         return {
-          sessionKey: run.agentId ? `subagent-${run.agentId}` : `subagent-${role}-${run.occurrence}`,
+          sessionKey: `subagent-${run.agentId}`,
           role,
           title,
           running: false,
-          ...(run.agentId && { agentId: run.agentId }),
+          agentId: run.agentId,
           ...(statusLine && { statusLine }),
           runDurationMs: completedDurationMs,
           children: run.blocks,
@@ -1341,6 +1380,16 @@ function pushWorkSessionsFromRuns(
   while (pendingMissionRuns.length > 0) {
     const missionRun = pendingMissionRuns.shift();
     if (!missionRun) {
+      continue;
+    }
+    if (mergeMissionOnlyRunIntoItems(missionRun)) {
+      continue;
+    }
+    if (
+      isMissionOnlyRun(missionRun) &&
+      !missionRun.agentId &&
+      pendingSubagentItems.some((entry) => entry.role === missionRun.role)
+    ) {
       continue;
     }
     const role = missionRun.role;

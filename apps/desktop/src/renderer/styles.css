@@ -2853,12 +2853,21 @@ button:not(:disabled) {
 .subagent-run-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
   min-width: 0;
 }
 
-.subagent-run-title {
+.subagent-run-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   flex: 1;
+}
+
+.subagent-run-title {
+  flex: 0 1 auto;
   min-width: 0;
   color: #f5f5f5;
   font-size: 14px;
@@ -2868,24 +2877,19 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
-.subagent-run-badge {
+.subagent-run-title-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
-  color: #a3a3a3;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.subagent-run-badge.running {
-  color: #93c5fd;
 }
 
 .subagent-run-agent-chip {
   flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  padding: 0;
   color: #737373;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

@@ -282,11 +282,6 @@ function SubagentRunInstanceStrip({
 
   return (
     <div className="subagent-run-instance-strip" aria-label="子代理实例">
-      {agentId ? (
-        <span className="subagent-run-agent-id" title={agentId}>
-          #{shortSubagentAgentId(agentId)}
-        </span>
-      ) : null}
       {metrics ? (
         <span className="subagent-run-instance-usage">
           {formatUsageBadge({
@@ -353,11 +348,14 @@ function SubagentRunRow({
   }, [durationMs, item.running, item.sessionKey, persistedTiming]);
 
   const displayTitle = resolveSubagentRunDisplayTitle(item.role);
-  const statusBadge = item.running ? "进行中" : "已结束";
   const statusText = item.statusLine?.trim() || (item.running ? "工作中" : "点击查看执行详情");
   const elapsedMs = item.running ? liveDurationMs : durationMs;
   const durationLabel =
-    elapsedMs > 0 ? (item.running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
+    elapsedMs > 0
+      ? item.running
+        ? formatDuration(elapsedMs)
+        : `用时 ${formatDuration(elapsedMs)}`
+      : undefined;
   const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
   const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
   const scopedUsageByRole =
@@ -377,20 +375,23 @@ function SubagentRunRow({
         <Sparkles size={14} className="subagent-run-icon" aria-hidden />
         <div className="subagent-run-main">
           <div className="subagent-run-title-row">
-            <span className="subagent-run-title">{displayTitle}</span>
-            {item.agentId ? (
-              <span className="subagent-run-agent-chip" title={item.agentId}>
-                #{shortSubagentAgentId(item.agentId)}
-              </span>
-            ) : null}
-            <span className={`subagent-run-badge${item.running ? " running" : ""}`}>{statusBadge}</span>
-            {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
-            {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            <ChevronDown
-              size={16}
-              className={expanded ? "subagent-run-chevron open" : "subagent-run-chevron"}
-              aria-hidden
-            />
+            <span className="subagent-run-title-group">
+              <span className="subagent-run-title">{displayTitle}</span>
+              {item.agentId ? (
+                <span className="subagent-run-agent-chip" title={item.agentId}>
+                  #{shortSubagentAgentId(item.agentId)}
+                </span>
+              ) : null}
+            </span>
+            <span className="subagent-run-title-trailing">
+              {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
+              {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
+              <ChevronDown
+                size={16}
+                className={expanded ? "subagent-run-chevron open" : "subagent-run-chevron"}
+                aria-hidden
+              />
+            </span>
           </div>
           <p className="subagent-run-status" title={statusText}>
             {statusText}
