@@ -37,6 +37,9 @@ win:
   artifactName: Eco-Coding-${version}-win-x64.${ext}
 
 linux:
+  executableName: eco-coding
+  synopsis: Eco Coding
+  description: Eco Coding desktop app
   target:
     - target: AppImage
       arch:

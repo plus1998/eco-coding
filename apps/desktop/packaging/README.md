@@ -15,3 +15,5 @@ bun run icons   # from apps/desktop, or: bun run --cwd apps/desktop icons
 ```
 
 `electron-builder.yml` uses this folder as `buildResources`; icons are picked up automatically when packing.
+
+Linux packages: `bun run pack:linux-x64` (AppImage, uses `icon.png`).

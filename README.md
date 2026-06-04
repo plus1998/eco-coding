@@ -71,12 +71,14 @@ bun run icons
 # Installers (run from repo root)
 bun run pack:mac-arm64   # macOS Apple Silicon → apps/desktop/release/Eco-Coding-*-mac-arm64.dmg
 bun run pack:win-x64     # Windows x64 NSIS → apps/desktop/release/Eco-Coding-*-win-x64.exe
-bun run pack             # also Linux AppImage when built on a supported host
+bun run pack:linux-x64   # Linux x64 AppImage → apps/desktop/release/Eco-Coding-*-linux-x64.AppImage
 ```
 
 macOS packages are unsigned by default (`identity: null` in `apps/desktop/electron-builder.yml`). For distribution, set a valid `CSC_NAME` / Developer ID and adjust signing in that file.
 
 Windows installers can be built on macOS (electron-builder downloads the Windows Electron binary). The Claude Agent SDK native CLI for Windows is included via optional dependency `@anthropic-ai/claude-agent-sdk-win32-x64`.
+
+Linux AppImages are produced as portable `*.AppImage` files. Run `bun run pack:linux-x64` on Linux for the smoothest build; cross-building from macOS is also supported (electron-builder downloads the Linux Electron binary). The pack script installs the Linux x64 Claude Agent SDK native CLI via `ensure-native-sdk.mjs` before bundling. After build, run `chmod +x Eco-Coding-*-linux-x64.AppImage` if needed, then launch the AppImage (some distros need [FUSE](https://github.com/AppImage/AppImageKit/wiki/FUSE) for AppImage).
 
 ## Repository shape
 

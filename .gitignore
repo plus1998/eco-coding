@@ -3,6 +3,7 @@ node_modules/
 dist/
 build/
 apps/desktop/release/
+apps/desktop/packaging/**/*.iconset/
 coverage/
 .turbo/
 .vite/
