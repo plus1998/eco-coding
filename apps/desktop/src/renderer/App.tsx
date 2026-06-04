@@ -91,14 +91,15 @@ import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
-import { ComposerProjectSkills } from "./ComposerProjectSkills";
-import { ComposerSkillPopover } from "./ComposerSkillPopover";
-import { ComposerTextarea } from "./ComposerTextarea";
+import { ComposerSkillsBar } from "./ComposerSkillsBar";
+import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
+import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import {
-  applyComposerSkillSelection,
-  parseComposerSkillSlashQuery,
-} from "./composer-skill-query";
-import { filterUserSkills } from "./skill-fuzzy";
+  applySlashSkillSelection,
+  buildSkillMap,
+  filterSkillsForSlash,
+  parseSlashQuery,
+} from "./composer-skills";
 import {
   dedupeSkillsByName,
   listSdkReadyProjectSkills,
@@ -655,7 +656,7 @@ function App() {
     Boolean(currentProjectPath) &&
     (isLoadingSkills || projectSdkReadySkills.length > 0 || projectAgentsOnly.length > 0);
   const composerSkillSlash = useMemo(
-    () => parseComposerSkillSlashQuery(prompt, composerCursor),
+    () => parseSlashQuery(prompt, composerCursor),
     [prompt, composerCursor],
   );
   const referencedSkillNames = useMemo(
@@ -666,8 +667,7 @@ function App() {
     if (!composerSkillSlash) {
       return [];
     }
-    const available = slashPickerSkills.filter((skill) => !referencedSkillNames.has(skill.name));
-    return filterUserSkills(composerSkillSlash.query, available);
+    return filterSkillsForSlash(composerSkillSlash.query, slashPickerSkills, referencedSkillNames);
   }, [composerSkillSlash, slashPickerSkills, referencedSkillNames]);
   const composerSkillPopoverOpen = Boolean(composerSkillSlash) && slashPickerSkills.length > 0;
 
@@ -845,31 +845,13 @@ function App() {
     return { ...configured, ...threadModelByRole };
   }, [activeRoutes, threadModelByRole]);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-
+  const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
 
-  function fitComposerHeight(textarea: HTMLTextAreaElement) {
-    textarea.style.height = "0px";
-    const next = Math.min(textarea.scrollHeight, COMPOSER_TEXTAREA_MAX_HEIGHT);
-    textarea.style.height = `${next}px`;
-    textarea.style.overflowY = textarea.scrollHeight > COMPOSER_TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
-  }
-
-  useLayoutEffect(() => {
-    const textarea = composerRef.current;
-    if (textarea) {
-      fitComposerHeight(textarea);
-    }
-  }, [prompt]);
-
-  const composerSkillsByName = useMemo(() => {
-    const map = new Map<string, SkillInfo>();
-    for (const skill of [...userSkills, ...projectSdkReadySkills]) {
-      map.set(skill.name, skill);
-    }
-    return map;
-  }, [userSkills, projectSdkReadySkills]);
+  const composerSkillsByName = useMemo(
+    () => buildSkillMap([...userSkills, ...projectSdkReadySkills]),
+    [userSkills, projectSdkReadySkills],
+  );
 
   const scrollActivityFeedToEnd = useCallback((force = false) => {
     const container = activityEndRef.current?.parentElement;
@@ -1595,7 +1577,7 @@ function App() {
     setComposerAttachments((current) => [...current, ...additions].slice(0, COMPOSER_MAX_IMAGES));
   }
 
-  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+  function handleComposerPaste(event: ClipboardEvent<HTMLDivElement>) {
     const items = event.clipboardData?.items;
     if (!items?.length) {
       return;
@@ -1620,33 +1602,37 @@ function App() {
     setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
-  function insertComposerNewline(textarea: HTMLTextAreaElement) {
-    const start = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? 0;
+  function insertComposerNewline() {
+    const composer = composerRef.current;
+    if (!composer) {
+      return;
+    }
+    const start = composer.getSelectionStart();
+    const end = composer.getSelectionEnd();
     const next = `${prompt.slice(0, start)}\n${prompt.slice(end)}`;
     setPrompt(next);
     const cursor = start + 1;
     queueMicrotask(() => {
-      textarea.selectionStart = cursor;
-      textarea.selectionEnd = cursor;
-      fitComposerHeight(textarea);
+      composer.setCursor(cursor);
+      composer.focus();
+      composer.fitHeight();
     });
   }
 
-  function syncComposerCursor(textarea?: HTMLTextAreaElement | null) {
-    const el = textarea ?? composerRef.current;
-    if (el) {
-      setComposerCursor(el.selectionStart ?? 0);
+  function syncComposerCursor() {
+    const composer = composerRef.current;
+    if (composer) {
+      setComposerCursor(composer.getSelectionEnd());
     }
   }
 
   function selectComposerSkill(skill: SkillInfo) {
-    const textarea = composerRef.current;
-    if (!composerSkillSlash || !textarea || promptIncludesSkillName(prompt, skill.name)) {
+    const composer = composerRef.current;
+    if (!composerSkillSlash || !composer || promptIncludesSkillName(prompt, skill.name)) {
       return;
     }
-    const selectionEnd = textarea.selectionEnd ?? textarea.selectionStart ?? prompt.length;
-    const { next, cursor } = applyComposerSkillSelection(
+    const selectionEnd = composer.getSelectionEnd();
+    const { next, cursor } = applySlashSkillSelection(
       prompt,
       { start: composerSkillSlash.start, end: selectionEnd },
       skill.name,
@@ -1654,15 +1640,14 @@ function App() {
     setPrompt(next);
     setComposerSkillActiveIndex(0);
     queueMicrotask(() => {
-      textarea.selectionStart = cursor;
-      textarea.selectionEnd = cursor;
-      textarea.focus();
-      fitComposerHeight(textarea);
+      composer.setCursor(cursor);
+      composer.focus();
+      composer.fitHeight();
       setComposerCursor(cursor);
     });
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (composerSkillPopoverOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -1702,7 +1687,7 @@ function App() {
     if (event.shiftKey || event.metaKey || event.altKey) {
       if (event.metaKey || event.altKey) {
         event.preventDefault();
-        insertComposerNewline(event.currentTarget);
+        insertComposerNewline();
       }
       return;
     }
@@ -1736,17 +1721,18 @@ function App() {
         </ul>
       )}
       <div className="codex-composer" ref={composerAnchorRef}>
-        <ComposerSkillPopover
+        <ComposerSkillsSlashMenu
           open={composerSkillPopoverOpen}
           query={composerSkillSlash?.query ?? ""}
-          userSkills={slashPickerSkills}
+          skills={slashPickerSkills}
+          matches={composerSkillMatches}
           activeIndex={composerSkillActiveIndex}
           anchorRef={composerAnchorRef}
           onActiveIndexChange={setComposerSkillActiveIndex}
           onSelect={selectComposerSkill}
           onClose={() => syncComposerCursor()}
         />
-        <ComposerTextarea
+        <ComposerSkillsInput
           ref={composerRef}
           value={prompt}
           onChange={(next) => {
@@ -1856,7 +1842,7 @@ function App() {
         )}
       </div>
       {showLanding && showProjectSkillsPanel ? (
-        <ComposerProjectSkills
+        <ComposerSkillsBar
           sdkReadySkills={projectSdkReadySkills}
           agentsOnlySkills={projectAgentsOnly}
           referencedSkillNames={referencedSkillNames}

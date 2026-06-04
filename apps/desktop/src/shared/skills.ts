@@ -69,11 +69,7 @@ export function listSdkReadyProjectSkills(skills: readonly SkillInfo[]): SkillIn
   );
 }
 
-export function listAgentsOnlySkills(result: Pick<SkillsListResult, "agentsOnlySkills">): SkillInfo[] {
-  return [...result.agentsOnlySkills];
-}
-
-const EXPLICIT_SKILL_NAME_PATTERN = /\$([a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
+export const SKILL_NAME_TOKEN = /\$([a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
 
 /** Skill names from Codex-style `$skill-name` tokens in a prompt. */
 export function parseExplicitSkillNames(prompt: string | undefined): string[] {
@@ -82,7 +78,7 @@ export function parseExplicitSkillNames(prompt: string | undefined): string[] {
   }
   const names: string[] = [];
   const seen = new Set<string>();
-  for (const match of prompt.matchAll(EXPLICIT_SKILL_NAME_PATTERN)) {
+  for (const match of prompt.matchAll(SKILL_NAME_TOKEN)) {
     const name = match[1];
     if (!name || seen.has(name)) {
       continue;

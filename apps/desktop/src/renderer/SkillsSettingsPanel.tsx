@@ -52,7 +52,7 @@ export function SkillsSettingsPanel({
         <div className="settings-skills-link-block" role="note">
           <p className="composer-skills-pending-names">
             {userAgentsOnly.map((skill) => (
-              <span key={skill.skillFilePath} className="composer-project-skill-tag is-pending" title={skill.description}>
+              <span key={skill.skillFilePath} className="composer-skill-pill is-pending" title={skill.description}>
                 {skill.name}
               </span>
             ))}
