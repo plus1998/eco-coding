@@ -89,18 +89,30 @@ interface ClaudeAgentSdkModule {
   query: SdkQuery;
 }
 
-const defaultAllowedTools = ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
+const networkAllowedTools = ["WebSearch", "WebFetch"] as const;
+const defaultAllowedTools = [
+  "Agent",
+  "Read",
+  "Glob",
+  "Grep",
+  "Write",
+  "Edit",
+  "Bash",
+  ...networkAllowedTools,
+] as const;
 const planningAllowedTools = [
   "Agent",
   "Read",
   "Glob",
   "Grep",
-  "WebSearch",
-  "WebFetch",
+  ...networkAllowedTools,
   "AskUserQuestion",
   FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;
-const questionAllowedTools = ["Agent", "Read", "Glob", "Grep"] as const;
+const questionAllowedTools = ["Agent", "Read", "Glob", "Grep", ...networkAllowedTools] as const;
+const readOnlySubagentTools = ["Read", "Glob", "Grep", ...networkAllowedTools] as const;
+const readOnlySubagentBashTools = ["Read", "Glob", "Grep", "Bash", ...networkAllowedTools] as const;
+const executionCoderTools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"] as const;
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
 const defaultSettingSources = ["user", "project"] as const;
@@ -678,19 +690,18 @@ export function createPlanningAgentDefinitions(
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const exploreTools = ["Read", "Glob", "Grep"];
 
   const definitions = {
     explore: {
       description: exploreAgentDescription,
-      tools: exploreTools,
+      tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
     },
     architect: {
       description: planningArchitectDescription,
-      tools: ["Read", "Glob", "Grep"],
+      tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: planningArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
@@ -710,7 +721,7 @@ export function createQuestionAgentDefinitions(
   const definitions = {
     explore: {
       description: exploreAgentDescription,
-      tools: ["Read", "Glob", "Grep"],
+      tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("explore", agentSkills),
       prompt: exploreAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
@@ -733,14 +744,14 @@ export function createExecutionAgentDefinitions(
   const definitions = {
     architect: {
       description: executionArchitectDescription,
-      tools: ["Read", "Glob", "Grep"],
+      tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
     coder: {
       description: executionCoderDescription,
-      tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+      tools: [...executionCoderTools],
       ...agentDefinitionSkills("coder", agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
@@ -748,14 +759,14 @@ export function createExecutionAgentDefinitions(
     reviewer: {
       description:
         "Pipeline step 4: review only this session's workspace changes against the approved plan (not full repo history).",
-      tools: ["Read", "Glob", "Grep", "Bash"],
+      tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
     tester: {
       description: executionTesterDescription,
-      tools: ["Read", "Bash", "Glob", "Grep"],
+      tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("tester", agentSkills),
       prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),

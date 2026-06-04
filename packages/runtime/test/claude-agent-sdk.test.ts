@@ -162,8 +162,11 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
   );
 });
 
-test("includes Agent in default allowed tools", () => {
-  expect(getDefaultAllowedTools()).toContain("Agent");
+test("includes network tools in default allowed tools", () => {
+  const allowedTools = getDefaultAllowedTools();
+  expect(allowedTools).toContain("Agent");
+  expect(allowedTools).toContain("WebSearch");
+  expect(allowedTools).toContain("WebFetch");
 });
 
 test("merges MCP tool allowlist and defaults filesystem session options", () => {
@@ -251,19 +254,44 @@ test("builds phased orchestration prompts", () => {
   );
 });
 
-test("planning agents include read-only explore subagent", () => {
+test("planning agents include network tools on read-only subagents", () => {
   const definitions = createPlanningAgentDefinitions(routes);
   expect(definitions.explore).toMatchObject({
     description: expect.stringContaining("read-only"),
     prompt: expect.stringContaining("read-only"),
-    tools: ["Read", "Glob", "Grep"],
+    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
     model: "claude-haiku-explore",
+  });
+  expect(definitions.architect).toMatchObject({
+    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
 });
 
-test("question explore subagent uses explore route model", () => {
+test("question explore subagent includes network tools", () => {
   const definitions = createQuestionAgentDefinitions(routes);
-  expect(definitions.explore).toMatchObject({ model: "claude-haiku-explore" });
+  expect(definitions.explore).toMatchObject({
+    model: "claude-haiku-explore",
+    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+  });
+});
+
+test("execution subagents include network tools except coder", () => {
+  const definitions = createExecutionAgentDefinitions(routes);
+  expect(definitions.architect).toMatchObject({
+    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+  });
+  expect(definitions.reviewer).toMatchObject({
+    tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+  });
+  expect(definitions.tester).toMatchObject({
+    tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+  });
+  expect(definitions.coder).toMatchObject({
+    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+  });
+  const coderTools = (definitions.coder as { tools: string[] }).tools;
+  expect(coderTools).not.toContain("WebSearch");
+  expect(coderTools).not.toContain("WebFetch");
 });
 
 test("createExecutionAgentDefinitions omits disabled roles but keeps coder", () => {
