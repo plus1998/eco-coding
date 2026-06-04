@@ -204,6 +204,7 @@ button:not(:disabled) {
   min-width: 0;
   padding: 2px 8px 2px 4px;
   border-radius: 10px;
+  cursor: grab;
 }
 
 .project-group-main:hover {
@@ -212,6 +213,11 @@ button:not(:disabled) {
 
 .project-group-main.active {
   background: #333;
+}
+
+.project-group-main:active,
+.project-group-row.dragging .project-group-main {
+  cursor: grabbing;
 }
 
 .project-group-row.dragging {
@@ -236,27 +242,6 @@ button:not(:disabled) {
 
 .project-group-row.drop-after::after {
   bottom: -1px;
-}
-
-.project-drag-handle {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 32px;
-  border-radius: 6px;
-  color: #555;
-  cursor: grab;
-}
-
-.project-drag-handle:hover {
-  color: #8a8a8a;
-  background: #2a2a2a;
-}
-
-.project-drag-handle:active {
-  cursor: grabbing;
 }
 
 .project-folder-toggle {

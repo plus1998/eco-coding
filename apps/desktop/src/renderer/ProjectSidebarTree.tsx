@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, GripVertical } from "lucide-react";
+import { Folder, FolderOpen } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
@@ -121,7 +121,7 @@ export function ProjectSidebarTree({
     }
   }
 
-  function handleProjectDragStart(event: DragEvent<HTMLButtonElement>, projectPath: string) {
+  function handleProjectDragStart(event: DragEvent<HTMLDivElement>, projectPath: string) {
     event.dataTransfer.setData(PROJECT_DRAG_MIME, projectPath);
     event.dataTransfer.effectAllowed = "move";
     setDraggingPath(projectPath);
@@ -190,17 +190,12 @@ export function ProjectSidebarTree({
               onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
               onDrop={(event) => handleProjectRowDrop(event, project.path)}
             >
-              <button
-                type="button"
-                className="project-drag-handle"
+              <div
+                className={isProjectActive ? "project-group-main active" : "project-group-main"}
                 draggable
-                aria-label="拖拽排序"
                 onDragStart={(event) => handleProjectDragStart(event, project.path)}
                 onDragEnd={handleProjectDragEnd}
               >
-                <GripVertical size={14} />
-              </button>
-              <div className={isProjectActive ? "project-group-main active" : "project-group-main"}>
                 <button
                   type="button"
                   className="project-folder-toggle"
