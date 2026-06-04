@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { AGENT_ROLES, type AgentRole, type AgentSkillAssignments } from "../shared/ipc";
+import { AGENT_ROLES, type AgentRole } from "../shared/ipc";
+
+/** Legacy persisted assignments; no longer used at runtime. */
+export type AgentSkillAssignments = Record<AgentRole, string[]>;
 
 interface AgentSkillsRow {
   role: AgentRole;

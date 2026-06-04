@@ -20,8 +20,6 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.clarificationGetPending).toBe("clarification:get-pending");
   expect(IPC_CHANNELS.clarificationSubmit).toBe("clarification:submit");
   expect(IPC_CHANNELS.clarificationDismiss).toBe("clarification:dismiss");
-  expect(IPC_CHANNELS.agentSkillsGet).toBe("agent-skills:get");
-  expect(IPC_CHANNELS.agentSkillsSave).toBe("agent-skills:save");
   expect(IPC_CHANNELS.subagentSettingsGet).toBe("subagent-settings:get");
   expect(IPC_CHANNELS.subagentSettingsSave).toBe("subagent-settings:save");
   expect(IPC_CHANNELS.workflowSettingsGet).toBe("workflow-settings:get");

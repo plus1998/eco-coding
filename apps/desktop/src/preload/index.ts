@@ -26,7 +26,6 @@ import {
   type SessionSyncTestConnectionRequest,
   type SessionSyncTestConnectionResult,
   type SkillsListResult,
-  type AgentSkillAssignments,
   type SubagentEnabledSettings,
   type ProxyBridgeSettingsSnapshot,
   type WorkflowSettingsSnapshot,
@@ -133,12 +132,6 @@ const api = {
   },
   listSkills(workspacePath?: string): Promise<SkillsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);
-  },
-  getAgentSkillsAssignments(): Promise<AgentSkillAssignments> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsGet);
-  },
-  saveAgentSkillsAssignments(assignments: AgentSkillAssignments): Promise<AgentSkillAssignments> {
-    return ipcRenderer.invoke(IPC_CHANNELS.agentSkillsSave, assignments);
   },
   getSubagentSettings(): Promise<SubagentEnabledSettings> {
     return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsGet);

@@ -63,7 +63,6 @@ import {
   buildThreadRuntimeConfigFromDefaults,
   getRoutesForProfile,
   type RouteProfileInput,
-  type AgentSkillAssignments,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   type ThreadActivityLine,
@@ -188,10 +187,13 @@ import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
+import {
+  filterExplicitUserSkillNames,
+  mergeSkillNames,
+} from "../shared/skills";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
 import { resolveActivityAgentId } from "./activity-agent-id";
-import { createAgentSkillsStore, type AgentSkillsStore } from "./agent-skills-store";
 import {
   createSubagentSettingsStore,
   isSubagentEnabledSettings,
@@ -242,7 +244,6 @@ let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
-let agentSkillsStore: AgentSkillsStore;
 let subagentSettingsStore: SubagentSettingsStore;
 let workflowSettingsStore: WorkflowSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
@@ -309,7 +310,6 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
-  agentSkillsStore = await createAgentSkillsStore(dbPath);
   subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
@@ -700,20 +700,6 @@ function registerIpcHandlers(): void {
         ? workspacePath.trim()
         : currentWorkspace?.path;
     return listDiscoveredSkills(pathToScan);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.agentSkillsGet, async () => agentSkillsStore.getAssignments());
-
-  ipcMain.handle(IPC_CHANNELS.agentSkillsSave, async (_event, payload: unknown) => {
-    if (!isAgentSkillAssignments(payload)) {
-      throw new Error("Invalid agent skills assignments.");
-    }
-    const pathToScan = currentWorkspace?.path;
-    const discovered = await listDiscoveredSkills(pathToScan);
-    const allowed = new Set(
-      [...discovered.userSkills, ...discovered.projectSkills].map((skill) => skill.name),
-    );
-    return agentSkillsStore.saveAssignments(payload, allowed);
   });
 
   ipcMain.handle(IPC_CHANNELS.subagentSettingsGet, async () => subagentSettingsStore.get());
@@ -1368,7 +1354,7 @@ async function runQuestionThread(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(thread.id),
+          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
           ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1536,7 +1522,7 @@ async function runCodingThreadSdkDefault(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(thread.id),
+          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
           ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1673,7 +1659,7 @@ async function runCodingThreadPlanning(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(thread.id),
+          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
           ...(effectiveResume ? { resume: effectiveResume } : {}),
         })) {
           if (event.type === "usage.recorded") {
@@ -1890,7 +1876,7 @@ async function runCodingThreadExecution(
             worktreePath: executionCwd,
             routes: attemptRoutes,
             signal: controller.signal,
-            sdkSession: buildSdkSessionOptions(thread.id),
+            sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
             ...(resume ? { resume } : {}),
             resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
           },
@@ -2976,7 +2962,7 @@ async function runThreadContinuation(
           worktreePath: cwd,
           routes,
           signal: controller.signal,
-          sdkSession: buildSdkSessionOptions(thread.id),
+          sdkSession: await buildSdkSessionOptions(thread.id, followUp),
           resume,
           resumableSubagents: listResumableSubagentRefs(
             thread.id,
@@ -3995,31 +3981,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function buildSdkSessionOptions(threadId: string): EcoSdkSessionOptions {
+async function buildSdkSessionOptions(
+  threadId: string,
+  prompt?: string,
+): Promise<EcoSdkSessionOptions> {
   const mcp = mcpStore.buildSdkConfig();
-  const assignments = agentSkillsStore.getAssignments();
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? subagentSettingsStore.get();
+  const workspacePath =
+    thread?.workspacePath ??
+    (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);
+  const discovered = await listDiscoveredSkills(workspacePath);
+  const projectNames = discovered.projectSkills.map((skill) => skill.name);
+  const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
+  const merged = mergeSkillNames(projectNames, explicitUser);
+  const agentSkills = Object.fromEntries(AGENT_ROLES.map((role) => [role, merged])) as Partial<
+    Record<AgentRole, string[]>
+  >;
   return {
     settingSources: ["user", "project"],
-    skills: assignments.planner,
-    agentSkills: assignments,
+    ...(merged.length > 0 ? { skills: merged } : {}),
+    agentSkills,
     enabledSubagents,
     mcpServers: mcp.mcpServers,
     mcpAllowedTools: mcp.allowedTools,
   };
-}
-
-function isAgentSkillAssignments(value: unknown): value is AgentSkillAssignments {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return AGENT_ROLES.every((role) => {
-    const skills = record[role];
-    return Array.isArray(skills) && skills.every((entry) => typeof entry === "string");
-  });
 }
 
 function isSdkTodoProgressPayload(payload: unknown): payload is SdkTodoUpdatedPayload {

@@ -39,7 +39,6 @@ import {
   type ModelSettingsSnapshot,
   type RouteCapabilityHint,
   type SkillsListResult,
-  type AgentSkillAssignments,
   type SubagentEnabledSettings,
   type SubagentRole,
   type ProxyBridgeSettingsSnapshot,
@@ -91,6 +90,14 @@ import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
+import { ComposerProjectSkills } from "./ComposerProjectSkills";
+import { ComposerSkillPopover } from "./ComposerSkillPopover";
+import {
+  applyComposerSkillSelection,
+  parseComposerSkillSlashQuery,
+} from "./composer-skill-query";
+import { filterUserSkills } from "./skill-fuzzy";
+import type { SkillInfo } from "../shared/skills";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -161,17 +168,18 @@ function App() {
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
-  const [agentSkillsAssignments, setAgentSkillsAssignments] = useState<AgentSkillAssignments | null>(null);
   const [subagentSettings, setSubagentSettings] = useState<SubagentEnabledSettings | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot | null>(null);
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
-  const [isSavingAgentSkills, setIsSavingAgentSkills] = useState(false);
   const [isSavingSubagentSettings, setIsSavingSubagentSettings] = useState(false);
   const [isSavingWorkflowSettings, setIsSavingWorkflowSettings] = useState(false);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("providers");
   const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
+  const composerAnchorRef = useRef<HTMLDivElement>(null);
+  const [composerCursor, setComposerCursor] = useState(0);
+  const [composerSkillActiveIndex, setComposerSkillActiveIndex] = useState(0);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
@@ -597,14 +605,38 @@ function App() {
     if (!settingsOpen || settingsSection !== "skills" || !window.eco) {
       return;
     }
+    void refreshSkillsList();
+  }, [settingsOpen, settingsSection]);
+
+  useEffect(() => {
+    if (!currentProjectPath || !window.eco) {
+      return;
+    }
     void refreshSkillsList(currentProjectPath);
-  }, [settingsOpen, settingsSection, currentProjectPath]);
+  }, [currentProjectPath]);
 
   useEffect(() => {
     if (activeThread) {
       setComposerRoutePopoverOpen(false);
     }
   }, [activeThread?.id]);
+
+  const userSkills = skillsSnapshot?.userSkills ?? [];
+  const projectSkills = skillsSnapshot?.projectSkills ?? [];
+  const composerSkillSlash = useMemo(
+    () => parseComposerSkillSlashQuery(prompt, composerCursor),
+    [prompt, composerCursor],
+  );
+  const composerSkillMatches = useMemo(
+    () => (composerSkillSlash ? filterUserSkills(composerSkillSlash.query, userSkills) : []),
+    [composerSkillSlash, userSkills],
+  );
+  const composerSkillPopoverOpen =
+    Boolean(composerSkillSlash) && userSkills.length > 0 && composerSkillMatches.length > 0;
+
+  useEffect(() => {
+    setComposerSkillActiveIndex(0);
+  }, [composerSkillSlash?.query, composerSkillSlash?.start]);
 
   const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
     if (!subagentSettings || !workflowSettings || settings.routeProfiles.length === 0) {
@@ -1202,12 +1234,8 @@ function App() {
     if (!window.eco) return;
     setIsLoadingSkills(true);
     try {
-      const [snapshot, assignments] = await Promise.all([
-        window.eco.listSkills(workspacePath),
-        window.eco.getAgentSkillsAssignments(),
-      ]);
+      const snapshot = await window.eco.listSkills(workspacePath);
       setSkillsSnapshot(snapshot);
-      setAgentSkillsAssignments(assignments);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -1310,20 +1338,6 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsSavingSubagentSettings(false);
-    }
-  }
-
-  async function saveAgentSkillsAssignments(assignments: AgentSkillAssignments) {
-    if (!window.eco) return;
-    setIsSavingAgentSkills(true);
-    setError(undefined);
-    try {
-      const saved = await window.eco.saveAgentSkillsAssignments(assignments);
-      setAgentSkillsAssignments(saved);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingAgentSkills(false);
     }
   }
 
@@ -1534,7 +1548,87 @@ function App() {
     });
   }
 
+  function syncComposerCursor(textarea?: HTMLTextAreaElement | null) {
+    const el = textarea ?? composerRef.current;
+    if (el) {
+      setComposerCursor(el.selectionStart ?? 0);
+    }
+  }
+
+  function insertComposerSkillReference(skillName: string) {
+    const textarea = composerRef.current;
+    const token = `$${skillName} `;
+    const next = prompt.trim() ? `${prompt.trimEnd()} ${token}` : token;
+    setPrompt(next);
+    queueMicrotask(() => {
+      if (!textarea) {
+        return;
+      }
+      const cursor = next.length;
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+      textarea.focus();
+      fitComposerHeight(textarea);
+      setComposerCursor(cursor);
+    });
+  }
+
+  function selectComposerSkill(skill: SkillInfo) {
+    const textarea = composerRef.current;
+    if (!composerSkillSlash || !textarea) {
+      return;
+    }
+    const selectionEnd = textarea.selectionEnd ?? textarea.selectionStart ?? prompt.length;
+    const { next, cursor } = applyComposerSkillSelection(
+      prompt,
+      { start: composerSkillSlash.start, end: selectionEnd },
+      skill.name,
+    );
+    setPrompt(next);
+    setComposerSkillActiveIndex(0);
+    queueMicrotask(() => {
+      textarea.selectionStart = cursor;
+      textarea.selectionEnd = cursor;
+      textarea.focus();
+      fitComposerHeight(textarea);
+      setComposerCursor(cursor);
+    });
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (composerSkillPopoverOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setComposerSkillActiveIndex((current) =>
+          composerSkillMatches.length === 0
+            ? 0
+            : (current + 1) % composerSkillMatches.length,
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setComposerSkillActiveIndex((current) =>
+          composerSkillMatches.length === 0
+            ? 0
+            : (current - 1 + composerSkillMatches.length) % composerSkillMatches.length,
+        );
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const match = composerSkillMatches[composerSkillActiveIndex];
+        if (match) {
+          selectComposerSkill(match.skill);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        return;
+      }
+    }
+
     if (event.key !== "Enter") {
       return;
     }
@@ -1574,11 +1668,30 @@ function App() {
           ))}
         </ul>
       )}
-      <div className="codex-composer">
+      <div className="codex-composer" ref={composerAnchorRef}>
+        <ComposerSkillPopover
+          open={composerSkillPopoverOpen}
+          query={composerSkillSlash?.query ?? ""}
+          userSkills={userSkills}
+          activeIndex={composerSkillActiveIndex}
+          anchorRef={composerAnchorRef}
+          onActiveIndexChange={setComposerSkillActiveIndex}
+          onSelect={selectComposerSkill}
+          onClose={() => syncComposerCursor()}
+        />
         <textarea
           ref={composerRef}
           value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(event) => {
+            setPrompt(event.target.value);
+            syncComposerCursor(event.currentTarget);
+            if (composerRoutePopoverOpen) {
+              setComposerRoutePopoverOpen(false);
+            }
+          }}
+          onClick={(event) => syncComposerCursor(event.currentTarget)}
+          onKeyUp={(event) => syncComposerCursor(event.currentTarget)}
+          onSelect={(event) => syncComposerCursor(event.currentTarget)}
           onPaste={canPasteComposerImages ? handleComposerPaste : undefined}
           onKeyDown={handleComposerKeyDown}
           placeholder={
@@ -1677,6 +1790,13 @@ function App() {
           </p>
         )}
       </div>
+      {showLanding && currentProjectPath ? (
+        <ComposerProjectSkills
+          skills={projectSkills}
+          loading={isLoadingSkills && !skillsSnapshot}
+          onSelectSkill={(skill) => insertComposerSkillReference(skill.name)}
+        />
+      ) : null}
     </div>
   );
 
@@ -1925,20 +2045,13 @@ function App() {
           </aside>
 
           <div className="settings-content">
-            {settingsSection === "skills" &&
-              (agentSkillsAssignments ? (
-                <SkillsSettingsPanel
-                  {...(skillsSnapshot && { snapshot: skillsSnapshot })}
-                  assignments={agentSkillsAssignments}
-                  loading={isLoadingSkills}
-                  saving={isSavingAgentSkills}
-                  {...(currentProjectPath && { workspaceLabel: currentProjectPath })}
-                  onRefresh={() => void refreshSkillsList(currentProjectPath)}
-                  onSaveAssignments={saveAgentSkillsAssignments}
-                />
-              ) : (
-                <p className="settings-empty-hint">正在加载 Skills 配置…</p>
-              ))}
+            {settingsSection === "skills" && (
+              <SkillsSettingsPanel
+                {...(skillsSnapshot && { snapshot: skillsSnapshot })}
+                loading={isLoadingSkills}
+                onRefresh={() => void refreshSkillsList()}
+              />
+            )}
 
             {settingsSection === "mcp" && (
               <McpSettingsPanel
