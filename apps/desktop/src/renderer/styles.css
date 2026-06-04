@@ -2852,14 +2852,32 @@ button:not(:disabled) {
 }
 
 .subagent-run-title {
+  display: inline-flex;
+  align-items: baseline;
   flex: 0 1 auto;
   min-width: 0;
-  color: #f5f5f5;
-  font-size: 14px;
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.subagent-run-title-role {
+  color: #f5f5f5;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.subagent-run-title-sep {
+  margin: 0 5px;
+  color: #525252;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.subagent-run-title-model {
+  color: #a3a3a3;
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .subagent-run-title-trailing {

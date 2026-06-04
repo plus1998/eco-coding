@@ -10,7 +10,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
@@ -294,11 +294,6 @@ function SubagentRunInstanceStrip({
         </span>
       ) : null}
       {contextLabel ? <span className="subagent-run-instance-context">{contextLabel}</span> : null}
-      {metrics?.modelId || modelByRole?.[role] ? (
-        <span className="subagent-run-instance-model">
-          {formatRoleModelLabel(role, metrics?.modelId ?? modelByRole?.[role])}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -347,8 +342,18 @@ function SubagentRunRow({
     return () => clearInterval(timer);
   }, [durationMs, item.running, item.sessionKey, persistedTiming]);
 
-  const displayTitle = resolveSubagentRunDisplayTitle(item.role);
-  const statusText = item.statusLine?.trim() || (item.running ? "工作中" : "点击查看执行详情");
+  const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
+  const roleLabel = resolveSubagentRunDisplayTitle(item.role);
+  const modelId = instanceMetrics?.modelId ?? modelByRole?.[item.role];
+  const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
+  const titleWithModel = formatRoleModelLabel(item.role, modelId);
+  const rawStatus = item.statusLine?.trim();
+  const statusText =
+    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
+      ? rawStatus
+      : item.running
+        ? "工作中"
+        : "点击查看执行详情";
   const elapsedMs = item.running ? liveDurationMs : durationMs;
   const durationLabel =
     elapsedMs > 0
@@ -356,7 +361,6 @@ function SubagentRunRow({
         ? formatDuration(elapsedMs)
         : `用时 ${formatDuration(elapsedMs)}`
       : undefined;
-  const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
   const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
   const scopedUsageByRole =
     usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
@@ -376,7 +380,17 @@ function SubagentRunRow({
         <div className="subagent-run-main">
           <div className="subagent-run-title-row">
             <span className="subagent-run-title-group">
-              <span className="subagent-run-title">{displayTitle}</span>
+              <span className="subagent-run-title">
+                <span className="subagent-run-title-role">{roleLabel}</span>
+                {modelShort ? (
+                  <>
+                    <span className="subagent-run-title-sep" aria-hidden>
+                      ·
+                    </span>
+                    <span className="subagent-run-title-model">{modelShort}</span>
+                  </>
+                ) : null}
+              </span>
               {item.agentId ? (
                 <span className="subagent-run-agent-chip" title={item.agentId}>
                   #{shortSubagentAgentId(item.agentId)}
@@ -900,6 +914,7 @@ function AssistantMessageBlock({
       text={text}
       streaming={streaming}
       subagent={subagent}
+      omitSubagentBadge={isSubagentDisplayRole(subagent)}
       {...(modelByRole && { modelByRole })}
       {...(usageByRole && { usageByRole })}
     />
