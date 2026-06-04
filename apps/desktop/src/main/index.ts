@@ -197,7 +197,7 @@ import {
 } from "../shared/skills";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
-import { resolveActivityAgentId } from "./activity-agent-id";
+import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
 import {
   createSubagentSettingsStore,
   isSubagentEnabledSettings,
@@ -574,6 +574,25 @@ function registerIpcHandlers(): void {
       return [];
     }
     return buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadSubagentMetricsList, async (_event, threadId: string) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return [];
+    }
+    return conversationStore.listSubagentMetrics(threadId).map((row) => ({
+      agentId: row.agentId,
+      role: row.role,
+      status: row.status,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheCreationTokens: row.cacheCreationTokens,
+      contextOccupied: row.contextOccupied,
+      ...(row.contextLimit !== undefined && { contextLimit: row.contextLimit }),
+      ecoCostUsd: row.ecoCostUsd,
+      ...(row.modelId && { modelId: row.modelId }),
+    }));
   });
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
@@ -3190,7 +3209,17 @@ function emitOtelActivity(line: OtelActivityLine): void {
   if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
     return;
   }
-  emitThreadEvent(line.threadId, "otel.activity", line.message, line.role, line.stream ?? false);
+  const otelAgentId = resolveOtelActivityAgentId(line.threadId, line, {
+    metricsRegistry: subagentMetricsRegistry,
+  });
+  emitThreadEvent(
+    line.threadId,
+    "otel.activity",
+    line.message,
+    line.role,
+    line.stream ?? false,
+    otelAgentId ? { agentId: otelAgentId } : undefined,
+  );
 }
 
 function trackUsageUpdate(threadId: string, promise: Promise<void>): void {

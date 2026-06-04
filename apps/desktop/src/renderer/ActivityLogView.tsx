@@ -6,6 +6,7 @@ import type {
   ThreadContextSnapshot,
   ThreadStatus,
   ThreadSubagentSessionTiming,
+  ThreadSubagentMetricsSummary,
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
@@ -14,35 +15,24 @@ import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
+  buildSubagentMetricsByAgentId,
   buildSubagentTimingsByAgentId,
   formatDuration,
+  resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
   type ActivityActionIcon,
   type ActivityDetailBlock,
   type ActivityLogBlock,
   type SubagentRunItem,
 } from "./activity-log";
+import { isSubagentDisplayRole } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import { useStreamRequestTiming } from "./useStreamRequestTiming";
 
-const SUBAGENT_ROLE_SHORT: Record<string, string> = {
-  explore: "探索",
-  architect: "架构",
-  coder: "编码",
-  reviewer: "审查",
-  tester: "测试",
-};
-
-const SUBAGENT_ROLES = new Set(Object.keys(SUBAGENT_ROLE_SHORT));
-
 function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
   return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
-}
-
-function isSubagentDisplayRole(role?: string): boolean {
-  return Boolean(role && SUBAGENT_ROLES.has(role));
 }
 
 function shouldOmitSubagentIdentity(
@@ -72,6 +62,7 @@ interface ActivityLogViewProps {
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   subagentTimings?: ThreadSubagentSessionTiming[];
+  subagentMetrics?: ThreadSubagentMetricsSummary[];
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: () => void;
 }
@@ -84,6 +75,7 @@ export function ActivityLogView({
   usageByRole,
   context,
   subagentTimings,
+  subagentMetrics,
   onPlannerLayoutChange,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
@@ -96,6 +88,10 @@ export function ActivityLogView({
   const subagentTimingsByAgentId = useMemo(
     () => (subagentTimings ? buildSubagentTimingsByAgentId(subagentTimings) : undefined),
     [subagentTimings],
+  );
+  const subagentMetricsByAgentId = useMemo(
+    () => (subagentMetrics ? buildSubagentMetricsByAgentId(subagentMetrics) : undefined),
+    [subagentMetrics],
   );
 
   const blocks = useMemo(
@@ -154,6 +150,7 @@ export function ActivityLogView({
           {...(usageByRole && { usageByRole })}
           {...(context && { context })}
           {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
+          {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
           {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
           {...(thread?.id && { threadId: thread.id })}
           {...(thread?.status && { threadStatus: thread.status })}
@@ -170,6 +167,7 @@ function RunLogBlock({
   usageByRole,
   context,
   subagentTimingsByAgentId,
+  subagentMetricsByAgentId,
   onPlannerLayoutChange,
   threadId,
   threadStatus,
@@ -180,6 +178,7 @@ function RunLogBlock({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
   onPlannerLayoutChange?: () => void;
   threadId?: string;
   threadStatus?: ThreadStatus;
@@ -209,6 +208,8 @@ function RunLogBlock({
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
         {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
+        {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
+        {...(context && { context })}
       />
     );
   }
@@ -235,6 +236,78 @@ function RunLogBlock({
   return null;
 }
 
+function shortSubagentAgentId(agentId: string): string {
+  if (agentId.length <= 8) {
+    return agentId;
+  }
+  return agentId.slice(-8);
+}
+
+function metricsToUsageSnapshot(metrics: ThreadSubagentMetricsSummary): ThreadUsageSnapshot {
+  const limit = metrics.contextLimit ?? 0;
+  const occupied = metrics.contextOccupied;
+  return {
+    inputTokens: metrics.inputTokens,
+    outputTokens: metrics.outputTokens,
+    cacheReadTokens: metrics.cacheReadTokens,
+    cacheCreationTokens: metrics.cacheCreationTokens,
+    contextTokens: occupied,
+    ...(limit > 0 && { contextLimit: limit, occupancyPct: Math.round((occupied / limit) * 100) }),
+    ...(metrics.modelId && { modelId: metrics.modelId }),
+  };
+}
+
+function SubagentRunInstanceStrip({
+  agentId,
+  role,
+  metrics,
+  context,
+  modelByRole,
+}: {
+  agentId?: string;
+  role: string;
+  metrics?: ThreadSubagentMetricsSummary;
+  context?: ThreadContextSnapshot;
+  modelByRole?: Record<string, string>;
+}) {
+  const instance = agentId
+    ? context?.instances?.find((entry) => entry.agentId === agentId)
+    : undefined;
+  const contextLabel =
+    instance && instance.limit > 0
+      ? `上下文 ${Math.round((instance.occupied / instance.limit) * 100)}%`
+      : metrics && metrics.contextLimit && metrics.contextLimit > 0
+        ? `上下文 ${Math.round((metrics.contextOccupied / metrics.contextLimit) * 100)}%`
+        : undefined;
+
+  return (
+    <div className="subagent-run-instance-strip" aria-label="子代理实例">
+      {agentId ? (
+        <span className="subagent-run-agent-id" title={agentId}>
+          #{shortSubagentAgentId(agentId)}
+        </span>
+      ) : null}
+      {metrics ? (
+        <span className="subagent-run-instance-usage">
+          {formatUsageBadge({
+            inputTokens: metrics.inputTokens,
+            outputTokens: metrics.outputTokens,
+            cacheReadTokens: metrics.cacheReadTokens,
+            cacheCreationTokens: metrics.cacheCreationTokens,
+          })}
+          {metrics.ecoCostUsd > 0 ? ` · $${metrics.ecoCostUsd.toFixed(4)}` : ""}
+        </span>
+      ) : null}
+      {contextLabel ? <span className="subagent-run-instance-context">{contextLabel}</span> : null}
+      {metrics?.modelId || modelByRole?.[role] ? (
+        <span className="subagent-run-instance-model">
+          {formatRoleModelLabel(role, metrics?.modelId ?? modelByRole?.[role])}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function SubagentRunRow({
   item,
   expanded,
@@ -242,7 +315,9 @@ function SubagentRunRow({
   requestActive,
   modelByRole,
   usageByRole,
+  context,
   subagentTimingsByAgentId,
+  subagentMetricsByAgentId,
 }: {
   item: SubagentRunItem;
   expanded: boolean;
@@ -250,7 +325,9 @@ function SubagentRunRow({
   requestActive: boolean;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
 }) {
   const persistedTiming = item.agentId ? subagentTimingsByAgentId?.[item.agentId] : undefined;
   const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
@@ -275,14 +352,22 @@ function SubagentRunRow({
     return () => clearInterval(timer);
   }, [durationMs, item.running, item.sessionKey, persistedTiming]);
 
-  const badge = SUBAGENT_ROLE_SHORT[item.role] ?? item.role;
+  const displayTitle = resolveSubagentRunDisplayTitle(item.role);
+  const statusBadge = item.running ? "进行中" : "已结束";
   const statusText = item.statusLine?.trim() || (item.running ? "工作中" : "点击查看执行详情");
   const elapsedMs = item.running ? liveDurationMs : durationMs;
   const durationLabel =
     elapsedMs > 0 ? (item.running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
+  const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
+  const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
+  const scopedUsageByRole =
+    usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
 
   return (
-    <div className="subagent-run-row-wrap">
+    <div
+      className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}`}
+      data-agent-id={item.agentId}
+    >
       <button
         type="button"
         className="subagent-run-row"
@@ -292,8 +377,13 @@ function SubagentRunRow({
         <Sparkles size={14} className="subagent-run-icon" aria-hidden />
         <div className="subagent-run-main">
           <div className="subagent-run-title-row">
-            <span className="subagent-run-title">{item.title}</span>
-            <span className="subagent-run-badge">{badge}</span>
+            <span className="subagent-run-title">{displayTitle}</span>
+            {item.agentId ? (
+              <span className="subagent-run-agent-chip" title={item.agentId}>
+                #{shortSubagentAgentId(item.agentId)}
+              </span>
+            ) : null}
+            <span className={`subagent-run-badge${item.running ? " running" : ""}`}>{statusBadge}</span>
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
             {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
             <ChevronDown
@@ -309,6 +399,13 @@ function SubagentRunRow({
       </button>
       {expanded && item.children.length > 0 ? (
         <div className="work-session-details-compact">
+          <SubagentRunInstanceStrip
+            {...(item.agentId && { agentId: item.agentId })}
+            role={item.role}
+            {...(instanceMetrics && { metrics: instanceMetrics })}
+            {...(context && { context })}
+            {...(modelByRole && { modelByRole })}
+          />
           <p className="work-session-details-compact-title">子代理执行详情</p>
           <div className="work-session-details-compact-scroll">
             {item.children.map((child, index) => (
@@ -318,7 +415,7 @@ function SubagentRunRow({
                 hideSubagentIdentity
                 requestActive={requestActive}
                 {...(modelByRole && { modelByRole })}
-                {...(usageByRole && { usageByRole })}
+                {...(scopedUsageByRole && { usageByRole: scopedUsageByRole })}
               />
             ))}
           </div>
@@ -333,13 +430,17 @@ function SubagentRunGroup({
   requestActive,
   modelByRole,
   usageByRole,
+  context,
   subagentTimingsByAgentId,
+  subagentMetricsByAgentId,
 }: {
   block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
   requestActive: boolean;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+  subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
 }) {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
@@ -353,7 +454,9 @@ function SubagentRunGroup({
           requestActive={requestActive}
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
+          {...(context && { context })}
           {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
+          {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
           onToggle={() => {
             setExpandedKeys((current) => ({
               ...current,

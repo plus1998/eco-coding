@@ -51,6 +51,7 @@ import {
   type ThreadActivityLine,
   type ThreadLiveEvent,
   type ThreadSubagentSessionTiming,
+  type ThreadSubagentMetricsSummary,
   type ThreadPendingPlan,
   type ThreadStatus,
   type ThreadBillingSnapshot,
@@ -208,6 +209,9 @@ function App() {
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
   const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
     Record<string, ThreadSubagentSessionTiming[]>
+  >({});
+  const [subagentMetricsByThread, setSubagentMetricsByThread] = useState<
+    Record<string, ThreadSubagentMetricsSummary[]>
   >({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
@@ -412,6 +416,18 @@ function App() {
         setSubagentTimingsByThread((current) => ({
           ...current,
           [selectedThreadId]: sessions,
+        }));
+      });
+    }
+
+    if (typeof window.eco.listSubagentMetrics === "function") {
+      void window.eco.listSubagentMetrics(selectedThreadId).then((metrics) => {
+        if (cancelled) {
+          return;
+        }
+        setSubagentMetricsByThread((current) => ({
+          ...current,
+          [selectedThreadId]: metrics,
         }));
       });
     }
@@ -817,6 +833,7 @@ function App() {
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
+  const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
@@ -1962,6 +1979,7 @@ function App() {
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(subagentTimings && { subagentTimings })}
+                  {...(subagentMetrics && { subagentMetrics })}
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />

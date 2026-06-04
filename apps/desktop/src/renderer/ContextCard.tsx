@@ -11,13 +11,7 @@ interface ContextCardProps {
   onDismiss?: () => void;
 }
 
-const SUBAGENT_ROLE_SHORT: Record<string, string> = {
-  explore: "探索",
-  architect: "架构",
-  coder: "编码",
-  reviewer: "审查",
-  tester: "测试",
-};
+import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 
 const SUBAGENT_ACCENT: Record<string, string> = {
   explore: "#38bdf8",

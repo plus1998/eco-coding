@@ -23,6 +23,8 @@ import {
   resolveActiveSubagents,
   resolveLatestSubagentLogLine,
   resolveSubagentRunDurationMs,
+  resolveSubagentRunDisplayTitle,
+  resolveSubagentRunStatusLine,
   resolveSubagentRunTitle,
   sessionAwaitingFirstToken,
   shouldScrollMainActivityFeedForLine,
@@ -301,7 +303,8 @@ test("uses compact mode for reviewer subagent work", () => {
 
   const item = subagentItems(blocks)[0];
   expect(item?.role).toBe("reviewer");
-  expect(item?.title).toContain("src/api.ts");
+  expect(item?.title).toBe("审查");
+  expect(item?.statusLine).toContain("src/api.ts");
 });
 
 test("shows user prompt as a preserved node", () => {
@@ -346,7 +349,8 @@ test("shows subagent mission before tool steps", () => {
     expect(mission.subagent).toBe("reviewer");
     expect(mission.summary).toContain("src/api.ts");
   }
-  expect(item.title).toContain("src/api.ts");
+  expect(item.title).toBe("审查");
+  expect(item.statusLine).toContain("src/api.ts");
 });
 
 test("resolves subagent run duration from agent elapsed lines", () => {
@@ -1095,11 +1099,27 @@ test("groups parallel subagent rows into one run group", () => {
   expect(resolveSubagentRunTitle(groups[0]!.items[0]!.children, "explore")).toContain("billing");
 });
 
-test("resolveSubagentRunTitle falls back to role", () => {
+test("resolveSubagentRunTitle returns mission summary text", () => {
   expect(
     resolveSubagentRunTitle(
-      [{ kind: "action", icon: "file", label: "读取 · a.ts", subagent: "coder" }],
+      [{ kind: "subagent-mission", subagent: "coder", summary: "实现 API" }],
       "coder",
     ),
-  ).toBe("coder");
+  ).toBe("实现 API");
+});
+
+test("resolveSubagentRunDisplayTitle uses fixed Chinese role label", () => {
+  expect(resolveSubagentRunDisplayTitle("coder")).toBe("编码");
+  expect(resolveSubagentRunDisplayTitle("reviewer")).toBe("审查");
+});
+
+test("resolveSubagentRunStatusLine prefers tool action over duplicate mission summary", () => {
+  const status = resolveSubagentRunStatusLine(
+    [
+      { kind: "subagent-mission", subagent: "coder", summary: "修改: preload.js" },
+      { kind: "action", icon: "edit", label: "编辑 · preload.js", subagent: "coder" },
+    ],
+    "coder",
+  );
+  expect(status).toBe("编辑 · preload.js");
 });

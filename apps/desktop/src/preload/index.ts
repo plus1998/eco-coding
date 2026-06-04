@@ -37,6 +37,7 @@ import {
   type CoderTodoItem,
   type ThreadActivityLine,
   type ThreadSubagentSessionTiming,
+  type ThreadSubagentMetricsSummary,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRetryRequest,
@@ -227,6 +228,9 @@ const api = {
   },
   listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);
+  },
+  listSubagentMetrics(threadId: string): Promise<ThreadSubagentMetricsSummary[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentMetricsList, threadId);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

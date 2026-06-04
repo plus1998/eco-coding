@@ -135,12 +135,18 @@ export class SubagentMetricsRegistry {
     if (active?.size === 1) {
       return [...active][0];
     }
-    const reason =
-      (active?.size ?? 0) > 1
-        ? "ambiguous_multiple_active"
-        : input.parentToolUseId
-          ? "parent_tool_use_unmapped"
-          : "no_active_subagent";
+    if ((active?.size ?? 0) > 1) {
+      const reason = input.parentToolUseId ? "parent_tool_use_unmapped" : "ambiguous_multiple_active";
+      this.logResolveMiss(threadId, input, reason, active);
+      return undefined;
+    }
+
+    const stoppedForRole = [...state.byAgentId.values()].filter((entry) => entry.role === input.role);
+    if (stoppedForRole.length === 1) {
+      return stoppedForRole[0]?.agentId;
+    }
+
+    const reason = input.parentToolUseId ? "parent_tool_use_unmapped" : "no_active_subagent";
     this.logResolveMiss(threadId, input, reason, active);
     return undefined;
   }

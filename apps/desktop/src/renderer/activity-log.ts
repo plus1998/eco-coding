@@ -18,7 +18,10 @@ import {
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
+import { resolveSubagentRunDisplayTitle } from "../shared/subagent-roles";
 import type { ThreadActivityLine, ThreadStatus, ThreadSubagentSessionTiming } from "../shared/ipc";
+
+export { resolveSubagentRunDisplayTitle } from "../shared/subagent-roles";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
 import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
 
@@ -32,6 +35,16 @@ export function buildSubagentTimingsByAgentId(
   const map: Record<string, ThreadSubagentSessionTiming> = {};
   for (const session of sessions) {
     map[session.agentId] = session;
+  }
+  return map;
+}
+
+export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
+  rows: readonly T[],
+): Record<string, T> {
+  const map: Record<string, T> = {};
+  for (const row of rows) {
+    map[row.agentId] = row;
   }
   return map;
 }
@@ -216,7 +229,11 @@ export function buildActivityLogBlocks(
     const isLastSegment = segment === segments[segments.length - 1];
     const segmentRunning = isRunning && isLastSegment;
 
-    pushWorkSessionsFromRuns(output, partitionDetailsIntoRuns(processBlocks), {
+    pushWorkSessionsFromRuns(output, partitionDetailsIntoRuns(processBlocks, {
+      ...(options.subagentTimingsByAgentId && {
+        subagentTimingsByAgentId: options.subagentTimingsByAgentId,
+      }),
+    }), {
       durationMs,
       segmentRunning,
       lines,
@@ -512,6 +529,19 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
         toolContextSubagent = subagent;
       }
       if (isAgentElapsedProgressLine(line.message)) {
+        const elapsedRole = subagent ?? toolContextSubagent;
+        const hasPriorMission = current.details.some(
+          (entry) =>
+            entry.kind === "subagent-mission" &&
+            entry.subagent === elapsedRole,
+        );
+        if (hasPriorMission) {
+          removePendingRequestBlocks();
+          current.details.push({
+            kind: "phase",
+            label: "子代理委派完成",
+          });
+        }
         upsertAgentRequest(subagent ?? toolContextSubagent);
         return;
       }
@@ -779,7 +809,12 @@ function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
   return undefined;
 }
 
-export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]): DetailRun[] {
+export function partitionDetailsIntoRuns(
+  details: readonly ActivityDetailBlock[],
+  options?: {
+    subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+  },
+): DetailRun[] {
   const runs: DetailRun[] = [];
   let plannerBlocks: ActivityDetailBlock[] = [];
   let currentRole: string | undefined;
@@ -812,9 +847,27 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
     currentAgentId = undefined;
   };
 
+  const takeMissionOnlyPrefix = (): ActivityDetailBlock[] => {
+    if (
+      !currentRole ||
+      subagentBlocks.length === 0 ||
+      !subagentBlocks.every((entry) => entry.kind === "subagent-mission")
+    ) {
+      return [];
+    }
+    const prefix = [...subagentBlocks];
+    subagentBlocks = [];
+    currentRole = undefined;
+    currentAgentId = undefined;
+    return prefix;
+  };
+
   const pushAgentBlock = (agentId: string, role: string, block: ActivityDetailBlock) => {
     flushPlanner();
-    flushLegacySubagent();
+    const missionPrefix = takeMissionOnlyPrefix();
+    if (missionPrefix.length === 0) {
+      flushLegacySubagent();
+    }
     let run = runsByAgentId.get(agentId);
     if (!run) {
       run = {
@@ -822,11 +875,13 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
         role,
         agentId,
         occurrence: roleOccurrences.get(role) ?? 0,
-        blocks: [],
+        blocks: [...missionPrefix],
       };
       roleOccurrences.set(role, (roleOccurrences.get(role) ?? 0) + 1);
       runsByAgentId.set(agentId, run);
       runs.push(run);
+    } else if (missionPrefix.length > 0) {
+      run.blocks = [...missionPrefix, ...run.blocks];
     }
     run.blocks.push(block);
   };
@@ -841,6 +896,15 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
     }
 
     if (blockAgentId) {
+      const inferredRole = options?.subagentTimingsByAgentId?.[blockAgentId]?.role;
+      if (inferredRole && isSubagentRole(inferredRole)) {
+        pushAgentBlock(blockAgentId, inferredRole, block);
+        continue;
+      }
+      if (currentAgentId === blockAgentId && currentRole) {
+        subagentBlocks.push(block);
+        continue;
+      }
       flushPlanner();
       flushLegacySubagent();
       continue;
@@ -850,7 +914,13 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
       if (currentAgentId) {
         flushLegacySubagent();
       } else if (currentRole && block.subagent === currentRole) {
-        flushLegacySubagent();
+        const hasPriorMission = subagentBlocks.some((entry) => entry.kind === "subagent-mission");
+        const missionOnly =
+          subagentBlocks.length > 0 &&
+          subagentBlocks.every((entry) => entry.kind === "subagent-mission");
+        if (hasPriorMission && !missionOnly) {
+          flushLegacySubagent();
+        }
       } else if (currentRole && block.subagent !== currentRole) {
         flushLegacySubagent();
       } else if (!currentRole) {
@@ -874,6 +944,11 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
       continue;
     }
 
+    if (currentRole && block.kind === "phase") {
+      subagentBlocks.push(block);
+      continue;
+    }
+
     if (currentRole && isEphemeralPlannerBlock(block)) {
       continue;
     }
@@ -887,6 +962,7 @@ export function partitionDetailsIntoRuns(details: readonly ActivityDetailBlock[]
   return runs;
 }
 
+/** Mission / task summary for expanded details (not the card primary title). */
 export function resolveSubagentRunTitle(
   children: readonly ActivityDetailBlock[],
   role: string,
@@ -903,6 +979,58 @@ export function resolveSubagentRunTitle(
     return role;
   }
   return "子代理任务";
+}
+
+/** Subtitle for compact sub-agent cards; avoids repeating the mission summary. */
+export function resolveSubagentRunStatusLine(
+  children: readonly ActivityDetailBlock[],
+  role: string,
+  missionSummary?: string,
+): string | undefined {
+  const missionText =
+    missionSummary?.trim() ||
+    children
+      .filter((block): block is Extract<ActivityDetailBlock, { kind: "subagent-mission" }> => block.kind === "subagent-mission")
+      .map((block) => block.summary.trim())
+      .find(Boolean);
+
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    const block = children[index];
+    if (block?.kind === "action" && block.subagent === role) {
+      const line = clampSubagentLogLine(block.label);
+      if (line && line !== missionText) {
+        return line;
+      }
+    }
+    if (block?.kind === "tool-failed" && block.subagent === role) {
+      const detail = block.error?.trim();
+      const line = clampSubagentLogLine(
+        detail ? `${block.tool} 失败：${detail}` : `${block.tool} 失败`,
+      );
+      if (line) {
+        return line;
+      }
+    }
+    if (block?.kind === "narrative" && block.subagent === role) {
+      const text = block.text.trim();
+      if (text) {
+        const firstLine = text.split("\n").find((entry) => entry.trim())?.trim() ?? text;
+        const line = clampSubagentLogLine(firstLine);
+        if (line && line !== missionText) {
+          return line;
+        }
+      }
+    }
+    if (block?.kind === "agent-request" && block.subagent === role) {
+      return "处理中…";
+    }
+  }
+
+  const fallback = resolveLatestSubagentLogLine(children, missionSummary);
+  if (!fallback || fallback === missionText || fallback === resolveSubagentRunDisplayTitle(role)) {
+    return missionText ? clampSubagentLogLine(missionText) : undefined;
+  }
+  return fallback;
 }
 
 export function findSubagentRunLineBoundsByAgentId(
@@ -1059,20 +1187,50 @@ function pushWorkSessionsFromRuns(
     run.blocks.length > 0 &&
     run.blocks.every((block) => block.kind === "subagent-mission");
 
+  const takeMissionPrecursor = (
+    run: Extract<DetailRun, { kind: "subagent" }>,
+  ): Extract<DetailRun, { kind: "subagent" }> | undefined => {
+    const index = pendingMissionRuns.findIndex((precursor) =>
+      run.agentId
+        ? precursor.agentId === run.agentId
+        : precursor.role === run.role && !precursor.agentId,
+    );
+    if (index < 0) {
+      return undefined;
+    }
+    return pendingMissionRuns.splice(index, 1)[0];
+  };
+
   const mergeMissionPrecursor = (
     run: Extract<DetailRun, { kind: "subagent" }>,
   ): Extract<DetailRun, { kind: "subagent" }> => {
-    const precursor = pendingMissionRuns.shift();
-    if (!precursor || precursor.role !== run.role) {
-      if (precursor) {
-        pendingMissionRuns.unshift(precursor);
-      }
+    const precursor = takeMissionPrecursor(run);
+    if (!precursor) {
       return run;
     }
     return {
       ...run,
+      ...(precursor.agentId && !run.agentId && { agentId: precursor.agentId }),
       blocks: [...precursor.blocks, ...run.blocks],
     };
+  };
+
+  const upsertSubagentItem = (item: SubagentRunItem): void => {
+    if (item.agentId) {
+      const existingIndex = pendingSubagentItems.findIndex((entry) => entry.agentId === item.agentId);
+      if (existingIndex >= 0) {
+        const existing = pendingSubagentItems[existingIndex]!;
+        pendingSubagentItems[existingIndex] = {
+          ...existing,
+          running: existing.running || item.running,
+          children: [...existing.children, ...item.children],
+          ...(item.statusLine && { statusLine: item.statusLine }),
+          runDurationMs: Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0) || undefined,
+        };
+        return;
+      }
+    }
+    pendingSubagentItems.push(item);
   };
 
   const buildItemFromRun = (
@@ -1089,13 +1247,14 @@ function pushWorkSessionsFromRuns(
       );
       if (completedDurationMs > 0) {
         const role = run.role;
-        const title = resolveSubagentRunTitle(run.blocks, role);
-        const statusLine = resolveLatestSubagentLogLine(run.blocks);
+        const title = resolveSubagentRunDisplayTitle(role);
+        const statusLine = resolveSubagentRunStatusLine(run.blocks, role);
         return {
-          sessionKey: `subagent-${role}-${run.occurrence}`,
+          sessionKey: run.agentId ? `subagent-${run.agentId}` : `subagent-${role}-${run.occurrence}`,
           role,
           title,
           running: false,
+          ...(run.agentId && { agentId: run.agentId }),
           ...(statusLine && { statusLine }),
           runDurationMs: completedDurationMs,
           children: run.blocks,
@@ -1112,9 +1271,10 @@ function pushWorkSessionsFromRuns(
       { role, occurrence: mergedRun.occurrence, ...(mergedRun.agentId && { agentId: mergedRun.agentId }) },
       segmentRunning,
     );
-    const title = resolveSubagentRunTitle(mergedRun.blocks, role);
-    const statusLine = resolveLatestSubagentLogLine(
+    const title = resolveSubagentRunDisplayTitle(role);
+    const statusLine = resolveSubagentRunStatusLine(
       mergedRun.blocks,
+      role,
       options.activeSubagent === role ? options.activeMissionSummary : undefined,
     );
     const runDurationMs = resolveSubagentRunDurationMsForItem(
@@ -1174,7 +1334,7 @@ function pushWorkSessionsFromRuns(
 
     const item = buildItemFromRun(run, options.segmentRunning);
     if (item) {
-      pendingSubagentItems.push(item);
+      upsertSubagentItem(item);
     }
   }
 
@@ -1184,8 +1344,8 @@ function pushWorkSessionsFromRuns(
       continue;
     }
     const role = missionRun.role;
-    const title = resolveSubagentRunTitle(missionRun.blocks, role);
-    const statusLine = resolveLatestSubagentLogLine(missionRun.blocks);
+    const title = resolveSubagentRunDisplayTitle(role);
+    const statusLine = resolveSubagentRunStatusLine(missionRun.blocks, role);
     const runDurationMs = resolveSubagentRunDurationMsForItem(
       missionRun.agentId,
       role,
@@ -1193,13 +1353,20 @@ function pushWorkSessionsFromRuns(
       options.lines,
       options.subagentTimingsByAgentId,
     );
-    pendingSubagentItems.push({
-      sessionKey: `subagent-${role}-${missionRun.occurrence}`,
+    upsertSubagentItem({
+      sessionKey: missionRun.agentId
+        ? `subagent-${missionRun.agentId}`
+        : `subagent-${role}-${missionRun.occurrence}`,
       role,
       title,
+      ...(missionRun.agentId && { agentId: missionRun.agentId }),
       running: resolveSubagentRunOpen(
         options.lines,
-        { role, occurrence: missionRun.occurrence },
+        {
+          role,
+          occurrence: missionRun.occurrence,
+          ...(missionRun.agentId && { agentId: missionRun.agentId }),
+        },
         options.segmentRunning,
       ),
       ...(statusLine && { statusLine }),

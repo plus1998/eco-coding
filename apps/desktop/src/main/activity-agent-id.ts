@@ -51,10 +51,10 @@ export function resolveActivityAgentId(
   }
 
   const parentToolUseId = readParentToolUseId(event.payload);
-  if (parentToolUseId && options.metricsRegistry) {
+  if (options.metricsRegistry) {
     const resolved = options.metricsRegistry.resolveAgentId(threadId, {
       role: billingRole,
-      parentToolUseId,
+      ...(parentToolUseId && { parentToolUseId }),
     });
     if (resolved) {
       return resolved;
@@ -62,6 +62,24 @@ export function resolveActivityAgentId(
   }
 
   return undefined;
+}
+
+/** Resolve sub-agent instance id for OTel tool / narrative activity lines. */
+export function resolveOtelActivityAgentId(
+  threadId: string,
+  line: { role: string; message: string },
+  options: {
+    metricsRegistry?: SubagentMetricsRegistry;
+  },
+): string | undefined {
+  const billingRole = readBillingRole(line.role);
+  if (!billingRole || !options.metricsRegistry) {
+    return undefined;
+  }
+
+  return options.metricsRegistry.resolveAgentId(threadId, {
+    role: billingRole,
+  });
 }
 
 export function activityStreamKey(threadId: string, agentId?: string, role?: string): string {
