@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { ApprovalRiskLevel } from "../../shared/src";
 
@@ -316,12 +317,16 @@ export class GitWorktreeService {
     diff: string,
     changedFiles: readonly string[] = [],
   ): Promise<void> {
+    if (!diff.trim() && changedFiles.length === 0) {
+      return;
+    }
+
+    if (changedFiles.length > 0) {
+      await this.materializeWorktreeFiles(plan, changedFiles);
+      return;
+    }
+
     if (!diff.trim()) {
-      if (changedFiles.length > 0) {
-        throw new Error(
-          `Worktree has ${changedFiles.length} changed file(s) but git diff was empty (${changedFiles.join(", ")}).`,
-        );
-      }
       return;
     }
 
@@ -331,6 +336,53 @@ export class GitWorktreeService {
     if (result.exitCode !== 0) {
       throw new Error(`Failed to apply approved diff: ${result.stderr || result.stdout}`);
     }
+  }
+
+  /**
+   * Copy final file contents from the isolated worktree into the workspace.
+   * Unlike `git apply`, this succeeds when the workspace has drifted (e.g. agent edits
+   * leaked to the main checkout during multi-pass review, a known Claude Code worktree issue).
+   */
+  private async materializeWorktreeFiles(
+    plan: WorktreePlan,
+    changedFiles: readonly string[],
+  ): Promise<void> {
+    for (const relPath of changedFiles) {
+      const normalized = relPath.replace(/\\/g, "/");
+      if (!normalized || normalized.includes("..")) {
+        throw new Error(`Refusing to merge unsafe path: ${relPath}`);
+      }
+
+      const src = path.join(plan.worktreePath, normalized);
+      const dest = path.join(plan.workspacePath, normalized);
+      if (!isInsidePath(src, plan.worktreePath) || !isInsidePath(dest, plan.workspacePath)) {
+        throw new Error(`Refusing to merge path outside workspace: ${relPath}`);
+      }
+
+      if (await pathExists(src)) {
+        await fs.mkdir(path.dirname(dest), { recursive: true });
+        await fs.copyFile(src, dest);
+        continue;
+      }
+
+      try {
+        await fs.unlink(dest);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+  }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 

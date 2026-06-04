@@ -17,6 +17,7 @@ export {
   executePhaseSystemAppend,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
+  buildExecutionPromptWithFollowUp,
   buildExecutePhaseSystemAppend,
   buildExecuteBuildSwitchAppend,
   architectSkipCriteria,

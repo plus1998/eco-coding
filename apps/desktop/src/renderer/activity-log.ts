@@ -283,7 +283,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let current: ActivitySegment = { userLines: [], details: [] };
 
   const pushSegment = () => {
-    if (current.userLines.length > 0 || current.details.length > 0) {
+    if (
+      current.userLines.length > 0 ||
+      current.details.length > 0 ||
+      current.worktreeMerge
+    ) {
       segments.push(current);
     }
     current = { userLines: [], details: [] };
@@ -603,7 +607,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   for (const line of lines) {
     if (line.role === "user") {
       flushTextBuffers();
-      if (current.details.length > 0) {
+      if (current.details.length > 0 || current.worktreeMerge) {
         pushSegment();
       }
       current.userLines.push(line);

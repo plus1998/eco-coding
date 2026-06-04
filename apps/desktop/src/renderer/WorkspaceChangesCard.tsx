@@ -1,5 +1,5 @@
 import { FileDiff, RotateCcw } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
 import { DiffReviewModal } from "./DiffReviewModal";
 
@@ -25,6 +25,30 @@ export function WorkspaceChangesCard({
   const [busy, setBusy] = useState(false);
   const [reverted, setReverted] = useState(rolledBack);
   const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    setReverted(rolledBack);
+  }, [rolledBack]);
+
+  useEffect(() => {
+    if (!threadId || !window.eco) {
+      return;
+    }
+    let cancelled = false;
+    void window.eco.getThreadAppliedDiff(threadId).then((applied) => {
+      if (cancelled) {
+        return;
+      }
+      if (applied.rolledBackAt) {
+        setReverted(true);
+      }
+    }).catch(() => {
+      // No applied diff for this thread — keep default display.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId]);
 
   const fileCount = summary.fileCount || summary.files.length;
   const canAct = Boolean(threadId) && !reverted;

@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   type CommandRunner,
   createWorktreePlan,
@@ -8,6 +11,33 @@ import {
   GitWorktreeService,
   isInsidePath,
 } from "../src";
+
+function createGitRunner(gitExecutable = "git"): CommandRunner {
+  return {
+    async run(command, cwd, options) {
+      const executable = command[0] === "git" ? gitExecutable : command[0]!;
+      try {
+        const stdout = execFileSync(executable, command.slice(1), {
+          cwd,
+          encoding: "utf8",
+          input: options?.stdin,
+        });
+        return { exitCode: 0, stdout, stderr: "" };
+      } catch (error) {
+        const failed = error as NodeJS.ErrnoException & {
+          status?: number;
+          stdout?: string | Buffer;
+          stderr?: string | Buffer;
+        };
+        return {
+          exitCode: typeof failed.status === "number" ? failed.status : 1,
+          stdout: String(failed.stdout ?? ""),
+          stderr: String(failed.stderr ?? failed.message ?? ""),
+        };
+      }
+    },
+  };
+}
 
 test("requires approval for dangerous commands", () => {
   expect(
@@ -229,12 +259,33 @@ test("applies approved worktree diffs back to the target workspace", async () =>
       cwd: "/repo/.eco/worktrees/thr_1",
       stdin: undefined,
     },
-    {
-      command: ["git", "apply", "--whitespace=nowarn", "-"],
-      cwd: "/repo",
-      stdin: "diff --git a/a.ts b/a.ts\n",
-    },
   ]);
+  expect(calls.some((call) => call.command[1] === "apply")).toBe(false);
+});
+
+test("applyApprovedDiff materializes files when workspace drifted from merge-base", async () => {
+  const fixturesRoot = path.join(import.meta.dir, ".git-fixtures");
+  await fs.mkdir(fixturesRoot, { recursive: true });
+  const root = await fs.mkdtemp(path.join(fixturesRoot, "apply-"));
+  const runner = createGitRunner();
+  const service = new GitWorktreeService(runner);
+  const plan = createWorktreePlan(root, "thr_drift");
+
+  execFileSync("git", ["init", "-b", "main"], {
+    cwd: root,
+    env: { ...process.env, GIT_TEMPLATE_DIR: "" },
+  });
+  await fs.writeFile(path.join(root, "preload.js"), "base\n");
+  execFileSync("git", ["add", "preload.js"], { cwd: root });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: root });
+
+  await service.createWorktree(plan);
+  await fs.writeFile(path.join(plan.worktreePath, "preload.js"), "worktree-final\n");
+  await fs.writeFile(path.join(root, "preload.js"), "main-drift\n");
+
+  await service.applyApprovedDiff(plan);
+
+  expect(await fs.readFile(path.join(root, "preload.js"), "utf8")).toBe("worktree-final\n");
 });
 
 test("changedFiles includes untracked new files without staging", async () => {

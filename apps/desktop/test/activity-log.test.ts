@@ -1123,3 +1123,42 @@ test("resolveSubagentRunStatusLine prefers tool action over duplicate mission su
   );
   expect(status).toBe("编辑 · preload.js");
 });
+
+test("places worktree merge before the next user turn when continuing conversation", () => {
+  const summary = buildWorktreeMergeSummary(
+    `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1,2 @@
++x
+`,
+    ["src/a.ts"],
+  );
+  const mergeMessage = serializeWorktreeMergeMessage(summary);
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "first task" },
+      { id: "1", role: "planner", message: "Tool: Write · src/a.ts" },
+      { id: "2", role: "system", message: mergeMessage },
+      { id: "u2", role: "user", message: "follow up task" },
+      { id: "3", role: "planner", message: "Tool: Read · src/b.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const firstUser = blocks.findIndex(
+    (block) => block.kind === "user-prompt" && block.text === "first task",
+  );
+  const mergeIndex = blocks.findIndex((block) => block.kind === "worktree-merge");
+  const secondUser = blocks.findIndex(
+    (block) => block.kind === "user-prompt" && block.text === "follow up task",
+  );
+  const secondWork = blocks.findIndex(
+    (block, index) => index > secondUser && block.kind === "work-session",
+  );
+
+  expect(firstUser).toBeGreaterThanOrEqual(0);
+  expect(mergeIndex).toBeGreaterThan(firstUser);
+  expect(secondUser).toBeGreaterThan(mergeIndex);
+  expect(secondWork).toBeGreaterThan(secondUser);
+});

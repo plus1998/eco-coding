@@ -670,6 +670,8 @@ export interface ThreadLiveEvent {
   title?: string;
   role?: AgentRole | "system" | "thinking" | "tool" | "user";
   stream?: boolean;
+  /** Set when the main process persisted this event as a thread_activity row. */
+  activityLine?: ThreadActivityLine;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;
   todoList?: CoderTodoItem[];

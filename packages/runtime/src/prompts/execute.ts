@@ -98,3 +98,42 @@ export function buildExecuteResumePrompt(planning: {
 
   return lines.join("\n");
 }
+
+/** Shared execution prompt for first run, SDK resume, and thread continue follow-ups. */
+export function buildExecutionPromptWithFollowUp(
+  planning: {
+    userPrompt: string;
+    analysis: string;
+    plan: string;
+    planUserEdited?: boolean;
+    approvedPlanFile?: string;
+    resumableSubagents?: readonly { role: string; agentId: string }[];
+  },
+  followUp: string,
+  options: { isResume: boolean; availability?: SubagentAvailability },
+): string {
+  if (options.isResume) {
+    const base = buildExecuteResumePrompt({
+      userPrompt: planning.userPrompt,
+      analysis: planning.analysis,
+      plan: planning.plan,
+      ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+      ...(planning.approvedPlanFile ? { approvedPlanFile: planning.approvedPlanFile } : {}),
+      ...(planning.resumableSubagents?.length
+        ? { resumableSubagents: planning.resumableSubagents }
+        : {}),
+    });
+    const trimmed = followUp.trim();
+    return trimmed && trimmed !== planning.userPrompt.trim()
+      ? `${base}\n\nUser follow-up:\n${trimmed}`
+      : base;
+  }
+
+  const trimmed = followUp.trim();
+  const userPrompt =
+    trimmed && trimmed !== planning.userPrompt.trim() ? trimmed : planning.userPrompt;
+  return buildExecutePhasePrompt(userPrompt, planning.analysis, planning.plan, {
+    ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+    availability: options.availability,
+  });
+}

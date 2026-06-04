@@ -51,6 +51,8 @@ export interface AgentRuntimeRunInput {
   resume?: EcoSdkResumeOptions;
   /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
   resumableSubagents?: readonly ResumableSubagentRef[];
+  /** When set, used as the full model prompt instead of buildExecutionPromptWithFollowUp. */
+  executionPromptOverride?: string;
 }
 
 export interface EcoPlanningContext {

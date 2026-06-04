@@ -6,6 +6,7 @@ import {
   appendToPhaseTranscript,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
+  buildExecutionPromptWithFollowUp,
   buildPlanningPhasePrompt,
   buildQuestionAnswerPrompt,
   ClaudeAgentSdkDriver,
@@ -800,6 +801,26 @@ test("createSessionCapturedEvent and init message helpers", () => {
   const event = createSessionCapturedEvent("thr_1", "sess-abc", "/tmp/worktree");
   expect(event.type).toBe("session.captured");
   expect(event.payload).toEqual({ sessionId: "sess-abc", cwd: "/tmp/worktree" });
+});
+
+test("buildExecutionPromptWithFollowUp appends User follow-up on resume", () => {
+  const prompt = buildExecutionPromptWithFollowUp(
+    { userPrompt: "Add feature X", analysis: "Needs tests", plan: "Do the thing" },
+    "also add unit tests",
+    { isResume: true },
+  );
+  expect(prompt).toContain("User follow-up:");
+  expect(prompt).toContain("also add unit tests");
+  expect(prompt).toContain("Do the thing");
+});
+
+test("buildExecutionPromptWithFollowUp omits duplicate follow-up matching original task", () => {
+  const prompt = buildExecutionPromptWithFollowUp(
+    { userPrompt: "same task", analysis: "a", plan: "p" },
+    "same task",
+    { isResume: true },
+  );
+  expect(prompt).not.toContain("User follow-up:");
 });
 
 test("buildExecuteResumePrompt inlines approved plan when resuming", () => {

@@ -53,6 +53,7 @@ import {
   buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
+  buildExecutionPromptWithFollowUp,
   questionAnswerSystemAppend,
   buildQuestionAnswerSystemAppend,
   buildQuestionAnswerPrompt,
@@ -229,18 +230,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
     const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
     const resumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
-    const prompt = isResume
-      ? buildExecuteResumePrompt({
+    const prompt =
+      input.executionPromptOverride ??
+      buildExecutionPromptWithFollowUp(
+        {
           ...planning,
           approvedPlanFile,
           ...(input.resumableSubagents?.length
             ? { resumableSubagents: input.resumableSubagents }
             : {}),
-        })
-      : buildExecutePhasePrompt(planning.userPrompt, planning.analysis, planning.plan, {
-          ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-          availability,
-        });
+        },
+        input.prompt,
+        { isResume, availability },
+      );
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
@@ -337,18 +339,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
     const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
     const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
-    let executionPrompt = input.prompt;
-    if (planning) {
-      const base = buildExecuteResumePrompt({
-        ...planning,
-        approvedPlanFile,
-      });
-      const followUp = input.prompt.trim();
-      executionPrompt =
-        followUp && followUp !== planning.userPrompt.trim()
-          ? `${base}\n\nUser follow-up:\n${followUp}`
-          : base;
-    }
+    const executionPrompt = planning
+      ? buildExecutionPromptWithFollowUp(
+          { ...planning, approvedPlanFile },
+          input.prompt,
+          { isResume: true, availability },
+        )
+      : input.prompt;
     yield* this.runSingleSession(input, {
       prompt: executionPrompt,
       permissionMode: "acceptEdits",
@@ -779,6 +776,7 @@ export {
   buildPlanPhasePrompt,
   buildExecutePhasePrompt,
   buildExecuteResumePrompt,
+  buildExecutionPromptWithFollowUp,
   buildQuestionAnswerPrompt,
 };
 

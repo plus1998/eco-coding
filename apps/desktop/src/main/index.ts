@@ -1817,7 +1817,12 @@ async function runCodingThreadPlanning(
 async function runCodingThreadExecution(
   threadId: string,
   runtimeConfig: RuntimeConfig,
-  options?: { planUserEdited?: boolean; routesOverride?: readonly RoleRouteConfig[] },
+  options?: {
+    planUserEdited?: boolean;
+    routesOverride?: readonly RoleRouteConfig[];
+    followUp?: string;
+    attachments?: PromptImageAttachment[];
+  },
 ): Promise<void> {
   const pending = conversationStore.getPendingPlan(threadId);
   const thread = conversationStore.getThread(threadId);
@@ -1881,7 +1886,11 @@ async function runCodingThreadExecution(
         return { ok: false, reason: freshConfig.reason };
       }
       recordThreadRouteFingerprint(threadId, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, undefined, threadId);
+      const attemptProxy = await startRuntimeProxy(
+        freshConfig.routes,
+        options?.attachments,
+        threadId,
+      );
       const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
       executionPlan.routesJson = JSON.stringify(attemptRoutes);
       try {
@@ -1913,17 +1922,29 @@ async function runCodingThreadExecution(
             ignoreRunningGuard: true,
           });
         }
+        const followUp = options?.followUp?.trim();
+        const runPrompt = followUp || pending.userPrompt;
+        let executionPromptOverride: string | undefined;
+        if (!resume && followUp && followUp !== pending.userPrompt.trim()) {
+          const activityLines = conversationStore.listActivityLines(threadId);
+          executionPromptOverride = buildAgentPromptWithContext(
+            thread.prompt,
+            followUp,
+            activityLines,
+          );
+        }
         for await (const event of driver.runExecution(
           {
             threadId,
-            prompt: pending.userPrompt,
+            prompt: runPrompt,
             workspacePath: pending.workspacePath,
             worktreePath: executionCwd,
             routes: attemptRoutes,
             signal: controller.signal,
-            sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
+            sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
             ...(resume ? { resume } : {}),
             resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
+            ...(executionPromptOverride && { executionPromptOverride }),
           },
           planning,
         )) {
@@ -2798,7 +2819,11 @@ async function dispatchThreadContinueAction(input: {
       markThreadInterrupted(threadId, "找不到可恢复的执行计划，请重新描述需求。");
       return;
     }
-    void runCodingThreadExecution(threadId, runtimeConfig, { routesOverride: roleRoutes });
+    void runCodingThreadExecution(threadId, runtimeConfig, {
+      routesOverride: roleRoutes,
+      followUp: agentPrompt,
+      ...(attachments?.length ? { attachments } : {}),
+    });
     return;
   }
 
@@ -4216,13 +4241,17 @@ function emitThreadEvent(
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
   const persistActivityLine =
-    (!isThreadStatusEvent || type === "thread.auto_retry" || type === "thread.retry") &&
+    (!isThreadStatusEvent ||
+      type === "thread.auto_retry" ||
+      type === "thread.retry" ||
+      type === "thread.user_prompt") &&
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&
     type !== "thread.title_updated" &&
     type !== "thread.subagent_timing_updated";
 
+  let persistedActivityLine: ThreadActivityLine | undefined;
   if (
     conversationStore.getThread(threadId) &&
     (displayMessage || allowEmptyStream) &&
@@ -4230,7 +4259,7 @@ function emitThreadEvent(
     !extras?.title &&
     persistActivityLine
   ) {
-    conversationStore.appendActivityLine(threadId, {
+    persistedActivityLine = conversationStore.appendActivityLine(threadId, {
       role: String(role),
       message: displayMessage,
       stream,
@@ -4244,6 +4273,7 @@ function emitThreadEvent(
     message: displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
     role,
     stream,
+    ...(persistedActivityLine && { activityLine: persistedActivityLine }),
   };
   if (extras?.plan) {
     payload.plan = extras.plan;

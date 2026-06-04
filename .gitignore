@@ -16,6 +16,9 @@ coverage/
 .eco/
 worktrees/
 
+# Workspace package git integration fixtures
+packages/workspace/test/.git-fixtures/
+
 # Secrets
 .env
 .env.*
