@@ -187,9 +187,12 @@ import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
 import { listDiscoveredSkills } from "./skills-discovery";
+import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import {
   filterExplicitUserSkillNames,
+  listSdkReadyProjectSkills,
   mergeSkillNames,
+  type LinkAgentsSkillsRequest,
 } from "../shared/skills";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { SdkStreamActivityBridge } from "./sdk-stream-activity";
@@ -700,6 +703,21 @@ function registerIpcHandlers(): void {
         ? workspacePath.trim()
         : currentWorkspace?.path;
     return listDiscoveredSkills(pathToScan);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.skillsLinkAgents, async (_event, payload: unknown) => {
+    if (!isLinkAgentsSkillsRequest(payload)) {
+      throw new Error("Invalid link agents skills request.");
+    }
+    const discovered = await listDiscoveredSkills(payload.workspacePath);
+    const toLink = discovered.agentsOnlySkills.filter(
+      (skill) => !payload.baseDir || skill.baseDir === payload.baseDir,
+    );
+    const linkResult = await linkAgentsSkillsToClaude(
+      toLink,
+      payload.baseDir ? { baseDir: payload.baseDir } : undefined,
+    );
+    return linkResult;
   });
 
   ipcMain.handle(IPC_CHANNELS.subagentSettingsGet, async () => subagentSettingsStore.get());
@@ -3981,6 +3999,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isLinkAgentsSkillsRequest(value: unknown): value is LinkAgentsSkillsRequest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as LinkAgentsSkillsRequest).workspacePath === "string" &&
+    ((value as LinkAgentsSkillsRequest).baseDir === undefined ||
+      typeof (value as LinkAgentsSkillsRequest).baseDir === "string")
+  );
+}
+
 async function buildSdkSessionOptions(
   threadId: string,
   prompt?: string,
@@ -3993,7 +4021,7 @@ async function buildSdkSessionOptions(
     thread?.workspacePath ??
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);
   const discovered = await listDiscoveredSkills(workspacePath);
-  const projectNames = discovered.projectSkills.map((skill) => skill.name);
+  const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
   const merged = mergeSkillNames(projectNames, explicitUser);
   const agentSkills = Object.fromEntries(AGENT_ROLES.map((role) => [role, merged])) as Partial<

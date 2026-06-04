@@ -43,6 +43,7 @@ export const IPC_CHANNELS = {
   mcpServerSave: "mcp-server:save",
   mcpServerDelete: "mcp-server:delete",
   skillsList: "skills:list",
+  skillsLinkAgents: "skills:link-agents",
   subagentSettingsGet: "subagent-settings:get",
   subagentSettingsSave: "subagent-settings:save",
   workflowSettingsGet: "workflow-settings:get",
@@ -65,7 +66,13 @@ export type {
   McpTransport,
 } from "./mcp";
 
-export type { SkillInfo, SkillSource, SkillsListResult } from "./skills";
+export type {
+  LinkAgentsSkillsRequest,
+  LinkAgentsSkillsResult,
+  SkillInfo,
+  SkillSource,
+  SkillsListResult,
+} from "./skills";
 
 export type {
   ListUpstreamModelsRequest,

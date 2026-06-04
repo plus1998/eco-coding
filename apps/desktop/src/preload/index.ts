@@ -25,6 +25,8 @@ import {
   type SessionSyncSettingsView,
   type SessionSyncTestConnectionRequest,
   type SessionSyncTestConnectionResult,
+  type LinkAgentsSkillsRequest,
+  type LinkAgentsSkillsResult,
   type SkillsListResult,
   type SubagentEnabledSettings,
   type ProxyBridgeSettingsSnapshot,
@@ -132,6 +134,9 @@ const api = {
   },
   listSkills(workspacePath?: string): Promise<SkillsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);
+  },
+  linkAgentsSkills(request: LinkAgentsSkillsRequest): Promise<LinkAgentsSkillsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.skillsLinkAgents, request);
   },
   getSubagentSettings(): Promise<SubagentEnabledSettings> {
     return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsGet);

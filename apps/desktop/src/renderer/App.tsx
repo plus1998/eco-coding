@@ -38,6 +38,7 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type RouteCapabilityHint,
+  type LinkAgentsSkillsResult,
   type SkillsListResult,
   type SubagentEnabledSettings,
   type SubagentRole,
@@ -97,7 +98,7 @@ import {
   parseComposerSkillSlashQuery,
 } from "./composer-skill-query";
 import { filterUserSkills } from "./skill-fuzzy";
-import type { SkillInfo } from "../shared/skills";
+import { listSdkReadyProjectSkills, type SkillInfo } from "../shared/skills";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -181,6 +182,8 @@ function App() {
   const [composerCursor, setComposerCursor] = useState(0);
   const [composerSkillActiveIndex, setComposerSkillActiveIndex] = useState(0);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
+  const [skillsLinking, setSkillsLinking] = useState(false);
+  const [skillsLinkResult, setSkillsLinkResult] = useState<LinkAgentsSkillsResult>();
   const [prompt, setPrompt] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
   const [plannerCapability, setPlannerCapability] = useState<RouteCapabilityHint>();
@@ -621,8 +624,22 @@ function App() {
     }
   }, [activeThread?.id]);
 
-  const userSkills = skillsSnapshot?.userSkills ?? [];
-  const projectSkills = skillsSnapshot?.projectSkills ?? [];
+  const userSkills = useMemo(
+    () => (skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady),
+    [skillsSnapshot?.userSkills],
+  );
+  const projectSdkReadySkills = useMemo(
+    () => listSdkReadyProjectSkills(skillsSnapshot?.projectSkills ?? []),
+    [skillsSnapshot?.projectSkills],
+  );
+  const projectAgentsOnly = useMemo(
+    () =>
+      (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
+    [skillsSnapshot?.agentsOnlySkills],
+  );
+  const showProjectSkillsPanel =
+    Boolean(currentProjectPath) &&
+    (isLoadingSkills || projectSdkReadySkills.length > 0 || projectAgentsOnly.length > 0);
   const composerSkillSlash = useMemo(
     () => parseComposerSkillSlashQuery(prompt, composerCursor),
     [prompt, composerCursor],
@@ -1243,6 +1260,46 @@ function App() {
     }
   }
 
+  async function linkProjectAgentsSkills() {
+    if (!window.eco || !currentProjectPath) {
+      return;
+    }
+    setSkillsLinking(true);
+    setError(undefined);
+    try {
+      const result = await window.eco.linkAgentsSkills({ workspacePath: currentProjectPath });
+      setSkillsLinkResult(result);
+      await refreshSkillsList(currentProjectPath);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSkillsLinking(false);
+    }
+  }
+
+  async function linkUserAgentsSkills() {
+    const userAgents =
+      skillsSnapshot?.agentsOnlySkills.filter((skill) => skill.source === "user") ?? [];
+    const baseDir = userAgents[0]?.baseDir;
+    if (!window.eco || !baseDir) {
+      return;
+    }
+    setSkillsLinking(true);
+    setError(undefined);
+    try {
+      const result = await window.eco.linkAgentsSkills({
+        workspacePath: currentProjectPath ?? baseDir,
+        baseDir,
+      });
+      setSkillsLinkResult(result);
+      await refreshSkillsList(currentProjectPath);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSkillsLinking(false);
+    }
+  }
+
   function openModelsSettings(tab: ModelsSettingsTab = "providers") {
     setModelsSettingsTab(tab);
     setSettingsSection("models");
@@ -1790,11 +1847,14 @@ function App() {
           </p>
         )}
       </div>
-      {showLanding && currentProjectPath ? (
+      {showLanding && showProjectSkillsPanel ? (
         <ComposerProjectSkills
-          skills={projectSkills}
-          loading={isLoadingSkills && !skillsSnapshot}
+          sdkReadySkills={projectSdkReadySkills}
+          agentsOnlySkills={projectAgentsOnly}
+          linking={skillsLinking}
+          {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
           onSelectSkill={(skill) => insertComposerSkillReference(skill.name)}
+          onLinkAgents={linkProjectAgentsSkills}
         />
       ) : null}
     </div>
@@ -2049,7 +2109,10 @@ function App() {
               <SkillsSettingsPanel
                 {...(skillsSnapshot && { snapshot: skillsSnapshot })}
                 loading={isLoadingSkills}
+                linking={skillsLinking}
+                {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
                 onRefresh={() => void refreshSkillsList()}
+                onLinkAgents={linkUserAgentsSkills}
               />
             )}
 

@@ -451,137 +451,162 @@ button:not(:disabled) {
 
 .codex-landing .codex-composer-wrap {
   padding: 0;
-  gap: 14px;
+  gap: 8px;
 }
 
 .composer-project-skills {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 5px;
   width: 100%;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.composer-project-skills-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   min-width: 0;
 }
 
-.composer-project-skills-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: #a3a3a3;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+.composer-project-skills-row .composer-project-skills-label:empty {
+  width: 36px;
+  flex-shrink: 0;
 }
 
-.composer-project-skills-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d4d4d4;
+.composer-project-skills-label {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: #525252;
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
+  line-height: 1.4;
 }
 
-.composer-project-skills-meta {
-  margin: 0;
-  color: #737373;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.composer-project-skills-meta code {
-  color: #a3a3a3;
-  font-size: 12px;
-}
-
-.composer-project-skills-list {
+.composer-project-skills-tags {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: min(240px, 32vh);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  max-height: 72px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.composer-project-skill-chip {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid #333;
-  border-radius: 10px;
-  background: #1f1f1f;
-  color: inherit;
+.composer-project-skill-tag {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #6b6b6b;
   font: inherit;
+  font-size: 11px;
+  line-height: 1.35;
   text-align: left;
   cursor: pointer;
-}
-
-.composer-project-skill-chip.is-static {
-  cursor: default;
-}
-
-.composer-project-skill-chip:hover:not(.is-static) {
-  border-color: #444;
-  background: #262626;
-}
-
-.composer-project-skill-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: rgba(74, 222, 128, 0.1);
-  color: #4ade80;
-}
-
-.composer-project-skill-body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.composer-project-skill-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #f0f0f0;
-  line-height: 1.3;
-}
-
-.composer-project-skill-description {
   overflow: hidden;
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-project-skill-scope {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(74, 222, 128, 0.12);
-  color: #4ade80;
+.composer-project-skill-tag.is-static,
+.composer-project-skill-tag.is-pending {
+  cursor: default;
+}
+
+.composer-project-skill-tag.is-pending {
+  color: #454545;
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+.composer-project-skill-tag:hover:not(.is-static):not(.is-pending),
+.composer-project-skill-tag:focus-visible:not(.is-static):not(.is-pending) {
+  color: #a3a3a3;
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
+.composer-skills-link-hint-row {
+  margin-top: 1px;
+}
+
+.composer-skills-link-hint {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.settings-skills-link-block {
+  margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-skills-pending-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0 2px;
+}
+
+.composer-skills-link-hint-message {
+  color: #9a9a9a;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+
+.composer-skills-link-action {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: #9ec5ff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-decoration: underline;
+  text-decoration-color: rgba(158, 197, 255, 0.55);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.composer-skills-link-action:hover:not(:disabled),
+.composer-skills-link-action:focus-visible:not(:disabled) {
+  color: #b8d4ff;
+  text-decoration-color: rgba(184, 212, 255, 0.75);
+  outline: none;
+}
+
+.composer-skills-link-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.composer-skills-link-hint-meta {
+  color: #6b6b6b;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.composer-skills-link-hint-error {
+  color: #c4a0a0;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .codex-hero {
@@ -2269,6 +2294,16 @@ button:not(:disabled) {
 .skill-source-badge.project {
   background: rgba(74, 222, 128, 0.12);
   color: #4ade80;
+}
+
+.skill-source-badge.claude {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.skill-source-badge.agents {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
 }
 
 .skill-card-description {

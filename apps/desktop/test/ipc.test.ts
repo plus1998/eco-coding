@@ -27,6 +27,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workflowSettingsSave).toBe("workflow-settings:save");
   expect(IPC_CHANNELS.mcpSettingsGet).toBe("mcp-settings:get");
   expect(IPC_CHANNELS.skillsList).toBe("skills:list");
+  expect(IPC_CHANNELS.skillsLinkAgents).toBe("skills:link-agents");
   expect(IPC_CHANNELS.mcpServerSave).toBe("mcp-server:save");
   expect(IPC_CHANNELS.sessionSyncSettingsGet).toBe("session-sync-settings:get");
   expect(IPC_CHANNELS.sessionSyncSettingsSave).toBe("session-sync-settings:save");
