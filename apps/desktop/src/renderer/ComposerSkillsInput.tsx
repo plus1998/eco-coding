@@ -56,6 +56,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
     ref,
   ) {
     const editorRef = useRef<HTMLDivElement>(null);
+    const isComposingRef = useRef(false);
     const skillsByNameRef = useRef(skillsByName);
     skillsByNameRef.current = skillsByName;
 
@@ -96,25 +97,34 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       [fitHeight],
     );
 
+    const syncDomFromValue = useCallback(() => {
+      const editor = editorRef.current;
+      if (!editor || isComposingRef.current) {
+        return;
+      }
+      const serialized = serializeEditable(editor);
+      if (serialized === value) {
+        return;
+      }
+      const { start, end } = getSelectionOffsets(editor);
+      renderEditablePrompt(editor, value, skillsByNameRef.current);
+      const nextStart = Math.min(start, value.length);
+      const nextEnd = Math.min(end, value.length);
+      setSelectionOffsets(editor, nextStart, nextEnd);
+    }, [value]);
+
     useLayoutEffect(() => {
       const editor = editorRef.current;
       if (!editor) {
         return;
       }
-      const serialized = serializeEditable(editor);
-      if (serialized !== value) {
-        const { start, end } = getSelectionOffsets(editor);
-        renderEditablePrompt(editor, value, skillsByNameRef.current);
-        const nextStart = Math.min(start, value.length);
-        const nextEnd = Math.min(end, value.length);
-        setSelectionOffsets(editor, nextStart, nextEnd);
-      }
+      syncDomFromValue();
       fitHeight(editor);
-    }, [value, fitHeight]);
+    }, [value, fitHeight, syncDomFromValue]);
 
     useLayoutEffect(() => {
       const editor = editorRef.current;
-      if (!editor || !value.includes("$")) {
+      if (!editor || isComposingRef.current || !value.includes("$")) {
         return;
       }
       if (serializeEditable(editor) !== value) {
@@ -125,7 +135,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       setSelectionOffsets(editor, start, end);
     }, [skillsByName, value]);
 
-    const handleInput = () => {
+    const commitEditorValue = useCallback(() => {
       const editor = editorRef.current;
       if (!editor) {
         return;
@@ -134,9 +144,32 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       onChange(next);
       onCursorChange?.(getCursorOffset(editor));
       fitHeight(editor);
+    }, [onChange, onCursorChange, fitHeight]);
+
+    const handleInput = () => {
+      if (isComposingRef.current) {
+        const editor = editorRef.current;
+        if (editor) {
+          fitHeight(editor);
+        }
+        return;
+      }
+      commitEditorValue();
+    };
+
+    const handleCompositionStart = () => {
+      isComposingRef.current = true;
+    };
+
+    const handleCompositionEnd = () => {
+      isComposingRef.current = false;
+      commitEditorValue();
     };
 
     const syncCursor = () => {
+      if (isComposingRef.current) {
+        return;
+      }
       const editor = editorRef.current;
       if (editor) {
         onCursorChange?.(getCursorOffset(editor));
@@ -171,6 +204,8 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
           data-placeholder={placeholder}
           spellCheck={false}
           onInput={handleInput}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           onClick={syncCursor}
           onKeyUp={syncCursor}
           onPaste={handlePaste}
