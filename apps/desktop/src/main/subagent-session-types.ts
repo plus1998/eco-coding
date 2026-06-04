@@ -12,5 +12,9 @@ export interface ThreadSubagentSessionRecord {
   status: SubagentSessionStatus;
   todoId?: string;
   missionKey?: string;
+  startedAt: string;
+  lastActiveAt: string;
+  endedAt?: string;
+  accumulatedMs: number;
   updatedAt: string;
 }

@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
+  threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",
@@ -635,6 +636,18 @@ export interface ModelsDevModelOption {
   displayName: string;
 }
 
+export interface ThreadSubagentSessionTiming {
+  agentId: string;
+  role: AgentRole;
+  status: "active" | "stopped";
+  startedAt: string;
+  lastActiveAt: string;
+  endedAt?: string;
+  accumulatedMs: number;
+  /** Active processing duration (accumulated + current segment when active). */
+  durationMs: number;
+}
+
 export interface ThreadLiveEvent {
   threadId: string;
   type: string;
@@ -652,6 +665,7 @@ export interface ThreadLiveEvent {
   modelUsage?: Record<string, ThreadModelUsageEntry>;
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
+  subagentSessions?: ThreadSubagentSessionTiming[];
 }
 
 export interface ThreadActivityLine {

@@ -50,6 +50,7 @@ import {
   type SessionSyncSettingsSnapshot,
   type ThreadActivityLine,
   type ThreadLiveEvent,
+  type ThreadSubagentSessionTiming,
   type ThreadPendingPlan,
   type ThreadStatus,
   type ThreadBillingSnapshot,
@@ -205,6 +206,9 @@ function App() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
+  const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
+    Record<string, ThreadSubagentSessionTiming[]>
+  >({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -347,6 +351,14 @@ function App() {
         return;
       }
 
+      if (event.type === "thread.subagent_timing_updated" && event.subagentSessions) {
+        setSubagentTimingsByThread((current) => ({
+          ...current,
+          [event.threadId]: event.subagentSessions!,
+        }));
+        return;
+      }
+
       if (event.type === "thread.execution_failed" && window.eco) {
         void window.eco.getPendingPlan(event.threadId).then((plan) => {
           if (plan) {
@@ -390,6 +402,19 @@ function App() {
         [selectedThreadId]: lines,
       }));
     });
+
+    // Preload may be stale until Electron restarts; skip rather than throw.
+    if (typeof window.eco.listSubagentSessions === "function") {
+      void window.eco.listSubagentSessions(selectedThreadId).then((sessions) => {
+        if (cancelled) {
+          return;
+        }
+        setSubagentTimingsByThread((current) => ({
+          ...current,
+          [selectedThreadId]: sessions,
+        }));
+      });
+    }
 
     if (window.eco) {
       void window.eco.getPendingPlan(selectedThreadId).then((plan) => {
@@ -791,6 +816,7 @@ function App() {
   const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
@@ -1935,6 +1961,7 @@ function App() {
                   onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                  {...(subagentTimings && { subagentTimings })}
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />

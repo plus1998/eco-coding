@@ -239,6 +239,10 @@ export class ConversationStore {
         status TEXT NOT NULL,
         todo_id TEXT,
         mission_key TEXT,
+        started_at TEXT NOT NULL,
+        last_active_at TEXT NOT NULL,
+        ended_at TEXT,
+        accumulated_ms INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (thread_id, agent_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
@@ -312,6 +316,37 @@ export class ConversationStore {
         PRIMARY KEY (thread_id, agent_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+    `);
+
+    const sessionColumns = this.db
+      .prepare(`PRAGMA table_info(thread_subagent_sessions)`)
+      .all() as Array<{ name: string }>;
+    const sessionNames = new Set(sessionColumns.map((column) => column.name));
+    if (!sessionNames.has("started_at")) {
+      this.db.exec(`ALTER TABLE thread_subagent_sessions ADD COLUMN started_at TEXT`);
+    }
+    if (!sessionNames.has("last_active_at")) {
+      this.db.exec(`ALTER TABLE thread_subagent_sessions ADD COLUMN last_active_at TEXT`);
+    }
+    if (!sessionNames.has("ended_at")) {
+      this.db.exec(`ALTER TABLE thread_subagent_sessions ADD COLUMN ended_at TEXT`);
+    }
+    if (!sessionNames.has("accumulated_ms")) {
+      this.db.exec(
+        `ALTER TABLE thread_subagent_sessions ADD COLUMN accumulated_ms INTEGER NOT NULL DEFAULT 0`,
+      );
+    }
+    this.db.exec(`
+      UPDATE thread_subagent_sessions
+      SET started_at = COALESCE(started_at, updated_at),
+          last_active_at = COALESCE(last_active_at, updated_at),
+          accumulated_ms = COALESCE(accumulated_ms, 0)
+      WHERE started_at IS NULL OR last_active_at IS NULL
+    `);
+    this.db.exec(`
+      UPDATE thread_subagent_sessions
+      SET ended_at = updated_at
+      WHERE status = 'stopped' AND ended_at IS NULL
     `);
   }
 
@@ -576,14 +611,17 @@ export class ConversationStore {
     this.db
       .prepare(
         `INSERT INTO thread_subagent_sessions (
-           thread_id, role, agent_id, phase, status, todo_id, mission_key, updated_at
-         ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)
+           thread_id, role, agent_id, phase, status, todo_id, mission_key,
+           started_at, last_active_at, ended_at, accumulated_ms, updated_at
+         ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL, 0, ?)
          ON CONFLICT(thread_id, agent_id) DO UPDATE SET
            role = excluded.role,
            phase = excluded.phase,
            status = 'active',
            todo_id = COALESCE(excluded.todo_id, todo_id),
            mission_key = COALESCE(excluded.mission_key, mission_key),
+           last_active_at = excluded.last_active_at,
+           ended_at = NULL,
            updated_at = excluded.updated_at`,
       )
       .run(
@@ -594,17 +632,39 @@ export class ConversationStore {
         input.todoId ?? null,
         input.missionKey ?? null,
         now,
+        now,
+        now,
       );
   }
 
   markSubagentSessionStopped(threadId: string, agentId: string): void {
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const row = this.db
+      .prepare(
+        `SELECT last_active_at, accumulated_ms
+         FROM thread_subagent_sessions
+         WHERE thread_id = ? AND agent_id = ?`,
+      )
+      .get(threadId, agentId) as
+      | { last_active_at: string | null; accumulated_ms: number | null }
+      | undefined;
+    const lastActiveMs = row?.last_active_at ? Date.parse(row.last_active_at) : nowMs;
+    const segmentMs =
+      Number.isFinite(lastActiveMs) && lastActiveMs > 0
+        ? Math.max(0, nowMs - lastActiveMs)
+        : 0;
+    const accumulatedMs = (row?.accumulated_ms ?? 0) + segmentMs;
     this.db
       .prepare(
         `UPDATE thread_subagent_sessions
-         SET status = 'stopped', updated_at = ?
+         SET status = 'stopped',
+             ended_at = ?,
+             accumulated_ms = ?,
+             updated_at = ?
          WHERE thread_id = ? AND agent_id = ?`,
       )
-      .run(new Date().toISOString(), threadId, agentId);
+      .run(now, accumulatedMs, now, threadId, agentId);
   }
 
   upsertSubagentMetrics(
@@ -723,7 +783,8 @@ export class ConversationStore {
   listSubagentSessions(threadId: string): ThreadSubagentSessionRecord[] {
     const rows = this.db
       .prepare(
-        `SELECT thread_id, role, agent_id, phase, status, todo_id, mission_key, updated_at
+        `SELECT thread_id, role, agent_id, phase, status, todo_id, mission_key,
+                started_at, last_active_at, ended_at, accumulated_ms, updated_at
          FROM thread_subagent_sessions
          WHERE thread_id = ?
          ORDER BY updated_at DESC`,
@@ -736,19 +797,32 @@ export class ConversationStore {
       status: string;
       todo_id: string | null;
       mission_key: string | null;
+      started_at: string | null;
+      last_active_at: string | null;
+      ended_at: string | null;
+      accumulated_ms: number | null;
       updated_at: string;
     }>;
 
-    return rows.map((row) => ({
-      threadId: row.thread_id,
-      role: row.role as SubagentRole,
-      agentId: row.agent_id,
-      phase: row.phase as SubagentRunPhase,
-      status: row.status as SubagentSessionStatus,
-      ...(row.todo_id ? { todoId: row.todo_id } : {}),
-      ...(row.mission_key ? { missionKey: row.mission_key } : {}),
-      updatedAt: row.updated_at,
-    }));
+    return rows.map((row) => {
+      const fallbackAt = row.updated_at;
+      const startedAt = row.started_at ?? fallbackAt;
+      const lastActiveAt = row.last_active_at ?? fallbackAt;
+      return {
+        threadId: row.thread_id,
+        role: row.role as SubagentRole,
+        agentId: row.agent_id,
+        phase: row.phase as SubagentRunPhase,
+        status: row.status as SubagentSessionStatus,
+        ...(row.todo_id ? { todoId: row.todo_id } : {}),
+        ...(row.mission_key ? { missionKey: row.mission_key } : {}),
+        startedAt,
+        lastActiveAt,
+        ...(row.ended_at ? { endedAt: row.ended_at } : {}),
+        accumulatedMs: row.accumulated_ms ?? 0,
+        updatedAt: row.updated_at,
+      };
+    });
   }
 
   listResumableSubagentSessions(

@@ -183,6 +183,7 @@ import {
 } from "./subagent-session-hooks.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
+import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
@@ -566,6 +567,13 @@ function registerIpcHandlers(): void {
       return [];
     }
     return conversationStore.listActivityLines(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadSubagentSessionsList, async (_event, threadId: string) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return [];
+    }
+    return buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId));
   });
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
@@ -2564,6 +2572,7 @@ function buildSdkHookContextExtras(
   };
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
     metricsRegistry: subagentMetricsRegistry,
+    onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
     consumePendingLaunch: () => {
       const next = pendingLaunch;
@@ -4128,6 +4137,12 @@ function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
   });
 }
 
+function emitSubagentTimingUpdated(threadId: string): void {
+  emitThreadEvent(threadId, "thread.subagent_timing_updated", "", "system", false, {
+    subagentSessions: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
+  });
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
@@ -4146,21 +4161,25 @@ function emitThreadEvent(
     billing?: ThreadBillingSnapshot;
     context?: ThreadContextSnapshot;
     agentId?: string;
+    subagentSessions?: ThreadLiveEvent["subagentSessions"];
   },
 ): void {
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
   const isContextEvent = type === "thread.context_updated";
+  const isSubagentTimingEvent = type === "thread.subagent_timing_updated";
   const allowEmptyStream = stream && trimmed.length === 0;
   if (
     !trimmed &&
     !allowEmptyStream &&
     !extras?.plan &&
     !extras?.clarification &&
+    !extras?.subagentSessions?.length &&
     !isThreadStatusEvent &&
     !isUsageEvent &&
-    !isContextEvent
+    !isContextEvent &&
+    !isSubagentTimingEvent
   ) {
     return;
   }
@@ -4172,7 +4191,8 @@ function emitThreadEvent(
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&
-    type !== "thread.title_updated";
+    type !== "thread.title_updated" &&
+    type !== "thread.subagent_timing_updated";
 
   if (
     conversationStore.getThread(threadId) &&
@@ -4225,6 +4245,9 @@ function emitThreadEvent(
   }
   if (extras?.context) {
     payload.context = extras.context;
+  }
+  if (extras?.subagentSessions) {
+    payload.subagentSessions = extras.subagentSessions;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {

@@ -9,6 +9,7 @@ import {
 } from "../src/shared/worktree-merge";
 import {
   buildActivityLogBlocks,
+  buildSubagentTimingsByAgentId,
   countOpenAgentDelegations,
   stripTrailingPendingRequestBlocks,
   thinkingPreviewLine,
@@ -377,6 +378,37 @@ test("finds isolated line bounds per subagent occurrence", () => {
   expect(findSubagentRunLineBounds(lines, "reviewer", 1)).toEqual({ start: 2, end: 4 });
   expect(resolveSubagentRunDurationMs(lines, "reviewer", 0)).toBe(3000);
   expect(resolveSubagentRunDurationMs(lines, "reviewer", 1)).toBe(7000);
+});
+
+test("prefers persisted subagent timing over activity log elapsed lines", () => {
+  const agentId = "agent-coder-persisted";
+  const startedAt = new Date(Date.now() - 120_000).toISOString();
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)", agentId },
+      { id: "2", role: "tool", message: "Tool: Agent (2s)", agentId },
+      { id: "3", role: "coder", message: "Tool: Read · a.ts", stream: true, agentId },
+    ],
+    {
+      status: "running",
+      createdAt: new Date().toISOString(),
+      subagentTimingsByAgentId: buildSubagentTimingsByAgentId([
+        {
+          agentId,
+          role: "coder",
+          status: "active",
+          startedAt,
+          lastActiveAt: startedAt,
+          accumulatedMs: 30_000,
+          durationMs: 150_000,
+        },
+      ]),
+    },
+  );
+
+  const item = subagentItems(blocks).find((entry) => entry.agentId === agentId);
+  expect(item?.runDurationMs).toBeGreaterThanOrEqual(150_000);
 });
 
 test("attaches run duration to completed subagent work session", () => {

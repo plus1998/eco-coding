@@ -19,6 +19,7 @@ export function createSubagentSessionHooks(
     todoIdHint?: () => string | undefined;
     consumePendingLaunch?: () => PendingSubagentLaunch | undefined;
     onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
+    onTimingChanged?: () => void;
   },
 ): EcoSubagentSessionHooks {
   return {
@@ -46,6 +47,7 @@ export function createSubagentSessionHooks(
         agentId: input.agentId,
         role: input.agentType,
       });
+      options?.onTimingChanged?.();
     },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
@@ -55,6 +57,7 @@ export function createSubagentSessionHooks(
           role: input.agentType,
         });
       }
+      options?.onTimingChanged?.();
     },
     resolveResume(input) {
       return store.resolveResumeAgentId(input);

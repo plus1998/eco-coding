@@ -1,9 +1,11 @@
 import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
   ThreadActivityLine,
   ThreadContextSnapshot,
   ThreadStatus,
+  ThreadSubagentSessionTiming,
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
@@ -12,6 +14,7 @@ import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
+  buildSubagentTimingsByAgentId,
   formatDuration,
   thinkingPreviewLine,
   type ActivityActionIcon,
@@ -68,6 +71,7 @@ interface ActivityLogViewProps {
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  subagentTimings?: ThreadSubagentSessionTiming[];
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: () => void;
 }
@@ -79,6 +83,7 @@ export function ActivityLogView({
   modelByRole,
   usageByRole,
   context,
+  subagentTimings,
   onPlannerLayoutChange,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
@@ -88,13 +93,19 @@ export function ActivityLogView({
     return [{ id: `legacy-${thread.id}`, role: "user", message: thread.prompt }, ...lines];
   }, [lines, thread?.id, thread?.prompt]);
 
+  const subagentTimingsByAgentId = useMemo(
+    () => (subagentTimings ? buildSubagentTimingsByAgentId(subagentTimings) : undefined),
+    [subagentTimings],
+  );
+
   const blocks = useMemo(
     () =>
       buildActivityLogBlocks(effectiveLines, {
         ...(thread?.status && { status: thread.status }),
         ...(thread?.createdAt && { createdAt: thread.createdAt }),
+        ...(subagentTimingsByAgentId && { subagentTimingsByAgentId }),
       }),
-    [effectiveLines, thread?.createdAt, thread?.status],
+    [effectiveLines, subagentTimingsByAgentId, thread?.createdAt, thread?.status],
   );
 
   const mainFeedLayoutSignature = useMemo(
@@ -142,6 +153,7 @@ export function ActivityLogView({
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
           {...(context && { context })}
+          {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
           {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
           {...(thread?.id && { threadId: thread.id })}
           {...(thread?.status && { threadStatus: thread.status })}
@@ -157,6 +169,7 @@ function RunLogBlock({
   modelByRole,
   usageByRole,
   context,
+  subagentTimingsByAgentId,
   onPlannerLayoutChange,
   threadId,
   threadStatus,
@@ -166,6 +179,7 @@ function RunLogBlock({
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   onPlannerLayoutChange?: () => void;
   threadId?: string;
   threadStatus?: ThreadStatus;
@@ -194,6 +208,7 @@ function RunLogBlock({
         )}
         {...(modelByRole && { modelByRole })}
         {...(usageByRole && { usageByRole })}
+        {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
       />
     );
   }
@@ -227,6 +242,7 @@ function SubagentRunRow({
   requestActive,
   modelByRole,
   usageByRole,
+  subagentTimingsByAgentId,
 }: {
   item: SubagentRunItem;
   expanded: boolean;
@@ -234,7 +250,9 @@ function SubagentRunRow({
   requestActive: boolean;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
 }) {
+  const persistedTiming = item.agentId ? subagentTimingsByAgentId?.[item.agentId] : undefined;
   const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
   const durationMs = item.runDurationMs ?? 0;
 
@@ -243,13 +261,19 @@ function SubagentRunRow({
       setLiveDurationMs(durationMs);
       return;
     }
+    if (persistedTiming) {
+      const tick = () => setLiveDurationMs(computeSubagentSessionDurationMs(persistedTiming));
+      tick();
+      const timer = setInterval(tick, 1000);
+      return () => clearInterval(timer);
+    }
     const baselineMs = durationMs;
     const anchorAt = Date.now();
     const tick = () => setLiveDurationMs(baselineMs + (Date.now() - anchorAt));
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [durationMs, item.running, item.sessionKey]);
+  }, [durationMs, item.running, item.sessionKey, persistedTiming]);
 
   const badge = SUBAGENT_ROLE_SHORT[item.role] ?? item.role;
   const statusText = item.statusLine?.trim() || (item.running ? "工作中" : "点击查看执行详情");
@@ -309,11 +333,13 @@ function SubagentRunGroup({
   requestActive,
   modelByRole,
   usageByRole,
+  subagentTimingsByAgentId,
 }: {
   block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
   requestActive: boolean;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
+  subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
 }) {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
@@ -327,6 +353,7 @@ function SubagentRunGroup({
           requestActive={requestActive}
           {...(modelByRole && { modelByRole })}
           {...(usageByRole && { usageByRole })}
+          {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
           onToggle={() => {
             setExpandedKeys((current) => ({
               ...current,

@@ -17,13 +17,41 @@ import {
   shouldClearReconnectActivity,
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
-import type { ThreadActivityLine, ThreadStatus } from "../shared/ipc";
+import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
+import type { ThreadActivityLine, ThreadStatus, ThreadSubagentSessionTiming } from "../shared/ipc";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
 import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
 
 export type { WorktreeMergeSummary };
 
 export { isReconnectActivityMessage };
+
+export function buildSubagentTimingsByAgentId(
+  sessions: readonly ThreadSubagentSessionTiming[],
+): Record<string, ThreadSubagentSessionTiming> {
+  const map: Record<string, ThreadSubagentSessionTiming> = {};
+  for (const session of sessions) {
+    map[session.agentId] = session;
+  }
+  return map;
+}
+
+function resolveSubagentRunDurationMsForItem(
+  agentId: string | undefined,
+  role: string,
+  occurrence: number,
+  lines: ThreadActivityLine[],
+  timingsByAgentId?: Record<string, ThreadSubagentSessionTiming>,
+): number {
+  if (agentId && timingsByAgentId?.[agentId]) {
+    const timing = timingsByAgentId[agentId];
+    return computeSubagentSessionDurationMs(timing);
+  }
+  if (agentId) {
+    return resolveSubagentRunDurationMsByAgentId(lines, agentId);
+  }
+  return resolveSubagentRunDurationMs(lines, role, occurrence);
+}
 
 /** Whether a new activity line should scroll the main feed (planner/user), not sub-agent panels. */
 export function shouldScrollMainActivityFeedForLine(line: Pick<ThreadActivityLine, "role"> | undefined): boolean {
@@ -137,7 +165,11 @@ export function stripTrailingPendingRequestBlocks(
 
 export function buildActivityLogBlocks(
   lines: ThreadActivityLine[],
-  options: { status?: ThreadStatus; createdAt?: string },
+  options: {
+    status?: ThreadStatus;
+    createdAt?: string;
+    subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
+  },
 ): ActivityLogBlock[] {
   const filteredLines = lines.filter((line) => !isUsageNoiseMessage(line.message));
   const segments = splitLinesIntoSegments(filteredLines);
@@ -191,6 +223,9 @@ export function buildActivityLogBlocks(
       status: options.status,
       activeSubagent,
       activeMissionSummary,
+      ...(options.subagentTimingsByAgentId && {
+        subagentTimingsByAgentId: options.subagentTimingsByAgentId,
+      }),
     });
 
     if (summaryBlock) {
@@ -996,6 +1031,7 @@ function pushWorkSessionsFromRuns(
     status?: ThreadStatus;
     activeSubagent?: string;
     activeMissionSummary?: string;
+    subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   },
 ): void {
   const hasSubagentRuns = runs.some((run) => run.kind === "subagent");
@@ -1044,10 +1080,12 @@ function pushWorkSessionsFromRuns(
     segmentRunning: boolean,
   ): SubagentRunItem | undefined => {
     if (isMissionOnlyRun(run)) {
-      const completedDurationMs = resolveSubagentRunDurationMs(
-        options.lines,
+      const completedDurationMs = resolveSubagentRunDurationMsForItem(
+        run.agentId,
         run.role,
         run.occurrence,
+        options.lines,
+        options.subagentTimingsByAgentId,
       );
       if (completedDurationMs > 0) {
         const role = run.role;
@@ -1079,9 +1117,13 @@ function pushWorkSessionsFromRuns(
       mergedRun.blocks,
       options.activeSubagent === role ? options.activeMissionSummary : undefined,
     );
-    const runDurationMs = mergedRun.agentId
-      ? resolveSubagentRunDurationMsByAgentId(options.lines, mergedRun.agentId)
-      : resolveSubagentRunDurationMs(options.lines, role, mergedRun.occurrence);
+    const runDurationMs = resolveSubagentRunDurationMsForItem(
+      mergedRun.agentId,
+      role,
+      mergedRun.occurrence,
+      options.lines,
+      options.subagentTimingsByAgentId,
+    );
     const sessionKey = mergedRun.agentId
       ? `subagent-${mergedRun.agentId}`
       : `subagent-${role}-${mergedRun.occurrence}`;
@@ -1144,10 +1186,12 @@ function pushWorkSessionsFromRuns(
     const role = missionRun.role;
     const title = resolveSubagentRunTitle(missionRun.blocks, role);
     const statusLine = resolveLatestSubagentLogLine(missionRun.blocks);
-    const runDurationMs = resolveSubagentRunDurationMs(
-      options.lines,
+    const runDurationMs = resolveSubagentRunDurationMsForItem(
+      missionRun.agentId,
       role,
       missionRun.occurrence,
+      options.lines,
+      options.subagentTimingsByAgentId,
     );
     pendingSubagentItems.push({
       sessionKey: `subagent-${role}-${missionRun.occurrence}`,
