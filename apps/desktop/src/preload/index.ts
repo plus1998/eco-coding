@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   IPC_CHANNELS,
   type IpcChannel,
@@ -65,6 +65,12 @@ const api = {
   },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);
+  },
+  openWorkspacePath(workspacePath: string): Promise<WorkspaceInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenPath, workspacePath);
+  },
+  getPathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
   },
   getCurrentWorkspace(): Promise<WorkspaceInfo | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetCurrent);

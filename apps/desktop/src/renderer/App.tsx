@@ -4,7 +4,6 @@ import {
   ArrowUp,
   ChevronLeft,
   Database,
-  Folder,
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
@@ -98,11 +97,19 @@ import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
-import { formatRelativeTime } from "./relative-time";
+import { ProjectSidebarTree } from "./ProjectSidebarTree";
+import {
+  buildInitialProjectOrder,
+  prependProjectOrder,
+  reorderProjectPaths,
+  sortProjectsByOrder,
+  type ProjectReorderPosition,
+} from "./project-sidebar-order";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
 const recentProjectsStorageKey = "eco.recent-projects";
+const projectOrderStorageKey = "eco.project-order";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const sidebarThreadsCollapsed = 5;
 
@@ -145,6 +152,8 @@ function App() {
   const [collapsedProjectPaths, setCollapsedProjectPaths] = useState<Set<string>>(() => new Set());
   const [expandedProjectThreadPaths, setExpandedProjectThreadPaths] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [projectOrder, setProjectOrder] = useState<string[]>([]);
+  const projectOrderInitializedRef = useRef(false);
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
@@ -431,6 +440,22 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(projectOrderStorageKey);
+    if (!saved) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setProjectOrder(parsed);
+        projectOrderInitializedRef.current = true;
+      }
+    } catch {
+      window.localStorage.removeItem(projectOrderStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
     const saved = window.localStorage.getItem(collapsedProjectsStorageKey);
     if (!saved) return;
     try {
@@ -443,7 +468,7 @@ function App() {
     }
   }, []);
 
-  const projects = useMemo(() => {
+  const mergedProjects = useMemo(() => {
     const merged = new Map<string, RecentProject>();
     for (const project of recentProjects) {
       merged.set(project.path, project);
@@ -468,8 +493,23 @@ function App() {
         });
       }
     }
-    return [...merged.values()].sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    return [...merged.values()];
   }, [recentProjects, threads, workspace]);
+
+  const projects = useMemo(
+    () => sortProjectsByOrder(mergedProjects, projectOrder),
+    [mergedProjects, projectOrder],
+  );
+
+  useEffect(() => {
+    if (projectOrderInitializedRef.current || mergedProjects.length === 0) {
+      return;
+    }
+    const initial = buildInitialProjectOrder(mergedProjects);
+    setProjectOrder(initial);
+    window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(initial));
+    projectOrderInitializedRef.current = true;
+  }, [mergedProjects]);
 
   const threadsByProject = useMemo(() => {
     const grouped = new Map<string, ThreadSummary[]>();
@@ -902,24 +942,31 @@ function App() {
     try {
       const result = await window.eco.openWorkspace();
       if (!result.canceled && result.workspace) {
-        setWorkspace(result.workspace);
-        setSelectedProjectPath(result.workspace.path);
-        registerImportedProject(result.workspace.path, result.workspace.name);
-        setCollapsedProjectPaths((current) => {
-          if (!current.has(result.workspace!.path)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(result.workspace!.path);
-          window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
-          return next;
-        });
-        setSelectedThreadId(undefined);
-        setActivityByThread({});
-        setTodosByThread({});
+        activateWorkspace(result.workspace);
       }
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setIsOpening(false);
+    }
+  }
+
+  async function openProjectFromPath(path: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable. Run the desktop app with bun run dev:electron.");
+    }
+    const workspace = await window.eco.openWorkspacePath(path);
+    activateWorkspace(workspace);
+  }
+
+  async function handleOpenProjectFromDrop(path: string) {
+    setError(undefined);
+    setIsOpening(true);
+    try {
+      await openProjectFromPath(path);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
     } finally {
       setIsOpening(false);
     }
@@ -1322,6 +1369,24 @@ function App() {
     return window.eco.testSessionSyncConnection(input);
   }
 
+  function activateWorkspace(nextWorkspace: WorkspaceInfo) {
+    setWorkspace(nextWorkspace);
+    setSelectedProjectPath(nextWorkspace.path);
+    registerImportedProject(nextWorkspace.path, nextWorkspace.name);
+    setCollapsedProjectPaths((current) => {
+      if (!current.has(nextWorkspace.path)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(nextWorkspace.path);
+      window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    setSelectedThreadId(undefined);
+    setActivityByThread({});
+    setTodosByThread({});
+  }
+
   function registerImportedProject(path: string, name: string) {
     setRecentProjects((current) => {
       const existing = current.find((item) => item.path === path);
@@ -1329,6 +1394,20 @@ function App() {
         ? current.map((item) => (item.path === path ? { ...item, name } : item))
         : [{ path, name, importedAt: new Date().toISOString() }, ...current].slice(0, 12);
       window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
+      return next;
+    });
+    setProjectOrder((current) => {
+      const next = prependProjectOrder(current, path);
+      window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
+      projectOrderInitializedRef.current = true;
+      return next;
+    });
+  }
+
+  function reorderProjects(draggedPath: string, targetPath: string, position: ProjectReorderPosition) {
+    setProjectOrder((current) => {
+      const next = reorderProjectPaths(current, draggedPath, targetPath, position);
+      window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
       return next;
     });
   }
@@ -1615,75 +1694,17 @@ function App() {
 
         <div className="sidebar-section sidebar-section-grow">
           <div className="sidebar-section-label">项目</div>
-          {projectTree.length > 0 ? (
-            <div className="project-tree">
-              {projectTree.map(({ project, projectThreads, collapsed, visibleThreads, hasMore }) => (
-                <div key={project.path} className="project-group">
-                  <div className="project-group-row">
-                    <button
-                      type="button"
-                      className="project-folder-toggle"
-                      aria-expanded={!collapsed}
-                      aria-label={collapsed ? "展开项目" : "折叠项目"}
-                      onClick={() => toggleProjectCollapsed(project.path)}
-                    >
-                      {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        currentProjectPath === project.path && !activeThread
-                          ? "project-group-header active"
-                          : "project-group-header"
-                      }
-                      onClick={() => switchProject(project.path)}
-                    >
-                      <span>{project.name}</span>
-                    </button>
-                  </div>
-                  {!collapsed ? (
-                    projectThreads.length > 0 ? (
-                      <>
-                        {visibleThreads.map((thread) => (
-                          <button
-                            key={thread.id}
-                            type="button"
-                            className={
-                              activeThread?.id === thread.id ? "chat-item nested active" : "chat-item nested"
-                            }
-                            onClick={() => selectThread(thread)}
-                          >
-                            <span className="chat-item-title">{thread.title}</span>
-                            <span className="chat-item-meta">
-                              {thread.status === "running" ||
-                              thread.status === "failed" ||
-                              thread.status === "blocked" ? (
-                                <span className={`status-dot ${thread.status}`} title={thread.status} />
-                              ) : null}
-                              <span className="chat-item-time">
-                                {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                              </span>
-                            </span>
-                          </button>
-                        ))}
-                        {hasMore ? (
-                          <button
-                            type="button"
-                            className="project-expand"
-                            onClick={() => expandProjectThreads(project.path)}
-                          >
-                            展开显示
-                          </button>
-                        ) : null}
-                      </>
-                    ) : (
-                      <p className="project-empty">暂无对话</p>
-                    )
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
+          <ProjectSidebarTree
+            projectTree={projectTree}
+            currentProjectPath={currentProjectPath}
+            activeThreadId={activeThread?.id}
+            onSwitchProject={switchProject}
+            onSelectThread={selectThread}
+            onToggleProjectCollapsed={toggleProjectCollapsed}
+            onExpandProjectThreads={expandProjectThreads}
+            onReorderProjects={reorderProjects}
+            onOpenProjectPath={handleOpenProjectFromDrop}
+          />
         </div>
 
         <button

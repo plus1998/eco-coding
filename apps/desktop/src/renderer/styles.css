@@ -160,6 +160,28 @@ button:not(:disabled) {
   gap: 10px;
 }
 
+.project-tree-drop-target {
+  border: 1px dashed #4a4a4a;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.project-tree-empty-drop {
+  margin: 0;
+  padding: 16px 12px;
+  border: 1px dashed #3a3a3a;
+  border-radius: 10px;
+  color: #6b6b6b;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.project-tree-drop-target .project-tree-empty-drop {
+  border-color: transparent;
+  color: #8a8a8a;
+}
+
 .project-group {
   display: flex;
   flex-direction: column;
@@ -171,6 +193,52 @@ button:not(:disabled) {
   align-items: center;
   gap: 2px;
   min-width: 0;
+  position: relative;
+}
+
+.project-group-row.dragging {
+  opacity: 0.45;
+}
+
+.project-group-row.drop-before::before,
+.project-group-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.project-group-row.drop-before::before {
+  top: -1px;
+}
+
+.project-group-row.drop-after::after {
+  bottom: -1px;
+}
+
+.project-drag-handle {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 32px;
+  border-radius: 6px;
+  color: #555;
+  cursor: grab;
+}
+
+.project-drag-handle:hover {
+  color: #8a8a8a;
+  background: #2a2a2a;
+}
+
+.project-drag-handle:active {
+  cursor: grabbing;
 }
 
 .project-folder-toggle {

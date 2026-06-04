@@ -494,6 +494,19 @@ function registerIpcHandlers(): void {
     return { canceled: false, workspace: currentWorkspace };
   });
 
+  ipcMain.handle(IPC_CHANNELS.workspaceOpenPath, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    const resolvedPath = path.resolve(workspacePath.trim());
+    const stat = await fs.stat(resolvedPath);
+    if (!stat.isDirectory()) {
+      throw new Error("请选择文件夹，而不是文件。");
+    }
+    currentWorkspace = await inspectWorkspace(resolvedPath);
+    return currentWorkspace;
+  });
+
   ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
 
   ipcMain.handle(IPC_CHANNELS.workspaceInspect, async (_event, workspacePath: unknown) => {
