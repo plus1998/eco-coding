@@ -2957,7 +2957,7 @@ async function runThreadContinuation(
     const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
 
     const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh();
+      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
       }
