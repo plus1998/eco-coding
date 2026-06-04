@@ -1884,6 +1884,8 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   TaskList: "列出任务",
   TaskOutput: "读取任务输出",
   AskUserQuestion: "澄清问题",
+  WebSearch: "网络搜索",
+  WebFetch: "获取网页",
   Skill: "读取技能",
 };
 

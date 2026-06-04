@@ -93,6 +93,8 @@ const planningAllowedTools = [
   "Read",
   "Glob",
   "Grep",
+  "WebSearch",
+  "WebFetch",
   "AskUserQuestion",
   FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;

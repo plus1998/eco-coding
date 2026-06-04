@@ -27,6 +27,7 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).toContain("Agent(explore)");
   expect(append).toContain("Eco Plan Mode workflow");
   expect(append).toContain("Explore first");
+  expect(append).toContain("WebSearch");
   expect(append).toContain("Clarify when needed");
   expect(append).not.toContain("MUST NOT call `mcp__eco_plan__finalize_plan`");
   expect(append).toContain("complete replacement");
@@ -41,6 +42,8 @@ test("buildPlanningPhasePrompt enforces explore-before-finalize sequential workf
   const prompt = buildPlanningPhasePrompt("Add caching to the API layer");
   expect(prompt).toContain("explore before finalize");
   expect(prompt).toContain("Explore the worktree first");
+  expect(prompt).toContain("WebSearch");
+  expect(prompt).toContain("WebFetch");
   expect(prompt).toContain("material ambiguity");
   expect(prompt).toContain("AskUserQuestion");
   expect(prompt).toContain("mcp__eco_plan__finalize_plan");

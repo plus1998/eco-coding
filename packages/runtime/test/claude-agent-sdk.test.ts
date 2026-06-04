@@ -951,7 +951,10 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
     events.push({ type: event.type });
   }
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
+  expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("dontAsk");
+  expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
+  expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
   expect(capturedOptions[0]?.allowedTools).toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.mcpServers).toBeDefined();
   expect(
