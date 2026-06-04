@@ -11,10 +11,10 @@ import type { SkillInfo } from "../shared/skills";
 import {
   getCursorOffset,
   getSelectionOffsets,
+  insertNewlineAtSelection,
   insertPlainTextAtSelection,
   renderEditablePrompt,
   serializeEditable,
-  setCursorOffset,
   setSelectionOffsets,
 } from "./composer-skills-editable";
 
@@ -25,6 +25,7 @@ export interface ComposerSkillsInputHandle {
   getSelectionEnd: () => number;
   setCursor: (offset: number) => void;
   setSelection: (start: number, end: number) => void;
+  insertNewline: () => void;
   fitHeight: () => void;
 }
 
@@ -57,6 +58,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
   ) {
     const editorRef = useRef<HTMLDivElement>(null);
     const isComposingRef = useRef(false);
+    const lastEmittedValueRef = useRef(value);
     const skillsByNameRef = useRef(skillsByName);
     skillsByNameRef.current = skillsByName;
 
@@ -70,6 +72,18 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       [maxHeight],
     );
 
+    const commitEditorValue = useCallback(() => {
+      const editor = editorRef.current;
+      if (!editor) {
+        return;
+      }
+      const next = serializeEditable(editor);
+      lastEmittedValueRef.current = next;
+      onChange(next);
+      onCursorChange?.(getCursorOffset(editor));
+      fitHeight(editor);
+    }, [onChange, onCursorChange, fitHeight]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -80,7 +94,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
         getSelectionEnd: () => (editorRef.current ? getCursorOffset(editorRef.current) : 0),
         setCursor: (offset) => {
           if (editorRef.current) {
-            setCursorOffset(editorRef.current, offset);
+            setSelectionOffsets(editorRef.current, offset, offset);
           }
         },
         setSelection: (start, end) => {
@@ -88,37 +102,51 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
             setSelectionOffsets(editorRef.current, start, end);
           }
         },
+        insertNewline: () => {
+          if (isComposingRef.current) {
+            return;
+          }
+          insertNewlineAtSelection();
+          commitEditorValue();
+        },
         fitHeight: () => {
           if (editorRef.current) {
             fitHeight(editorRef.current);
           }
         },
       }),
-      [fitHeight],
+      [commitEditorValue, fitHeight],
     );
 
-    const syncDomFromValue = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor || isComposingRef.current) {
-        return;
-      }
-      const serialized = serializeEditable(editor);
-      if (serialized === value) {
-        return;
-      }
-      const { start, end } = getSelectionOffsets(editor);
-      renderEditablePrompt(editor, value, skillsByNameRef.current);
-      const nextStart = Math.min(start, value.length);
-      const nextEnd = Math.min(end, value.length);
-      setSelectionOffsets(editor, nextStart, nextEnd);
-    }, [value]);
+    const syncDomFromValue = useCallback(
+      (restoreCursor: boolean) => {
+        const editor = editorRef.current;
+        if (!editor || isComposingRef.current) {
+          return;
+        }
+        const serialized = serializeEditable(editor);
+        if (serialized === value) {
+          return;
+        }
+        const selection = restoreCursor ? getSelectionOffsets(editor) : null;
+        renderEditablePrompt(editor, value, skillsByNameRef.current);
+        if (selection) {
+          const nextStart = Math.min(selection.start, value.length);
+          const nextEnd = Math.min(selection.end, value.length);
+          setSelectionOffsets(editor, nextStart, nextEnd);
+        }
+      },
+      [value],
+    );
 
     useLayoutEffect(() => {
       const editor = editorRef.current;
       if (!editor) {
         return;
       }
-      syncDomFromValue();
+      const isExternalUpdate = value !== lastEmittedValueRef.current;
+      syncDomFromValue(!isExternalUpdate);
+      lastEmittedValueRef.current = value;
       fitHeight(editor);
     }, [value, fitHeight, syncDomFromValue]);
 
@@ -133,18 +161,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       const { start, end } = getSelectionOffsets(editor);
       renderEditablePrompt(editor, value, skillsByNameRef.current);
       setSelectionOffsets(editor, start, end);
-    }, [skillsByName, value]);
-
-    const commitEditorValue = useCallback(() => {
-      const editor = editorRef.current;
-      if (!editor) {
-        return;
-      }
-      const next = serializeEditable(editor);
-      onChange(next);
-      onCursorChange?.(getCursorOffset(editor));
-      fitHeight(editor);
-    }, [onChange, onCursorChange, fitHeight]);
+    }, [skillsByName]);
 
     const handleInput = () => {
       if (isComposingRef.current) {

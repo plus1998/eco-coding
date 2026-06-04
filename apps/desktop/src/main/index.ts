@@ -3170,7 +3170,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       );
     },
     undefined,
-    ...(activityAgentId && { activityAgentId }),
+    activityAgentId ? { activityAgentId } : undefined,
   );
 }
 

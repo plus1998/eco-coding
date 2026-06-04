@@ -1607,16 +1607,8 @@ function App() {
     if (!composer) {
       return;
     }
-    const start = composer.getSelectionStart();
-    const end = composer.getSelectionEnd();
-    const next = `${prompt.slice(0, start)}\n${prompt.slice(end)}`;
-    setPrompt(next);
-    const cursor = start + 1;
-    queueMicrotask(() => {
-      composer.setCursor(cursor);
-      composer.focus();
-      composer.fitHeight();
-    });
+    composer.insertNewline();
+    composer.focus();
   }
 
   function syncComposerCursor() {

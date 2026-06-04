@@ -3,12 +3,38 @@ import { formatSkillDisplayName, parsePromptSegments, skillToken } from "./compo
 
 const SKILL_SELECTOR = "[data-skill]";
 
-export function serializeEditable(root: HTMLElement): string {
+function isBlockElement(node: ChildNode): node is HTMLElement {
+  return node instanceof HTMLElement && (node.tagName === "DIV" || node.tagName === "P");
+}
+
+function isSkillElement(node: ChildNode): node is HTMLElement {
+  return node instanceof HTMLElement && node.matches(SKILL_SELECTOR);
+}
+
+function skillTokenLength(node: HTMLElement): number {
+  const name = node.dataset.skill;
+  return name ? skillToken(name).length : 0;
+}
+
+function needsBlockSeparator(prev: ChildNode, next: ChildNode): boolean {
+  return isBlockElement(prev) || isBlockElement(next);
+}
+
+function serializeChildren(parent: Node): string {
+  const children = [...parent.childNodes];
   let out = "";
-  for (const node of root.childNodes) {
+  for (let index = 0; index < children.length; index += 1) {
+    const node = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, node)) {
+      out += "\n";
+    }
     out += serializeNode(node);
   }
   return out;
+}
+
+export function serializeEditable(root: HTMLElement): string {
+  return serializeChildren(root);
 }
 
 function serializeNode(node: ChildNode): string {
@@ -21,27 +47,51 @@ function serializeNode(node: ChildNode): string {
   if (node.tagName === "BR") {
     return "\n";
   }
-  const skillName = node.dataset.skill;
-  if (skillName) {
-    return skillToken(skillName);
+  if (isSkillElement(node)) {
+    return skillToken(node.dataset.skill!);
   }
-  if (node.tagName === "DIV" || node.tagName === "P") {
-    let block = "";
-    for (const child of node.childNodes) {
-      block += serializeNode(child);
-    }
-    return block;
+  if (isBlockElement(node)) {
+    return serializeChildren(node);
   }
-  let inline = "";
-  for (const child of node.childNodes) {
-    inline += serializeNode(child);
-  }
-  return inline;
+  return serializeChildren(node);
 }
 
-function skillTokenLength(node: HTMLElement): number {
-  const name = node.dataset.skill;
-  return name ? skillToken(name).length : 0;
+function serializedLength(node: ChildNode): number {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return (node.textContent ?? "").length;
+  }
+  if (!(node instanceof HTMLElement)) {
+    return 0;
+  }
+  if (node.tagName === "BR") {
+    return 1;
+  }
+  if (isSkillElement(node)) {
+    return skillTokenLength(node);
+  }
+  const children = [...node.childNodes];
+  let length = 0;
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, child)) {
+      length += 1;
+    }
+    length += serializedLength(child);
+  }
+  return length;
+}
+
+function sumChildLengths(parent: Node, childIndex: number): number {
+  let length = 0;
+  const children = parent.childNodes;
+  for (let index = 0; index < childIndex && index < children.length; index += 1) {
+    const child = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, child)) {
+      length += 1;
+    }
+    length += serializedLength(child);
+  }
+  return length;
 }
 
 export function getSelectionOffsets(root: HTMLElement): { start: number; end: number } {
@@ -50,8 +100,8 @@ export function getSelectionOffsets(root: HTMLElement): { start: number; end: nu
     return { start: 0, end: 0 };
   }
   return {
-    start: offsetFromRoot(root, selection.anchorNode, selection.anchorOffset),
-    end: offsetFromRoot(root, selection.focusNode, selection.focusOffset),
+    start: measureOffset(root, selection.anchorNode, selection.anchorOffset),
+    end: measureOffset(root, selection.focusNode, selection.focusOffset),
   };
 }
 
@@ -59,59 +109,32 @@ export function getCursorOffset(root: HTMLElement): number {
   return getSelectionOffsets(root).end;
 }
 
-function offsetFromRoot(root: HTMLElement, targetNode: Node | null, targetOffset: number): number {
+function measureOffset(container: Node, targetNode: Node | null, targetOffset: number): number {
   if (!targetNode) {
     return 0;
   }
-  let offset = 0;
-  let found = false;
-
-  function walk(parent: Node): void {
-    if (found) {
-      return;
-    }
-    for (const child of parent.childNodes) {
-      if (found) {
-        return;
-      }
-      if (child === targetNode) {
-        if (child.nodeType === Node.TEXT_NODE) {
-          offset += targetOffset;
-        }
-        found = true;
-        return;
-      }
-      if (child instanceof HTMLElement && child.matches(SKILL_SELECTOR)) {
-        const len = skillTokenLength(child);
-        if (child.contains(targetNode)) {
-          offset += len;
-          found = true;
-          return;
-        }
-        offset += len;
-        continue;
-      }
-      if (child.nodeType === Node.TEXT_NODE) {
-        const text = child.textContent ?? "";
-        if (child === targetNode) {
-          offset += targetOffset;
-          found = true;
-          return;
-        }
-        offset += text.length;
-        continue;
-      }
-      if (child instanceof HTMLElement) {
-        if (child.contains(targetNode)) {
-          walk(child);
-          return;
-        }
-        offset += serializeNode(child).length;
-      }
-    }
+  if (container === targetNode) {
+    return sumChildLengths(container, targetOffset);
   }
 
-  walk(root);
+  let offset = 0;
+  const children = container.childNodes;
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, child)) {
+      offset += 1;
+    }
+    if (child === targetNode) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        return offset + targetOffset;
+      }
+      return offset + sumChildLengths(child, targetOffset);
+    }
+    if (child.contains(targetNode)) {
+      return offset + measureOffset(child, targetNode, targetOffset);
+    }
+    offset += serializedLength(child);
+  }
   return offset;
 }
 
@@ -136,44 +159,47 @@ export function setSelectionOffsets(root: HTMLElement, start: number, end: numbe
   selection.addRange(range);
 }
 
-function locatePosition(
-  root: HTMLElement,
-  target: number,
-): { node: Node; offset: number } | null {
-  let remaining = target;
+function locatePosition(root: HTMLElement, target: number): { node: Node; offset: number } | null {
+  return locateInParent(root, target);
+}
 
-  function walk(parent: Node): { node: Node; offset: number } | null {
-    for (const child of parent.childNodes) {
-      if (child instanceof HTMLElement && child.matches(SKILL_SELECTOR)) {
-        const len = skillTokenLength(child);
-        if (remaining <= len) {
-          if (remaining === 0) {
-            return { node: parent, offset: Array.from(parent.childNodes).indexOf(child) };
-          }
-          return { node: parent, offset: Array.from(parent.childNodes).indexOf(child) + 1 };
-        }
-        remaining -= len;
-        continue;
+function locateInParent(parent: Node, target: number): { node: Node; offset: number } | null {
+  let remaining = target;
+  const children = parent.childNodes;
+
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    if (index > 0 && needsBlockSeparator(children[index - 1]!, child)) {
+      if (remaining === 0) {
+        return { node: parent, offset: index };
       }
+      remaining -= 1;
+    }
+
+    const childLength = serializedLength(child);
+    if (remaining <= childLength) {
       if (child.nodeType === Node.TEXT_NODE) {
-        const text = child.textContent ?? "";
-        if (remaining <= text.length) {
-          return { node: child, offset: remaining };
-        }
-        remaining -= text.length;
-        continue;
+        return { node: child, offset: remaining };
       }
-      if (child instanceof HTMLElement) {
-        const hit = walk(child);
-        if (hit) {
-          return hit;
-        }
+      if (child instanceof HTMLElement && child.tagName === "BR") {
+        return remaining === 0
+          ? { node: parent, offset: index }
+          : { node: parent, offset: index + 1 };
+      }
+      if (isSkillElement(child)) {
+        return remaining === 0
+          ? { node: parent, offset: index }
+          : { node: parent, offset: index + 1 };
+      }
+      const nested = locateInParent(child, remaining);
+      if (nested) {
+        return nested;
       }
     }
-    return { node: parent, offset: parent.childNodes.length };
+    remaining -= childLength;
   }
 
-  return walk(root);
+  return { node: parent, offset: children.length };
 }
 
 const SKILL_ICON_SVG =
@@ -234,6 +260,22 @@ export function insertPlainTextAtSelection(text: string): void {
   const node = document.createTextNode(text);
   range.insertNode(node);
   range.setStartAfter(node);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** Insert a line break at the current selection without rebuilding the editor from React state. */
+export function insertNewlineAtSelection(): void {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return;
+  }
+  selection.deleteFromDocument();
+  const range = selection.getRangeAt(0);
+  const br = document.createElement("br");
+  range.insertNode(br);
+  range.setStartAfter(br);
   range.collapse(true);
   selection.removeAllRanges();
   selection.addRange(range);
