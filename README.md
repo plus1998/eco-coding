@@ -23,7 +23,7 @@ Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you ne
 
 ## Context compaction
 
-Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event; Eco updates the context meter and refreshes the `/context` breakdown.
+Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event; Eco updates the context meter and refreshes context breakdown via `getContextUsage()`.
 
 Two layers work together:
 

@@ -23,7 +23,7 @@ export interface ThreadUsageSummaryOutput {
   contextTokens?: number;
 }
 
-/** Build a minimal context card from planner usage when /context breakdown is not cached yet. */
+/** Build a minimal context card from planner usage when getContextUsage breakdown is not cached yet. */
 export function buildFallbackContextSnapshot(options: {
   context?: ThreadContextSnapshot;
   contextTokens?: number;

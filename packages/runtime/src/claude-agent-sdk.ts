@@ -173,7 +173,7 @@ export interface ClaudeAgentSdkDriverOptions {
   hookContext?: EcoHookContext;
   /** Mirror SDK session transcripts to external storage (mutually exclusive with file checkpointing). */
   sessionStore?: SessionStore;
-  /** Optional probe logging for `/context` and `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
+  /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
 }
 
@@ -278,8 +278,18 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSlashCommand(input, "/compact", { permissionMode: "dontAsk" });
   }
 
-  async *contextSnapshot(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    yield* this.runSlashCommand(input, "/context", { permissionMode: "dontAsk" });
+  /** Reads context breakdown via SDK `getContextUsage()`. */
+  async *fetchContextUsage(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    if (!input.resume?.resumeSessionId) {
+      throw new Error("fetchContextUsage requires an existing SDK session (resume).");
+    }
+    yield* this.runSingleSession(input, {
+      prompt: "",
+      permissionMode: "dontAsk",
+      allowedTools: [],
+      phaseAppend: "",
+      contextUsageOnly: true,
+    });
   }
 
   async *runContinuation(
@@ -397,6 +407,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: string;
       agents?: Record<string, unknown>;
       availability?: SubagentAvailability;
+      /** Open resume session, call `getContextUsage()`, close — no slash commands. */
+      contextUsageOnly?: boolean;
     },
   ): AsyncGenerator<AgentEvent, { transcript: string; finalizedPlan?: FinalizePlanPayload }> {
     const sdk = await this.loadSdk();
@@ -486,6 +498,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     let transcript = "";
     let sessionCaptured = false;
+    let activeSessionId = "unknown-session";
     const resolveSubagent = this.options.hookContext?.subagentAttribution?.resolveAgentId;
     const streamCtx = createSdkStreamContext({
       ...(resolveSubagent && {
@@ -497,17 +510,59 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }),
       }),
     });
-    const contextSlash = phase.prompt.trim() === "/context";
+    const slashPrompt = phase.prompt.trim().startsWith("/");
+    let contextUsageCollected = false;
+    let contextUsageOnlyFetched = false;
     for await (const message of query) {
-      if (contextSlash) {
-        this.options.onContextProbe?.("raw_sdk_message", summarizeSdkMessageForProbe(message));
+      if (phase.contextUsageOnly) {
+        if (!contextUsageOnlyFetched) {
+          contextUsageOnlyFetched = true;
+          if (isSdkInitMessage(message)) {
+            const sessionId = readSdkSessionId(message);
+            if (sessionId) {
+              activeSessionId = sessionId;
+            }
+          } else if (isRecord(message) && typeof message.session_id === "string") {
+            activeSessionId = message.session_id;
+          }
+          const events = await this.collectContextUsageEvents(
+            query,
+            input.threadId,
+            activeSessionId !== "unknown-session"
+              ? activeSessionId
+              : (input.resume?.resumeSessionId ?? activeSessionId),
+          );
+          for (const contextEvent of events) {
+            yield contextEvent;
+          }
+          query.close?.();
+        }
+        break;
       }
+
       if (!sessionCaptured && isSdkInitMessage(message)) {
         const sessionId = readSdkSessionId(message);
         if (sessionId) {
           sessionCaptured = true;
+          activeSessionId = sessionId;
           yield createSessionCapturedEvent(input.threadId, sessionId, input.worktreePath);
         }
+      }
+
+      let pendingContextEvents: AgentEvent[] = [];
+      if (
+        isRecord(message) &&
+        message.type === "result" &&
+        !slashPrompt &&
+        !contextUsageCollected &&
+        typeof query.getContextUsage === "function"
+      ) {
+        contextUsageCollected = true;
+        pendingContextEvents = await this.collectContextUsageEvents(
+          query,
+          input.threadId,
+          activeSessionId,
+        );
       }
 
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
@@ -515,25 +570,55 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         transcript = appendToPhaseTranscript(transcript, event);
       }
 
+      for (const contextEvent of pendingContextEvents) {
+        yield contextEvent;
+      }
+
       if (input.signal.aborted) {
         break;
       }
     }
 
-    if (contextSlash && typeof query.getContextUsage === "function") {
-      try {
-        const usage = await query.getContextUsage();
-        this.options.onContextProbe?.("getContextUsage", {
-          usage: usage as unknown as Record<string, unknown>,
-        });
-      } catch (error) {
-        this.options.onContextProbe?.("getContextUsage_error", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
     return { transcript: transcript.trim(), ...(finalizedPlan ? { finalizedPlan } : {}) };
+  }
+
+  /** While the SDK query transport is still open (on each `result` message). */
+  private async collectContextUsageEvents(
+    query: AsyncIterable<unknown> & { getContextUsage?: () => Promise<Record<string, unknown>> },
+    threadId: string,
+    sessionId: string,
+  ): Promise<AgentEvent[]> {
+    if (typeof query.getContextUsage !== "function") {
+      return [];
+    }
+    try {
+      const usage = await query.getContextUsage();
+      this.options.onContextProbe?.("getContextUsage", {
+        usage: usage as unknown as Record<string, unknown>,
+        timing: "on_result",
+      });
+      const role: AgentRole = "planner";
+      return [
+        createAgentEvent({
+          id: `${crypto.randomUUID()}:sdk-context-usage`,
+          threadId,
+          agentId: sessionId,
+          role,
+          type: "usage.recorded",
+          payload: {
+            type: "sdk_context_usage",
+            ecoSdkContextUsage: usage,
+          },
+        }),
+      ];
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.options.onContextProbe?.("getContextUsage_error", {
+        error: errorMessage,
+        timing: "on_result",
+      });
+      return [];
+    }
   }
 
   private async *runSlashCommand(
@@ -840,19 +925,6 @@ export function readSdkSlashCommands(message: unknown): string[] {
 export function sdkSupportsSlashCommand(commands: readonly string[], name: string): boolean {
   const normalized = name.replace(/^\//, "").toLowerCase();
   return commands.some((entry) => entry.replace(/^\//, "").toLowerCase() === normalized);
-}
-
-export function extractSdkContextResultText(payload: unknown): string | undefined {
-  if (!isRecord(payload)) {
-    return undefined;
-  }
-  if (typeof payload.result === "string" && payload.result.trim()) {
-    return payload.result.trim();
-  }
-  if (payload.type === "result" && typeof payload.result === "string") {
-    return payload.result.trim();
-  }
-  return undefined;
 }
 
 export function extractCompactPostTokens(payload: unknown): number | undefined {
@@ -1890,30 +1962,6 @@ function pathBasename(filePath: string): string {
 
 export function isStreamableAgentEventType(type: AgentEventType): boolean {
   return type === "message.delta";
-}
-
-function summarizeSdkMessageForProbe(message: unknown): Record<string, unknown> {
-  if (!isRecord(message)) {
-    return { raw: message };
-  }
-  const summary: Record<string, unknown> = {
-    type: message.type,
-    ...(typeof message.subtype === "string" && { subtype: message.subtype }),
-    ...(typeof message.session_id === "string" && { session_id: message.session_id }),
-  };
-  if (typeof message.result === "string") {
-    const text = message.result;
-    summary.resultLength = text.length;
-    summary.result =
-      text.length > 16_000 ? `${text.slice(0, 16_000)}…[truncated]` : text;
-  }
-  if (message.usage !== undefined) {
-    summary.usage = message.usage;
-  }
-  if (message.modelUsage !== undefined) {
-    summary.modelUsage = message.modelUsage;
-  }
-  return summary;
 }
 
 export {

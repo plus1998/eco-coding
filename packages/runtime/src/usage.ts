@@ -170,6 +170,10 @@ export function parseSdkUsageBilling(payload: unknown): {
     return null;
   }
 
+  if (payload.type === "sdk_context_usage" || payload.ecoSdkContextUsage !== undefined) {
+    return null;
+  }
+
   const modelBillings = parseSdkModelUsageBilling(payload);
   const explicitTotalCostUsd =
     typeof payload.totalCostUsd === "number"

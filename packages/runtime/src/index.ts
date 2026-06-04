@@ -74,8 +74,8 @@ export interface AgentRuntimeDriver {
   ): AsyncIterable<AgentEvent>;
   /** Sends `/compact` on an existing session (requires resume). */
   compactSession?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
-  /** Sends `/context` on an existing session (requires resume). */
-  contextSnapshot?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
+  /** SDK `getContextUsage()` on an existing session (requires resume). */
+  fetchContextUsage?(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent>;
 }
 
 export interface RunningThread {
@@ -351,13 +351,16 @@ export {
 export {
   CONTEXT_SEGMENT_COLORS,
   CONTEXT_SEGMENT_LABELS,
+  contextSegmentDisplayLabel,
   mergeBreakdownWithOccupancy,
   normalizeContextSegments,
   parseContextCommandHeader,
   parseContextCommandResult,
+  parseSdkGetContextUsageBreakdown,
   type ContextBreakdownSegment,
   type ContextCommandHeader,
   type ContextSegmentKey,
+  type SdkContextUsageBreakdown,
 } from "./context-breakdown";
 export {
   extractPhaseDeliverable,

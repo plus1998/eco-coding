@@ -161,6 +161,181 @@ function shouldIgnoreUnknownLabel(label: string): boolean {
   return CONTEXT_TOTAL_LABEL_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
+function shouldSkipSdkCategory(
+  name: string,
+  tokens: number,
+  limit: number,
+  isDeferred?: boolean,
+): boolean {
+  if (tokens <= 0 || !name.trim()) {
+    return true;
+  }
+  if (isDeferred) {
+    return true;
+  }
+  if (shouldIgnoreUnknownLabel(name) || /^free\s*space$/i.test(name.trim())) {
+    return true;
+  }
+  // SDK may report template/deferred sizes larger than the live context window.
+  if (tokens > limit) {
+    return true;
+  }
+  return false;
+}
+
+function scaleSegmentsToOccupied(
+  segments: ContextBreakdownSegment[],
+  occupied: number,
+): ContextBreakdownSegment[] {
+  const normalized = normalizeContextSegments(segments);
+  const sum = normalized.reduce((total, segment) => total + segment.tokens, 0);
+  if (sum <= 0) {
+    return mergeBreakdownWithOccupancy([], occupied);
+  }
+  if (sum <= occupied) {
+    return mergeBreakdownWithOccupancy(normalized, occupied);
+  }
+  const factor = occupied / sum;
+  const scaled = normalized.map((segment) => ({
+    ...segment,
+    tokens: Math.max(1, Math.round(segment.tokens * factor)),
+  }));
+  return mergeBreakdownWithOccupancy(scaled, occupied);
+}
+
+function buildBreakdownSegment(
+  key: ContextSegmentKey,
+  label: string,
+  tokens: number,
+): ContextBreakdownSegment {
+  return {
+    key,
+    label,
+    tokens,
+    color: CONTEXT_SEGMENT_COLORS[key],
+  };
+}
+
+function formatSdkBreakdownName(name: string): string {
+  const trimmed = name.trim();
+  const friendly: Record<string, string> = {
+    skill_listing: "技能列表",
+    task_reminder: "任务提醒",
+  };
+  return friendly[trimmed] ?? trimmed.replace(/_/g, " ");
+}
+
+/** Keep SDK messageBreakdown rows separate (do not merge by segment key). */
+function finalizeSdkMessageSegments(
+  segments: ContextBreakdownSegment[],
+  occupied: number,
+): ContextBreakdownSegment[] | null {
+  const filtered = segments.filter((segment) => segment.tokens > 0);
+  const sum = filtered.reduce((total, segment) => total + segment.tokens, 0);
+  if (sum <= 0 || Math.abs(sum - occupied) > Math.max(occupied * 0.05, 512)) {
+    return null;
+  }
+  if (sum === occupied) {
+    return filtered.sort((left, right) => right.tokens - left.tokens);
+  }
+  const factor = occupied / sum;
+  return filtered
+    .map((segment) => ({
+      ...segment,
+      tokens: Math.max(1, Math.round(segment.tokens * factor)),
+    }))
+    .sort((left, right) => right.tokens - left.tokens);
+}
+
+function segmentsFromMessageBreakdown(
+  payload: Record<string, unknown>,
+  occupied: number,
+): ContextBreakdownSegment[] | null {
+  const breakdown = payload.messageBreakdown;
+  if (!isRecord(breakdown)) {
+    return null;
+  }
+  const rows: ContextBreakdownSegment[] = [];
+
+  const userMessageTokens = readNumber(breakdown.userMessageTokens);
+  if (userMessageTokens > 0) {
+    rows.push(buildBreakdownSegment("conversation", "用户消息", userMessageTokens));
+  }
+  const assistantMessageTokens = readNumber(breakdown.assistantMessageTokens);
+  if (assistantMessageTokens > 0) {
+    rows.push(buildBreakdownSegment("conversation", "助手消息", assistantMessageTokens));
+  }
+
+  const toolCallsByType = breakdown.toolCallsByType;
+  if (Array.isArray(toolCallsByType) && toolCallsByType.length > 0) {
+    for (const entry of toolCallsByType) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const name = typeof entry.name === "string" ? entry.name : "工具";
+      const tokens = readNumber(entry.callTokens) + readNumber(entry.resultTokens);
+      if (tokens > 0) {
+        rows.push(buildBreakdownSegment("toolDefinitions", `工具 · ${name}`, tokens));
+      }
+    }
+  } else {
+    const toolCallTokens = readNumber(breakdown.toolCallTokens);
+    if (toolCallTokens > 0) {
+      rows.push(buildBreakdownSegment("toolDefinitions", "工具调用", toolCallTokens));
+    }
+    const toolResultTokens = readNumber(breakdown.toolResultTokens);
+    if (toolResultTokens > 0) {
+      rows.push(buildBreakdownSegment("toolDefinitions", "工具结果", toolResultTokens));
+    }
+  }
+
+  const attachmentsByType = breakdown.attachmentsByType;
+  if (Array.isArray(attachmentsByType) && attachmentsByType.length > 0) {
+    for (const entry of attachmentsByType) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const name = typeof entry.name === "string" ? entry.name : "";
+      const tokens = readNumber(entry.tokens);
+      if (tokens > 0 && name) {
+        rows.push(
+          buildBreakdownSegment("conversation", `附件 · ${formatSdkBreakdownName(name)}`, tokens),
+        );
+      }
+    }
+  } else {
+    const attachmentTokens = readNumber(breakdown.attachmentTokens);
+    if (attachmentTokens > 0) {
+      rows.push(buildBreakdownSegment("conversation", "附件", attachmentTokens));
+    }
+  }
+
+  const redirectedContextTokens = readNumber(breakdown.redirectedContextTokens);
+  if (redirectedContextTokens > 0) {
+    rows.push(buildBreakdownSegment("conversation", "重定向上下文", redirectedContextTokens));
+  }
+
+  const unattributedTokens = readNumber(breakdown.unattributedTokens);
+  if (unattributedTokens > 0) {
+    rows.push(buildBreakdownSegment("unattributed", "未归因上下文", unattributedTokens));
+  }
+
+  return finalizeSdkMessageSegments(rows, occupied);
+}
+
+/** Prefer SDK-specific labels over canonical segment names in the UI. */
+export function contextSegmentDisplayLabel(segment: ContextBreakdownSegment): string {
+  const canonical = CONTEXT_SEGMENT_LABELS[segment.key];
+  if (segment.label && segment.label !== canonical) {
+    return segment.label;
+  }
+  return canonical ?? segment.label.replace(/占用$/u, "");
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function segmentFromKey(key: ContextSegmentKey, tokens: number): ContextBreakdownSegment {
   return {
     key,
@@ -250,6 +425,116 @@ export function parseContextCommandResult(
     .map(([key, tokens]) => segmentFromKey(key, tokens))
     .filter((segment) => segment.tokens > 0)
     .sort((a, b) => b.tokens - a.tokens);
+}
+
+export interface SdkContextUsageBreakdown {
+  occupied: number;
+  limit: number;
+  occupancyPct?: number;
+  modelId?: string;
+  segments: ContextBreakdownSegment[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Maps Claude Agent SDK `getContextUsage()` control response to Eco breakdown segments.
+ */
+export function parseSdkGetContextUsageBreakdown(payload: unknown): SdkContextUsageBreakdown | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  const occupied = typeof payload.totalTokens === "number" ? payload.totalTokens : 0;
+  const limit = typeof payload.maxTokens === "number" ? payload.maxTokens : 0;
+  if (occupied <= 0 || limit <= 0) {
+    return null;
+  }
+
+  const messageSegments = segmentsFromMessageBreakdown(payload, occupied);
+  if (messageSegments && messageSegments.length > 0) {
+    const occupancyPct =
+      typeof payload.percentage === "number" && Number.isFinite(payload.percentage)
+        ? Math.round(payload.percentage)
+        : undefined;
+    const modelId = typeof payload.model === "string" ? payload.model : undefined;
+    return {
+      occupied,
+      limit,
+      ...(occupancyPct !== undefined && { occupancyPct }),
+      ...(modelId && { modelId }),
+      segments: messageSegments,
+    };
+  }
+
+  const segmentTotals = new Map<ContextSegmentKey, number>();
+  const addCategory = (name: string, tokens: number, isDeferred?: boolean) => {
+    if (shouldSkipSdkCategory(name, tokens, limit, isDeferred)) {
+      return;
+    }
+    const key = resolveSegmentKey(name) ?? "unattributed";
+    segmentTotals.set(key, (segmentTotals.get(key) ?? 0) + tokens);
+  };
+
+  if (Array.isArray(payload.categories)) {
+    for (const entry of payload.categories) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const name = typeof entry.name === "string" ? entry.name : "";
+      const tokens = typeof entry.tokens === "number" ? entry.tokens : 0;
+      const isDeferred = entry.isDeferred === true;
+      addCategory(name, tokens, isDeferred);
+    }
+  }
+
+  const addNamedEntries = (
+    entries: unknown,
+    nameKey: string,
+    tokensKey = "tokens",
+  ) => {
+    if (!Array.isArray(entries)) {
+      return;
+    }
+    for (const entry of entries) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const name = typeof entry[nameKey] === "string" ? entry[nameKey] : "";
+      const tokens = typeof entry[tokensKey] === "number" ? entry[tokensKey] : 0;
+      addCategory(name, tokens);
+    }
+  };
+
+  addNamedEntries(payload.systemPromptSections, "name");
+  addNamedEntries(payload.systemTools, "name");
+  addNamedEntries(payload.mcpTools, "name");
+  addNamedEntries(payload.deferredBuiltinTools, "name");
+  addNamedEntries(payload.agents, "agentType");
+
+  if (isRecord(payload.skills) && typeof payload.skills.tokens === "number") {
+    addCategory("Skills", payload.skills.tokens);
+  }
+
+  const rawSegments = [...segmentTotals.entries()]
+    .map(([key, tokens]) => segmentFromKey(key, tokens))
+    .filter((segment) => segment.tokens > 0)
+    .sort((left, right) => right.tokens - left.tokens);
+
+  const occupancyPct =
+    typeof payload.percentage === "number" && Number.isFinite(payload.percentage)
+      ? Math.round(payload.percentage)
+      : undefined;
+  const modelId = typeof payload.model === "string" ? payload.model : undefined;
+
+  return {
+    occupied,
+    limit,
+    ...(occupancyPct !== undefined && { occupancyPct }),
+    ...(modelId && { modelId }),
+    segments: scaleSegmentsToOccupied(rawSegments, occupied),
+  };
 }
 
 export function mergeBreakdownWithOccupancy(

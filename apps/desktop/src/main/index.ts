@@ -338,28 +338,7 @@ app.whenReady().then(async () => {
       }
       return gitWorktrees.isInsideWorktree(worktreePath);
     },
-    withSdkDriver: async (threadId, fn) => {
-      const roleRoutes = resolveRoleRoutesForThread(threadId);
-      const runtimeConfig = resolveRuntimeConfig(
-        providerStore.getSettings(),
-        providerStore.listProvidersWithSecrets(),
-        roleRoutes,
-      );
-      if (!runtimeConfig.ok) {
-        throw new Error(runtimeConfig.reason);
-      }
-      const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId, {
-        emitRequestActivity: false,
-      });
-      const driverRoutes = buildDriverRoutes(attemptProxy.routes);
-      try {
-        const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
-        const controller = new AbortController();
-        await fn(driver, controller.signal, driverRoutes);
-      } finally {
-        await attemptProxy.close();
-      }
-    },
+    withSdkDriver: (threadId, fn) => withThreadSdkDriver(threadId, fn),
     emitContext: emitThreadContextUpdated,
     emitActivity: (threadId, message) => {
       emitThreadEvent(threadId, "otel.activity", message, "system", false);
@@ -1404,7 +1383,7 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(thread.id, event);
+            onSdkUsageRecordedEvent(thread.id, event, cwd);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -1572,7 +1551,7 @@ async function runCodingThreadSdkDefault(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(thread.id, event);
+            onSdkUsageRecordedEvent(thread.id, event, cwd);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -1709,7 +1688,7 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(thread.id, event);
+            onSdkUsageRecordedEvent(thread.id, event, cwd);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -1742,12 +1721,6 @@ async function runCodingThreadPlanning(
               plan: event.payload.plan,
               analysis: event.payload.analysis,
             });
-          }
-
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(thread.id, event);
-            continue;
           }
 
           emitSdkStreamActivity(thread.id, event);
@@ -1950,7 +1923,7 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(threadId, event);
+            onSdkUsageRecordedEvent(threadId, event, executionCwd);
             continue;
           }
 
@@ -2637,11 +2610,43 @@ function buildSdkHookContextExtras(
   return { ...rest, subagentSessions, subagentAttribution };
 }
 
+async function withThreadSdkDriver(
+  threadId: string,
+  fn: (
+    driver: ClaudeAgentSdkDriver,
+    signal: AbortSignal,
+    routes: readonly ResolvedModelRoute[],
+  ) => Promise<void>,
+  onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
+): Promise<void> {
+  const roleRoutes = resolveRoleRoutesForThread(threadId);
+  const runtimeConfig = resolveRuntimeConfig(
+    providerStore.getSettings(),
+    providerStore.listProvidersWithSecrets(),
+    roleRoutes,
+  );
+  if (!runtimeConfig.ok) {
+    throw new Error(runtimeConfig.reason);
+  }
+  const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId, {
+    emitRequestActivity: false,
+  });
+  const driverRoutes = buildDriverRoutes(attemptProxy.routes);
+  try {
+    const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution", onContextProbe);
+    const controller = new AbortController();
+    await fn(driver, controller.signal, driverRoutes);
+  } finally {
+    await attemptProxy.close();
+  }
+}
+
 function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
   hookContextExtras?: Partial<EcoHookContext>,
   runPhase: SubagentRunPhase = "execution",
+  onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): ClaudeAgentSdkDriver {
   const endpoint = localOtelReceiver.getEndpoint();
   if (!endpoint) {
@@ -2662,9 +2667,13 @@ function createSdkDriver(
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
     },
-    onContextProbe: (phase, detail) => {
-      logContextSnapshot(phase, { threadId, ...detail });
-    },
+    onContextProbe: onContextProbe
+      ? (phase, detail) => {
+          onContextProbe(phase, detail);
+        }
+      : (phase, detail) => {
+          logContextSnapshot(phase, { threadId, ...detail });
+        },
     otel: { endpoint, threadId },
     ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
   });
@@ -3049,7 +3058,7 @@ async function runThreadContinuation(
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            recordSdkUsageFromEvent(thread.id, event);
+            onSdkUsageRecordedEvent(thread.id, event, cwd);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -3606,7 +3615,7 @@ function resolveThreadWorktreePath(threadId: string): string | undefined {
   return worktreePathHint;
 }
 
-/** Call after activeRuns.delete so /context breakdown is not blocked as "still running". */
+/** Call after activeRuns.delete so getContextUsage refresh is not blocked as "still running". */
 function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   contextScheduler.emitLiveFromMonitor(threadId);
   const thread = conversationStore.getThread(threadId);
@@ -3615,7 +3624,9 @@ function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   }
   const path = worktreePath ?? resolveThreadWorktreePath(threadId);
   if (path) {
-    scheduleContextBreakdownRefresh(threadId, path, true);
+    if (!contextScheduler.hasRecentSdkContextUsage(threadId)) {
+      scheduleContextBreakdownRefresh(threadId, path, true);
+    }
     void schedulePostRunCompactionIfNeeded(threadId, path);
   }
 }
@@ -3781,6 +3792,10 @@ function handleSdkContextSideEffects(
     return;
   }
   const payload = event.payload;
+  if (payload.type === "sdk_context_usage" && payload.ecoSdkContextUsage !== undefined) {
+    contextScheduler.applySdkContextUsageBreakdown(threadId, payload.ecoSdkContextUsage);
+    return;
+  }
   if (payload.subtype === "compact_boundary") {
     const postTokens = extractCompactPostTokens(payload);
     contextMonitor.markCompactCompleted(threadId, postTokens);
@@ -3793,6 +3808,18 @@ function handleSdkContextSideEffects(
   if (payload.type === "system" && payload.subtype === "status" && payload.status === "compacting") {
     contextMonitor.noteOtelCompaction(threadId);
   }
+}
+
+function onSdkUsageRecordedEvent(
+  threadId: string,
+  event: AgentEventLike & { id: string },
+  worktreePath?: string,
+): void {
+  handleSdkContextSideEffects(threadId, event, worktreePath);
+  if (isRecord(event.payload) && event.payload.type === "sdk_context_usage") {
+    return;
+  }
+  recordSdkUsageFromEvent(threadId, event);
 }
 
 function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id: string }): void {

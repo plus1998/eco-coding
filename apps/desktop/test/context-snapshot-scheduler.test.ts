@@ -154,7 +154,7 @@ test("clearSubagentState drops cached child role snapshots and segments", () => 
   expect(snapshot?.segments).toEqual(plannerSegments);
 });
 
-test("refreshBreakdownNow applies /context header and planner segments", async () => {
+test("refreshBreakdownNow applies getContextUsage breakdown and planner segments", async () => {
   const emitted: ThreadContextSnapshot[] = [];
   let monitorSnapshot: ContextMonitorSnapshot = {
     occupied: 36_000,
@@ -191,23 +191,29 @@ test("refreshBreakdownNow applies /context header and planner segments", async (
     shouldCompact: () => false,
   } as unknown as ContextWindowMonitor;
 
-  const contextText = `
-claude-sonnet-4 · 76k/200k tokens (38%)
-System prompt: 2.7k tokens
-System tools: 16.8k tokens
-Messages: 9.6k tokens
-`;
-
   const scheduler = new ContextSnapshotScheduler({
     monitor,
     isThreadRunning: () => false,
     getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
     withSdkDriver: async (_threadId, fn) => {
       const driver = {
-        contextSnapshot: async function* () {
+        fetchContextUsage: async function* () {
           yield {
             type: "usage.recorded",
-            payload: { type: "result", result: contextText },
+            payload: {
+              type: "sdk_context_usage",
+              ecoSdkContextUsage: {
+                totalTokens: 76_000,
+                maxTokens: 200_000,
+                percentage: 38,
+                model: "claude-sonnet-4",
+                categories: [
+                  { name: "System prompt", tokens: 2700, color: "#aaa" },
+                  { name: "System tools", tokens: 16_800, color: "#bbb" },
+                  { name: "Messages", tokens: 9600, color: "#ccc" },
+                ],
+              },
+            },
           };
         },
       };

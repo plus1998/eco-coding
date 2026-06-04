@@ -4,6 +4,7 @@ import {
   normalizeContextSegments,
   parseContextCommandHeader,
   parseContextCommandResult,
+  parseSdkGetContextUsageBreakdown,
 } from "../src/context-breakdown";
 import {
   computeOccupancyRatio,
@@ -152,6 +153,52 @@ test("parseContextCommandHeader parses compact numeric forms", () => {
   expect(header?.occupied).toBe(17_000);
   expect(header?.limit).toBe(1_100_000);
   expect(header?.occupancyPct).toBe(2);
+});
+
+test("parseSdkGetContextUsageBreakdown maps SDK categories", () => {
+  const parsed = parseSdkGetContextUsageBreakdown({
+    totalTokens: 64_700,
+    maxTokens: 200_000,
+    percentage: 32,
+    model: "eco-planner",
+    categories: [
+      { name: "System prompt", tokens: 12_500, color: "#aaa" },
+      { name: "Messages", tokens: 50_000, color: "#bbb" },
+    ],
+  });
+  expect(parsed?.occupied).toBe(64_700);
+  expect(parsed?.limit).toBe(200_000);
+  expect(parsed?.occupancyPct).toBe(32);
+  const segmentSum = parsed?.segments.reduce((sum, segment) => sum + segment.tokens, 0) ?? 0;
+  expect(segmentSum).toBe(64_700);
+});
+
+test("parseSdkGetContextUsageBreakdown skips deferred sizes and uses messageBreakdown", () => {
+  const parsed = parseSdkGetContextUsageBreakdown({
+    totalTokens: 31_528,
+    maxTokens: 200_000,
+    percentage: 16,
+    categories: [
+      { name: "System prompt", tokens: 409_864, color: "#aaa" },
+      { name: "Messages", tokens: 31_528, color: "#bbb" },
+      { name: "Free space", tokens: 0, color: "#ccc" },
+    ],
+    messageBreakdown: {
+      userMessageTokens: 2098,
+      assistantMessageTokens: 270,
+      toolCallTokens: 28,
+      toolResultTokens: 42,
+      attachmentTokens: 1672,
+      unattributedTokens: 27_418,
+      toolCallsByType: [{ name: "WebSearch", callTokens: 28, resultTokens: 42 }],
+      attachmentsByType: [{ name: "skill_listing", tokens: 1672 }],
+    },
+  });
+  expect(parsed?.occupied).toBe(31_528);
+  expect(parsed?.segments.reduce((sum, segment) => sum + segment.tokens, 0)).toBe(31_528);
+  expect(parsed?.segments.find((segment) => segment.label === "用户消息")?.tokens).toBe(2098);
+  expect(parsed?.segments.find((segment) => segment.label === "未归因上下文")?.tokens).toBe(27_418);
+  expect(parsed?.segments.some((segment) => segment.label.startsWith("工具 ·"))).toBe(true);
 });
 
 test("effectiveContextLimit deducts autocompact buffer and output reserve", () => {

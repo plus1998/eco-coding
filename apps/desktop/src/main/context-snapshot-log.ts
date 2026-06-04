@@ -15,10 +15,10 @@ export function logContextSnapshot(phase: string, detail: Record<string, unknown
   const line = JSON.stringify({ phase, ...detail });
   const max = 64_000;
   if (line.length <= max) {
-    process.stderr.write(`[eco] /context ${line}\n`);
+    process.stderr.write(`[eco] context-usage ${line}\n`);
     return;
   }
   process.stderr.write(
-    `[eco] /context ${JSON.stringify({ phase, truncated: true, length: line.length, preview: line.slice(0, max) })}\n`,
+    `[eco] context-usage ${JSON.stringify({ phase, truncated: true, length: line.length, preview: line.slice(0, max) })}\n`,
   );
 }

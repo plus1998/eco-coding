@@ -2,14 +2,12 @@ import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   mergeBreakdownWithOccupancy,
   normalizeContextSegments,
-  parseContextCommandHeader,
-  parseContextCommandResult,
+  parseSdkGetContextUsageBreakdown,
   parseUsagePayload,
   type EcoSdkResumeOptions,
 } from "@eco/runtime";
 import {
   extractCompactPostTokens,
-  extractSdkContextResultText,
   readSdkSlashCommands,
   sdkSupportsSlashCommand,
   type AgentRuntimeDriver,
@@ -20,17 +18,23 @@ import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context
 import { logContextSnapshot } from "./context-snapshot-log";
 
 const REFRESH_DEBOUNCE_MS = 3000;
+/** Skip redundant getContextUsage fetch when one ran recently on the same thread. */
+const SDK_CONTEXT_USAGE_FRESH_MS = 60_000;
 
 type SdkDriver = ClaudeAgentSdkDriver & {
   compactSession?: AgentRuntimeDriver["compactSession"];
-  contextSnapshot?: AgentRuntimeDriver["contextSnapshot"];
+  fetchContextUsage?: AgentRuntimeDriver["fetchContextUsage"];
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 export interface ContextSnapshotSchedulerOptions {
   monitor: ContextWindowMonitor;
   isThreadRunning: (threadId: string) => boolean;
   getResume: (threadId: string, worktreePath: string) => EcoSdkResumeOptions | undefined;
-  /** When set, skip /context refresh if the worktree path is missing or no longer a git worktree. */
+  /** When set, skip context refresh if the worktree path is missing or no longer a git worktree. */
   isWorktreePathReady?: (worktreePath: string) => Promise<boolean>;
   withSdkDriver: (
     threadId: string,
@@ -42,13 +46,35 @@ export interface ContextSnapshotSchedulerOptions {
 
 export class ContextSnapshotScheduler {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Planner-only breakdown segments from `/context`. */
+  /** Planner-only breakdown segments from SDK `getContextUsage()`. */
   private readonly lastPlannerSegments = new Map<string, ThreadContextSnapshot["segments"]>();
   private readonly lastEmitted = new Map<string, ThreadContextSnapshot>();
   private readonly breakdownInFlight = new Set<string>();
   private readonly refreshInFlight = new Set<string>();
+  private readonly lastSdkContextUsageAt = new Map<string, number>();
 
   constructor(private readonly options: ContextSnapshotSchedulerOptions) {}
+
+  hasRecentSdkContextUsage(threadId: string, maxAgeMs = SDK_CONTEXT_USAGE_FRESH_MS): boolean {
+    const at = this.lastSdkContextUsageAt.get(threadId);
+    return at !== undefined && Date.now() - at < maxAgeMs;
+  }
+
+  applySdkContextUsageBreakdown(threadId: string, payload: unknown): boolean {
+    const parsed = parseSdkGetContextUsageBreakdown(payload);
+    if (!parsed) {
+      return false;
+    }
+    void this.options.monitor.updateOccupied(threadId, "planner", parsed.occupied, {
+      limit: parsed.limit,
+    });
+    if (parsed.segments.length > 0) {
+      this.lastPlannerSegments.set(threadId, normalizeContextSegments(parsed.segments));
+    }
+    this.lastSdkContextUsageAt.set(threadId, Date.now());
+    this.emitLiveFromMonitor(threadId);
+    return true;
+  }
 
   /** Real-time meter from usage / monitor — never marked stale. */
   emitLiveFromMonitor(threadId: string): void {
@@ -66,6 +92,9 @@ export class ContextSnapshotScheduler {
     worktreePath: string,
     immediate = false,
   ): void {
+    if (this.hasRecentSdkContextUsage(threadId)) {
+      return;
+    }
     if (this.options.isThreadRunning(threadId)) {
       return;
     }
@@ -120,6 +149,7 @@ export class ContextSnapshotScheduler {
     this.lastEmitted.delete(threadId);
     this.breakdownInFlight.delete(threadId);
     this.refreshInFlight.delete(threadId);
+    this.lastSdkContextUsageAt.delete(threadId);
     this.options.monitor.clearThread(threadId);
   }
 
@@ -343,73 +373,38 @@ export class ContextSnapshotScheduler {
     try {
       await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
         const driverRoutesList = driverRoutes;
-        if (!driver.contextSnapshot) {
+        if (!driver.fetchContextUsage) {
           return;
         }
 
-        let contextText = "";
-        let slashCommands: string[] = [];
+        let applied = false;
 
-        for await (const event of driver.contextSnapshot({
+        for await (const event of driver.fetchContextUsage({
           threadId,
-          prompt: "/context",
+          prompt: "",
           workspacePath: worktreePath,
           worktreePath,
           routes: [...driverRoutesList],
           signal: runSignal,
           resume,
         })) {
-          if (event.type === "agent.started" && isRecord(event.payload)) {
-            const commands = readSdkSlashCommands(event.payload);
-            if (commands.length > 0) {
-              slashCommands = commands;
-            }
-          }
-          if (event.type === "usage.recorded" && event.payload) {
-            const text = extractSdkContextResultText(event.payload);
-            logContextSnapshot("mapped_event", {
+          if (
+            event.type === "usage.recorded" &&
+            isRecord(event.payload) &&
+            event.payload.type === "sdk_context_usage"
+          ) {
+            applied = this.applySdkContextUsageBreakdown(threadId, event.payload.ecoSdkContextUsage);
+            logContextSnapshot("sdk_context_usage", {
               threadId,
-              eventType: event.type,
-              hasResultText: Boolean(text),
-              payloadKeys: isRecord(event.payload) ? Object.keys(event.payload) : [],
+              applied,
+              payloadKeys: Object.keys(event.payload),
             });
-            if (text) {
-              contextText = text;
-            }
           }
         }
 
-        if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "context")) {
-          logContextSnapshot("skip_unsupported_slash", { threadId, slashCommands });
-          return;
+        if (!applied) {
+          logContextSnapshot("no_sdk_context_usage", { threadId });
         }
-
-        if (!contextText.trim()) {
-          logContextSnapshot("no_text", { threadId });
-          return;
-        }
-
-        const header = parseContextCommandHeader(contextText);
-        const monitorSnap = this.options.monitor.getSnapshot(threadId);
-        const fallbackOccupied = monitorSnap?.roles.find((role) => role.role === "planner")?.occupied ?? 0;
-        const occupied = header?.occupied ?? fallbackOccupied;
-        const segments = parseContextCommandResult(contextText, occupied);
-
-        if (header && occupied > 0) {
-          await this.options.monitor.updateOccupied(threadId, "planner", occupied);
-        }
-
-        if (segments.length > 0) {
-          this.lastPlannerSegments.set(threadId, normalizeContextSegments(segments));
-        }
-
-        logContextSnapshot("parsed", {
-          threadId,
-          header,
-          segmentCount: segments.length,
-          segments: segments.map((segment) => ({ key: segment.key, tokens: segment.tokens })),
-          occupied,
-        });
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -433,8 +428,4 @@ function fallbackSegment(tokens: number): ThreadContextSnapshot["segments"][numb
     tokens,
     color: "#ea580c",
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

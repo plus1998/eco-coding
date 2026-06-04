@@ -1,4 +1,9 @@
-import { CONTEXT_SEGMENT_LABELS, formatRoleModelLabel, formatTokenCount } from "@eco/runtime";
+import {
+  CONTEXT_SEGMENT_LABELS,
+  contextSegmentDisplayLabel,
+  formatRoleModelLabel,
+  formatTokenCount,
+} from "@eco/runtime";
 import { X } from "lucide-react";
 import { useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
@@ -187,7 +192,7 @@ function SubagentContextRow({ row }: { row: FlatSubagentRow }) {
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
             {visibleSegments.map((segment) => (
               <span
-                key={segment.key}
+                key={`${segment.key}-${segment.label}`}
                 className="context-card-bar-segment"
                 style={{ flexGrow: segment.tokens, backgroundColor: segment.color }}
               />
@@ -241,7 +246,7 @@ function ContextRoleBody({
           <span className="context-card-bar-occupied" style={{ flexGrow: occupied }}>
             {visibleSegments.map((segment) => (
               <span
-                key={segment.key}
+                key={`${segment.key}-${segment.label}`}
                 className="context-card-bar-segment"
                 style={{
                   flexGrow: segment.tokens,
@@ -265,11 +270,9 @@ function ContextRoleBody({
       {detailed && detailsOpen ? (
         <ul className="context-card-breakdown">
           {visibleSegments.map((segment) => (
-            <li key={segment.key}>
+            <li key={`${segment.key}-${segment.label}`}>
               <span className="context-card-swatch" style={{ backgroundColor: segment.color }} />
-              <span className="context-card-label">
-                {CONTEXT_SEGMENT_LABELS[segment.key] ?? segment.label.replace(/占用$/u, "")}
-              </span>
+              <span className="context-card-label">{contextSegmentDisplayLabel(segment)}</span>
               <span className="context-card-value">{formatTokenCount(segment.tokens)}</span>
             </li>
           ))}
