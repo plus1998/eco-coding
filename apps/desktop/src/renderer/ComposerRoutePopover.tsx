@@ -190,18 +190,25 @@ export function ComposerRoutePopoverTrigger({
   buttonRef: RefObject<HTMLButtonElement | null>;
   onToggle: () => void;
 }) {
+  const label = profileName?.trim() || "未选择方案";
+
   return (
     <button
       ref={buttonRef}
       type="button"
-      className={open ? "composer-settings-link active" : "composer-settings-link"}
+      className={
+        open ? "composer-route-trigger composer-settings-link active" : "composer-route-trigger composer-settings-link"
+      }
       onClick={onToggle}
       disabled={disabled}
       title={profileName ? `当前方案：${profileName}` : "切换路由方案"}
-      aria-label="切换路由方案"
+      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换路由方案"}
       aria-expanded={open}
     >
-      <SlidersHorizontal size={16} />
+      <SlidersHorizontal size={16} aria-hidden />
+      <span className={profileName ? "composer-route-profile-name" : "composer-route-profile-name is-placeholder"}>
+        {label}
+      </span>
     </button>
   );
 }

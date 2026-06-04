@@ -4474,6 +4474,26 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
+.composer-route-trigger {
+  width: auto;
+  max-width: min(160px, 28vw);
+  gap: 5px;
+  padding: 0 8px 0 6px;
+}
+
+.composer-route-profile-name {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #d4d4d4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-route-profile-name.is-placeholder {
+  color: #737373;
+}
+
 .composer-settings-link:hover {
   background: rgba(255, 255, 255, 0.06);
   color: #e5e5e5;
