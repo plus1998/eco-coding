@@ -58,7 +58,9 @@ export function SkillsSettingsPanel({
             ))}
           </p>
           <p className="composer-skills-link-hint settings-skills-link-hint">
-            <span className="composer-skills-link-hint-message">需链至 .claude 后 Agent 可加载</span>
+            <span className="composer-skills-link-hint-message">
+              {userAgentsOnly.length} 个 Skills 需链至 .claude
+            </span>
             {onLinkAgents ? (
               <button
                 type="button"

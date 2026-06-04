@@ -93,6 +93,10 @@ export function parseExplicitSkillNames(prompt: string | undefined): string[] {
   return names;
 }
 
+export function promptIncludesSkillName(prompt: string | undefined, skillName: string): boolean {
+  return parseExplicitSkillNames(prompt).includes(skillName);
+}
+
 /** `$name` tokens that match discovered user-level skills (sdk-ready only). */
 export function filterExplicitUserSkillNames(
   prompt: string | undefined,

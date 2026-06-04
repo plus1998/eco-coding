@@ -118,8 +118,9 @@ export function ComposerSkillPopover({
       ref={panelRef}
       className="composer-skill-popover"
       role="listbox"
-      aria-label="选择用户 Skill"
+      aria-label="选择 Skill"
       style={panelStyle}
+      onMouseDown={(event) => event.preventDefault()}
     >
       {matches.length === 0 ? (
         <p className="composer-skill-popover-empty">没有匹配的用户 Skill</p>
@@ -181,7 +182,9 @@ function SkillRow({
           </span>
           <span className="composer-skill-row-description">{match.skill.description}</span>
         </span>
-        <span className="composer-skill-scope">个人</span>
+        <span className="composer-skill-scope">
+          {match.skill.source === "project" ? "项目" : "个人"}
+        </span>
       </button>
     </li>
   );

@@ -5,6 +5,7 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
+  promptIncludesSkillName,
   type SkillInfo,
 } from "../src/shared/skills";
 
@@ -24,6 +25,11 @@ test("filterExplicitUserSkillNames keeps only sdk-ready user skills", () => {
   ]);
   expect(filterExplicitUserSkillNames("$pdf", userSkills)).toEqual([]);
   expect(filterExplicitUserSkillNames("$unknown", userSkills)).toEqual([]);
+});
+
+test("promptIncludesSkillName detects explicit tokens", () => {
+  expect(promptIncludesSkillName("use $vue-best  ", "vue-best")).toBe(true);
+  expect(promptIncludesSkillName("use $vue-best", "other")).toBe(false);
 });
 
 test("mergeSkillNames dedupes and sorts", () => {

@@ -10,6 +10,11 @@ test("parseComposerSkillSlashQuery finds slash token before cursor", () => {
   expect(parseComposerSkillSlashQuery("no slash", 8)).toBeNull();
 });
 
+test("parseComposerSkillSlashQuery tolerates stale cursor at start of slash token", () => {
+  expect(parseComposerSkillSlashQuery("/", 0)).toEqual({ start: 0, query: "" });
+  expect(parseComposerSkillSlashQuery("/vue", 0)).toEqual({ start: 0, query: "vue" });
+});
+
 test("applyComposerSkillSelection inserts $skill-name token", () => {
   const result = applyComposerSkillSelection("prefix /ut suffix", { start: 7, end: 10 }, "utools-plugin-dev");
   expect(result.next).toBe("prefix $utools-plugin-dev  suffix");

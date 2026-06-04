@@ -93,12 +93,19 @@ import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerProjectSkills } from "./ComposerProjectSkills";
 import { ComposerSkillPopover } from "./ComposerSkillPopover";
+import { ComposerTextarea } from "./ComposerTextarea";
 import {
   applyComposerSkillSelection,
   parseComposerSkillSlashQuery,
 } from "./composer-skill-query";
 import { filterUserSkills } from "./skill-fuzzy";
-import { listSdkReadyProjectSkills, type SkillInfo } from "../shared/skills";
+import {
+  dedupeSkillsByName,
+  listSdkReadyProjectSkills,
+  parseExplicitSkillNames,
+  promptIncludesSkillName,
+  type SkillInfo,
+} from "../shared/skills";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -612,7 +619,7 @@ function App() {
   }, [settingsOpen, settingsSection]);
 
   useEffect(() => {
-    if (!currentProjectPath || !window.eco) {
+    if (!window.eco) {
       return;
     }
     void refreshSkillsList(currentProjectPath);
@@ -625,12 +632,19 @@ function App() {
   }, [activeThread?.id]);
 
   const userSkills = useMemo(
-    () => (skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady),
+    () =>
+      dedupeSkillsByName(
+        (skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady),
+      ),
     [skillsSnapshot?.userSkills],
   );
   const projectSdkReadySkills = useMemo(
     () => listSdkReadyProjectSkills(skillsSnapshot?.projectSkills ?? []),
     [skillsSnapshot?.projectSkills],
+  );
+  const slashPickerSkills = useMemo(
+    () => dedupeSkillsByName([...userSkills, ...projectSdkReadySkills]),
+    [userSkills, projectSdkReadySkills],
   );
   const projectAgentsOnly = useMemo(
     () =>
@@ -644,12 +658,18 @@ function App() {
     () => parseComposerSkillSlashQuery(prompt, composerCursor),
     [prompt, composerCursor],
   );
-  const composerSkillMatches = useMemo(
-    () => (composerSkillSlash ? filterUserSkills(composerSkillSlash.query, userSkills) : []),
-    [composerSkillSlash, userSkills],
+  const referencedSkillNames = useMemo(
+    () => new Set(parseExplicitSkillNames(prompt)),
+    [prompt],
   );
-  const composerSkillPopoverOpen =
-    Boolean(composerSkillSlash) && userSkills.length > 0 && composerSkillMatches.length > 0;
+  const composerSkillMatches = useMemo(() => {
+    if (!composerSkillSlash) {
+      return [];
+    }
+    const available = slashPickerSkills.filter((skill) => !referencedSkillNames.has(skill.name));
+    return filterUserSkills(composerSkillSlash.query, available);
+  }, [composerSkillSlash, slashPickerSkills, referencedSkillNames]);
+  const composerSkillPopoverOpen = Boolean(composerSkillSlash) && slashPickerSkills.length > 0;
 
   useEffect(() => {
     setComposerSkillActiveIndex(0);
@@ -842,6 +862,14 @@ function App() {
       fitComposerHeight(textarea);
     }
   }, [prompt]);
+
+  const composerSkillsByName = useMemo(() => {
+    const map = new Map<string, SkillInfo>();
+    for (const skill of [...userSkills, ...projectSdkReadySkills]) {
+      map.set(skill.name, skill);
+    }
+    return map;
+  }, [userSkills, projectSdkReadySkills]);
 
   const scrollActivityFeedToEnd = useCallback((force = false) => {
     const container = activityEndRef.current?.parentElement;
@@ -1612,27 +1640,9 @@ function App() {
     }
   }
 
-  function insertComposerSkillReference(skillName: string) {
-    const textarea = composerRef.current;
-    const token = `$${skillName} `;
-    const next = prompt.trim() ? `${prompt.trimEnd()} ${token}` : token;
-    setPrompt(next);
-    queueMicrotask(() => {
-      if (!textarea) {
-        return;
-      }
-      const cursor = next.length;
-      textarea.selectionStart = cursor;
-      textarea.selectionEnd = cursor;
-      textarea.focus();
-      fitComposerHeight(textarea);
-      setComposerCursor(cursor);
-    });
-  }
-
   function selectComposerSkill(skill: SkillInfo) {
     const textarea = composerRef.current;
-    if (!composerSkillSlash || !textarea) {
+    if (!composerSkillSlash || !textarea || promptIncludesSkillName(prompt, skill.name)) {
       return;
     }
     const selectionEnd = textarea.selectionEnd ?? textarea.selectionStart ?? prompt.length;
@@ -1729,28 +1739,27 @@ function App() {
         <ComposerSkillPopover
           open={composerSkillPopoverOpen}
           query={composerSkillSlash?.query ?? ""}
-          userSkills={userSkills}
+          userSkills={slashPickerSkills}
           activeIndex={composerSkillActiveIndex}
           anchorRef={composerAnchorRef}
           onActiveIndexChange={setComposerSkillActiveIndex}
           onSelect={selectComposerSkill}
           onClose={() => syncComposerCursor()}
         />
-        <textarea
+        <ComposerTextarea
           ref={composerRef}
           value={prompt}
-          onChange={(event) => {
-            setPrompt(event.target.value);
-            syncComposerCursor(event.currentTarget);
+          onChange={(next) => {
+            setPrompt(next);
             if (composerRoutePopoverOpen) {
               setComposerRoutePopoverOpen(false);
             }
           }}
-          onClick={(event) => syncComposerCursor(event.currentTarget)}
-          onKeyUp={(event) => syncComposerCursor(event.currentTarget)}
-          onSelect={(event) => syncComposerCursor(event.currentTarget)}
+          skillsByName={composerSkillsByName}
+          onCursorChange={setComposerCursor}
           onPaste={canPasteComposerImages ? handleComposerPaste : undefined}
           onKeyDown={handleComposerKeyDown}
+          maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
           placeholder={
             pendingClarification
               ? "请先在上方回答问题"
@@ -1763,7 +1772,6 @@ function App() {
                     : "尽管问"
           }
           disabled={Boolean(activeThread && !threadAcceptsInput)}
-          rows={1}
         />
         <div className="composer-footer">
           <div className="composer-route-control">
@@ -1851,9 +1859,9 @@ function App() {
         <ComposerProjectSkills
           sdkReadySkills={projectSdkReadySkills}
           agentsOnlySkills={projectAgentsOnly}
+          referencedSkillNames={referencedSkillNames}
           linking={skillsLinking}
           {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-          onSelectSkill={(skill) => insertComposerSkillReference(skill.name)}
           onLinkAgents={linkProjectAgentsSkills}
         />
       ) : null}
