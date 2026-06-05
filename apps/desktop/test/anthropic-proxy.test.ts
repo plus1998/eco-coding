@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   type AnthropicProxyResolvedRoute,
   buildModelsListResponse,
+  canonicalModelFamilyIds,
   createModelAlias,
   createStreamingUsageTracker,
   extractUsageFromResponseBody,
@@ -24,6 +25,114 @@ test("resolves provider routes by local model alias", () => {
   expect(resolveProxyRoute([route], route.aliasModelId)).toEqual(route);
   expect(resolveProxyRoute([route], "qwen-coder")).toEqual(route);
   expect(resolveProxyRoute([route], "missing-model")).toBeUndefined();
+});
+
+test("canonicalModelFamilyIds derives gpt-5.4 from gpt-5.4-mini", () => {
+  expect(canonicalModelFamilyIds("gpt-5.4-mini")).toEqual(["gpt-5.4"]);
+  expect(canonicalModelFamilyIds("claude-sonnet-4-6")).toEqual([]);
+});
+
+test("resolveProxyRoute maps canonical gpt-5.4 to unique gpt-5.4-mini explore route", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const exploreRoute: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+  };
+  const plannerRoute: AnthropicProxyResolvedRoute = {
+    role: "planner",
+    provider,
+    modelId: "gpt-5.5",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("planner", provider.id, "gpt-5.5"),
+  };
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4")).toEqual(exploreRoute);
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4-mini")).toEqual(exploreRoute);
+});
+
+test("resolveProxyRoute does not guess when multiple routes share a family prefix", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const routes: AnthropicProxyResolvedRoute[] = [
+    {
+      role: "explore",
+      provider,
+      modelId: "gpt-5.4-mini",
+      apiCompat: "anthropic",
+      aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+    },
+    {
+      role: "coder",
+      provider,
+      modelId: "gpt-5.4-turbo",
+      apiCompat: "anthropic",
+      aliasModelId: createModelAlias("coder", provider.id, "gpt-5.4-turbo"),
+    },
+  ];
+  expect(resolveProxyRoute(routes, "gpt-5.4")).toBeUndefined();
+});
+
+test("resolveProxyRoute maps canonical gpt-5.4 to explore when roles share gpt-5.4-mini", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const exploreRoute: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+  };
+  const coderRoute: AnthropicProxyResolvedRoute = {
+    role: "coder",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("coder", provider.id, "gpt-5.4-mini"),
+  };
+  const testerRoute: AnthropicProxyResolvedRoute = {
+    role: "tester",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("tester", provider.id, "gpt-5.4-mini"),
+  };
+  const routes = [coderRoute, exploreRoute, testerRoute];
+  expect(resolveProxyRoute(routes, "gpt-5.4")).toEqual(exploreRoute);
+  expect(resolveProxyRoute(routes, "gpt-5.4-mini")).toEqual(exploreRoute);
+});
+
+test("buildModelsListResponse lists only configured alias and upstream model ids", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const route: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+  };
+  const ids = buildModelsListResponse([route]).data.map((entry) => entry.id);
+  expect(ids).toContain(route.aliasModelId);
+  expect(ids).toContain("gpt-5.4-mini");
+  expect(ids).not.toContain("gpt-5.4");
+});
+
+test("resolveProxyRoute maps SDK builtin Explore gpt-5.4 to configured explore route", () => {
+  const provider = createProvider("anthropic", "Anthropic", "provider-secret");
+  const exploreRoute: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "claude-haiku-4-5-20251001",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "claude-haiku-4-5-20251001"),
+  };
+  const plannerRoute: AnthropicProxyResolvedRoute = {
+    role: "planner",
+    provider,
+    modelId: "claude-sonnet-4-6",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("planner", provider.id, "claude-sonnet-4-6"),
+  };
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4")).toEqual(exploreRoute);
 });
 
 test("createModelAlias includes explore role", () => {

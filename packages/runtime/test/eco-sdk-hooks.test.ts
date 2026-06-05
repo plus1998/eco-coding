@@ -88,6 +88,34 @@ test("createTaskToolPreToolHook forwards tool input to tracker", async () => {
   expect(calls).toEqual([{ toolName: "TaskCreate", input: { subject: "Run tests" } }]);
 });
 
+test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {
+  const hook = createDisabledSubagentPreToolHook({
+    explore: false,
+    architect: true,
+    coder: true,
+    reviewer: true,
+    tester: true,
+  });
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "Explore", prompt: "Scan repo" },
+      tool_use_id: "tool_e",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_e",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+});
+
 test("createDisabledSubagentPreToolHook denies Agent for disabled roles", async () => {
   const hook = createDisabledSubagentPreToolHook({
     explore: true,

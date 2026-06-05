@@ -16,11 +16,12 @@ import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
   createSubagentMissionCapturePreToolHook,
   createSubagentResumePreToolHook,
+  normalizeSdkSubagentType,
   readAgentSubagentType,
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
 
-export { readAgentSubagentType } from "./subagent-resume.js";
+export { normalizeSdkSubagentType, readAgentSubagentType } from "./subagent-resume.js";
 import type { AgentRole } from "../../shared/src";
 import {
   isSubagentEnabled,
@@ -158,18 +159,20 @@ export function createDisabledSubagentPreToolHook(
       return {};
     }
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const subagentType = readAgentSubagentType(toolInput);
-    if (!subagentType || !isSubagentRole(subagentType)) {
+    const rawType = readAgentSubagentType(toolInput);
+    const subagentType = rawType ? normalizeSdkSubagentType(rawType) : undefined;
+    if (!subagentType) {
       return {};
     }
     if (isSubagentEnabled(resolved, subagentType)) {
       return {};
     }
+    const deniedLabel = rawType ?? subagentType;
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Subagent "${subagentType}" is disabled in Eco settings. Do not call Agent(${subagentType}).`,
+        permissionDecisionReason: `Subagent "${deniedLabel}" is disabled in Eco settings. Do not call Agent(${deniedLabel}).`,
       },
     };
   };

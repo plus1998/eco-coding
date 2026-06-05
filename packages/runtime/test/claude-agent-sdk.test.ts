@@ -170,9 +170,9 @@ test("applyEcoSdkSettings disables workflows in query settings", () => {
 test("createAutonomousAgentDefinitions registers all subagent roles", () => {
   const definitions = createAutonomousAgentDefinitions(routes);
   expect(Object.keys(definitions).sort()).toEqual([
+    "Explore",
     "architect",
     "coder",
-    "explore",
     "reviewer",
     "tester",
   ]);
@@ -284,12 +284,13 @@ test("builds phased orchestration prompts", () => {
 
 test("planning agents include network tools on read-only subagents", () => {
   const definitions = createPlanningAgentDefinitions(routes);
-  expect(definitions.explore).toMatchObject({
+  expect(definitions.Explore).toMatchObject({
     description: expect.stringContaining("Read-only"),
     prompt: expect.stringContaining("read-only"),
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
     model: "claude-haiku-explore",
   });
+  expect(definitions).not.toHaveProperty("explore");
   expect(definitions.architect).toMatchObject({
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
@@ -297,10 +298,11 @@ test("planning agents include network tools on read-only subagents", () => {
 
 test("question explore subagent includes network tools", () => {
   const definitions = createQuestionAgentDefinitions(routes);
-  expect(definitions.explore).toMatchObject({
+  expect(definitions.Explore).toMatchObject({
     model: "claude-haiku-explore",
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
+  expect(definitions).not.toHaveProperty("explore");
 });
 
 test("execution subagents include network tools except coder", () => {
@@ -351,7 +353,7 @@ test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", ()
   expect(append).toContain("Coders (parallel)");
 });
 
-test("inferActivityRole maps Agent(explore) to explore", () => {
+test("inferActivityRole maps Agent(Explore) to explore", () => {
   expect(
     inferActivityRole({
       type: "tool.started",
@@ -359,7 +361,7 @@ test("inferActivityRole maps Agent(explore) to explore", () => {
       payload: {
         type: "tool_use",
         tool_name: "Agent",
-        input: { subagent_type: "explore", prompt: "Find auth middleware" },
+        input: { subagent_type: "Explore", prompt: "Find auth middleware" },
       },
     }),
   ).toBe("explore");
@@ -368,10 +370,10 @@ test("inferActivityRole maps Agent(explore) to explore", () => {
 test("builds read-only question answering prompts", () => {
   expect(questionAnswerSystemAppend).toContain("ANSWER");
   expect(questionAnswerSystemAppend).toContain("read-only");
-  expect(questionAnswerSystemAppend).toContain("Agent(explore)");
+  expect(questionAnswerSystemAppend).toContain("Agent(Explore)");
   expect(questionAnswerSystemAppend).toContain("Do not create an implementation plan");
   expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("User question:");
-  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("Agent(explore)");
+  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("Agent(Explore)");
 });
 
 test("formats eco phase boundary events", () => {

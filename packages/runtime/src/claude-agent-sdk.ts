@@ -22,7 +22,7 @@ import {
 } from "./finalize-plan";
 import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
-import { formatResumableSubagentsAppend } from "./subagent-resume.js";
+import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
 import { mergeStreamText } from "./stream-text";
 import {
   applySubagentUsageAttribution,
@@ -73,6 +73,7 @@ import {
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
+  SDK_EXPLORE_AGENT_KEY,
   SUBAGENT_ROLES,
   type EcoOrchestrationMode,
   type SubagentAvailability,
@@ -745,21 +746,28 @@ export function createAgentDefinitions(
   return createExecutionAgentDefinitions(routes, agentSkills, availability);
 }
 
+function createExploreAgentDefinition(
+  routes: readonly ResolvedModelRoute[],
+  agentSkills?: Partial<Record<AgentRole, string[]>>,
+): Record<string, unknown> {
+  const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  return {
+    description: exploreAgentDescription,
+    tools: [...readOnlySubagentTools],
+    ...agentDefinitionSkills("explore", agentSkills),
+    prompt: exploreAgentPrompt,
+    model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
+  };
+}
+
 export function createPlanningAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<AgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-
   const definitions = {
-    explore: {
-      description: exploreAgentDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("explore", agentSkills),
-      prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
-    },
+    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
     architect: {
       description: planningArchitectDescription,
       tools: [...readOnlySubagentTools],
@@ -777,16 +785,8 @@ export function createQuestionAgentDefinitions(
   agentSkills?: Partial<Record<AgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
-  const routeByRole = new Map(routes.map((route) => [route.role, route]));
-
   const definitions = {
-    explore: {
-      description: exploreAgentDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("explore", agentSkills),
-      prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
-    },
+    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
   };
 
   return filterAgentDefinitions(definitions, availability);
@@ -803,6 +803,7 @@ export function createExecutionAgentDefinitions(
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
 
   const definitions = {
+    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
     architect: {
       description: executionArchitectDescription,
       tools: [...readOnlySubagentTools],
@@ -852,13 +853,7 @@ export function createAutonomousAgentDefinitions(
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   return {
-    explore: {
-      description: exploreAgentDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("explore", agentSkills),
-      prompt: exploreAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
-    },
+    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
     architect: {
       description: executionArchitectDescription,
       tools: [...readOnlySubagentTools],
@@ -1618,17 +1613,37 @@ function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): Reso
 }
 
 function inferRole(message: Record<string, unknown>): AgentRole {
-  if (typeof message.subagent_type === "string" && isAgentRole(message.subagent_type)) {
-    return message.subagent_type;
+  if (typeof message.subagent_type === "string") {
+    const normalized = normalizeSdkSubagentType(message.subagent_type);
+    if (normalized) {
+      return normalized;
+    }
+    if (isAgentRole(message.subagent_type)) {
+      return message.subagent_type;
+    }
   }
-  if (typeof message.agent_type === "string" && isAgentRole(message.agent_type)) {
-    return message.agent_type;
+  if (typeof message.agent_type === "string") {
+    const normalized = normalizeSdkSubagentType(message.agent_type);
+    if (normalized) {
+      return normalized;
+    }
+    if (isAgentRole(message.agent_type)) {
+      return message.agent_type;
+    }
   }
   return "planner";
 }
 
 function isAgentRole(value: string): value is AgentRole {
   return ["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(value);
+}
+
+function resolveActivitySubagentRole(value: string): ActivityDisplayRole | undefined {
+  const normalized = normalizeSdkSubagentType(value);
+  if (normalized) {
+    return normalized;
+  }
+  return isAgentRole(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1743,30 +1758,43 @@ export function inferActivityRole(
           (typeof event.payload.input.subagent_type === "string" && event.payload.input.subagent_type) ||
           (typeof event.payload.input.agent_type === "string" && event.payload.input.agent_type) ||
           undefined;
-        if (subagent && isAgentRole(subagent)) {
-          return subagent;
+        const role = subagent ? resolveActivitySubagentRole(subagent) : undefined;
+        if (role) {
+          return role;
         }
       }
-      if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
-        return event.payload.subagent_type;
+      if (typeof event.payload.subagent_type === "string") {
+        const role = resolveActivitySubagentRole(event.payload.subagent_type);
+        if (role) {
+          return role;
+        }
       }
       if (isSubagentRole(event.role) || (isAgentRole(event.role) && event.role !== "planner")) {
         return event.role;
       }
       return "tool";
     }
-    if (typeof event.payload.subagent_type === "string" && isAgentRole(event.payload.subagent_type)) {
-      return event.payload.subagent_type;
+    if (typeof event.payload.subagent_type === "string") {
+      const role = resolveActivitySubagentRole(event.payload.subagent_type);
+      if (role) {
+        return role;
+      }
     }
-    if (typeof event.payload.agent_type === "string" && isAgentRole(event.payload.agent_type)) {
-      return event.payload.agent_type;
+    if (typeof event.payload.agent_type === "string") {
+      const role = resolveActivitySubagentRole(event.payload.agent_type);
+      if (role) {
+        return role;
+      }
     }
   }
 
   if (event.type === "todo.updated" && isRecord(event.payload)) {
     const subagent = event.payload.subagent_type;
-    if (typeof subagent === "string" && isAgentRole(subagent)) {
-      return subagent;
+    if (typeof subagent === "string") {
+      const role = resolveActivitySubagentRole(subagent);
+      if (role) {
+        return role;
+      }
     }
   }
 
@@ -1779,16 +1807,16 @@ export function inferActivityRole(
         (typeof event.payload.input.subagent_type === "string" && event.payload.input.subagent_type) ||
         (typeof event.payload.input.agent_type === "string" && event.payload.input.agent_type) ||
         undefined;
-      if (subagent && isAgentRole(subagent)) {
-        return subagent;
+      const role = subagent ? resolveActivitySubagentRole(subagent) : undefined;
+      if (role) {
+        return role;
       }
     }
-    if (
-      isRecord(event.payload) &&
-      typeof event.payload.subagent_type === "string" &&
-      isAgentRole(event.payload.subagent_type)
-    ) {
-      return event.payload.subagent_type;
+    if (isRecord(event.payload) && typeof event.payload.subagent_type === "string") {
+      const role = resolveActivitySubagentRole(event.payload.subagent_type);
+      if (role) {
+        return role;
+      }
     }
     return "tool";
   }

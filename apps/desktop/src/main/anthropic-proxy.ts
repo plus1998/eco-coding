@@ -293,6 +293,50 @@ export function createModelAlias(role: AgentRole, providerId: string, modelId: s
   return `eco-${role}-${digest}`;
 }
 
+/**
+ * Model ids Claude Agent SDK may request for builtin Explore even when Eco routes explore elsewhere.
+ * Users never configure these directly; the proxy maps them to the explore role route.
+ */
+export const SDK_BUILTIN_EXPLORE_MODEL_IDS = new Set(["gpt-5.4"]);
+
+/** Family ids SDK may request when the configured route uses a suffixed variant (e.g. gpt-5.4-mini → gpt-5.4). */
+export function canonicalModelFamilyIds(modelId: string): readonly string[] {
+  const match = modelId.match(
+    /^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i,
+  );
+  const family = match?.groups?.family?.trim();
+  return family ? [family] : [];
+}
+
+/** When several roles share one upstream model id, prefer explore for canonical family ids (SDK builtin Explore). */
+const SHARED_UPSTREAM_MODEL_ROLE_PRIORITY: readonly AgentRole[] = [
+  "explore",
+  "coder",
+  "tester",
+  "architect",
+  "reviewer",
+  "planner",
+];
+
+function pickSharedUpstreamModelRoute(
+  routes: readonly AnthropicProxyResolvedRoute[],
+): AnthropicProxyResolvedRoute | undefined {
+  if (routes.length === 0) {
+    return undefined;
+  }
+  const uniqueModelIds = new Set(routes.map((route) => route.modelId));
+  if (uniqueModelIds.size !== 1) {
+    return undefined;
+  }
+  for (const role of SHARED_UPSTREAM_MODEL_ROLE_PRIORITY) {
+    const match = routes.find((route) => route.role === role);
+    if (match) {
+      return match;
+    }
+  }
+  return routes[0];
+}
+
 export function resolveProxyRoute(
   routes: readonly AnthropicProxyResolvedRoute[],
   requestedModel: string | undefined,
@@ -304,8 +348,28 @@ export function resolveProxyRoute(
     return byAlias;
   }
 
-  // Multiple roles may share the same upstream model id; the first configured role wins.
-  return routes.find((route) => route.modelId === requestedModel);
+  const byExactModelId = routes.filter((route) => route.modelId === requestedModel);
+  if (byExactModelId.length === 1) {
+    return byExactModelId[0];
+  }
+  if (byExactModelId.length > 1) {
+    return pickSharedUpstreamModelRoute(byExactModelId);
+  }
+
+  const familyPrefix = `${requestedModel}-`;
+  const byFamilyVariant = routes.filter((route) => route.modelId.startsWith(familyPrefix));
+  if (byFamilyVariant.length === 1) {
+    return byFamilyVariant[0];
+  }
+  if (byFamilyVariant.length > 1) {
+    return pickSharedUpstreamModelRoute(byFamilyVariant);
+  }
+
+  if (SDK_BUILTIN_EXPLORE_MODEL_IDS.has(requestedModel)) {
+    return routes.find((route) => route.role === "explore");
+  }
+
+  return undefined;
 }
 
 export function buildModelsListResponse(

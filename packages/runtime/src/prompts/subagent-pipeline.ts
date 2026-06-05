@@ -177,8 +177,8 @@ export function formatPlanExecutionSummary(availability: SubagentAvailability): 
 
 export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): string {
   const exploreLine = isSubagentEnabled(availability, "explore")
-    ? "- Exploration: use Read, Glob, Grep, and **`Agent(explore)`** for broad codebase discovery (same role as Codex PHASE 1 exploration)."
-    : "- Exploration: use Read, Glob, and Grep only — **do not** call Agent(explore) (disabled in Eco settings).";
+    ? "- Exploration: use Read, Glob, Grep, and **`Agent(Explore)`** for broad codebase discovery (same role as Codex PHASE 1 exploration)."
+    : "- Exploration: use Read, Glob, and Grep only — **do not** call Agent(Explore) (disabled in Eco settings).";
 
   const architectLines = isSubagentEnabled(availability, "architect")
     ? [
@@ -190,8 +190,8 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     : [];
 
   const exploreFirstRule = isSubagentEnabled(availability, "explore")
-    ? "- **Explore first**: run at least one targeted pass with Read, Glob, Grep, and/or `Agent(explore)` before asking the user anything answerable from the repo."
-    : "- **Explore first**: run at least one targeted pass with Read, Glob, and/or Grep before asking the user anything answerable from the repo. Do not call Agent(explore).";
+    ? "- **Explore first**: run at least one targeted pass with Read, Glob, Grep, and/or `Agent(Explore)` before asking the user anything answerable from the repo."
+    : "- **Explore first**: run at least one targeted pass with Read, Glob, and/or Grep before asking the user anything answerable from the repo. Do not call Agent(Explore).";
 
   return [
     "# Eco harness (minimal overrides — Codex Plan text above is authoritative)",
@@ -243,8 +243,8 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
 
 export function buildPlanningExploreInstruction(availability: SubagentAvailability): string {
   return isSubagentEnabled(availability, "explore")
-    ? "Read / Glob / Grep and/or Agent(explore)"
-    : "Read / Glob / Grep only — do not call Agent(explore)";
+    ? "Read / Glob / Grep and/or Agent(Explore)"
+    : "Read / Glob / Grep only — do not call Agent(Explore)";
 }
 
 export function buildPlanningContinuationExploreHint(availability: SubagentAvailability): string {
@@ -259,12 +259,12 @@ export function buildPlanningContinuationExploreHint(availability: SubagentAvail
 
 export function buildQuestionExploreInstruction(availability: SubagentAvailability): string {
   return isSubagentEnabled(availability, "explore")
-    ? "For broad codebase questions, use Agent(explore) with thoroughness quick|medium|very thorough."
-    : "For broad codebase questions, use Read, Glob, and Grep — do not call Agent(explore).";
+    ? "For broad codebase questions, use Agent(Explore) with thoroughness quick|medium|very thorough."
+    : "For broad codebase questions, use Read, Glob, and Grep — do not call Agent(Explore).";
 }
 
 export function buildQuestionAnswerTaskLine(availability: SubagentAvailability): string {
   return isSubagentEnabled(availability, "explore")
-    ? "Task: Answer read-only. Use Agent(explore) if the question requires repo-wide context."
+    ? "Task: Answer read-only. Use Agent(Explore) if the question requires repo-wide context."
     : "Task: Answer read-only. Use Read/Glob/Grep for repo-wide context.";
 }

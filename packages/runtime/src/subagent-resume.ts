@@ -4,6 +4,14 @@ import {
   type SubagentRole,
 } from "./subagent-availability.js";
 
+/** Map SDK subagent_type values to Eco subagent roles. */
+export function normalizeSdkSubagentType(type: string): SubagentRole | undefined {
+  if (type === "Explore") {
+    return "explore";
+  }
+  return isSubagentRole(type) ? type : undefined;
+}
+
 export function readAgentSubagentType(input: Record<string, unknown>): string | undefined {
   if (typeof input.subagent_type === "string" && input.subagent_type.trim()) {
     return input.subagent_type.trim();
@@ -64,8 +72,8 @@ export function createSubagentMissionCapturePreToolHook(
       return {};
     }
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const subagentType = readAgentSubagentType(toolInput);
-    if (!subagentType || !isSubagentRole(subagentType)) {
+    const subagentType = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+    if (!subagentType) {
       return {};
     }
     const originalPrompt =
@@ -113,8 +121,8 @@ export function createSubagentResumePreToolHook(
     }
 
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const subagentType = readAgentSubagentType(toolInput);
-    if (!subagentType || !isSubagentRole(subagentType)) {
+    const subagentType = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+    if (!subagentType) {
       return {};
     }
 
