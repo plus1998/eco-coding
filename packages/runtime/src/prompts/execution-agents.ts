@@ -43,9 +43,8 @@ export const executionArchitectPrompt = [
 ].join("\n");
 
 export const executionArchitectDescription = [
-  "Use when the approved plan needs architecture decisions or multi-area work breakdown.",
-  "Returns ## Coder Tasks for parallel coders.",
-  "When NOT to use: trivial single-file fix, typo, or one isolated function change — the planner should skip you.",
+  "Use only when multiple parallel workstreams or cross-module boundaries need a ## Coder Tasks breakdown.",
+  "When NOT to use: low/medium risk tasks, single-module changes, or when the planner can delegate one coder directly.",
 ].join(" ");
 
 export const executionCoderPrompt = [
@@ -64,8 +63,10 @@ export const executionCoderPrompt = [
   "Do not spawn subagents.",
 ].join("\n");
 
-export const executionCoderDescription =
-  "Executes exactly one ## Coder Tasks item. When NOT to use: whole-plan implementation or multiple unrelated modules in one call.";
+export const executionCoderDescription = [
+  "Implements a focused coding delegation. Use after exploration when code changes are needed.",
+  "When NOT to use: read-only questions — answer or explore instead.",
+].join(" ");
 
 export const executionTesterPrompt = [
   "You are a test agent. Run the narrowest useful tests for the approved plan and recent changes.",
@@ -81,8 +82,10 @@ export const executionTesterPrompt = [
   "Do not spawn subagents. Do not implement fixes unless a one-line command unblocks verification.",
 ].join("\n");
 
-export const executionTesterDescription =
-  "Pipeline step 5: targeted tests after review. When NOT to use: before reviewer PASS.";
+export const executionTesterDescription = [
+  "Runs narrow tests after implementation (and any review). Use when verification is needed.",
+  "When NOT to use: before coding is done or when the task is documentation-only.",
+].join(" ");
 
 export const planningArchitectPrompt = [
   "Planning-phase architecture review only.",

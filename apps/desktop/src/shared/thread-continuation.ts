@@ -26,7 +26,7 @@ export interface ThreadContinueRoutingInput {
   intent: "question" | "coding";
   followUp: string;
   canResume: boolean;
-  usesPlanOrchestration: boolean;
+  usesManualOrchestration: boolean;
   hasPendingPlan: boolean;
   hasApprovedPlanOnDisk: boolean;
   enteredExecutionPhase: boolean;
@@ -112,7 +112,7 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
     return { kind: "question", resume: input.canResume };
   }
 
-  if (!input.usesPlanOrchestration) {
+  if (!input.usesManualOrchestration) {
     return input.canResume
       ? { kind: "resume_sdk", phase: "execution" }
       : { kind: "fresh_plan" };

@@ -30,7 +30,9 @@ import {
   isSdkInitMessage,
   isCompactBoundarySdkMessage,
   mapSdkMessageToEvents,
+  applyEcoSdkSettings,
   buildSdkProcessEnv,
+  createAutonomousAgentDefinitions,
   mergeAllowedTools,
   planningPhaseSystemAppend,
   questionAnswerSystemAppend,
@@ -142,6 +144,7 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
     expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:36037");
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(env.PATH).toBe(previous.PATH);
+    expect(env.CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
   } finally {
     if (previous.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = previous.ANTHROPIC_API_KEY;
@@ -150,6 +153,31 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
     if (previous.ANTHROPIC_AUTH_TOKEN === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
     else process.env.ANTHROPIC_AUTH_TOKEN = previous.ANTHROPIC_AUTH_TOKEN;
   }
+});
+
+test("applyEcoSdkSettings disables workflows in query settings", () => {
+  const options: Record<string, unknown> = {};
+  applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/");
+  expect(options.settings).toMatchObject({
+    disableWorkflows: true,
+    env: {
+      ANTHROPIC_API_KEY: "router-key",
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",
+    },
+  });
+});
+
+test("createAutonomousAgentDefinitions registers all subagent roles", () => {
+  const definitions = createAutonomousAgentDefinitions(routes);
+  expect(Object.keys(definitions).sort()).toEqual([
+    "architect",
+    "coder",
+    "explore",
+    "reviewer",
+    "tester",
+  ]);
+  const reviewer = definitions.reviewer as { description: string };
+  expect(reviewer.description).toContain("High-risk");
 });
 
 test("maps Claude family model ids to SDK subagent aliases", () => {
@@ -196,7 +224,7 @@ test("creates native SDK subagent definitions", () => {
   const definitions = createAgentDefinitions(routes, agentSkills);
   expect(definitions).toHaveProperty("coder");
   expect(definitions.coder).toMatchObject({
-    description: expect.stringContaining("## Coder Tasks"),
+    description: expect.stringContaining("focused coding"),
     skills: ["docx"],
     model: "qwen-coder-anthropic",
   });
@@ -221,7 +249,7 @@ test("execution architect prompt requires Coder Tasks section", () => {
 test("reviewer prompt limits scope to current session workspace diff", () => {
   const definitions = createExecutionAgentDefinitions(routes);
   expect(definitions.reviewer).toMatchObject({
-    description: expect.stringContaining("workspace"),
+    description: expect.stringContaining("High-risk"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
   });
   expect(executePhaseSystemAppend).toContain("Eco prepends");
@@ -239,7 +267,7 @@ test("builds phased orchestration prompts", () => {
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("mcp__eco_plan__finalize_plan");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
-  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode workflow");
+  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode pipeline");
   expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
@@ -257,7 +285,7 @@ test("builds phased orchestration prompts", () => {
 test("planning agents include network tools on read-only subagents", () => {
   const definitions = createPlanningAgentDefinitions(routes);
   expect(definitions.explore).toMatchObject({
-    description: expect.stringContaining("read-only"),
+    description: expect.stringContaining("Read-only"),
     prompt: expect.stringContaining("read-only"),
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
     model: "claude-haiku-explore",

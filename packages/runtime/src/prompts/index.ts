@@ -33,6 +33,11 @@ export {
   summarizeExecutePipeline,
 } from "./subagent-pipeline.js";
 export {
+  autonomousOrchestratorAppend,
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
+} from "./autonomous.js";
+export {
   reviewerAgentPrompt,
   executionArchitectPrompt,
   executionArchitectDescription,

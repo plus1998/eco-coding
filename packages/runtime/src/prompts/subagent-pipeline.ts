@@ -220,7 +220,7 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "",
     formatAvailableSubagentsLine(availability),
     "",
-    "## Eco Plan Mode workflow (mandatory ordering)",
+    "## Eco Plan Mode pipeline (mandatory ordering)",
     "",
     "A detailed user message is **not** permission to skip exploration. A clear request may proceed to finalize after exploration without extra clarification.",
     "",

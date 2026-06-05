@@ -49,7 +49,7 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
     settings,
     subagentDefaults,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { orchestrationMode: "manual" },
   });
 
   const thread: ThreadSummary = {
@@ -70,10 +70,10 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
 
   store.saveThreadRuntimeConfig("thr_test", {
     ...runtimeConfig,
-    planModeEnabled: false,
+    orchestrationMode: "autonomous",
     routeProfileId: "profile-a",
   });
-  expect(store.getThread("thr_test")?.runtimeConfig?.planModeEnabled).toBe(false);
+  expect(store.getThread("thr_test")?.runtimeConfig?.orchestrationMode).toBe("autonomous");
 });
 
 test.skipIf(!sqliteAvailable)("listThreads keeps creation order when updated_at changes", async () => {

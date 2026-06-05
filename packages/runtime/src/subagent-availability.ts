@@ -2,7 +2,26 @@ export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tes
 
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
-export type EcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
+export type EcoOrchestrationMode = "autonomous" | "manual";
+
+/** @deprecated Use autonomous | manual */
+export type LegacyEcoOrchestrationMode = "analyze_plan_execute" | "sdk_default";
+
+export function normalizeEcoOrchestrationMode(
+  mode: EcoOrchestrationMode | LegacyEcoOrchestrationMode,
+): EcoOrchestrationMode {
+  if (mode === "analyze_plan_execute") {
+    return "manual";
+  }
+  if (mode === "sdk_default") {
+    return "autonomous";
+  }
+  return mode;
+}
+
+export function isAutonomousOrchestration(mode: EcoOrchestrationMode): boolean {
+  return mode === "autonomous";
+}
 
 export function isSubagentRole(role: string): role is SubagentRole {
   return (SUBAGENT_ROLES as readonly string[]).includes(role);

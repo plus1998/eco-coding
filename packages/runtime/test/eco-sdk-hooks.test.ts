@@ -6,6 +6,7 @@ import {
   createPreCompactHook,
   createReviewerScopePreToolHook,
   createTaskToolPreToolHook,
+  createWorkflowDenyPreToolHook,
 } from "../src/eco-sdk-hooks";
 import type { PreCompactHookInput, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 
@@ -176,4 +177,24 @@ test("createPreCompactHook delegates trigger and session id", async () => {
   );
 
   expect(calls).toEqual([{ trigger: "auto", sessionId: "sess_compact" }]);
+});
+
+test("createWorkflowDenyPreToolHook denies Workflow tool", async () => {
+  const hook = createWorkflowDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Workflow",
+      tool_input: {},
+      tool_use_id: "tool_wf",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_wf",
+    { signal: new AbortController().signal },
+  );
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
 });

@@ -1,6 +1,12 @@
-import { SUBAGENT_ROLES, normalizeSubagentAvailability, type SubagentRole } from "@eco/runtime";
+import {
+  SUBAGENT_ROLES,
+  defaultSubagentAvailability,
+  normalizeSubagentAvailability,
+  type SubagentRole,
+} from "@eco/runtime";
 import type {
   ModelSettingsSnapshot,
+  OrchestrationModeSetting,
   RoleRouteConfig,
   SubagentEnabledSettings,
   WorkflowSettingsSnapshot,
@@ -9,7 +15,7 @@ import type {
 export interface ThreadRuntimeConfig {
   routeProfileId: string;
   subagentEnabled: SubagentEnabledSettings;
-  planModeEnabled: boolean;
+  orchestrationMode: OrchestrationModeSetting;
 }
 
 export type ThreadRuntimeConfigInput = ThreadRuntimeConfig;
@@ -25,6 +31,22 @@ export function getRoutesForProfile(
   return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
 }
 
+function normalizeOrchestrationMode(value: unknown): OrchestrationModeSetting {
+  if (value === "manual" || value === "autonomous") {
+    return value;
+  }
+  if (value === "analyze_plan_execute") {
+    return "manual";
+  }
+  if (value === "sdk_default") {
+    return "autonomous";
+  }
+  if (typeof value === "boolean") {
+    return value ? "manual" : "autonomous";
+  }
+  return "autonomous";
+}
+
 export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeConfig {
   if (!value || typeof value !== "object") {
     return false;
@@ -33,7 +55,14 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (typeof record.routeProfileId !== "string" || !record.routeProfileId.trim()) {
     return false;
   }
-  if (typeof record.planModeEnabled !== "boolean") {
+  const orchestration = record.orchestrationMode ?? record.planModeEnabled;
+  if (
+    orchestration !== "manual" &&
+    orchestration !== "autonomous" &&
+    orchestration !== "analyze_plan_execute" &&
+    orchestration !== "sdk_default" &&
+    typeof orchestration !== "boolean"
+  ) {
     return false;
   }
   if (!record.subagentEnabled || typeof record.subagentEnabled !== "object") {
@@ -63,10 +92,14 @@ export function serializeThreadRuntimeConfig(config: ThreadRuntimeConfig): strin
 }
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
+  const record = config as ThreadRuntimeConfig & { planModeEnabled?: boolean };
+  const orchestrationMode = normalizeOrchestrationMode(
+    record.orchestrationMode ?? record.planModeEnabled,
+  );
   return {
     routeProfileId: config.routeProfileId.trim(),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
-    planModeEnabled: config.planModeEnabled,
+    orchestrationMode,
   };
 }
 
@@ -83,9 +116,18 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   if (!getRoutesForProfile(input.settings, routeProfileId)) {
     throw new Error(`找不到路由配置：${routeProfileId}`);
   }
+  const orchestrationMode = input.workflowDefaults.orchestrationMode;
+  const subagentEnabled =
+    orchestrationMode === "autonomous"
+      ? defaultSubagentAvailability()
+      : normalizeSubagentAvailability(input.subagentDefaults);
   return {
     routeProfileId,
-    subagentEnabled: normalizeSubagentAvailability(input.subagentDefaults),
-    planModeEnabled: input.workflowDefaults.planModeEnabled,
+    subagentEnabled,
+    orchestrationMode,
   };
+}
+
+export function isAutonomousThreadRuntime(config: ThreadRuntimeConfig): boolean {
+  return config.orchestrationMode === "autonomous";
 }

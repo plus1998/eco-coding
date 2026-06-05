@@ -1391,11 +1391,11 @@ function App() {
     await persistComposerRuntimeConfig(next);
   }
 
-  async function toggleComposerPlanMode(enabled: boolean) {
+  async function toggleComposerOrchestrationMode(mode: ThreadRuntimeConfig["orchestrationMode"]) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
     }
-    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, planModeEnabled: enabled };
+    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, orchestrationMode: mode };
     await persistComposerRuntimeConfig(next);
   }
 
@@ -1812,18 +1812,20 @@ function App() {
           <div className="composer-agent-labels">
             {composerRuntimeConfig ? (
               <ComposerPlanModeToggle
-                planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                orchestrationMode={composerRuntimeConfig.orchestrationMode}
                 plannerModelId={plannerModelLabel?.modelId}
                 plannerTitle={plannerModelLabel?.title}
                 canEdit={canEditComposerConfig}
                 saving={isSavingSettings}
-                onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                onToggle={(mode) => void toggleComposerOrchestrationMode(mode)}
               />
             ) : null}
             <ComposerAgentModels
               labels={agentModelLabels}
               subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}
-              canEditSubagents={canEditComposerConfig}
+              canEditSubagents={
+                canEditComposerConfig && composerRuntimeConfig?.orchestrationMode === "manual"
+              }
               subagentSaving={isSavingSettings}
               onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
             />

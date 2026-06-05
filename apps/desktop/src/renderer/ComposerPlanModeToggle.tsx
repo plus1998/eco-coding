@@ -1,27 +1,29 @@
 import { shortenModelId } from "@eco/runtime";
+import type { OrchestrationModeSetting } from "../shared/ipc";
 
 interface ComposerPlanModeToggleProps {
-  planModeEnabled: boolean;
+  orchestrationMode: OrchestrationModeSetting;
   plannerModelId?: string | undefined;
   plannerTitle?: string | undefined;
   canEdit: boolean;
   saving?: boolean | undefined;
-  onToggle: (enabled: boolean) => void;
+  onToggle: (mode: OrchestrationModeSetting) => void;
 }
 
 export function ComposerPlanModeToggle({
-  planModeEnabled,
+  orchestrationMode,
   plannerModelId,
   plannerTitle,
   canEdit,
   saving,
   onToggle,
 }: ComposerPlanModeToggleProps) {
+  const isManual = orchestrationMode === "manual";
   const clickable = canEdit && !saving;
   const className = [
     "composer-agent-model",
     "composer-plan-mode-toggle",
-    planModeEnabled ? "is-active" : "is-inactive",
+    isManual ? "is-active" : "is-inactive",
     clickable ? "is-clickable" : "",
   ]
     .filter(Boolean)
@@ -31,16 +33,16 @@ export function ComposerPlanModeToggle({
   const modelLabel = plannerTitle ?? modelShort;
 
   const tip = !canEdit
-    ? planModeEnabled
-      ? `计划模式已开启 · ${modelLabel}（对话进行中不可改）`
-      : `直接编码 · ${modelLabel}（对话进行中不可改）`
-    : planModeEnabled
-      ? `计划模式已开启 · ${modelLabel} · 点击关闭`
-      : `直接编码 · ${modelLabel} · 点击开启`;
+    ? isManual
+      ? `手动编排 · ${modelLabel}（对话进行中不可改）`
+      : `自主编排 · ${modelLabel}（对话进行中不可改）`
+    : isManual
+      ? `手动编排 · ${modelLabel} · 点击切到自主`
+      : `自主编排 · ${modelLabel} · 点击切到手动`;
 
   const content = (
     <>
-      <span className="composer-agent-model-role">计划</span>
+      <span className="composer-agent-model-role">{isManual ? "手动" : "自主"}</span>
       <span className="composer-agent-model-id">{modelShort}</span>
     </>
   );
@@ -50,7 +52,7 @@ export function ComposerPlanModeToggle({
       <span
         className={className}
         title={tip}
-        aria-label={planModeEnabled ? `计划模式已开启 · ${modelShort}` : `计划模式已关闭 · ${modelShort}`}
+        aria-label={isManual ? `手动编排 · ${modelShort}` : `自主编排 · ${modelShort}`}
       >
         {content}
       </span>
@@ -63,9 +65,9 @@ export function ComposerPlanModeToggle({
       className={className}
       title={tip}
       disabled={saving}
-      aria-pressed={planModeEnabled}
-      aria-label={planModeEnabled ? `计划模式已开启 · ${modelShort}` : `计划模式已关闭 · ${modelShort}`}
-      onClick={() => onToggle(!planModeEnabled)}
+      aria-pressed={isManual}
+      aria-label={isManual ? `手动编排 · ${modelShort}` : `自主编排 · ${modelShort}`}
+      onClick={() => onToggle(isManual ? "autonomous" : "manual")}
     >
       {content}
     </button>

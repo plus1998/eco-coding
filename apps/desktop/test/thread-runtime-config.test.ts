@@ -3,6 +3,7 @@ import {
   buildThreadRuntimeConfigFromDefaults,
   getDefaultRouteProfileId,
   getRoutesForProfile,
+  isAutonomousThreadRuntime,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
@@ -60,31 +61,56 @@ test("getRoutesForProfile resolves routes by id", () => {
   expect(getRoutesForProfile(settings, "profile-b")?.[0]?.modelId).toBe("m2");
 });
 
-test("buildThreadRuntimeConfigFromDefaults snapshots defaults", () => {
+test("buildThreadRuntimeConfigFromDefaults uses autonomous subagents all on", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
-    subagentDefaults,
-    workflowDefaults: { planModeEnabled: false },
+    subagentDefaults: { ...subagentDefaults, reviewer: false },
+    workflowDefaults: { orchestrationMode: "autonomous" },
     routeProfileId: "profile-b",
   });
   expect(config.routeProfileId).toBe("profile-b");
-  expect(config.planModeEnabled).toBe(false);
-  expect(config.subagentEnabled.coder).toBe(true);
+  expect(config.orchestrationMode).toBe("autonomous");
+  expect(config.subagentEnabled.reviewer).toBe(true);
+  expect(isAutonomousThreadRuntime(config)).toBe(true);
+});
+
+test("buildThreadRuntimeConfigFromDefaults respects manual subagent toggles", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    subagentDefaults: { ...subagentDefaults, reviewer: false },
+    workflowDefaults: { orchestrationMode: "manual" },
+  });
+  expect(config.orchestrationMode).toBe("manual");
+  expect(config.subagentEnabled.reviewer).toBe(false);
 });
 
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
     subagentDefaults,
-    workflowDefaults: { planModeEnabled: true },
+    workflowDefaults: { orchestrationMode: "manual" },
   });
   const json = serializeThreadRuntimeConfig(config);
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
 });
 
+test("normalizeThreadRuntimeConfig migrates legacy planModeEnabled", () => {
+  expect(
+    normalizeThreadRuntimeConfig({
+      routeProfileId: "profile-a",
+      subagentEnabled: subagentDefaults,
+      planModeEnabled: true,
+    } as never),
+  ).toEqual({
+    routeProfileId: "profile-a",
+    subagentEnabled: subagentDefaults,
+    orchestrationMode: "manual",
+  });
+});
+
 test("isThreadRuntimeConfig rejects invalid payloads", () => {
   expect(isThreadRuntimeConfig(null)).toBe(false);
-  expect(isThreadRuntimeConfig({ routeProfileId: "", planModeEnabled: true, subagentEnabled: {} })).toBe(
-    false,
-  );
+  expect(
+    isThreadRuntimeConfig({ routeProfileId: "", orchestrationMode: "manual", subagentEnabled: {} }),
+  ).toBe(false);
 });

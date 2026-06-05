@@ -49,6 +49,7 @@ import {
   buildAnalyzePhasePrompt,
   buildPlanPhasePrompt,
   executePhaseSystemAppend,
+  buildAutonomousPlanContinuationPrompt,
   buildExecutePhaseSystemAppend,
   buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
@@ -68,6 +69,7 @@ import {
   planningArchitectDescription,
 } from "./prompts/index.js";
 import {
+  defaultSubagentAvailability,
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
@@ -76,6 +78,7 @@ import {
   type SubagentAvailability,
   type SubagentRole,
 } from "./subagent-availability.js";
+import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
 
 export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagentRole };
 
@@ -113,6 +116,11 @@ const questionAllowedTools = ["Agent", "Read", "Glob", "Grep", ...networkAllowed
 const readOnlySubagentTools = ["Read", "Glob", "Grep", ...networkAllowedTools] as const;
 const readOnlySubagentBashTools = ["Read", "Glob", "Grep", "Bash", ...networkAllowedTools] as const;
 const executionCoderTools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"] as const;
+const autonomousAllowedTools = [
+  ...defaultAllowedTools,
+  "AskUserQuestion",
+  FINALIZE_PLAN_ALLOWED_TOOL,
+] as const;
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
 const defaultSettingSources = ["user", "project"] as const;
@@ -172,7 +180,7 @@ export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
 export interface ClaudeAgentSdkDriverOptions {
   apiKey: string;
   baseUrl: string;
-  /** Default: analyze_plan_execute (plan in one session → subagents execute). */
+  /** Default: autonomous (single session, agent picks subagents). Use manual for fixed pipeline. */
   orchestration?: EcoOrchestrationMode;
   /**
    * When true, move cwd/git/platform context out of the cached system prompt prefix
@@ -213,20 +221,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
-    if (this.options.orchestration === "sdk_default") {
-      yield* this.runSingleSession(input, {
-        prompt: input.prompt,
-        permissionMode: "acceptEdits",
-        allowedTools: [...defaultAllowedTools],
-        phaseAppend: "",
-        agents: createExecutionAgentDefinitions(
-          input.routes,
-          input.sdkSession?.agentSkills,
-          availability,
-        ),
-        availability,
-      });
+    if (this.options.orchestration === "autonomous") {
+      yield* this.runAutonomous(input);
       return;
     }
 
@@ -314,15 +310,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         baseUrl: this.options.baseUrl,
         ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
       }),
-      settings: {
-        env: {
-          ANTHROPIC_API_KEY: this.options.apiKey,
-          ANTHROPIC_BASE_URL: this.options.baseUrl.replace(/\/+$/, ""),
-        },
-      },
+      settings: {},
     };
     applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
     applyResumeToQueryOptions(queryOptions, input.resume);
+    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
     const query = sdk.query({ prompt: "", options: queryOptions });
     try {
       for await (const _message of query) {
@@ -344,6 +336,54 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     mode: "planning" | "execution" | "question",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
+    if (this.options.orchestration === "autonomous") {
+      if (mode === "question") {
+        const availability = defaultSubagentAvailability();
+        yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
+        yield* this.runSingleSession(input, {
+          prompt: buildQuestionAnswerPrompt(input.prompt, availability),
+          permissionMode: readOnlyPermissionMode,
+          allowedTools: [...questionAllowedTools],
+          phaseAppend: buildQuestionAnswerSystemAppend(availability),
+          agents: createQuestionAgentDefinitions(
+            input.routes,
+            input.sdkSession?.agentSkills,
+            availability,
+          ),
+          availability,
+        });
+        return;
+      }
+
+      const availability = defaultSubagentAvailability();
+      const continuationPrompt =
+        mode === "execution" && planning
+          ? buildAutonomousPlanContinuationPrompt({
+              userPrompt: planning.userPrompt,
+              analysis: planning.analysis,
+              plan: planning.plan,
+              followUp: input.prompt,
+            })
+          : input.prompt;
+      yield createPhaseBoundaryEvent(
+        input.threadId,
+        mode === "execution" ? "execute" : "plan",
+        mode === "execution" ? "【续聊】继续执行" : "【续聊】继续对话",
+      );
+      yield* this.runSingleSession(input, {
+        prompt: continuationPrompt,
+        permissionMode: "acceptEdits",
+        allowedTools: [...autonomousAllowedTools],
+        phaseAppend: buildAutonomousOrchestratorAppend(),
+        agents: createAutonomousAgentDefinitions(
+          input.routes,
+          input.sdkSession?.agentSkills,
+        ),
+        availability,
+      });
+      return;
+    }
+
     if (mode === "planning") {
       const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
@@ -415,6 +455,32 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ),
       availability,
     });
+  }
+
+  private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const availability = defaultSubagentAvailability();
+    const transcript = yield* this.runSingleSession(input, {
+      prompt: input.prompt,
+      permissionMode: "acceptEdits",
+      allowedTools: [...autonomousAllowedTools],
+      phaseAppend: buildAutonomousOrchestratorAppend(),
+      agents: createAutonomousAgentDefinitions(
+        input.routes,
+        input.sdkSession?.agentSkills,
+      ),
+      availability,
+    });
+    if (input.signal.aborted) {
+      return;
+    }
+    const finalizedPlan = transcript.finalizedPlan;
+    if (finalizedPlan) {
+      yield createPlanReadyEvent(input.threadId, {
+        userPrompt: input.prompt,
+        analysis: finalizedPlan.analysis,
+        plan: finalizedPlan.plan,
+      });
+    }
   }
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
@@ -508,18 +574,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           ? { otel: { ...this.options.otel, threadId: input.threadId } }
           : {}),
       }),
-      // Flag-layer settings override ~/.claude/settings.json env (user gateway URL).
-      settings: {
-        env: {
-          ANTHROPIC_API_KEY: this.options.apiKey,
-          ANTHROPIC_BASE_URL: this.options.baseUrl.replace(/\/+$/, ""),
-        },
-      },
+      settings: {},
     };
 
     applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
+    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
 
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
@@ -757,8 +818,7 @@ export function createExecutionAgentDefinitions(
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
     reviewer: {
-      description:
-        "Pipeline step 4: review only this session's workspace changes against the approved plan (not full repo history).",
+      description: autonomousReviewerDescription,
       tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
@@ -778,6 +838,56 @@ export function createExecutionAgentDefinitions(
     return { ...filtered, coder: definitions.coder };
   }
   return filtered;
+}
+
+const autonomousReviewerDescription = [
+  "High-risk code review only: cross-module changes, security, or data-sensitive paths.",
+  "Review ONLY this session's workspace changes (not full repo history).",
+  "When NOT to use: low/medium risk — the planner should self-review with Read/Grep/git diff instead.",
+].join(" ");
+
+export function createAutonomousAgentDefinitions(
+  routes: readonly ResolvedModelRoute[],
+  agentSkills?: Partial<Record<AgentRole, string[]>>,
+): Record<string, unknown> {
+  const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  return {
+    explore: {
+      description: exploreAgentDescription,
+      tools: [...readOnlySubagentTools],
+      ...agentDefinitionSkills("explore", agentSkills),
+      prompt: exploreAgentPrompt,
+      model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
+    },
+    architect: {
+      description: executionArchitectDescription,
+      tools: [...readOnlySubagentTools],
+      ...agentDefinitionSkills("architect", agentSkills),
+      prompt: executionArchitectPrompt,
+      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
+    },
+    coder: {
+      description: executionCoderDescription,
+      tools: [...executionCoderTools],
+      ...agentDefinitionSkills("coder", agentSkills),
+      prompt: executionCoderPrompt,
+      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
+    },
+    reviewer: {
+      description: autonomousReviewerDescription,
+      tools: [...readOnlySubagentBashTools],
+      ...agentDefinitionSkills("reviewer", agentSkills),
+      prompt: reviewerAgentPrompt,
+      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
+    },
+    tester: {
+      description: executionTesterDescription,
+      tools: [...readOnlySubagentBashTools],
+      ...agentDefinitionSkills("tester", agentSkills),
+      prompt: executionTesterPrompt,
+      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
+    },
+  };
 }
 
 export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
@@ -812,6 +922,7 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
   }
 
   applyThinkingToProcessEnv(env, options.thinkingEffort);
+  env.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
 
   delete env.ANTHROPIC_AUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -820,6 +931,25 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
 
 export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
+}
+
+/** SDK settings shared by every query(): disable Dynamic Workflows and route API credentials. */
+export function applyEcoSdkSettings(
+  queryOptions: Record<string, unknown>,
+  apiKey: string,
+  baseUrl: string,
+): void {
+  const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
+  const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
+  queryOptions.settings = {
+    ...existing,
+    disableWorkflows: true,
+    env: {
+      ...existingEnv,
+      ANTHROPIC_API_KEY: apiKey,
+      ANTHROPIC_BASE_URL: baseUrl.replace(/\/+$/, ""),
+    },
+  };
 }
 
 export function applyResumeToQueryOptions(

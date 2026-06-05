@@ -751,14 +751,16 @@ export function ModelsSettingsPanel({
               <div className="models-section-intro">
                 <h2 className="models-section-title">子代理</h2>
                 <p className="models-section-desc">
-                  各角色可单独开关；关闭后不会注册到 SDK。与上方计划模式无关，默认全部启用。
+                  {workflowSettings.orchestrationMode === "manual"
+                    ? "手动编排下可单独开关各角色；关闭后不会注册到 SDK。"
+                    : "自主编排下子代理默认全开，由 Agent 选用；切到手动编排后可在此开关。"}
                 </p>
               </div>
             </header>
             <SubagentSettingsSection
               settings={subagentSettings}
               saving={subagentSettingsSaving}
-              disabled={busy}
+              disabled={busy || workflowSettings.orchestrationMode === "autonomous"}
               onChange={onSubagentSettingsChange}
             />
           </section>

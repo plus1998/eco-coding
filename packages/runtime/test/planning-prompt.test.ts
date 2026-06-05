@@ -25,7 +25,7 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).not.toMatch(/`request_user_input`/);
   expect(append).not.toContain("## Implementation Plan");
   expect(append).toContain("Agent(explore)");
-  expect(append).toContain("Eco Plan Mode workflow");
+  expect(append).toContain("Eco Plan Mode pipeline");
   expect(append).toContain("Explore first");
   expect(append).toContain("WebSearch");
   expect(append).toContain("Clarify when needed");

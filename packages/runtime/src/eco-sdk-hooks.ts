@@ -88,6 +88,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function createWorkflowDenyPreToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Workflow") {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason:
+          "SDK Dynamic Workflows are disabled in Eco. Orchestrate with Agent(<role>) instead.",
+      },
+    };
+  };
+}
+
 export function createAskUserQuestionPreToolHook(
   delegate: EcoHookContext["askUserQuestion"],
 ): HookCallback | undefined {
@@ -389,6 +409,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
 
   const availability = ctx.subagentAvailability ?? normalizeSubagentAvailability();
 
+  pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
   if (ctx.subagentSessions) {

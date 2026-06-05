@@ -3,13 +3,14 @@ import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { EcoOrchestrationMode } from "@eco/runtime";
 
+export type OrchestrationModeSetting = "autonomous" | "manual";
+
 export interface WorkflowSettingsSnapshot {
-  /** 开启：先探索与计划确认，再执行；关闭：Claude Code 预设单次会话。默认开启。 */
-  planModeEnabled: boolean;
+  orchestrationMode: OrchestrationModeSetting;
 }
 
 export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
-  return { planModeEnabled: true };
+  return { orchestrationMode: "autonomous" };
 }
 
 export async function createWorkflowSettingsStore(dbPath: string): Promise<WorkflowSettingsStore> {
@@ -39,7 +40,7 @@ export class WorkflowSettingsStore {
       const now = new Date().toISOString();
       this.db
         .prepare(`INSERT INTO workflow_settings (key, value_json, updated_at) VALUES (?, ?, ?)`)
-        .run("orchestration_mode", JSON.stringify("analyze_plan_execute"), now);
+        .run("orchestration_mode", JSON.stringify("autonomous"), now);
     }
   }
 
@@ -67,33 +68,50 @@ export class WorkflowSettingsStore {
 export function orchestrationModeFromSnapshot(
   settings: WorkflowSettingsSnapshot,
 ): EcoOrchestrationMode {
-  return settings.planModeEnabled ? "analyze_plan_execute" : "sdk_default";
+  return settings.orchestrationMode;
 }
 
+export function usesManualOrchestration(settings: WorkflowSettingsSnapshot): boolean {
+  return settings.orchestrationMode === "manual";
+}
+
+/** @deprecated Use usesManualOrchestration */
 export function usesPlanOrchestration(settings: WorkflowSettingsSnapshot): boolean {
-  return settings.planModeEnabled;
+  return usesManualOrchestration(settings);
 }
 
 function snapshotFromStoredOrchestration(mode: EcoOrchestrationMode): WorkflowSettingsSnapshot {
-  return { planModeEnabled: mode !== "sdk_default" };
+  return { orchestrationMode: mode === "manual" ? "manual" : "autonomous" };
 }
 
 function parseStoredOrchestration(raw: string | undefined): EcoOrchestrationMode {
-  if (raw === "sdk_default" || raw === "analyze_plan_execute") {
+  if (raw === "manual" || raw === "autonomous") {
     return raw;
+  }
+  if (raw === "analyze_plan_execute") {
+    return "manual";
+  }
+  if (raw === "sdk_default") {
+    return "autonomous";
   }
   try {
     const parsed = JSON.parse(raw ?? "") as unknown;
-    if (parsed === "sdk_default" || parsed === "analyze_plan_execute") {
+    if (parsed === "manual" || parsed === "autonomous") {
       return parsed;
     }
+    if (parsed === "analyze_plan_execute") {
+      return "manual";
+    }
+    if (parsed === "sdk_default") {
+      return "autonomous";
+    }
     if (typeof parsed === "boolean") {
-      return parsed ? "analyze_plan_execute" : "sdk_default";
+      return parsed ? "manual" : "autonomous";
     }
   } catch {
     // ignore
   }
-  return "analyze_plan_execute";
+  return "autonomous";
 }
 
 export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSettingsSnapshot {
@@ -101,14 +119,17 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
     return defaultWorkflowSettings();
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.planModeEnabled === "boolean") {
-    return { planModeEnabled: record.planModeEnabled };
-  }
-  if (record.orchestrationMode === "sdk_default") {
-    return { planModeEnabled: false };
+  if (record.orchestrationMode === "manual" || record.orchestrationMode === "autonomous") {
+    return { orchestrationMode: record.orchestrationMode };
   }
   if (record.orchestrationMode === "analyze_plan_execute") {
-    return { planModeEnabled: true };
+    return { orchestrationMode: "manual" };
+  }
+  if (record.orchestrationMode === "sdk_default") {
+    return { orchestrationMode: "autonomous" };
+  }
+  if (typeof record.planModeEnabled === "boolean") {
+    return { orchestrationMode: record.planModeEnabled ? "manual" : "autonomous" };
   }
   return defaultWorkflowSettings();
 }
@@ -118,8 +139,11 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.planModeEnabled === "boolean") {
+  if (record.orchestrationMode === "manual" || record.orchestrationMode === "autonomous") {
     return true;
   }
-  return record.orchestrationMode === "sdk_default" || record.orchestrationMode === "analyze_plan_execute";
+  if (record.orchestrationMode === "analyze_plan_execute" || record.orchestrationMode === "sdk_default") {
+    return true;
+  }
+  return typeof record.planModeEnabled === "boolean";
 }
