@@ -158,6 +158,7 @@ import {
   buildPlannerModelLabel,
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
+  resolvePublicModelId,
   resolveRatesForRoute,
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
@@ -3407,7 +3408,7 @@ async function processUsageBilling(input: {
     plannerLookup?.displayName ?? plannerRoute?.modelId,
   );
 
-  const resolvedModelId = usageRoute?.modelId ?? input.modelId;
+  const resolvedModelId = resolvePublicModelId(input.role, input.modelId, runtimeRoutes) ?? input.modelId;
   const billingRole = usageRoute?.role ?? input.role;
 
   const monitorModelId = usageRoute?.modelId ?? plannerRoute?.modelId ?? resolvedModelId;
@@ -3468,7 +3469,7 @@ async function processUsageBilling(input: {
     outputTokens: delta.outputTokens,
     cacheReadTokens: delta.cacheReadTokens,
     cacheCreationTokens: delta.cacheCreationTokens,
-    ...(input.modelId && { modelId: input.modelId }),
+    ...(resolvedModelId && { modelId: resolvedModelId }),
   };
 
   const snapshot = buildUsageSnapshotForRole({
@@ -3958,7 +3959,12 @@ async function processSdkRunBilling(input: {
     formatUsageBadge(contextUsage),
     billingRole,
     false,
-    { usage: snapshot, totalCostUsd: billing.otelCostUsd, billing },
+    {
+      usage: snapshot,
+      totalCostUsd: billing.otelCostUsd,
+      billing,
+      ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
+    },
   );
 
   schedulePersistThreadMetrics(input.threadId);

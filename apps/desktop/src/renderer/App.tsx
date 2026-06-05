@@ -76,6 +76,7 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
+import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import {
   isReconnectActivityMessage,
@@ -330,12 +331,12 @@ function App() {
           }));
         }
         const modelId = event.modelId ?? event.usage.modelId;
-        if (modelId) {
+        if (modelId && !isEcoSdkModelAlias(modelId)) {
           setModelByThread((current) => ({
             ...current,
             [event.threadId]: {
               ...(current[event.threadId] ?? {}),
-              [roleKey]: modelId,
+              [roleKey]: modelId.trim(),
             },
           }));
         }
@@ -858,7 +859,7 @@ function App() {
         const route = activeRoutes.find((candidate) => candidate.role === role);
         const configured = route?.modelId.trim() || undefined;
         const live = threadModelByRole?.[role];
-        const modelId = live ?? configured;
+        const modelId = pickDisplayModelId(live, configured);
         return {
           role,
           modelId,
@@ -879,7 +880,15 @@ function App() {
         configured[route.role] = modelId;
       }
     }
-    return { ...configured, ...threadModelByRole };
+    const merged: Record<string, string> = { ...configured };
+    for (const role of AGENT_ROLES) {
+      const live = threadModelByRole?.[role];
+      const displayModelId = pickDisplayModelId(live, configured[role]);
+      if (displayModelId) {
+        merged[role] = displayModelId;
+      }
+    }
+    return merged;
   }, [activeRoutes, threadModelByRole]);
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);

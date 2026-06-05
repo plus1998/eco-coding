@@ -160,6 +160,15 @@ export function resolveUsageRoute(
   return undefined;
 }
 
+/** Resolve SDK alias / OTel model to the upstream id shown in UI and billing snapshots. */
+export function resolvePublicModelId(
+  role: AgentRole,
+  requestedModel: string | undefined,
+  routes: readonly RuntimeRoute[],
+): string | undefined {
+  return resolveUsageRoute(role, requestedModel, routes)?.modelId;
+}
+
 export async function lookupRatesForRoute(
   cache: ModelsDevPricingCache,
   route: ResolvedUsageRoute | undefined,

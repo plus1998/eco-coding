@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   manualSpecToRates,
+  resolvePublicModelId,
   resolveRatesForRoute,
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
@@ -8,6 +9,17 @@ import {
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { createModelAlias } from "../src/main/anthropic-proxy";
 import type { ModelSettingsSnapshot } from "../src/shared/ipc";
+
+test("resolvePublicModelId maps OTel SDK alias to upstream model id", () => {
+  const provider = createProvider();
+  const routes = [
+    { role: "planner" as const, provider, modelId: "claude-opus-4-7" },
+    { role: "coder" as const, provider, modelId: "claude-haiku-4-5" },
+  ];
+  const alias = createModelAlias("planner", provider.id, "claude-opus-4-7");
+  expect(resolvePublicModelId("planner", alias, routes)).toBe("claude-opus-4-7");
+  expect(resolvePublicModelId("planner", undefined, routes)).toBe("claude-opus-4-7");
+});
 
 test("resolveUsageRoute maps eco alias to route", () => {
   const provider = createProvider();
