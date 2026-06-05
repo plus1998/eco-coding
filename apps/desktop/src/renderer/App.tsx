@@ -367,10 +367,15 @@ function App() {
         });
       }
 
-      if (event.type === "thread.user_prompt") {
+      if (event.type === "thread.user_prompt" || event.type === "thread.api_error") {
         if (event.activityLine) {
           appendActivityLine(event.threadId, event.activityLine);
         }
+        return;
+      }
+
+      if (event.activityLine) {
+        appendActivityLine(event.threadId, event.activityLine);
         return;
       }
 
@@ -387,6 +392,7 @@ function App() {
         role: event.role ?? "system",
         message: event.message,
         ...(event.stream !== undefined && { stream: event.stream }),
+        ...(event.apiError && { apiError: event.apiError }),
       });
     });
   }, []);

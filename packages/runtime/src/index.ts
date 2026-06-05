@@ -253,6 +253,14 @@ export * from "./ask-user-question";
 export * from "./reviewer-scope";
 export { mergeStreamText } from "./stream-text";
 export {
+  apiErrorDedupeKey,
+  formatApiErrorActivitySummary,
+  formatApiErrorUserMessage,
+  parseLegacyApiErrorActivityMessage,
+  parseOtelApiErrorAttribute,
+  type ThreadApiErrorInfo,
+} from "./api-error";
+export {
   formatSubagentMissionMessage,
   isGenericMissionSummary,
   isToolElapsedDuration,

@@ -35,6 +35,7 @@ export interface AnthropicProxyMessagesRequestInfo {
 export interface AnthropicProxyUpstreamErrorInfo {
   role: AgentRole;
   error: string;
+  statusCode?: number;
 }
 
 export interface AnthropicProxyUsageInfo {
@@ -178,6 +179,15 @@ export async function startAnthropicModelProxy(
         requestUrl: request.url,
         requestedModel,
         ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+        ...(onUpstreamConnectionError && {
+          onUpstreamConnectionError: (info) => {
+            onUpstreamConnectionError({
+              role: info.role,
+              error: info.error,
+              ...(info.statusCode !== undefined && { statusCode: info.statusCode }),
+            });
+          },
+        }),
         onUsage: onUsage
           ? async (info: {
               role: AgentRole;

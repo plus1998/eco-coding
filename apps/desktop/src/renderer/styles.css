@@ -2534,24 +2534,64 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
+.run-log-surfaced-detail {
+  margin: 0 0 10px;
+}
+
 .run-log-reconnect {
+  margin: 6px 0 8px;
+  color: #a3a3a3;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.run-log-reconnect--failed .run-log-reconnect-summary,
+.run-log-reconnect--failed.run-log-reconnect-inline {
+  color: #d4d4d4;
+}
+
+.run-log-reconnect-inline {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 8px 0 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(251, 191, 36, 0.25);
-  background: rgba(251, 191, 36, 0.08);
-  color: #fbbf24;
-  font-size: 13px;
-  line-height: 1.45;
+}
+
+.run-log-reconnect-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: #c8c8c8;
+  user-select: none;
+}
+
+.run-log-reconnect-summary::-webkit-details-marker {
+  display: none;
 }
 
 .run-log-reconnect-icon {
   flex-shrink: 0;
   margin-top: 2px;
-  color: #fbbf24;
+  color: #737373;
+}
+
+.run-log-reconnect--failed .run-log-reconnect-icon {
+  color: #f87171;
+}
+
+.run-log-reconnect-detail {
+  margin: 6px 0 0 22px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #d4d4d4;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
 }
 
 .run-log-user-prompt {
@@ -3067,6 +3107,36 @@ button:not(:disabled) {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.run-log-api-error {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.run-log-api-error-role {
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.run-log-api-error-label {
+  color: #fecaca;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.run-log-api-error-message {
+  margin: 0;
+  color: #fda4af;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .run-log-mission-details {

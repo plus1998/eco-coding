@@ -19,6 +19,8 @@ import {
   isAgentElapsedProgressLine,
   isModelRequestLine,
   isReconnectActivityMessage,
+  isRequestFailureDetailBlock,
+  extractSurfacedRequestFailureBlocks,
   partitionDetailsIntoRuns,
   resolveActiveSubagents,
   resolveLatestSubagentLogLine,
@@ -608,6 +610,70 @@ test("hides usage cost lines even with subagent prefix", () => {
   );
 });
 
+test("surfaces subagent request failures on main feed outside collapsed cards", () => {
+  const missionLine = formatSubagentMissionMessage("explore", "Search codebase");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "explore", message: "【连接失败】HTTP 502：upstream failed" },
+      { id: "3", role: "explore", message: "Requesting model…" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const surfaced = blocks.filter(
+    (block): block is Extract<ActivityLogBlock, { kind: "surfaced-detail" }> =>
+      block.kind === "surfaced-detail",
+  );
+  expect(surfaced).toHaveLength(1);
+  expect(surfaced[0]?.block.kind).toBe("phase");
+  if (surfaced[0]?.block.kind === "phase") {
+    expect(surfaced[0].block.reconnecting).toBe(true);
+    expect(surfaced[0].block.label).toContain("502");
+  }
+
+  const exploreItem = subagentItems(blocks).find((item) => item.role === "explore");
+  expect(
+    exploreItem?.children.some((child) => child.kind === "phase" && child.reconnecting),
+  ).toBe(false);
+
+  const groupIndex = blocks.findIndex((block) => block.kind === "subagent-run-group");
+  const surfacedIndex = blocks.findIndex((block) => block.kind === "surfaced-detail");
+  expect(surfacedIndex).toBeGreaterThanOrEqual(0);
+  expect(surfacedIndex).toBeLessThan(groupIndex);
+});
+
+test("isRequestFailureDetailBlock matches api-error and reconnect phases", () => {
+  expect(
+    isRequestFailureDetailBlock({
+      kind: "api-error",
+      message: "upstream failed",
+      statusCode: 502,
+    }),
+  ).toBe(true);
+  expect(
+    isRequestFailureDetailBlock({
+      kind: "phase",
+      label: "连接失败 · HTTP 502",
+      reconnecting: true,
+    }),
+  ).toBe(true);
+  expect(
+    isRequestFailureDetailBlock({
+      kind: "phase",
+      label: "【1/3】",
+    }),
+  ).toBe(false);
+
+  const extracted = extractSurfacedRequestFailureBlocks([
+    { kind: "action", icon: "read", label: "Read · a.ts" },
+    { kind: "api-error", message: "failed", statusCode: 502 },
+  ]);
+  expect(extracted.surfaced).toHaveLength(1);
+  expect(extracted.remaining).toHaveLength(1);
+});
+
 test("shows reconnect phase for auto-retry and connection failure lines", () => {
   expect(isReconnectActivityMessage("【自动重试 1/5】5 秒后重试：fetch failed")).toBe(true);
   expect(isReconnectActivityMessage("【连接失败】无法连接上游")).toBe(true);
@@ -630,12 +696,18 @@ test("shows reconnect phase for auto-retry and connection failure lines", () => 
   expect(phases[0]?.kind).toBe("phase");
   if (phases[0]?.kind === "phase") {
     expect(phases[0].reconnecting).toBe(true);
-    expect(phases[0].label).toContain("自动重试 2/5");
+    expect(phases[0].label).toBe("正在重新连接 2/5");
+    expect(phases[0].reconnectDetail).toContain("fetch failed");
   }
 });
 
-test("clears reconnect phase after connection resumes", () => {
-  expect(shouldClearReconnectActivity({ role: "planner", message: "Requesting model…" })).toBe(true);
+test("keeps reconnect phase while request is retrying", () => {
+  expect(shouldClearReconnectActivity({ role: "planner", message: "Requesting model…" })).toBe(
+    false,
+  );
+  expect(shouldClearReconnectActivity({ role: "explore", message: "Requesting model…" })).toBe(
+    false,
+  );
   expect(shouldClearReconnectActivity({ role: "system", message: "【自动重试 1/5】5 秒后重试" })).toBe(
     false,
   );
@@ -646,7 +718,26 @@ test("clears reconnect phase after connection resumes", () => {
       { id: "1", role: "system", message: "【连接失败】无法连接上游模型 API。" },
       { id: "2", role: "system", message: "【自动重试 1/5】5 秒后重试：fetch failed" },
       { id: "3", role: "planner", message: "Requesting model…" },
-      { id: "4", role: "tool", message: "Tool: Read · a.ts" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  const reconnectPhases =
+    session?.kind === "work-session"
+      ? session.children.filter((child) => child.kind === "phase" && child.reconnecting)
+      : [];
+  expect(reconnectPhases).toHaveLength(1);
+});
+
+test("clears reconnect phase after substantive progress", () => {
+  expect(shouldClearReconnectActivity({ role: "tool", message: "Tool: Read · a.ts" })).toBe(true);
+
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "system", message: "【连接失败】无法连接上游模型 API。" },
+      { id: "2", role: "tool", message: "Tool: Read · a.ts" },
     ],
     { status: "running", createdAt: new Date().toISOString() },
   );
@@ -677,8 +768,8 @@ test("collapses repeated auto-retry lines into one reconnect phase", () => {
       : [];
   expect(phases).toHaveLength(1);
   if (phases[0]?.kind === "phase") {
-    expect(phases[0].label).toContain("自动重试 5/5");
-    expect(phases[0].label).toContain("error C");
+    expect(phases[0].label).toBe("正在重新连接 5/5");
+    expect(phases[0].reconnectDetail).toContain("error C");
   }
 });
 
@@ -1186,4 +1277,73 @@ test("places worktree merge before the next user turn when continuing conversati
   expect(mergeIndex).toBeGreaterThan(firstUser);
   expect(secondUser).toBeGreaterThan(mergeIndex);
   expect(secondWork).toBeGreaterThan(secondUser);
+});
+
+test("structured apiError activity lines become api-error blocks instead of narrative", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "Review this" },
+      {
+        id: "e1",
+        role: "reviewer",
+        message: "API error · 502 · 上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+        apiError: {
+          statusCode: 502,
+          code: "upstream_error",
+          message: "上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+        },
+      },
+      {
+        id: "n1",
+        role: "planner",
+        message: "Reviewer 子代理遇到临时 502；我会重试一次 reviewer 阶段。",
+      },
+    ],
+    { status: "running" },
+  );
+
+  const session = plannerSession(blocks);
+  const reviewerRun = subagentItems(blocks).find((item) => item.role === "reviewer");
+  const surfacedApiErrors = blocks.filter(
+    (block): block is Extract<ActivityLogBlock, { kind: "surfaced-detail" }> =>
+      block.kind === "surfaced-detail" && block.block.kind === "api-error",
+  );
+  expect(surfacedApiErrors).toHaveLength(1);
+  expect(reviewerRun?.children.some((child) => child.kind === "api-error")).toBe(false);
+  expect(reviewerRun?.children.some((child) => child.kind === "narrative")).toBe(false);
+  expect(session?.children.some((child) => child.kind === "narrative")).toBe(true);
+});
+
+test("dedupes consecutive identical structured api errors", () => {
+  const apiError = {
+    statusCode: 502,
+    code: "upstream_error",
+    message: "上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+  };
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "Review" },
+      {
+        id: "e1",
+        role: "reviewer",
+        message: "API error · 502 · 上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+        apiError,
+      },
+      {
+        id: "e2",
+        role: "reviewer",
+        message: "API error · 502 · 上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+        apiError,
+      },
+    ],
+    { status: "running" },
+  );
+
+  const reviewerRun = subagentItems(blocks).find((item) => item.role === "reviewer");
+  const surfacedApiErrors = blocks.filter(
+    (block): block is Extract<ActivityLogBlock, { kind: "surfaced-detail" }> =>
+      block.kind === "surfaced-detail" && block.block.kind === "api-error",
+  );
+  expect(surfacedApiErrors).toHaveLength(1);
+  expect(reviewerRun?.children.filter((child) => child.kind === "api-error")).toHaveLength(0);
 });

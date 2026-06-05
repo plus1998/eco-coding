@@ -1,12 +1,15 @@
 import {
+  apiErrorDedupeKey,
   isGenericMissionSummary,
   isSubagentRole,
   isToolElapsedDuration,
   isWeakAgentToolDetail,
   mergeStreamText,
   missionFromAgentToolDetail,
+  parseLegacyApiErrorActivityMessage,
   parseSubagentMissionMessage,
   type SubagentMissionPayload,
+  type ThreadApiErrorInfo,
 } from "@eco/runtime";
 import {
   activityActionKey,
@@ -14,6 +17,7 @@ import {
   isMcpToolName,
   isReconnectActivityMessage,
   normalizeActivityActionLabel,
+  parseReconnectActivityMessage,
   shouldClearReconnectActivity,
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
@@ -86,7 +90,7 @@ export function shouldScrollMainActivityFeedForLine(line: Pick<ThreadActivityLin
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =
-  | { kind: "phase"; label: string; reconnecting?: boolean }
+  | { kind: "phase"; label: string; reconnecting?: boolean; reconnectDetail?: string }
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
   | { kind: "model-request"; role?: string }
   | { kind: "agent-request"; subagent?: string; agentId?: string }
@@ -94,6 +98,14 @@ export type ActivityDetailBlock =
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string; agentId?: string }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
+  | {
+      kind: "api-error";
+      message: string;
+      statusCode?: number;
+      code?: string;
+      subagent?: string;
+      agentId?: string;
+    }
   | { kind: "worktree-merge"; summary: WorktreeMergeSummary };
 
 export interface SubagentRunItem {
@@ -134,7 +146,8 @@ export type ActivityLogBlock =
       streaming?: boolean;
       subagent?: string;
     }
-  | { kind: "worktree-merge"; summary: WorktreeMergeSummary; threadId?: string };
+  | { kind: "worktree-merge"; summary: WorktreeMergeSummary; threadId?: string }
+  | { kind: "surfaced-detail"; block: ActivityDetailBlock };
 
 interface ParsedToolAction {
   tool: string;
@@ -309,6 +322,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   let toolContextAgentId: string | undefined;
   const missionByRole = new Map<string, SubagentMissionPayload>();
   const recentNarratives: string[] = [];
+  let lastApiErrorKey: string | undefined;
 
   const removePendingRequestBlocks = () => {
     for (let index = current.details.length - 1; index >= 0; index -= 1) {
@@ -342,10 +356,12 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   const upsertReconnectPhase = (label: string) => {
+    const parsed = parseReconnectActivityMessage(label);
     const block: ActivityDetailBlock = {
       kind: "phase",
-      label,
+      label: parsed?.summary ?? label,
       reconnecting: true,
+      ...(parsed?.detail && { reconnectDetail: parsed.detail }),
     };
     for (let index = current.details.length - 1; index >= 0; index -= 1) {
       const child = current.details[index];
@@ -667,6 +683,30 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       continue;
     }
 
+    const apiError = resolveActivityLineApiError(line);
+    if (apiError) {
+      flushTextBuffers();
+      removePendingRequestBlocks();
+      noteToolContext(line);
+      const dedupeKey = apiErrorDedupeKey(apiError);
+      if (dedupeKey === lastApiErrorKey) {
+        continue;
+      }
+      lastApiErrorKey = dedupeKey;
+      const subagent = isSubagentRole(line.role) ? line.role : toolContextSubagent;
+      current.details.push({
+        kind: "api-error",
+        message: apiError.message,
+        ...(apiError.statusCode !== undefined && { statusCode: apiError.statusCode }),
+        ...(apiError.code && { code: apiError.code }),
+        ...(subagent && { subagent }),
+        ...((line.agentId?.trim() || toolContextAgentId) && {
+          agentId: (line.agentId?.trim() || toolContextAgentId)!,
+        }),
+      });
+      continue;
+    }
+
     if (isTaskActivityLine(line)) {
       flushTextBuffers();
       removePendingRequestBlocks();
@@ -795,8 +835,32 @@ function hasSubstantivePlannerContent(blocks: readonly ActivityDetailBlock[]): b
       block.kind === "narrative" ||
       block.kind === "thinking" ||
       block.kind === "tool-failed" ||
+      block.kind === "api-error" ||
       block.kind === "phase",
   );
+}
+
+/** Request failures hidden inside collapsed subagent cards — hoist to main feed. */
+export function isRequestFailureDetailBlock(block: ActivityDetailBlock): boolean {
+  if (block.kind === "api-error") {
+    return true;
+  }
+  return block.kind === "phase" && Boolean(block.reconnecting);
+}
+
+export function extractSurfacedRequestFailureBlocks(
+  children: readonly ActivityDetailBlock[],
+): { remaining: ActivityDetailBlock[]; surfaced: ActivityDetailBlock[] } {
+  const surfaced: ActivityDetailBlock[] = [];
+  const remaining: ActivityDetailBlock[] = [];
+  for (const block of children) {
+    if (isRequestFailureDetailBlock(block)) {
+      surfaced.push(block);
+    } else {
+      remaining.push(block);
+    }
+  }
+  return { remaining, surfaced };
 }
 
 function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
@@ -810,7 +874,8 @@ function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
     (block.kind === "action" ||
       block.kind === "narrative" ||
       block.kind === "agent-request" ||
-      block.kind === "tool-failed") &&
+      block.kind === "tool-failed" ||
+      block.kind === "api-error") &&
     block.subagent &&
     isSubagentRole(block.subagent)
   ) {
@@ -1021,6 +1086,12 @@ export function resolveSubagentRunStatusLine(
         return line;
       }
     }
+    if (block?.kind === "api-error" && block.subagent === role) {
+      const line = clampSubagentLogLine(block.message);
+      if (line) {
+        return line;
+      }
+    }
     if (block?.kind === "narrative" && block.subagent === role) {
       const text = block.text.trim();
       if (text) {
@@ -1183,10 +1254,24 @@ function pushWorkSessionsFromRuns(
       return;
     }
     for (const group of groupSubagentRunItems(pendingSubagentItems, options.segmentRunning)) {
+      const surfacedBlocks: ActivityDetailBlock[] = [];
+      const items = group.items.map((item) => {
+        const extracted = extractSurfacedRequestFailureBlocks(item.children);
+        surfacedBlocks.push(...extracted.surfaced);
+        const remaining = extracted.remaining;
+        return {
+          ...item,
+          children: remaining,
+          statusLine: resolveSubagentRunStatusLine(remaining, item.role) ?? item.statusLine,
+        };
+      });
+      for (const surfaced of surfacedBlocks) {
+        output.push({ kind: "surfaced-detail", block: surfaced });
+      }
       output.push({
         kind: "subagent-run-group",
         parallel: group.parallel,
-        items: group.items,
+        items,
       });
     }
     pendingSubagentItems.length = 0;
@@ -1616,6 +1701,9 @@ export function resolveLatestSubagentLogLine(
         detail ? `${block.tool} 失败：${detail}` : `${block.tool} 失败`,
       );
     }
+    if (block.kind === "api-error" && block.subagent) {
+      return clampSubagentLogLine(block.message);
+    }
     if (block.kind === "narrative" && block.subagent) {
       const text = block.text.trim();
       if (text) {
@@ -1649,7 +1737,8 @@ export function sessionHasSubagentWork(children: readonly ActivityDetailBlock[])
     if (
       block.kind === "action" ||
       block.kind === "narrative" ||
-      block.kind === "tool-failed"
+      block.kind === "tool-failed" ||
+      block.kind === "api-error"
     ) {
       return Boolean(block.subagent);
     }
@@ -2038,6 +2127,13 @@ function isNarrativeLine(line: ThreadActivityLine): boolean {
 
 const TOOL_LINE_PATTERN =
   /^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$/;
+
+function resolveActivityLineApiError(line: ThreadActivityLine): ThreadApiErrorInfo | null {
+  if (line.apiError?.message?.trim()) {
+    return line.apiError;
+  }
+  return parseLegacyApiErrorActivityMessage(line.message);
+}
 
 function parseToolFailedLine(message: string): { tool: string; error?: string } | null {
   const match = stripSubagentBracketPrefix(message.trim()).match(

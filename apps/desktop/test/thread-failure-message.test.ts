@@ -86,3 +86,11 @@ test("resolveRetryBannerHint only adds guidance for quota failures", () => {
   expect(resolveRetryBannerHint("fetch failed")).toBeUndefined();
   expect(resolveRetryBannerHint(undefined)).toBeUndefined();
 });
+
+test("formatUserFacingRequestError translates structured upstream 502 failures", () => {
+  const raw =
+    'API error (eco-reviewer-1): 502 {"error":{"message":"Upstream request failed","type":"upstream_error"}}';
+  expect(formatUserFacingRequestError(raw)).toBe(
+    "上游模型服务暂时不可用，请稍后重试或切换 Provider。",
+  );
+});

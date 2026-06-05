@@ -1337,8 +1337,8 @@ function runThreadRequestWithAutoRetry(
   return runWithRequestAutoRetry(runOnce, {
     signal,
     onRetryScheduled: (retryIndex, maxRetries, reason) => {
-      const short = reason.length > 100 ? `${reason.slice(0, 97)}…` : reason;
-      const message = `上游不可用，正在重试 ${retryIndex}/${maxRetries}（${REQUEST_AUTO_RETRY_INTERVAL_MS / 1000}s 后，点击停止可立即中断）：${short}`;
+      const short = reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
+      const message = `【自动重试 ${retryIndex}/${maxRetries}】${short}`;
       emitThreadEvent(threadId, "thread.auto_retry", message, "system");
       updateThread(threadId, { status: "running", message });
     },
@@ -3194,13 +3194,17 @@ function emitOtelActivity(line: OtelActivityLine): void {
   const otelAgentId = resolveOtelActivityAgentId(line.threadId, line, {
     metricsRegistry: subagentMetricsRegistry,
   });
+  const eventType = line.apiError ? "thread.api_error" : "otel.activity";
   emitThreadEvent(
     line.threadId,
-    "otel.activity",
+    eventType,
     line.message,
     line.role,
     line.stream ?? false,
-    otelAgentId ? { agentId: otelAgentId } : undefined,
+    {
+      ...(otelAgentId && { agentId: otelAgentId }),
+      ...(line.apiError && { apiError: line.apiError }),
+    },
   );
 }
 
@@ -4202,6 +4206,7 @@ function emitThreadEvent(
     context?: ThreadContextSnapshot;
     agentId?: string;
     subagentSessions?: ThreadLiveEvent["subagentSessions"];
+    apiError?: ThreadLiveEvent["apiError"];
   },
 ): void {
   const trimmed = message.trim();
@@ -4230,7 +4235,8 @@ function emitThreadEvent(
     (!isThreadStatusEvent ||
       type === "thread.auto_retry" ||
       type === "thread.retry" ||
-      type === "thread.user_prompt") &&
+      type === "thread.user_prompt" ||
+      type === "thread.api_error") &&
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&
@@ -4250,6 +4256,7 @@ function emitThreadEvent(
       message: displayMessage,
       stream,
       ...(extras?.agentId?.trim() && { agentId: extras.agentId.trim() }),
+      ...(extras?.apiError && { apiError: extras.apiError }),
     });
   }
 
@@ -4260,6 +4267,7 @@ function emitThreadEvent(
     role,
     stream,
     ...(persistedActivityLine && { activityLine: persistedActivityLine }),
+    ...(extras?.apiError && { apiError: extras.apiError }),
   };
   if (extras?.plan) {
     payload.plan = extras.plan;
@@ -4443,13 +4451,31 @@ interface RuntimeConfig {
 
 type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { ok: false; reason: string };
 
+const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
+
 function emitUpstreamModelRequestActivity(threadId: string, role: AgentRole): void {
   emitThreadEvent(threadId, "otel.activity", "Requesting model…", role, false);
 }
 
-function emitUpstreamConnectionErrorActivity(threadId: string, role: AgentRole, error: string): void {
+function emitUpstreamConnectionErrorActivity(
+  threadId: string,
+  role: AgentRole,
+  error: string,
+  statusCode?: number,
+): void {
   const detail = formatUserFacingRequestError(error);
-  emitThreadEvent(threadId, "otel.activity", `【连接失败】${detail}`, role, false);
+  const summary = statusCode ? `HTTP ${statusCode}` : detail;
+  const message =
+    summary === detail
+      ? `【连接失败】${summary}`
+      : `【连接失败】${summary}：${detail}`;
+  const now = Date.now();
+  const last = lastConnectionErrorEmitByThread.get(threadId);
+  if (last && last.message === message && now - last.at < 4000) {
+    return;
+  }
+  lastConnectionErrorEmitByThread.set(threadId, { at: now, message });
+  emitThreadEvent(threadId, "otel.activity", message, role, false);
 }
 
 function startRuntimeProxy(
@@ -4469,8 +4495,8 @@ function startRuntimeProxy(
           emitUpstreamModelRequestActivity(threadId, role);
         },
       }),
-      onUpstreamConnectionError: ({ role, error }) => {
-        emitUpstreamConnectionErrorActivity(threadId, role, error);
+      onUpstreamConnectionError: ({ role, error, statusCode }) => {
+        emitUpstreamConnectionErrorActivity(threadId, role, error, statusCode);
       },
       onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
       resolveCountTokensInput: ({ role, body }) => {

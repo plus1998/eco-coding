@@ -16,11 +16,68 @@ const reconnectClearSystemNoise = [
   /^已从异常退出恢复/i,
 ];
 
+export interface ParsedReconnectActivity {
+  summary: string;
+  detail?: string;
+}
+
 /** Auto-retry or upstream connection failure status — should replace prior line, not stack. */
 export function isReconnectActivityMessage(message: string): boolean {
-  const trimmed = message.trim();
-  return /^【(?:自动重试|连接失败)/.test(trimmed);
+  return parseReconnectActivityMessage(message) !== null;
 }
+
+export function parseReconnectActivityMessage(message: string): ParsedReconnectActivity | null {
+  const trimmed = message.trim();
+  const autoRetry = trimmed.match(/^【自动重试\s*(\d+)\/(\d+)】\s*([\s\S]*)$/);
+  if (autoRetry?.[1] && autoRetry[2]) {
+    const detail = autoRetry[3]?.trim();
+    return {
+      summary: `正在重新连接 ${autoRetry[1]}/${autoRetry[2]}`,
+      ...(detail && { detail }),
+    };
+  }
+
+  const connectionFailed = trimmed.match(/^【连接失败】\s*([\s\S]*)$/);
+  if (connectionFailed) {
+    const body = connectionFailed[1]?.trim() ?? "";
+    const httpMatch = body.match(/^HTTP\s*(\d{3})\s*(?:[：:]\s*([\s\S]*))?$/);
+    if (httpMatch?.[1]) {
+      const detail = httpMatch[2]?.trim() || undefined;
+      return {
+        summary: `连接失败 · HTTP ${httpMatch[1]}`,
+        ...(detail && { detail }),
+      };
+    }
+    const colonSplit = body.match(/^([^：:]+)[：:]\s*([\s\S]+)$/);
+    if (colonSplit?.[1] && colonSplit[2]) {
+      return {
+        summary: `连接失败 · ${colonSplit[1].trim()}`,
+        detail: colonSplit[2].trim(),
+      };
+    }
+    return {
+      summary: "连接失败",
+      ...(body && { detail: body }),
+    };
+  }
+
+  const legacyRetry = trimmed.match(/^上游不可用，正在重试\s*(\d+)\/(\d+)[^：:]*[：:]\s*([\s\S]*)$/);
+  if (legacyRetry?.[1] && legacyRetry[2]) {
+    const detail = legacyRetry[3]?.trim();
+    return {
+      summary: `正在重新连接 ${legacyRetry[1]}/${legacyRetry[2]}`,
+      ...(detail && { detail }),
+    };
+  }
+
+  return null;
+}
+
+/** Retry-in-progress placeholders — not evidence that upstream recovered. */
+const reconnectInProgressPatterns = [
+  /^Requesting model/i,
+  /^API error/i,
+];
 
 /** True when a new activity line means the upstream connection resumed — drop reconnect status. */
 export function shouldClearReconnectActivity(line: { message: string; role: string }): boolean {
@@ -35,17 +92,17 @@ export function shouldClearReconnectActivity(line: { message: string; role: stri
   if (reconnectClearSystemNoise.some((pattern) => pattern.test(trimmed))) {
     return false;
   }
+  if (reconnectInProgressPatterns.some((pattern) => pattern.test(trimmed))) {
+    return false;
+  }
 
   if (parseSubagentMissionMessage(trimmed)) {
-    return true;
-  }
-  if (/^Requesting model/i.test(trimmed)) {
     return true;
   }
   if (/^正在刷新上下文用量/.test(trimmed)) {
     return false;
   }
-  if (/^Tool(?: failed)?:/i.test(trimmed)) {
+  if (/^Tool:/i.test(trimmed) && !/^Tool failed:/i.test(trimmed)) {
     return true;
   }
   if (/^【\d+\/\d+】/.test(trimmed)) {
@@ -54,10 +111,7 @@ export function shouldClearReconnectActivity(line: { message: string; role: stri
   if (/^(Reading|Writing|Editing|Searching|Running)\s+/i.test(trimmed)) {
     return true;
   }
-  if (line.role === "thinking") {
-    return true;
-  }
-  if (["planner", "explore", "architect", "coder", "reviewer", "tester"].includes(line.role)) {
+  if (line.role === "thinking" && trimmed.length > 0) {
     return true;
   }
 

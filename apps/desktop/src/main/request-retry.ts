@@ -7,6 +7,11 @@ export type RequestAttemptResult =
   | { ok: true }
   | { ok: false; reason: string; aborted?: boolean };
 
+import {
+  formatApiErrorUserMessage,
+  parseLegacyApiErrorActivityMessage,
+  parseOtelApiErrorAttribute,
+} from "@eco/runtime";
 import { isQuotaOrRateLimitFailure } from "../shared/request-errors";
 
 export { isQuotaOrRateLimitFailure } from "../shared/request-errors";
@@ -83,6 +88,15 @@ export function formatUserFacingRequestError(reason: string): string {
   }
   if (text.includes("未提交 FinalizePlan")) {
     return "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换 Planner 模型。";
+  }
+
+  const legacyApiError = parseLegacyApiErrorActivityMessage(text);
+  if (legacyApiError) {
+    return formatApiErrorUserMessage(legacyApiError);
+  }
+  const otelApiError = parseOtelApiErrorAttribute(text);
+  if (otelApiError) {
+    return formatApiErrorUserMessage(otelApiError);
   }
 
   return text;

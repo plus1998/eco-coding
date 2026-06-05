@@ -120,6 +120,15 @@ export function ActivityLogView({
           if (block.kind === "worktree-merge") {
             return `w:${block.summary.fileCount}:${block.summary.files.length}`;
           }
+          if (block.kind === "surfaced-detail") {
+            if (block.block.kind === "api-error") {
+              return `sf:ae:${block.block.statusCode ?? ""}:${block.block.message.length}`;
+            }
+            if (block.block.kind === "phase") {
+              return `sf:ph:${block.block.label}:${block.block.reconnectDetail?.length ?? 0}`;
+            }
+            return `sf:${block.block.kind}`;
+          }
           return "";
         })
         .filter(Boolean)
@@ -231,6 +240,20 @@ function RunLogBlock({
         summary={block.summary}
         {...(threadId && { threadId })}
       />
+    );
+  }
+  if (block.kind === "surfaced-detail") {
+    const requestActive =
+      threadStatus === "running" || threadStatus === "queued";
+    return (
+      <div className="run-log-surfaced-detail">
+        <DetailBlock
+          block={block.block}
+          requestActive={requestActive}
+          {...(modelByRole && { modelByRole })}
+          {...(usageByRole && { usageByRole })}
+        />
+      </div>
     );
   }
   return null;
@@ -628,7 +651,13 @@ function DetailBlock({
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
   if (block.kind === "phase") {
-    return <PhaseBlock label={block.label} {...(block.reconnecting && { reconnecting: block.reconnecting })} />;
+    return (
+      <PhaseBlock
+        label={block.label}
+        {...(block.reconnecting && { reconnecting: block.reconnecting })}
+        {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
+      />
+    );
   }
   if (block.kind === "subagent-mission") {
     return (
@@ -683,6 +712,17 @@ function DetailBlock({
       />
     );
   }
+  if (block.kind === "api-error") {
+    return (
+      <ApiErrorBlock
+        message={block.message}
+        {...(block.statusCode !== undefined && { statusCode: block.statusCode })}
+        {...(block.subagent && { subagent: block.subagent })}
+        omitRoleLabel={omitSubagent}
+        {...(!omitSubagent && modelByRole && { modelByRole })}
+      />
+    );
+  }
   if (block.kind === "thinking") {
     return (
       <ThinkingBlock
@@ -710,13 +750,36 @@ function DetailBlock({
   );
 }
 
-function PhaseBlock({ label, reconnecting }: { label: string; reconnecting?: boolean }) {
+function PhaseBlock({
+  label,
+  reconnecting,
+  reconnectDetail,
+}: {
+  label: string;
+  reconnecting?: boolean;
+  reconnectDetail?: string;
+}) {
   if (reconnecting) {
-    return (
-      <div className="run-log-phase run-log-reconnect" role="status" aria-live="polite">
+    const isFailure = label.startsWith("连接失败");
+    const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
+    const summaryRow = (
+      <>
         <RefreshCw size={14} className="run-log-reconnect-icon spinning" aria-hidden />
         <span>{label}</span>
-      </div>
+      </>
+    );
+    if (!reconnectDetail) {
+      return (
+        <div className={`${className} run-log-reconnect-inline`} role="status" aria-live="polite">
+          {summaryRow}
+        </div>
+      );
+    }
+    return (
+      <details className={className} role="status" aria-live="polite">
+        <summary className="run-log-reconnect-summary">{summaryRow}</summary>
+        <pre className="run-log-reconnect-detail">{reconnectDetail}</pre>
+      </details>
     );
   }
   return <div className="run-log-phase">{label}</div>;
@@ -1100,6 +1163,37 @@ function ToolFailedBlock({
         工具失败 · {tool}
       </span>
       {error ? <p className="run-log-tool-failed-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function ApiErrorBlock({
+  message,
+  statusCode,
+  subagent,
+  modelByRole,
+  omitRoleLabel,
+}: {
+  message: string;
+  statusCode?: number;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
+}) {
+  const title =
+    statusCode !== undefined
+      ? `模型请求失败 · HTTP ${statusCode}`
+      : "模型请求失败";
+
+  return (
+    <div className="run-log-api-error" role="alert">
+      {subagent && !omitRoleLabel ? (
+        <span className="run-log-api-error-role">
+          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+        </span>
+      ) : null}
+      <span className="run-log-api-error-label">{title}</span>
+      <p className="run-log-api-error-message">{message}</p>
     </div>
   );
 }

@@ -68,6 +68,12 @@ export interface BridgeForwardRoute {
   aliasModelId: string;
 }
 
+export interface BridgeUpstreamConnectionErrorInfo {
+  role: AgentRole;
+  error: string;
+  statusCode?: number;
+}
+
 export interface BridgeForwardContext {
   route: BridgeForwardRoute;
   body: Record<string, unknown>;
@@ -75,6 +81,7 @@ export interface BridgeForwardContext {
   requestUrl?: string;
   upstreamUserAgent?: string;
   onUsage?: BridgeUsageHandler;
+  onUpstreamConnectionError?: (info: BridgeUpstreamConnectionErrorInfo) => void;
 }
 
 export interface BridgeUsageInfo {
@@ -146,6 +153,18 @@ function bridgeProxyCallCommonFields(input: {
     upstreamUrl: input.upstreamUrl,
     stream: input.stream,
     converted: input.converted,
+  });
+}
+
+function notifyBridgeProxyFailure(
+  ctx: BridgeForwardContext,
+  error: string,
+  statusCode?: number,
+): void {
+  ctx.onUpstreamConnectionError?.({
+    role: ctx.route.role,
+    error,
+    ...(statusCode !== undefined && { statusCode }),
   });
 }
 
@@ -481,6 +500,7 @@ async function forwardAnthropicNativeMessages(
       error: message,
       ...failureDebug(),
     });
+    notifyBridgeProxyFailure(ctx, message);
     throw error;
   }
 
@@ -502,6 +522,13 @@ async function forwardAnthropicNativeMessages(
       error: upstreamResponse.statusText || String(upstreamResponse.status),
       ...failureDebug(responseText),
     });
+    notifyBridgeProxyFailure(
+      ctx,
+      responseText.trim().slice(0, 500) ||
+        upstreamResponse.statusText ||
+        String(upstreamResponse.status),
+      upstreamResponse.status,
+    );
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
     });
@@ -650,6 +677,7 @@ async function forwardOpenAIResponsesMessages(
       error: message,
       ...failureDebug(),
     });
+    notifyBridgeProxyFailure(ctx, message);
     throw error;
   }
 
@@ -667,6 +695,13 @@ async function forwardOpenAIResponsesMessages(
       error: upstreamResponse.statusText || String(upstreamResponse.status),
       ...failureDebug(responseText),
     });
+    notifyBridgeProxyFailure(
+      ctx,
+      responseText.trim().slice(0, 500) ||
+        upstreamResponse.statusText ||
+        String(upstreamResponse.status),
+      upstreamResponse.status,
+    );
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
     });
@@ -860,6 +895,7 @@ async function forwardOpenAIChatCompletionsMessages(
       error: message,
       ...failureDebug(),
     });
+    notifyBridgeProxyFailure(ctx, message);
     throw error;
   }
 
@@ -877,6 +913,13 @@ async function forwardOpenAIChatCompletionsMessages(
       error: upstreamResponse.statusText || String(upstreamResponse.status),
       ...failureDebug(responseText),
     });
+    notifyBridgeProxyFailure(
+      ctx,
+      responseText.trim().slice(0, 500) ||
+        upstreamResponse.statusText ||
+        String(upstreamResponse.status),
+      upstreamResponse.status,
+    );
     response.writeHead(upstreamResponse.status, {
       "content-type": contentType || "application/json",
     });

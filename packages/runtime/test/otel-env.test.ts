@@ -38,7 +38,45 @@ test("parseOtelTracesPayload maps llm_request failures", () => {
       },
     ],
   });
-  expect(lines[0]?.message).toBe("rate limited");
+  expect(lines[0]?.message).toContain("API error ·");
+  expect(lines[0]?.apiError?.message).toContain("频繁");
+});
+
+test("parseOtelLogsPayload maps api_error events with structured metadata", () => {
+  const { lines } = parseOtelLogsPayload({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t3" } }],
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "api_error" } },
+                  { key: "subagent_type", value: { stringValue: "reviewer" } },
+                  { key: "model", value: { stringValue: "eco-reviewer-1" } },
+                  {
+                    key: "error",
+                    value: {
+                      stringValue:
+                        '502 {"error":{"message":"Upstream request failed","type":"upstream_error"}}',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(lines[0]?.role).toBe("reviewer");
+  expect(lines[0]?.apiError?.statusCode).toBe(502);
+  expect(lines[0]?.apiError?.code).toBe("upstream_error");
+  expect(lines[0]?.message).toContain("API error · 502 ·");
 });
 
 test("parseOtelLogsPayload maps tool_result and api_request usage", () => {

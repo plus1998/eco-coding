@@ -13,6 +13,7 @@ import type {
   CoderTodoItem,
   CoderTodoStatus,
   ThreadActivityLine,
+  ThreadApiErrorInfo,
   ThreadContextSnapshot,
   ThreadPendingPlan,
   ThreadRuntimeConfig,
@@ -69,6 +70,7 @@ interface ActivityRow {
   message: string;
   stream: number;
   agent_id: string | null;
+  api_error_json: string | null;
   created_at: string;
 }
 
@@ -299,6 +301,9 @@ export class ConversationStore {
     const activityNames = new Set(activityColumns.map((column) => column.name));
     if (!activityNames.has("agent_id")) {
       this.db.exec(`ALTER TABLE thread_activity ADD COLUMN agent_id TEXT`);
+    }
+    if (!activityNames.has("api_error_json")) {
+      this.db.exec(`ALTER TABLE thread_activity ADD COLUMN api_error_json TEXT`);
     }
 
     this.db.exec(`
@@ -1016,11 +1021,12 @@ export class ConversationStore {
       message: line.message,
       ...(line.stream !== undefined && { stream: line.stream }),
       ...(line.agentId?.trim() && { agentId: line.agentId.trim() }),
+      ...(line.apiError && { apiError: line.apiError }),
     };
     this.db
       .prepare(
-        `INSERT INTO thread_activity (id, thread_id, role, message, stream, agent_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO thread_activity (id, thread_id, role, message, stream, agent_id, api_error_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.id,
@@ -1029,6 +1035,7 @@ export class ConversationStore {
         record.message,
         line.stream ? 1 : 0,
         record.agentId ?? null,
+        record.apiError ? JSON.stringify(record.apiError) : null,
         new Date().toISOString(),
       );
 
@@ -1043,7 +1050,7 @@ export class ConversationStore {
   listActivityLines(threadId: string): ThreadActivityLine[] {
     const rows = this.db
       .prepare(
-        `SELECT id, role, message, stream, agent_id
+        `SELECT id, role, message, stream, agent_id, api_error_json
          FROM thread_activity
          WHERE thread_id = ?
          ORDER BY created_at ASC`,
@@ -1052,12 +1059,14 @@ export class ConversationStore {
 
     const lines = rows.map((row) => {
       const { text, repaired } = repairActivityText(row.message);
+      const apiError = parseStoredApiError(row.api_error_json);
       return {
         id: row.id,
         role: row.role,
         message: repaired ? text : row.message,
         stream: row.stream === 1,
         ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
+        ...(apiError && { apiError }),
       };
     });
 
@@ -1223,7 +1232,7 @@ export class ConversationStore {
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, role, message, stream, agent_id
+        `SELECT id, role, message, stream, agent_id, api_error_json
          FROM thread_activity
          WHERE thread_id = ?
          ORDER BY created_at DESC
@@ -1235,14 +1244,36 @@ export class ConversationStore {
       return undefined;
     }
 
+    const apiError = parseStoredApiError(row.api_error_json);
     return {
       id: row.id,
       role: row.role,
       message: row.message,
       stream: row.stream === 1,
       ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
+      ...(apiError && { apiError }),
     };
   }
+}
+
+function parseStoredApiError(raw: string | null | undefined): ThreadApiErrorInfo | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as ThreadApiErrorInfo;
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return {
+        message: parsed.message.trim(),
+        ...(typeof parsed.statusCode === "number" && { statusCode: parsed.statusCode }),
+        ...(typeof parsed.code === "string" && parsed.code.trim() && { code: parsed.code.trim() }),
+        ...(typeof parsed.model === "string" && parsed.model.trim() && { model: parsed.model.trim() }),
+      };
+    }
+  } catch {
+    // ignore malformed persisted JSON
+  }
+  return undefined;
 }
 
 function rowToCoderTodo(row: CoderTodoRow): CoderTodoItem {

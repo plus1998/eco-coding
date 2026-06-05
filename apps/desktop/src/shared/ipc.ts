@@ -696,6 +696,14 @@ export interface ThreadLiveEvent {
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
   subagentSessions?: ThreadSubagentSessionTiming[];
+  apiError?: ThreadApiErrorInfo;
+}
+
+export interface ThreadApiErrorInfo {
+  statusCode?: number;
+  code?: string;
+  message: string;
+  model?: string;
 }
 
 export interface ThreadActivityLine {
@@ -705,4 +713,6 @@ export interface ThreadActivityLine {
   stream?: boolean;
   /** Sub-agent instance id (SDK session_id / SubagentStart agent_id). */
   agentId?: string;
+  /** Structured API failure from OTLP api_error event (not parsed from stream text). */
+  apiError?: ThreadApiErrorInfo;
 }

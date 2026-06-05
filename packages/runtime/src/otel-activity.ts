@@ -3,6 +3,14 @@
  * @see https://code.claude.com/docs/en/monitoring-usage
  */
 
+import {
+  formatApiErrorActivitySummary,
+  parseOtelApiErrorAttribute,
+  type ThreadApiErrorInfo,
+} from "./api-error.js";
+
+export type { ThreadApiErrorInfo };
+
 export type OtelActivityRole =
   | "planner"
   | "explore"
@@ -19,6 +27,8 @@ export interface OtelActivityLine {
   message: string;
   role: OtelActivityRole;
   stream?: boolean;
+  /** Set when OTLP event.name is api_error (or llm_request failed). */
+  apiError?: ThreadApiErrorInfo;
 }
 
 export interface OtelUsageUpdate {
@@ -154,7 +164,8 @@ function spanToActivityLine(span: unknown, threadId: string): OtelActivityLine |
     const success = readAttributeString(attrs, "success");
     if (success === "false") {
       const error = readAttributeString(attrs, "error") ?? record.status?.message ?? "模型请求失败";
-      return { threadId, role, message: error };
+      const model = readAttributeString(attrs, "model");
+      return buildOtelApiErrorLine(threadId, role, error, model);
     }
     return null;
   }
@@ -227,11 +238,7 @@ function logRecordToActivity(
     const error = readAttributeString(attrs, "error") ?? "API 请求失败";
     const model = readAttributeString(attrs, "model");
     return {
-      line: {
-        threadId,
-        role,
-        message: model ? `API error (${model}): ${error}` : `API error: ${error}`,
-      },
+      line: buildOtelApiErrorLine(threadId, role, error, model),
     };
   }
 
@@ -390,4 +397,31 @@ function pathBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || filePath;
+}
+
+function buildOtelApiErrorLine(
+  threadId: string,
+  role: OtelActivityRole,
+  rawError: string,
+  model?: string,
+): OtelActivityLine {
+  const apiError = parseOtelApiErrorAttribute(rawError, model);
+  if (apiError) {
+    return {
+      threadId,
+      role,
+      message: formatApiErrorActivitySummary(apiError),
+      apiError,
+    };
+  }
+  const trimmed = rawError.trim() || "API 请求失败";
+  return {
+    threadId,
+    role,
+    message: trimmed.startsWith("API error") ? trimmed : `API error · ${trimmed}`,
+    apiError: {
+      message: trimmed,
+      ...(model && { model }),
+    },
+  };
 }
