@@ -50,7 +50,8 @@ test("buildBillingTokenBreakdown returns agent rows in AGENT_ROLES order", () =>
   );
 
   expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "coder"]);
-  expect(breakdown?.byAgent[0]?.label).toBe("规划 · claude-opus-4-7");
+  expect(breakdown?.byAgent[0]?.label).toBe("规划 · 主");
+  expect(breakdown?.byAgent[1]?.label).toBe("编码 · 主");
   expect(breakdown?.byAgent[0]?.tokenBadge).toBe("↑10k ↓1k");
 });
 
@@ -116,6 +117,52 @@ test("buildBillingTokenBreakdown prefers explicit byModel rows", () => {
 
   const breakdown = buildBillingTokenBreakdown(billing);
   expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["haiku", "sonnet"]);
+});
+
+test("buildBillingTokenBreakdown supplements missing roles from non-primary sources", () => {
+  const billing = makeBilling({
+    explore: {
+      inputTokens: 3000,
+      outputTokens: 300,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+      modelId: "claude-haiku-4-5",
+    },
+  });
+  billing.primarySource = "sdk";
+  billing.sourceBreakdown = {
+    sdk: {
+      source: "sdk",
+      totalTokens: { input: 3000, output: 300, cacheRead: 0, cacheCreation: 0 },
+      plannerTokenCostUsd: 0,
+      ecoCostUsd: 0.02,
+      pricingResolved: true,
+      byRole: billing.byRole,
+      byModel: billing.byModel,
+    },
+    otel: {
+      source: "otel",
+      totalTokens: { input: 10000, output: 1000, cacheRead: 0, cacheCreation: 0 },
+      plannerTokenCostUsd: 0.1,
+      ecoCostUsd: 0.1,
+      pricingResolved: true,
+      byRole: {
+        planner: {
+          inputTokens: 10000,
+          outputTokens: 1000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          ecoCostUsd: 0.1,
+          modelId: "claude-opus-4-7",
+        },
+      },
+    },
+  };
+
+  const breakdown = buildBillingTokenBreakdown(billing);
+  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "explore"]);
+  expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["claude-haiku-4-5", "claude-opus-4-7"]);
 });
 
 test("buildBillingTokenBreakdown returns null for empty or zero usage", () => {

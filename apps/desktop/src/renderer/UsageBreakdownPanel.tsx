@@ -1,8 +1,8 @@
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { formatCostUsd, formatRoleModelLabel } from "@eco/runtime";
+import { formatCostUsd, formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
 import { buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
-import type { ThreadBillingSnapshot } from "../shared/ipc";
+import type { ThreadBillingSnapshot, ThreadSubagentBillingSnapshot } from "../shared/ipc";
 
 type BreakdownView = "agent" | "model";
 
@@ -49,19 +49,48 @@ function BreakdownRows({
   view,
   breakdown,
   compact,
+  subagents = [],
 }: {
   view: BreakdownView;
   breakdown: NonNullable<ReturnType<typeof buildBillingTokenBreakdown>>;
   compact: boolean;
+  subagents?: ThreadSubagentBillingSnapshot[];
 }) {
   if (view === "agent") {
+    const rolesWithSubagents = new Set(subagents.map((row) => row.role));
+    const agentRows = breakdown.byAgent.filter((row) => !rolesWithSubagents.has(row.role));
+
     return (
       <ul className={`usage-breakdown-list${compact ? " usage-breakdown-list-compact" : ""}`}>
-        {breakdown.byAgent.map((row) => (
-          <li key={row.role} className="usage-breakdown-row" title={`${row.label} · 经济编程费用`}>
+        {agentRows.map((row) => (
+          <li
+            key={row.role}
+            className="usage-breakdown-row"
+            title={
+              row.modelId
+                ? `${formatRoleModelLabel(row.role, row.modelId)} · 经济编程费用`
+                : `${row.label} · 经济编程费用`
+            }
+          >
             <span className="usage-breakdown-label">{row.label}</span>
             <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
               {row.tokenBadge}
+            </span>
+            <span className="usage-breakdown-cost">{formatCostUsd(row.ecoCostUsd)}</span>
+          </li>
+        ))}
+        {subagents.map((row) => (
+          <li key={row.agentId} className="usage-breakdown-row" title={`子代理 ${row.agentId}`}>
+            <span className="usage-breakdown-label">
+              {formatRoleModelLabel(row.role)} · {row.agentId.slice(0, 8)}
+            </span>
+            <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
+              {formatUsageBadge({
+                inputTokens: row.inputTokens,
+                outputTokens: row.outputTokens,
+                cacheReadTokens: row.cacheReadTokens,
+                cacheCreationTokens: row.cacheCreationTokens,
+              })}
             </span>
             <span className="usage-breakdown-cost">{formatCostUsd(row.ecoCostUsd)}</span>
           </li>
@@ -132,6 +161,8 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
     return null;
   }
 
+  const subagents = billing?.subagents ?? [];
+
   if (compact) {
     const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
     const summary = summaryRows
@@ -153,7 +184,7 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
         {expanded ? (
           <div className="usage-breakdown-compact-body">
             <ViewToggle view={view} onChange={setView} compact />
-            <BreakdownRows view={view} breakdown={breakdown} compact />
+            <BreakdownRows view={view} breakdown={breakdown} compact subagents={subagents} />
           </div>
         ) : null}
       </div>
@@ -163,27 +194,10 @@ export function UsageBreakdownPanel({ billing, variant }: UsageBreakdownPanelPro
   const summaryRows = breakdown.byAgent.length > 0 ? breakdown.byAgent : breakdown.byModel;
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
-  const subagents = billing?.subagents ?? [];
-
   return (
     <ExpandableBillingSection title="用量明细" summary={summary}>
       <ViewToggle view={view} onChange={setView} compact={false} />
-      <BreakdownRows view={view} breakdown={breakdown} compact={false} />
-      {subagents.length > 0 ? (
-        <ul className="usage-breakdown-list usage-breakdown-subagents">
-          {subagents.map((row) => (
-            <li key={row.agentId} className="usage-breakdown-row" title={`子代理 ${row.agentId}`}>
-              <span className="usage-breakdown-label">
-                {formatRoleModelLabel(row.role)} · {row.agentId.slice(0, 8)}
-              </span>
-              <span className="usage-breakdown-tokens">
-                ↑{row.inputTokens} ↓{row.outputTokens}
-              </span>
-              <span className="usage-breakdown-cost">{formatCostUsd(row.ecoCostUsd)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <BreakdownRows view={view} breakdown={breakdown} compact={false} subagents={subagents} />
     </ExpandableBillingSection>
   );
 }
