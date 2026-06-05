@@ -29,6 +29,14 @@ export function fromResponsesCallID(id: string): string {
   return id;
 }
 
+export function isWebSearchToolName(name: string | undefined): boolean {
+  return (name ?? '').trim() === 'web_search';
+}
+
+export function normalizeWebSearchDomain(domain: string): string {
+  return domain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
 export function mapAnthropicEffortToResponses(effort: string): string {
   if (effort === 'max') {
     return 'xhigh';
@@ -167,7 +175,9 @@ export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {
     case 'none':
       return 'none';
     case 'tool':
-      return { type: 'function', name: tc.name };
+      return isWebSearchToolName(tc.name)
+        ? { type: 'web_search' }
+        : { type: 'function', name: tc.name };
     default:
       return raw;
   }
@@ -360,7 +370,14 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
   const out: ResponsesTool[] = [];
   for (const t of tools) {
     if (t.type !== undefined && t.type.startsWith('web_search')) {
-      out.push({ type: 'web_search' });
+      const converted: ResponsesTool = { type: 'web_search' };
+      const allowedDomains = (t.allowed_domains ?? [])
+        .map(normalizeWebSearchDomain)
+        .filter((domain) => domain !== '');
+      if (allowedDomains.length > 0) {
+        converted.filters = { allowed_domains: allowedDomains };
+      }
+      out.push(converted);
       continue;
     }
     out.push({

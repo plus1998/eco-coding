@@ -142,4 +142,47 @@ describe('anthropicToResponses', () => {
 
     expect(resp.reasoning).toBeUndefined();
   });
+
+  test('maps web_search tool_choice to hosted web_search type', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.5',
+      max_tokens: 32000,
+      messages: [{ role: 'user', content: 'Search the web' }],
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          allowed_domains: ['weather.com.cn', 'tianqi.com'],
+          max_uses: 8,
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'web_search' },
+    });
+
+    expect(resp.tool_choice).toEqual({ type: 'web_search' });
+    expect(resp.tools).toEqual([
+      {
+        type: 'web_search',
+        filters: { allowed_domains: ['weather.com.cn', 'tianqi.com'] },
+      },
+    ]);
+  });
+
+  test('keeps function tool_choice for non-web_search tools', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [
+        {
+          name: 'get_weather',
+          description: 'Get weather',
+          input_schema: { type: 'object', properties: {} },
+        },
+      ],
+      tool_choice: { type: 'tool', name: 'get_weather' },
+    });
+
+    expect(resp.tool_choice).toEqual({ type: 'function', name: 'get_weather' });
+  });
 });

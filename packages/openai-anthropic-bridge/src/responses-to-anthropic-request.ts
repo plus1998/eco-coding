@@ -479,13 +479,19 @@ function convertResponsesToAnthropicTools(
     switch (t.type) {
       case 'web_search':
       case 'google_search':
-      case 'web_search_20250305':
-        out.push({
+      case 'web_search_20250305': {
+        const webSearchTool: AnthropicTool = {
           type: 'web_search_20250305',
           name: 'web_search',
           input_schema: {},
-        });
+        };
+        const allowedDomains = t.filters?.allowed_domains;
+        if (allowedDomains !== undefined && allowedDomains.length > 0) {
+          webSearchTool.allowed_domains = allowedDomains;
+        }
+        out.push(webSearchTool);
         break;
+      }
       case 'function':
         out.push({
           name: t.name ?? '',
@@ -556,6 +562,10 @@ function convertResponsesToAnthropicToolChoice(raw: unknown): {
     name?: string;
     function?: { name?: string };
   };
+  if (tc.type === 'web_search') {
+    return { value: { type: 'tool', name: 'web_search' }, err: undefined };
+  }
+
   if (tc.type === 'function') {
     let name = (tc.name ?? '').trim();
     if (name === '') {

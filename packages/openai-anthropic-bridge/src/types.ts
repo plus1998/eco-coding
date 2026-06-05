@@ -63,6 +63,8 @@ export interface AnthropicTool {
   description?: string;
   input_schema?: unknown;
   cache_control?: AnthropicCacheControl;
+  allowed_domains?: string[];
+  max_uses?: number;
 }
 
 export interface AnthropicResponse {
@@ -150,12 +152,18 @@ export interface ResponsesContentPart {
   image_url?: string;
 }
 
+export interface ResponsesWebSearchFilters {
+  allowed_domains?: string[];
+  blocked_domains?: string[];
+}
+
 export interface ResponsesTool {
   type: string;
   name?: string;
   description?: string;
   parameters?: unknown;
   strict?: boolean;
+  filters?: ResponsesWebSearchFilters;
 }
 
 export interface ResponsesResponse {
