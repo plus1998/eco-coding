@@ -164,10 +164,12 @@ import {
   resolveUsageRoute,
 } from "./billing-resolver";
 import {
+  buildAssistantUsageRequestKey,
   buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
   nextOtelRequestDedupId,
+  shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
 } from "./billing-orchestration";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -3307,6 +3309,7 @@ async function emitProxyUsage(
     modelId: info.modelId,
     requestKey,
     reconciliationOnly: true,
+    fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
     ...(subagentAgentId && { agentId: subagentAgentId }),
   });
   trackUsageUpdate(
@@ -3352,6 +3355,8 @@ async function processUsageBilling(input: {
   otelDedupId?: string;
   updateContext?: boolean;
   reconciliationOnly?: boolean;
+  /** When proxy bills a subagent call, also write SDK primary if SDK path missed it. */
+  fillSdkPrimaryForSubagent?: boolean;
 }): Promise<UpstreamProxyCallBilling | null> {
   await pricingCatalogReady;
 
@@ -3447,7 +3452,7 @@ async function processUsageBilling(input: {
     otelCostUsd: input.otelCostUsd ?? 0,
   };
 
-  const billing = enrichBillingSnapshot(
+  let billing = enrichBillingSnapshot(
     input.threadId,
     threadUsageAccumulator.recordUsage({
       threadId: input.threadId,
@@ -3463,6 +3468,41 @@ async function processUsageBilling(input: {
       ...(input.reconciliationOnly && { reconciliationOnly: true }),
     }),
   );
+
+  if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(billingRole) && input.agentId) {
+    const sdkProxyKey = `sdk:proxy-subagent:${requestKey}`;
+    if (!threadUsageAccumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
+      billing = enrichBillingSnapshot(
+        input.threadId,
+        threadUsageAccumulator.recordUsage({
+          threadId: input.threadId,
+          role: billingRole,
+          source: "sdk",
+          delta,
+          actualRates,
+          plannerRates,
+          ...(resolvedModelId && { modelId: resolvedModelId }),
+          requestKey: sdkProxyKey,
+          ...(plannerModelLabel && { plannerModelLabel }),
+        }),
+      );
+    }
+  }
+
+  if (input.agentId && isSubagentBillingRole(billingRole)) {
+    const roleSnap = contextMonitor.getSnapshot(input.threadId);
+    const instance = roleSnap?.instances?.find((row) => row.agentId === input.agentId);
+    subagentMetricsRegistry.recordSdkUsage(input.threadId, {
+      role: billingRole,
+      agentId: input.agentId,
+      usage: delta,
+      contextOccupied: instance?.occupied ?? computeWindowOccupancy(delta),
+      ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
+      billing: requestBilling,
+      ...(resolvedModelId && { modelId: resolvedModelId }),
+      requestKey,
+    });
+  }
 
   const parsed = {
     inputTokens: delta.inputTokens,
@@ -3739,6 +3779,39 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
   }
 
   if (!bundle.authoritative) {
+    const messageId =
+      isRecord(event.payload) && typeof event.payload.messageId === "string"
+        ? event.payload.messageId
+        : undefined;
+    const run = activeRuns.get(threadId);
+    if (
+      messageId &&
+      subagentAgentId &&
+      shouldBillAssistantSubagentUsage({
+        role: billingRole,
+        messageId,
+        otelTokenBilled: run?.otelTokenBilled,
+      })
+    ) {
+      const usage = bundle.models[0]?.usage ?? bundle.contextUsage;
+      trackUsageUpdate(
+        threadId,
+        processUsageBilling({
+          threadId,
+          role: billingRole,
+          agentId: subagentAgentId,
+          source: "sdk",
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadTokens: usage.cacheReadTokens,
+          cacheCreationTokens: usage.cacheCreationTokens,
+          ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
+          requestKey: buildAssistantUsageRequestKey(messageId),
+        }).catch((error) => {
+          process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
+        }),
+      );
+    }
     return;
   }
 
