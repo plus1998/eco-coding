@@ -201,6 +201,7 @@ import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subage
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { resolveSdkEventUsageBilling, type SdkUsageBillingBundle } from "./sdk-event-usage-billing";
+import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -3676,40 +3677,23 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     ...(observedAuthoritativeUsage && { observedAuthoritativeUsage }),
   });
 
-  if (resolved.kind === "none" || resolved.kind === "assistant_ignored") {
-    return;
-  }
-
-  if (resolved.kind === "assistant_subagent") {
-    usageLedgerCoordinator.trackUsageUpdate(
-      threadId,
-      processUsageBilling(resolved.billingInput)
-        .then(() => undefined)
-        .catch((error) => {
-          process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
-        }),
-    );
-    return;
-  }
-
-  logSdkUsageResolution(threadId, resolved);
-
-  if (resolved.kind === "stream_partial") {
-    usageLedgerCoordinator.trackUsageUpdate(
-      threadId,
-      processSdkStreamPartialUsage(resolved.streamInput).catch((error) => {
-        process.stderr.write(`[eco] SDK stream partial usage failed: ${errorMessage(error)}\n`);
-      }),
-    );
-    return;
-  }
-
-  usageLedgerCoordinator.trackUsageUpdate(
+  dispatchSdkEventUsageBilling({
     threadId,
-    processSdkRunBilling(resolved.runInput).catch((error) => {
-      process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
-    }),
-  );
+    resolved,
+    services: sdkUsageBillingDispatchServices(),
+  });
+}
+
+function sdkUsageBillingDispatchServices() {
+  return {
+    trackUsageUpdate: (threadId: string, task: Promise<void>) =>
+      usageLedgerCoordinator.trackUsageUpdate(threadId, task),
+    processUsageBilling,
+    processSdkStreamPartialUsage,
+    processSdkRunBilling,
+    logResolution: logSdkUsageResolution,
+    writeError: (message: string) => process.stderr.write(message),
+  };
 }
 
 function logSdkUsageResolution(
