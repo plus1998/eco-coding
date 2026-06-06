@@ -39,7 +39,6 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, type NativeImage } fr
 import {
   AGENT_ROLES,
   type AgentRole,
-  type BillingUsageSource,
   IPC_CHANNELS,
   isKnownIpcChannel,
   type McpServerConfigInput,
@@ -155,7 +154,6 @@ import {
 } from "./billing-resolver";
 import {
   isSubagentBillingRole,
-  shouldUpdateContextFromUsageSource,
   type UsageBillingObservation,
 } from "./billing-orchestration";
 import { appendUsageBillingObservation } from "./usage-billing-observations";
@@ -171,8 +169,11 @@ import { resolveOtelUsageBilling } from "./otel-usage-billing";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import {
+  resolveSingleUsageBillingOrchestration,
+  type SingleUsageBillingRequest,
+} from "./single-usage-billing-orchestration";
+import {
   resolveSdkStreamPartialBillingArtifacts,
-  resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "./usage-billing-artifacts";
 import {
@@ -3666,87 +3667,22 @@ function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): vo
   emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, event.payload);
 }
 
-async function processUsageBilling(input: {
-  threadId: string;
-  role: AgentRole;
-  agentId?: string;
-  source?: BillingUsageSource;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  otelCostUsd?: number;
-  modelId?: string;
-  messageId?: string;
-  runAttemptId?: string;
-  plannerAgentId?: string;
-  parentToolUseId?: string;
-  requestKey?: string;
-  sourceEventId?: string;
-  providerRequestId?: string;
-  otelDedupId?: string;
-  updateContext?: boolean;
-  reconciliationOnly?: boolean;
-  /** When proxy bills a subagent call, also write SDK primary if SDK path missed it. */
-  fillSdkPrimaryForSubagent?: boolean;
-}): Promise<UpstreamProxyCallBilling | null> {
+async function processUsageBilling(
+  input: SingleUsageBillingRequest,
+): Promise<UpstreamProxyCallBilling | null> {
   await pricingCatalogReady;
 
-  const delta: ParsedUsage = {
-    inputTokens: input.inputTokens,
-    outputTokens: input.outputTokens,
-    cacheReadTokens: input.cacheReadTokens,
-    cacheCreationTokens: input.cacheCreationTokens,
-  };
-
-  if (
-    delta.inputTokens === 0 &&
-    delta.outputTokens === 0 &&
-    delta.cacheReadTokens === 0 &&
-    delta.cacheCreationTokens === 0 &&
-    input.otelCostUsd === undefined
-  ) {
+  const resolved = await resolveSingleUsageBillingOrchestration({
+    request: input,
+    runtimeRoutes: resolveRuntimeRoutesForThread(input.threadId),
+    lookupPricing: lookupUsageBillingPricing,
+  });
+  if (!resolved) {
     return null;
   }
 
-  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const artifacts = await resolveSingleUsageBillingArtifacts({
-    threadId: input.threadId,
-    role: input.role,
-    usage: delta,
-    runtimeRoutes,
-    lookupPricing: lookupUsageBillingPricing,
-    ...(input.source && { source: input.source }),
-    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-    ...(input.modelId && { modelId: input.modelId }),
-    ...(input.messageId && { messageId: input.messageId }),
-    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-    ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
-    ...(input.agentId && { agentId: input.agentId }),
-    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    ...(input.requestKey && { requestKey: input.requestKey }),
-    ...(input.sourceEventId && { sourceEventId: input.sourceEventId }),
-    ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
-    ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
-  });
-
-  const updateContext =
-    input.updateContext ?? shouldUpdateContextFromUsageSource(input.source, input.role);
-  await applySingleUsageBillingEffects(
-    usageBillingEffectsServices(),
-    {
-      threadId: input.threadId,
-      artifacts,
-      updateContext,
-      ...(input.agentId && { agentId: input.agentId }),
-      ...(input.messageId && { messageId: input.messageId }),
-      ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-      ...(input.reconciliationOnly && { reconciliationOnly: true }),
-      ...(input.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
-    },
-  );
-
-  return artifacts.requestBillingLog;
+  await applySingleUsageBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
+  return resolved.requestBillingLog;
 }
 
 function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRoutesFromSettings>): ResolvedModelRoute[] {
