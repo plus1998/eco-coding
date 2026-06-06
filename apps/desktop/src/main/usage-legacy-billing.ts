@@ -1,13 +1,7 @@
 import type { AgentRole, ThreadBillingSnapshot } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
-import type {
-  RecordRunUsageInput,
-  RecordUsageInput,
-} from "./thread-usage-accumulator";
-import type {
-  ResolvedSdkRunBillingModel,
-  SingleUsageBillingArtifacts,
-} from "./usage-billing-artifacts";
+import type { RecordRunUsageInput, RecordUsageInput } from "./thread-usage-accumulator";
+import type { ResolvedSdkRunBillingModel, SingleUsageBillingArtifacts } from "./usage-billing-artifacts";
 
 export interface UsageLegacyBillingAccumulator {
   recordUsage(input: RecordUsageInput): ThreadBillingSnapshot;
@@ -27,6 +21,7 @@ export interface RecordLegacySingleUsageBillingInput {
 export interface RecordLegacySingleUsageBillingResult {
   snapshot: ThreadBillingSnapshot;
   filledSdkPrimary: boolean;
+  syntheticSdkPrimaryDecision: SyntheticSdkPrimaryFillDecision;
 }
 
 export interface RecordLegacySdkRunBillingInput {
@@ -37,6 +32,13 @@ export interface RecordLegacySdkRunBillingInput {
   totalCostUsd?: number;
   plannerModelLabel?: string;
 }
+
+export type SyntheticSdkPrimaryFillDecision =
+  | { fill: true; reason: "subagent_compatibility" }
+  | {
+      fill: false;
+      reason: "not_requested" | "missing_agent" | "non_subagent_role" | "already_seen";
+    };
 
 export function recordLegacySingleUsageBilling(
   accumulator: UsageLegacyBillingAccumulator,
@@ -57,13 +59,15 @@ export function recordLegacySingleUsageBilling(
     ...(input.reconciliationOnly && { reconciliationOnly: true }),
   });
 
-  if (!shouldFillSdkPrimaryForSubagent(input)) {
-    return { snapshot, filledSdkPrimary: false };
-  }
-
   const sdkProxyKey = buildSyntheticSdkPrimaryRequestKey(artifacts.requestKey);
-  if (accumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
-    return { snapshot, filledSdkPrimary: false };
+  const syntheticSdkPrimaryDecision = resolveSyntheticSdkPrimaryFill({
+    requested: input.fillSdkPrimaryForSubagent === true,
+    role: artifacts.billingRole,
+    hasAgent: Boolean(input.agentId),
+    alreadySeen: accumulator.hasSeenRequestKey(input.threadId, sdkProxyKey),
+  });
+  if (!syntheticSdkPrimaryDecision.fill) {
+    return { snapshot, filledSdkPrimary: false, syntheticSdkPrimaryDecision };
   }
 
   snapshot = accumulator.recordUsage({
@@ -78,7 +82,7 @@ export function recordLegacySingleUsageBilling(
     ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
   });
 
-  return { snapshot, filledSdkPrimary: true };
+  return { snapshot, filledSdkPrimary: true, syntheticSdkPrimaryDecision };
 }
 
 export function recordLegacySdkRunBilling(
@@ -100,10 +104,23 @@ export function buildSyntheticSdkPrimaryRequestKey(requestKey: string): string {
   return `sdk:proxy-subagent:${requestKey}`;
 }
 
-function shouldFillSdkPrimaryForSubagent(input: RecordLegacySingleUsageBillingInput): boolean {
-  return Boolean(
-    input.fillSdkPrimaryForSubagent &&
-      input.agentId &&
-      isSubagentBillingRole(input.artifacts.billingRole),
-  );
+export function resolveSyntheticSdkPrimaryFill(input: {
+  requested: boolean;
+  role: AgentRole;
+  hasAgent: boolean;
+  alreadySeen: boolean;
+}): SyntheticSdkPrimaryFillDecision {
+  if (!input.requested) {
+    return { fill: false, reason: "not_requested" };
+  }
+  if (!isSubagentBillingRole(input.role)) {
+    return { fill: false, reason: "non_subagent_role" };
+  }
+  if (!input.hasAgent) {
+    return { fill: false, reason: "missing_agent" };
+  }
+  if (input.alreadySeen) {
+    return { fill: false, reason: "already_seen" };
+  }
+  return { fill: true, reason: "subagent_compatibility" };
 }

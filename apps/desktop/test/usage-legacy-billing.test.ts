@@ -12,6 +12,7 @@ import {
   buildSyntheticSdkPrimaryRequestKey,
   recordLegacySdkRunBilling,
   recordLegacySingleUsageBilling,
+  resolveSyntheticSdkPrimaryFill,
 } from "../src/main/usage-legacy-billing";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
@@ -72,6 +73,10 @@ test("recordLegacySingleUsageBilling fills synthetic SDK primary for subagent co
   });
 
   expect(result.filledSdkPrimary).toBe(true);
+  expect(result.syntheticSdkPrimaryDecision).toEqual({
+    fill: true,
+    reason: "subagent_compatibility",
+  });
   expect(result.snapshot.primarySource).toBe("sdk");
   expect(result.snapshot.sourceBreakdown?.proxy).toBeDefined();
   expect(result.snapshot.sourceBreakdown?.sdk).toBeDefined();
@@ -102,8 +107,47 @@ test("recordLegacySingleUsageBilling skips synthetic SDK primary outside subagen
   });
 
   expect(result.filledSdkPrimary).toBe(false);
+  expect(result.syntheticSdkPrimaryDecision).toEqual({
+    fill: false,
+    reason: "non_subagent_role",
+  });
   expect(result.snapshot.primarySource).toBe("proxy");
   expect(result.snapshot.sourceBreakdown?.sdk).toBeUndefined();
+});
+
+test("resolveSyntheticSdkPrimaryFill reports audit-friendly skip reasons", () => {
+  expect(
+    resolveSyntheticSdkPrimaryFill({
+      requested: false,
+      role: "coder",
+      hasAgent: true,
+      alreadySeen: false,
+    }),
+  ).toEqual({ fill: false, reason: "not_requested" });
+  expect(
+    resolveSyntheticSdkPrimaryFill({
+      requested: true,
+      role: "coder",
+      hasAgent: false,
+      alreadySeen: false,
+    }),
+  ).toEqual({ fill: false, reason: "missing_agent" });
+  expect(
+    resolveSyntheticSdkPrimaryFill({
+      requested: true,
+      role: "planner",
+      hasAgent: true,
+      alreadySeen: false,
+    }),
+  ).toEqual({ fill: false, reason: "non_subagent_role" });
+  expect(
+    resolveSyntheticSdkPrimaryFill({
+      requested: true,
+      role: "coder",
+      hasAgent: true,
+      alreadySeen: true,
+    }),
+  ).toEqual({ fill: false, reason: "already_seen" });
 });
 
 test("recordLegacySdkRunBilling records SDK run totals through the legacy accumulator", async () => {
