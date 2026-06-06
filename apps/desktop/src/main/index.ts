@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  computeWindowOccupancy,
   parseSdkContextUsage,
   parseSdkUsageBilling,
   type ParsedUsage,
@@ -174,10 +173,9 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import {
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
-import {
-  normalizeTelemetryBillingRole,
-  resolveOtelUsageBilling,
-} from "./otel-usage-billing";
+import { resolveOtelUsageBilling } from "./otel-usage-billing";
+import { resolveProxyUsageBilling } from "./proxy-usage-billing";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -3608,65 +3606,26 @@ async function emitProxyUsage(
   info: AnthropicProxyUsageInfo & { threadId: string },
 ): Promise<UpstreamProxyCallBilling | null> {
   const run = activeRuns.get(info.threadId);
-  const seq = (run?.proxyRequestSeq ?? 0) + 1;
-  if (run) {
-    run.proxyRequestSeq = seq;
-    run.proxyTokenBilled = true;
-    const occupied = computeWindowOccupancy(info.usage);
-    run.lastProxyContextByRole = { ...run.lastProxyContextByRole, [info.role]: occupied };
-  }
-  const requestKey = [
-    "proxy",
-    info.role,
-    info.modelId,
-    info.requestId ?? String(seq),
-    info.usage.inputTokens,
-    info.usage.outputTokens,
-    info.usage.cacheReadTokens,
-    info.usage.cacheCreationTokens,
-  ].join(":");
-
-  const initialBillingRole = normalizeTelemetryBillingRole(info.role);
   const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
-  const attribution = resolveSubagentUsageAttribution({
-    threadId: info.threadId,
-    role: initialBillingRole,
-    resolver: subagentMetricsRegistry,
-  });
-  const { billingRole, subagentAgentId } = attribution;
-  const proxyUsage: ParsedUsage = {
-    inputTokens: info.usage.inputTokens,
-    outputTokens: info.usage.outputTokens,
-    cacheReadTokens: info.usage.cacheReadTokens,
-    cacheCreationTokens: info.usage.cacheCreationTokens,
-  };
-  noteUsageBillingObservation(info.threadId, {
-    source: "proxy",
-    role: billingRole,
-    usage: proxyUsage,
-    requestKey,
-    modelId: info.modelId,
-    ...(subagentAgentId && { agentId: subagentAgentId }),
-  });
-  const billingTask = processUsageBilling({
-    threadId: info.threadId,
-    role: billingRole,
-    source: "proxy",
-    inputTokens: info.usage.inputTokens,
-    outputTokens: info.usage.outputTokens,
-    cacheReadTokens: info.usage.cacheReadTokens,
-    cacheCreationTokens: info.usage.cacheCreationTokens,
-    modelId: info.modelId,
-    requestKey,
-    sourceEventId: requestKey,
-    ...(info.requestId && { providerRequestId: info.requestId }),
+  const resolved = resolveProxyUsageBilling({
+    info,
+    ...(run?.proxyRequestSeq !== undefined && { currentRequestSeq: run.proxyRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
-    reconciliationOnly: true,
-    fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
-    ...(subagentAgentId && { agentId: subagentAgentId }),
+    resolver: subagentMetricsRegistry,
   });
+  if (run) {
+    run.proxyRequestSeq = resolved.nextRequestSeq;
+    run.proxyTokenBilled = true;
+    run.lastProxyContextByRole = {
+      ...run.lastProxyContextByRole,
+      [resolved.contextRole]: resolved.contextOccupied,
+    };
+  }
+
+  noteUsageBillingObservation(info.threadId, resolved.observation);
+  const billingTask = processUsageBilling(resolved.billingInput);
   usageLedgerCoordinator.trackUsageUpdate(
     info.threadId,
     billingTask.then(

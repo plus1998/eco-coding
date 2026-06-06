@@ -1,14 +1,13 @@
 import type { OtelUsageUpdate, ParsedUsage } from "@eco/runtime";
-import {
-  AGENT_ROLES,
-  type AgentRole,
-  type BillingUsageSource,
-} from "../shared/ipc";
+import type { AgentRole, BillingUsageSource } from "../shared/ipc";
 import {
   nextOtelRequestDedupId,
   type UsageBillingObservation,
 } from "./billing-orchestration";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { buildUsageRequestKey } from "./thread-usage-accumulator";
+
+export { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 
 export interface OtelUsageBillingInput {
   threadId: string;
@@ -44,16 +43,6 @@ export interface OtelUsageBillingResolution {
   requestKey: string;
   observation?: UsageBillingObservation;
   billingInput: OtelUsageBillingInput;
-}
-
-export function normalizeTelemetryBillingRole(role: string): AgentRole {
-  if (role === "system" || role === "thinking" || role === "tool") {
-    return "planner";
-  }
-  if (AGENT_ROLES.includes(role as AgentRole)) {
-    return role as AgentRole;
-  }
-  return "planner";
 }
 
 export function resolveOtelUsageBilling(
