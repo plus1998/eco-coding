@@ -1997,14 +1997,20 @@ async function runCodingThreadAutonomousAfterApproval(
     );
 
     const decision = resolveExecutionRunOutcome(outcome);
-    if (decision.kind === "cancelled") {
-      cancelClarificationsForThread(threadId, "cancelled by user");
-      await handleRunCancelled(threadId, worktreePlan);
-      return;
-    }
-    if (decision.kind === "failed") {
-      cancelClarificationsForThread(threadId, decision.reason);
-      markThreadInterrupted(threadId, decision.reason);
+    if (
+      await applyMainThreadRunDecisionEffects({
+        threadId,
+        decision,
+        onCancelled: async (reason) => {
+          cancelClarificationsForThread(threadId, reason);
+          await handleRunCancelled(threadId, worktreePlan);
+        },
+        onFailed: (reason) => {
+          cancelClarificationsForThread(threadId, reason);
+          markThreadInterrupted(threadId, reason);
+        },
+      })
+    ) {
       return;
     }
 
@@ -2172,22 +2178,27 @@ async function runCodingThreadExecution(
     );
 
     const executionDecision = resolveExecutionRunOutcome(executionOutcome);
-    if (executionDecision.kind === "cancelled") {
-      stopStatusRef.current = "cancelled";
-      if (!stopTodosHandled) {
-        taskHookHandlers.onStop("cancelled");
-      }
-      cancelClarificationsForThread(threadId, "cancelled by user");
-      await handleRunCancelled(threadId, worktreePlan);
-      return;
-    }
-
-    if (executionDecision.kind === "failed") {
-      stopStatusRef.current = "blocked";
-      if (!stopTodosHandled) {
-        taskHookHandlers.onStop("blocked");
-      }
-      await restoreAfterExecutionFailure(threadId, worktreePlan, executionDecision.reason, executionPlan);
+    if (
+      await applyMainThreadRunDecisionEffects({
+        threadId,
+        decision: executionDecision,
+        onCancelled: async (reason) => {
+          stopStatusRef.current = "cancelled";
+          if (!stopTodosHandled) {
+            taskHookHandlers.onStop("cancelled");
+          }
+          cancelClarificationsForThread(threadId, reason);
+          await handleRunCancelled(threadId, worktreePlan);
+        },
+        onFailed: async (reason) => {
+          stopStatusRef.current = "blocked";
+          if (!stopTodosHandled) {
+            taskHookHandlers.onStop("blocked");
+          }
+          await restoreAfterExecutionFailure(threadId, worktreePlan, reason, executionPlan);
+        },
+      })
+    ) {
       return;
     }
 
@@ -3178,12 +3189,18 @@ async function runThreadContinuation(
         },
       );
       const decision = resolveExecutionRunOutcome(outcome);
-      if (decision.kind === "cancelled") {
-        await handleRunCancelled(thread.id, worktreePlan);
-        return;
-      }
-      if (decision.kind === "failed") {
-        markThreadInterrupted(thread.id, decision.reason);
+      if (
+        await applyMainThreadRunDecisionEffects({
+          threadId: thread.id,
+          decision,
+          onCancelled: async () => {
+            await handleRunCancelled(thread.id, worktreePlan);
+          },
+          onFailed: (reason) => {
+            markThreadInterrupted(thread.id, reason);
+          },
+        })
+      ) {
         return;
       }
       await completeCodingThreadRun(thread.id, worktreePlan);
@@ -3359,46 +3376,40 @@ async function runThreadContinuation(
       planningPlanCaptured,
     });
 
-    if (continuationDecision.kind === "cancelled") {
-      stopStatusRef.current = "cancelled";
-      taskHookHandlers?.onStop("cancelled");
-      cancelClarificationsForThread(thread.id, "cancelled by user");
-      await handleRunCancelled(thread.id, worktreePlan);
-      return;
-    }
-    if (continuationDecision.kind === "failed") {
-      stopStatusRef.current = "blocked";
-      taskHookHandlers?.onStop("blocked");
-      clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
-      markThreadInterrupted(thread.id, continuationDecision.reason);
-      return;
-    }
-
-    if (continuationDecision.kind === "completed" && mode === "execution") {
-      taskHookHandlers?.onStop("completed");
-      await completeCodingThreadRun(thread.id, worktreePlan);
-      return;
-    }
-
-    if (continuationDecision.kind === "completed" && mode === "question") {
-      updateThread(thread.id, {
-        status: "completed",
-        message: continuationDecision.message ?? "回答完成。",
-      });
-      scheduleThreadTitleSummary(thread.id, runtimeConfig);
-      return;
-    }
-
-    if (continuationDecision.kind === "awaiting_plan") {
-      updateThread(thread.id, {
-        status: "awaiting_plan",
-        message: continuationDecision.message,
-      });
-      return;
-    }
-
-    if (continuationDecision.kind === "idle") {
-      updateThread(thread.id, { status: "idle", message: continuationDecision.message });
+    if (
+      await applyMainThreadRunDecisionEffects({
+        threadId: thread.id,
+        decision: continuationDecision,
+        onCancelled: async (reason) => {
+          stopStatusRef.current = "cancelled";
+          taskHookHandlers?.onStop("cancelled");
+          cancelClarificationsForThread(thread.id, reason);
+          await handleRunCancelled(thread.id, worktreePlan);
+        },
+        onFailed: (reason) => {
+          stopStatusRef.current = "blocked";
+          taskHookHandlers?.onStop("blocked");
+          clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
+          markThreadInterrupted(thread.id, reason);
+        },
+        onCompleted: async (message) => {
+          if (mode === "execution") {
+            taskHookHandlers?.onStop("completed");
+            await completeCodingThreadRun(thread.id, worktreePlan);
+            return;
+          }
+          if (mode === "question") {
+            updateThread(thread.id, {
+              status: "completed",
+              message: message ?? "回答完成。",
+            });
+            scheduleThreadTitleSummary(thread.id, runtimeConfig);
+            return;
+          }
+          updateThread(thread.id, { status: "idle", message: message ?? "续聊已结束。" });
+        },
+      })
+    ) {
       return;
     }
 

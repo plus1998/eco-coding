@@ -134,3 +134,22 @@ test("applyThreadRunDecisionEffects returns false when no handler can own a deci
   ).toBe(false);
   expect(updates).toEqual([]);
 });
+
+test("applyThreadRunDecisionEffects awaits async handlers before returning", async () => {
+  const { effects } = createUpdateCapture();
+  const calls: string[] = [];
+
+  const handled = await applyThreadRunDecisionEffects({
+    threadId: "thr_decision",
+    decision: { kind: "failed", reason: "blocked" },
+    effects,
+    onFailed: async (reason) => {
+      calls.push(`start:${reason}`);
+      await Promise.resolve();
+      calls.push(`finish:${reason}`);
+    },
+  });
+
+  expect(handled).toBe(true);
+  expect(calls).toEqual(["start:blocked", "finish:blocked"]);
+});
