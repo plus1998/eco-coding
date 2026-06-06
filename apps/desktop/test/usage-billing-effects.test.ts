@@ -4,7 +4,11 @@ import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import { InMemoryUsageLedger, type AgentInstanceRecord, type UsageLedgerEvent } from "../src/main/usage-ledger";
-import { UsageLedgerCoordinator, type UsageLedgerCoordinatorStore } from "../src/main/usage-ledger-coordinator";
+import {
+  UsageLedgerCoordinator,
+  type UsageLedgerBillingSnapshotSelectionOptions,
+  type UsageLedgerCoordinatorStore,
+} from "../src/main/usage-ledger-coordinator";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -139,13 +143,70 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
     requestKey: "proxy:coder:req_1",
     modelId: "haiku",
   });
-  expect(billing.primarySource).toBe("sdk");
+  expect(billing.primarySource).toBe("proxy");
   expect(billing.sourceBreakdown?.proxy).toBeDefined();
-  expect(billing.sourceBreakdown?.sdk).toBeDefined();
+  expect(billing.sourceBreakdown?.sdk).toBeUndefined();
   expect(emitted).toHaveLength(1);
-  expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
+  expect(emitted[0]?.payload.billing.primarySource).toBe("proxy");
   expect(persisted).toEqual(["thr_effects"]);
   expect(liveContext).toEqual(["thr_effects"]);
+});
+
+test("applySingleUsageBillingEffects requests verified ledger projection by default", async () => {
+  const selectionOptions: UsageLedgerBillingSnapshotSelectionOptions[] = [];
+  const emitted: UsageBillingUpdatedEvent[] = [];
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage() {
+          return undefined;
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: {
+      appendEvents: () => undefined,
+      resolveBillingSnapshot: (_threadId, legacyBilling, options) => {
+        selectionOptions.push(options ?? {});
+        return {
+          snapshot: legacyBilling,
+          source: "legacy",
+          legacySnapshot: legacyBilling,
+        };
+      },
+      reconcileShadow: () => undefined,
+    },
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: {
+      recordSdkUsage: () => undefined,
+    },
+    emitUsageUpdated: (event) => emitted.push(event),
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_effects_selection",
+    role: "planner",
+    source: "otel",
+    usage: usage(),
+    runtimeRoutes: routes,
+    lookupPricing,
+    requestKey: "otel:planner:req_1",
+  });
+
+  await applySingleUsageBillingEffects(services, {
+    threadId: "thr_effects_selection",
+    artifacts,
+    updateContext: false,
+  });
+
+  expect(selectionOptions).toEqual([
+    {
+      useLedgerProjection: true,
+      plannerModelLabel: "Claude Sonnet · Test Provider",
+    },
+  ]);
+  expect(emitted[0]?.payload.billing.primarySource).toBe("otel");
 });
 
 test("applySdkStreamPartialBillingEffects records partial ledger and context side effects only", async () => {
@@ -309,4 +370,64 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
   expect(billing.otelCostUsd).toBe(0.01);
   expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
   expect(emitted[0]?.payload.modelId).toBe("haiku");
+});
+
+test("applySdkRunBillingEffects requests verified ledger projection by default", async () => {
+  const selectionOptions: UsageLedgerBillingSnapshotSelectionOptions[] = [];
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage() {
+          return undefined;
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: {
+      appendEvents: () => undefined,
+      resolveBillingSnapshot: (_threadId, legacyBilling, options) => {
+        selectionOptions.push(options ?? {});
+        return {
+          snapshot: legacyBilling,
+          source: "legacy",
+          legacySnapshot: legacyBilling,
+        };
+      },
+      reconcileShadow: () => undefined,
+    },
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: {
+      recordSdkUsage: () => undefined,
+    },
+    emitUsageUpdated: () => undefined,
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const billingModels = await resolveSdkRunBillingModels({
+    role: "planner",
+    models: [{ modelId: "sonnet", usage: usage(3_000), sdkCostUsd: 0.02 }],
+    runtimeRoutes: routes,
+    lookupPricing,
+  });
+
+  await applySdkRunBillingEffects(services, {
+    threadId: "thr_sdk_effects_selection",
+    role: "planner",
+    requestKey: "sdk-result:event_selection",
+    models: billingModels.models,
+    billingRole: "planner",
+    contextUsage: usage(3_000),
+    updateContext: true,
+    totalCostUsd: 0.02,
+    ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
+    runAttemptId: "attempt_selection",
+    ledgerAgentId: "agent_planner",
+  });
+
+  expect(selectionOptions).toEqual([
+    {
+      useLedgerProjection: true,
+      plannerModelLabel: "Claude Sonnet · Test Provider",
+    },
+  ]);
 });

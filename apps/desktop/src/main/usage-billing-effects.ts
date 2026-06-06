@@ -6,6 +6,10 @@ import type {
 import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import {
+  resolveBillingSnapshotSelectionOptions,
+  type BillingSnapshotSelectionPolicy,
+} from "./billing-snapshot-selection-policy";
 import type { UsageContextService } from "./usage-context-effects";
 import {
   recordLegacySdkRunBilling,
@@ -38,6 +42,7 @@ export interface UsageBillingEffectsServices {
   usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow">;
   accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordSdkUsage">;
+  billingSnapshotSelection?: BillingSnapshotSelectionPolicy;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
   schedulePersistThreadMetrics(threadId: string): void;
 }
@@ -107,6 +112,10 @@ export async function applySingleUsageBillingEffects(
   const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
     legacyBilling.snapshot,
+    resolveBillingSnapshotSelectionOptions({
+      ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
+      ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
+    }),
   );
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
@@ -211,14 +220,19 @@ export async function applySdkRunBillingEffects(
     }
   }
 
+  const legacyBilling = recordLegacySdkRunBilling(services.accumulator, {
+    threadId: input.threadId,
+    role: input.role,
+    requestKey: input.requestKey,
+    models: input.models,
+    ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
+    ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
+  });
   const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
-    recordLegacySdkRunBilling(services.accumulator, {
-      threadId: input.threadId,
-      role: input.role,
-      requestKey: input.requestKey,
-      models: input.models,
-      ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
+    legacyBilling,
+    resolveBillingSnapshotSelectionOptions({
+      ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
       ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
     }),
   );
