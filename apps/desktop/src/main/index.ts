@@ -80,11 +80,11 @@ import {
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
-import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-tasks";
 import { createSdkTaskTracker } from "./sdk-task-tracker";
 import { createSdkTaskRunHooks, type SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
@@ -667,18 +667,14 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
-    const stored = conversationStore.listCoderTodos(threadId);
-    if (stored.length > 0) {
-      return stored;
-    }
-    const activity = conversationStore.listActivityLines(threadId);
-    const drafts = extractCoderTasksFromActivity(activity);
-    if (drafts.length === 0) {
-      return stored;
-    }
-    const todos = mergeCoderTodoItems(threadId, drafts, stored);
-    conversationStore.replaceCoderTodos(threadId, todos);
-    return todos;
+    return loadThreadTodoList({
+      threadId,
+      services: {
+        listTodos: (id) => conversationStore.listCoderTodos(id),
+        listActivity: (id) => conversationStore.listActivityLines(id),
+        replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+      },
+    });
   });
 
   ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
