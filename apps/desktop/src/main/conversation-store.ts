@@ -37,6 +37,18 @@ import type {
 } from "./subagent-session-types.js";
 import { isFreshSubagentRequest } from "@eco/runtime";
 import type { SubagentRole } from "@eco/runtime";
+import type {
+  AgentInstanceRecord,
+  AgentInstanceStatus,
+  AgentInstanceKind,
+  RunAttemptPhase,
+  RunAttemptRecord,
+  RunAttemptStatus,
+  UsageAttribution,
+  UsageLedgerEvent,
+  UsageLedgerKind,
+  UsageLedgerSource,
+} from "./usage-ledger";
 
 interface ThreadRow {
   id: string;
@@ -136,6 +148,31 @@ interface AppliedDiffRow {
   files_json: string;
   applied_at: string;
   rolled_back_at: string | null;
+}
+
+interface UsageLedgerEventRow {
+  id: string;
+  idempotency_key: string;
+  thread_id: string;
+  run_attempt_id: string | null;
+  agent_id: string | null;
+  parent_tool_use_id: string | null;
+  source: string;
+  source_event_id: string;
+  request_key: string | null;
+  provider_request_id: string | null;
+  sdk_message_id: string | null;
+  usage_kind: string;
+  role: string;
+  model_id: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  reported_cost_usd: number | null;
+  attribution_json: string;
+  metadata_json: string | null;
+  observed_at: string;
 }
 
 export async function createConversationStore(dbPath: string): Promise<ConversationStore> {
@@ -277,6 +314,70 @@ export class ConversationStore {
         PRIMARY KEY (thread_id, agent_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS thread_run_attempts (
+        thread_id TEXT NOT NULL,
+        attempt_id TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        retry_index INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        metadata_json TEXT,
+        PRIMARY KEY (thread_id, attempt_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS thread_agent_instances (
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        run_attempt_id TEXT,
+        parent_agent_id TEXT,
+        parent_tool_use_id TEXT,
+        mission_key TEXT,
+        todo_id TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL,
+        metadata_json TEXT,
+        PRIMARY KEY (thread_id, agent_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_agent_instances_thread_parent
+        ON thread_agent_instances(thread_id, parent_agent_id, parent_tool_use_id);
+
+      CREATE TABLE IF NOT EXISTS thread_usage_ledger_events (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        thread_id TEXT NOT NULL,
+        run_attempt_id TEXT,
+        agent_id TEXT,
+        parent_tool_use_id TEXT,
+        source TEXT NOT NULL,
+        source_event_id TEXT NOT NULL,
+        request_key TEXT,
+        provider_request_id TEXT,
+        sdk_message_id TEXT,
+        usage_kind TEXT NOT NULL,
+        role TEXT NOT NULL,
+        model_id TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        reported_cost_usd REAL,
+        attribution_json TEXT NOT NULL,
+        metadata_json TEXT,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_usage_ledger_thread_observed
+        ON thread_usage_ledger_events(thread_id, observed_at, id);
     `);
     this.migrateSchema();
   }
@@ -367,6 +468,72 @@ export class ConversationStore {
         PRIMARY KEY (thread_id, user_message_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_run_attempts (
+        thread_id TEXT NOT NULL,
+        attempt_id TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        retry_index INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        metadata_json TEXT,
+        PRIMARY KEY (thread_id, attempt_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS thread_agent_instances (
+        thread_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        run_attempt_id TEXT,
+        parent_agent_id TEXT,
+        parent_tool_use_id TEXT,
+        mission_key TEXT,
+        todo_id TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL,
+        metadata_json TEXT,
+        PRIMARY KEY (thread_id, agent_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_agent_instances_thread_parent
+        ON thread_agent_instances(thread_id, parent_agent_id, parent_tool_use_id);
+
+      CREATE TABLE IF NOT EXISTS thread_usage_ledger_events (
+        id TEXT PRIMARY KEY,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        thread_id TEXT NOT NULL,
+        run_attempt_id TEXT,
+        agent_id TEXT,
+        parent_tool_use_id TEXT,
+        source TEXT NOT NULL,
+        source_event_id TEXT NOT NULL,
+        request_key TEXT,
+        provider_request_id TEXT,
+        sdk_message_id TEXT,
+        usage_kind TEXT NOT NULL,
+        role TEXT NOT NULL,
+        model_id TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        reported_cost_usd REAL,
+        attribution_json TEXT NOT NULL,
+        metadata_json TEXT,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_usage_ledger_thread_observed
+        ON thread_usage_ledger_events(thread_id, observed_at, id);
     `);
   }
 
@@ -646,6 +813,185 @@ export class ConversationStore {
       userMessageId: row.user_message_id,
       createdAt: row.created_at,
     }));
+  }
+
+  upsertRunAttempt(record: RunAttemptRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO thread_run_attempts (
+           thread_id, attempt_id, phase, retry_index, status, started_at, ended_at, metadata_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, attempt_id) DO UPDATE SET
+           phase = excluded.phase,
+           retry_index = excluded.retry_index,
+           status = excluded.status,
+           started_at = excluded.started_at,
+           ended_at = excluded.ended_at,
+           metadata_json = excluded.metadata_json`,
+      )
+      .run(
+        record.threadId,
+        record.attemptId,
+        record.phase,
+        record.retryIndex,
+        record.status,
+        record.startedAt,
+        record.endedAt ?? null,
+        record.metadata ? JSON.stringify(record.metadata) : null,
+      );
+  }
+
+  listRunAttempts(threadId: string): RunAttemptRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, attempt_id, phase, retry_index, status, started_at, ended_at, metadata_json
+         FROM thread_run_attempts
+         WHERE thread_id = ?
+         ORDER BY started_at ASC, attempt_id ASC`,
+      )
+      .all(threadId) as Array<{
+      thread_id: string;
+      attempt_id: string;
+      phase: string;
+      retry_index: number;
+      status: string;
+      started_at: string;
+      ended_at: string | null;
+      metadata_json: string | null;
+    }>;
+
+    return rows.map(rowToRunAttempt);
+  }
+
+  upsertAgentInstance(record: AgentInstanceRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO thread_agent_instances (
+           thread_id, agent_id, role, kind, status, run_attempt_id,
+           parent_agent_id, parent_tool_use_id, mission_key, todo_id,
+           started_at, ended_at, updated_at, metadata_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, agent_id) DO UPDATE SET
+           role = excluded.role,
+           kind = excluded.kind,
+           status = excluded.status,
+           run_attempt_id = excluded.run_attempt_id,
+           parent_agent_id = excluded.parent_agent_id,
+           parent_tool_use_id = excluded.parent_tool_use_id,
+           mission_key = COALESCE(excluded.mission_key, mission_key),
+           todo_id = COALESCE(excluded.todo_id, todo_id),
+           started_at = excluded.started_at,
+           ended_at = excluded.ended_at,
+           updated_at = excluded.updated_at,
+           metadata_json = excluded.metadata_json`,
+      )
+      .run(
+        record.threadId,
+        record.agentId,
+        record.role,
+        record.kind,
+        record.status,
+        record.runAttemptId ?? null,
+        record.parentAgentId ?? null,
+        record.parentToolUseId ?? null,
+        record.missionKey ?? null,
+        record.todoId ?? null,
+        record.startedAt,
+        record.endedAt ?? null,
+        record.updatedAt,
+        record.metadata ? JSON.stringify(record.metadata) : null,
+      );
+  }
+
+  listAgentInstances(threadId: string): AgentInstanceRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, agent_id, role, kind, status, run_attempt_id,
+                parent_agent_id, parent_tool_use_id, mission_key, todo_id,
+                started_at, ended_at, updated_at, metadata_json
+         FROM thread_agent_instances
+         WHERE thread_id = ?
+         ORDER BY started_at ASC, agent_id ASC`,
+      )
+      .all(threadId) as Array<{
+      thread_id: string;
+      agent_id: string;
+      role: string;
+      kind: string;
+      status: string;
+      run_attempt_id: string | null;
+      parent_agent_id: string | null;
+      parent_tool_use_id: string | null;
+      mission_key: string | null;
+      todo_id: string | null;
+      started_at: string;
+      ended_at: string | null;
+      updated_at: string;
+      metadata_json: string | null;
+    }>;
+
+    return rows.map(rowToAgentInstance);
+  }
+
+  appendUsageLedgerEvent(event: UsageLedgerEvent): boolean {
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO thread_usage_ledger_events (
+           id, idempotency_key, thread_id, run_attempt_id, agent_id, parent_tool_use_id,
+           source, source_event_id, request_key, provider_request_id, sdk_message_id,
+           usage_kind, role, model_id,
+           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+           reported_cost_usd, attribution_json, metadata_json, observed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        event.id,
+        event.idempotencyKey,
+        event.threadId,
+        event.runAttemptId ?? null,
+        event.agentId ?? null,
+        event.parentToolUseId ?? null,
+        event.source,
+        event.sourceEventId,
+        event.requestKey ?? null,
+        event.providerRequestId ?? null,
+        event.sdkMessageId ?? null,
+        event.usageKind,
+        event.role,
+        event.modelId ?? null,
+        event.inputTokens,
+        event.outputTokens,
+        event.cacheReadTokens,
+        event.cacheCreationTokens,
+        event.reportedCostUsd ?? null,
+        JSON.stringify(event.attribution),
+        event.metadata ? JSON.stringify(event.metadata) : null,
+        event.observedAt,
+      ) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  listUsageLedgerEvents(threadId: string): UsageLedgerEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, idempotency_key, thread_id, run_attempt_id, agent_id, parent_tool_use_id,
+                source, source_event_id, request_key, provider_request_id, sdk_message_id,
+                usage_kind, role, model_id,
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                reported_cost_usd, attribution_json, metadata_json, observed_at
+         FROM thread_usage_ledger_events
+         WHERE thread_id = ?
+         ORDER BY observed_at ASC, id ASC`,
+      )
+      .all(threadId) as unknown as Array<UsageLedgerEventRow>;
+
+    return rows.map(rowToUsageLedgerEvent);
+  }
+
+  clearUsageLedger(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_usage_ledger_events WHERE thread_id = ?`).run(threadId);
+    this.db.prepare(`DELETE FROM thread_agent_instances WHERE thread_id = ?`).run(threadId);
+    this.db.prepare(`DELETE FROM thread_run_attempts WHERE thread_id = ?`).run(threadId);
   }
 
   upsertSubagentSessionActive(input: {
@@ -1346,6 +1692,127 @@ function rowToThreadMetrics(row: {
     ...(accumulator && { accumulator }),
     ...(context && { context }),
   };
+}
+
+function rowToRunAttempt(row: {
+  thread_id: string;
+  attempt_id: string;
+  phase: string;
+  retry_index: number;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  metadata_json: string | null;
+}): RunAttemptRecord {
+  const metadata = parseJsonRecord(row.metadata_json);
+  return {
+    threadId: row.thread_id,
+    attemptId: row.attempt_id,
+    phase: row.phase as RunAttemptPhase,
+    retryIndex: row.retry_index,
+    status: row.status as RunAttemptStatus,
+    startedAt: row.started_at,
+    ...(row.ended_at && { endedAt: row.ended_at }),
+    ...(metadata && { metadata }),
+  };
+}
+
+function rowToAgentInstance(row: {
+  thread_id: string;
+  agent_id: string;
+  role: string;
+  kind: string;
+  status: string;
+  run_attempt_id: string | null;
+  parent_agent_id: string | null;
+  parent_tool_use_id: string | null;
+  mission_key: string | null;
+  todo_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+  updated_at: string;
+  metadata_json: string | null;
+}): AgentInstanceRecord {
+  const metadata = parseJsonRecord(row.metadata_json);
+  return {
+    threadId: row.thread_id,
+    agentId: row.agent_id,
+    role: row.role as AgentRole,
+    kind: row.kind as AgentInstanceKind,
+    status: row.status as AgentInstanceStatus,
+    ...(row.run_attempt_id && { runAttemptId: row.run_attempt_id }),
+    ...(row.parent_agent_id && { parentAgentId: row.parent_agent_id }),
+    ...(row.parent_tool_use_id && { parentToolUseId: row.parent_tool_use_id }),
+    ...(row.mission_key && { missionKey: row.mission_key }),
+    ...(row.todo_id && { todoId: row.todo_id }),
+    startedAt: row.started_at,
+    ...(row.ended_at && { endedAt: row.ended_at }),
+    updatedAt: row.updated_at,
+    ...(metadata && { metadata }),
+  };
+}
+
+function rowToUsageLedgerEvent(row: UsageLedgerEventRow): UsageLedgerEvent {
+  const metadata = parseJsonRecord(row.metadata_json);
+  return {
+    id: row.id,
+    idempotencyKey: row.idempotency_key,
+    threadId: row.thread_id,
+    source: row.source as UsageLedgerSource,
+    sourceEventId: row.source_event_id,
+    usageKind: row.usage_kind as UsageLedgerKind,
+    role: row.role as AgentRole,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    observedAt: row.observed_at,
+    attribution: parseUsageAttributionJson(row.attribution_json),
+    ...(row.run_attempt_id && { runAttemptId: row.run_attempt_id }),
+    ...(row.agent_id && { agentId: row.agent_id }),
+    ...(row.parent_tool_use_id && { parentToolUseId: row.parent_tool_use_id }),
+    ...(row.request_key && { requestKey: row.request_key }),
+    ...(row.provider_request_id && { providerRequestId: row.provider_request_id }),
+    ...(row.sdk_message_id && { sdkMessageId: row.sdk_message_id }),
+    ...(row.model_id && { modelId: row.model_id }),
+    ...(row.reported_cost_usd !== null && { reportedCostUsd: row.reported_cost_usd }),
+    ...(metadata && { metadata }),
+  };
+}
+
+function parseUsageAttributionJson(raw: string): UsageAttribution {
+  try {
+    const parsed = JSON.parse(raw) as Partial<UsageAttribution>;
+    if (parsed.status === "attributed" && typeof parsed.agentId === "string" && parsed.agentId.trim()) {
+      return { status: "attributed", agentId: parsed.agentId.trim() };
+    }
+    if (parsed.status === "unattributed") {
+      return {
+        status: "unattributed",
+        ...(typeof parsed.reason === "string" && parsed.reason.trim()
+          ? { reason: parsed.reason.trim() }
+          : {}),
+      };
+    }
+  } catch {
+    // malformed attribution is still auditable as unattributed.
+  }
+  return { status: "unattributed", reason: "invalid_attribution_json" };
+}
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function parseEcoCostBreakdownJson(raw: string | null): TokenCostBreakdown {

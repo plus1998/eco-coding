@@ -182,6 +182,11 @@ import {
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
 import {
+  buildSdkUsageLedgerEvents,
+  buildSingleUsageLedgerEvent,
+} from "./usage-ledger-adapters";
+import type { UsageLedgerEvent } from "./usage-ledger";
+import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
@@ -3555,6 +3560,8 @@ async function emitProxyUsage(
     cacheCreationTokens: info.usage.cacheCreationTokens,
     modelId: info.modelId,
     requestKey,
+    sourceEventId: requestKey,
+    ...(info.requestId && { providerRequestId: info.requestId }),
     reconciliationOnly: true,
     fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
     ...(subagentAgentId && { agentId: subagentAgentId }),
@@ -3598,7 +3605,10 @@ async function processUsageBilling(input: {
   otelCostUsd?: number;
   modelId?: string;
   messageId?: string;
+  parentToolUseId?: string;
   requestKey?: string;
+  sourceEventId?: string;
+  providerRequestId?: string;
   otelDedupId?: string;
   updateContext?: boolean;
   reconciliationOnly?: boolean;
@@ -3662,6 +3672,31 @@ async function processUsageBilling(input: {
 
   const resolvedModelId = resolvePublicModelId(input.role, input.modelId, runtimeRoutes) ?? input.modelId;
   const billingRole = usageRoute?.role ?? input.role;
+  const source = input.source ?? "otel";
+  const ledgerAgentId =
+    input.agentId ??
+    (billingRole === "planner" ? conversationStore.getSdkSession(input.threadId)?.sessionId : undefined);
+  appendUsageLedgerShadowEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: input.threadId,
+      role: billingRole,
+      source,
+      sourceEventId: input.sourceEventId ?? requestKey,
+      usageKind: source === "sdk" && input.messageId ? "assistant_fallback" : "request_final",
+      usage: delta,
+      requestKey,
+      ...(ledgerAgentId && { agentId: ledgerAgentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+      ...(input.messageId && { sdkMessageId: input.messageId }),
+      ...(resolvedModelId && { modelId: resolvedModelId }),
+      ...(input.otelCostUsd !== undefined && { reportedCostUsd: input.otelCostUsd }),
+      metadata: {
+        path: "processUsageBilling",
+        ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
+      },
+    }),
+  ]);
 
   const monitorModelId = usageRoute?.modelId ?? plannerRoute?.modelId ?? resolvedModelId;
   const monitorBaseUrl = usageRoute?.provider.baseUrl ?? plannerRoute?.provider.baseUrl;
@@ -3704,7 +3739,7 @@ async function processUsageBilling(input: {
     threadUsageAccumulator.recordUsage({
       threadId: input.threadId,
       role: billingRole,
-      source: input.source ?? "otel",
+      source,
       delta,
       ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
       actualRates,
@@ -3942,6 +3977,16 @@ function schedulePersistThreadMetrics(threadId: string): void {
   );
 }
 
+function appendUsageLedgerShadowEvents(events: readonly UsageLedgerEvent[]): void {
+  for (const event of events) {
+    try {
+      conversationStore.appendUsageLedgerEvent(event);
+    } catch (error) {
+      process.stderr.write(`[eco] usage ledger shadow write failed: ${errorMessage(error)}\n`);
+    }
+  }
+}
+
 function flushAllThreadMetrics(): void {
   for (const timer of persistMetricsTimers.values()) {
     clearTimeout(timer);
@@ -4053,6 +4098,8 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
           cacheReadTokens: usage.cacheReadTokens,
           cacheCreationTokens: usage.cacheCreationTokens,
           ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
+          messageId,
+          ...(parentToolUseId && { parentToolUseId }),
           requestKey: buildAssistantUsageRequestKey(messageId),
         }).catch((error) => {
           process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
@@ -4215,6 +4262,22 @@ async function processSdkRunBilling(input: {
       billingRole = entryRole;
     }
   }
+  const allLedgerRowsArePlanner = models.every((model) => (model.role ?? input.role) === "planner");
+  const ledgerAgentId =
+    resolvedSubagentId ??
+    (allLedgerRowsArePlanner ? conversationStore.getSdkSession(input.threadId)?.sessionId : undefined);
+  appendUsageLedgerShadowEvents(
+    buildSdkUsageLedgerEvents({
+      threadId: input.threadId,
+      role: input.role,
+      requestKey: input.requestKey,
+      models,
+      ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
+      ...(ledgerAgentId && { agentId: ledgerAgentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      metadata: { path: "processSdkRunBilling" },
+    }),
+  );
 
   const contextUsage =
     resolvedSubagentId && primaryModel?.modelId && input.usagePayload
