@@ -98,6 +98,7 @@ import {
   resolveQuestionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
+import { finalizeThreadRunCleanup, type FinalizeThreadRunCleanupInput } from "./thread-run-cleanup";
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
@@ -1425,6 +1426,20 @@ function runThreadRequestWithAutoRetry(
   });
 }
 
+async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput): Promise<void> {
+  await finalizeThreadRunCleanup(input, {
+    cancelClarifications: cancelClarificationsForThread,
+    resetSdkStream: (threadId) => sdkStreamBridge.resetThread(threadId),
+    flushUsageUpdates: (threadId) => usageLedgerCoordinator.flushUsageUpdates(threadId),
+    finishActiveRun,
+    afterRunContextRefresh,
+    getThread: (threadId) => conversationStore.getThread(threadId),
+    updateThreadIdle: (threadId, message) => {
+      updateThread(threadId, { status: "idle", message });
+    },
+  });
+}
+
 async function runQuestionThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
@@ -1522,18 +1537,12 @@ async function runQuestionThread(
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
-    cancelClarificationsForThread(thread.id, "run finished");
-    sdkStreamBridge.resetThread(thread.id);
-    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    finishActiveRun(thread.id);
-    afterRunContextRefresh(thread.id, worktreePath);
-    const currentThread = conversationStore.getThread(thread.id);
-    if (currentThread?.status === "running") {
-      updateThread(thread.id, {
-        status: "idle",
-        message: currentThread.message || "回答已结束。",
-      });
-    }
+    await finalizeMainThreadRunCleanup({
+      threadId: thread.id,
+      worktreePath,
+      cancelClarificationsReason: "run finished",
+      idleFallbackMessage: "回答已结束。",
+    });
   }
 }
 
@@ -1717,18 +1726,12 @@ async function runCodingThreadAutonomous(
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
-    cancelClarificationsForThread(thread.id, "run finished");
-    sdkStreamBridge.resetThread(thread.id);
-    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    finishActiveRun(thread.id);
-    afterRunContextRefresh(thread.id, worktreePath);
-    const currentThread = conversationStore.getThread(thread.id);
-    if (currentThread?.status === "running") {
-      updateThread(thread.id, {
-        status: "idle",
-        message: currentThread.message || "运行已结束。",
-      });
-    }
+    await finalizeMainThreadRunCleanup({
+      threadId: thread.id,
+      worktreePath,
+      cancelClarificationsReason: "run finished",
+      idleFallbackMessage: "运行已结束。",
+    });
   }
 }
 
@@ -1889,18 +1892,12 @@ async function runCodingThreadPlanning(
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
-    cancelClarificationsForThread(thread.id, "run finished");
-    sdkStreamBridge.resetThread(thread.id);
-    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    finishActiveRun(thread.id);
-    afterRunContextRefresh(thread.id, worktreePath);
-    const currentThread = conversationStore.getThread(thread.id);
-    if (currentThread?.status === "running") {
-      updateThread(thread.id, {
-        status: "idle",
-        message: currentThread.message || "计划阶段已结束。",
-      });
-    }
+    await finalizeMainThreadRunCleanup({
+      threadId: thread.id,
+      worktreePath,
+      cancelClarificationsReason: "run finished",
+      idleFallbackMessage: "计划阶段已结束。",
+    });
   }
 }
 
@@ -2007,11 +2004,11 @@ async function runCodingThreadAutonomousAfterApproval(
     cancelClarificationsForThread(threadId, errorMessage(error));
     markThreadInterrupted(threadId, errorMessage(error));
   } finally {
-    cancelClarificationsForThread(threadId, "run finished");
-    sdkStreamBridge.resetThread(threadId);
-    await usageLedgerCoordinator.flushUsageUpdates(threadId);
-    finishActiveRun(threadId);
-    afterRunContextRefresh(threadId, cwd);
+    await finalizeMainThreadRunCleanup({
+      threadId,
+      worktreePath: cwd,
+      cancelClarificationsReason: "run finished",
+    });
   }
 }
 
@@ -2196,17 +2193,11 @@ async function runCodingThreadExecution(
     }
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
-    sdkStreamBridge.resetThread(threadId);
-    await usageLedgerCoordinator.flushUsageUpdates(threadId);
-    finishActiveRun(threadId);
-    afterRunContextRefresh(threadId, worktreePlan.worktreePath);
-    const thread = conversationStore.getThread(threadId);
-    if (thread?.status === "running") {
-      updateThread(threadId, {
-        status: "idle",
-        message: thread.message || "执行已结束。",
-      });
-    }
+    await finalizeMainThreadRunCleanup({
+      threadId,
+      worktreePath: worktreePlan.worktreePath,
+      idleFallbackMessage: "执行已结束。",
+    });
   }
 }
 
@@ -3408,18 +3399,12 @@ async function runThreadContinuation(
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
-    cancelClarificationsForThread(thread.id, "run finished");
-    sdkStreamBridge.resetThread(thread.id);
-    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    finishActiveRun(thread.id);
-    afterRunContextRefresh(thread.id, worktreePath);
-    const currentThread = conversationStore.getThread(thread.id);
-    if (currentThread?.status === "running") {
-      updateThread(thread.id, {
-        status: "idle",
-        message: currentThread.message || "续聊已结束。",
-      });
-    }
+    await finalizeMainThreadRunCleanup({
+      threadId: thread.id,
+      worktreePath,
+      cancelClarificationsReason: "run finished",
+      idleFallbackMessage: "续聊已结束。",
+    });
   }
 }
 
