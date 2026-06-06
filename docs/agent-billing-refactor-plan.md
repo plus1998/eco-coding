@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`672 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit 近端类型错误已清理。
+- `bun test`: 通过，`673 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -116,13 +116,22 @@
 - 未归因 OTel 不再压掉已明确归因的 SubAgent assistant fallback，避免并发 SubAgent 或跨角色请求被漏计。
 - 新增测试覆盖：fallback observation gating、未归因 OTel 不误伤、partial/context 不进入 billable projection、compaction ledger event 元数据、compact boundary session 保留。
 
+第十批 Lifecycle recovery settlement 已完成：
+
+- `AgentLifecycleService` 新增 `settleRecoveredThread`，从持久化 `RunAttempt` / `AgentInstance` 记录中结算异常残留状态。
+- 对 persisted `RunAttempt(status=running)` 会写入终态 `failed` 并补齐 `endedAt`，避免重启后 run attempt 永久悬挂。
+- 对 persisted `AgentInstance(status=active|launching)` 会写入 `abandoned` 并补齐 `endedAt/updatedAt`，避免 SubAgent 退出时未结算生命周期。
+- 启动恢复 `recoverOrphanedRunningThreads` 会先执行 lifecycle settlement，再把 UI thread 从 `running/queued` 恢复到 `idle`。
+- 非 running attempt 与已 stopped agent 不会被 recovery settlement 改写，避免破坏已完成审计历史。
+- 新增测试覆盖：running attempt 结算、active agent abandoned、已完成/已停止记录不被改写。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
-- 进程重启后的 lifecycle 内存态恢复尚未接入；持久化表已具备记录能力，但恢复逻辑必须在 projector/settlement 阶段一并设计。
+- 进程重启后的 persisted lifecycle 残留会被 settlement 到终态；当前不会把旧 lifecycle 重新 hydrate 成可继续运行的内存态。
 - BillingProjector 已开始驱动 `billing.subagents` 账单行；线程 total/source/byModel 仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
 - projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
-- 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain 和 lifecycle recovery，再移除旧账单累计职责。
+- 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - `request_partial` 目前只进入审计，不进入结算；后续 settlement 阶段必须明确中断流式请求是否、何时、按什么状态转成 billable final。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
 
@@ -246,11 +255,10 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
-2. 在 settlement 中定义 interrupted stream partial 的最终状态，避免 partial 永久悬挂。
-3. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
-4. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
-5. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
+1. 在 settlement 中定义 interrupted stream partial 的最终状态，避免 partial 永久悬挂。
+2. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
+3. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
+4. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
 ## 每批提交必须满足
 

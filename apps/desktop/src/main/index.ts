@@ -2414,6 +2414,9 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
 /** After a crash, SQLite may still say running while activeRuns is empty. */
 function recoverOrphanedRunningThreads(): void {
   for (const thread of conversationStore.listThreads()) {
+    if (!activeRuns.has(thread.id)) {
+      settleRecoveredLifecycleRecords(thread.id, "failed");
+    }
     if (thread.status !== "running" && thread.status !== "queued") {
       continue;
     }
@@ -2426,6 +2429,27 @@ function recoverOrphanedRunningThreads(): void {
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
   }
+}
+
+function settleRecoveredLifecycleRecords(
+  threadId: string,
+  runStatus: Exclude<RunAttemptStatus, "running">,
+): void {
+  const result = agentLifecycle.settleRecoveredThread({
+    threadId,
+    attempts: conversationStore.listRunAttempts(threadId),
+    agents: conversationStore.listAgentInstances(threadId),
+    runStatus,
+  });
+  if (result.runAttemptsSettled === 0 && result.agentInstancesSettled === 0) {
+    return;
+  }
+  logEcoDiag("agent_lifecycle.recovered", {
+    threadId: shortThreadId(threadId),
+    runStatus,
+    runAttemptsSettled: result.runAttemptsSettled,
+    agentInstancesSettled: result.agentInstancesSettled,
+  });
 }
 
 async function restoreAfterExecutionFailure(

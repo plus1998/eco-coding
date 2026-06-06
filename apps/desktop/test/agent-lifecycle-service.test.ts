@@ -122,3 +122,51 @@ test("AgentLifecycleService stops subagents explicitly before run finalizer", ()
 
   expect(store.getAgent("thr_lifecycle", "agent_coder")?.status).toBe("stopped");
 });
+
+test("AgentLifecycleService settles recovered running attempts and active agents", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  const attempt: RunAttemptRecord = {
+    threadId: "thr_recovered",
+    attemptId: "attempt_execution_0",
+    phase: "execution",
+    retryIndex: 0,
+    status: "running",
+    startedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const completedAttempt: RunAttemptRecord = {
+    ...attempt,
+    attemptId: "attempt_execution_done",
+    status: "completed",
+    endedAt: "2026-01-01T00:00:02.000Z",
+  };
+  const activeAgent: AgentInstanceRecord = {
+    threadId: "thr_recovered",
+    agentId: "agent_coder",
+    role: "coder",
+    kind: "subagent",
+    status: "active",
+    runAttemptId: attempt.attemptId,
+    startedAt: "2026-01-01T00:00:01.000Z",
+    updatedAt: "2026-01-01T00:00:01.000Z",
+  };
+  const stoppedAgent: AgentInstanceRecord = {
+    ...activeAgent,
+    agentId: "agent_done",
+    status: "stopped",
+    endedAt: "2026-01-01T00:00:02.000Z",
+  };
+
+  const result = service.settleRecoveredThread({
+    threadId: "thr_recovered",
+    attempts: [attempt, completedAttempt],
+    agents: [activeAgent, stoppedAgent],
+    runStatus: "failed",
+  });
+
+  expect(result).toEqual({ runAttemptsSettled: 1, agentInstancesSettled: 1 });
+  expect(store.getAttempt("thr_recovered", "attempt_execution_0")?.status).toBe("failed");
+  expect(store.getAttempt("thr_recovered", "attempt_execution_done")).toBeUndefined();
+  expect(store.getAgent("thr_recovered", "agent_coder")?.status).toBe("abandoned");
+  expect(store.getAgent("thr_recovered", "agent_done")).toBeUndefined();
+});

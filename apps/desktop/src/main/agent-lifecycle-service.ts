@@ -17,6 +17,18 @@ export interface AgentLifecycleServiceOptions {
   attemptId?: (input: { threadId: string; phase: RunAttemptPhase; retryIndex: number }) => string;
 }
 
+export interface AgentLifecycleRecoveryInput {
+  threadId: string;
+  attempts: readonly RunAttemptRecord[];
+  agents: readonly AgentInstanceRecord[];
+  runStatus: Exclude<RunAttemptStatus, "running">;
+}
+
+export interface AgentLifecycleRecoveryResult {
+  runAttemptsSettled: number;
+  agentInstancesSettled: number;
+}
+
 interface ThreadLifecycleState {
   currentAttempt?: RunAttemptRecord;
   currentPlannerAgentId?: string;
@@ -181,6 +193,47 @@ export class AgentLifecycleService {
       updatedAt: now,
     });
     state.activeAgents.delete(input.agentId);
+  }
+
+  settleRecoveredThread(input: AgentLifecycleRecoveryInput): AgentLifecycleRecoveryResult {
+    const now = this.now();
+    let runAttemptsSettled = 0;
+    let agentInstancesSettled = 0;
+
+    for (const attempt of input.attempts) {
+      if (attempt.status !== "running") {
+        continue;
+      }
+      this.store.upsertRunAttempt({
+        ...attempt,
+        status: input.runStatus,
+        endedAt: attempt.endedAt ?? now,
+      });
+      runAttemptsSettled += 1;
+    }
+
+    for (const agent of input.agents) {
+      if (agent.status !== "active" && agent.status !== "launching") {
+        continue;
+      }
+      this.store.upsertAgentInstance({
+        ...agent,
+        status: "abandoned",
+        endedAt: agent.endedAt ?? now,
+        updatedAt: now,
+      });
+      agentInstancesSettled += 1;
+    }
+
+    const state = this.threads.get(input.threadId);
+    if (state) {
+      delete state.currentAttempt;
+      delete state.currentPlannerAgentId;
+      state.pendingToolUses = [];
+      state.activeAgents.clear();
+    }
+
+    return { runAttemptsSettled, agentInstancesSettled };
   }
 
   currentRunAttemptId(threadId: string): string | undefined {
