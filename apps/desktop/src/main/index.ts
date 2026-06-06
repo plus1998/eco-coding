@@ -85,6 +85,7 @@ import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
+import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import {
@@ -2412,20 +2413,21 @@ async function restoreAfterExecutionFailure(
 
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
   activeRunRuntimeState.abortRun(threadId, "dismissed by user");
-  const pending = conversationStore.getPendingPlan(threadId);
-  const thread = conversationStore.getThread(threadId);
-  const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
-  const worktreePath = pending?.worktreePath;
+  const dismissal = resolveThreadPendingPlanDismissal({
+    threadId,
+    message,
+    pendingPlan: conversationStore.getPendingPlan(threadId),
+    thread: conversationStore.getThread(threadId),
+    resolveWorktreePlan,
+    isIsolatedWorktreePlan,
+  });
   conversationStore.clearPendingPlan(threadId);
-  if (workspacePath) {
-    const plan = resolveWorktreePlan(workspacePath, threadId, worktreePath);
-    if (isIsolatedWorktreePlan(plan)) {
-      await handleRunCancelled(threadId, plan);
-      return;
-    }
+  if (dismissal.kind === "cancel_worktree") {
+    await handleRunCancelled(threadId, dismissal.worktreePlan);
+    return;
   }
-  updateThread(threadId, { status: "idle", message });
-  emitThreadEvent(threadId, "thread.idle", message, "system");
+  updateThread(threadId, { status: "idle", message: dismissal.message });
+  emitThreadEvent(threadId, "thread.idle", dismissal.message, "system");
 }
 
 function resolveWorktreePlan(workspacePath: string, threadId: string, _worktreePath?: string): WorktreePlan {
