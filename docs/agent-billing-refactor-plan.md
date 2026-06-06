@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`659 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle 近端类型错误已清理。
+- `bun test`: 通过，`663 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -78,11 +78,22 @@
 - 新增 lifecycle 测试覆盖：run attempt/planner 生命周期、跨角色交错 SubAgent 父 tool use 归属、失败 finalizer abandoned、显式 stop、late usage attribution。
 - `usage-ledger-adapters` 测试补充 `runAttemptId` 传播断言，防止审计链路被后续改动截断。
 
+第六批 BillingProjector shadow 已完成：
+
+- 新增 `billing-projector`，从 `UsageLedgerEvent` 派生兼容 `ThreadBillingSnapshot` 的 source、byRole、byModel、subagent shadow 账单视图。
+- projector 同时输出 `byAgent`、`byRunAttempt`、`unattributedEvents`、`unresolvedEventCount`，用于审计“Token 是否能追溯到具体 Agent / attempt”。
+- ledger event metadata 新增 `computedBilling`，写入本地费率计算出的 `ecoCostUsd`、`plannerTokenCostUsd`、cost breakdown 与 `pricingResolved`，避免 projector 反向依赖旧 accumulator。
+- 对缺少 `computedBilling` 的历史或测试事件，projector 支持显式 `resolveRates` 回填成本；无法解析时会标记 unresolved，不静默混入 0 成本成功态。
+- SDK 多模型 request total 在 projector 中按 request 计一次；per-model `reportedCostUsd` 仍按模型行归集。
+- 主进程 shadow reconciliation mismatch 日志会附带 projector 摘要，便于观察新旧账单投影差异；不驱动 UI、不改变结算。
+- 新增 projector 测试覆盖：SDK primary、request total 不重复、byAgent/subagent/runAttempt、unattributed/unresolved、rate resolver fallback。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
 - 进程重启后的 lifecycle 内存态恢复尚未接入；持久化表已具备记录能力，但恢复逻辑必须在 projector/settlement 阶段一并设计。
-- BillingProjector 尚未成为最终账单来源；旧 accumulator 仍是 UI 与当前结算的权威来源。
+- BillingProjector 已可生成 shadow billing，但旧 accumulator 仍是 UI 与当前结算的权威来源。
+- projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
 
 ## 不做事项
 
@@ -204,10 +215,10 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 实现真正的 `BillingProjector`，从 ledger 派生 byRole、byAgent、byModel、subagent、unattributed。
-2. 增加 projector 与旧 accumulator / `SubagentMetricsRegistry` 的 shadow 对账，明确 synthetic SDK primary 等兼容差异。
-3. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
-4. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
+1. 增加 projector 与旧 accumulator / `SubagentMetricsRegistry` 的 shadow 对账，明确 synthetic SDK primary 等兼容差异。
+2. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
+3. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
+4. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
 5. shadow 对账稳定后，再进入 UI/metrics 切换。
 
 ## 每批提交必须满足

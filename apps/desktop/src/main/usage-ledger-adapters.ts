@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { ParsedUsage } from "@eco/runtime";
+import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import type { AgentRole } from "../shared/ipc";
 import {
   buildUsageLedgerEventKey,
@@ -7,12 +7,17 @@ import {
   type UsageLedgerKind,
   type UsageLedgerSource,
 } from "./usage-ledger";
+import {
+  USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY,
+  serializeUsageLedgerComputedBilling,
+} from "./usage-ledger-cost-metadata";
 
 export interface UsageLedgerModelUsage {
   role?: AgentRole;
   modelId: string;
   usage: ParsedUsage;
   sdkCostUsd?: number;
+  computedBilling?: RequestBillingDelta;
 }
 
 export interface BuildSdkUsageLedgerEventsInput {
@@ -35,6 +40,7 @@ export interface BuildSingleUsageLedgerEventInput {
   sourceEventId: string;
   usageKind?: UsageLedgerKind;
   usage: ParsedUsage;
+  computedBilling?: RequestBillingDelta;
   runAttemptId?: string;
   agentId?: string;
   parentToolUseId?: string;
@@ -60,6 +66,7 @@ export function buildSdkUsageLedgerEvents(
       sourceEventId: input.requestKey,
       usageKind: "request_final",
       usage: entry.usage,
+      ...(entry.computedBilling && { computedBilling: entry.computedBilling }),
       requestKey: input.requestKey,
       modelId: entry.modelId,
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
@@ -80,6 +87,7 @@ export function buildSingleUsageLedgerEvent(
 ): UsageLedgerEvent {
   const usageKind = input.usageKind ?? "request_final";
   const modelId = input.modelId ?? input.usage.modelId;
+  const metadata = buildMetadata(input.metadata, input.computedBilling);
   const idempotencyKey = buildUsageLedgerEventKey({
     threadId: input.threadId,
     source: input.source,
@@ -112,11 +120,23 @@ export function buildSingleUsageLedgerEvent(
     ...(input.sdkMessageId && { sdkMessageId: input.sdkMessageId }),
     ...(modelId && { modelId }),
     ...(input.reportedCostUsd !== undefined && { reportedCostUsd: input.reportedCostUsd }),
-    ...(input.metadata && Object.keys(input.metadata).length > 0 && { metadata: input.metadata }),
+    ...(metadata && { metadata }),
   };
 }
 
 function usageLedgerEventId(idempotencyKey: string): string {
   const hash = crypto.createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 24);
   return `ule_${hash}`;
+}
+
+function buildMetadata(
+  metadata: Record<string, unknown> | undefined,
+  computedBilling: RequestBillingDelta | undefined,
+): Record<string, unknown> | undefined {
+  const output = { ...(metadata ?? {}) };
+  if (computedBilling) {
+    output[USAGE_LEDGER_COMPUTED_BILLING_METADATA_KEY] =
+      serializeUsageLedgerComputedBilling(computedBilling);
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
 }

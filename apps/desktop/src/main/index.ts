@@ -190,6 +190,10 @@ import {
   reconcileUsageLedgerWithBilling,
   summarizeUsageLedgerReconciliation,
 } from "./usage-ledger-reconciliation";
+import {
+  projectBillingFromUsageLedger,
+  summarizeUsageLedgerBillingProjection,
+} from "./billing-projector";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import {
   createSubagentSessionHooks,
@@ -3728,6 +3732,19 @@ async function processUsageBilling(input: {
   const resolvedModelId = resolvePublicModelId(input.role, input.modelId, runtimeRoutes) ?? input.modelId;
   const billingRole = usageRoute?.role ?? input.role;
   const source = input.source ?? "otel";
+  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  const requestBilling = computeRequestBilling(delta, actualRates, plannerRates);
+  const { savedUsd } = computeSavings(
+    requestBilling.plannerTokenCostUsd,
+    requestBilling.ecoCostUsd,
+  );
+  const requestBillingLog: UpstreamProxyCallBilling = {
+    ecoCostUsd: requestBilling.ecoCostUsd,
+    plannerTokenCostUsd: requestBilling.plannerTokenCostUsd,
+    savedUsd,
+    otelCostUsd: input.otelCostUsd ?? 0,
+  };
   const ledgerAgentId =
     input.agentId ??
     (billingRole === "planner" ? input.plannerAgentId : undefined);
@@ -3739,6 +3756,7 @@ async function processUsageBilling(input: {
       sourceEventId: input.sourceEventId ?? requestKey,
       usageKind: source === "sdk" && input.messageId ? "assistant_fallback" : "request_final",
       usage: delta,
+      computedBilling: requestBilling,
       requestKey,
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(ledgerAgentId && { agentId: ledgerAgentId }),
@@ -3775,20 +3793,6 @@ async function processUsageBilling(input: {
   }
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
-
-  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
-  const requestBilling = computeRequestBilling(delta, actualRates, plannerRates);
-  const { savedUsd } = computeSavings(
-    requestBilling.plannerTokenCostUsd,
-    requestBilling.ecoCostUsd,
-  );
-  const requestBillingLog: UpstreamProxyCallBilling = {
-    ecoCostUsd: requestBilling.ecoCostUsd,
-    plannerTokenCostUsd: requestBilling.plannerTokenCostUsd,
-    savedUsd,
-    otelCostUsd: input.otelCostUsd ?? 0,
-  };
 
   let billing = enrichBillingSnapshot(
     input.threadId,
@@ -4054,12 +4058,18 @@ function reconcileUsageLedgerShadow(threadId: string, billing: ThreadBillingSnap
     if (result.ok) {
       return;
     }
+    const projection = projectBillingFromUsageLedger({
+      events,
+      agents: conversationStore.listAgentInstances(threadId),
+      ...(billing.plannerModelLabel && { plannerModelLabel: billing.plannerModelLabel }),
+    });
     logEcoDiagThrottled(
       `usage-ledger-reconcile:${threadId}`,
       "usage_ledger.reconcile_mismatch",
       {
         threadId: shortThreadId(threadId),
         ...summarizeUsageLedgerReconciliation(result),
+        projection: summarizeUsageLedgerBillingProjection(projection),
       },
       1000,
     );
@@ -4328,12 +4338,15 @@ async function processSdkRunBilling(input: {
             ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
           })
         : null;
+      const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+      const computedBilling = computeRequestBilling(entry.usage, actualRates, plannerRates);
       return {
         role: billingRole,
         modelId: usageRoute?.modelId ?? entry.modelId,
         usage: entry.usage,
-        actualRates: resolveRatesForRoute(actualLookup, usageRoute?.manualSpec),
+        actualRates,
         plannerRates,
+        computedBilling,
         ...(entry.sdkCostUsd !== undefined && { sdkCostUsd: entry.sdkCostUsd }),
       };
     }),
@@ -4392,14 +4405,13 @@ async function processSdkRunBilling(input: {
     const roleSnap = contextMonitor.getSnapshot(input.threadId);
     const instance = roleSnap?.instances?.find((row) => row.agentId === resolvedSubagentId);
     for (const model of models) {
-      const billingDelta = computeRequestBilling(model.usage, model.actualRates, model.plannerRates);
       subagentMetricsRegistry.recordSdkUsage(input.threadId, {
         role: model.role ?? billingRole,
         agentId: resolvedSubagentId,
         usage: model.usage,
         contextOccupied: instance?.occupied ?? computeWindowOccupancy(contextUsage),
         ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
-        billing: billingDelta,
+        billing: model.computedBilling,
         ...(model.modelId && { modelId: model.modelId }),
         requestKey: input.requestKey,
       });
