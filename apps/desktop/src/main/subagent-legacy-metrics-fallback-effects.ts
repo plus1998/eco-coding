@@ -30,6 +30,7 @@ export interface ApplySubagentLegacyMetricsFallbackInput {
 export interface AppliedSubagentLegacyMetricsFallback {
   billingSelection: UsageLedgerBillingSnapshotSelection;
   recorded: boolean;
+  recordCount: number;
   reason: ReturnType<typeof resolveSubagentLegacyMetricsFallback>["reason"];
 }
 
@@ -44,6 +45,7 @@ export function applySubagentLegacyMetricsFallback(
     return {
       billingSelection: input.billingSelection,
       recorded: false,
+      recordCount: 0,
       reason: decision.reason,
     };
   }
@@ -58,6 +60,7 @@ export function applySubagentLegacyMetricsFallback(
       useLedgerProjection: false,
     }),
     recorded: input.records.length > 0,
+    recordCount: input.records.length,
     reason: decision.reason,
   };
 }

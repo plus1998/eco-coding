@@ -103,6 +103,7 @@ test("applySingleUsageSubagentLegacyFallback records one legacy record from sing
   ]);
   expect(selectionOptions).toEqual([{ useLedgerProjection: false, plannerModelLabel: "Planner" }]);
   expect(applied.recorded).toBe(true);
+  expect(applied.recordCount).toBe(1);
   expect(applied.reason).toBe("ledger_projection_unavailable");
 });
 
@@ -130,6 +131,7 @@ test("applySingleUsageSubagentLegacyFallback skips old metrics without subagent 
   expect(applied).toEqual({
     billingSelection,
     recorded: false,
+    recordCount: 0,
     reason: "missing_subagent_context",
   });
 });
@@ -188,5 +190,6 @@ test("applySdkRunSubagentLegacyFallback records one legacy record for each SDK m
     },
   ]);
   expect(applied.recorded).toBe(true);
+  expect(applied.recordCount).toBe(2);
   expect(applied.reason).toBe("ledger_projection_unavailable");
 });

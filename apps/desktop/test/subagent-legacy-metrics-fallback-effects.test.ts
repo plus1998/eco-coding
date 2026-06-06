@@ -67,6 +67,7 @@ test("applySubagentLegacyMetricsFallback skips when ledger projection is availab
   expect(applied).toEqual({
     billingSelection,
     recorded: false,
+    recordCount: 0,
     reason: "ledger_projection_available",
   });
   expect(records).toEqual([]);
@@ -115,6 +116,36 @@ test("applySubagentLegacyMetricsFallback records and forces legacy billing when 
   ]);
   expect(selectionOptions).toEqual([{ useLedgerProjection: false, plannerModelLabel: "Planner" }]);
   expect(applied.recorded).toBe(true);
+  expect(applied.recordCount).toBe(1);
   expect(applied.reason).toBe("ledger_projection_unavailable");
   expect(applied.billingSelection.snapshot).toEqual(legacyBilling);
+});
+
+test("applySubagentLegacyMetricsFallback reports zero record count when no legacy records exist", () => {
+  const selectionOptions: unknown[] = [];
+  const legacyBilling = billingSnapshot({ primarySource: "proxy" });
+  const legacySelection = selection({ snapshot: legacyBilling, legacySnapshot: legacyBilling });
+
+  const applied = applySubagentLegacyMetricsFallback({
+    threadId: "thr_legacy_fallback_empty",
+    hasSubagentContext: true,
+    billingSelection: legacySelection,
+    legacyBilling,
+    selectionOptions: { useLedgerProjection: true },
+    records: [],
+    services: {
+      recordSdkUsage: () => {
+        throw new Error("empty legacy records must not record metrics");
+      },
+      resolveBillingSnapshot: (_threadId, snapshot, options) => {
+        selectionOptions.push(options);
+        return selection({ snapshot, legacySnapshot: snapshot });
+      },
+    },
+  });
+
+  expect(selectionOptions).toEqual([{ useLedgerProjection: false }]);
+  expect(applied.recorded).toBe(false);
+  expect(applied.recordCount).toBe(0);
+  expect(applied.reason).toBe("ledger_projection_unavailable");
 });
