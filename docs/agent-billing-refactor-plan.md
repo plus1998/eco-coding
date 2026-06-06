@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`698 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection 近端类型错误已清理。
+- `bun test`: 通过，`700 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -208,16 +208,26 @@
 - projection API 保留 `plannerModelLabel` 透传能力，确保后续从 legacy accumulator 切换总账时不丢失展示兼容字段。
 - 新增测试覆盖：完整 snapshot 的 `primarySource`、`plannerModelLabel`、`totalTokens`、`sourceBreakdown`、`byRole`、`byModel` 和 `subagents` 投影。
 
+第二十一批 Ledger billing selection gate 已完成：
+
+- `UsageLedgerCoordinator.resolveBillingSnapshot` 成为 usage effects 获取账单快照的统一入口，默认仍返回 legacy accumulator 快照并保留 ledger subagent enrichment。
+- 新入口支持显式 `useLedgerProjection`，只有 ledger projection 与 legacy-enriched 快照对账通过时才返回 ledger snapshot。
+- 当 projection 缺失、抛错或出现 `error` 级对账差异时，gate 保留 legacy snapshot，并把 ledger snapshot 与 reconciliation 结果挂到返回值用于审计。
+- selection 返回值显式携带 `legacySnapshot`，`usage-billing-effects` 继续用 legacy 快照做 shadow reconcile，避免未来 opt-in 后出现 ledger 与自身对账的假阳性。
+- gate 对账使用 projection 生成的 SubAgent billing entries，避免由于旧 registry 记录时序导致“可展示的 ledger subagent 行”被误判为不能切换总账。
+- `usage-billing-effects` 不再直接调用 `enrichBillingSnapshot`，改为通过 `resolveBillingSnapshot` 获取 billing；默认参数不启用 ledger 主快照，因此现有 UI 行为不变。
+- 新增测试覆盖：opt-in 且对账通过时选择 ledger、Token 漂移时回退 legacy 并记录 `usage_ledger.billing_selection_rejected`。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
 - 进程重启后的 persisted lifecycle 残留会被 settlement 到终态；当前不会把旧 lifecycle 重新 hydrate 成可继续运行的内存态。
-- BillingProjector 已开始驱动 `billing.subagents` 账单行；`UsageLedgerCoordinator` 已提供完整 `ThreadBillingSnapshot` 投影入口；线程 `usage_updated` payload 的 total/source/byModel 仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
+- BillingProjector 已开始驱动 `billing.subagents` 账单行；`UsageLedgerCoordinator` 已提供完整 `ThreadBillingSnapshot` 投影入口和 opt-in selection gate；线程 `usage_updated` payload 的 total/source/byModel 默认仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
 - projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；`index.ts` 仍保留 OTel 普通 API request 观测、activeRuns、runtime event glue、activity/UI glue，下一批优先推进账本总账切换 gate、Context Domain 或旧 accumulator 退场边界。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 OTel 普通 API request 观测、activeRuns、runtime event glue、activity/UI glue，下一批优先推进 Context Domain 或旧 accumulator 退场边界。
 
 ## 不做事项
 

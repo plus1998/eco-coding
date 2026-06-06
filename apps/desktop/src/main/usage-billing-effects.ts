@@ -31,7 +31,7 @@ export interface UsageBillingUpdatedEvent {
 
 export interface UsageBillingEffectsServices {
   contextMonitor: Pick<ContextWindowMonitor, "getSnapshot" | "updateFromUsage">;
-  usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "enrichBillingSnapshot" | "reconcileShadow">;
+  usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow">;
   accumulator: Pick<ThreadUsageAccumulator, "recordUsage" | "recordRunUsage" | "hasSeenRequestKey">;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordSdkUsage">;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
@@ -104,7 +104,7 @@ export async function applySingleUsageBillingEffects(
   }
 
   const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
-  let billing = services.usageLedger.enrichBillingSnapshot(
+  let billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
     services.accumulator.recordUsage({
       threadId: input.threadId,
@@ -120,11 +120,12 @@ export async function applySingleUsageBillingEffects(
       ...(input.reconciliationOnly && { reconciliationOnly: true }),
     }),
   );
+  let billing = billingSelection.snapshot;
 
   if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(artifacts.billingRole) && input.agentId) {
     const sdkProxyKey = `sdk:proxy-subagent:${artifacts.requestKey}`;
     if (!services.accumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
-      billing = services.usageLedger.enrichBillingSnapshot(
+      billingSelection = services.usageLedger.resolveBillingSnapshot(
         input.threadId,
         services.accumulator.recordUsage({
           threadId: input.threadId,
@@ -138,9 +139,10 @@ export async function applySingleUsageBillingEffects(
           ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
         }),
       );
+      billing = billingSelection.snapshot;
     }
   }
-  services.usageLedger.reconcileShadow(input.threadId, billing);
+  services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
   if (input.agentId && isSubagentBillingRole(artifacts.billingRole)) {
     const roleSnap = services.contextMonitor.getSnapshot(input.threadId);
@@ -247,7 +249,7 @@ export async function applySdkRunBillingEffects(
     }
   }
 
-  const billing = services.usageLedger.enrichBillingSnapshot(
+  const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
     services.accumulator.recordRunUsage({
       threadId: input.threadId,
@@ -259,7 +261,8 @@ export async function applySdkRunBillingEffects(
       ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
     }),
   );
-  services.usageLedger.reconcileShadow(input.threadId, billing);
+  const billing = billingSelection.snapshot;
+  services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
   const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
   const primaryModel = input.models[0];

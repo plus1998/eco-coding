@@ -189,3 +189,97 @@ test("UsageLedgerCoordinator projects full billing snapshots from ledger", () =>
     outputTokens: 1_000,
   });
 });
+
+test("UsageLedgerCoordinator can select ledger billing snapshots when projection matches legacy", () => {
+  const { coordinator } = createCoordinator();
+  const delta = usage(2_000);
+  coordinator.appendEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_billing_gate",
+      role: "coder",
+      source: "proxy",
+      sourceEventId: "proxy:coder:req_1",
+      requestKey: "proxy:coder:req_1",
+      usage: delta,
+      computedBilling: computeRequestBilling(delta, haikuRates, sonnetRates),
+      runAttemptId: "attempt_1",
+      agentId: "agent_coder",
+      modelId: "haiku",
+    }),
+  ]);
+  const legacyBilling = new ThreadUsageAccumulator().recordUsage({
+    threadId: "thr_billing_gate",
+    role: "coder",
+    source: "proxy",
+    delta,
+    actualRates: haikuRates,
+    plannerRates: sonnetRates,
+    modelId: "haiku",
+    requestKey: "proxy:coder:req_1",
+    plannerModelLabel: "Claude Sonnet",
+  });
+
+  const selection = coordinator.resolveBillingSnapshot("thr_billing_gate", legacyBilling, {
+    useLedgerProjection: true,
+  });
+
+  expect(selection.source).toBe("ledger");
+  expect(selection.reconciliation?.ok).toBe(true);
+  expect(selection.snapshot).toMatchObject({
+    primarySource: "proxy",
+    plannerModelLabel: "Claude Sonnet",
+    totalTokens: {
+      input: 2_000,
+      output: 1_000,
+    },
+  });
+});
+
+test("UsageLedgerCoordinator keeps legacy billing snapshots when ledger projection drifts", () => {
+  const { coordinator, logs } = createCoordinator();
+  coordinator.appendEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_billing_gate_drift",
+      role: "coder",
+      source: "proxy",
+      sourceEventId: "proxy:coder:req_1",
+      requestKey: "proxy:coder:req_1",
+      usage: usage(2_000),
+      computedBilling: computeRequestBilling(usage(2_000), haikuRates, sonnetRates),
+      runAttemptId: "attempt_1",
+      agentId: "agent_coder",
+      modelId: "haiku",
+    }),
+  ]);
+  const legacyBilling = new ThreadUsageAccumulator().recordUsage({
+    threadId: "thr_billing_gate_drift",
+    role: "coder",
+    source: "proxy",
+    delta: usage(3_000),
+    actualRates: haikuRates,
+    plannerRates: sonnetRates,
+    modelId: "haiku",
+    requestKey: "proxy:coder:req_1",
+  });
+
+  const selection = coordinator.resolveBillingSnapshot("thr_billing_gate_drift", legacyBilling, {
+    useLedgerProjection: true,
+  });
+
+  expect(selection.source).toBe("legacy");
+  expect(selection.snapshot.totalTokens.input).toBe(3_000);
+  expect(selection.ledgerSnapshot?.totalTokens.input).toBe(2_000);
+  expect(selection.reconciliation?.ok).toBe(false);
+  expect(selection.reconciliation?.issues).toContainEqual(
+    expect.objectContaining({
+      type: "token_mismatch",
+      severity: "error",
+      field: "input",
+    }),
+  );
+  expect(logs).toContainEqual(
+    expect.objectContaining({
+      topic: "usage_ledger.billing_selection_rejected",
+    }),
+  );
+});

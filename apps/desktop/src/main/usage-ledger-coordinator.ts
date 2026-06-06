@@ -3,6 +3,7 @@ import { projectBillingFromUsageLedger, summarizeUsageLedgerBillingProjection } 
 import {
   reconcileBillingProjectionWithLegacy,
   summarizeBillingProjectionReconciliation,
+  type BillingProjectionReconciliationResult,
 } from "./billing-projector-reconciliation";
 import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
 import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
@@ -44,6 +45,21 @@ export interface UsageLedgerCoordinatorOptions {
     intervalMs?: number,
   ) => void;
   writeError?: (message: string) => void;
+}
+
+export type UsageLedgerBillingSnapshotSource = "legacy" | "ledger";
+
+export interface UsageLedgerBillingSnapshotSelection {
+  snapshot: ThreadBillingSnapshot;
+  source: UsageLedgerBillingSnapshotSource;
+  legacySnapshot: ThreadBillingSnapshot;
+  ledgerSnapshot?: ThreadBillingSnapshot;
+  reconciliation?: BillingProjectionReconciliationResult;
+}
+
+export interface UsageLedgerBillingSnapshotSelectionOptions {
+  useLedgerProjection?: boolean;
+  plannerModelLabel?: string;
 }
 
 export class UsageLedgerCoordinator {
@@ -158,6 +174,65 @@ export class UsageLedgerCoordinator {
       ...(entry.modelId && { modelId: entry.modelId }),
     }));
     return subagents.length > 0 ? { ...billing, subagents } : billing;
+  }
+
+  resolveBillingSnapshot(
+    threadId: string,
+    legacyBilling: ThreadBillingSnapshot,
+    options: UsageLedgerBillingSnapshotSelectionOptions = {},
+  ): UsageLedgerBillingSnapshotSelection {
+    const legacySnapshot = this.enrichBillingSnapshot(threadId, legacyBilling);
+    if (!options.useLedgerProjection) {
+      return { snapshot: legacySnapshot, source: "legacy", legacySnapshot };
+    }
+
+    try {
+      const projection = this.projectBilling(
+        threadId,
+        options.plannerModelLabel ?? legacySnapshot.plannerModelLabel,
+      );
+      if (!projection?.snapshot) {
+        return { snapshot: legacySnapshot, source: "legacy", legacySnapshot };
+      }
+
+      const projectedSubagentMetrics = projectSubagentMetricsEntriesFromBillingProjection({
+        projection,
+        existingEntries: this.metrics.listEntries(threadId),
+      });
+      const reconciliation = reconcileBillingProjectionWithLegacy(projection, legacySnapshot, {
+        subagentMetrics: projectedSubagentMetrics,
+      });
+      if (!reconciliation.ok) {
+        this.logDiagThrottled?.(
+          `usage-ledger-billing-selection:${threadId}`,
+          "usage_ledger.billing_selection_rejected",
+          {
+            threadId: shortThreadId(threadId),
+            projection: summarizeUsageLedgerBillingProjection(projection),
+            projectionReconciliation: summarizeBillingProjectionReconciliation(reconciliation),
+          },
+          1000,
+        );
+        return {
+          snapshot: legacySnapshot,
+          source: "legacy",
+          legacySnapshot,
+          ledgerSnapshot: projection.snapshot,
+          reconciliation,
+        };
+      }
+
+      return {
+        snapshot: projection.snapshot,
+        source: "ledger",
+        legacySnapshot,
+        ledgerSnapshot: projection.snapshot,
+        reconciliation,
+      };
+    } catch (error) {
+      this.writeError(`[eco] usage ledger billing selection failed: ${errorMessage(error)}\n`);
+      return { snapshot: legacySnapshot, source: "legacy", legacySnapshot };
+    }
   }
 
   projectBillingSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {
