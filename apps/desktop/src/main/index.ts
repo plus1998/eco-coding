@@ -186,34 +186,18 @@ import {
   buildSdkUsageLedgerEvents,
   buildSingleUsageLedgerEvent,
 } from "./usage-ledger-adapters";
-import { buildInterruptedStreamPartialSettlementEvents } from "./usage-ledger-settlement";
 import {
   buildCompactionLedgerEvent,
   readCompactionBoundaryMetadata,
 } from "./compaction-ledger-events";
-import type { RunAttemptPhase, RunAttemptStatus, UsageLedgerEvent } from "./usage-ledger";
-import {
-  reconcileUsageLedgerWithBilling,
-  summarizeUsageLedgerReconciliation,
-} from "./usage-ledger-reconciliation";
-import {
-  projectBillingFromUsageLedger,
-  summarizeUsageLedgerBillingProjection,
-} from "./billing-projector";
-import {
-  reconcileBillingProjectionWithLegacy,
-  summarizeBillingProjectionReconciliation,
-} from "./billing-projector-reconciliation";
-import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
+import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
+import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
-import {
-  SubagentMetricsRegistry,
-  type SubagentMetricsEntry,
-} from "./subagent-metrics-registry";
+import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -335,20 +319,14 @@ interface PendingCompactionAudit {
   preTokens?: number;
 }
 
-interface PendingInterruptedStreamSettlement {
-  runAttemptId: string;
-  runStatus: Exclude<RunAttemptStatus, "running" | "completed">;
-}
-
 const activeRuns = new Map<string, ActiveThreadRun>();
 const pendingCompactionAudits = new Map<string, PendingCompactionAudit>();
-const pendingInterruptedStreamSettlements = new Map<string, PendingInterruptedStreamSettlement[]>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
+let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const pendingUsageUpdates = new Map<string, Set<Promise<void>>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -390,6 +368,12 @@ app.whenReady().then(async () => {
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
+  usageLedgerCoordinator = new UsageLedgerCoordinator({
+    store: conversationStore,
+    metrics: subagentMetricsRegistry,
+    logDiag: logEcoDiag,
+    logDiagThrottled: logEcoDiagThrottled,
+  });
   subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
@@ -1398,12 +1382,12 @@ function runThreadRequestWithAutoRetry(
     try {
       const result = await runOnce();
       const status = runAttemptStatusFromResult(result);
-      queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
+      usageLedgerCoordinator.queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
       agentLifecycle.finishRunAttempt(threadId, status);
       return result;
     } catch (error) {
       const status = signal?.aborted ? "cancelled" : "failed";
-      queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
+      usageLedgerCoordinator.queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
       agentLifecycle.finishRunAttempt(threadId, status);
       throw error;
     } finally {
@@ -1536,7 +1520,7 @@ async function runQuestionThread(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
-    await flushUsageUpdates(thread.id);
+    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -1731,7 +1715,7 @@ async function runCodingThreadAutonomous(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
-    await flushUsageUpdates(thread.id);
+    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -1905,7 +1889,7 @@ async function runCodingThreadPlanning(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
-    await flushUsageUpdates(thread.id);
+    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -2031,7 +2015,7 @@ async function runCodingThreadAutonomousAfterApproval(
   } finally {
     cancelClarificationsForThread(threadId, "run finished");
     sdkStreamBridge.resetThread(threadId);
-    await flushUsageUpdates(threadId);
+    await usageLedgerCoordinator.flushUsageUpdates(threadId);
     activeRuns.delete(threadId);
     afterRunContextRefresh(threadId, cwd);
   }
@@ -2230,7 +2214,7 @@ async function runCodingThreadExecution(
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     sdkStreamBridge.resetThread(threadId);
-    await flushUsageUpdates(threadId);
+    await usageLedgerCoordinator.flushUsageUpdates(threadId);
     activeRuns.delete(threadId);
     afterRunContextRefresh(threadId, worktreePlan.worktreePath);
     const thread = conversationStore.getThread(threadId);
@@ -2457,7 +2441,7 @@ function settleRecoveredLifecycleRecords(
   }
   for (const runAttemptId of result.settledRunAttemptIds) {
     if (runStatus === "failed" || runStatus === "cancelled") {
-      settleInterruptedStreamPartials(threadId, runAttemptId, runStatus);
+      usageLedgerCoordinator.settleInterruptedStreamPartials(threadId, runAttemptId, runStatus);
     }
   }
   logEcoDiag("agent_lifecycle.recovered", {
@@ -3488,7 +3472,7 @@ async function runThreadContinuation(
     const worktreePath = resolveThreadWorktreePath(thread.id);
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
-    await flushUsageUpdates(thread.id);
+    await usageLedgerCoordinator.flushUsageUpdates(thread.id);
     activeRuns.delete(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
@@ -3571,83 +3555,6 @@ function emitOtelActivity(line: OtelActivityLine): void {
   );
 }
 
-function trackUsageUpdate(threadId: string, promise: Promise<void>): void {
-  let set = pendingUsageUpdates.get(threadId);
-  if (!set) {
-    set = new Set();
-    pendingUsageUpdates.set(threadId, set);
-  }
-
-  const tracked = promise.finally(() => {
-    const current = pendingUsageUpdates.get(threadId);
-    current?.delete(tracked);
-    if (current?.size === 0) {
-      pendingUsageUpdates.delete(threadId);
-    }
-  });
-  set.add(tracked);
-  void tracked.catch(() => {});
-}
-
-async function flushUsageUpdates(threadId: string): Promise<void> {
-  while (true) {
-    const pending = pendingUsageUpdates.get(threadId);
-    if (!pending || pending.size === 0) {
-      settleQueuedInterruptedStreamPartials(threadId);
-      return;
-    }
-    await Promise.allSettled([...pending]);
-  }
-}
-
-function queueInterruptedStreamSettlement(
-  threadId: string,
-  runAttemptId: string,
-  runStatus: Exclude<RunAttemptStatus, "running">,
-): void {
-  if (runStatus === "completed") {
-    return;
-  }
-  const pending = pendingInterruptedStreamSettlements.get(threadId) ?? [];
-  if (!pending.some((entry) => entry.runAttemptId === runAttemptId && entry.runStatus === runStatus)) {
-    pending.push({ runAttemptId, runStatus });
-  }
-  pendingInterruptedStreamSettlements.set(threadId, pending);
-}
-
-function settleQueuedInterruptedStreamPartials(threadId: string): void {
-  const pending = pendingInterruptedStreamSettlements.get(threadId);
-  if (!pending || pending.length === 0) {
-    return;
-  }
-  pendingInterruptedStreamSettlements.delete(threadId);
-  for (const entry of pending) {
-    settleInterruptedStreamPartials(threadId, entry.runAttemptId, entry.runStatus);
-  }
-}
-
-function settleInterruptedStreamPartials(
-  threadId: string,
-  runAttemptId: string,
-  runStatus: Exclude<RunAttemptStatus, "running" | "completed">,
-): void {
-  const settlements = buildInterruptedStreamPartialSettlementEvents({
-    events: conversationStore.listUsageLedgerEvents(threadId),
-    runAttemptId,
-    runStatus,
-  });
-  if (settlements.length === 0) {
-    return;
-  }
-  appendUsageLedgerShadowEvents(settlements);
-  logEcoDiag("usage_ledger.partial_settlement", {
-    threadId: shortThreadId(threadId),
-    runAttemptId,
-    runStatus,
-    eventCount: settlements.length,
-  });
-}
-
 function noteUsageBillingObservation(
   threadId: string,
   observation: UsageBillingObservation,
@@ -3721,7 +3628,7 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
   const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
 
-  trackUsageUpdate(
+  usageLedgerCoordinator.trackUsageUpdate(
     usage.threadId,
     processUsageBilling({
       threadId: usage.threadId,
@@ -3807,7 +3714,7 @@ async function emitProxyUsage(
     fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
     ...(subagentAgentId && { agentId: subagentAgentId }),
   });
-  trackUsageUpdate(
+  usageLedgerCoordinator.trackUsageUpdate(
     info.threadId,
     billingTask.then(
       () => undefined,
@@ -3932,7 +3839,7 @@ async function processUsageBilling(input: {
   const ledgerAgentId =
     input.agentId ??
     (billingRole === "planner" ? input.plannerAgentId : undefined);
-  appendUsageLedgerShadowEvents([
+  usageLedgerCoordinator.appendEvents([
     buildSingleUsageLedgerEvent({
       threadId: input.threadId,
       role: billingRole,
@@ -3978,7 +3885,7 @@ async function processUsageBilling(input: {
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
 
-  let billing = enrichBillingSnapshot(
+  let billing = usageLedgerCoordinator.enrichBillingSnapshot(
     input.threadId,
     threadUsageAccumulator.recordUsage({
       threadId: input.threadId,
@@ -3998,7 +3905,7 @@ async function processUsageBilling(input: {
   if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(billingRole) && input.agentId) {
     const sdkProxyKey = `sdk:proxy-subagent:${requestKey}`;
     if (!threadUsageAccumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
-      billing = enrichBillingSnapshot(
+      billing = usageLedgerCoordinator.enrichBillingSnapshot(
         input.threadId,
         threadUsageAccumulator.recordUsage({
           threadId: input.threadId,
@@ -4014,7 +3921,7 @@ async function processUsageBilling(input: {
       );
     }
   }
-  reconcileUsageLedgerShadow(input.threadId, billing);
+  usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
 
   if (input.agentId && isSubagentBillingRole(billingRole)) {
     const roleSnap = contextMonitor.getSnapshot(input.threadId);
@@ -4149,48 +4056,6 @@ function resetSubagentContextWindows(threadId: string): void {
   contextScheduler.emitLiveFromMonitor(threadId);
 }
 
-function enrichBillingSnapshot(
-  threadId: string,
-  billing: ReturnType<ThreadUsageAccumulator["recordUsage"]>,
-): ReturnType<ThreadUsageAccumulator["recordUsage"]> {
-  const subagents = listSubagentBillingEntries(threadId).map((entry) => ({
-    agentId: entry.agentId,
-    role: entry.role,
-    status: entry.status,
-    inputTokens: entry.usage.inputTokens,
-    outputTokens: entry.usage.outputTokens,
-    cacheReadTokens: entry.usage.cacheReadTokens,
-    cacheCreationTokens: entry.usage.cacheCreationTokens,
-    contextOccupied: entry.contextOccupied,
-    ...(entry.contextLimit !== undefined && { contextLimit: entry.contextLimit }),
-    ecoCostUsd: entry.ecoCostUsd,
-    ecoCostBreakdown: entry.ecoCostBreakdown,
-    ...(entry.modelId && { modelId: entry.modelId }),
-  }));
-  return subagents.length > 0 ? { ...billing, subagents } : billing;
-}
-
-function listSubagentBillingEntries(threadId: string): SubagentMetricsEntry[] {
-  const existingEntries = subagentMetricsRegistry.listEntries(threadId);
-  try {
-    const events = conversationStore.listUsageLedgerEvents(threadId);
-    if (events.length === 0) {
-      return existingEntries;
-    }
-    const projection = projectBillingFromUsageLedger({
-      events,
-      agents: conversationStore.listAgentInstances(threadId),
-    });
-    return projectSubagentMetricsEntriesFromBillingProjection({
-      projection,
-      existingEntries,
-    });
-  } catch (error) {
-    process.stderr.write(`[eco] subagent ledger projection failed: ${errorMessage(error)}\n`);
-    return existingEntries;
-  }
-}
-
 function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {
   emitThreadEvent(threadId, "thread.context_updated", "", "system", false, { context });
   schedulePersistThreadMetrics(threadId);
@@ -4241,50 +4106,6 @@ function schedulePersistThreadMetrics(threadId: string): void {
       persistThreadMetricsNow(threadId);
     }, 400),
   );
-}
-
-function appendUsageLedgerShadowEvents(events: readonly UsageLedgerEvent[]): void {
-  for (const event of events) {
-    try {
-      conversationStore.appendUsageLedgerEvent(event);
-    } catch (error) {
-      process.stderr.write(`[eco] usage ledger shadow write failed: ${errorMessage(error)}\n`);
-    }
-  }
-}
-
-function reconcileUsageLedgerShadow(threadId: string, billing: ThreadBillingSnapshot): void {
-  try {
-    const events = conversationStore.listUsageLedgerEvents(threadId);
-    if (events.length === 0) {
-      return;
-    }
-    const result = reconcileUsageLedgerWithBilling(events, billing);
-    const projection = projectBillingFromUsageLedger({
-      events,
-      agents: conversationStore.listAgentInstances(threadId),
-      ...(billing.plannerModelLabel && { plannerModelLabel: billing.plannerModelLabel }),
-    });
-    const projectionResult = reconcileBillingProjectionWithLegacy(projection, billing, {
-      subagentMetrics: subagentMetricsRegistry.listEntries(threadId),
-    });
-    if (result.ok && projectionResult.ok) {
-      return;
-    }
-    logEcoDiagThrottled(
-      `usage-ledger-reconcile:${threadId}`,
-      "usage_ledger.reconcile_mismatch",
-      {
-        threadId: shortThreadId(threadId),
-        sourceReconciliation: summarizeUsageLedgerReconciliation(result),
-        projection: summarizeUsageLedgerBillingProjection(projection),
-        projectionReconciliation: summarizeBillingProjectionReconciliation(projectionResult),
-      },
-      1000,
-    );
-  } catch (error) {
-    process.stderr.write(`[eco] usage ledger shadow reconcile failed: ${errorMessage(error)}\n`);
-  }
 }
 
 function flushAllThreadMetrics(): void {
@@ -4392,7 +4213,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
         ...(run?.usageObservations && { observedAuthoritativeUsage: run.usageObservations }),
       })
     ) {
-      trackUsageUpdate(
+      usageLedgerCoordinator.trackUsageUpdate(
         threadId,
         processUsageBilling({
           threadId,
@@ -4459,7 +4280,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       subagentAgentId && modelId
         ? (parseSdkContextUsage(event.payload, { subagentModelId: modelId }) ?? bundle.contextUsage)
         : bundle.contextUsage;
-    trackUsageUpdate(
+    usageLedgerCoordinator.trackUsageUpdate(
       threadId,
       processSdkStreamPartialUsage({
         threadId,
@@ -4478,7 +4299,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     return;
   }
 
-  trackUsageUpdate(
+  usageLedgerCoordinator.trackUsageUpdate(
     threadId,
     processSdkRunBilling({
       threadId,
@@ -4534,7 +4355,7 @@ async function processSdkStreamPartialUsage(input: {
     (input.role === "planner" ? input.plannerAgentId : undefined);
   const requestKey = `sdk-stream:${input.eventId}`;
 
-  appendUsageLedgerShadowEvents([
+  usageLedgerCoordinator.appendEvents([
     buildSingleUsageLedgerEvent({
       threadId: input.threadId,
       role: usageRoute?.role ?? input.role,
@@ -4671,7 +4492,7 @@ async function processSdkRunBilling(input: {
       });
     }
   }
-  appendUsageLedgerShadowEvents(
+  usageLedgerCoordinator.appendEvents(
     buildSdkUsageLedgerEvents({
       threadId: input.threadId,
       role: input.role,
@@ -4719,7 +4540,7 @@ async function processSdkRunBilling(input: {
     }
   }
 
-  const billing = enrichBillingSnapshot(
+  const billing = usageLedgerCoordinator.enrichBillingSnapshot(
     input.threadId,
     threadUsageAccumulator.recordRunUsage({
       threadId: input.threadId,
@@ -4731,7 +4552,7 @@ async function processSdkRunBilling(input: {
       ...(plannerModelLabel && { plannerModelLabel }),
     }),
   );
-  reconcileUsageLedgerShadow(input.threadId, billing);
+  usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
   const snapshot = buildUsageSnapshotForRole({
@@ -5128,7 +4949,7 @@ function appendCompactionLedgerEvent(input: {
 }): void {
   const runAttemptId = agentLifecycle.usageRunAttemptId(input.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(input.threadId);
-  appendUsageLedgerShadowEvents([
+  usageLedgerCoordinator.appendEvents([
     buildCompactionLedgerEvent({
       ...input,
       ...(runAttemptId && { runAttemptId }),
