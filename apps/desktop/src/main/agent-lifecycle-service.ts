@@ -27,6 +27,7 @@ export interface AgentLifecycleRecoveryInput {
 export interface AgentLifecycleRecoveryResult {
   runAttemptsSettled: number;
   agentInstancesSettled: number;
+  settledRunAttemptIds: string[];
 }
 
 interface ThreadLifecycleState {
@@ -199,6 +200,7 @@ export class AgentLifecycleService {
     const now = this.now();
     let runAttemptsSettled = 0;
     let agentInstancesSettled = 0;
+    const settledRunAttemptIds: string[] = [];
 
     for (const attempt of input.attempts) {
       if (attempt.status !== "running") {
@@ -210,6 +212,7 @@ export class AgentLifecycleService {
         endedAt: attempt.endedAt ?? now,
       });
       runAttemptsSettled += 1;
+      settledRunAttemptIds.push(attempt.attemptId);
     }
 
     for (const agent of input.agents) {
@@ -233,7 +236,7 @@ export class AgentLifecycleService {
       state.activeAgents.clear();
     }
 
-    return { runAttemptsSettled, agentInstancesSettled };
+    return { runAttemptsSettled, agentInstancesSettled, settledRunAttemptIds };
   }
 
   currentRunAttemptId(threadId: string): string | undefined {

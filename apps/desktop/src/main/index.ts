@@ -186,6 +186,7 @@ import {
   buildSdkUsageLedgerEvents,
   buildSingleUsageLedgerEvent,
 } from "./usage-ledger-adapters";
+import { buildInterruptedStreamPartialSettlementEvents } from "./usage-ledger-settlement";
 import {
   buildCompactionLedgerEvent,
   readCompactionBoundaryMetadata,
@@ -334,8 +335,14 @@ interface PendingCompactionAudit {
   preTokens?: number;
 }
 
+interface PendingInterruptedStreamSettlement {
+  runAttemptId: string;
+  runStatus: Exclude<RunAttemptStatus, "running" | "completed">;
+}
+
 const activeRuns = new Map<string, ActiveThreadRun>();
 const pendingCompactionAudits = new Map<string, PendingCompactionAudit>();
+const pendingInterruptedStreamSettlements = new Map<string, PendingInterruptedStreamSettlement[]>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
@@ -1387,13 +1394,17 @@ function runThreadRequestWithAutoRetry(
 ): Promise<RequestAttemptResult> {
   let retryIndex = 0;
   const wrappedRunOnce = async (): Promise<RequestAttemptResult> => {
-    agentLifecycle.startRunAttempt({ threadId, phase, retryIndex });
+    const attempt = agentLifecycle.startRunAttempt({ threadId, phase, retryIndex });
     try {
       const result = await runOnce();
-      agentLifecycle.finishRunAttempt(threadId, runAttemptStatusFromResult(result));
+      const status = runAttemptStatusFromResult(result);
+      queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
+      agentLifecycle.finishRunAttempt(threadId, status);
       return result;
     } catch (error) {
-      agentLifecycle.finishRunAttempt(threadId, signal?.aborted ? "cancelled" : "failed");
+      const status = signal?.aborted ? "cancelled" : "failed";
+      queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
+      agentLifecycle.finishRunAttempt(threadId, status);
       throw error;
     } finally {
       retryIndex += 1;
@@ -2443,6 +2454,11 @@ function settleRecoveredLifecycleRecords(
   });
   if (result.runAttemptsSettled === 0 && result.agentInstancesSettled === 0) {
     return;
+  }
+  for (const runAttemptId of result.settledRunAttemptIds) {
+    if (runStatus === "failed" || runStatus === "cancelled") {
+      settleInterruptedStreamPartials(threadId, runAttemptId, runStatus);
+    }
   }
   logEcoDiag("agent_lifecycle.recovered", {
     threadId: shortThreadId(threadId),
@@ -3577,10 +3593,59 @@ async function flushUsageUpdates(threadId: string): Promise<void> {
   while (true) {
     const pending = pendingUsageUpdates.get(threadId);
     if (!pending || pending.size === 0) {
+      settleQueuedInterruptedStreamPartials(threadId);
       return;
     }
     await Promise.allSettled([...pending]);
   }
+}
+
+function queueInterruptedStreamSettlement(
+  threadId: string,
+  runAttemptId: string,
+  runStatus: Exclude<RunAttemptStatus, "running">,
+): void {
+  if (runStatus === "completed") {
+    return;
+  }
+  const pending = pendingInterruptedStreamSettlements.get(threadId) ?? [];
+  if (!pending.some((entry) => entry.runAttemptId === runAttemptId && entry.runStatus === runStatus)) {
+    pending.push({ runAttemptId, runStatus });
+  }
+  pendingInterruptedStreamSettlements.set(threadId, pending);
+}
+
+function settleQueuedInterruptedStreamPartials(threadId: string): void {
+  const pending = pendingInterruptedStreamSettlements.get(threadId);
+  if (!pending || pending.length === 0) {
+    return;
+  }
+  pendingInterruptedStreamSettlements.delete(threadId);
+  for (const entry of pending) {
+    settleInterruptedStreamPartials(threadId, entry.runAttemptId, entry.runStatus);
+  }
+}
+
+function settleInterruptedStreamPartials(
+  threadId: string,
+  runAttemptId: string,
+  runStatus: Exclude<RunAttemptStatus, "running" | "completed">,
+): void {
+  const settlements = buildInterruptedStreamPartialSettlementEvents({
+    events: conversationStore.listUsageLedgerEvents(threadId),
+    runAttemptId,
+    runStatus,
+  });
+  if (settlements.length === 0) {
+    return;
+  }
+  appendUsageLedgerShadowEvents(settlements);
+  logEcoDiag("usage_ledger.partial_settlement", {
+    threadId: shortThreadId(threadId),
+    runAttemptId,
+    runStatus,
+    eventCount: settlements.length,
+  });
 }
 
 function noteUsageBillingObservation(

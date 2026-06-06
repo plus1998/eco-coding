@@ -28,7 +28,7 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`673 pass / 14 skip / 0 fail`
+- `bun test`: 通过，`675 pass / 14 skip / 0 fail`
 - `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
@@ -125,6 +125,16 @@
 - 非 running attempt 与已 stopped agent 不会被 recovery settlement 改写，避免破坏已完成审计历史。
 - 新增测试覆盖：running attempt 结算、active agent abandoned、已完成/已停止记录不被改写。
 
+第十一批 Interrupted stream partial settlement 已完成：
+
+- 新增 `usage-ledger-settlement`，对 failed/cancelled run attempt 下尚未结算的 `request_partial` 追加 append-only `request_final` settlement event。
+- settlement event 保留 partial event 的 thread、role、agent、parentToolUse、model、token、computedBilling metadata，并记录 `settledFromEventId`、`settledFromSourceEventId`、`runStatus`。
+- 正常 completed run 不会把 partial 转成 final，避免 SDK result / Proxy / OTel final 已存在时重复结算。
+- `runThreadRequestWithAutoRetry` 在 failed/cancelled attempt 结束时入队 settlement，`flushUsageUpdates` 等待异步 usage 写入完成后再追加 settlement final。
+- 启动恢复时，被 lifecycle recovery 标记为 failed/cancelled 的 persisted run attempt 也会触发 partial settlement，避免重启后 partial 永久悬挂。
+- settlement 构造具备幂等判断；已存在 `settledFromEventId` 的 partial 不会重复生成 final event。
+- 新增测试覆盖：partial 转 final、computedBilling 保留、按 runAttempt 过滤、重复 settlement 跳过。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -132,7 +142,7 @@
 - BillingProjector 已开始驱动 `billing.subagents` 账单行；线程 total/source/byModel 仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
 - projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
-- `request_partial` 目前只进入审计，不进入结算；后续 settlement 阶段必须明确中断流式请求是否、何时、按什么状态转成 billable final。
+- completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
 
 ## 不做事项
@@ -255,10 +265,9 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 在 settlement 中定义 interrupted stream partial 的最终状态，避免 partial 永久悬挂。
-2. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
-3. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
-4. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
+1. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
+2. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
+3. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
 ## 每批提交必须满足
 

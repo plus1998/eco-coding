@@ -164,7 +164,11 @@ test("AgentLifecycleService settles recovered running attempts and active agents
     runStatus: "failed",
   });
 
-  expect(result).toEqual({ runAttemptsSettled: 1, agentInstancesSettled: 1 });
+  expect(result).toEqual({
+    runAttemptsSettled: 1,
+    agentInstancesSettled: 1,
+    settledRunAttemptIds: ["attempt_execution_0"],
+  });
   expect(store.getAttempt("thr_recovered", "attempt_execution_0")?.status).toBe("failed");
   expect(store.getAttempt("thr_recovered", "attempt_execution_done")).toBeUndefined();
   expect(store.getAgent("thr_recovered", "agent_coder")?.status).toBe("abandoned");
