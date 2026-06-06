@@ -84,6 +84,7 @@ import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
@@ -1032,18 +1033,7 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
     }
-    const pending = conversationStore.getPendingPlan(threadId);
-    if (!pending) {
-      return undefined;
-    }
-    return {
-      threadId: pending.threadId,
-      userPrompt: pending.userPrompt,
-      analysis: pending.analysis,
-      plan: pending.plan,
-      workspacePath: pending.workspacePath,
-      worktreePath: pending.worktreePath,
-    } satisfies ThreadPendingPlan;
+    return buildThreadPendingPlanView(conversationStore.getPendingPlan(threadId));
   });
 
   ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, payload: unknown) => {
