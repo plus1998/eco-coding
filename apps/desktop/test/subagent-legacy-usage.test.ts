@@ -121,6 +121,40 @@ test("SubagentLegacyUsageTracker dedupes by agent role request and model", () =>
   expect(otherModel.entry.updatedAt).toBe(300);
 });
 
+test("SubagentLegacyUsageTracker records observations for a resolved target", () => {
+  const metrics = new SubagentMetricsState();
+  const tracker = new SubagentLegacyUsageTracker();
+
+  const result = tracker.recordForTarget(
+    metrics,
+    { agentId: "agent_architect_a", role: "architect" },
+    {
+      usage: {
+        inputTokens: 600,
+        outputTokens: 80,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 0,
+      },
+      contextOccupied: 700,
+      billing: billing(0.02),
+      modelId: "model-architect",
+      requestKey: "sdk-result:evt_target",
+    },
+    400,
+  );
+
+  expect(result.deduped).toBe(false);
+  if (result.deduped) {
+    throw new Error("expected target observation to be billable");
+  }
+  expect(result.entry.agentId).toBe("agent_architect_a");
+  expect(result.entry.role).toBe("architect");
+  expect(result.entry.usage.inputTokens).toBe(600);
+  expect(result.entry.ecoCostUsd).toBeCloseTo(0.02);
+  expect(result.entry.modelId).toBe("model-architect");
+  expect(result.entry.updatedAt).toBe(400);
+});
+
 test("SubagentLegacyUsageTracker restores contribution keys before replay", () => {
   const metrics = new SubagentMetricsState();
   const tracker = new SubagentLegacyUsageTracker();

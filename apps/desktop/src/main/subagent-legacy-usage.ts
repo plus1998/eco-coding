@@ -1,16 +1,15 @@
-import {
-  mergeCostBreakdowns,
-  type ParsedUsage,
-  type RequestBillingDelta,
-} from "@eco/runtime";
+import { mergeCostBreakdowns, type ParsedUsage, type RequestBillingDelta } from "@eco/runtime";
 import type { AgentRole } from "../shared/ipc";
 import { buildSubagentUsageContributionKey } from "./subagent-metrics-persistence";
 import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 import { SubagentMetricsState } from "./subagent-metrics-state";
 
-export interface SubagentLegacyUsageRecordInput {
+export interface SubagentLegacyUsageRecordTarget {
   agentId: string;
   role: AgentRole;
+}
+
+export interface SubagentLegacyUsageObservationInput {
   usage: ParsedUsage;
   contextOccupied: number;
   contextLimit?: number;
@@ -18,6 +17,10 @@ export interface SubagentLegacyUsageRecordInput {
   modelId?: string;
   requestKey: string;
 }
+
+export interface SubagentLegacyUsageRecordInput
+  extends SubagentLegacyUsageRecordTarget,
+    SubagentLegacyUsageObservationInput {}
 
 export type SubagentLegacyUsageRecordResult =
   | {
@@ -35,6 +38,28 @@ export type SubagentLegacyUsageRecordResult =
 
 export class SubagentLegacyUsageTracker {
   private readonly seenUsageKeys = new Set<string>();
+
+  recordForTarget(
+    metrics: SubagentMetricsState,
+    target: SubagentLegacyUsageRecordTarget,
+    input: SubagentLegacyUsageObservationInput,
+    updatedAt: number,
+  ): SubagentLegacyUsageRecordResult {
+    return this.record(
+      metrics,
+      {
+        agentId: target.agentId,
+        role: target.role,
+        usage: input.usage,
+        contextOccupied: input.contextOccupied,
+        billing: input.billing,
+        requestKey: input.requestKey,
+        ...(input.contextLimit !== undefined && { contextLimit: input.contextLimit }),
+        ...(input.modelId && { modelId: input.modelId }),
+      },
+      updatedAt,
+    );
+  }
 
   record(
     metrics: SubagentMetricsState,
@@ -66,10 +91,7 @@ export class SubagentLegacyUsageTracker {
     }
     entry.ecoCostUsd += input.billing.ecoCostUsd;
     if (input.billing.ecoBreakdown) {
-      entry.ecoCostBreakdown = mergeCostBreakdowns(
-        entry.ecoCostBreakdown,
-        input.billing.ecoBreakdown,
-      );
+      entry.ecoCostBreakdown = mergeCostBreakdowns(entry.ecoCostBreakdown, input.billing.ecoBreakdown);
     }
     if (input.modelId) {
       entry.modelId = input.modelId;

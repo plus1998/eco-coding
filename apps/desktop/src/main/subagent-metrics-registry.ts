@@ -193,20 +193,7 @@ export class SubagentMetricsRegistry {
       return undefined;
     }
     const state = this.getOrCreateThread(threadId);
-    const result = state.legacyUsage.record(
-      state.metrics,
-      {
-        agentId: target.agentId,
-        role: target.role,
-        usage: input.usage,
-        contextOccupied: input.contextOccupied,
-        billing: input.billing,
-        requestKey: input.requestKey,
-        ...(input.contextLimit !== undefined && { contextLimit: input.contextLimit }),
-        ...(input.modelId && { modelId: input.modelId }),
-      },
-      Date.now(),
-    );
+    const result = state.legacyUsage.recordForTarget(state.metrics, target, input, Date.now());
     if (result.deduped) {
       this.diagnostics.logUsageDedupe({
         threadId,
