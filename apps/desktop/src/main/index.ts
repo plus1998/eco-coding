@@ -90,6 +90,14 @@ import {
   type RequestAttemptResult,
 } from "./request-retry";
 import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
+import {
+  resolveAutonomousRunOutcome,
+  resolveContinuationRunOutcome,
+  resolveExecutionRunOutcome,
+  resolvePlanningRunOutcome,
+  resolveQuestionRunOutcome,
+  runAttemptPhaseFromThreadMode,
+} from "./thread-run-outcome";
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
@@ -1417,14 +1425,6 @@ function runThreadRequestWithAutoRetry(
   });
 }
 
-function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
-  return !result.ok && result.aborted === true;
-}
-
-function runAttemptPhaseFromThreadMode(mode: "planning" | "execution" | "question"): RunAttemptPhase {
-  return mode;
-}
-
 async function runQuestionThread(
   thread: ThreadSummary,
   workspace: WorkspaceInfo,
@@ -1503,18 +1503,19 @@ async function runQuestionThread(
       },
     );
 
-    if (isRequestAttemptAborted(outcome)) {
+    const decision = resolveQuestionRunOutcome(outcome);
+    if (decision.kind === "cancelled") {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       const plan = resolveWorktreePlan(workspace.path, thread.id, cwd);
       await handleRunCancelled(thread.id, plan);
       return;
     }
-    if (!outcome.ok) {
-      markThreadInterrupted(thread.id, outcome.reason);
+    if (decision.kind === "failed") {
+      markThreadInterrupted(thread.id, decision.reason);
       return;
     }
 
-    updateThread(thread.id, { status: "completed", message: "回答完成。" });
+    updateThread(thread.id, { status: "completed", message: decision.message ?? "回答完成。" });
     scheduleThreadTitleSummary(thread.id, runtimeConfig);
   } catch (error) {
     cancelClarificationsForThread(thread.id, errorMessage(error));
@@ -1684,25 +1685,27 @@ async function runCodingThreadAutonomous(
       },
     );
 
-    if (isRequestAttemptAborted(runOutcome)) {
+    const runDecision = resolveAutonomousRunOutcome(runOutcome, {
+      hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+      planCaptured: runOutcome.ok && "planCaptured" in runOutcome && runOutcome.planCaptured === true,
+    });
+
+    if (runDecision.kind === "cancelled") {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
-    if (!runOutcome.ok) {
-      cancelClarificationsForThread(thread.id, runOutcome.reason);
+    if (runDecision.kind === "failed") {
+      cancelClarificationsForThread(thread.id, runDecision.reason);
       clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
-      markThreadInterrupted(thread.id, runOutcome.reason);
+      markThreadInterrupted(thread.id, runDecision.reason);
       return;
     }
 
-    if (
-      conversationStore.getPendingPlan(thread.id) ||
-      (runOutcome.ok && "planCaptured" in runOutcome && runOutcome.planCaptured === true)
-    ) {
+    if (runDecision.kind === "awaiting_plan") {
       updateThread(thread.id, {
         status: "awaiting_plan",
-        message: "等待你确认计划。",
+        message: runDecision.message,
       });
       return;
     }
@@ -1854,27 +1857,31 @@ async function runCodingThreadPlanning(
       },
     );
 
-    if (isRequestAttemptAborted(planningOutcome)) {
+    const planningDecision = resolvePlanningRunOutcome(planningOutcome, {
+      hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+    });
+
+    if (planningDecision.kind === "cancelled") {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
-    if (!planningOutcome.ok) {
-      cancelClarificationsForThread(thread.id, planningOutcome.reason);
+    if (planningDecision.kind === "failed") {
+      cancelClarificationsForThread(thread.id, planningDecision.reason);
       clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
-      markThreadInterrupted(thread.id, planningOutcome.reason);
+      markThreadInterrupted(thread.id, planningDecision.reason);
       return;
     }
 
-    if (conversationStore.getPendingPlan(thread.id)) {
+    if (planningDecision.kind === "awaiting_plan") {
       updateThread(thread.id, {
         status: "awaiting_plan",
-        message: "等待你确认计划。",
+        message: planningDecision.message,
       });
     } else {
       updateThread(thread.id, {
         status: "idle",
-        message: "计划阶段已结束。",
+        message: planningDecision.message ?? "计划阶段已结束。",
       });
     }
   } catch (error) {
@@ -1982,14 +1989,15 @@ async function runCodingThreadAutonomousAfterApproval(
       },
     );
 
-    if (isRequestAttemptAborted(outcome)) {
+    const decision = resolveExecutionRunOutcome(outcome);
+    if (decision.kind === "cancelled") {
       cancelClarificationsForThread(threadId, "cancelled by user");
       await handleRunCancelled(threadId, worktreePlan);
       return;
     }
-    if (!outcome.ok) {
-      cancelClarificationsForThread(threadId, outcome.reason);
-      markThreadInterrupted(threadId, outcome.reason);
+    if (decision.kind === "failed") {
+      cancelClarificationsForThread(threadId, decision.reason);
+      markThreadInterrupted(threadId, decision.reason);
       return;
     }
 
@@ -2156,7 +2164,8 @@ async function runCodingThreadExecution(
       },
     );
 
-    if (isRequestAttemptAborted(executionOutcome)) {
+    const executionDecision = resolveExecutionRunOutcome(executionOutcome);
+    if (executionDecision.kind === "cancelled") {
       stopStatusRef.current = "cancelled";
       if (!stopTodosHandled) {
         taskHookHandlers.onStop("cancelled");
@@ -2166,12 +2175,12 @@ async function runCodingThreadExecution(
       return;
     }
 
-    if (!executionOutcome.ok) {
+    if (executionDecision.kind === "failed") {
       stopStatusRef.current = "blocked";
       if (!stopTodosHandled) {
         taskHookHandlers.onStop("blocked");
       }
-      await restoreAfterExecutionFailure(threadId, worktreePlan, executionOutcome.reason, executionPlan);
+      await restoreAfterExecutionFailure(threadId, worktreePlan, executionDecision.reason, executionPlan);
       return;
     }
 
@@ -3167,12 +3176,13 @@ async function runThreadContinuation(
           });
         },
       );
-      if (isRequestAttemptAborted(outcome)) {
+      const decision = resolveExecutionRunOutcome(outcome);
+      if (decision.kind === "cancelled") {
         await handleRunCancelled(thread.id, worktreePlan);
         return;
       }
-      if (!outcome.ok) {
-        markThreadInterrupted(thread.id, outcome.reason);
+      if (decision.kind === "failed") {
+        markThreadInterrupted(thread.id, decision.reason);
         return;
       }
       await completeCodingThreadRun(thread.id, worktreePlan);
@@ -3343,42 +3353,51 @@ async function runThreadContinuation(
       },
     );
 
-    if (isRequestAttemptAborted(outcome)) {
+    const continuationDecision = resolveContinuationRunOutcome(outcome, {
+      mode,
+      planningPlanCaptured,
+    });
+
+    if (continuationDecision.kind === "cancelled") {
       stopStatusRef.current = "cancelled";
       taskHookHandlers?.onStop("cancelled");
       cancelClarificationsForThread(thread.id, "cancelled by user");
       await handleRunCancelled(thread.id, worktreePlan);
       return;
     }
-    if (!outcome.ok) {
+    if (continuationDecision.kind === "failed") {
       stopStatusRef.current = "blocked";
       taskHookHandlers?.onStop("blocked");
       clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
-      markThreadInterrupted(thread.id, outcome.reason);
+      markThreadInterrupted(thread.id, continuationDecision.reason);
       return;
     }
 
-    if (mode === "execution") {
+    if (continuationDecision.kind === "completed" && mode === "execution") {
       taskHookHandlers?.onStop("completed");
       await completeCodingThreadRun(thread.id, worktreePlan);
       return;
     }
 
-    if (mode === "question") {
-      updateThread(thread.id, { status: "completed", message: "回答完成。" });
+    if (continuationDecision.kind === "completed" && mode === "question") {
+      updateThread(thread.id, {
+        status: "completed",
+        message: continuationDecision.message ?? "回答完成。",
+      });
       scheduleThreadTitleSummary(thread.id, runtimeConfig);
       return;
     }
 
-    if (mode === "planning") {
-      if (planningPlanCaptured) {
-        updateThread(thread.id, {
-          status: "awaiting_plan",
-          message: "等待你确认计划。",
-        });
-      } else {
-        updateThread(thread.id, { status: "idle", message: "计划阶段已结束。" });
-      }
+    if (continuationDecision.kind === "awaiting_plan") {
+      updateThread(thread.id, {
+        status: "awaiting_plan",
+        message: continuationDecision.message,
+      });
+      return;
+    }
+
+    if (continuationDecision.kind === "idle") {
+      updateThread(thread.id, { status: "idle", message: continuationDecision.message });
       return;
     }
 

@@ -1,0 +1,96 @@
+import type { RequestAttemptResult } from "./request-retry";
+import type { RunAttemptPhase } from "./usage-ledger";
+
+export type ThreadRunMode = "planning" | "execution" | "question";
+
+export type ThreadRunOutcomeDecision =
+  | { kind: "cancelled"; reason: string }
+  | { kind: "failed"; reason: string }
+  | { kind: "awaiting_plan"; message: string }
+  | { kind: "completed"; message?: string }
+  | { kind: "idle"; message: string };
+
+export function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
+  return !result.ok && result.aborted === true;
+}
+
+export function runAttemptPhaseFromThreadMode(mode: ThreadRunMode): RunAttemptPhase {
+  return mode;
+}
+
+export function resolveQuestionRunOutcome(result: RequestAttemptResult): ThreadRunOutcomeDecision {
+  const interrupted = resolveInterruptedRunOutcome(result);
+  if (interrupted) {
+    return interrupted;
+  }
+  return { kind: "completed", message: "回答完成。" };
+}
+
+export function resolveAutonomousRunOutcome(
+  result: RequestAttemptResult,
+  input: { hasPendingPlan: boolean; planCaptured: boolean },
+): ThreadRunOutcomeDecision {
+  const interrupted = resolveInterruptedRunOutcome(result);
+  if (interrupted) {
+    return interrupted;
+  }
+  if (input.hasPendingPlan || input.planCaptured) {
+    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+  }
+  return { kind: "completed" };
+}
+
+export function resolvePlanningRunOutcome(
+  result: RequestAttemptResult,
+  input: { hasPendingPlan: boolean },
+): ThreadRunOutcomeDecision {
+  const interrupted = resolveInterruptedRunOutcome(result);
+  if (interrupted) {
+    return interrupted;
+  }
+  if (input.hasPendingPlan) {
+    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+  }
+  return { kind: "idle", message: "计划阶段已结束。" };
+}
+
+export function resolveExecutionRunOutcome(result: RequestAttemptResult): ThreadRunOutcomeDecision {
+  const interrupted = resolveInterruptedRunOutcome(result);
+  if (interrupted) {
+    return interrupted;
+  }
+  return { kind: "completed" };
+}
+
+export function resolveContinuationRunOutcome(
+  result: RequestAttemptResult,
+  input: { mode: ThreadRunMode; planningPlanCaptured: boolean },
+): ThreadRunOutcomeDecision {
+  const interrupted = resolveInterruptedRunOutcome(result);
+  if (interrupted) {
+    return interrupted;
+  }
+
+  if (input.mode === "execution") {
+    return { kind: "completed" };
+  }
+  if (input.mode === "question") {
+    return { kind: "completed", message: "回答完成。" };
+  }
+  if (input.planningPlanCaptured) {
+    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+  }
+  return { kind: "idle", message: "计划阶段已结束。" };
+}
+
+function resolveInterruptedRunOutcome(
+  result: RequestAttemptResult,
+): Extract<ThreadRunOutcomeDecision, { kind: "cancelled" | "failed" }> | undefined {
+  if (isRequestAttemptAborted(result)) {
+    return { kind: "cancelled", reason: "cancelled by user" };
+  }
+  if (!result.ok) {
+    return { kind: "failed", reason: result.reason };
+  }
+  return undefined;
+}
