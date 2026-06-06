@@ -100,9 +100,9 @@ import { createSdkTaskTracker } from "./sdk-task-tracker";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
-  runWithRequestAutoRetry,
   type RequestAttemptResult,
 } from "./request-retry";
+import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
 import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
@@ -1411,25 +1411,12 @@ function runThreadRequestWithAutoRetry(
   signal: AbortSignal | undefined,
   runOnce: () => Promise<RequestAttemptResult>,
 ): Promise<RequestAttemptResult> {
-  let retryIndex = 0;
-  const wrappedRunOnce = async (): Promise<RequestAttemptResult> => {
-    const attempt = agentLifecycle.startRunAttempt({ threadId, phase, retryIndex });
-    try {
-      const result = await runOnce();
-      const status = runAttemptStatusFromResult(result);
-      usageLedgerCoordinator.queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
-      agentLifecycle.finishRunAttempt(threadId, status);
-      return result;
-    } catch (error) {
-      const status = signal?.aborted ? "cancelled" : "failed";
-      usageLedgerCoordinator.queueInterruptedStreamSettlement(threadId, attempt.attemptId, status);
-      agentLifecycle.finishRunAttempt(threadId, status);
-      throw error;
-    } finally {
-      retryIndex += 1;
-    }
-  };
-  return runWithRequestAutoRetry(wrappedRunOnce, {
+  return runThreadRequestWithLifecycleAutoRetry({
+    threadId,
+    phase,
+    runOnce,
+    lifecycle: agentLifecycle,
+    settlements: usageLedgerCoordinator,
     ...(signal && { signal }),
     onRetryScheduled: (retryIndex, maxRetries, reason) => {
       const short = reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
@@ -1438,13 +1425,6 @@ function runThreadRequestWithAutoRetry(
       updateThread(threadId, { status: "running", message });
     },
   });
-}
-
-function runAttemptStatusFromResult(result: RequestAttemptResult): Exclude<RunAttemptStatus, "running"> {
-  if (result.ok) {
-    return "completed";
-  }
-  return result.aborted ? "cancelled" : "failed";
 }
 
 function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
