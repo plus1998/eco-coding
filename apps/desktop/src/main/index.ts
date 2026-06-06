@@ -82,6 +82,7 @@ import {
 } from "../shared/worktree-merge";
 import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-tasks";
 import { createSdkTaskTracker } from "./sdk-task-tracker";
+import { createSdkTaskRunHooks, type SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
@@ -2067,9 +2068,6 @@ async function runCodingThreadExecution(
     process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
   }
 
-  const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
-  let stopTodosHandled = false;
-
   const todoTracker = createSdkTaskTracker(
     threadId,
     {
@@ -2078,7 +2076,9 @@ async function runCodingThreadExecution(
     },
     emitTodoList,
   );
-  const taskHookHandlers = todoTracker.createHookHandlers(() => stopStatusRef.current);
+  const taskRunHooks = createSdkTaskRunHooks({
+    createHookHandlers: (getStopStatus) => todoTracker.createHookHandlers(getStopStatus),
+  });
   const executionPlan = {
     ...pending,
     routesJson: pending.routesJson || "[]",
@@ -2105,17 +2105,7 @@ async function runCodingThreadExecution(
               const driver = createSdkDriver(
                 threadId,
                 attemptProxy,
-                {
-                  peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
-                  taskTracker: {
-                    ...taskHookHandlers,
-                    onStop(status) {
-                      stopTodosHandled = true;
-                      taskHookHandlers.onStop(status);
-                    },
-                  },
-                  getStopTodoStatus: () => stopStatusRef.current,
-                },
+                taskRunHooks.hookContextExtras,
                 "execution",
               );
 
@@ -2181,18 +2171,12 @@ async function runCodingThreadExecution(
         threadId,
         decision: executionDecision,
         onCancelled: async (reason) => {
-          stopStatusRef.current = "cancelled";
-          if (!stopTodosHandled) {
-            taskHookHandlers.onStop("cancelled");
-          }
+          taskRunHooks.stopIfUnhandled("cancelled");
           cancelClarificationsForThread(threadId, reason);
           await handleRunCancelled(threadId, worktreePlan);
         },
         onFailed: async (reason) => {
-          stopStatusRef.current = "blocked";
-          if (!stopTodosHandled) {
-            taskHookHandlers.onStop("blocked");
-          }
+          taskRunHooks.stopIfUnhandled("blocked");
           await restoreAfterExecutionFailure(threadId, worktreePlan, reason, executionPlan);
         },
       })
@@ -2200,16 +2184,11 @@ async function runCodingThreadExecution(
       return;
     }
 
-    if (!stopTodosHandled) {
-      taskHookHandlers.onStop("completed");
-    }
+    taskRunHooks.stopIfUnhandled("completed");
 
     await completeCodingThreadRun(threadId, worktreePlan);
   } catch (error) {
-    stopStatusRef.current = "blocked";
-    if (!stopTodosHandled) {
-      taskHookHandlers.onStop("blocked");
-    }
+    taskRunHooks.stopIfUnhandled("blocked");
     await restoreAfterExecutionFailure(threadId, worktreePlan, errorMessage(error), executionPlan);
   } finally {
     await finalizeMainThreadRunCleanup({
@@ -2757,7 +2736,7 @@ function listResumableSubagentRefs(
 function buildSdkHookContextExtras(
   threadId: string,
   phase: SubagentRunPhase,
-  extras?: Partial<EcoHookContext> & { peekPendingCoderTodoId?: () => string | undefined },
+  extras?: SdkRunHookContextExtras,
 ): Partial<EcoHookContext> {
   const pendingLaunches: PendingSubagentLaunch[] = [];
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
@@ -2836,7 +2815,7 @@ async function withThreadSdkDriver(
 function createSdkDriver(
   threadId: string,
   proxy: { apiKey: string; baseUrl: string },
-  hookContextExtras?: Partial<EcoHookContext>,
+  hookContextExtras?: SdkRunHookContextExtras,
   runPhase: SubagentRunPhase = "execution",
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): ClaudeAgentSdkDriver {
@@ -3216,8 +3195,6 @@ async function runThreadContinuation(
   });
   resetSubagentContextWindows(thread.id);
 
-  const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
-  let stopTodosHandled = false;
   let planningPlanCaptured = false;
   let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
   let cwd = workspace.path;
@@ -3232,7 +3209,11 @@ async function runThreadContinuation(
           emitTodoList,
         )
       : undefined;
-  const taskHookHandlers = todoTracker?.createHookHandlers(() => stopStatusRef.current);
+  const taskRunHooks = todoTracker
+    ? createSdkTaskRunHooks({
+        createHookHandlers: (getStopStatus) => todoTracker.createHookHandlers(getStopStatus),
+      })
+    : undefined;
 
   try {
     if (mode !== "question") {
@@ -3268,21 +3249,7 @@ async function runThreadContinuation(
               const driver = createSdkDriver(
                 thread.id,
                 attemptProxy,
-                {
-                  ...(taskHookHandlers
-                    ? {
-                        peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
-                        taskTracker: {
-                          ...taskHookHandlers,
-                          onStop(status) {
-                            stopTodosHandled = true;
-                            taskHookHandlers.onStop(status);
-                          },
-                        },
-                        getStopTodoStatus: () => stopStatusRef.current,
-                      }
-                    : {}),
-                },
+                taskRunHooks?.hookContextExtras,
                 continuationPhase,
               );
               const runInput = buildSdkRunInput({
@@ -3360,20 +3327,18 @@ async function runThreadContinuation(
         threadId: thread.id,
         decision: continuationDecision,
         onCancelled: async (reason) => {
-          stopStatusRef.current = "cancelled";
-          taskHookHandlers?.onStop("cancelled");
+          taskRunHooks?.stopIfUnhandled("cancelled");
           cancelClarificationsForThread(thread.id, reason);
           await handleRunCancelled(thread.id, worktreePlan);
         },
         onFailed: (reason) => {
-          stopStatusRef.current = "blocked";
-          taskHookHandlers?.onStop("blocked");
+          taskRunHooks?.stopIfUnhandled("blocked");
           clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
           markThreadInterrupted(thread.id, reason);
         },
         onCompleted: async (message) => {
           if (mode === "execution") {
-            taskHookHandlers?.onStop("completed");
+            taskRunHooks?.stopIfUnhandled("completed");
             await completeCodingThreadRun(thread.id, worktreePlan);
             return;
           }
@@ -3394,8 +3359,7 @@ async function runThreadContinuation(
 
     updateThread(thread.id, { status: "idle", message: "续聊已结束。" });
   } catch (error) {
-    stopStatusRef.current = "blocked";
-    taskHookHandlers?.onStop("blocked");
+    taskRunHooks?.stopIfUnhandled("blocked");
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
     const worktreePath = resolveThreadWorktreePath(thread.id);
