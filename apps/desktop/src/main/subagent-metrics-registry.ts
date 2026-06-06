@@ -8,6 +8,7 @@ import {
   subagentMetricsEntryToPersistenceInput,
   type SubagentMetricsPersistenceStore,
 } from "./subagent-metrics-persistence";
+import { SubagentToolUseIndex } from "./subagent-tool-use-index";
 
 export type SubagentMetricsStatus = "active" | "stopped";
 
@@ -27,15 +28,9 @@ export interface SubagentMetricsEntry {
 
 interface ThreadSubagentState {
   activeByRole: Map<AgentRole, Set<string>>;
-  toolUseToAgentId: Map<string, string>;
-  pendingToolUses: PendingToolUse[];
+  toolUses: SubagentToolUseIndex;
   seenUsageKeys: Set<string>;
   byAgentId: Map<string, SubagentMetricsEntry>;
-}
-
-interface PendingToolUse {
-  toolUseId: string;
-  role?: AgentRole;
 }
 
 export interface SubagentContextObservationInput {
@@ -68,9 +63,9 @@ export class SubagentMetricsRegistry {
       entry.role = input.role;
       entry.updatedAt = now;
     }
-    const pendingToolUseId = consumePendingToolUseId(state, input.role);
+    const pendingToolUseId = state.toolUses.consumeForRole(input.role);
     if (pendingToolUseId) {
-      state.toolUseToAgentId.set(pendingToolUseId, input.agentId);
+      state.toolUses.link(pendingToolUseId, input.agentId);
     }
     const active = state.activeByRole.get(input.role) ?? new Set();
     active.add(input.agentId);
@@ -82,7 +77,7 @@ export class SubagentMetricsRegistry {
       role: input.role,
       agentId: shortAgentId(input.agentId),
       activeCount: active.size,
-      toolUseLinks: state.toolUseToAgentId.size,
+      toolUseLinks: state.toolUses.mappedCount,
     });
   }
 
@@ -111,26 +106,13 @@ export class SubagentMetricsRegistry {
   noteTaskToolUse(threadId: string, toolUseId: string, role?: AgentRole): void {
     const state = this.getOrCreateThread(threadId);
     const pendingRole = role && isSubagentBillingRole(role) ? role : undefined;
-    if (!state.toolUseToAgentId.has(toolUseId)) {
-      const existing = state.pendingToolUses.find((pending) => pending.toolUseId === toolUseId);
-      if (existing) {
-        if (!existing.role && pendingRole) {
-          existing.role = pendingRole;
-        }
-      } else {
-        state.pendingToolUses.push({
-          toolUseId,
-          ...(pendingRole && { role: pendingRole }),
-        });
-      }
-    }
-    const pending = state.pendingToolUses.find((entry) => entry.toolUseId === toolUseId);
+    const result = state.toolUses.note(toolUseId, pendingRole);
     logEcoDiag("subagent.task_tool", {
       threadId: shortThreadId(threadId),
       toolUseId: toolUseId.slice(-12),
       ...(pendingRole && { role: pendingRole }),
-      pending: Boolean(pending),
-      pendingCount: state.pendingToolUses.length,
+      pending: result.pending,
+      pendingCount: result.pendingCount,
     });
   }
 
@@ -139,8 +121,7 @@ export class SubagentMetricsRegistry {
     if (!state) {
       return;
     }
-    state.toolUseToAgentId.set(toolUseId, agentId);
-    removePendingToolUseId(state, toolUseId);
+    state.toolUses.link(toolUseId, agentId);
   }
 
   resolveAgentId(
@@ -157,7 +138,7 @@ export class SubagentMetricsRegistry {
     }
     const state = this.threads.get(threadId);
     if (input.parentToolUseId && state) {
-      const linked = state.toolUseToAgentId.get(input.parentToolUseId);
+      const linked = state.toolUses.resolve(input.parentToolUseId);
       if (linked) {
         return linked;
       }
@@ -242,7 +223,7 @@ export class SubagentMetricsRegistry {
       reason,
       parentToolUseId: input.parentToolUseId?.slice(-12),
       activeAgents: active ? [...active].map(shortAgentId) : [],
-      mappedParents: this.threads.get(threadId)?.toolUseToAgentId.size ?? 0,
+      mappedParents: this.threads.get(threadId)?.toolUses.mappedCount ?? 0,
     });
   }
 
@@ -355,8 +336,7 @@ export class SubagentMetricsRegistry {
     if (!state) {
       state = {
         activeByRole: new Map(),
-        toolUseToAgentId: new Map(),
-        pendingToolUses: [],
+        toolUses: new SubagentToolUseIndex(),
         seenUsageKeys: new Set(),
         byAgentId: new Map(),
       };
@@ -386,34 +366,6 @@ function createEmptyEntry(
     ecoCostBreakdown: { inputUsd: 0, outputUsd: 0, cacheReadUsd: 0, cacheCreationUsd: 0, totalUsd: 0 },
     updatedAt,
   };
-}
-
-function consumePendingToolUseId(state: ThreadSubagentState, role: AgentRole): string | undefined {
-  while (state.pendingToolUses.length > 0) {
-    let index = state.pendingToolUses.findIndex(
-      (pending) => pending.role === role && !state.toolUseToAgentId.has(pending.toolUseId),
-    );
-    if (index < 0) {
-      index = state.pendingToolUses.findIndex(
-        (pending) => !pending.role && !state.toolUseToAgentId.has(pending.toolUseId),
-      );
-    }
-    if (index < 0) {
-      return undefined;
-    }
-    const [pending] = state.pendingToolUses.splice(index, 1);
-    if (pending) {
-      return pending.toolUseId;
-    }
-  }
-  return undefined;
-}
-
-function removePendingToolUseId(state: ThreadSubagentState, toolUseId: string): void {
-  const index = state.pendingToolUses.findIndex((pending) => pending.toolUseId === toolUseId);
-  if (index >= 0) {
-    state.pendingToolUses.splice(index, 1);
-  }
 }
 
 function mergeUsage(left: ParsedUsage, right: ParsedUsage): ParsedUsage {
