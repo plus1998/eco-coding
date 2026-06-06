@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  parseSdkContextUsage,
   type ParsedUsage,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
@@ -153,7 +152,6 @@ import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
   resolveRuntimeRoutesFromSettings,
-  resolveUsageRoute,
 } from "./billing-resolver";
 import {
   isSubagentBillingRole,
@@ -173,7 +171,6 @@ import { resolveOtelUsageBilling } from "./otel-usage-billing";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import {
-  resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
@@ -196,12 +193,12 @@ import {
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { resolveSdkRunBillingAttribution } from "./sdk-run-billing-attribution";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import {
   resolveSdkEventUsageBilling,
   type SdkUsageBillingBundle,
 } from "./sdk-event-usage-billing";
+import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -4083,74 +4080,26 @@ async function processSdkRunBilling(input: {
   await pricingCatalogReady;
 
   const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const billingModels = await resolveSdkRunBillingModels({
-    role: input.role,
-    models: input.bundle.models,
-    runtimeRoutes,
-    lookupPricing: lookupUsageBillingPricing,
-  });
-  const { models } = billingModels;
-
-  const primaryModel = models[0];
-  const attribution = resolveSdkRunBillingAttribution({
+  const resolved = await resolveSdkRunBillingResolution({
     threadId: input.threadId,
     role: input.role,
-    models,
+    requestKey: input.requestKey,
+    bundle: input.bundle,
+    runtimeRoutes,
+    lookupPricing: lookupUsageBillingPricing,
     resolver: subagentMetricsRegistry,
-    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
+    ...(input.usagePayload !== undefined && { usagePayload: input.usagePayload }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
+    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
   });
-  const { billingRole, resolvedSubagentId, ledgerAgentId } = attribution;
-  if (resolvedSubagentId && isSubagentBillingRole(billingRole)) {
-    for (const model of models) {
-      noteUsageBillingObservation(input.threadId, {
-        source: "sdk",
-        role: billingRole,
-        agentId: resolvedSubagentId,
-        usage: model.usage,
-        requestKey: input.requestKey,
-        ...(model.modelId && { modelId: model.modelId }),
-      });
-    }
+
+  for (const observation of resolved.observations) {
+    noteUsageBillingObservation(input.threadId, observation);
   }
 
-  const contextUsage =
-    resolvedSubagentId && primaryModel?.modelId && input.usagePayload
-      ? (parseSdkContextUsage(input.usagePayload, { subagentModelId: primaryModel.modelId }) ??
-        input.bundle.contextUsage)
-      : input.bundle.contextUsage;
-
-  const usageRoute = resolveUsageRoute(billingRole, primaryModel?.modelId, runtimeRoutes);
-  const contextUpdate =
-    usageRoute && shouldUpdateContextFromUsageSource("sdk", billingRole)
-      ? {
-          role: billingRole,
-          modelId: usageRoute.modelId,
-          providerBaseUrl: usageRoute.provider.baseUrl,
-          ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-        }
-      : undefined;
-
-  await applySdkRunBillingEffects(
-    usageBillingEffectsServices(),
-    {
-      threadId: input.threadId,
-      role: input.role,
-      requestKey: input.requestKey,
-      models,
-      billingRole,
-      contextUsage,
-      updateContext: Boolean(contextUpdate),
-      ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
-      ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
-      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-      ...(ledgerAgentId && { ledgerAgentId }),
-      ...(resolvedSubagentId && { resolvedSubagentId }),
-      ...(contextUpdate && { contextUpdate }),
-    },
-  );
+  await applySdkRunBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
