@@ -84,6 +84,7 @@ import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
 import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import {
@@ -1038,46 +1039,34 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, payload: unknown) => {
     const { threadId } = parseThreadApprovePlanPayload(payload);
-    const thread = conversationStore.getThread(threadId);
-    if (!thread) {
-      throw new Error("Thread was not found.");
-    }
-    if (thread.status !== "awaiting_plan") {
-      throw new Error("This thread is not waiting for plan approval.");
-    }
-    if (activeRunRuntimeState.hasRun(threadId)) {
-      throw new Error("Thread is already running.");
-    }
-
-    const pending = conversationStore.getPendingPlan(threadId);
-    if (!pending) {
-      throw new Error("找不到待批准的计划。");
-    }
-
-    if (!pending.plan.trim()) {
-      throw new Error("计划内容不能为空。");
-    }
-
-    const roleRoutes = resolveRoleRoutesForThread(threadId);
-    const runtimeConfig = resolveThreadRuntimeConfig(
-      providerStore.getSettings(),
-      providerStore.listProvidersWithSecrets(),
-      roleRoutes,
-    );
-    if (!runtimeConfig.ok) {
-      throw new Error(runtimeConfig.reason);
-    }
+    const approval = resolveThreadPlanApprovalRuntime(threadId, {
+      getThread: (id) => conversationStore.getThread(id),
+      hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
+      getPendingPlan: (id) => conversationStore.getPendingPlan(id),
+      resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
+      resolveRuntimeConfig: (routes) =>
+        resolveThreadRuntimeConfig(
+          providerStore.getSettings(),
+          providerStore.listProvidersWithSecrets(),
+          routes,
+        ),
+      usesManualOrchestration: (id) => threadUsesManualOrchestration(id),
+    });
 
     updateThread(threadId, {
       status: "running",
       message: "正在按计划执行…",
     });
-    if (threadUsesManualOrchestration(threadId)) {
-      void runCodingThreadExecution(threadId, runtimeConfig, { routesOverride: roleRoutes });
+    if (approval.launchMode === "manual_execution") {
+      void runCodingThreadExecution(threadId, approval.runtimeConfig, {
+        routesOverride: approval.roleRoutes,
+      });
     } else {
-      void runCodingThreadAutonomousAfterApproval(threadId, runtimeConfig, { routesOverride: roleRoutes });
+      void runCodingThreadAutonomousAfterApproval(threadId, approval.runtimeConfig, {
+        routesOverride: approval.roleRoutes,
+      });
     }
-    return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
+    return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
   });
 
   ipcMain.handle(IPC_CHANNELS.threadDismissPlan, async (_event, threadId: unknown) => {
