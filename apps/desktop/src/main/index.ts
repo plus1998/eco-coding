@@ -16,7 +16,6 @@ import {
 } from "@eco/runtime";
 import {
   ClaudeAgentSdkDriver,
-  extractCompactPostTokens,
   extractSdkRunFailure,
   type EcoHookContext,
   type SdkTodoUpdatedPayload,
@@ -167,6 +166,10 @@ import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
+import {
+  createContextLifecycleService,
+  type ContextLifecycleService,
+} from "./context-lifecycle-service";
 import {
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
@@ -349,6 +352,7 @@ let pricingCatalogReady: Promise<void> = Promise.resolve();
 let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
+let contextLifecycle: ContextLifecycleService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -423,6 +427,19 @@ app.whenReady().then(async () => {
     },
     onCompactionBoundary: (threadId, input) => {
       recordCompactionLedgerBoundary(threadId, input.payload, input.sourceEventId);
+    },
+  });
+  contextLifecycle = createContextLifecycleService({
+    monitor: contextMonitor,
+    emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
+    ensureHeadroom: ensureContextHeadroom,
+    getThreadStatus: (threadId) => conversationStore.getThread(threadId)?.status,
+    resolveThreadWorktreePath,
+    applySdkContextUsageBreakdown: (threadId, payload) => {
+      contextScheduler.applySdkContextUsageBreakdown(threadId, payload);
+    },
+    recordCompactionBoundary: (threadId, payload, sourceEventId) => {
+      recordCompactionLedgerBoundary(threadId, payload, sourceEventId);
     },
   });
   loadThreadMetricsFromStore();
@@ -1498,7 +1515,7 @@ async function runQuestionThread(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event, cwd);
+            onSdkUsageRecordedEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -1651,7 +1668,7 @@ async function runCodingThreadAutonomous(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event, cwd);
+            onSdkUsageRecordedEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -1826,7 +1843,7 @@ async function runCodingThreadPlanning(
         })) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event, cwd);
+            onSdkUsageRecordedEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -2000,7 +2017,7 @@ async function runCodingThreadAutonomousAfterApproval(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(threadId, event, cwd);
+            onSdkUsageRecordedEvent(threadId, event);
             continue;
           }
           captureSdkSessionFromEvent(threadId, event, cwd);
@@ -2174,7 +2191,7 @@ async function runCodingThreadExecution(
         )) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(threadId, event, executionCwd);
+            onSdkUsageRecordedEvent(threadId, event);
             continue;
           }
 
@@ -3248,7 +3265,7 @@ async function runThreadContinuation(
           )) {
             if (event.type === "usage.recorded") {
               sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-              onSdkUsageRecordedEvent(thread.id, event, cwd);
+              onSdkUsageRecordedEvent(thread.id, event);
               continue;
             }
             captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -3389,7 +3406,7 @@ async function runThreadContinuation(
         for await (const event of eventStream) {
           if (event.type === "usage.recorded") {
             sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event, cwd);
+            onSdkUsageRecordedEvent(thread.id, event);
             continue;
           }
           captureSdkSessionFromEvent(thread.id, event, cwd);
@@ -3509,9 +3526,6 @@ async function runThreadContinuation(
 
 /** OTel does not stream assistant text; SDK drives narrative, tool, and todo activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
-  const worktreePath =
-    activeRuns.get(threadId)?.worktreePlan?.worktreePath ??
-    conversationStore.getSdkSession(threadId)?.cwd;
   if (event.type === "tool.started" && isRecord(event.payload)) {
     const toolName =
       typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
@@ -3529,7 +3543,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }
   }
-  handleSdkContextSideEffects(threadId, event, worktreePath);
+  handleSdkContextSideEffects(threadId, event);
   const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId;
   const activityAgentId = resolveActivityAgentId(threadId, event, {
     ...(plannerSessionId && { plannerSessionId }),
@@ -3555,7 +3569,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
 
 function emitOtelActivity(line: OtelActivityLine): void {
   if (/^Compacting context/i.test(line.message)) {
-    contextMonitor.noteOtelCompaction(line.threadId);
+    contextLifecycle.noteOtelCompaction(line.threadId);
   }
   if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
     return;
@@ -3772,26 +3786,7 @@ function resolveThreadWorktreePath(threadId: string): string | undefined {
 
 /** Call after activeRuns.delete to refresh the context meter from monitor state. */
 function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
-  contextScheduler.emitLiveFromMonitor(threadId);
-  const thread = conversationStore.getThread(threadId);
-  if (thread?.status === "blocked" || thread?.status === "failed") {
-    return;
-  }
-  const path = worktreePath ?? resolveThreadWorktreePath(threadId);
-  if (path) {
-    void schedulePostRunCompactionIfNeeded(threadId, path);
-  }
-}
-
-/** Run deferred /compact when the thread is idle but still above the occupancy threshold. */
-async function schedulePostRunCompactionIfNeeded(
-  threadId: string,
-  worktreePath: string,
-): Promise<void> {
-  if (!contextMonitor.shouldCompact(threadId)) {
-    return;
-  }
-  await ensureContextHeadroom(threadId, worktreePath, new AbortController().signal);
+  contextLifecycle.afterRunRefresh(threadId, worktreePath);
 }
 
 function resetSubagentContextWindows(threadId: string): void {
@@ -3853,38 +3848,16 @@ function flushAllThreadMetrics(): void {
   flushThreadMetrics(threadMetricsPersistenceServices());
 }
 
-function handleSdkContextSideEffects(
-  threadId: string,
-  event: AgentEventLike,
-  worktreePath?: string,
-): void {
-  if (!isRecord(event.payload)) {
-    return;
-  }
-  const payload = event.payload;
-  if (payload.type === "sdk_context_usage" && payload.ecoSdkContextUsage !== undefined) {
-    contextScheduler.applySdkContextUsageBreakdown(threadId, payload.ecoSdkContextUsage);
-    return;
-  }
-  if (payload.subtype === "compact_boundary") {
-    recordCompactionLedgerBoundary(threadId, payload, event.id);
-    const postTokens = extractCompactPostTokens(payload);
-    contextMonitor.markCompactCompleted(threadId, postTokens);
-    contextScheduler.emitLiveFromMonitor(threadId);
-    return;
-  }
-  if (payload.type === "system" && payload.subtype === "status" && payload.status === "compacting") {
-    contextMonitor.noteOtelCompaction(threadId);
-  }
+function handleSdkContextSideEffects(threadId: string, event: AgentEventLike): boolean {
+  return contextLifecycle.handleSdkContextEvent({
+    threadId,
+    eventId: event.id,
+    payload: event.payload,
+  });
 }
 
-function onSdkUsageRecordedEvent(
-  threadId: string,
-  event: AgentEventLike & { id: string },
-  worktreePath?: string,
-): void {
-  handleSdkContextSideEffects(threadId, event, worktreePath);
-  if (isRecord(event.payload) && event.payload.type === "sdk_context_usage") {
+function onSdkUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: string }): void {
+  if (handleSdkContextSideEffects(threadId, event)) {
     return;
   }
   recordSdkUsageFromEvent(threadId, event);
@@ -4351,7 +4324,7 @@ function archiveThreadContextBeforeCompaction(
       "system",
       false,
     );
-    contextMonitor.markCompactInFlight(threadId);
+    contextLifecycle.markCompactInFlight(threadId);
   } catch (error) {
     process.stderr.write(
       `[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`,
