@@ -1,6 +1,7 @@
 import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
 import { isSubagentRole, type SubagentRole } from "@eco/runtime";
 import type { ConversationStore } from "./conversation-store.js";
+import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 
@@ -15,6 +16,7 @@ export function createSubagentSessionHooks(
   threadId: string,
   phase: SubagentRunPhase,
   options?: {
+    lifecycle?: AgentLifecycleService;
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
     consumePendingLaunch?: (input: { role: SubagentRole }) => PendingSubagentLaunch | undefined;
@@ -47,12 +49,24 @@ export function createSubagentSessionHooks(
         agentId: input.agentId,
         role: input.agentType,
       });
+      options?.lifecycle?.startSubagent({
+        threadId,
+        agentId: input.agentId,
+        role: input.agentType,
+        ...(missionKey && { missionKey }),
+        ...(todoId && { todoId }),
+      });
       options?.onTimingChanged?.();
     },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
       if (isSubagentRole(input.agentType)) {
         options?.metricsRegistry?.onSubagentStop(threadId, {
+          agentId: input.agentId,
+          role: input.agentType,
+        });
+        options?.lifecycle?.stopSubagent({
+          threadId,
           agentId: input.agentId,
           role: input.agentType,
         });

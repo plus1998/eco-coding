@@ -10,6 +10,7 @@ test("buildSdkUsageLedgerEvents writes one row per model without duplicating tot
     role: "planner",
     requestKey: "sdk-result:evt_1",
     totalCostUsd: 1.23,
+    runAttemptId: "attempt_1",
     observedAt: "2026-01-01T00:00:00.000Z",
     models: [
       {
@@ -30,6 +31,8 @@ test("buildSdkUsageLedgerEvents writes one row per model without duplicating tot
   expect(events).toHaveLength(2);
   expect(events[0]?.reportedCostUsd).toBe(0.4);
   expect(events[1]?.reportedCostUsd).toBe(0.83);
+  expect(events[0]?.runAttemptId).toBe("attempt_1");
+  expect(events[1]?.runAttemptId).toBe("attempt_1");
   expect(events[0]?.metadata?.sdkTotalCostUsd).toBe(1.23);
   expect(events[0]?.idempotencyKey).not.toBe(events[1]?.idempotencyKey);
 });
@@ -87,6 +90,7 @@ test("buildSingleUsageLedgerEvent preserves source-specific audit fields", () =>
     modelId: "coder-model",
     requestKey: "proxy:coder:model:req_1",
     providerRequestId: "req_1",
+    runAttemptId: "attempt_proxy",
     parentToolUseId: "toolu_parent",
     agentId: "agent_coder_a",
     reportedCostUsd: 0.01,
@@ -94,6 +98,7 @@ test("buildSingleUsageLedgerEvent preserves source-specific audit fields", () =>
 
   expect(event.source).toBe("proxy");
   expect(event.providerRequestId).toBe("req_1");
+  expect(event.runAttemptId).toBe("attempt_proxy");
   expect(event.parentToolUseId).toBe("toolu_parent");
   expect(event.reportedCostUsd).toBe(0.01);
 });

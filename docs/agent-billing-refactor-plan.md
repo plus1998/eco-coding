@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`655 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation 近端类型错误已清理。
+- `bun test`: 通过，`659 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -46,7 +46,7 @@
 
 - 新 shadow projection 不驱动 UI、不替代旧 `ThreadUsageAccumulator`。
 - SQLite 持久化测试在当前运行环境因 `node:sqlite` 不可用被跳过；测试代码已保留，具备 SQLite 的环境会执行。
-- 当前 run attempt 还没有接入运行状态机；ledger event 的 `runAttemptId` 暂时为空，必须在 Agent Lifecycle Domain 阶段补齐。
+- Foundation 阶段不驱动 UI；run attempt 与 ledger event 的 `runAttemptId` 接入见第五批 Agent Lifecycle shadow 状态机。
 
 第三批 Usage Ledger adapter + shadow write 已完成：
 
@@ -66,6 +66,23 @@
 - 主进程在旧 billing snapshot 生成后做 best-effort shadow compare，仅写 `eco-diag`，不驱动 UI、不抛错、不改变旧结算。
 - 当前会暴露旧链路的 synthetic SDK primary 差异，例如 proxy subagent usage 被旧 accumulator 复制到 SDK source 时，新 ledger 不伪造 SDK 来源。
 - 新增 reconciliation 测试覆盖：source token 对齐、token mismatch、SDK total cost 一次性归集、per-model cost 优先、缺失 source、未归因 usage。
+
+第五批 Agent Lifecycle shadow 状态机已完成：
+
+- 新增 `AgentLifecycleService`，集中维护 `RunAttempt` 与 `AgentInstance` 的 shadow 生命周期。
+- `runThreadRequestWithAutoRetry` 每次 request attempt 都会 start/finalize 一个 `RunAttempt`；retry 会产生新的 attempt，失败、取消、成功路径都进入统一 finalizer。
+- Planner 被建模为虚拟 `AgentInstance`：`planner:${attemptId}`，作为 SubAgent 的显式 `parentAgentId`。
+- Task/Agent tool use 使用 role-aware pending 队列；SubAgent start 会写入 `runAttemptId`、`parentAgentId`、`parentToolUseId`、`missionKey`、`todoId`。
+- SubAgent stop 会显式转为 `stopped`；run finalizer 会把仍 active 的 SubAgent 转为 `abandoned`，避免退出时留下未结算生命周期。
+- SDK、Proxy、OTel、SDK assistant fallback 写入 ledger event 时会携带当前或最近完成的 `runAttemptId`；planner usage 会归属到 planner agent，而不是 SDK session id。
+- 新增 lifecycle 测试覆盖：run attempt/planner 生命周期、跨角色交错 SubAgent 父 tool use 归属、失败 finalizer abandoned、显式 stop、late usage attribution。
+- `usage-ledger-adapters` 测试补充 `runAttemptId` 传播断言，防止审计链路被后续改动截断。
+
+当前边界：
+
+- Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
+- 进程重启后的 lifecycle 内存态恢复尚未接入；持久化表已具备记录能力，但恢复逻辑必须在 projector/settlement 阶段一并设计。
+- BillingProjector 尚未成为最终账单来源；旧 accumulator 仍是 UI 与当前结算的权威来源。
 
 ## 不做事项
 
@@ -187,10 +204,10 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 接入 run attempt/lifecycle 状态机，为 ledger event 补 `runAttemptId`。
-2. 建立 `AgentLifecycleService`，统一 Agent/SubAgent start/stop/cancel/fail/finalizer。
-3. 加并发、重复、retry、cancel、unattributed 集成测试。
-4. 实现真正的 `BillingProjector`，从 ledger 派生 byRole/byAgent/byModel/subagent。
+1. 实现真正的 `BillingProjector`，从 ledger 派生 byRole、byAgent、byModel、subagent、unattributed。
+2. 增加 projector 与旧 accumulator / `SubagentMetricsRegistry` 的 shadow 对账，明确 synthetic SDK primary 等兼容差异。
+3. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
+4. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
 5. shadow 对账稳定后，再进入 UI/metrics 切换。
 
 ## 每批提交必须满足

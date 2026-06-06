@@ -185,11 +185,12 @@ import {
   buildSdkUsageLedgerEvents,
   buildSingleUsageLedgerEvent,
 } from "./usage-ledger-adapters";
-import type { UsageLedgerEvent } from "./usage-ledger";
+import type { RunAttemptPhase, RunAttemptStatus, UsageLedgerEvent } from "./usage-ledger";
 import {
   reconcileUsageLedgerWithBilling,
   summarizeUsageLedgerReconciliation,
 } from "./usage-ledger-reconciliation";
+import { AgentLifecycleService } from "./agent-lifecycle-service";
 import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
@@ -310,6 +311,7 @@ interface ActiveThreadRun {
 const activeRuns = new Map<string, ActiveThreadRun>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
+let agentLifecycle: AgentLifecycleService;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingUsageUpdates = new Map<string, Set<Promise<void>>>();
@@ -358,6 +360,7 @@ app.whenReady().then(async () => {
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
+  agentLifecycle = new AgentLifecycleService(conversationStore);
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
   });
@@ -1348,11 +1351,26 @@ function threadHasResumableCheckpoint(
 
 function runThreadRequestWithAutoRetry(
   threadId: string,
+  phase: RunAttemptPhase,
   signal: AbortSignal | undefined,
   runOnce: () => Promise<RequestAttemptResult>,
 ): Promise<RequestAttemptResult> {
-  return runWithRequestAutoRetry(runOnce, {
-    signal,
+  let retryIndex = 0;
+  const wrappedRunOnce = async (): Promise<RequestAttemptResult> => {
+    agentLifecycle.startRunAttempt({ threadId, phase, retryIndex });
+    try {
+      const result = await runOnce();
+      agentLifecycle.finishRunAttempt(threadId, runAttemptStatusFromResult(result));
+      return result;
+    } catch (error) {
+      agentLifecycle.finishRunAttempt(threadId, signal?.aborted ? "cancelled" : "failed");
+      throw error;
+    } finally {
+      retryIndex += 1;
+    }
+  };
+  return runWithRequestAutoRetry(wrappedRunOnce, {
+    ...(signal && { signal }),
     onRetryScheduled: (retryIndex, maxRetries, reason) => {
       const short = reason.length > 240 ? `${reason.slice(0, 237)}…` : reason;
       const message = `【自动重试 ${retryIndex}/${maxRetries}】${short}`;
@@ -1360,6 +1378,23 @@ function runThreadRequestWithAutoRetry(
       updateThread(threadId, { status: "running", message });
     },
   });
+}
+
+function runAttemptStatusFromResult(result: RequestAttemptResult): Exclude<RunAttemptStatus, "running"> {
+  if (result.ok) {
+    return "completed";
+  }
+  return result.aborted ? "cancelled" : "failed";
+}
+
+function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
+  return !result.ok && result.aborted === true;
+}
+
+function runAttemptPhaseFromThreadMode(
+  mode: "planning" | "execution" | "question",
+): RunAttemptPhase {
+  return mode;
 }
 
 async function runQuestionThread(
@@ -1378,7 +1413,7 @@ async function runQuestionThread(
   resetSubagentContextWindows(thread.id);
 
   try {
-    const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+    const outcome = await runThreadRequestWithAutoRetry(thread.id, "question", controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -1440,7 +1475,7 @@ async function runQuestionThread(
       }
     });
 
-    if (outcome.aborted) {
+    if (isRequestAttemptAborted(outcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       const plan = resolveWorktreePlan(workspace.path, thread.id, cwd);
       await handleRunCancelled(thread.id, plan);
@@ -1527,7 +1562,7 @@ async function runCodingThreadAutonomous(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const runOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+    const runOutcome = await runThreadRequestWithAutoRetry(thread.id, "execution", controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -1623,7 +1658,7 @@ async function runCodingThreadAutonomous(
       }
     });
 
-    if (runOutcome.aborted) {
+    if (isRequestAttemptAborted(runOutcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       await handleRunCancelled(thread.id, worktreePlan);
       return;
@@ -1635,7 +1670,10 @@ async function runCodingThreadAutonomous(
       return;
     }
 
-    if (conversationStore.getPendingPlan(thread.id) || runOutcome.planCaptured) {
+    if (
+      conversationStore.getPendingPlan(thread.id) ||
+      (runOutcome.ok && "planCaptured" in runOutcome && runOutcome.planCaptured === true)
+    ) {
       updateThread(thread.id, {
         status: "awaiting_plan",
         message: "等待你确认计划。",
@@ -1698,7 +1736,7 @@ async function runCodingThreadPlanning(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+    const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, "planning", controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -1796,7 +1834,7 @@ async function runCodingThreadPlanning(
       }
     });
 
-    if (planningOutcome.aborted) {
+    if (isRequestAttemptAborted(planningOutcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
       await handleRunCancelled(thread.id, worktreePlan);
       return;
@@ -1883,7 +1921,7 @@ async function runCodingThreadAutonomousAfterApproval(
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，继续同会话执行。", "system");
 
-    const outcome = await runThreadRequestWithAutoRetry(threadId, controller.signal, async () => {
+    const outcome = await runThreadRequestWithAutoRetry(threadId, "execution", controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(options?.routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -1933,7 +1971,7 @@ async function runCodingThreadAutonomousAfterApproval(
       }
     });
 
-    if (outcome.aborted) {
+    if (isRequestAttemptAborted(outcome)) {
       cancelClarificationsForThread(threadId, "cancelled by user");
       await handleRunCancelled(threadId, worktreePlan);
       return;
@@ -2019,7 +2057,7 @@ async function runCodingThreadExecution(
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
-    const executionOutcome = await runThreadRequestWithAutoRetry(threadId, controller.signal, async () => {
+    const executionOutcome = await runThreadRequestWithAutoRetry(threadId, "execution", controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(options?.routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -2119,7 +2157,7 @@ async function runCodingThreadExecution(
       }
     });
 
-    if (executionOutcome.aborted) {
+    if (isRequestAttemptAborted(executionOutcome)) {
       stopStatusRef.current = "cancelled";
       if (!stopTodosHandled) {
         taskHookHandlers.onStop("cancelled");
@@ -2725,9 +2763,11 @@ function buildSdkHookContextExtras(
       }),
     onTaskToolUse: (toolUseId: string, input?: { role?: AgentRole }) => {
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, input?.role);
+      agentLifecycle.noteTaskToolUse(threadId, toolUseId, input?.role);
     },
   };
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
+    lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
@@ -3105,7 +3145,7 @@ async function runThreadContinuation(
         markThreadInterrupted(thread.id, "无法恢复 SDK 会话，请重新发送完整需求。");
         return;
       }
-      const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+      const outcome = await runThreadRequestWithAutoRetry(thread.id, runAttemptPhaseFromThreadMode(mode), controller.signal, async () => {
         const freshConfig = resolveRuntimeConfigFresh(routesOverride);
         if (!freshConfig.ok) {
           return { ok: false, reason: freshConfig.reason };
@@ -3149,7 +3189,7 @@ async function runThreadContinuation(
           await attemptProxy.close();
         }
       });
-      if (outcome.aborted) {
+      if (isRequestAttemptAborted(outcome)) {
         await handleRunCancelled(thread.id, worktreePlan);
         return;
       }
@@ -3204,7 +3244,7 @@ async function runThreadContinuation(
 
     const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
 
-    const outcome = await runThreadRequestWithAutoRetry(thread.id, controller.signal, async () => {
+    const outcome = await runThreadRequestWithAutoRetry(thread.id, runAttemptPhaseFromThreadMode(mode), controller.signal, async () => {
       const freshConfig = resolveRuntimeConfigFresh(routesOverride);
       if (!freshConfig.ok) {
         return { ok: false, reason: freshConfig.reason };
@@ -3330,7 +3370,7 @@ async function runThreadContinuation(
       }
     });
 
-    if (outcome.aborted) {
+    if (isRequestAttemptAborted(outcome)) {
       stopStatusRef.current = "cancelled";
       taskHookHandlers?.onStop("cancelled");
       cancelClarificationsForThread(thread.id, "cancelled by user");
@@ -3410,6 +3450,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
             : "";
       const role = isSubagentRole(rawRole) ? rawRole : undefined;
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
+      agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }
   }
   handleSdkContextSideEffects(threadId, event, worktreePath);
@@ -3504,6 +3545,8 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
   if (hasTokens && run) {
     run.otelTokenBilled = true;
   }
+  const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
+  const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
 
   trackUsageUpdate(
     usage.threadId,
@@ -3517,6 +3560,8 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
       cacheCreationTokens: usage.cacheCreationTokens ?? 0,
       ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
       ...(usage.modelId && { modelId: usage.modelId }),
+      ...(runAttemptId && { runAttemptId }),
+      ...(plannerAgentId && { plannerAgentId }),
       otelDedupId: dedupId,
       reconciliationOnly: true,
       updateContext: false,
@@ -3551,6 +3596,8 @@ async function emitProxyUsage(
   ].join(":");
 
   const billingRole = normalizeBillingRole(info.role);
+  const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
+  const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const subagentAgentId = isSubagentBillingRole(billingRole)
     ? subagentMetricsRegistry.resolveAgentId(info.threadId, { role: billingRole })
     : undefined;
@@ -3566,6 +3613,8 @@ async function emitProxyUsage(
     requestKey,
     sourceEventId: requestKey,
     ...(info.requestId && { providerRequestId: info.requestId }),
+    ...(runAttemptId && { runAttemptId }),
+    ...(plannerAgentId && { plannerAgentId }),
     reconciliationOnly: true,
     fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
     ...(subagentAgentId && { agentId: subagentAgentId }),
@@ -3609,6 +3658,8 @@ async function processUsageBilling(input: {
   otelCostUsd?: number;
   modelId?: string;
   messageId?: string;
+  runAttemptId?: string;
+  plannerAgentId?: string;
   parentToolUseId?: string;
   requestKey?: string;
   sourceEventId?: string;
@@ -3679,7 +3730,7 @@ async function processUsageBilling(input: {
   const source = input.source ?? "otel";
   const ledgerAgentId =
     input.agentId ??
-    (billingRole === "planner" ? conversationStore.getSdkSession(input.threadId)?.sessionId : undefined);
+    (billingRole === "planner" ? input.plannerAgentId : undefined);
   appendUsageLedgerShadowEvents([
     buildSingleUsageLedgerEvent({
       threadId: input.threadId,
@@ -3689,6 +3740,7 @@ async function processUsageBilling(input: {
       usageKind: source === "sdk" && input.messageId ? "assistant_fallback" : "request_final",
       usage: delta,
       requestKey,
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(ledgerAgentId && { agentId: ledgerAgentId }),
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
@@ -4078,6 +4130,8 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     return;
   }
 
+  const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
+  const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
   let billingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
   const parentToolUseId =
     isRecord(event.payload) && typeof event.payload.parent_tool_use_id === "string"
@@ -4128,11 +4182,15 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
           cacheCreationTokens: usage.cacheCreationTokens,
           ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
           messageId,
+          ...(runAttemptId && { runAttemptId }),
+          ...(plannerAgentId && { plannerAgentId }),
           ...(parentToolUseId && { parentToolUseId }),
           requestKey: buildAssistantUsageRequestKey(messageId),
-        }).catch((error) => {
-          process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
-        }),
+        })
+          .then(() => undefined)
+          .catch((error) => {
+            process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
+          }),
       );
     }
     return;
@@ -4197,6 +4255,8 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
       requestKey: `sdk-result:${event.id}`,
       bundle,
       usagePayload: event.payload,
+      ...(runAttemptId && { runAttemptId }),
+      ...(plannerAgentId && { plannerAgentId }),
       ...(subagentAgentId && { subagentAgentId }),
       ...(parentToolUseId && { parentToolUseId }),
     }).catch((error) => {
@@ -4235,6 +4295,8 @@ async function processSdkRunBilling(input: {
   requestKey: string;
   bundle: NonNullable<ReturnType<typeof parseSdkUsageBilling>>;
   usagePayload?: unknown;
+  runAttemptId?: string;
+  plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
 }): Promise<void> {
@@ -4294,7 +4356,7 @@ async function processSdkRunBilling(input: {
   const allLedgerRowsArePlanner = models.every((model) => (model.role ?? input.role) === "planner");
   const ledgerAgentId =
     resolvedSubagentId ??
-    (allLedgerRowsArePlanner ? conversationStore.getSdkSession(input.threadId)?.sessionId : undefined);
+    (allLedgerRowsArePlanner ? input.plannerAgentId : undefined);
   appendUsageLedgerShadowEvents(
     buildSdkUsageLedgerEvents({
       threadId: input.threadId,
@@ -4302,6 +4364,7 @@ async function processSdkRunBilling(input: {
       requestKey: input.requestKey,
       models,
       ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(ledgerAgentId && { agentId: ledgerAgentId }),
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       metadata: { path: "processSdkRunBilling" },

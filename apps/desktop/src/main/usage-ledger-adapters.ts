@@ -21,6 +21,7 @@ export interface BuildSdkUsageLedgerEventsInput {
   requestKey: string;
   models: readonly UsageLedgerModelUsage[];
   totalCostUsd?: number;
+  runAttemptId?: string;
   agentId?: string;
   parentToolUseId?: string;
   observedAt?: string;
@@ -34,6 +35,7 @@ export interface BuildSingleUsageLedgerEventInput {
   sourceEventId: string;
   usageKind?: UsageLedgerKind;
   usage: ParsedUsage;
+  runAttemptId?: string;
   agentId?: string;
   parentToolUseId?: string;
   requestKey?: string;
@@ -60,6 +62,7 @@ export function buildSdkUsageLedgerEvents(
       usage: entry.usage,
       requestKey: input.requestKey,
       modelId: entry.modelId,
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(input.agentId && { agentId: input.agentId }),
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       ...(reportedCostUsd !== undefined && { reportedCostUsd }),
@@ -101,6 +104,7 @@ export function buildSingleUsageLedgerEvent(
     attribution: input.agentId
       ? { status: "attributed", agentId: input.agentId }
       : { status: "unattributed", reason: "agent_id_missing" },
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.agentId && { agentId: input.agentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(input.requestKey && { requestKey: input.requestKey }),
