@@ -2706,7 +2706,7 @@ function buildSdkHookContextExtras(
   phase: SubagentRunPhase,
   extras?: Partial<EcoHookContext> & { peekPendingCoderTodoId?: () => string | undefined },
 ): Partial<EcoHookContext> {
-  let pendingLaunch: PendingSubagentLaunch | undefined;
+  const pendingLaunches: PendingSubagentLaunch[] = [];
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
   const subagentAttribution = {
     resolveAgentId: (input: { role: AgentRole; parentToolUseId?: string; sessionId: string }) =>
@@ -2714,18 +2714,21 @@ function buildSdkHookContextExtras(
         role: input.role,
         ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       }),
-    onTaskToolUse: (toolUseId: string) => {
-      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId);
+    onTaskToolUse: (toolUseId: string, input?: { role?: AgentRole }) => {
+      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, input?.role);
     },
   };
   const subagentSessions = createSubagentSessionHooks(conversationStore, threadId, phase, {
     metricsRegistry: subagentMetricsRegistry,
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
-    consumePendingLaunch: () => {
-      const next = pendingLaunch;
-      pendingLaunch = undefined;
-      return next;
+    consumePendingLaunch: (input) => {
+      const roleIndex = pendingLaunches.findIndex((pending) => pending.role === input.role);
+      if (roleIndex >= 0) {
+        const [pending] = pendingLaunches.splice(roleIndex, 1);
+        return pending;
+      }
+      return undefined;
     },
     onAgentToolCapture: (input) => {
       if (!isSubagentRole(input.role)) {
@@ -2734,11 +2737,11 @@ function buildSdkHookContextExtras(
       const missionKey = normalizeSubagentMissionKey(input.prompt);
       const todoId =
         input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
-      pendingLaunch = {
+      pendingLaunches.push({
         role: input.role,
         ...(missionKey ? { missionKey } : {}),
         ...(todoId ? { todoId } : {}),
-      };
+      });
     },
   });
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
@@ -3390,7 +3393,14 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     const toolUseId =
       typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
     if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
-      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId);
+      const rawRole =
+        typeof event.payload.subagent_type === "string"
+          ? event.payload.subagent_type
+          : typeof event.payload.agent_type === "string"
+            ? event.payload.agent_type
+            : "";
+      const role = isSubagentRole(rawRole) ? rawRole : undefined;
+      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
     }
   }
   handleSdkContextSideEffects(threadId, event, worktreePath);

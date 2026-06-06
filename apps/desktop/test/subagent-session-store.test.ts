@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createConversationStore } from "../src/main/conversation-store";
+import { createSubagentSessionHooks } from "../src/main/subagent-session-hooks";
 import { resolveResumeAgentIdFromRecords } from "../src/main/subagent-session-resolve";
 
 const sqliteAvailable = await (async () => {
@@ -53,6 +54,41 @@ test("resolveResumeAgentIdFromRecords prefers coder todo match", () => {
     },
   );
   expect(agentId).toBe("coder-a");
+});
+
+test("createSubagentSessionHooks consumes pending launch for matching role", () => {
+  const saved: Array<Record<string, unknown>> = [];
+  const consumedRoles: string[] = [];
+  const store = {
+    upsertSubagentSessionActive(input: Record<string, unknown>) {
+      saved.push(input);
+    },
+    markSubagentSessionStopped() {},
+    resolveResumeAgentId() {
+      return undefined;
+    },
+  } as never;
+
+  const hooks = createSubagentSessionHooks(store, "thr_pending_launch", "execution", {
+    consumePendingLaunch(input) {
+      consumedRoles.push(input.role);
+      return input.role === "coder"
+        ? { role: "coder", todoId: "todo-coder", missionKey: "implement api" }
+        : undefined;
+    },
+  });
+
+  hooks.onStart({ agentId: "agent_coder_a", agentType: "coder" });
+
+  expect(consumedRoles).toEqual(["coder"]);
+  expect(saved[0]).toMatchObject({
+    threadId: "thr_pending_launch",
+    role: "coder",
+    agentId: "agent_coder_a",
+    phase: "execution",
+    todoId: "todo-coder",
+    missionKey: "implement api",
+  });
 });
 
 test.skipIf(!sqliteAvailable)("conversation store persists and resolves reviewer resume", async () => {

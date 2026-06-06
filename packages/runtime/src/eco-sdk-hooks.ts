@@ -2,6 +2,7 @@ import type {
   HookCallback,
   HookCallbackMatcher,
   HookEvent,
+  HookJSONOutput,
   NotificationHookInput,
   PreCompactHookInput,
   PreToolUseHookInput,
@@ -51,7 +52,7 @@ export type SubagentRunPhase = "planning" | "execution" | "question";
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;
   threadId: string;
-  onStart(input: { agentId: string; agentType: string }): void;
+  onStart(input: { agentId: string; agentType: string; prompt?: string; todoId?: string }): void;
   onStop(input: { agentId: string; agentType: string }): void;
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
@@ -68,7 +69,7 @@ export interface EcoSubagentAttributionHooks {
     parentToolUseId?: string;
     sessionId: string;
   }): string | undefined;
-  onTaskToolUse?(toolUseId: string): void;
+  onTaskToolUse?(toolUseId: string, input?: { role?: SubagentRole }): void;
 }
 
 export interface EcoHookContext {
@@ -229,7 +230,9 @@ export function createSubagentToolAttributionPreToolHook(
       typeof toolUseID === "string" &&
       (preInput.tool_name === "Task" || preInput.tool_name === "Agent")
     ) {
-      onTaskToolUse(toolUseID);
+      const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+      const role = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+      onTaskToolUse(toolUseID, role ? { role } : undefined);
     }
     return {};
   };
@@ -364,9 +367,10 @@ export function createNotificationHook(
     return undefined;
   }
 
-  return async (input) => {
+  const hook: HookCallback = async (input) => {
     if (input.hook_event_name !== "Notification") {
-      return {};
+      const output: HookJSONOutput = {};
+      return output;
     }
     const notification = input as NotificationHookInput;
     onNotification({
@@ -376,6 +380,7 @@ export function createNotificationHook(
     });
     return { async: true, asyncTimeout: 5000 };
   };
+  return hook;
 }
 
 function pushMatcher(
@@ -432,7 +437,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
         sessions.threadId,
         sessions.phase,
         sessions.resolveResume,
-        { todoIdHint: sessions.todoIdHint },
+        sessions.todoIdHint ? { todoIdHint: sessions.todoIdHint } : undefined,
       ),
       "Agent|Task",
     );

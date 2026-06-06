@@ -6,6 +6,12 @@ import { createConversationStore } from "../src/main/conversation-store";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import { emptyCostBreakdown } from "@eco/runtime";
 
+const metricsStoreStub = {
+  listSubagentMetrics: () => [],
+  upsertSubagentMetrics: () => {},
+  clearSubagentMetrics: () => {},
+} as never;
+
 const sqliteAvailable = await (async () => {
   try {
     await import("node:sqlite");
@@ -67,8 +73,7 @@ test.skipIf(!sqliteAvailable)("resolves agent via parent tool_use_id and persist
 });
 
 test("resolveAgentId maps parent tool_use_id even when event role is planner", () => {
-  const store = { listSubagentMetrics: () => [], upsertSubagentMetrics: () => {} } as never;
-  const registry = new SubagentMetricsRegistry(store);
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_parent_planner";
   registry.noteTaskToolUse(threadId, "toolu_task_2");
   registry.onSubagentStart(threadId, { agentId: "agent_explore_b", role: "explore" });
@@ -78,6 +83,106 @@ test("resolveAgentId maps parent tool_use_id even when event role is planner", (
       parentToolUseId: "toolu_task_2",
     }),
   ).toBe("agent_explore_b");
+});
+
+test("resolveAgentId consumes queued parent tool_use ids in subagent start order", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_parallel_queue";
+
+  registry.noteTaskToolUse(threadId, "toolu_task_a");
+  registry.noteTaskToolUse(threadId, "toolu_task_b");
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_b", role: "coder" });
+
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "coder",
+      parentToolUseId: "toolu_task_a",
+    }),
+  ).toBe("agent_coder_a");
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "coder",
+      parentToolUseId: "toolu_task_b",
+    }),
+  ).toBe("agent_coder_b");
+});
+
+test("resolveAgentId matches queued parent tool_use ids by role when starts are interleaved", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_parallel_role_queue";
+
+  registry.noteTaskToolUse(threadId, "toolu_task_explore", "explore");
+  registry.noteTaskToolUse(threadId, "toolu_task_coder", "coder");
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStart(threadId, { agentId: "agent_explore_a", role: "explore" });
+
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "planner",
+      parentToolUseId: "toolu_task_coder",
+    }),
+  ).toBe("agent_coder_a");
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "planner",
+      parentToolUseId: "toolu_task_explore",
+    }),
+  ).toBe("agent_explore_a");
+});
+
+test("recordSdkUsage is idempotent per agent request and model", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_subagent_usage_dedupe";
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+
+  const usage = {
+    inputTokens: 1000,
+    outputTokens: 200,
+    cacheReadTokens: 50,
+    cacheCreationTokens: 10,
+  };
+  const billing = {
+    ecoCostUsd: 0.01,
+    plannerTokenCostUsd: 0,
+    ecoBreakdown: emptyCostBreakdown(),
+    plannerBreakdown: emptyCostBreakdown(),
+    pricingResolved: false,
+  };
+
+  registry.recordSdkUsage(threadId, {
+    role: "coder",
+    agentId: "agent_coder_a",
+    usage,
+    contextOccupied: 1260,
+    billing,
+    modelId: "claude-test-a",
+    requestKey: "sdk-result:evt_1",
+  });
+  registry.recordSdkUsage(threadId, {
+    role: "coder",
+    agentId: "agent_coder_a",
+    usage,
+    contextOccupied: 1260,
+    billing,
+    modelId: "claude-test-a",
+    requestKey: "sdk-result:evt_1",
+  });
+  registry.recordSdkUsage(threadId, {
+    role: "coder",
+    agentId: "agent_coder_a",
+    usage,
+    contextOccupied: 1260,
+    billing,
+    modelId: "claude-test-b",
+    requestKey: "sdk-result:evt_1",
+  });
+
+  const entry = registry.listEntries(threadId)[0];
+  expect(entry?.usage.inputTokens).toBe(2000);
+  expect(entry?.usage.outputTokens).toBe(400);
+  expect(entry?.ecoCostUsd).toBeCloseTo(0.02);
+  expect(entry?.lastRequestKey).toBe("sdk-result:evt_1");
 });
 
 test.skipIf(!sqliteAvailable)("falls back to sole active subagent for role", async () => {

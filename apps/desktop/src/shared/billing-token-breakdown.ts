@@ -51,7 +51,7 @@ function roleUsageTotal(entry: {
 
 /** Primary (non-subagent) agent rows use role · 主 to mirror subagent role · agentId labels. */
 function formatPrimaryAgentLabel(role: AgentRole): string {
-  return `${formatRoleModelLabel(role)} · Master`;
+  return `${formatRoleModelLabel(role)} · 主`;
 }
 
 function toTokenBadge(entry: {

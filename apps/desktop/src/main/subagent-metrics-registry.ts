@@ -1,7 +1,7 @@
 import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
-import type { ConversationStore, ThreadSubagentMetricsRecord } from "./conversation-store";
+import type { ConversationStore } from "./conversation-store";
 import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
 
 export type SubagentMetricsStatus = "active" | "stopped";
@@ -23,8 +23,14 @@ export interface SubagentMetricsEntry {
 interface ThreadSubagentState {
   activeByRole: Map<AgentRole, Set<string>>;
   toolUseToAgentId: Map<string, string>;
-  pendingToolUseId?: string;
+  pendingToolUses: PendingToolUse[];
+  seenUsageKeys: Set<string>;
   byAgentId: Map<string, SubagentMetricsEntry>;
+}
+
+interface PendingToolUse {
+  toolUseId: string;
+  role?: AgentRole;
 }
 
 export class SubagentMetricsRegistry {
@@ -47,9 +53,9 @@ export class SubagentMetricsRegistry {
       entry.role = input.role;
       entry.updatedAt = now;
     }
-    if (state.pendingToolUseId) {
-      state.toolUseToAgentId.set(state.pendingToolUseId, input.agentId);
-      state.pendingToolUseId = undefined;
+    const pendingToolUseId = consumePendingToolUseId(state, input.role);
+    if (pendingToolUseId) {
+      state.toolUseToAgentId.set(pendingToolUseId, input.agentId);
     }
     const active = state.activeByRole.get(input.role) ?? new Set();
     active.add(input.agentId);
@@ -87,13 +93,29 @@ export class SubagentMetricsRegistry {
     });
   }
 
-  noteTaskToolUse(threadId: string, toolUseId: string): void {
+  noteTaskToolUse(threadId: string, toolUseId: string, role?: AgentRole): void {
     const state = this.getOrCreateThread(threadId);
-    state.pendingToolUseId = toolUseId;
+    const pendingRole = role && isSubagentBillingRole(role) ? role : undefined;
+    if (!state.toolUseToAgentId.has(toolUseId)) {
+      const existing = state.pendingToolUses.find((pending) => pending.toolUseId === toolUseId);
+      if (existing) {
+        if (!existing.role && pendingRole) {
+          existing.role = pendingRole;
+        }
+      } else {
+        state.pendingToolUses.push({
+          toolUseId,
+          ...(pendingRole && { role: pendingRole }),
+        });
+      }
+    }
+    const pending = state.pendingToolUses.find((entry) => entry.toolUseId === toolUseId);
     logEcoDiag("subagent.task_tool", {
       threadId: shortThreadId(threadId),
       toolUseId: toolUseId.slice(-12),
-      pending: true,
+      ...(pendingRole && { role: pendingRole }),
+      pending: Boolean(pending),
+      pendingCount: state.pendingToolUses.length,
     });
   }
 
@@ -103,6 +125,7 @@ export class SubagentMetricsRegistry {
       return;
     }
     state.toolUseToAgentId.set(toolUseId, agentId);
+    removePendingToolUseId(state, toolUseId);
   }
 
   resolveAgentId(
@@ -195,6 +218,21 @@ export class SubagentMetricsRegistry {
       return undefined;
     }
     const state = this.getOrCreateThread(threadId);
+    const usageKey = buildUsageContributionKey(input, {
+      agentId: resolvedAgentId,
+      role: entryRole,
+    });
+    if (state.seenUsageKeys.has(usageKey)) {
+      logEcoDiag("subagent.usage_dedupe", {
+        threadId: shortThreadId(threadId),
+        role: entryRole,
+        agentId: shortAgentId(resolvedAgentId),
+        requestKey: input.requestKey,
+        modelId: input.modelId ?? input.usage.modelId,
+      });
+      return state.byAgentId.get(resolvedAgentId);
+    }
+    state.seenUsageKeys.add(usageKey);
     const now = Date.now();
     let entry = state.byAgentId.get(resolvedAgentId);
     if (!entry) {
@@ -253,6 +291,17 @@ export class SubagentMetricsRegistry {
         updatedAt: Date.parse(row.updatedAt) || Date.now(),
       };
       state.byAgentId.set(row.agentId, entry);
+      if (row.lastRequestKey) {
+        state.seenUsageKeys.add(
+          buildUsageContributionKey(
+            {
+              ...(entry.modelId && { modelId: entry.modelId }),
+              requestKey: row.lastRequestKey,
+            },
+            { agentId: row.agentId, role: row.role },
+          ),
+        );
+      }
       if (entry.status === "active" && isSubagentBillingRole(entry.role)) {
         const active = state.activeByRole.get(entry.role) ?? new Set();
         active.add(entry.agentId);
@@ -272,6 +321,8 @@ export class SubagentMetricsRegistry {
       state = {
         activeByRole: new Map(),
         toolUseToAgentId: new Map(),
+        pendingToolUses: [],
+        seenUsageKeys: new Set(),
         byAgentId: new Map(),
       };
       this.threads.set(threadId, state);
@@ -314,6 +365,42 @@ function createEmptyEntry(
     ecoCostBreakdown: { inputUsd: 0, outputUsd: 0, cacheReadUsd: 0, cacheCreationUsd: 0, totalUsd: 0 },
     updatedAt,
   };
+}
+
+function consumePendingToolUseId(state: ThreadSubagentState, role: AgentRole): string | undefined {
+  while (state.pendingToolUses.length > 0) {
+    let index = state.pendingToolUses.findIndex(
+      (pending) => pending.role === role && !state.toolUseToAgentId.has(pending.toolUseId),
+    );
+    if (index < 0) {
+      index = state.pendingToolUses.findIndex(
+        (pending) => !pending.role && !state.toolUseToAgentId.has(pending.toolUseId),
+      );
+    }
+    if (index < 0) {
+      return undefined;
+    }
+    const [pending] = state.pendingToolUses.splice(index, 1);
+    if (pending) {
+      return pending.toolUseId;
+    }
+  }
+  return undefined;
+}
+
+function removePendingToolUseId(state: ThreadSubagentState, toolUseId: string): void {
+  const index = state.pendingToolUses.findIndex((pending) => pending.toolUseId === toolUseId);
+  if (index >= 0) {
+    state.pendingToolUses.splice(index, 1);
+  }
+}
+
+function buildUsageContributionKey(
+  input: { requestKey: string; modelId?: string; usage?: Pick<ParsedUsage, "modelId"> },
+  resolved: { agentId: string; role: AgentRole },
+): string {
+  const modelId = input.modelId ?? input.usage?.modelId ?? "unknown-model";
+  return [resolved.agentId, resolved.role, input.requestKey, modelId].join("\u001f");
 }
 
 function mergeUsage(left: ParsedUsage, right: ParsedUsage): ParsedUsage {

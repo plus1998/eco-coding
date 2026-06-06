@@ -5,6 +5,7 @@ import {
   createDisabledSubagentPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
+  createSubagentToolAttributionPreToolHook,
   createTaskToolPreToolHook,
   createWorkflowDenyPreToolHook,
 } from "../src/eco-sdk-hooks";
@@ -86,6 +87,30 @@ test("createTaskToolPreToolHook forwards tool input to tracker", async () => {
   );
 
   expect(calls).toEqual([{ toolName: "TaskCreate", input: { subject: "Run tests" } }]);
+});
+
+test("createSubagentToolAttributionPreToolHook forwards tool use id with role", async () => {
+  const calls: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentToolAttributionPreToolHook({
+    onTaskToolUse(toolUseId, input) {
+      calls.push({ toolUseId, ...(input?.role && { role: input.role }) });
+    },
+  });
+
+  await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "coder", prompt: "Implement." },
+      tool_use_id: "tool_agent",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_agent",
+    { signal: new AbortController().signal },
+  );
+
+  expect(calls).toEqual([{ toolUseId: "tool_agent", role: "coder" }]);
 });
 
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {

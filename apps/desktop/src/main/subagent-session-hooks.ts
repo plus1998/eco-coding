@@ -17,7 +17,7 @@ export function createSubagentSessionHooks(
   options?: {
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
-    consumePendingLaunch?: () => PendingSubagentLaunch | undefined;
+    consumePendingLaunch?: (input: { role: SubagentRole }) => PendingSubagentLaunch | undefined;
     onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
     onTimingChanged?: () => void;
   },
@@ -29,7 +29,7 @@ export function createSubagentSessionHooks(
       if (!isSubagentRole(input.agentType)) {
         return;
       }
-      const pending = options?.consumePendingLaunch?.();
+      const pending = options?.consumePendingLaunch?.({ role: input.agentType });
       const prompt = input.prompt?.trim() ?? "";
       const todoId = input.todoId ?? pending?.todoId ?? options?.todoIdHint?.();
       const missionKey =
