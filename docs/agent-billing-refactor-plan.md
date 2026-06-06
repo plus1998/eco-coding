@@ -28,7 +28,7 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`822 pass / 14 skip / 0 fail`
+- `bun test`: 通过，`823 pass / 14 skip / 0 fail`
 - `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、SubAgent context observation、SubAgent metrics projection summary、SubAgent metrics persistence port、SubAgent metrics persistence mapper、SubAgent tool use index、SubAgent agent resolver、SubAgent metrics state、SubAgent legacy usage tracker、SubAgent legacy metrics fallback gate、SubAgent metrics diagnostics facade、SubAgent metrics registry persistence facade、SubAgent metrics record target、Thread run attempt orchestration、Thread runtime route/proxy attempt、Thread run outcome、Thread run cleanup、Thread run decision effects、SDK run event loop、SDK run input、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、billing snapshot selection policy、active run billing state、active run runtime state、legacy billing accumulator adapter、usage context effects、usage context service、thread metrics runtime、context lifecycle service、compaction audit service、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、SDK final run billing resolver、single usage billing orchestration、stream partial billing orchestration、billing runtime environment、telemetry billing role normalization 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
@@ -525,6 +525,13 @@
 - `usage-billing-effects` 的 single usage 与 SDK final 两条路径都通过该 gate 判断是否写旧 SubAgent metrics；条件保持不变：必须有 SubAgent context，且 billing selection 没有 ledger snapshot。
 - 决策结果保留 reason：`missing_subagent_context`、`ledger_projection_available`、`ledger_projection_unavailable`，后续删除 fallback 时可以直接基于该 gate 收敛。
 - 新增测试覆盖：无 SubAgent context 跳过、ledger projection 可用跳过、ledger projection 不可用时记录。
+
+第六十批 SDK final legacy fallback 覆盖已完成：
+
+- 补充 `applySdkRunBillingEffects` 在 ledger projection 不可用时写 legacy SubAgent metrics 的回归测试。
+- 测试覆盖 SDK final 多模型场景：当 ledger snapshot 缺失时，legacy metrics fallback 会把不同模型行累计到同一个 resolved SubAgent entry，并投影到 `billing.subagents`。
+- 测试使用独立 reviewer 路由保持第二个模型的 modelId，不混入 planner-model 归一化规则，避免把 fallback gate 和模型路由策略绑在一条断言里。
+- 本批只补测试，不改变生产代码。
 
 当前边界：
 

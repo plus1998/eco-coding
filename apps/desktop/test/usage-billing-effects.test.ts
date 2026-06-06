@@ -3,7 +3,11 @@ import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
-import { InMemoryUsageLedger, type AgentInstanceRecord, type UsageLedgerEvent } from "../src/main/usage-ledger";
+import {
+  InMemoryUsageLedger,
+  type AgentInstanceRecord,
+  type UsageLedgerEvent,
+} from "../src/main/usage-ledger";
 import {
   UsageLedgerCoordinator,
   type UsageLedgerBillingSnapshotSelectionOptions,
@@ -528,5 +532,77 @@ test("applySingleUsageBillingEffects falls back to legacy subagent metrics when 
   expect(billing.subagents?.[0]).toMatchObject({
     agentId: "agent_coder",
     inputTokens: 10_000,
+  });
+});
+
+test("applySdkRunBillingEffects falls back to legacy subagent metrics when ledger projection is unavailable", async () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_sdk_effects_legacy_subagent_fallback";
+  registry.onSubagentStart(threadId, { agentId: "agent_coder", role: "coder" });
+  const coordinator = new UsageLedgerCoordinator({
+    store: {
+      appendUsageLedgerEvent: () => false,
+      listUsageLedgerEvents: () => [],
+      listAgentInstances: () => [],
+    },
+    metrics: {
+      listEntries: (id) => registry.listEntries(id),
+    },
+    writeError: (message) => {
+      throw new Error(message);
+    },
+  });
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage() {
+          return undefined;
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: coordinator,
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: registry,
+    emitUsageUpdated: () => undefined,
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const billingModels = await resolveSdkRunBillingModels({
+    role: "coder",
+    models: [
+      { modelId: "haiku", usage: usage(1_000), sdkCostUsd: 0.01 },
+      { modelId: "reviewer-haiku", usage: usage(500), sdkCostUsd: 0.02 },
+    ],
+    runtimeRoutes: [
+      ...routes,
+      { role: "reviewer", provider, modelId: "reviewer-haiku", apiCompat: "anthropic" },
+    ],
+    lookupPricing,
+  });
+
+  const billing = await applySdkRunBillingEffects(services, {
+    threadId,
+    role: "coder",
+    requestKey: "sdk-result:event_fallback",
+    models: billingModels.models,
+    billingRole: "coder",
+    contextUsage: usage(1_500),
+    updateContext: true,
+    totalCostUsd: 0.03,
+    ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
+    runAttemptId: "attempt_fallback",
+    ledgerAgentId: "agent_coder",
+    resolvedSubagentId: "agent_coder",
+  });
+
+  const [entry] = registry.listEntries(threadId);
+  expect(entry?.usage.inputTokens).toBe(1_500);
+  expect(entry?.usage.outputTokens).toBe(2_000);
+  expect(entry?.ecoCostUsd).toBeGreaterThan(0);
+  expect(billing.subagents?.[0]).toMatchObject({
+    agentId: "agent_coder",
+    inputTokens: 1_500,
+    outputTokens: 2_000,
   });
 });
