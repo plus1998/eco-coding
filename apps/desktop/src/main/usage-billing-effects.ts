@@ -11,6 +11,7 @@ import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import {
   type ResolvedSdkRunBillingModel,
+  type SdkStreamPartialBillingArtifacts,
   type SingleUsageBillingArtifacts,
   type UsageBillingContextUpdate,
 } from "./usage-billing-artifacts";
@@ -47,6 +48,38 @@ export interface ApplySingleUsageBillingEffectsInput {
   otelCostUsd?: number;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
+}
+
+export interface ApplySdkStreamPartialBillingEffectsInput {
+  threadId: string;
+  usage: ParsedUsage;
+  artifacts: SdkStreamPartialBillingArtifacts;
+  subagentAgentId?: string;
+}
+
+export async function applySdkStreamPartialBillingEffects(
+  services: UsageBillingEffectsServices,
+  input: ApplySdkStreamPartialBillingEffectsInput,
+): Promise<void> {
+  services.usageLedger.appendEvents([input.artifacts.ledgerEvent]);
+
+  if (!input.artifacts.contextUpdate) {
+    return;
+  }
+
+  await services.contextMonitor.updateFromUsage(input.threadId, input.usage, {
+    role: input.artifacts.contextUpdate.role,
+    ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
+    modelId: input.artifacts.contextUpdate.modelId,
+    providerBaseUrl: input.artifacts.contextUpdate.providerBaseUrl,
+    ...(input.artifacts.contextUpdate.modelsDevMapping && {
+      modelsDevMapping: input.artifacts.contextUpdate.modelsDevMapping,
+    }),
+    ...(input.artifacts.contextUpdate.manualSpec && {
+      manualSpec: input.artifacts.contextUpdate.manualSpec,
+    }),
+  });
+  services.emitLiveContext(input.threadId);
 }
 
 export async function applySingleUsageBillingEffects(

@@ -7,11 +7,13 @@ import { InMemoryUsageLedger, type AgentInstanceRecord, type UsageLedgerEvent } 
 import { UsageLedgerCoordinator, type UsageLedgerCoordinatorStore } from "../src/main/usage-ledger-coordinator";
 import {
   resolveSdkRunBillingModels,
+  resolveSdkStreamPartialBillingArtifacts,
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "../src/main/usage-billing-artifacts";
 import {
   applySdkRunBillingEffects,
+  applySdkStreamPartialBillingEffects,
   applySingleUsageBillingEffects,
   type UsageBillingEffectsServices,
   type UsageBillingUpdatedEvent,
@@ -141,6 +143,98 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
   expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
   expect(persisted).toEqual(["thr_effects"]);
   expect(liveContext).toEqual(["thr_effects"]);
+});
+
+test("applySdkStreamPartialBillingEffects records partial ledger and context side effects only", async () => {
+  const { ledger, coordinator } = createLedgerCoordinator();
+  const contextUpdates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
+  const liveContext: string[] = [];
+  const accumulator: UsageBillingEffectsServices["accumulator"] = {
+    recordUsage: () => {
+      throw new Error("stream partial must not update legacy single usage");
+    },
+    recordRunUsage: () => {
+      throw new Error("stream partial must not update legacy run usage");
+    },
+    hasSeenRequestKey: () => {
+      throw new Error("stream partial must not inspect legacy request keys");
+    },
+  };
+  const services: UsageBillingEffectsServices = {
+    contextMonitor: {
+      async updateFromUsage(threadId, nextUsage, options) {
+        contextUpdates.push({ threadId, usage: nextUsage, options });
+      },
+      getSnapshot: () => undefined,
+    },
+    usageLedger: coordinator,
+    accumulator,
+    subagentMetrics: {
+      recordSdkUsage: () => {
+        throw new Error("stream partial must not update subagent billing metrics");
+      },
+    },
+    emitUsageUpdated: () => {
+      throw new Error("stream partial must not emit usage_updated");
+    },
+    schedulePersistThreadMetrics: () => {
+      throw new Error("stream partial must not persist thread metrics");
+    },
+    emitLiveContext: (threadId) => liveContext.push(threadId),
+  };
+  const artifacts = await resolveSdkStreamPartialBillingArtifacts({
+    threadId: "thr_stream_effects",
+    eventId: "evt_stream",
+    role: "coder",
+    usage: usage(1_000),
+    modelId: "haiku",
+    runtimeRoutes: routes,
+    lookupPricing,
+    runAttemptId: "attempt_1",
+    subagentAgentId: "agent_coder",
+  });
+
+  await applySdkStreamPartialBillingEffects(services, {
+    threadId: "thr_stream_effects",
+    usage: usage(1_000),
+    artifacts,
+    subagentAgentId: "agent_coder",
+  });
+
+  expect(ledger.listUsageEvents("thr_stream_effects")).toHaveLength(1);
+  expect(ledger.listUsageEvents("thr_stream_effects")[0]).toMatchObject({
+    source: "sdk",
+    usageKind: "request_partial",
+    runAttemptId: "attempt_1",
+    agentId: "agent_coder",
+  });
+  expect(contextUpdates).toHaveLength(1);
+  expect(contextUpdates[0]?.options).toMatchObject({
+    role: "coder",
+    agentId: "agent_coder",
+    modelId: "haiku",
+    providerBaseUrl: "https://api.example.test",
+  });
+  expect(liveContext).toEqual(["thr_stream_effects"]);
+
+  const noContextArtifacts = await resolveSdkStreamPartialBillingArtifacts({
+    threadId: "thr_stream_audit_only",
+    eventId: "evt_no_route",
+    role: "coder",
+    usage: usage(500),
+    modelId: "unknown-model",
+    runtimeRoutes: [],
+    lookupPricing,
+  });
+  await applySdkStreamPartialBillingEffects(services, {
+    threadId: "thr_stream_audit_only",
+    usage: usage(500),
+    artifacts: noContextArtifacts,
+  });
+
+  expect(ledger.listUsageEvents("thr_stream_audit_only")).toHaveLength(1);
+  expect(contextUpdates).toHaveLength(1);
+  expect(liveContext).toEqual(["thr_stream_effects"]);
 });
 
 test("applySdkRunBillingEffects applies SDK final side effects", async () => {

@@ -183,6 +183,7 @@ import {
 } from "./usage-billing-artifacts";
 import {
   applySdkRunBillingEffects,
+  applySdkStreamPartialBillingEffects,
   applySingleUsageBillingEffects,
   type UsageBillingUpdatedEvent,
 } from "./usage-billing-effects";
@@ -4227,22 +4228,12 @@ async function processSdkStreamPartialUsage(input: {
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
   });
 
-  usageLedgerCoordinator.appendEvents([
-    artifacts.ledgerEvent,
-  ]);
-
-  if (artifacts.contextUpdate) {
-    await contextMonitor.updateFromUsage(input.threadId, input.usage, {
-      role: artifacts.contextUpdate.role,
-      ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
-      modelId: artifacts.contextUpdate.modelId,
-      providerBaseUrl: artifacts.contextUpdate.providerBaseUrl,
-      ...(artifacts.contextUpdate.modelsDevMapping && {
-        modelsDevMapping: artifacts.contextUpdate.modelsDevMapping,
-      }),
-    });
-    contextScheduler.emitLiveFromMonitor(input.threadId);
-  }
+  await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), {
+    threadId: input.threadId,
+    usage: input.usage,
+    artifacts,
+    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
+  });
 }
 
 async function processSdkRunBilling(input: {
