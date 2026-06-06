@@ -171,6 +171,33 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
+export function createNonEcoSubagentDenyPreToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
+      return {};
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const rawType = readAgentSubagentType(toolInput);
+    if (!rawType) {
+      return {};
+    }
+    if (normalizeSdkSubagentType(rawType)) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: `Subagent "${rawType}" is not an Eco agent. Use eco_* keys only (see Available Eco subagents in system prompt).`,
+      },
+    };
+  };
+}
+
 export function createDisabledSubagentPreToolHook(
   availability?: SubagentAvailability,
 ): HookCallback | undefined {
@@ -447,6 +474,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;

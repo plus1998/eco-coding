@@ -156,11 +156,20 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
   }
 });
 
-test("applyEcoSdkSettings disables workflows in query settings", () => {
+test("applyEcoSdkSettings disables workflows and denies SDK built-in subagents", () => {
   const options: Record<string, unknown> = {};
   applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/");
   expect(options.settings).toMatchObject({
     disableWorkflows: true,
+    permissions: {
+      deny: expect.arrayContaining([
+        "Agent(general-purpose)",
+        "Agent(Explore)",
+        "Agent(Plan)",
+        "Agent(Bash)",
+        "Agent(statusline-setup)",
+      ]),
+    },
     env: {
       ANTHROPIC_API_KEY: "router-key",
       ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",

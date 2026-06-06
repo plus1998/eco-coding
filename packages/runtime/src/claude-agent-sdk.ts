@@ -74,6 +74,7 @@ import {
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
+  sdkBuiltinSubagentDenyRules,
   SUBAGENT_ROLES,
   type EcoOrchestrationMode,
   type SubagentAvailability,
@@ -945,9 +946,18 @@ export function applyEcoSdkSettings(
 ): void {
   const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
   const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
+  const existingPermissions = isRecord(existing.permissions) ? existing.permissions : {};
+  const existingDeny = Array.isArray(existingPermissions.deny)
+    ? (existingPermissions.deny as string[])
+    : [];
+  const deny = [...new Set([...existingDeny, ...sdkBuiltinSubagentDenyRules()])];
   queryOptions.settings = {
     ...existing,
     disableWorkflows: true,
+    permissions: {
+      ...existingPermissions,
+      deny,
+    },
     env: {
       ...existingEnv,
       ANTHROPIC_API_KEY: apiKey,

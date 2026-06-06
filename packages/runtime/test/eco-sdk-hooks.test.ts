@@ -3,6 +3,7 @@ import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
+  createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
@@ -143,6 +144,46 @@ test("createSubagentToolAttributionPreToolHook forwards tool use id with role", 
   );
 
   expect(calls).toEqual([{ toolUseId: "tool_agent", role: "coder" }]);
+});
+
+test("createNonEcoSubagentDenyPreToolHook denies Agent(general-purpose)", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", prompt: "Research codebase" },
+      tool_use_id: "tool_gp",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_gp",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("general-purpose");
+});
+
+test("createNonEcoSubagentDenyPreToolHook allows eco_* subagent keys", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: ecoSubagentKeyForRole("coder"), prompt: "Implement." },
+      tool_use_id: "tool_c",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_c",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toBeUndefined();
 });
 
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {

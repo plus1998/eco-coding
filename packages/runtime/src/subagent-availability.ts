@@ -3,6 +3,22 @@ export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tes
 /** Legacy SDK built-in explore key accepted for old sessions/tool calls. */
 export const SDK_EXPLORE_AGENT_KEY = "Explore";
 
+/**
+ * Built-in subagent keys Claude Agent SDK injects into session init and the Agent/Task schema.
+ * @see https://github.com/anthropics/claude-agent-sdk-typescript/issues/87
+ */
+export const SDK_BUILTIN_SUBAGENT_NAMES = [
+  "general-purpose",
+  "statusline-setup",
+  "Explore",
+  "Plan",
+  "Bash",
+] as const;
+
+export function sdkBuiltinSubagentDenyRules(): readonly string[] {
+  return SDK_BUILTIN_SUBAGENT_NAMES.map((name) => `Agent(${name})`);
+}
+
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
 
 export const ECO_SUBAGENT_KEY_BY_ROLE = {
