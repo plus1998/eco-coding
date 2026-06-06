@@ -10,6 +10,11 @@ export interface NoteSubagentToolUseResult {
   pendingCount: number;
 }
 
+export interface LinkPendingSubagentToolUseResult {
+  toolUseId?: string;
+  mappedCount: number;
+}
+
 export class SubagentToolUseIndex {
   private readonly toolUseToAgentId = new Map<string, string>();
   private readonly pendingToolUses: PendingToolUse[] = [];
@@ -42,6 +47,17 @@ export class SubagentToolUseIndex {
   link(toolUseId: string, agentId: string): void {
     this.toolUseToAgentId.set(toolUseId, agentId);
     this.removePending(toolUseId);
+  }
+
+  linkNextPendingForRole(role: AgentRole, agentId: string): LinkPendingSubagentToolUseResult {
+    const toolUseId = this.consumeForRole(role);
+    if (toolUseId) {
+      this.link(toolUseId, agentId);
+    }
+    return {
+      ...(toolUseId && { toolUseId }),
+      mappedCount: this.mappedCount,
+    };
   }
 
   resolve(toolUseId: string): string | undefined {

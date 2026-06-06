@@ -36,3 +36,20 @@ test("SubagentToolUseIndex link removes pending entries", () => {
   expect(index.consumeForRole("coder")).toBeUndefined();
   expect(index.resolve("toolu_task")).toBe("agent_coder");
 });
+
+test("SubagentToolUseIndex links the next pending tool use for a role atomically", () => {
+  const index = new SubagentToolUseIndex();
+  index.note("toolu_explore", "explore");
+  index.note("toolu_coder", "coder");
+
+  expect(index.linkNextPendingForRole("coder", "agent_coder")).toEqual({
+    toolUseId: "toolu_coder",
+    mappedCount: 1,
+  });
+  expect(index.resolve("toolu_coder")).toBe("agent_coder");
+  expect(index.consumeForRole("coder")).toBeUndefined();
+
+  expect(index.linkNextPendingForRole("tester", "agent_tester")).toEqual({
+    mappedCount: 1,
+  });
+});

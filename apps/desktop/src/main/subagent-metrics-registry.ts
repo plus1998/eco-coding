@@ -54,10 +54,7 @@ export class SubagentMetricsRegistry {
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
     const start = state.metrics.start(input, now);
-    const pendingToolUseId = state.toolUses.consumeForRole(input.role);
-    if (pendingToolUseId) {
-      state.toolUses.link(pendingToolUseId, input.agentId);
-    }
+    const toolUseLink = state.toolUses.linkNextPendingForRole(input.role, input.agentId);
     this.persistEntry(threadId, start.entry);
     this.diagnostics.logLifecycle({
       threadId,
@@ -65,7 +62,7 @@ export class SubagentMetricsRegistry {
       role: input.role,
       agentId: input.agentId,
       activeCount: start.activeCount,
-      toolUseLinks: state.toolUses.mappedCount,
+      toolUseLinks: toolUseLink.mappedCount,
     });
   }
 
