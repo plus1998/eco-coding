@@ -94,7 +94,7 @@ export type ActivityDetailBlock =
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
   | { kind: "model-request"; role?: string }
   | { kind: "agent-request"; subagent?: string; agentId?: string }
-  | { kind: "thinking"; text: string; streaming?: boolean }
+  | { kind: "thinking"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string; agentId?: string }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
@@ -411,11 +411,26 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     if (text) {
       removePendingRequestBlocks();
     }
-    current.details.push({
-      kind: "thinking",
-      text,
-      ...(stillStreaming ? { streaming: true } : {}),
-    });
+    const last = current.details[current.details.length - 1];
+    const thinkingContext = {
+      ...(toolContextSubagent && { subagent: toolContextSubagent }),
+      ...(toolContextAgentId && { agentId: toolContextAgentId }),
+    };
+    if (text && last?.kind === "thinking" && shouldMergeThinkingBlocks(last.text, text)) {
+      current.details[current.details.length - 1] = {
+        kind: "thinking",
+        text: mergeThinkingBlocks(last.text, text),
+        ...(stillStreaming ? { streaming: true } : {}),
+        ...thinkingContext,
+      };
+    } else {
+      current.details.push({
+        kind: "thinking",
+        text,
+        ...(stillStreaming ? { streaming: true } : {}),
+        ...thinkingContext,
+      });
+    }
     thinking = "";
     thinkingStreaming = false;
   };
@@ -732,7 +747,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const progressAction = parseProgressActionLine(line.message);
     if (progressAction) {
-      flushTextBuffers();
+      flushNarrative();
       pushToolAction(progressAction, line);
       continue;
     }
@@ -754,7 +769,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const tool = parseToolLine(line.message);
     if (tool) {
-      flushTextBuffers();
+      flushNarrative();
       pushToolAction(tool, line);
       continue;
     }
@@ -766,11 +781,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
         thinking = mergeStreamText(thinking, text);
         thinkingStreaming = true;
       } else {
-        if (thinking) {
-          thinking += `\n\n${text}`;
-        } else {
-          thinking = text;
-        }
+        thinking = thinking ? mergeStreamText(thinking, text) : text;
         thinkingStreaming = false;
       }
       continue;
@@ -871,7 +882,8 @@ function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
     return block.role;
   }
   if (
-    (block.kind === "action" ||
+    (block.kind === "thinking" ||
+      block.kind === "action" ||
       block.kind === "narrative" ||
       block.kind === "agent-request" ||
       block.kind === "tool-failed" ||
@@ -1637,6 +1649,27 @@ function isNarrativeDuplicateOfThinking(narrative: string, thinking: string): bo
   }
   const nPrefix = n.slice(0, Math.min(80, n.length));
   return t.startsWith(nPrefix) || n.startsWith(t.slice(0, Math.min(80, t.length)));
+}
+
+export function shouldMergeThinkingBlocks(previous: string, next: string): boolean {
+  const prev = previous.trim();
+  const nextTrim = next.trim();
+  if (!prev || !nextTrim) {
+    return false;
+  }
+  return nextTrim.startsWith(prev) || prev.startsWith(nextTrim);
+}
+
+export function mergeThinkingBlocks(previous: string, next: string): string {
+  const prev = previous.trim();
+  const nextTrim = next.trim();
+  if (nextTrim.startsWith(prev)) {
+    return nextTrim;
+  }
+  if (prev.startsWith(nextTrim)) {
+    return prev;
+  }
+  return `${prev}\n\n${nextTrim}`;
 }
 
 export function resolveActiveMissionSummary(

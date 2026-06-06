@@ -30,6 +30,8 @@ import {
   resolveSubagentRunTitle,
   sessionAwaitingFirstToken,
   shouldScrollMainActivityFeedForLine,
+  shouldMergeThinkingBlocks,
+  mergeThinkingBlocks,
   type ActivityLogBlock,
   type SubagentRunItem,
 } from "../src/renderer/activity-log";
@@ -180,6 +182,43 @@ test("keeps thinking separate from agent narrative streams", () => {
   if (narrative?.kind === "narrative") {
     expect(narrative.text).toBe("check the index.html to understand the build setup.");
   }
+});
+
+test("keeps thinking continuous across tool use instead of truncating into duplicate blocks", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "weather" },
+      { id: "1", role: "tool", message: "Tool: Agent · 探索 (explore)" },
+      { id: "2", role: "thinking", message: "The", stream: true },
+      { id: "3", role: "tool", message: "Tool: WebSearch · 广州天气" },
+      {
+        id: "4",
+        role: "thinking",
+        message: "The agent has returned the weather information for Guangzhou tomorrow.",
+        stream: false,
+      },
+      { id: "5", role: "explore", message: "广州明天有暴雨。" },
+    ],
+    { status: "completed", createdAt: new Date().toISOString() },
+  );
+
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("explore");
+  const thinkingBlocks = item?.children.filter((child) => child.kind === "thinking") ?? [];
+  expect(thinkingBlocks).toHaveLength(1);
+  const thinking = thinkingBlocks[0];
+  expect(thinking?.kind).toBe("thinking");
+  if (thinking?.kind === "thinking") {
+    expect(thinking.text).toBe(
+      "The agent has returned the weather information for Guangzhou tomorrow.",
+    );
+    expect(thinking.subagent).toBe("explore");
+  }
+});
+
+test("mergeThinkingBlocks prefers the longer prefix continuation", () => {
+  expect(shouldMergeThinkingBlocks("The", "The agent has returned")).toBe(true);
+  expect(mergeThinkingBlocks("The", "The agent has returned")).toBe("The agent has returned");
 });
 
 test("renders streaming thinking label even before first token", () => {
