@@ -1,8 +1,8 @@
 import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
-import type { ConversationStore } from "./conversation-store";
 import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
+import type { SubagentMetricsPersistenceStore } from "./subagent-metrics-persistence";
 
 export type SubagentMetricsStatus = "active" | "stopped";
 
@@ -46,7 +46,7 @@ export interface SubagentContextObservationInput {
 export class SubagentMetricsRegistry {
   private readonly threads = new Map<string, ThreadSubagentState>();
 
-  constructor(private readonly store: ConversationStore) {}
+  constructor(private readonly store: SubagentMetricsPersistenceStore) {}
 
   onSubagentStart(threadId: string, input: { agentId: string; role: AgentRole }): void {
     if (!isSubagentBillingRole(input.role)) {

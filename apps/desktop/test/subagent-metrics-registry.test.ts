@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { createConversationStore } from "../src/main/conversation-store";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { emptyCostBreakdown } from "@eco/runtime";
 
-const metricsStoreStub = {
+const metricsStoreStub: SubagentMetricsPersistenceStore = {
   listSubagentMetrics: () => [],
   upsertSubagentMetrics: () => {},
   clearSubagentMetrics: () => {},
-} as never;
+};
 
 const sqliteAvailable = await (async () => {
   try {

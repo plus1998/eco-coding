@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { inferActivityRole } from "@eco/runtime/sdk";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { activityStreamKey, resolveActivityAgentId } from "../src/main/activity-agent-id";
 
 test("resolveActivityAgentId prefers distinct subagent session id", () => {
@@ -23,7 +24,7 @@ test("resolveActivityAgentId prefers distinct subagent session id", () => {
 });
 
 test("resolveActivityAgentId falls back to parent tool use mapping", () => {
-  const registry = new SubagentMetricsRegistry({} as never);
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.noteTaskToolUse("thr_1", "toolu_task_1");
   registry.linkToolUseToAgent("thr_1", "toolu_task_1", "agent_coder_a");
 
@@ -64,10 +65,11 @@ test("activityStreamKey isolates parallel subagent streams", () => {
   expect(activityStreamKey("thr_1", undefined, "planner")).toBe("thr_1:planner");
 });
 
-const metricsStoreStub = {
+const metricsStoreStub: SubagentMetricsPersistenceStore = {
   listSubagentMetrics: () => [],
   upsertSubagentMetrics: () => {},
-} as never;
+  clearSubagentMetrics: () => {},
+};
 
 test("resolveActivityAgentId falls back to sole active subagent without parent", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);

@@ -24,6 +24,7 @@ import {
   type UsageBillingUpdatedEvent,
 } from "../src/main/usage-billing-effects";
 import { createUsageContextService } from "../src/main/usage-context-effects";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
@@ -52,11 +53,11 @@ const routes: RuntimeRoute[] = [
   { role: "coder", provider, modelId: "haiku", apiCompat: "anthropic" },
 ];
 
-const metricsStoreStub = {
+const metricsStoreStub: SubagentMetricsPersistenceStore = {
   listSubagentMetrics: () => [],
   upsertSubagentMetrics: () => {},
   clearSubagentMetrics: () => {},
-} as never;
+};
 
 async function lookupPricing(route: UsageBillingPricingRoute): Promise<ModelPricingLookup> {
   return {
