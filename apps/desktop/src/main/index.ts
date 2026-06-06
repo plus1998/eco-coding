@@ -4,8 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  computeRequestBilling,
-  computeSavings,
   computeWindowOccupancy,
   formatUsageBadge,
   parseSdkContextUsage,
@@ -155,11 +153,8 @@ import {
 } from "./anthropic-proxy";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import {
-  buildPlannerModelLabel,
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
-  resolvePublicModelId,
-  resolveRatesForRoute,
   resolveRuntimeRoutesFromSettings,
   resolveUsageRoute,
 } from "./billing-resolver";
@@ -183,9 +178,12 @@ import {
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
 import {
-  buildSdkUsageLedgerEvents,
-  buildSingleUsageLedgerEvent,
-} from "./usage-ledger-adapters";
+  resolveSdkRunBillingModels,
+  resolveSdkStreamPartialBillingArtifacts,
+  resolveSingleUsageBillingArtifacts,
+  type UsageBillingPricingRoute,
+} from "./usage-billing-artifacts";
+import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 import {
   buildCompactionLedgerEvent,
   readCompactionBoundaryMetadata,
@@ -3741,6 +3739,14 @@ function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
   return "planner";
 }
 
+function lookupUsageBillingPricing(route: UsageBillingPricingRoute) {
+  return pricingCache.lookupForRoute({
+    baseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    ...(route.modelsDevMapping && { mapping: route.modelsDevMapping }),
+  });
+}
+
 async function processUsageBilling(input: {
   threadId: string;
   role: AgentRole;
@@ -3785,100 +3791,41 @@ async function processUsageBilling(input: {
   }
 
   const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const usageRoute = resolveUsageRoute(input.role, input.modelId, runtimeRoutes);
-  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
-
-  const actualLookup = usageRoute
-    ? await pricingCache.lookupForRoute({
-        baseUrl: usageRoute.provider.baseUrl,
-        modelId: usageRoute.modelId,
-        ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
-      })
-    : null;
-  const plannerLookup = plannerRoute
-    ? await pricingCache.lookupForRoute({
-        baseUrl: plannerRoute.provider.baseUrl,
-        modelId: plannerRoute.modelId,
-        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
-      })
-    : null;
-
-  const requestKey =
-    input.requestKey ??
-    buildUsageRequestKey({
-      role: input.role,
-      inputTokens: input.inputTokens,
-      outputTokens: input.outputTokens,
-      cacheReadTokens: input.cacheReadTokens,
-      cacheCreationTokens: input.cacheCreationTokens,
-      ...(input.modelId && { modelId: input.modelId }),
-      ...(input.otelDedupId && { dedupId: input.otelDedupId }),
-    });
-
-  const plannerModelLabel = buildPlannerModelLabel(
-    plannerRoute,
-    plannerLookup?.displayName ?? plannerRoute?.modelId,
-  );
-
-  const resolvedModelId = resolvePublicModelId(input.role, input.modelId, runtimeRoutes) ?? input.modelId;
-  const billingRole = usageRoute?.role ?? input.role;
-  const source = input.source ?? "otel";
-  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
-  const requestBilling = computeRequestBilling(delta, actualRates, plannerRates);
-  const { savedUsd } = computeSavings(
-    requestBilling.plannerTokenCostUsd,
-    requestBilling.ecoCostUsd,
-  );
-  const requestBillingLog: UpstreamProxyCallBilling = {
-    ecoCostUsd: requestBilling.ecoCostUsd,
-    plannerTokenCostUsd: requestBilling.plannerTokenCostUsd,
-    savedUsd,
-    otelCostUsd: input.otelCostUsd ?? 0,
-  };
-  const ledgerAgentId =
-    input.agentId ??
-    (billingRole === "planner" ? input.plannerAgentId : undefined);
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: input.threadId,
+    role: input.role,
+    usage: delta,
+    runtimeRoutes,
+    lookupPricing: lookupUsageBillingPricing,
+    ...(input.source && { source: input.source }),
+    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+    ...(input.modelId && { modelId: input.modelId }),
+    ...(input.messageId && { messageId: input.messageId }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
+    ...(input.agentId && { agentId: input.agentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.requestKey && { requestKey: input.requestKey }),
+    ...(input.sourceEventId && { sourceEventId: input.sourceEventId }),
+    ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+    ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
+  });
   usageLedgerCoordinator.appendEvents([
-    buildSingleUsageLedgerEvent({
-      threadId: input.threadId,
-      role: billingRole,
-      source,
-      sourceEventId: input.sourceEventId ?? requestKey,
-      usageKind: source === "sdk" && input.messageId ? "assistant_fallback" : "request_final",
-      usage: delta,
-      computedBilling: requestBilling,
-      requestKey,
-      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-      ...(ledgerAgentId && { agentId: ledgerAgentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-      ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
-      ...(input.messageId && { sdkMessageId: input.messageId }),
-      ...(resolvedModelId && { modelId: resolvedModelId }),
-      ...(input.otelCostUsd !== undefined && { reportedCostUsd: input.otelCostUsd }),
-      metadata: {
-        path: "processUsageBilling",
-        ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
-      },
-    }),
+    artifacts.ledgerEvent,
   ]);
 
-  const monitorModelId = usageRoute?.modelId ?? plannerRoute?.modelId ?? resolvedModelId;
-  const monitorBaseUrl = usageRoute?.provider.baseUrl ?? plannerRoute?.provider.baseUrl;
-  const monitorRole = billingRole;
-  const monitorRoute = resolveUsageRoute(monitorRole, resolvedModelId, runtimeRoutes);
-  const monitorModelForRole = monitorRoute?.modelId ?? monitorModelId;
-  const monitorBaseForRole = monitorRoute?.provider.baseUrl ?? monitorBaseUrl;
   const updateContext =
     input.updateContext ?? shouldUpdateContextFromUsageSource(input.source, input.role);
-  if (updateContext && monitorModelForRole && monitorBaseForRole) {
-    await contextMonitor.updateFromUsage(input.threadId, delta, {
-      role: monitorRole,
+  if (updateContext && artifacts.contextUpdate) {
+    await contextMonitor.updateFromUsage(input.threadId, artifacts.delta, {
+      role: artifacts.contextUpdate.role,
       ...(input.agentId && { agentId: input.agentId }),
-      modelId: monitorModelForRole,
-      providerBaseUrl: monitorBaseForRole,
-      ...(monitorRoute?.modelsDevMapping && { modelsDevMapping: monitorRoute.modelsDevMapping }),
-      ...(monitorRoute?.manualSpec && { manualSpec: monitorRoute.manualSpec }),
+      modelId: artifacts.contextUpdate.modelId,
+      providerBaseUrl: artifacts.contextUpdate.providerBaseUrl,
+      ...(artifacts.contextUpdate.modelsDevMapping && {
+        modelsDevMapping: artifacts.contextUpdate.modelsDevMapping,
+      }),
+      ...(artifacts.contextUpdate.manualSpec && { manualSpec: artifacts.contextUpdate.manualSpec }),
       ...(input.messageId && { messageId: input.messageId }),
     });
   }
@@ -3889,82 +3836,74 @@ async function processUsageBilling(input: {
     input.threadId,
     threadUsageAccumulator.recordUsage({
       threadId: input.threadId,
-      role: billingRole,
-      source,
-      delta,
+      role: artifacts.billingRole,
+      source: artifacts.source,
+      delta: artifacts.delta,
       ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-      actualRates,
-      plannerRates,
-      ...(resolvedModelId && { modelId: resolvedModelId }),
-      requestKey,
-      ...(plannerModelLabel && { plannerModelLabel }),
+      actualRates: artifacts.actualRates,
+      plannerRates: artifacts.plannerRates,
+      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
+      requestKey: artifacts.requestKey,
+      ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
       ...(input.reconciliationOnly && { reconciliationOnly: true }),
     }),
   );
 
-  if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(billingRole) && input.agentId) {
-    const sdkProxyKey = `sdk:proxy-subagent:${requestKey}`;
+  if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(artifacts.billingRole) && input.agentId) {
+    const sdkProxyKey = `sdk:proxy-subagent:${artifacts.requestKey}`;
     if (!threadUsageAccumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
       billing = usageLedgerCoordinator.enrichBillingSnapshot(
         input.threadId,
         threadUsageAccumulator.recordUsage({
           threadId: input.threadId,
-          role: billingRole,
+          role: artifacts.billingRole,
           source: "sdk",
-          delta,
-          actualRates,
-          plannerRates,
-          ...(resolvedModelId && { modelId: resolvedModelId }),
+          delta: artifacts.delta,
+          actualRates: artifacts.actualRates,
+          plannerRates: artifacts.plannerRates,
+          ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
           requestKey: sdkProxyKey,
-          ...(plannerModelLabel && { plannerModelLabel }),
+          ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
         }),
       );
     }
   }
   usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
 
-  if (input.agentId && isSubagentBillingRole(billingRole)) {
+  if (input.agentId && isSubagentBillingRole(artifacts.billingRole)) {
     const roleSnap = contextMonitor.getSnapshot(input.threadId);
     const instance = roleSnap?.instances?.find((row) => row.agentId === input.agentId);
     subagentMetricsRegistry.recordSdkUsage(input.threadId, {
-      role: billingRole,
+      role: artifacts.billingRole,
       agentId: input.agentId,
-      usage: delta,
-      contextOccupied: instance?.occupied ?? computeWindowOccupancy(delta),
+      usage: artifacts.delta,
+      contextOccupied: instance?.occupied ?? computeWindowOccupancy(artifacts.delta),
       ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
-      billing: requestBilling,
-      ...(resolvedModelId && { modelId: resolvedModelId }),
-      requestKey,
+      billing: artifacts.requestBilling,
+      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
+      requestKey: artifacts.requestKey,
     });
   }
 
-  const parsed = {
-    inputTokens: delta.inputTokens,
-    outputTokens: delta.outputTokens,
-    cacheReadTokens: delta.cacheReadTokens,
-    cacheCreationTokens: delta.cacheCreationTokens,
-    ...(resolvedModelId && { modelId: resolvedModelId }),
-  };
-
   const snapshot = buildUsageSnapshotForRole({
-    usage: parsed,
-    role: billingRole,
+    usage: artifacts.parsedUsage,
+    role: artifacts.billingRole,
     ...(monitorSnap && { monitorSnap }),
-    ...(parsed.modelId && { modelId: parsed.modelId }),
+    ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
     fallbackContext: updateContext ? "estimate" : "none",
   });
 
-  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(parsed), billingRole, false, {
+  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(artifacts.parsedUsage), artifacts.billingRole, false, {
     usage: snapshot,
     totalCostUsd: billing.otelCostUsd,
     billing,
-    ...(parsed.modelId && { modelId: parsed.modelId }),
+    ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
   });
 
   schedulePersistThreadMetrics(input.threadId);
   contextScheduler.emitLiveFromMonitor(input.threadId);
 
-  return requestBillingLog;
+  return artifacts.requestBillingLog;
 }
 
 function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRoutesFromSettings>): ResolvedModelRoute[] {
@@ -4330,83 +4269,36 @@ async function processSdkStreamPartialUsage(input: {
 }): Promise<void> {
   await pricingCatalogReady;
   const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const usageRoute = resolveUsageRoute(input.role, input.modelId, runtimeRoutes);
-  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
-  const actualLookup = usageRoute
-    ? await pricingCache.lookupForRoute({
-        baseUrl: usageRoute.provider.baseUrl,
-        modelId: usageRoute.modelId,
-        ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
-      })
-    : null;
-  const plannerLookup = plannerRoute
-    ? await pricingCache.lookupForRoute({
-        baseUrl: plannerRoute.provider.baseUrl,
-        modelId: plannerRoute.modelId,
-        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
-      })
-    : null;
-  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
-  const computedBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
-  const resolvedModelId = usageRoute?.modelId ?? input.modelId;
-  const ledgerAgentId =
-    input.subagentAgentId ??
-    (input.role === "planner" ? input.plannerAgentId : undefined);
-  const requestKey = `sdk-stream:${input.eventId}`;
+  const artifacts = await resolveSdkStreamPartialBillingArtifacts({
+    threadId: input.threadId,
+    eventId: input.eventId,
+    role: input.role,
+    usage: input.usage,
+    runtimeRoutes,
+    lookupPricing: lookupUsageBillingPricing,
+    ...(input.modelId && { modelId: input.modelId }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
+    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+  });
 
   usageLedgerCoordinator.appendEvents([
-    buildSingleUsageLedgerEvent({
-      threadId: input.threadId,
-      role: usageRoute?.role ?? input.role,
-      source: "sdk",
-      sourceEventId: requestKey,
-      usageKind: "request_partial",
-      usage: input.usage,
-      computedBilling,
-      requestKey,
-      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-      ...(ledgerAgentId && { agentId: ledgerAgentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-      ...(resolvedModelId && { modelId: resolvedModelId }),
-      metadata: {
-        path: "processSdkStreamPartialUsage",
-        settlement: "partial",
-      },
-    }),
+    artifacts.ledgerEvent,
   ]);
 
-  await updateContextFromSdkUsage(
-    input.threadId,
-    input.role,
-    input.usage,
-    resolvedModelId,
-    input.subagentAgentId,
-  );
-}
-
-async function updateContextFromSdkUsage(
-  threadId: string,
-  role: AgentRole,
-  usage: ParsedUsage,
-  modelId?: string,
-  subagentAgentId?: string,
-): Promise<void> {
-  await pricingCatalogReady;
-  const runtimeRoutes = resolveRuntimeRoutesForThread(threadId);
-  const usageRoute = resolveUsageRoute(role, modelId, runtimeRoutes);
-  if (!usageRoute) {
-    return;
+  if (artifacts.contextUpdate) {
+    await contextMonitor.updateFromUsage(input.threadId, input.usage, {
+      role: artifacts.contextUpdate.role,
+      ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
+      modelId: artifacts.contextUpdate.modelId,
+      providerBaseUrl: artifacts.contextUpdate.providerBaseUrl,
+      ...(artifacts.contextUpdate.modelsDevMapping && {
+        modelsDevMapping: artifacts.contextUpdate.modelsDevMapping,
+      }),
+    });
+    contextScheduler.emitLiveFromMonitor(input.threadId);
   }
-
-  await contextMonitor.updateFromUsage(threadId, usage, {
-    role,
-    ...(subagentAgentId && { agentId: subagentAgentId }),
-    modelId: usageRoute.modelId,
-    providerBaseUrl: usageRoute.provider.baseUrl,
-    ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-  });
-  contextScheduler.emitLiveFromMonitor(threadId);
 }
 
 async function processSdkRunBilling(input: {
@@ -4423,44 +4315,13 @@ async function processSdkRunBilling(input: {
   await pricingCatalogReady;
 
   const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
-  const plannerLookup = plannerRoute
-    ? await pricingCache.lookupForRoute({
-        baseUrl: plannerRoute.provider.baseUrl,
-        modelId: plannerRoute.modelId,
-        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
-      })
-    : null;
-  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
-  const plannerModelLabel = buildPlannerModelLabel(
-    plannerRoute,
-    plannerLookup?.displayName ?? plannerRoute?.modelId,
-  );
-
-  const models = await Promise.all(
-    input.bundle.models.map(async (entry) => {
-      const usageRoute = resolveUsageRoute(input.role, entry.modelId, runtimeRoutes);
-      const billingRole = usageRoute?.role ?? input.role;
-      const actualLookup = usageRoute
-        ? await pricingCache.lookupForRoute({
-            baseUrl: usageRoute.provider.baseUrl,
-            modelId: usageRoute.modelId,
-            ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
-          })
-        : null;
-      const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
-      const computedBilling = computeRequestBilling(entry.usage, actualRates, plannerRates);
-      return {
-        role: billingRole,
-        modelId: usageRoute?.modelId ?? entry.modelId,
-        usage: entry.usage,
-        actualRates,
-        plannerRates,
-        computedBilling,
-        ...(entry.sdkCostUsd !== undefined && { sdkCostUsd: entry.sdkCostUsd }),
-      };
-    }),
-  );
+  const billingModels = await resolveSdkRunBillingModels({
+    role: input.role,
+    models: input.bundle.models,
+    runtimeRoutes,
+    lookupPricing: lookupUsageBillingPricing,
+  });
+  const { models } = billingModels;
 
   const primaryModel = models[0];
   let billingRole = primaryModel?.role ?? input.role;
@@ -4549,7 +4410,7 @@ async function processSdkRunBilling(input: {
       requestKey: input.requestKey,
       models,
       ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
-      ...(plannerModelLabel && { plannerModelLabel }),
+      ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
     }),
   );
   usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
