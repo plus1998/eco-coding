@@ -9,6 +9,7 @@ import {
   type UsageLedgerBillingSnapshotSelectionOptions,
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -51,6 +52,12 @@ const routes: RuntimeRoute[] = [
   { role: "coder", provider, modelId: "haiku", apiCompat: "anthropic" },
 ];
 
+const metricsStoreStub = {
+  listSubagentMetrics: () => [],
+  upsertSubagentMetrics: () => {},
+  clearSubagentMetrics: () => {},
+} as never;
+
 async function lookupPricing(route: UsageBillingPricingRoute): Promise<ModelPricingLookup> {
   return {
     providerKey: "test",
@@ -86,10 +93,19 @@ function createLedgerCoordinator() {
 }
 
 test("applySingleUsageBillingEffects applies ledger context accumulator metrics and event side effects", async () => {
-  const subagentMetricCalls: Array<Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>[1]> = [];
+  const contextObservationCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordContextObservation"]>[1]
+  > = [];
+  const legacySubagentUsageCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>[1]
+  > = [];
   const subagentMetrics: UsageBillingEffectsServices["subagentMetrics"] = {
+    recordContextObservation: (_threadId, input) => {
+      contextObservationCalls.push(input);
+      return undefined;
+    },
     recordSdkUsage: (_threadId, input) => {
-      subagentMetricCalls.push(input);
+      legacySubagentUsageCalls.push(input);
       return undefined;
     },
   };
@@ -136,13 +152,14 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
 
   expect(ledger.listUsageEvents("thr_effects")).toHaveLength(1);
   expect(contextUpdates).toHaveLength(1);
-  expect(subagentMetricCalls).toHaveLength(1);
-  expect(subagentMetricCalls[0]).toMatchObject({
+  expect(contextObservationCalls).toHaveLength(1);
+  expect(contextObservationCalls[0]).toMatchObject({
     role: "coder",
     agentId: "agent_coder",
     requestKey: "proxy:coder:req_1",
     modelId: "haiku",
   });
+  expect(legacySubagentUsageCalls).toHaveLength(0);
   expect(billing.primarySource).toBe("proxy");
   expect(billing.sourceBreakdown?.proxy).toBeDefined();
   expect(billing.sourceBreakdown?.sdk).toBeUndefined();
@@ -179,6 +196,7 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
     },
     accumulator: new ThreadUsageAccumulator(),
     subagentMetrics: {
+      recordContextObservation: () => undefined,
       recordSdkUsage: () => undefined,
     },
     emitUsageUpdated: (event) => emitted.push(event),
@@ -237,6 +255,9 @@ test("applySdkStreamPartialBillingEffects records partial ledger and context sid
     usageLedger: coordinator,
     accumulator,
     subagentMetrics: {
+      recordContextObservation: () => {
+        throw new Error("stream partial must not update subagent context metrics");
+      },
       recordSdkUsage: () => {
         throw new Error("stream partial must not update subagent billing metrics");
       },
@@ -304,10 +325,19 @@ test("applySdkStreamPartialBillingEffects records partial ledger and context sid
 });
 
 test("applySdkRunBillingEffects applies SDK final side effects", async () => {
-  const subagentMetricCalls: Array<Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>[1]> = [];
+  const contextObservationCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordContextObservation"]>[1]
+  > = [];
+  const legacySubagentUsageCalls: Array<
+    Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>[1]
+  > = [];
   const subagentMetrics: UsageBillingEffectsServices["subagentMetrics"] = {
+    recordContextObservation: (_threadId, input) => {
+      contextObservationCalls.push(input);
+      return undefined;
+    },
     recordSdkUsage: (_threadId, input) => {
-      subagentMetricCalls.push(input);
+      legacySubagentUsageCalls.push(input);
       return undefined;
     },
   };
@@ -365,7 +395,14 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
     agentId: "agent_coder",
   });
   expect(contextUpdates).toHaveLength(1);
-  expect(subagentMetricCalls).toHaveLength(1);
+  expect(contextObservationCalls).toHaveLength(1);
+  expect(contextObservationCalls[0]).toMatchObject({
+    role: "coder",
+    agentId: "agent_coder",
+    requestKey: "sdk-result:event_1",
+    modelId: "haiku",
+  });
+  expect(legacySubagentUsageCalls).toHaveLength(0);
   expect(billing.primarySource).toBe("sdk");
   expect(billing.otelCostUsd).toBe(0.01);
   expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
@@ -398,6 +435,7 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
     },
     accumulator: new ThreadUsageAccumulator(),
     subagentMetrics: {
+      recordContextObservation: () => undefined,
       recordSdkUsage: () => undefined,
     },
     emitUsageUpdated: () => undefined,
@@ -430,4 +468,64 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
       plannerModelLabel: "Claude Sonnet · Test Provider",
     },
   ]);
+});
+
+test("applySingleUsageBillingEffects falls back to legacy subagent metrics when ledger projection is unavailable", async () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_effects_legacy_subagent_fallback";
+  registry.onSubagentStart(threadId, { agentId: "agent_coder", role: "coder" });
+  const coordinator = new UsageLedgerCoordinator({
+    store: {
+      appendUsageLedgerEvent: () => false,
+      listUsageLedgerEvents: () => [],
+      listAgentInstances: () => [],
+    },
+    metrics: {
+      listEntries: (id) => registry.listEntries(id),
+    },
+    writeError: (message) => {
+      throw new Error(message);
+    },
+  });
+  const services: UsageBillingEffectsServices = {
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage() {
+          return undefined;
+        },
+        getSnapshot: () => undefined,
+      },
+      emitLiveContext: () => undefined,
+    }),
+    usageLedger: coordinator,
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics: registry,
+    emitUsageUpdated: () => undefined,
+    schedulePersistThreadMetrics: () => undefined,
+  };
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId,
+    role: "coder",
+    source: "proxy",
+    usage: usage(),
+    runtimeRoutes: routes,
+    lookupPricing,
+    agentId: "agent_coder",
+    requestKey: "proxy:coder:req_fallback",
+  });
+
+  const billing = await applySingleUsageBillingEffects(services, {
+    threadId,
+    artifacts,
+    updateContext: true,
+    agentId: "agent_coder",
+  });
+
+  const [entry] = registry.listEntries(threadId);
+  expect(entry?.usage.inputTokens).toBe(10_000);
+  expect(entry?.ecoCostUsd).toBeGreaterThan(0);
+  expect(billing.subagents?.[0]).toMatchObject({
+    agentId: "agent_coder",
+    inputTokens: 10_000,
+  });
 });

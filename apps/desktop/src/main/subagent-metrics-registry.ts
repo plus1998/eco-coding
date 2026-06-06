@@ -33,6 +33,16 @@ interface PendingToolUse {
   role?: AgentRole;
 }
 
+export interface SubagentContextObservationInput {
+  role: AgentRole;
+  agentId?: string;
+  parentToolUseId?: string;
+  contextOccupied: number;
+  contextLimit?: number;
+  modelId?: string;
+  requestKey?: string;
+}
+
 export class SubagentMetricsRegistry {
   private readonly threads = new Map<string, ThreadSubagentState>();
 
@@ -176,6 +186,43 @@ export class SubagentMetricsRegistry {
 
   roleForAgentId(threadId: string, agentId: string): AgentRole | undefined {
     return this.threads.get(threadId)?.byAgentId.get(agentId)?.role;
+  }
+
+  recordContextObservation(
+    threadId: string,
+    input: SubagentContextObservationInput,
+  ): SubagentMetricsEntry | undefined {
+    const resolvedAgentId = this.resolveAgentId(threadId, {
+      role: input.role,
+      ...(input.agentId && { subagentAgentId: input.agentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    });
+    const entryRole = resolvedAgentId ? this.roleForAgentId(threadId, resolvedAgentId) : undefined;
+    if (!resolvedAgentId || !entryRole || !isSubagentBillingRole(entryRole)) {
+      return undefined;
+    }
+
+    const state = this.getOrCreateThread(threadId);
+    const now = Date.now();
+    let entry = state.byAgentId.get(resolvedAgentId);
+    if (!entry) {
+      entry = createEmptyEntry(resolvedAgentId, entryRole, "active", now);
+      state.byAgentId.set(resolvedAgentId, entry);
+    }
+
+    entry.contextOccupied = input.contextOccupied;
+    if (input.contextLimit !== undefined) {
+      entry.contextLimit = input.contextLimit;
+    }
+    if (input.modelId) {
+      entry.modelId = input.modelId;
+    }
+    if (input.requestKey) {
+      entry.lastRequestKey = input.requestKey;
+    }
+    entry.updatedAt = now;
+    this.persistEntry(threadId, entry);
+    return entry;
   }
 
   private logResolveMiss(

@@ -131,6 +131,54 @@ test("resolveAgentId matches queued parent tool_use ids by role when starts are 
   ).toBe("agent_explore_a");
 });
 
+test("recordContextObservation updates context without billing usage", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_subagent_context_observation";
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+
+  registry.recordContextObservation(threadId, {
+    role: "coder",
+    agentId: "agent_coder_a",
+    contextOccupied: 1260,
+    contextLimit: 100_000,
+    modelId: "claude-test",
+    requestKey: "sdk-result:evt_context",
+  });
+
+  const contextOnlyEntry = registry.listEntries(threadId)[0];
+  expect(contextOnlyEntry?.usage.inputTokens).toBe(0);
+  expect(contextOnlyEntry?.ecoCostUsd).toBe(0);
+  expect(contextOnlyEntry?.contextOccupied).toBe(1260);
+  expect(contextOnlyEntry?.contextLimit).toBe(100_000);
+  expect(contextOnlyEntry?.modelId).toBe("claude-test");
+  expect(contextOnlyEntry?.lastRequestKey).toBe("sdk-result:evt_context");
+
+  registry.recordSdkUsage(threadId, {
+    role: "coder",
+    agentId: "agent_coder_a",
+    usage: {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheReadTokens: 50,
+      cacheCreationTokens: 10,
+    },
+    contextOccupied: 1260,
+    billing: {
+      ecoCostUsd: 0.01,
+      plannerTokenCostUsd: 0,
+      ecoBreakdown: emptyCostBreakdown(),
+      plannerBreakdown: emptyCostBreakdown(),
+      pricingResolved: false,
+    },
+    modelId: "claude-test",
+    requestKey: "sdk-result:evt_context",
+  });
+
+  const billedEntry = registry.listEntries(threadId)[0];
+  expect(billedEntry?.usage.inputTokens).toBe(1000);
+  expect(billedEntry?.ecoCostUsd).toBeCloseTo(0.01);
+});
+
 test("recordSdkUsage is idempotent per agent request and model", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_subagent_usage_dedupe";
