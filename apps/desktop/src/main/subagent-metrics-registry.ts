@@ -1,21 +1,21 @@
-import type { AgentRole } from "../shared/ipc";
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
+import type { AgentRole } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
-import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
-import {
-  resolveSubagentAgentId,
-  type SubagentAgentResolveMissReason,
-} from "./subagent-agent-resolver";
-import {
-  subagentMetricsEntryFromPersistenceRecord,
-  subagentMetricsEntryToPersistenceInput,
-  type SubagentMetricsPersistenceStore,
-} from "./subagent-metrics-persistence";
+import { resolveSubagentAgentId, type SubagentAgentResolveMissReason } from "./subagent-agent-resolver";
 import { SubagentLegacyUsageTracker } from "./subagent-legacy-usage";
 import {
-  SubagentMetricsState,
+  defaultSubagentMetricsDiagnostics,
+  type SubagentMetricsDiagnosticsPort,
+} from "./subagent-metrics-diagnostics";
+import {
+  type SubagentMetricsPersistenceStore,
+  subagentMetricsEntryFromPersistenceRecord,
+  subagentMetricsEntryToPersistenceInput,
+} from "./subagent-metrics-persistence";
+import {
   type SubagentContextObservationInput,
   type SubagentMetricsEntry,
+  SubagentMetricsState,
 } from "./subagent-metrics-state";
 import { SubagentToolUseIndex } from "./subagent-tool-use-index";
 
@@ -34,7 +34,10 @@ interface ThreadSubagentState {
 export class SubagentMetricsRegistry {
   private readonly threads = new Map<string, ThreadSubagentState>();
 
-  constructor(private readonly store: SubagentMetricsPersistenceStore) {}
+  constructor(
+    private readonly store: SubagentMetricsPersistenceStore,
+    private readonly diagnostics: SubagentMetricsDiagnosticsPort = defaultSubagentMetricsDiagnostics,
+  ) {}
 
   onSubagentStart(threadId: string, input: { agentId: string; role: AgentRole }): void {
     if (!isSubagentBillingRole(input.role)) {
@@ -48,11 +51,11 @@ export class SubagentMetricsRegistry {
       state.toolUses.link(pendingToolUseId, input.agentId);
     }
     this.persistEntry(threadId, start.entry);
-    logEcoDiag("subagent.lifecycle", {
-      threadId: shortThreadId(threadId),
+    this.diagnostics.logLifecycle({
+      threadId,
       event: "start",
       role: input.role,
-      agentId: shortAgentId(input.agentId),
+      agentId: input.agentId,
       activeCount: start.activeCount,
       toolUseLinks: state.toolUses.mappedCount,
     });
@@ -67,11 +70,11 @@ export class SubagentMetricsRegistry {
     if (stopped.entry) {
       this.persistEntry(threadId, stopped.entry);
     }
-    logEcoDiag("subagent.lifecycle", {
-      threadId: shortThreadId(threadId),
+    this.diagnostics.logLifecycle({
+      threadId,
       event: "stop",
       role: input.role,
-      agentId: shortAgentId(input.agentId),
+      agentId: input.agentId,
       activeCount: stopped.activeCount,
     });
   }
@@ -80,9 +83,9 @@ export class SubagentMetricsRegistry {
     const state = this.getOrCreateThread(threadId);
     const pendingRole = role && isSubagentBillingRole(role) ? role : undefined;
     const result = state.toolUses.note(toolUseId, pendingRole);
-    logEcoDiag("subagent.task_tool", {
-      threadId: shortThreadId(threadId),
-      toolUseId: toolUseId.slice(-12),
+    this.diagnostics.logTaskTool({
+      threadId,
+      toolUseId,
       ...(pendingRole && { role: pendingRole }),
       pending: result.pending,
       pendingCount: result.pendingCount,
@@ -125,12 +128,7 @@ export class SubagentMetricsRegistry {
     }
 
     if (result.missReason) {
-      this.logResolveMiss(
-        threadId,
-        input,
-        result.missReason,
-        new Set(result.activeAgentIds ?? []),
-      );
+      this.logResolveMiss(threadId, input, result.missReason, new Set(result.activeAgentIds ?? []));
     }
     return undefined;
   }
@@ -166,12 +164,12 @@ export class SubagentMetricsRegistry {
     reason: SubagentAgentResolveMissReason,
     active?: Set<string>,
   ): void {
-    logEcoDiag("subagent.resolve_miss", {
-      threadId: shortThreadId(threadId),
+    this.diagnostics.logResolveMiss({
+      threadId,
       role: input.role,
       reason,
-      parentToolUseId: input.parentToolUseId?.slice(-12),
-      activeAgents: active ? [...active].map(shortAgentId) : [],
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(active && { activeAgentIds: [...active] }),
       mappedParents: this.threads.get(threadId)?.toolUses.mappedCount ?? 0,
     });
   }
@@ -215,12 +213,12 @@ export class SubagentMetricsRegistry {
       Date.now(),
     );
     if (result.deduped) {
-      logEcoDiag("subagent.usage_dedupe", {
-        threadId: shortThreadId(threadId),
+      this.diagnostics.logUsageDedupe({
+        threadId,
         role: entryRole,
-        agentId: shortAgentId(resolvedAgentId),
+        agentId: resolvedAgentId,
         requestKey: input.requestKey,
-        modelId: result.modelId,
+        ...(result.modelId && { modelId: result.modelId }),
       });
       return result.entry;
     }

@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createConversationStore } from "../src/main/conversation-store";
-import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
-import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { emptyCostBreakdown } from "@eco/runtime";
+import { createConversationStore } from "../src/main/conversation-store";
+import type { SubagentMetricsDiagnosticsPort } from "../src/main/subagent-metrics-diagnostics";
+import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
+import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
 
 const metricsStoreStub: SubagentMetricsPersistenceStore = {
   listSubagentMetrics: () => [],
@@ -84,6 +85,50 @@ test("resolveAgentId maps parent tool_use_id even when event role is planner", (
       parentToolUseId: "toolu_task_2",
     }),
   ).toBe("agent_explore_b");
+});
+
+test("SubagentMetricsRegistry emits diagnostics through injected port", () => {
+  const lifecycle: unknown[] = [];
+  const taskTools: unknown[] = [];
+  const diagnostics: SubagentMetricsDiagnosticsPort = {
+    logLifecycle: (input) => lifecycle.push(input),
+    logTaskTool: (input) => taskTools.push(input),
+    logResolveMiss: () => undefined,
+    logUsageDedupe: () => undefined,
+  };
+  const registry = new SubagentMetricsRegistry(metricsStoreStub, diagnostics);
+  const threadId = "thr_injected_diag";
+
+  registry.noteTaskToolUse(threadId, "toolu_task_1", "coder");
+  registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
+  registry.onSubagentStop(threadId, { agentId: "agent_coder_a", role: "coder" });
+
+  expect(taskTools).toEqual([
+    {
+      threadId,
+      toolUseId: "toolu_task_1",
+      role: "coder",
+      pending: true,
+      pendingCount: 1,
+    },
+  ]);
+  expect(lifecycle).toEqual([
+    {
+      threadId,
+      event: "start",
+      role: "coder",
+      agentId: "agent_coder_a",
+      activeCount: 1,
+      toolUseLinks: 1,
+    },
+    {
+      threadId,
+      event: "stop",
+      role: "coder",
+      agentId: "agent_coder_a",
+      activeCount: 0,
+    },
+  ]);
 });
 
 test("resolveAgentId consumes queued parent tool_use ids in subagent start order", () => {
