@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   parseSdkContextUsage,
-  parseSdkUsageBilling,
   type ParsedUsage,
   type EcoPlanningContext,
   type EcoSdkResumeOptions,
@@ -157,10 +156,7 @@ import {
   resolveUsageRoute,
 } from "./billing-resolver";
 import {
-  buildAssistantUsageRequestKey,
-  isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
-  shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
   type UsageBillingObservation,
 } from "./billing-orchestration";
@@ -202,6 +198,10 @@ import {
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { resolveSdkRunBillingAttribution } from "./sdk-run-billing-attribution";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
+import {
+  resolveSdkEventUsageBilling,
+  type SdkUsageBillingBundle,
+} from "./sdk-event-usage-billing";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -3951,130 +3951,40 @@ function onSdkUsageRecordedEvent(
 }
 
 function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id: string }): void {
-  const bundle = parseSdkUsageBilling(event.payload);
-  if (!bundle) {
-    return;
-  }
-
+  const run = activeRuns.get(threadId);
   const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
-  const initialBillingRole = normalizeTelemetryBillingRole(event.role);
-  const parentToolUseId =
-    isRecord(event.payload) && typeof event.payload.parent_tool_use_id === "string"
-      ? event.payload.parent_tool_use_id
-      : undefined;
-  const explicitSubagentId =
-    isRecord(event.payload) && typeof event.payload.subagentAgentId === "string"
-      ? event.payload.subagentAgentId
-      : undefined;
-  const attribution = resolveSubagentUsageAttribution({
+  const resolved = resolveSdkEventUsageBilling({
     threadId,
-    role: initialBillingRole,
+    event,
     resolver: subagentMetricsRegistry,
-    ...(explicitSubagentId && { subagentAgentId: explicitSubagentId }),
-    ...(parentToolUseId && { parentToolUseId }),
+    ...(runAttemptId && { runAttemptId }),
+    ...(plannerAgentId && { plannerAgentId }),
+    ...(run?.usageObservations && { observedAuthoritativeUsage: run.usageObservations }),
   });
-  const { billingRole, subagentAgentId } = attribution;
 
-  if (!bundle.authoritative) {
-    const messageId =
-      isRecord(event.payload) && typeof event.payload.messageId === "string"
-        ? event.payload.messageId
-        : undefined;
-    const run = activeRuns.get(threadId);
-    const usage = bundle.models[0]?.usage ?? bundle.contextUsage;
-    if (
-      messageId &&
-      subagentAgentId &&
-      shouldBillAssistantSubagentUsage({
-        role: billingRole,
-        messageId,
-        agentId: subagentAgentId,
-        usage,
-        ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
-        ...(run?.usageObservations && { observedAuthoritativeUsage: run.usageObservations }),
-      })
-    ) {
-      usageLedgerCoordinator.trackUsageUpdate(
-        threadId,
-        processUsageBilling({
-          threadId,
-          role: billingRole,
-          agentId: subagentAgentId,
-          source: "sdk",
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheCreationTokens: usage.cacheCreationTokens,
-          ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
-          messageId,
-          ...(runAttemptId && { runAttemptId }),
-          ...(plannerAgentId && { plannerAgentId }),
-          ...(parentToolUseId && { parentToolUseId }),
-          requestKey: buildAssistantUsageRequestKey(messageId),
-        })
-          .then(() => undefined)
-          .catch((error) => {
-            process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
-          }),
-      );
-    }
+  if (resolved.kind === "none" || resolved.kind === "assistant_ignored") {
     return;
   }
 
-  if (
-    isSubagentBillingRole(billingRole) &&
-    bundle.authoritative &&
-    !isSdkIncrementalStreamUsage(bundle.authoritative, event.payload) &&
-    !subagentAgentId
-  ) {
-    logEcoDiag("sdk.usage_miss", {
-      threadId: shortThreadId(threadId),
-      role: billingRole,
-      eventId: event.id.slice(-12),
-      parentToolUseId: parentToolUseId?.slice(-12),
-      explicitSubagentId: explicitSubagentId?.slice(-12) ?? null,
-    });
-  }
-
-  logEcoDiagThrottled(
-    `sdk-usage:${threadId}:${billingRole}`,
-    "sdk.usage",
-    {
-      threadId: shortThreadId(threadId),
-      role: billingRole,
-      subagentAgentId: subagentAgentId?.slice(-12) ?? null,
-      explicit: Boolean(explicitSubagentId),
-      parentToolUseId: parentToolUseId?.slice(-12) ?? null,
-      stream: isSdkIncrementalStreamUsage(bundle.authoritative, event.payload),
-      inputTokens: bundle.models[0]?.usage.inputTokens,
-      outputTokens: bundle.models[0]?.usage.outputTokens,
-    },
-    500,
-  );
-
-  if (isSdkIncrementalStreamUsage(bundle.authoritative, event.payload)) {
-    const modelId =
-      isRecord(event.payload) && typeof event.payload.model === "string"
-        ? event.payload.model
-        : bundle.models[0]?.modelId;
-    const streamContextUsage =
-      subagentAgentId && modelId
-        ? (parseSdkContextUsage(event.payload, { subagentModelId: modelId }) ?? bundle.contextUsage)
-        : bundle.contextUsage;
+  if (resolved.kind === "assistant_subagent") {
     usageLedgerCoordinator.trackUsageUpdate(
       threadId,
-      processSdkStreamPartialUsage({
-        threadId,
-        eventId: event.id,
-        role: billingRole,
-        usage: streamContextUsage,
-        ...(modelId && { modelId }),
-        ...(runAttemptId && { runAttemptId }),
-        ...(plannerAgentId && { plannerAgentId }),
-        ...(subagentAgentId && { subagentAgentId }),
-        ...(parentToolUseId && { parentToolUseId }),
-      }).catch((error) => {
+      processUsageBilling(resolved.billingInput)
+        .then(() => undefined)
+        .catch((error) => {
+          process.stderr.write(`[eco] SDK assistant subagent billing failed: ${errorMessage(error)}\n`);
+        }),
+    );
+    return;
+  }
+
+  logSdkUsageResolution(threadId, resolved);
+
+  if (resolved.kind === "stream_partial") {
+    usageLedgerCoordinator.trackUsageUpdate(
+      threadId,
+      processSdkStreamPartialUsage(resolved.streamInput).catch((error) => {
         process.stderr.write(`[eco] SDK stream partial usage failed: ${errorMessage(error)}\n`);
       }),
     );
@@ -4083,19 +3993,44 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
 
   usageLedgerCoordinator.trackUsageUpdate(
     threadId,
-    processSdkRunBilling({
-      threadId,
-      role: billingRole,
-      requestKey: `sdk-result:${event.id}`,
-      bundle,
-      usagePayload: event.payload,
-      ...(runAttemptId && { runAttemptId }),
-      ...(plannerAgentId && { plannerAgentId }),
-      ...(subagentAgentId && { subagentAgentId }),
-      ...(parentToolUseId && { parentToolUseId }),
-    }).catch((error) => {
+    processSdkRunBilling(resolved.runInput).catch((error) => {
       process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
     }),
+  );
+}
+
+function logSdkUsageResolution(
+  threadId: string,
+  resolved: Extract<
+    ReturnType<typeof resolveSdkEventUsageBilling>,
+    { kind: "stream_partial" | "sdk_run" }
+  >,
+): void {
+  if (resolved.kind === "sdk_run" && resolved.missDiagnostic) {
+    logEcoDiag("sdk.usage_miss", {
+      threadId: shortThreadId(threadId),
+      role: resolved.missDiagnostic.role,
+      eventId: resolved.missDiagnostic.eventId.slice(-12),
+      parentToolUseId: resolved.missDiagnostic.parentToolUseId?.slice(-12),
+      explicitSubagentId: resolved.missDiagnostic.explicitSubagentId?.slice(-12) ?? null,
+    });
+  }
+
+  const diagnostic = resolved.diagnostic;
+  logEcoDiagThrottled(
+    diagnostic.throttleKey,
+    "sdk.usage",
+    {
+      threadId: shortThreadId(threadId),
+      role: diagnostic.role,
+      subagentAgentId: diagnostic.subagentAgentId?.slice(-12) ?? null,
+      explicit: diagnostic.explicit,
+      parentToolUseId: diagnostic.parentToolUseId?.slice(-12) ?? null,
+      stream: diagnostic.stream,
+      inputTokens: diagnostic.inputTokens,
+      outputTokens: diagnostic.outputTokens,
+    },
+    500,
   );
 }
 
@@ -4138,7 +4073,7 @@ async function processSdkRunBilling(input: {
   threadId: string;
   role: AgentRole;
   requestKey: string;
-  bundle: NonNullable<ReturnType<typeof parseSdkUsageBilling>>;
+  bundle: SdkUsageBillingBundle;
   usagePayload?: unknown;
   runAttemptId?: string;
   plannerAgentId?: string;

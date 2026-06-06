@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`714 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects、OTel usage billing resolver、Proxy usage billing resolver、telemetry billing role normalization 近端类型错误已清理。
+- `bun test`: 通过，`719 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、telemetry billing role normalization 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -251,6 +251,15 @@
 - Proxy requestKey 继续使用原始 proxy role 和 provider request id / run-scoped seq，避免改变旧 accumulator 与 ledger 的幂等键；billing role 仍可由 SubAgent registry 回填为真实 SubAgent role。
 - 新增测试覆盖：provider request id 与 seq fallback requestKey、context occupancy、observation/billingInput 构造、registry role 覆盖、planner proxy usage 不做 SubAgent fallback。
 
+第二十六批 SDK event usage billing resolver 已完成：
+
+- 新增 `sdk-event-usage-billing`，集中解析 `usage.recorded` payload，并把 SDK event 分流为 `none`、assistant fallback、stream partial、SDK final run 三类计费路径。
+- `recordSdkUsageFromEvent` 不再直接调用 SDK usage parser、不再手写 messageId / parent tool use / explicit SubAgent 读取、不再手写 assistant fallback gating、stream 判定或 final requestKey。
+- assistant fallback billing input 由 resolver 统一生成，继续要求 messageId、明确 SubAgent agentId，并用 authoritative observation gating 避免 SDK/Proxy/OTel 已观测请求被重复计费。
+- stream partial input 由 resolver 统一生成，保留 subagent model context usage 选择、runAttempt/plannerAgent/parentToolUse 传播和现有错误日志路径。
+- SDK final input 由 resolver 统一生成，并输出 usage diag / usage miss diagnostic；主进程只负责把 diagnostic 写入 `eco-diag` 和调度 `processSdkRunBilling`。
+- 新增测试覆盖：无 billable usage、assistant fallback 计费、authoritative observation 跳过 fallback、stream partial input、SDK final run input 与 miss diagnostic。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -260,7 +269,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 activeRuns 状态写入、SDK event runtime glue、activity/UI glue，下一批优先拆 SDK event usage billing resolver 或推进 Context Domain 退场边界。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；SDK event usage 分流已抽到 `sdk-event-usage-billing`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 activeRuns 状态写入、SDK final pricing/context/observation 编排、activity/UI glue，下一批优先拆 SDK final run billing 编排或推进 Context Domain 退场边界。
 
 ## 不做事项
 
@@ -382,7 +391,7 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 将 `recordSdkUsageFromEvent` 中的 SDK event requestKey、parent tool use / explicit SubAgent、observation 和 billing input 构造拆成 SDK event usage billing resolver。
+1. 将 `processSdkRunBilling` 中的 SDK final model pricing、context usage selection、authoritative observation 和 effects input 构造继续拆成 SDK final run billing resolver。
 2. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
 3. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
