@@ -83,6 +83,7 @@ import {
 import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-tasks";
 import { createSdkTaskTracker } from "./sdk-task-tracker";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
+import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
@@ -1472,16 +1473,18 @@ async function runQuestionThread(
               }
 
               return await consumeSdkRunEvents({
-                events: driver.runQuestion({
-                  threadId: thread.id,
-                  prompt,
-                  workspacePath: workspace.path,
-                  worktreePath: cwd,
-                  routes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                  ...(effectiveResume ? { resume: effectiveResume } : {}),
-                }),
+                events: driver.runQuestion(
+                  buildSdkRunInput({
+                    threadId: thread.id,
+                    prompt,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    ...(effectiveResume ? { resume: effectiveResume } : {}),
+                  }),
+                ),
                 threadId: thread.id,
                 worktreePath: cwd,
                 signal: controller.signal,
@@ -1615,16 +1618,18 @@ async function runCodingThreadAutonomous(
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
               let planCaptured = false;
               const result = await consumeSdkRunEvents({
-                events: driver.run({
-                  threadId: thread.id,
-                  prompt,
-                  workspacePath: workspace.path,
-                  worktreePath: cwd,
-                  routes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                  ...(effectiveResume ? { resume: effectiveResume } : {}),
-                }),
+                events: driver.run(
+                  buildSdkRunInput({
+                    threadId: thread.id,
+                    prompt,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    ...(effectiveResume ? { resume: effectiveResume } : {}),
+                  }),
+                ),
                 threadId: thread.id,
                 worktreePath: cwd,
                 signal: controller.signal,
@@ -1788,16 +1793,18 @@ async function runCodingThreadPlanning(
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
 
               return await consumeSdkRunEvents({
-                events: driver.run({
-                  threadId: thread.id,
-                  prompt,
-                  workspacePath: workspace.path,
-                  worktreePath: cwd,
-                  routes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                  ...(effectiveResume ? { resume: effectiveResume } : {}),
-                }),
+                events: driver.run(
+                  buildSdkRunInput({
+                    threadId: thread.id,
+                    prompt,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    ...(effectiveResume ? { resume: effectiveResume } : {}),
+                  }),
+                ),
                 threadId: thread.id,
                 worktreePath: cwd,
                 signal: controller.signal,
@@ -1950,7 +1957,7 @@ async function runCodingThreadAutonomousAfterApproval(
             const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
             return await consumeSdkRunEvents({
               events: driver.runContinuation(
-                {
+                buildSdkRunInput({
                   threadId,
                   prompt: pending.userPrompt,
                   workspacePath: pending.workspacePath,
@@ -1959,7 +1966,7 @@ async function runCodingThreadAutonomousAfterApproval(
                   signal: controller.signal,
                   sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
                   resume,
-                },
+                }),
                 "execution",
                 planning,
               ),
@@ -2112,7 +2119,7 @@ async function runCodingThreadExecution(
               }
               return await consumeSdkRunEvents({
                 events: driver.runExecution(
-                  {
+                  buildSdkRunInput({
                     threadId,
                     prompt: runPrompt,
                     workspacePath: pending.workspacePath,
@@ -2123,7 +2130,7 @@ async function runCodingThreadExecution(
                     ...(resume ? { resume } : {}),
                     resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
                     ...(executionPromptOverride && { executionPromptOverride }),
-                  },
+                  }),
                   planning,
                 ),
                 threadId,
@@ -2512,7 +2519,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
     try {
       const built = buildDriverRoutes(proxy.routes);
       await driver.rewindSessionFiles(
-        {
+        buildSdkRunInput({
           threadId,
           prompt: "",
           workspacePath: thread.workspacePath,
@@ -2521,7 +2528,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
           signal: AbortSignal.timeout(120_000),
           sdkSession: await buildSdkSessionOptions(threadId, ""),
           resume,
-        },
+        }),
         userMessageId,
       );
     } finally {
@@ -3136,7 +3143,7 @@ async function runThreadContinuation(
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
               return await consumeSdkRunEvents({
                 events: driver.runContinuation(
-                  {
+                  buildSdkRunInput({
                     threadId: thread.id,
                     prompt: followUp,
                     workspacePath: workspace.path,
@@ -3145,7 +3152,7 @@ async function runThreadContinuation(
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(thread.id, followUp),
                     resume: resumeOpts,
-                  },
+                  }),
                   mode,
                   planningContext,
                 ),
@@ -3231,8 +3238,7 @@ async function runThreadContinuation(
             await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
 
             try {
-              const continuationPhase: SubagentRunPhase =
-                mode === "question" ? "question" : mode === "planning" ? "planning" : "execution";
+              const continuationPhase = sdkRunPhaseFromMode(mode);
               const driver = createSdkDriver(
                 thread.id,
                 attemptProxy,
@@ -3253,14 +3259,7 @@ async function runThreadContinuation(
                 },
                 continuationPhase,
               );
-              if (!driver.runQuestion && mode === "question") {
-                throw new Error("Runtime driver does not support question answering.");
-              }
-              if (!driver.runContinuation) {
-                throw new Error("Runtime driver does not support session continuation.");
-              }
-
-              const runInput = {
+              const runInput = buildSdkRunInput({
                 threadId: thread.id,
                 prompt: followUp,
                 workspacePath: workspace.path,
@@ -3270,12 +3269,20 @@ async function runThreadContinuation(
                 sdkSession: await buildSdkSessionOptions(thread.id, followUp),
                 resume,
                 resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
-              };
+              });
 
-              const eventStream =
-                mode === "question"
-                  ? driver.runQuestion!(runInput)
-                  : driver.runContinuation!(runInput, mode, planningContext);
+              let eventStream: AsyncIterable<AgentEvent>;
+              if (mode === "question") {
+                if (!driver.runQuestion) {
+                  throw new Error("Runtime driver does not support question answering.");
+                }
+                eventStream = driver.runQuestion(runInput);
+              } else {
+                if (!driver.runContinuation) {
+                  throw new Error("Runtime driver does not support session continuation.");
+                }
+                eventStream = driver.runContinuation(runInput, mode, planningContext);
+              }
 
               return await consumeSdkRunEvents({
                 events: eventStream,
