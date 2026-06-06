@@ -3,6 +3,10 @@ import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
 import {
+  resolveSubagentAgentId,
+  type SubagentAgentResolveMissReason,
+} from "./subagent-agent-resolver";
+import {
   buildSubagentUsageContributionKey,
   subagentMetricsEntryFromPersistenceRecord,
   subagentMetricsEntryToPersistenceInput,
@@ -132,41 +136,37 @@ export class SubagentMetricsRegistry {
       parentToolUseId?: string;
     },
   ): string | undefined {
-    const explicit = input.subagentAgentId?.trim();
-    if (explicit) {
-      return explicit;
-    }
     const state = this.threads.get(threadId);
-    if (input.parentToolUseId && state) {
-      const linked = state.toolUses.resolve(input.parentToolUseId);
-      if (linked) {
-        return linked;
-      }
-    }
-    if (!isSubagentBillingRole(input.role)) {
-      return undefined;
-    }
-    if (!state) {
-      this.logResolveMiss(threadId, input, "no_thread_state");
-      return undefined;
-    }
-    const active = state.activeByRole.get(input.role);
-    if (active?.size === 1) {
-      return [...active][0];
-    }
-    if ((active?.size ?? 0) > 1) {
-      const reason = input.parentToolUseId ? "parent_tool_use_unmapped" : "ambiguous_multiple_active";
-      this.logResolveMiss(threadId, input, reason, active);
-      return undefined;
+    const linkedParentAgentId =
+      input.parentToolUseId && state ? state.toolUses.resolve(input.parentToolUseId) : undefined;
+    const activeAgentIds = state ? [...(state.activeByRole.get(input.role) ?? [])] : undefined;
+    const stoppedAgentIdsForRole = state
+      ? [...state.byAgentId.values()]
+          .filter((entry) => entry.role === input.role)
+          .map((entry) => entry.agentId)
+      : undefined;
+    const result = resolveSubagentAgentId({
+      role: input.role,
+      ...(input.subagentAgentId && { explicitAgentId: input.subagentAgentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(linkedParentAgentId && { linkedParentAgentId }),
+      hasThreadState: Boolean(state),
+      ...(activeAgentIds && { activeAgentIds }),
+      ...(stoppedAgentIdsForRole && { stoppedAgentIdsForRole }),
+    });
+
+    if (result.agentId) {
+      return result.agentId;
     }
 
-    const stoppedForRole = [...state.byAgentId.values()].filter((entry) => entry.role === input.role);
-    if (stoppedForRole.length === 1) {
-      return stoppedForRole[0]?.agentId;
+    if (result.missReason) {
+      this.logResolveMiss(
+        threadId,
+        input,
+        result.missReason,
+        new Set(result.activeAgentIds ?? []),
+      );
     }
-
-    const reason = input.parentToolUseId ? "parent_tool_use_unmapped" : "no_active_subagent";
-    this.logResolveMiss(threadId, input, reason, active);
     return undefined;
   }
 
@@ -214,7 +214,7 @@ export class SubagentMetricsRegistry {
   private logResolveMiss(
     threadId: string,
     input: { role: AgentRole; parentToolUseId?: string },
-    reason: string,
+    reason: SubagentAgentResolveMissReason,
     active?: Set<string>,
   ): void {
     logEcoDiag("subagent.resolve_miss", {
