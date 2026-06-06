@@ -173,7 +173,6 @@ import {
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
 import {
-  resolveSdkStreamPartialBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "./usage-billing-artifacts";
 import {
@@ -200,6 +199,10 @@ import {
   type SdkUsageBillingBundle,
 } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
+import {
+  resolveSdkStreamPartialBillingOrchestration,
+  type SdkStreamPartialBillingRequest,
+} from "./sdk-stream-partial-billing-orchestration";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -3967,39 +3970,17 @@ function logSdkUsageResolution(
   );
 }
 
-async function processSdkStreamPartialUsage(input: {
-  threadId: string;
-  eventId: string;
-  role: AgentRole;
-  usage: ParsedUsage;
-  modelId?: string;
-  runAttemptId?: string;
-  plannerAgentId?: string;
-  subagentAgentId?: string;
-  parentToolUseId?: string;
-}): Promise<void> {
+async function processSdkStreamPartialUsage(
+  input: SdkStreamPartialBillingRequest,
+): Promise<void> {
   await pricingCatalogReady;
-  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
-  const artifacts = await resolveSdkStreamPartialBillingArtifacts({
-    threadId: input.threadId,
-    eventId: input.eventId,
-    role: input.role,
-    usage: input.usage,
-    runtimeRoutes,
+  const resolved = await resolveSdkStreamPartialBillingOrchestration({
+    request: input,
+    runtimeRoutes: resolveRuntimeRoutesForThread(input.threadId),
     lookupPricing: lookupUsageBillingPricing,
-    ...(input.modelId && { modelId: input.modelId }),
-    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-    ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
-    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
-    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
   });
 
-  await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), {
-    threadId: input.threadId,
-    usage: input.usage,
-    artifacts,
-    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
-  });
+  await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
 }
 
 async function processSdkRunBilling(input: {
