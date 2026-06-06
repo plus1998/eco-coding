@@ -1,14 +1,7 @@
-import type {
-  AgentRole,
-  ThreadBillingSnapshot,
-  ThreadUsageSnapshot,
-} from "../shared/ipc";
-import {
-  computeWindowOccupancy,
-  formatUsageBadge,
-  type ParsedUsage,
-} from "@eco/runtime";
+import type { AgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
+import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
+import { resolveSubagentLegacyMetricsFallback } from "./subagent-legacy-metrics-fallback";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import {
   resolveBillingSnapshotSelectionOptions,
@@ -142,7 +135,11 @@ export async function applySingleUsageBillingEffects(
     selectionOptions,
   );
 
-  if (input.agentId && subagentContext && !billingSelection.ledgerSnapshot) {
+  const legacySubagentFallback = resolveSubagentLegacyMetricsFallback({
+    hasSubagentContext: Boolean(input.agentId && subagentContext),
+    billingSelection,
+  });
+  if (input.agentId && subagentContext && legacySubagentFallback.record) {
     services.subagentMetrics.recordSdkUsage(input.threadId, {
       role: artifacts.billingRole,
       agentId: input.agentId,
@@ -269,7 +266,11 @@ export async function applySdkRunBillingEffects(
     selectionOptions,
   );
 
-  if (input.resolvedSubagentId && subagentContext && !billingSelection.ledgerSnapshot) {
+  const legacySubagentFallback = resolveSubagentLegacyMetricsFallback({
+    hasSubagentContext: Boolean(input.resolvedSubagentId && subagentContext),
+    billingSelection,
+  });
+  if (input.resolvedSubagentId && subagentContext && legacySubagentFallback.record) {
     for (const model of input.models) {
       services.subagentMetrics.recordSdkUsage(input.threadId, {
         role: model.role ?? input.billingRole,
