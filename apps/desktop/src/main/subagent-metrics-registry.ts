@@ -9,6 +9,10 @@ import {
 } from "./subagent-metrics-diagnostics";
 import type { SubagentMetricsPersistenceStore } from "./subagent-metrics-persistence";
 import {
+  resolveSubagentMetricsRecordTarget,
+  type SubagentMetricsRecordTarget,
+} from "./subagent-metrics-record-target";
+import {
   type SubagentMetricsRegistryPersistence,
   SubagentMetricsStoreFacade,
 } from "./subagent-metrics-registry-persistence";
@@ -145,19 +149,14 @@ export class SubagentMetricsRegistry {
     threadId: string,
     input: SubagentContextObservationInput,
   ): SubagentMetricsEntry | undefined {
-    const resolvedAgentId = this.resolveAgentId(threadId, {
-      role: input.role,
-      ...(input.agentId && { subagentAgentId: input.agentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    });
-    const entryRole = resolvedAgentId ? this.roleForAgentId(threadId, resolvedAgentId) : undefined;
-    if (!resolvedAgentId || !entryRole || !isSubagentBillingRole(entryRole)) {
+    const target = this.resolveRecordTarget(threadId, input);
+    if (!target) {
       return undefined;
     }
 
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
-    const entry = state.metrics.recordContext(resolvedAgentId, entryRole, input, now);
+    const entry = state.metrics.recordContext(target.agentId, target.role, input, now);
     this.persistEntry(threadId, entry);
     return entry;
   }
@@ -192,21 +191,16 @@ export class SubagentMetricsRegistry {
       requestKey: string;
     },
   ): SubagentMetricsEntry | undefined {
-    const resolvedAgentId = this.resolveAgentId(threadId, {
-      role: input.role,
-      ...(input.agentId && { subagentAgentId: input.agentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    });
-    const entryRole = resolvedAgentId ? this.roleForAgentId(threadId, resolvedAgentId) : undefined;
-    if (!resolvedAgentId || !entryRole || !isSubagentBillingRole(entryRole)) {
+    const target = this.resolveRecordTarget(threadId, input);
+    if (!target) {
       return undefined;
     }
     const state = this.getOrCreateThread(threadId);
     const result = state.legacyUsage.record(
       state.metrics,
       {
-        agentId: resolvedAgentId,
-        role: entryRole,
+        agentId: target.agentId,
+        role: target.role,
         usage: input.usage,
         contextOccupied: input.contextOccupied,
         billing: input.billing,
@@ -219,8 +213,8 @@ export class SubagentMetricsRegistry {
     if (result.deduped) {
       this.diagnostics.logUsageDedupe({
         threadId,
-        role: entryRole,
-        agentId: resolvedAgentId,
+        role: target.role,
+        agentId: target.agentId,
         requestKey: input.requestKey,
         ...(result.modelId && { modelId: result.modelId }),
       });
@@ -268,6 +262,19 @@ export class SubagentMetricsRegistry {
       this.threads.set(threadId, state);
     }
     return state;
+  }
+
+  private resolveRecordTarget(
+    threadId: string,
+    input: { role: AgentRole; agentId?: string; parentToolUseId?: string },
+  ): SubagentMetricsRecordTarget | undefined {
+    return resolveSubagentMetricsRecordTarget({
+      threadId,
+      role: input.role,
+      resolver: this,
+      ...(input.agentId && { agentId: input.agentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    });
   }
 
   private persistEntry(threadId: string, entry: SubagentMetricsEntry): void {
