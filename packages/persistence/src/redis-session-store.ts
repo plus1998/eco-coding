@@ -142,8 +142,8 @@ export async function testRedisConnection(config: {
   try {
     const { close } = await createRedisSessionStore({
       url: config.url,
-      password: config.password,
       keyPrefix: "eco-sessions-test",
+      ...(config.password ? { password: config.password } : {}),
     });
     await close();
     return { ok: true };

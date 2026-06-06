@@ -1,5 +1,5 @@
 import type { SubagentAvailability } from "../subagent-availability.js";
-import { defaultSubagentAvailability } from "../subagent-availability.js";
+import { defaultSubagentAvailability, ecoSubagentKeyForRole } from "../subagent-availability.js";
 import {
   buildQuestionAnswerTaskLine,
   buildQuestionExploreInstruction,
@@ -18,7 +18,7 @@ export function buildQuestionAnswerSystemAppend(
     buildQuestionExploreInstruction(availability),
     "For a known file or symbol, use Read/Grep directly — do not over-delegate.",
     "Do not create an implementation plan, do not modify files.",
-    "Do not call coder, reviewer, tester, or architect subagents.",
+    `Do not call ${ecoSubagentKeyForRole("coder")}, ${ecoSubagentKeyForRole("reviewer")}, ${ecoSubagentKeyForRole("tester")}, or ${ecoSubagentKeyForRole("architect")}.`,
   ].join("\n");
 }
 

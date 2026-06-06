@@ -5,6 +5,7 @@ import {
   formatReviewerScopeAppend,
   REVIEWER_SCOPE_SECTION_TITLE,
 } from "../src/reviewer-scope";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("formatReviewerScopeAppend lists changed paths", () => {
   const block = formatReviewerScopeAppend(["app/service/corp.service.ts", "src/pages/Home/Corp.vue"]);
@@ -23,6 +24,7 @@ test("createReviewerScopeToolHandler injects scope for Agent(reviewer) only", as
     signal: new AbortController().signal,
   });
   expect(reviewer.behavior).toBe("allow");
+  expect(reviewer.updatedInput?.subagent_type).toBe(ecoSubagentKeyForRole("reviewer"));
   expect(reviewer.updatedInput?.prompt).toContain(REVIEWER_SCOPE_SECTION_TITLE);
   expect(reviewer.updatedInput?.prompt).toContain("- a.ts");
   expect(reviewer.updatedInput?.prompt).toContain("Review the plan.");

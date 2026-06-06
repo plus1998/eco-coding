@@ -3,13 +3,22 @@ import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
+  createNormalizeSubagentPreToolHook,
   createPreCompactHook,
   createReviewerScopePreToolHook,
+  createSubagentStartHook,
+  createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
   createTaskToolPreToolHook,
   createWorkflowDenyPreToolHook,
 } from "../src/eco-sdk-hooks";
-import type { PreCompactHookInput, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  PreCompactHookInput,
+  PreToolUseHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
+} from "@anthropic-ai/claude-agent-sdk";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("createAskUserQuestionPreToolHook returns updated input", async () => {
   const hook = createAskUserQuestionPreToolHook(async () => ({
@@ -37,7 +46,29 @@ test("createAskUserQuestionPreToolHook returns updated input", async () => {
   });
 });
 
-test("createReviewerScopePreToolHook injects changed files for Agent(reviewer)", async () => {
+test("createNormalizeSubagentPreToolHook rewrites legacy Agent input to eco key", async () => {
+  const hook = createNormalizeSubagentPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "Explore", prompt: "Scan repo" },
+      tool_use_id: "tool_norm",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_norm",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "allow",
+    updatedInput: { subagent_type: ecoSubagentKeyForRole("explore"), prompt: "Scan repo" },
+  });
+});
+
+test("createReviewerScopePreToolHook injects changed files and preserves eco reviewer key", async () => {
   const hook = createReviewerScopePreToolHook(async () => ["src/api.ts"]);
   expect(hook).toBeDefined();
 
@@ -55,6 +86,7 @@ test("createReviewerScopePreToolHook injects changed files for Agent(reviewer)",
   );
 
   const updatedInput = result.hookSpecificOutput?.updatedInput as Record<string, unknown>;
+  expect(updatedInput.subagent_type).toBe(ecoSubagentKeyForRole("reviewer"));
   expect(typeof updatedInput.prompt).toBe("string");
   expect(updatedInput.prompt).toContain("src/api.ts");
   expect(updatedInput.prompt).toContain("Review the plan.");
@@ -168,6 +200,61 @@ test("createDisabledSubagentPreToolHook denies Agent for disabled roles", async 
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
+});
+
+test("subagent lifecycle hooks normalize eco agent keys back to roles", async () => {
+  const starts: Array<{ agentId: string; agentType: string }> = [];
+  const stops: Array<{ agentId: string; agentType: string }> = [];
+  const startHook = createSubagentStartHook({
+    taskTracker: {
+      onPreToolUse() {},
+      onTaskCreated() {},
+      onTaskCompleted() {},
+      onSubagentStart(input) {
+        starts.push(input);
+      },
+      onSubagentStop() {},
+      onStop() {},
+    },
+  });
+  const stopHook = createSubagentStopHook({
+    taskTracker: {
+      onPreToolUse() {},
+      onTaskCreated() {},
+      onTaskCompleted() {},
+      onSubagentStart() {},
+      onSubagentStop(input) {
+        stops.push(input);
+      },
+      onStop() {},
+    },
+  });
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder",
+      agent_type: ecoSubagentKeyForRole("coder"),
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  await stopHook(
+    {
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_coder",
+      agent_type: ecoSubagentKeyForRole("coder"),
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStopHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(starts).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
+  expect(stops).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
 });
 
 test("buildEcoSdkHooks registers expected hook events", () => {

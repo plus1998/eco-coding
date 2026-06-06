@@ -4,6 +4,7 @@ import {
   mapStreamEventToEvents,
 } from "../src/sdk-stream-events";
 import { mapSdkMessageToEvents } from "../src/claude-agent-sdk";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("maps tool_use content_block_start to tool.started", () => {
   const ctx = createSdkStreamContext();
@@ -26,6 +27,28 @@ test("maps tool_use content_block_start to tool.started", () => {
   expect(payload.tool_name).toBe("Read");
   expect(payload.tool_use_id).toBe("toolu_abc");
   expect(payload.streaming).toBe(true);
+});
+
+test("maps eco subagent stream metadata to the role", () => {
+  const ctx = createSdkStreamContext();
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_eco",
+      session_id: "sess",
+      subagent_type: ecoSubagentKeyForRole("coder"),
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "Read", id: "toolu_eco" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_eco",
+    ctx,
+  );
+  expect(events[0]?.role).toBe("coder");
 });
 
 test("suppresses text_delta while inside tool block", () => {

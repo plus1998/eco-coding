@@ -1,30 +1,11 @@
-import type { OrchestrationModeSetting, WorkflowSettingsSnapshot } from "../shared/ipc";
+import type { WorkflowSettingsSnapshot } from "../shared/ipc";
+import { ORCHESTRATION_MODE_UI } from "../shared/orchestration-mode-ui";
 
 interface WorkflowSettingsSectionProps {
   settings: WorkflowSettingsSnapshot;
   disabled?: boolean | undefined;
   onChange: (settings: WorkflowSettingsSnapshot) => void;
 }
-
-const MODE_OPTIONS: Array<{
-  value: OrchestrationModeSetting;
-  title: string;
-  subtitle: string;
-  description: string;
-}> = [
-  {
-    value: "autonomous",
-    title: "自主编排",
-    subtitle: "autonomous",
-    description: "主 Agent 按任务风险自选子代理；子代理默认全开，不可手动开关。",
-  },
-  {
-    value: "manual",
-    title: "手动编排",
-    subtitle: "manual",
-    description: "强制先计划后执行，走预设流水线；可在下方单独开关子代理。",
-  },
-];
 
 export function WorkflowSettingsSection({ settings, disabled, onChange }: WorkflowSettingsSectionProps) {
   return (
@@ -36,7 +17,7 @@ export function WorkflowSettingsSection({ settings, disabled, onChange }: Workfl
         </div>
       </header>
       <ul className="models-subagent-list">
-        {MODE_OPTIONS.map((option) => {
+        {ORCHESTRATION_MODE_UI.map((option) => {
           const active = settings.orchestrationMode === option.value;
           return (
             <li key={option.value}>

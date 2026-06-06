@@ -51,7 +51,7 @@ export function normalizeAnthropicContentBlocks(
       const embedded = tryParseSerializedAnthropicContentBlocks(block.text);
       if (embedded) {
         for (const piece of embedded) {
-          normalized.push(piece as AnthropicContentBlockLike);
+          normalized.push(piece as unknown as AnthropicContentBlockLike);
         }
         continue;
       }
@@ -74,5 +74,5 @@ export function expandAssistantMessageContent(
       ...(typeof block.name === "string" && { name: block.name }),
       ...(block.input !== undefined && { input: block.input }),
     }));
-  return normalizeAnthropicContentBlocks(blocks) as Record<string, unknown>[];
+  return normalizeAnthropicContentBlocks(blocks) as unknown as Record<string, unknown>[];
 }

@@ -1,6 +1,8 @@
 import type { HookCallback, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import {
+  ecoSubagentKeyForRole,
   isSubagentRole,
+  SUBAGENT_ROLES,
   type SubagentRole,
 } from "./subagent-availability.js";
 
@@ -9,7 +11,29 @@ export function normalizeSdkSubagentType(type: string): SubagentRole | undefined
   if (type === "Explore") {
     return "explore";
   }
+  for (const role of SUBAGENT_ROLES) {
+    if (type === ecoSubagentKeyForRole(role)) {
+      return role;
+    }
+  }
   return isSubagentRole(type) ? type : undefined;
+}
+
+export function normalizeAgentToolInputSubagentType(
+  input: Record<string, unknown>,
+): { input: Record<string, unknown>; role?: SubagentRole; changed: boolean } {
+  const rawType = readAgentSubagentType(input);
+  const role = rawType ? normalizeSdkSubagentType(rawType) : undefined;
+  if (!role) {
+    return { input, changed: false };
+  }
+  const nextType = ecoSubagentKeyForRole(role);
+  if (input.subagent_type === nextType && input.agent_type === undefined) {
+    return { input, role, changed: false };
+  }
+  const nextInput: Record<string, unknown> = { ...input, subagent_type: nextType };
+  delete nextInput.agent_type;
+  return { input: nextInput, role, changed: true };
 }
 
 export function readAgentSubagentType(input: Record<string, unknown>): string | undefined {
@@ -71,8 +95,8 @@ export function createSubagentMissionCapturePreToolHook(
     if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
       return {};
     }
-    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const subagentType = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+    const rawToolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const { input: toolInput, role: subagentType } = normalizeAgentToolInputSubagentType(rawToolInput);
     if (!subagentType) {
       return {};
     }
@@ -99,7 +123,7 @@ export function formatResumableSubagentsAppend(
   const lines = entries.map((entry) => `- ${entry.role}: ${entry.agentId}`);
   return [
     "",
-    "Resumable subagents in this thread (Eco will auto-Resume when you call Agent(role) again):",
+    "Resumable subagents in this thread (Eco will auto-Resume when you call the same eco_* Agent key again):",
     ...lines,
     "To force a fresh subagent, include words like fresh/restart/从头开始 in the Agent prompt.",
   ].join("\n");
@@ -120,8 +144,8 @@ export function createSubagentResumePreToolHook(
       return {};
     }
 
-    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    const subagentType = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+    const rawToolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const { input: toolInput, role: subagentType } = normalizeAgentToolInputSubagentType(rawToolInput);
     if (!subagentType) {
       return {};
     }

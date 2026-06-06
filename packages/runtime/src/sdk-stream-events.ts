@@ -4,7 +4,7 @@ import {
   createAgentEvent,
 } from "../../shared/src";
 import { tryParseSerializedAnthropicContentBlocks } from "./anthropic-content-normalize.js";
-import { isSubagentRole } from "./subagent-availability.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
 
 export type EcoStreamBlockKind = "text" | "thinking" | "tool_use";
 
@@ -132,10 +132,12 @@ function slimRawStreamEvent(event: Record<string, unknown>): Record<string, unkn
 function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, unknown>): void {
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
-  if (subagentType && isSubagentRole(subagentType)) {
-    ctx.activeSubagentRole = subagentType;
-  } else if (agentType && isSubagentRole(agentType)) {
-    ctx.activeSubagentRole = agentType;
+  const subagentRole = subagentType ? normalizeSdkSubagentType(subagentType) : undefined;
+  const agentRole = agentType ? normalizeSdkSubagentType(agentType) : undefined;
+  if (subagentRole) {
+    ctx.activeSubagentRole = subagentRole;
+  } else if (agentRole) {
+    ctx.activeSubagentRole = agentRole;
   }
 }
 
@@ -181,13 +183,18 @@ export function mapStreamEventToEvents(
       ctx.inToolBlock = true;
       ctx.activeBlockKind = "tool_use";
       ctx.currentToolName = block.name;
-      ctx.currentToolUseId = typeof block.id === "string" ? block.id : undefined;
+      if (typeof block.id === "string") {
+        ctx.currentToolUseId = block.id;
+      } else {
+        delete ctx.currentToolUseId;
+      }
       ctx.currentToolInputJson = "";
       if (ctx.currentToolUseId) {
         ctx.emittedToolUseIds.add(ctx.currentToolUseId);
       }
       events.push(
         createToolStartedEvent(threadId, sessionId, streamRole, uuid, {
+          type: "tool_use",
           tool_name: block.name,
           ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
           streaming: true,
@@ -351,8 +358,8 @@ export function mapStreamEventToEvents(
     }
     ctx.inToolBlock = false;
     ctx.activeBlockKind = null;
-    ctx.currentToolName = undefined;
-    ctx.currentToolUseId = undefined;
+    delete ctx.currentToolName;
+    delete ctx.currentToolUseId;
     ctx.currentToolInputJson = "";
     return events;
   }

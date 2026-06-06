@@ -1,9 +1,21 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
+import { ecoSubagentKeyForRole } from "../subagent-availability.js";
+import { formatMandatoryEcoSubagentRule } from "./subagent-pipeline.js";
+
+const ecoExplore = ecoSubagentKeyForRole("explore");
+const ecoCoder = ecoSubagentKeyForRole("coder");
+const ecoReviewer = ecoSubagentKeyForRole("reviewer");
+const ecoTester = ecoSubagentKeyForRole("tester");
+
 export const autonomousOrchestratorAppend = [
-  "Eco autonomous orchestration: you are the Planner. Judge task risk and delegate with Agent(<role>).",
-  "Low risk: explore → coder → tester. Medium: add your own read-only review before tester (do not call reviewer).",
-  "High risk: explore → coder → reviewer → tester; call finalize_plan when the user should approve before large changes.",
+  [
+    "Eco autonomous orchestration: you are the Planner. Judge task risk and delegate with Eco Agent keys:",
+    `explore=${ecoExplore}, coder=${ecoCoder}, reviewer=${ecoReviewer}, tester=${ecoTester}.`,
+  ].join(" "),
+  formatMandatoryEcoSubagentRule(),
+  `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
+  `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}; call finalize_plan when the user should approve before large changes.`,
   "Do not use the SDK Workflow tool.",
 ].join("\n");
 
@@ -20,7 +32,7 @@ export function buildAutonomousPlanContinuationPrompt(input: {
   const lines = [
     "<system-reminder>",
     "The user approved your submitted plan. Continue in the same session and implement it.",
-    "Use Agent(role) as needed; do not restart planning from scratch unless blocked.",
+    "Use the Eco Agent keys as needed; do not restart planning from scratch unless blocked.",
     "</system-reminder>",
     "",
     "User request:",

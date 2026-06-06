@@ -70,10 +70,10 @@ import {
 } from "./prompts/index.js";
 import {
   defaultSubagentAvailability,
+  ecoSubagentKeyForRole,
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
-  SDK_EXPLORE_AGENT_KEY,
   SUBAGENT_ROLES,
   type EcoOrchestrationMode,
   type SubagentAvailability,
@@ -766,9 +766,10 @@ export function createPlanningAgentDefinitions(
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  const architectKey = ecoSubagentKeyForRole("architect");
   const definitions = {
-    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
-    architect: {
+    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
+    [architectKey]: {
       description: planningArchitectDescription,
       tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("architect", agentSkills),
@@ -786,7 +787,7 @@ export function createQuestionAgentDefinitions(
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const definitions = {
-    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
+    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
   };
 
   return filterAgentDefinitions(definitions, availability);
@@ -801,31 +802,35 @@ export function createExecutionAgentDefinitions(
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  const architectKey = ecoSubagentKeyForRole("architect");
+  const coderKey = ecoSubagentKeyForRole("coder");
+  const reviewerKey = ecoSubagentKeyForRole("reviewer");
+  const testerKey = ecoSubagentKeyForRole("tester");
 
   const definitions = {
-    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
-    architect: {
+    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
+    [architectKey]: {
       description: executionArchitectDescription,
       tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
-    coder: {
+    [coderKey]: {
       description: executionCoderDescription,
       tools: [...executionCoderTools],
       ...agentDefinitionSkills("coder", agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
-    reviewer: {
+    [reviewerKey]: {
       description: autonomousReviewerDescription,
       tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
-    tester: {
+    [testerKey]: {
       description: executionTesterDescription,
       tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("tester", agentSkills),
@@ -835,8 +840,8 @@ export function createExecutionAgentDefinitions(
   };
 
   const filtered = filterAgentDefinitions(definitions, availability);
-  if (!filtered.coder) {
-    return { ...filtered, coder: definitions.coder };
+  if (!filtered[coderKey]) {
+    return { ...filtered, [coderKey]: definitions[coderKey] };
   }
   return filtered;
 }
@@ -852,30 +857,34 @@ export function createAutonomousAgentDefinitions(
   agentSkills?: Partial<Record<AgentRole, string[]>>,
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  const architectKey = ecoSubagentKeyForRole("architect");
+  const coderKey = ecoSubagentKeyForRole("coder");
+  const reviewerKey = ecoSubagentKeyForRole("reviewer");
+  const testerKey = ecoSubagentKeyForRole("tester");
   return {
-    [SDK_EXPLORE_AGENT_KEY]: createExploreAgentDefinition(routes, agentSkills),
-    architect: {
+    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
+    [architectKey]: {
       description: executionArchitectDescription,
       tools: [...readOnlySubagentTools],
       ...agentDefinitionSkills("architect", agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
-    coder: {
+    [coderKey]: {
       description: executionCoderDescription,
       tools: [...executionCoderTools],
       ...agentDefinitionSkills("coder", agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
-    reviewer: {
+    [reviewerKey]: {
       description: autonomousReviewerDescription,
       tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("reviewer", agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
-    tester: {
+    [testerKey]: {
       description: executionTesterDescription,
       tools: [...readOnlySubagentBashTools],
       ...agentDefinitionSkills("tester", agentSkills),
@@ -988,6 +997,7 @@ export function createFileCheckpointEvent(
   userMessageId: string,
 ): AgentEvent {
   return createAgentEvent({
+    id: `file-checkpoint:${userMessageId}`,
     type: "file.checkpoint",
     threadId,
     role: "planner",

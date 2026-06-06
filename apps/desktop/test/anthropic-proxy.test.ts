@@ -135,6 +135,26 @@ test("resolveProxyRoute maps SDK builtin Explore gpt-5.4 to configured explore r
   expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4")).toEqual(exploreRoute);
 });
 
+test("resolveProxyRoute does not guess SDK default Claude models", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const exploreRoute: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+  };
+  const plannerRoute: AnthropicProxyResolvedRoute = {
+    role: "planner",
+    provider,
+    modelId: "gpt-5.5",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("planner", provider.id, "gpt-5.5"),
+  };
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "claude-haiku-4-5-20251001")).toBeUndefined();
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "claude-sonnet-4-6")).toBeUndefined();
+});
+
 test("createModelAlias includes explore role", () => {
   const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
   const alias = createModelAlias("explore", provider.id, "qwen-explore");

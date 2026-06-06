@@ -91,7 +91,7 @@ import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } fro
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
-import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
+import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
@@ -873,10 +873,6 @@ function App() {
         };
       }),
     [activeRoutes, threadModelByRole],
-  );
-  const plannerModelLabel = useMemo(
-    () => agentModelLabels.find((entry) => entry.role === "planner"),
-    [agentModelLabels],
   );
   const activityModelByRole = useMemo(() => {
     const configured: Record<string, string> = {};
@@ -1785,50 +1781,52 @@ function App() {
           disabled={Boolean(activeThread && !threadAcceptsInput)}
         />
         <div className="composer-footer">
-          <div className="composer-route-control">
-            <ComposerRoutePopoverTrigger
-              buttonRef={composerRouteButtonRef}
-              open={composerRoutePopoverOpen}
-              disabled={!canSwitchRouteProfile || isSavingSettings}
-              profileName={selectedRouteProfile?.name}
-              onToggle={() => {
-                if (!canSwitchRouteProfile) {
-                  return;
+          <div className="composer-footer-main">
+            <div className="composer-footer-row composer-footer-config-row">
+              <div className="composer-route-control">
+                <ComposerRoutePopoverTrigger
+                  buttonRef={composerRouteButtonRef}
+                  open={composerRoutePopoverOpen}
+                  disabled={!canSwitchRouteProfile || isSavingSettings}
+                  profileName={selectedRouteProfile?.name}
+                  onToggle={() => {
+                    if (!canSwitchRouteProfile) {
+                      return;
+                    }
+                    setComposerRoutePopoverOpen((current) => !current);
+                  }}
+                />
+                <ComposerRoutePopover
+                  open={composerRoutePopoverOpen && canSwitchRouteProfile}
+                  settings={settings}
+                  busy={isSavingSettings}
+                  anchorRef={composerRouteButtonRef}
+                  onClose={() => setComposerRoutePopoverOpen(false)}
+                  onSelectProfile={selectComposerRouteProfile}
+                  selectedProfileId={composerRuntimeConfig?.routeProfileId}
+                  onOpenFullSettings={() => openModelsSettings("routes")}
+                />
+              </div>
+              {composerRuntimeConfig ? (
+                <ComposerOrchestrationModeToggle
+                  orchestrationMode={composerRuntimeConfig.orchestrationMode}
+                  canEdit={canEditComposerConfig}
+                  saving={isSavingSettings}
+                  onToggle={(mode) => void toggleComposerOrchestrationMode(mode)}
+                />
+              ) : null}
+            </div>
+            <div className="composer-footer-row composer-footer-agents-row">
+              <ComposerAgentModels
+                labels={agentModelLabels}
+                subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}
+                canEditSubagents={
+                  canEditComposerConfig && composerRuntimeConfig?.orchestrationMode === "manual"
                 }
-                setComposerRoutePopoverOpen((current) => !current);
-              }}
-            />
-            <ComposerRoutePopover
-              open={composerRoutePopoverOpen && canSwitchRouteProfile}
-              settings={settings}
-              busy={isSavingSettings}
-              anchorRef={composerRouteButtonRef}
-              onClose={() => setComposerRoutePopoverOpen(false)}
-              onSelectProfile={selectComposerRouteProfile}
-              selectedProfileId={composerRuntimeConfig?.routeProfileId}
-              onOpenFullSettings={() => openModelsSettings("routes")}
-            />
-          </div>
-          <div className="composer-agent-labels">
-            {composerRuntimeConfig ? (
-              <ComposerPlanModeToggle
-                orchestrationMode={composerRuntimeConfig.orchestrationMode}
-                plannerModelId={plannerModelLabel?.modelId}
-                plannerTitle={plannerModelLabel?.title}
-                canEdit={canEditComposerConfig}
-                saving={isSavingSettings}
-                onToggle={(mode) => void toggleComposerOrchestrationMode(mode)}
+                subagentSaving={isSavingSettings}
+                onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
               />
-            ) : null}
-            <ComposerAgentModels
-              labels={agentModelLabels}
-              subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}
-              canEditSubagents={
-                canEditComposerConfig && composerRuntimeConfig?.orchestrationMode === "manual"
-              }
-              subagentSaving={isSavingSettings}
-              onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-            />
+            </div>
           </div>
           {canStopThread ? (
             <button

@@ -29,6 +29,7 @@ export {
 } from "./question.js";
 export {
   formatAvailableSubagentsLine,
+  formatMandatoryEcoSubagentRule,
   formatPlanExecutionSummary,
   summarizeExecutePipeline,
 } from "./subagent-pipeline.js";

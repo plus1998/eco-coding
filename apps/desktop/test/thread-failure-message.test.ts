@@ -94,3 +94,11 @@ test("formatUserFacingRequestError translates structured upstream 502 failures",
     "上游模型服务暂时不可用，请稍后重试或切换 Provider。",
   );
 });
+
+test("formatUserFacingRequestError surfaces local route misses as SDK model leaks", () => {
+  const raw =
+    '{"error":"No provider route configured for model claude-haiku-4-5-20251001."}';
+  expect(formatUserFacingRequestError(raw)).toBe(
+    "本地模型路由未配置 SDK 请求的模型 claude-haiku-4-5-20251001。这不是当前角色路由的成功匹配；若再次出现，说明仍有 SDK 路径绕过了 Eco 子代理定义。",
+  );
+});

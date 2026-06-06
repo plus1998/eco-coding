@@ -197,7 +197,9 @@ export function ComposerRoutePopoverTrigger({
       ref={buttonRef}
       type="button"
       className={
-        open ? "composer-route-trigger composer-settings-link active" : "composer-route-trigger composer-settings-link"
+        open
+          ? "composer-meta-pill composer-route-pill is-active"
+          : "composer-meta-pill composer-route-pill"
       }
       onClick={onToggle}
       disabled={disabled}
@@ -205,8 +207,8 @@ export function ComposerRoutePopoverTrigger({
       aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换路由方案"}
       aria-expanded={open}
     >
-      <SlidersHorizontal size={16} aria-hidden />
-      <span className={profileName ? "composer-route-profile-name" : "composer-route-profile-name is-placeholder"}>
+      <SlidersHorizontal size={14} aria-hidden className="composer-route-pill-icon" />
+      <span className={profileName ? "composer-route-pill-name" : "composer-route-pill-name is-placeholder"}>
         {label}
       </span>
     </button>

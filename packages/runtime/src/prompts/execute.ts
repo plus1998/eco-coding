@@ -11,7 +11,7 @@ export { buildExecuteBuildSwitchAppend, buildExecutePhaseSystemAppend };
 /** @deprecated Use buildExecuteBuildSwitchAppend(availability) */
 export const executeBuildSwitchAppend = buildExecuteBuildSwitchAppend(defaultSubagentAvailability());
 
-/** Skip Agent(architect) only when ALL apply (otherwise architect is mandatory). */
+/** Skip architect only when ALL apply (otherwise architect is mandatory). */
 export const architectSkipCriteria = [
   "Single focused change in one module or ≤3 files",
   "No new public API surface or cross-package boundary changes",
@@ -134,6 +134,6 @@ export function buildExecutionPromptWithFollowUp(
     trimmed && trimmed !== planning.userPrompt.trim() ? trimmed : planning.userPrompt;
   return buildExecutePhasePrompt(userPrompt, planning.analysis, planning.plan, {
     ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-    availability: options.availability,
+    ...(options.availability ? { availability: options.availability } : {}),
   });
 }

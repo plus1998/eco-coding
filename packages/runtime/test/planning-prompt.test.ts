@@ -6,6 +6,9 @@ import {
   buildPlanningPhasePrompt,
   planningPhaseSystemAppend,
 } from "../src/prompts/planning.js";
+import { formatMandatoryEcoSubagentRule } from "../src/prompts/subagent-pipeline.js";
+import { buildAutonomousOrchestratorAppend } from "../src/prompts/autonomous.js";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability.js";
 
 test("inlined Codex plan template matches upstream structure", () => {
   const template = CODEX_PLAN_MODE_TEMPLATE;
@@ -24,7 +27,7 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).toContain("mcp__eco_plan__finalize_plan");
   expect(append).not.toMatch(/`request_user_input`/);
   expect(append).not.toContain("## Implementation Plan");
-  expect(append).toContain("Agent(Explore)");
+  expect(append).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
   expect(append).toContain("Eco Plan Mode pipeline");
   expect(append).toContain("Explore first");
   expect(append).toContain("WebSearch");
@@ -59,4 +62,21 @@ test("buildPlanningContinuationPrompt requires full replacement plan", () => {
   expect(prompt).toContain("mcp__eco_plan__finalize_plan");
   expect(prompt).not.toContain("not turn 1");
   expect(prompt).not.toContain("turn 1");
+});
+
+test("orchestrator prompts require eco subagent keys when delegating", () => {
+  const rule = formatMandatoryEcoSubagentRule();
+  expect(rule).toContain("Mandatory subagent policy");
+  expect(rule).toContain("eco_*");
+  expect(rule).toContain("Never use SDK built-in agents");
+
+  const planning = buildPlanningPhaseSystemAppend();
+  expect(planning).toContain(formatMandatoryEcoSubagentRule());
+  expect(planning).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
+  expect(planning).not.toContain("Agent(Explore)");
+
+  const autonomous = buildAutonomousOrchestratorAppend();
+  expect(autonomous).toContain(ecoSubagentKeyForRole("coder"));
+  expect(autonomous).toContain(formatMandatoryEcoSubagentRule());
+  expect(autonomous).not.toContain("explore → coder");
 });

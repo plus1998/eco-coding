@@ -89,6 +89,10 @@ export function formatUserFacingRequestError(reason: string): string {
   if (text.includes("未提交 FinalizePlan")) {
     return "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换 Planner 模型。";
   }
+  const routeMiss = text.match(/No provider route configured for model\s+([^."}\s]+)/i);
+  if (routeMiss?.[1]) {
+    return `本地模型路由未配置 SDK 请求的模型 ${routeMiss[1]}。这不是当前角色路由的成功匹配；若再次出现，说明仍有 SDK 路径绕过了 Eco 子代理定义。`;
+  }
 
   const legacyApiError = parseLegacyApiErrorActivityMessage(text);
   if (legacyApiError) {

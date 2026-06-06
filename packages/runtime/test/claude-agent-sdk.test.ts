@@ -42,6 +42,7 @@ import {
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
 import { parseSubagentMissionMessage } from "../src/agent-mission";
+import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 const routes: ResolvedModelRoute[] = [
   {
@@ -170,13 +171,13 @@ test("applyEcoSdkSettings disables workflows in query settings", () => {
 test("createAutonomousAgentDefinitions registers all subagent roles", () => {
   const definitions = createAutonomousAgentDefinitions(routes);
   expect(Object.keys(definitions).sort()).toEqual([
-    "Explore",
-    "architect",
-    "coder",
-    "reviewer",
-    "tester",
+    ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("coder"),
+    ecoSubagentKeyForRole("explore"),
+    ecoSubagentKeyForRole("reviewer"),
+    ecoSubagentKeyForRole("tester"),
   ]);
-  const reviewer = definitions.reviewer as { description: string };
+  const reviewer = definitions[ecoSubagentKeyForRole("reviewer")] as { description: string };
   expect(reviewer.description).toContain("High-risk");
 });
 
@@ -222,33 +223,33 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
 test("creates native SDK subagent definitions", () => {
   const agentSkills = { coder: ["docx"], architect: ["pdf"] };
   const definitions = createAgentDefinitions(routes, agentSkills);
-  expect(definitions).toHaveProperty("coder");
-  expect(definitions.coder).toMatchObject({
+  expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
+  expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     description: expect.stringContaining("focused coding"),
     skills: ["docx"],
     model: "qwen-coder-anthropic",
   });
-  expect(definitions.architect).toMatchObject({ skills: ["pdf"] });
-  expect(definitions.reviewer).not.toHaveProperty("skills");
+  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({ skills: ["pdf"] });
+  expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
   expect(resolveAgentSkills("tester", agentSkills)).toEqual([]);
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {
   const definitions = createExecutionAgentDefinitions(routes);
-  expect(definitions.architect).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     prompt: expect.stringContaining("## Coder Tasks"),
   });
-  expect(definitions.coder).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     prompt: expect.stringMatching(/runnable, verified code/),
   });
-  expect(definitions.tester).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
     prompt: expect.stringContaining("## Test Verdict"),
   });
 });
 
 test("reviewer prompt limits scope to current session workspace diff", () => {
   const definitions = createExecutionAgentDefinitions(routes);
-  expect(definitions.reviewer).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
     description: expect.stringContaining("High-risk"),
     prompt: expect.stringMatching(/git diff --name-only HEAD/),
   });
@@ -284,42 +285,44 @@ test("builds phased orchestration prompts", () => {
 
 test("planning agents include network tools on read-only subagents", () => {
   const definitions = createPlanningAgentDefinitions(routes);
-  expect(definitions.Explore).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     description: expect.stringContaining("Read-only"),
     prompt: expect.stringContaining("read-only"),
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
     model: "claude-haiku-explore",
   });
+  expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");
-  expect(definitions.architect).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
 });
 
 test("question explore subagent includes network tools", () => {
   const definitions = createQuestionAgentDefinitions(routes);
-  expect(definitions.Explore).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     model: "claude-haiku-explore",
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
+  expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");
 });
 
 test("execution subagents include network tools except coder", () => {
   const definitions = createExecutionAgentDefinitions(routes);
-  expect(definitions.architect).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   });
-  expect(definitions.reviewer).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
   });
-  expect(definitions.tester).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
   });
-  expect(definitions.coder).toMatchObject({
+  expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
   });
-  const coderTools = (definitions.coder as { tools: string[] }).tools;
+  const coderTools = (definitions[ecoSubagentKeyForRole("coder")] as { tools: string[] }).tools;
   expect(coderTools).not.toContain("WebSearch");
   expect(coderTools).not.toContain("WebFetch");
 });
@@ -333,9 +336,9 @@ test("createExecutionAgentDefinitions omits disabled roles but keeps coder", () 
     tester: false,
   };
   const definitions = createExecutionAgentDefinitions(routes, undefined, availability);
-  expect(definitions).toHaveProperty("coder");
-  expect(definitions).not.toHaveProperty("reviewer");
-  expect(definitions).not.toHaveProperty("tester");
+  expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
+  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
+  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
 });
 
 test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", () => {
@@ -346,8 +349,8 @@ test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", ()
     reviewer: false,
     tester: false,
   });
-  expect(append).not.toContain("Agent(reviewer)");
-  expect(append).not.toContain("Agent(tester)");
+  expect(append).not.toContain(`Agent(${ecoSubagentKeyForRole("reviewer")})`);
+  expect(append).not.toContain(`Agent(${ecoSubagentKeyForRole("tester")})`);
   expect(append).toContain("Reviewer subagent is disabled");
   expect(append).toContain("Tester subagent is disabled");
   expect(append).toContain("Coders (parallel)");
@@ -370,10 +373,12 @@ test("inferActivityRole maps Agent(Explore) to explore", () => {
 test("builds read-only question answering prompts", () => {
   expect(questionAnswerSystemAppend).toContain("ANSWER");
   expect(questionAnswerSystemAppend).toContain("read-only");
-  expect(questionAnswerSystemAppend).toContain("Agent(Explore)");
+  expect(questionAnswerSystemAppend).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
   expect(questionAnswerSystemAppend).toContain("Do not create an implementation plan");
   expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("User question:");
-  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain("Agent(Explore)");
+  expect(buildQuestionAnswerPrompt("How does routing work?")).toContain(
+    `Agent(${ecoSubagentKeyForRole("explore")})`,
+  );
 });
 
 test("formats eco phase boundary events", () => {
@@ -910,6 +915,98 @@ test("buildExecuteResumePrompt inlines approved plan when resuming", () => {
     plan: "Edited",
     planUserEdited: true,
   })).toContain("user edited this plan");
+});
+
+test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route models", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-agents",
+              uuid: "init-agents",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-agents",
+              uuid: "result-agents",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+  const runInput = {
+    threadId: "thr_agents",
+    prompt: "Inspect and implement",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+  };
+
+  for await (const _event of driver.run({
+    ...runInput,
+    signal: new AbortController().signal,
+  })) {
+    // drain
+  }
+  for await (const _event of driver.runQuestion({
+    ...runInput,
+    signal: new AbortController().signal,
+  })) {
+    // drain
+  }
+  for await (const _event of driver.runExecution(
+    {
+      ...runInput,
+      signal: new AbortController().signal,
+    },
+    {
+      userPrompt: "Inspect and implement",
+      analysis: "Needs execution",
+      plan: "Run coders and review",
+    },
+  )) {
+    // drain
+  }
+
+  const planningAgents = capturedOptions[0]?.agents as Record<string, { model?: string }> | undefined;
+  expect(Object.keys(planningAgents ?? {}).sort()).toEqual([
+    ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("explore"),
+  ]);
+  expect(planningAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
+  expect(planningAgents?.[ecoSubagentKeyForRole("architect")]?.model).toBe(
+    "claude-sonnet-architect",
+  );
+
+  const questionAgents = capturedOptions[1]?.agents as Record<string, { model?: string }> | undefined;
+  expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
+  expect(questionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
+
+  const executionAgents = capturedOptions[2]?.agents as Record<string, { model?: string }> | undefined;
+  expect(Object.keys(executionAgents ?? {}).sort()).toEqual([
+    ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("coder"),
+    ecoSubagentKeyForRole("explore"),
+    ecoSubagentKeyForRole("reviewer"),
+    ecoSubagentKeyForRole("tester"),
+  ]);
+  expect(executionAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
+  expect(executionAgents?.[ecoSubagentKeyForRole("reviewer")]?.model).toBe(
+    "claude-sonnet-reviewer",
+  );
+  expect(executionAgents).not.toHaveProperty("Explore");
+  expect(executionAgents).not.toHaveProperty("coder");
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

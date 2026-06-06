@@ -1,9 +1,23 @@
 export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
-/** SDK built-in explore key; Eco registers here to override the default Explore subagent. */
+/** Legacy SDK built-in explore key accepted for old sessions/tool calls. */
 export const SDK_EXPLORE_AGENT_KEY = "Explore";
 
 export type SubagentRole = (typeof SUBAGENT_ROLES)[number];
+
+export const ECO_SUBAGENT_KEY_BY_ROLE = {
+  explore: "eco_explore",
+  architect: "eco_architect",
+  coder: "eco_coder",
+  reviewer: "eco_reviewer",
+  tester: "eco_tester",
+} as const satisfies Record<SubagentRole, string>;
+
+export type EcoSubagentKey = (typeof ECO_SUBAGENT_KEY_BY_ROLE)[SubagentRole];
+
+export function ecoSubagentKeyForRole(role: SubagentRole): EcoSubagentKey {
+  return ECO_SUBAGENT_KEY_BY_ROLE[role];
+}
 
 export type EcoOrchestrationMode = "autonomous" | "manual";
 
@@ -63,6 +77,11 @@ export function listEnabledSubagents(availability: SubagentAvailability): Subage
 export function agentDefinitionAvailabilityRole(key: string): SubagentRole | undefined {
   if (key === SDK_EXPLORE_AGENT_KEY) {
     return "explore";
+  }
+  for (const role of SUBAGENT_ROLES) {
+    if (key === ECO_SUBAGENT_KEY_BY_ROLE[role]) {
+      return role;
+    }
   }
   return isSubagentRole(key) ? key : undefined;
 }

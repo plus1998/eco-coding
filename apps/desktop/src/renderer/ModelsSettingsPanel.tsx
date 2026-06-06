@@ -752,8 +752,8 @@ export function ModelsSettingsPanel({
                 <h2 className="models-section-title">子代理</h2>
                 <p className="models-section-desc">
                   {workflowSettings.orchestrationMode === "manual"
-                    ? "手动编排下可单独开关各角色；关闭后不会注册到 SDK。"
-                    : "自主编排下子代理默认全开，由 Agent 选用；切到手动编排后可在此开关。"}
+                    ? "固定编排下可单独开关各角色；关闭后不会注册到 SDK。"
+                    : "自主编排下子代理默认全开，由 Agent 选用；切到固定编排后可在此开关。"}
                 </p>
               </div>
             </header>

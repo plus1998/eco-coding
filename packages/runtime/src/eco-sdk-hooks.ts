@@ -17,17 +17,21 @@ import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
   createSubagentMissionCapturePreToolHook,
   createSubagentResumePreToolHook,
+  normalizeAgentToolInputSubagentType,
   normalizeSdkSubagentType,
   readAgentSubagentType,
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
 
-export { normalizeSdkSubagentType, readAgentSubagentType } from "./subagent-resume.js";
+export {
+  normalizeAgentToolInputSubagentType,
+  normalizeSdkSubagentType,
+  readAgentSubagentType,
+} from "./subagent-resume.js";
 import type { AgentRole } from "../../shared/src";
 import {
   isSubagentEnabled,
   normalizeSubagentAvailability,
-  SUBAGENT_ROLES,
   type SubagentAvailability,
   type SubagentRole,
 } from "./subagent-availability";
@@ -104,7 +108,7 @@ export function createWorkflowDenyPreToolHook(): HookCallback {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
         permissionDecisionReason:
-          "SDK Dynamic Workflows are disabled in Eco. Orchestrate with Agent(<role>) instead.",
+          "SDK Dynamic Workflows are disabled in Eco. Orchestrate with Eco Agent keys instead.",
       },
     };
   };
@@ -143,8 +147,28 @@ export function createAskUserQuestionPreToolHook(
   };
 }
 
-function isSubagentRole(role: string): role is SubagentRole {
-  return (SUBAGENT_ROLES as readonly string[]).includes(role);
+export function createNormalizeSubagentPreToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
+      return {};
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const normalized = normalizeAgentToolInputSubagentType(toolInput);
+    if (!normalized.changed) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput: normalized.input,
+      },
+    };
+  };
 }
 
 export function createDisabledSubagentPreToolHook(
@@ -156,7 +180,7 @@ export function createDisabledSubagentPreToolHook(
       return {};
     }
     const preInput = input as PreToolUseHookInput;
-    if (preInput.tool_name !== "Agent") {
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
       return {};
     }
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
@@ -191,11 +215,12 @@ export function createReviewerScopePreToolHook(
       return {};
     }
     const preInput = input as PreToolUseHookInput;
-    if (preInput.tool_name !== "Agent") {
+    if (preInput.tool_name !== "Agent" && preInput.tool_name !== "Task") {
       return {};
     }
-    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-    if (readAgentSubagentType(toolInput) !== "reviewer") {
+    const rawToolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const { input: toolInput, role } = normalizeAgentToolInputSubagentType(rawToolInput);
+    if (role !== "reviewer") {
       return {};
     }
 
@@ -290,9 +315,10 @@ export function createSubagentStartHook(
       return {};
     }
     const started = input as SubagentStartHookInput;
+    const agentType = normalizeSdkSubagentType(started.agent_type) ?? started.agent_type;
     const payload = {
       agentId: started.agent_id,
-      agentType: started.agent_type,
+      agentType,
     };
     handlers.taskTracker?.onSubagentStart(payload);
     handlers.subagentSessions?.onStart(payload);
@@ -311,9 +337,10 @@ export function createSubagentStopHook(
       return {};
     }
     const stopped = input as SubagentStopHookInput;
+    const agentType = normalizeSdkSubagentType(stopped.agent_type) ?? stopped.agent_type;
     const payload = {
       agentId: stopped.agent_id,
-      agentType: stopped.agent_type,
+      agentType,
     };
     handlers.taskTracker?.onSubagentStop(payload);
     handlers.subagentSessions?.onStop(payload);
@@ -419,6 +446,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
 
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
+  pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
