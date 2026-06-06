@@ -7,7 +7,11 @@ import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
 import type { ContextWindowMonitor } from "./context-window-monitor";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
+import {
+  recordLegacySdkRunBilling,
+  recordLegacySingleUsageBilling,
+  type UsageLegacyBillingAccumulator,
+} from "./usage-legacy-billing";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import {
   type ResolvedSdkRunBillingModel,
@@ -32,7 +36,7 @@ export interface UsageBillingUpdatedEvent {
 export interface UsageBillingEffectsServices {
   contextMonitor: Pick<ContextWindowMonitor, "getSnapshot" | "updateFromUsage">;
   usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow">;
-  accumulator: Pick<ThreadUsageAccumulator, "recordUsage" | "recordRunUsage" | "hasSeenRequestKey">;
+  accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordSdkUsage">;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
   schedulePersistThreadMetrics(threadId: string): void;
@@ -104,44 +108,19 @@ export async function applySingleUsageBillingEffects(
   }
 
   const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
-  let billingSelection = services.usageLedger.resolveBillingSnapshot(
+  const legacyBilling = recordLegacySingleUsageBilling(services.accumulator, {
+    threadId: input.threadId,
+    artifacts,
+    ...(input.agentId && { agentId: input.agentId }),
+    ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
+    ...(input.reconciliationOnly && { reconciliationOnly: true }),
+    ...(input.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
+  });
+  const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
-    services.accumulator.recordUsage({
-      threadId: input.threadId,
-      role: artifacts.billingRole,
-      source: artifacts.source,
-      delta: artifacts.delta,
-      ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-      actualRates: artifacts.actualRates,
-      plannerRates: artifacts.plannerRates,
-      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-      requestKey: artifacts.requestKey,
-      ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
-      ...(input.reconciliationOnly && { reconciliationOnly: true }),
-    }),
+    legacyBilling.snapshot,
   );
-  let billing = billingSelection.snapshot;
-
-  if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(artifacts.billingRole) && input.agentId) {
-    const sdkProxyKey = `sdk:proxy-subagent:${artifacts.requestKey}`;
-    if (!services.accumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
-      billingSelection = services.usageLedger.resolveBillingSnapshot(
-        input.threadId,
-        services.accumulator.recordUsage({
-          threadId: input.threadId,
-          role: artifacts.billingRole,
-          source: "sdk",
-          delta: artifacts.delta,
-          actualRates: artifacts.actualRates,
-          plannerRates: artifacts.plannerRates,
-          ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-          requestKey: sdkProxyKey,
-          ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
-        }),
-      );
-      billing = billingSelection.snapshot;
-    }
-  }
+  const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
   if (input.agentId && isSubagentBillingRole(artifacts.billingRole)) {
@@ -251,13 +230,12 @@ export async function applySdkRunBillingEffects(
 
   const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
-    services.accumulator.recordRunUsage({
+    recordLegacySdkRunBilling(services.accumulator, {
       threadId: input.threadId,
       role: input.role,
-      source: "sdk",
       requestKey: input.requestKey,
-      models: [...input.models],
-      ...(input.totalCostUsd !== undefined && { otelCostUsd: input.totalCostUsd }),
+      models: input.models,
+      ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
       ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
     }),
   );

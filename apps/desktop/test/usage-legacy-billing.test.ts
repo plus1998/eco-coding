@@ -1,0 +1,134 @@
+import { expect, test } from "bun:test";
+import type { ModelPricingLookup, ParsedUsage } from "@eco/runtime";
+import type { RuntimeRoute } from "../src/main/billing-resolver";
+import type { ProviderConfigSecret } from "../src/main/provider-store";
+import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
+import {
+  resolveSdkRunBillingModels,
+  resolveSingleUsageBillingArtifacts,
+  type UsageBillingPricingRoute,
+} from "../src/main/usage-billing-artifacts";
+import {
+  buildSyntheticSdkPrimaryRequestKey,
+  recordLegacySdkRunBilling,
+  recordLegacySingleUsageBilling,
+} from "../src/main/usage-legacy-billing";
+
+const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
+
+function usage(inputTokens = 10_000): ParsedUsage {
+  return { inputTokens, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+}
+
+const provider: ProviderConfigSecret = {
+  id: "provider_test",
+  name: "Test Provider",
+  baseUrl: "https://api.example.test",
+  requestPath: "/v1/messages",
+  apiCompat: "anthropic",
+  defaultModel: "sonnet",
+  enabled: true,
+  hasApiKey: true,
+  apiKeyPreview: "sk-...",
+  apiKey: "sk-test",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+const routes: RuntimeRoute[] = [
+  { role: "planner", provider, modelId: "sonnet", apiCompat: "anthropic" },
+  { role: "coder", provider, modelId: "haiku", apiCompat: "anthropic" },
+];
+
+async function lookupPricing(route: UsageBillingPricingRoute): Promise<ModelPricingLookup> {
+  return {
+    providerKey: "test",
+    modelId: route.modelId,
+    rates: route.modelId === "haiku" ? haikuRates : sonnetRates,
+    displayName: route.modelId === "haiku" ? "Claude Haiku" : "Claude Sonnet",
+  };
+}
+
+test("recordLegacySingleUsageBilling fills synthetic SDK primary for subagent compatibility", async () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_legacy_single",
+    role: "coder",
+    source: "proxy",
+    usage: usage(2_000),
+    runtimeRoutes: routes,
+    lookupPricing,
+    agentId: "agent_coder",
+    requestKey: "proxy:coder:req_1",
+  });
+
+  const result = recordLegacySingleUsageBilling(accumulator, {
+    threadId: "thr_legacy_single",
+    artifacts,
+    agentId: "agent_coder",
+    reconciliationOnly: true,
+    fillSdkPrimaryForSubagent: true,
+  });
+
+  expect(result.filledSdkPrimary).toBe(true);
+  expect(result.snapshot.primarySource).toBe("sdk");
+  expect(result.snapshot.sourceBreakdown?.proxy).toBeDefined();
+  expect(result.snapshot.sourceBreakdown?.sdk).toBeDefined();
+  expect(
+    accumulator.hasSeenRequestKey(
+      "thr_legacy_single",
+      buildSyntheticSdkPrimaryRequestKey("proxy:coder:req_1"),
+    ),
+  ).toBe(true);
+});
+
+test("recordLegacySingleUsageBilling skips synthetic SDK primary outside subagent attribution", async () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_legacy_no_fill",
+    role: "planner",
+    source: "proxy",
+    usage: usage(2_000),
+    runtimeRoutes: routes,
+    lookupPricing,
+    requestKey: "proxy:planner:req_1",
+  });
+
+  const result = recordLegacySingleUsageBilling(accumulator, {
+    threadId: "thr_legacy_no_fill",
+    artifacts,
+    fillSdkPrimaryForSubagent: true,
+  });
+
+  expect(result.filledSdkPrimary).toBe(false);
+  expect(result.snapshot.primarySource).toBe("proxy");
+  expect(result.snapshot.sourceBreakdown?.sdk).toBeUndefined();
+});
+
+test("recordLegacySdkRunBilling records SDK run totals through the legacy accumulator", async () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const resolved = await resolveSdkRunBillingModels({
+    role: "coder",
+    models: [{ modelId: "haiku", usage: usage(3_000), sdkCostUsd: 0.125 }],
+    runtimeRoutes: routes,
+    lookupPricing,
+  });
+
+  const snapshot = recordLegacySdkRunBilling(accumulator, {
+    threadId: "thr_legacy_sdk_run",
+    role: "coder",
+    requestKey: "sdk-result:evt_1",
+    models: resolved.models,
+    totalCostUsd: 0.125,
+    plannerModelLabel: resolved.plannerModelLabel,
+  });
+
+  expect(snapshot.primarySource).toBe("sdk");
+  expect(snapshot.sourceBreakdown?.sdk?.reportedCostUsd).toBe(0.125);
+  expect(snapshot.byModel?.[0]).toMatchObject({
+    modelId: "haiku",
+    inputTokens: 3_000,
+    outputTokens: 1_000,
+  });
+});
