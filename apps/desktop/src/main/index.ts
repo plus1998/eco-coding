@@ -153,6 +153,11 @@ import {
   resolveRuntimeRoutesFromSettings,
 } from "./billing-resolver";
 import {
+  createBillingRuntimeEnvironment,
+  resolveBillingRuntimeContext,
+  type BillingRuntimeEnvironment,
+} from "./billing-runtime-environment";
+import {
   isSubagentBillingRole,
   type UsageBillingObservation,
 } from "./billing-orchestration";
@@ -335,6 +340,7 @@ const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
+let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 
@@ -393,6 +399,11 @@ app.whenReady().then(async () => {
       process.stderr.write(`[eco] models.dev pricing cache init failed: ${errorMessage(error)}\n`);
     },
   );
+  billingRuntimeEnvironment = createBillingRuntimeEnvironment({
+    waitUntilReady: () => pricingCatalogReady,
+    resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
+    lookupPricing: lookupUsageBillingPricing,
+  });
   contextMonitor = new ContextWindowMonitor(pricingCache);
   contextScheduler = new ContextSnapshotScheduler({
     monitor: contextMonitor,
@@ -3673,12 +3684,15 @@ function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): vo
 async function processUsageBilling(
   input: SingleUsageBillingRequest,
 ): Promise<UpstreamProxyCallBilling | null> {
-  await pricingCatalogReady;
+  const billingRuntime = await resolveBillingRuntimeContext(
+    billingRuntimeEnvironment,
+    input.threadId,
+  );
 
   const resolved = await resolveSingleUsageBillingOrchestration({
     request: input,
-    runtimeRoutes: resolveRuntimeRoutesForThread(input.threadId),
-    lookupPricing: lookupUsageBillingPricing,
+    runtimeRoutes: billingRuntime.runtimeRoutes,
+    lookupPricing: billingRuntime.lookupPricing,
   });
   if (!resolved) {
     return null;
@@ -3973,11 +3987,14 @@ function logSdkUsageResolution(
 async function processSdkStreamPartialUsage(
   input: SdkStreamPartialBillingRequest,
 ): Promise<void> {
-  await pricingCatalogReady;
+  const billingRuntime = await resolveBillingRuntimeContext(
+    billingRuntimeEnvironment,
+    input.threadId,
+  );
   const resolved = await resolveSdkStreamPartialBillingOrchestration({
     request: input,
-    runtimeRoutes: resolveRuntimeRoutesForThread(input.threadId),
-    lookupPricing: lookupUsageBillingPricing,
+    runtimeRoutes: billingRuntime.runtimeRoutes,
+    lookupPricing: billingRuntime.lookupPricing,
   });
 
   await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
@@ -3994,16 +4011,17 @@ async function processSdkRunBilling(input: {
   subagentAgentId?: string;
   parentToolUseId?: string;
 }): Promise<void> {
-  await pricingCatalogReady;
-
-  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
+  const billingRuntime = await resolveBillingRuntimeContext(
+    billingRuntimeEnvironment,
+    input.threadId,
+  );
   const resolved = await resolveSdkRunBillingResolution({
     threadId: input.threadId,
     role: input.role,
     requestKey: input.requestKey,
     bundle: input.bundle,
-    runtimeRoutes,
-    lookupPricing: lookupUsageBillingPricing,
+    runtimeRoutes: billingRuntime.runtimeRoutes,
+    lookupPricing: billingRuntime.lookupPricing,
     resolver: subagentMetricsRegistry,
     ...(input.usagePayload !== undefined && { usagePayload: input.usagePayload }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),

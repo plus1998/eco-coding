@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`727 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、SDK final run billing resolver、single usage billing orchestration、stream partial billing orchestration、telemetry billing role normalization 近端类型错误已清理。
+- `bun test`: 通过，`729 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、SDK final run billing resolver、single usage billing orchestration、stream partial billing orchestration、billing runtime environment、telemetry billing role normalization 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -284,6 +284,14 @@
 - 无 route 时仍生成 audit-only ledger event，不生成 context update，避免把无法解析模型的流式中间值静默混入 context 或账单。
 - 新增测试覆盖：SubAgent partial effects input、agent/runAttempt/parentToolUse 传播、无 route audit-only 行为。
 
+第三十批 Billing runtime environment 已完成：
+
+- 新增 `billing-runtime-environment`，把 pricing readiness、线程 runtime routes 和 pricing lookup 组合成显式运行时上下文。
+- `processUsageBilling`、`processSdkStreamPartialUsage`、`processSdkRunBilling` 不再各自直接等待 `pricingCatalogReady` 或直接传入 `lookupUsageBillingPricing`，统一通过 `resolveBillingRuntimeContext` 获取计费编排依赖。
+- `index.ts` 仍保留 provider store / pricing cache 的实际拥有权，但计费编排入口只依赖 runtime environment，后续可以继续把 billing orchestration services 从主进程剥离。
+- 设置页和 IPC 的价格/能力查询仍直接等待 pricing catalog；这些是配置查询入口，不属于 usage billing 编排路径。
+- 新增测试覆盖：ready-before-routes 顺序、pricing readiness 失败时不解析 routes，防止运行时依赖半初始化后继续计费。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -293,7 +301,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；SDK event usage 分流已抽到 `sdk-event-usage-billing`；SDK final run billing 编排已抽到 `sdk-run-billing-resolution`；single usage billing 编排已抽到 `single-usage-billing-orchestration`；stream partial billing 编排已抽到 `sdk-stream-partial-billing-orchestration`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 activeRuns 状态写入、pricing readiness/runtime route glue、activity/UI glue，下一批优先拆 billing runtime environment 或推进 Context Domain 退场边界。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；SDK event usage 分流已抽到 `sdk-event-usage-billing`；SDK final run billing 编排已抽到 `sdk-run-billing-resolution`；single usage billing 编排已抽到 `single-usage-billing-orchestration`；stream partial billing 编排已抽到 `sdk-stream-partial-billing-orchestration`；billing runtime 依赖已收口到 `billing-runtime-environment`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 activeRuns 状态写入、pricing cache/provider store 拥有权、activity/UI glue，下一批优先推进 Context Domain 退场边界。
 
 ## 不做事项
 
@@ -415,7 +423,7 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 抽出 billing runtime environment，封装 `pricingCatalogReady`、线程 runtime routes 和 pricing lookup，使 single / SDK final / stream partial 编排不再由 `index.ts` 直接掌控计费运行时依赖。
+1. 拆 Context Domain 的最小入口，先把 usage billing 触发的 context update/live emit 从主进程环境中抽成可测试上下文服务。
 2. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
 3. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
