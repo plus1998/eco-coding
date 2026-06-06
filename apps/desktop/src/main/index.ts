@@ -186,6 +186,7 @@ import {
   applySingleUsageBillingEffects,
   type UsageBillingUpdatedEvent,
 } from "./usage-billing-effects";
+import { createUsageContextService } from "./usage-context-effects";
 import {
   buildCompactionLedgerEvent,
   readCompactionBoundaryMetadata,
@@ -3665,7 +3666,10 @@ function lookupUsageBillingPricing(route: UsageBillingPricingRoute) {
 
 function usageBillingEffectsServices() {
   return {
-    contextMonitor,
+    context: createUsageContextService({
+      monitor: contextMonitor,
+      emitLiveContext: (threadId: string) => contextScheduler.emitLiveFromMonitor(threadId),
+    }),
     usageLedger: usageLedgerCoordinator,
     accumulator: threadUsageAccumulator,
     subagentMetrics: subagentMetricsRegistry,
@@ -3673,7 +3677,6 @@ function usageBillingEffectsServices() {
       emitUsageUpdatedFromBillingEffects(event);
     },
     schedulePersistThreadMetrics,
-    emitLiveContext: (threadId: string) => contextScheduler.emitLiveFromMonitor(threadId),
   };
 }
 

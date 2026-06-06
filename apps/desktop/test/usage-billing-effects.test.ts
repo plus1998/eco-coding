@@ -18,6 +18,7 @@ import {
   type UsageBillingEffectsServices,
   type UsageBillingUpdatedEvent,
 } from "../src/main/usage-billing-effects";
+import { createUsageContextService } from "../src/main/usage-context-effects";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
 const haikuRates = { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 };
@@ -94,18 +95,20 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
   const persisted: string[] = [];
   const liveContext: string[] = [];
   const services: UsageBillingEffectsServices = {
-    contextMonitor: {
-      async updateFromUsage(threadId, usage, options) {
-        contextUpdates.push({ threadId, usage, options });
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage(threadId, nextUsage, options) {
+          contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        getSnapshot: () => undefined,
       },
-      getSnapshot: () => undefined,
-    },
+      emitLiveContext: (threadId) => liveContext.push(threadId),
+    }),
     usageLedger: coordinator,
     accumulator: new ThreadUsageAccumulator(),
     subagentMetrics,
     emitUsageUpdated: (event) => emitted.push(event),
     schedulePersistThreadMetrics: (threadId) => persisted.push(threadId),
-    emitLiveContext: (threadId) => liveContext.push(threadId),
   };
   const artifacts = await resolveSingleUsageBillingArtifacts({
     threadId: "thr_effects",
@@ -161,12 +164,15 @@ test("applySdkStreamPartialBillingEffects records partial ledger and context sid
     },
   };
   const services: UsageBillingEffectsServices = {
-    contextMonitor: {
-      async updateFromUsage(threadId, nextUsage, options) {
-        contextUpdates.push({ threadId, usage: nextUsage, options });
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage(threadId, nextUsage, options) {
+          contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        getSnapshot: () => undefined,
       },
-      getSnapshot: () => undefined,
-    },
+      emitLiveContext: (threadId) => liveContext.push(threadId),
+    }),
     usageLedger: coordinator,
     accumulator,
     subagentMetrics: {
@@ -180,7 +186,6 @@ test("applySdkStreamPartialBillingEffects records partial ledger and context sid
     schedulePersistThreadMetrics: () => {
       throw new Error("stream partial must not persist thread metrics");
     },
-    emitLiveContext: (threadId) => liveContext.push(threadId),
   };
   const artifacts = await resolveSdkStreamPartialBillingArtifacts({
     threadId: "thr_stream_effects",
@@ -249,18 +254,20 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
   const contextUpdates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
   const emitted: UsageBillingUpdatedEvent[] = [];
   const services: UsageBillingEffectsServices = {
-    contextMonitor: {
-      async updateFromUsage(threadId, nextUsage, options) {
-        contextUpdates.push({ threadId, usage: nextUsage, options });
+    context: createUsageContextService({
+      monitor: {
+        async updateFromUsage(threadId, nextUsage, options) {
+          contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        getSnapshot: () => undefined,
       },
-      getSnapshot: () => undefined,
-    },
+      emitLiveContext: () => undefined,
+    }),
     usageLedger: coordinator,
     accumulator: new ThreadUsageAccumulator(),
     subagentMetrics,
     emitUsageUpdated: (event) => emitted.push(event),
     schedulePersistThreadMetrics: () => undefined,
-    emitLiveContext: () => undefined,
   };
   const billingModels = await resolveSdkRunBillingModels({
     role: "coder",

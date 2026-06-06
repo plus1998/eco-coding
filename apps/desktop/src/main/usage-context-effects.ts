@@ -10,6 +10,21 @@ export interface UsageContextUpdateMonitor {
   updateFromUsage: ContextWindowMonitor["updateFromUsage"];
 }
 
+export interface UsageContextMonitor
+  extends UsageContextUpdateMonitor,
+    Pick<ContextWindowMonitor, "getSnapshot"> {}
+
+export interface UsageContextService {
+  applyUpdate(input: ApplyUsageContextUpdateInput): Promise<boolean>;
+  getSnapshot: ContextWindowMonitor["getSnapshot"];
+  emitLive(threadId: string): void;
+}
+
+export interface CreateUsageContextServiceInput {
+  monitor: UsageContextMonitor;
+  emitLiveContext(threadId: string): void;
+}
+
 export interface BuildUsageContextUpdateOptionsInput {
   agentId?: string;
   messageId?: string;
@@ -55,4 +70,14 @@ export async function applyUsageContextUpdate(
     }),
   );
   return true;
+}
+
+export function createUsageContextService(
+  input: CreateUsageContextServiceInput,
+): UsageContextService {
+  return {
+    applyUpdate: (update) => applyUsageContextUpdate(input.monitor, update),
+    getSnapshot: (threadId) => input.monitor.getSnapshot(threadId),
+    emitLive: (threadId) => input.emitLiveContext(threadId),
+  };
 }

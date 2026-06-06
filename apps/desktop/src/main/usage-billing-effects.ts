@@ -5,9 +5,8 @@ import type {
 } from "../shared/ipc";
 import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
-import type { ContextWindowMonitor } from "./context-window-monitor";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { applyUsageContextUpdate } from "./usage-context-effects";
+import type { UsageContextService } from "./usage-context-effects";
 import {
   recordLegacySdkRunBilling,
   recordLegacySingleUsageBilling,
@@ -35,13 +34,12 @@ export interface UsageBillingUpdatedEvent {
 }
 
 export interface UsageBillingEffectsServices {
-  contextMonitor: Pick<ContextWindowMonitor, "getSnapshot" | "updateFromUsage">;
+  context: UsageContextService;
   usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow">;
   accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordSdkUsage">;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
   schedulePersistThreadMetrics(threadId: string): void;
-  emitLiveContext(threadId: string): void;
 }
 
 export interface ApplySingleUsageBillingEffectsInput {
@@ -68,7 +66,7 @@ export async function applySdkStreamPartialBillingEffects(
 ): Promise<void> {
   services.usageLedger.appendEvents([input.artifacts.ledgerEvent]);
 
-  const contextUpdated = await applyUsageContextUpdate(services.contextMonitor, {
+  const contextUpdated = await services.context.applyUpdate({
     threadId: input.threadId,
     usage: input.usage,
     ...(input.artifacts.contextUpdate && { contextUpdate: input.artifacts.contextUpdate }),
@@ -78,7 +76,7 @@ export async function applySdkStreamPartialBillingEffects(
     return;
   }
 
-  services.emitLiveContext(input.threadId);
+  services.context.emitLive(input.threadId);
 }
 
 export async function applySingleUsageBillingEffects(
@@ -88,7 +86,7 @@ export async function applySingleUsageBillingEffects(
   const { artifacts } = input;
   services.usageLedger.appendEvents([artifacts.ledgerEvent]);
 
-  await applyUsageContextUpdate(services.contextMonitor, {
+  await services.context.applyUpdate({
     threadId: input.threadId,
     usage: artifacts.delta,
     updateContext: input.updateContext,
@@ -97,7 +95,7 @@ export async function applySingleUsageBillingEffects(
     ...(input.messageId && { messageId: input.messageId }),
   });
 
-  const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
+  const monitorSnap = services.context.getSnapshot(input.threadId);
   const legacyBilling = recordLegacySingleUsageBilling(services.accumulator, {
     threadId: input.threadId,
     artifacts,
@@ -114,7 +112,7 @@ export async function applySingleUsageBillingEffects(
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
   if (input.agentId && isSubagentBillingRole(artifacts.billingRole)) {
-    const roleSnap = services.contextMonitor.getSnapshot(input.threadId);
+    const roleSnap = services.context.getSnapshot(input.threadId);
     const instance = roleSnap?.instances?.find((row) => row.agentId === input.agentId);
     services.subagentMetrics.recordSdkUsage(input.threadId, {
       role: artifacts.billingRole,
@@ -149,7 +147,7 @@ export async function applySingleUsageBillingEffects(
   });
 
   services.schedulePersistThreadMetrics(input.threadId);
-  services.emitLiveContext(input.threadId);
+  services.context.emitLive(input.threadId);
   return billing;
 }
 
@@ -188,7 +186,7 @@ export async function applySdkRunBillingEffects(
     }),
   );
 
-  await applyUsageContextUpdate(services.contextMonitor, {
+  await services.context.applyUpdate({
     threadId: input.threadId,
     usage: input.contextUsage,
     updateContext: input.updateContext,
@@ -197,7 +195,7 @@ export async function applySdkRunBillingEffects(
   });
 
   if (input.resolvedSubagentId && isSubagentBillingRole(input.billingRole)) {
-    const roleSnap = services.contextMonitor.getSnapshot(input.threadId);
+    const roleSnap = services.context.getSnapshot(input.threadId);
     const instance = roleSnap?.instances?.find((row) => row.agentId === input.resolvedSubagentId);
     for (const model of input.models) {
       services.subagentMetrics.recordSdkUsage(input.threadId, {
@@ -227,7 +225,7 @@ export async function applySdkRunBillingEffects(
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
-  const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
+  const monitorSnap = services.context.getSnapshot(input.threadId);
   const primaryModel = input.models[0];
   const snapshot = buildUsageSnapshotForRole({
     usage: input.contextUsage,
@@ -250,6 +248,6 @@ export async function applySdkRunBillingEffects(
   });
 
   services.schedulePersistThreadMetrics(input.threadId);
-  services.emitLiveContext(input.threadId);
+  services.context.emitLive(input.threadId);
   return billing;
 }

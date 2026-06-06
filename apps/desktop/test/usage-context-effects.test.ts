@@ -3,6 +3,8 @@ import type { ParsedUsage } from "@eco/runtime";
 import {
   applyUsageContextUpdate,
   buildUsageContextUpdateOptions,
+  createUsageContextService,
+  type UsageContextMonitor,
   type UsageContextUpdateMonitor,
 } from "../src/main/usage-context-effects";
 import type { UsageBillingContextUpdate } from "../src/main/usage-billing-artifacts";
@@ -84,4 +86,38 @@ test("applyUsageContextUpdate skips missing or disabled context updates", async 
     }),
   ).toBe(false);
   expect(calls).toHaveLength(0);
+});
+
+test("createUsageContextService exposes update snapshot and live emit as one boundary", async () => {
+  const updates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
+  const snapshots: string[] = [];
+  const live: string[] = [];
+  const monitor: UsageContextMonitor = {
+    async updateFromUsage(threadId, nextUsage, options) {
+      updates.push({ threadId, usage: nextUsage, options });
+      return undefined as Awaited<ReturnType<UsageContextMonitor["updateFromUsage"]>>;
+    },
+    getSnapshot(threadId) {
+      snapshots.push(threadId);
+      return undefined;
+    },
+  };
+  const service = createUsageContextService({
+    monitor,
+    emitLiveContext: (threadId) => live.push(threadId),
+  });
+
+  expect(
+    await service.applyUpdate({
+      threadId: "thr_context_service",
+      usage: usage(),
+      contextUpdate,
+    }),
+  ).toBe(true);
+  expect(service.getSnapshot("thr_context_service")).toBeUndefined();
+  service.emitLive("thr_context_service");
+
+  expect(updates).toHaveLength(1);
+  expect(snapshots).toEqual(["thr_context_service"]);
+  expect(live).toEqual(["thr_context_service"]);
 });
