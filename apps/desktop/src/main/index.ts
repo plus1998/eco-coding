@@ -183,6 +183,7 @@ import {
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "./usage-billing-artifacts";
+import { applySingleUsageBillingEffects } from "./usage-billing-effects";
 import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 import {
   buildCompactionLedgerEvent,
@@ -3810,98 +3811,32 @@ async function processUsageBilling(input: {
     ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
     ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
   });
-  usageLedgerCoordinator.appendEvents([
-    artifacts.ledgerEvent,
-  ]);
 
   const updateContext =
     input.updateContext ?? shouldUpdateContextFromUsageSource(input.source, input.role);
-  if (updateContext && artifacts.contextUpdate) {
-    await contextMonitor.updateFromUsage(input.threadId, artifacts.delta, {
-      role: artifacts.contextUpdate.role,
-      ...(input.agentId && { agentId: input.agentId }),
-      modelId: artifacts.contextUpdate.modelId,
-      providerBaseUrl: artifacts.contextUpdate.providerBaseUrl,
-      ...(artifacts.contextUpdate.modelsDevMapping && {
-        modelsDevMapping: artifacts.contextUpdate.modelsDevMapping,
-      }),
-      ...(artifacts.contextUpdate.manualSpec && { manualSpec: artifacts.contextUpdate.manualSpec }),
-      ...(input.messageId && { messageId: input.messageId }),
-    });
-  }
-
-  const monitorSnap = contextMonitor.getSnapshot(input.threadId);
-
-  let billing = usageLedgerCoordinator.enrichBillingSnapshot(
-    input.threadId,
-    threadUsageAccumulator.recordUsage({
+  await applySingleUsageBillingEffects(
+    {
+      contextMonitor,
+      usageLedger: usageLedgerCoordinator,
+      accumulator: threadUsageAccumulator,
+      subagentMetrics: subagentMetricsRegistry,
+      emitUsageUpdated: (event) => {
+        emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, event.payload);
+      },
+      schedulePersistThreadMetrics,
+      emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
+    },
+    {
       threadId: input.threadId,
-      role: artifacts.billingRole,
-      source: artifacts.source,
-      delta: artifacts.delta,
+      artifacts,
+      updateContext,
+      ...(input.agentId && { agentId: input.agentId }),
+      ...(input.messageId && { messageId: input.messageId }),
       ...(input.otelCostUsd !== undefined && { otelCostUsd: input.otelCostUsd }),
-      actualRates: artifacts.actualRates,
-      plannerRates: artifacts.plannerRates,
-      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-      requestKey: artifacts.requestKey,
-      ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
       ...(input.reconciliationOnly && { reconciliationOnly: true }),
-    }),
+      ...(input.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
+    },
   );
-
-  if (input.fillSdkPrimaryForSubagent && isSubagentBillingRole(artifacts.billingRole) && input.agentId) {
-    const sdkProxyKey = `sdk:proxy-subagent:${artifacts.requestKey}`;
-    if (!threadUsageAccumulator.hasSeenRequestKey(input.threadId, sdkProxyKey)) {
-      billing = usageLedgerCoordinator.enrichBillingSnapshot(
-        input.threadId,
-        threadUsageAccumulator.recordUsage({
-          threadId: input.threadId,
-          role: artifacts.billingRole,
-          source: "sdk",
-          delta: artifacts.delta,
-          actualRates: artifacts.actualRates,
-          plannerRates: artifacts.plannerRates,
-          ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-          requestKey: sdkProxyKey,
-          ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
-        }),
-      );
-    }
-  }
-  usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
-
-  if (input.agentId && isSubagentBillingRole(artifacts.billingRole)) {
-    const roleSnap = contextMonitor.getSnapshot(input.threadId);
-    const instance = roleSnap?.instances?.find((row) => row.agentId === input.agentId);
-    subagentMetricsRegistry.recordSdkUsage(input.threadId, {
-      role: artifacts.billingRole,
-      agentId: input.agentId,
-      usage: artifacts.delta,
-      contextOccupied: instance?.occupied ?? computeWindowOccupancy(artifacts.delta),
-      ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
-      billing: artifacts.requestBilling,
-      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-      requestKey: artifacts.requestKey,
-    });
-  }
-
-  const snapshot = buildUsageSnapshotForRole({
-    usage: artifacts.parsedUsage,
-    role: artifacts.billingRole,
-    ...(monitorSnap && { monitorSnap }),
-    ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
-    fallbackContext: updateContext ? "estimate" : "none",
-  });
-
-  emitThreadEvent(input.threadId, "thread.usage_updated", formatUsageBadge(artifacts.parsedUsage), artifacts.billingRole, false, {
-    usage: snapshot,
-    totalCostUsd: billing.otelCostUsd,
-    billing,
-    ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
-  });
-
-  schedulePersistThreadMetrics(input.threadId);
-  contextScheduler.emitLiveFromMonitor(input.threadId);
 
   return artifacts.requestBillingLog;
 }
