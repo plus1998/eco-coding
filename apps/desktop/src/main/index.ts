@@ -95,6 +95,7 @@ import {
   applyThreadRunDecisionEffects,
   type ApplyThreadRunDecisionEffectsInput,
 } from "./thread-run-decision-effects";
+import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
 import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
@@ -1367,6 +1368,40 @@ function scheduleThreadTitleSummary(
     });
 }
 
+function captureThreadPlanReady(input: {
+  threadId: string;
+  payload: PlanReadyPayload;
+  workspacePath: string;
+  worktreePath: string;
+  routesJson: string;
+  awaitingPlanMessage: string;
+  runtimeConfig: RuntimeConfig;
+}): true {
+  const result = applyThreadPlanReadyEffects({
+    threadId: input.threadId,
+    payload: input.payload,
+    workspacePath: input.workspacePath,
+    worktreePath: input.worktreePath,
+    routesJson: input.routesJson,
+    awaitingPlanMessage: input.awaitingPlanMessage,
+    effects: {
+      savePendingPlan: (plan) => {
+        conversationStore.savePendingPlan(plan);
+      },
+      emitAwaitingPlan: (event) => {
+        emitThreadEvent(event.threadId, "thread.awaiting_plan", event.message, "planner", false, {
+          plan: event.plan,
+        });
+      },
+      scheduleTitleSummary: (threadId, context) => {
+        scheduleThreadTitleSummary(threadId, input.runtimeConfig, context);
+      },
+    },
+  });
+
+  return result.planCaptured;
+}
+
 const THREAD_INTERRUPTED_CONTINUE_HINT = "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
 
 function markThreadInterrupted(threadId: string, reason: string): void {
@@ -1666,33 +1701,14 @@ async function runCodingThreadAutonomous(
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
                   if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    planCaptured = true;
-                    conversationStore.savePendingPlan({
+                    planCaptured = captureThreadPlanReady({
                       threadId: thread.id,
-                      userPrompt: event.payload.userPrompt,
-                      analysis: event.payload.analysis,
-                      plan: event.payload.plan,
                       workspacePath: workspace.path,
                       worktreePath: cwd,
                       routesJson: JSON.stringify(routes),
-                    });
-                    emitThreadEvent(
-                      thread.id,
-                      "thread.awaiting_plan",
-                      "Agent 请求确认计划，请审批后继续。",
-                      "planner",
-                      false,
-                      {
-                        plan: {
-                          userPrompt: event.payload.userPrompt,
-                          analysis: event.payload.analysis,
-                          plan: event.payload.plan,
-                        },
-                      },
-                    );
-                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                      plan: event.payload.plan,
-                      analysis: event.payload.analysis,
+                      payload: event.payload,
+                      awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
+                      runtimeConfig,
                     });
                   }
                 },
@@ -1835,32 +1851,14 @@ async function runCodingThreadPlanning(
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
                   if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    conversationStore.savePendingPlan({
+                    captureThreadPlanReady({
                       threadId: thread.id,
-                      userPrompt: event.payload.userPrompt,
-                      analysis: event.payload.analysis,
-                      plan: event.payload.plan,
                       workspacePath: workspace.path,
                       worktreePath: cwd,
                       routesJson: JSON.stringify(routes),
-                    });
-                    emitThreadEvent(
-                      thread.id,
-                      "thread.awaiting_plan",
-                      "计划已生成，请确认是否执行。",
-                      "planner",
-                      false,
-                      {
-                        plan: {
-                          userPrompt: event.payload.userPrompt,
-                          analysis: event.payload.analysis,
-                          plan: event.payload.plan,
-                        },
-                      },
-                    );
-                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                      plan: event.payload.plan,
-                      analysis: event.payload.analysis,
+                      payload: event.payload,
+                      awaitingPlanMessage: "计划已生成，请确认是否执行。",
+                      runtimeConfig,
                     });
                   }
                 },
@@ -3322,33 +3320,14 @@ async function runThreadContinuation(
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
                   if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    planningPlanCaptured = true;
-                    conversationStore.savePendingPlan({
+                    planningPlanCaptured = captureThreadPlanReady({
                       threadId: thread.id,
-                      userPrompt: event.payload.userPrompt,
-                      analysis: event.payload.analysis,
-                      plan: event.payload.plan,
                       workspacePath: workspace.path,
                       worktreePath: cwd,
                       routesJson: JSON.stringify(routes),
-                    });
-                    emitThreadEvent(
-                      thread.id,
-                      "thread.awaiting_plan",
-                      "计划已生成，请确认是否执行。",
-                      "planner",
-                      false,
-                      {
-                        plan: {
-                          userPrompt: event.payload.userPrompt,
-                          analysis: event.payload.analysis,
-                          plan: event.payload.plan,
-                        },
-                      },
-                    );
-                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                      plan: event.payload.plan,
-                      analysis: event.payload.analysis,
+                      payload: event.payload,
+                      awaitingPlanMessage: "计划已生成，请确认是否执行。",
+                      runtimeConfig,
                     });
                   }
                   if (
