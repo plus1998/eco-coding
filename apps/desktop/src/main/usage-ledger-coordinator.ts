@@ -160,17 +160,22 @@ export class UsageLedgerCoordinator {
     return subagents.length > 0 ? { ...billing, subagents } : billing;
   }
 
+  projectBillingSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {
+    try {
+      return this.projectBilling(threadId, plannerModelLabel)?.snapshot;
+    } catch (error) {
+      this.writeError(`[eco] usage ledger billing projection failed: ${errorMessage(error)}\n`);
+      return undefined;
+    }
+  }
+
   listSubagentBillingEntries(threadId: string): SubagentMetricsEntry[] {
     const existingEntries = this.metrics.listEntries(threadId);
     try {
-      const events = this.store.listUsageLedgerEvents(threadId);
-      if (events.length === 0) {
+      const projection = this.projectBilling(threadId);
+      if (!projection) {
         return existingEntries;
       }
-      const projection = projectBillingFromUsageLedger({
-        events,
-        agents: this.store.listAgentInstances(threadId),
-      });
       return projectSubagentMetricsEntriesFromBillingProjection({
         projection,
         existingEntries,
@@ -179,6 +184,21 @@ export class UsageLedgerCoordinator {
       this.writeError(`[eco] subagent ledger projection failed: ${errorMessage(error)}\n`);
       return existingEntries;
     }
+  }
+
+  private projectBilling(
+    threadId: string,
+    plannerModelLabel?: string,
+  ): ReturnType<typeof projectBillingFromUsageLedger> | undefined {
+    const events = this.store.listUsageLedgerEvents(threadId);
+    if (events.length === 0) {
+      return undefined;
+    }
+    return projectBillingFromUsageLedger({
+      events,
+      agents: this.store.listAgentInstances(threadId),
+      ...(plannerModelLabel && { plannerModelLabel }),
+    });
   }
 
   reconcileShadow(threadId: string, billing: ThreadBillingSnapshot): void {

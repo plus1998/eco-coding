@@ -132,3 +132,60 @@ test("UsageLedgerCoordinator enriches billing snapshots from ledger projection",
     modelId: "haiku",
   });
 });
+
+test("UsageLedgerCoordinator projects full billing snapshots from ledger", () => {
+  const { coordinator } = createCoordinator();
+  const delta = usage(2_000);
+  coordinator.appendEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_full_projection",
+      role: "coder",
+      source: "proxy",
+      sourceEventId: "proxy:coder:req_1",
+      requestKey: "proxy:coder:req_1",
+      usage: delta,
+      computedBilling: computeRequestBilling(delta, haikuRates, sonnetRates),
+      runAttemptId: "attempt_1",
+      agentId: "agent_coder",
+      modelId: "haiku",
+    }),
+  ]);
+
+  const snapshot = coordinator.projectBillingSnapshot("thr_full_projection", "Claude Sonnet");
+
+  expect(snapshot).toMatchObject({
+    primarySource: "proxy",
+    plannerModelLabel: "Claude Sonnet",
+    totalTokens: {
+      input: 2_000,
+      output: 1_000,
+      cacheRead: 0,
+      cacheCreation: 0,
+    },
+    byRole: {
+      coder: {
+        inputTokens: 2_000,
+        outputTokens: 1_000,
+      },
+    },
+    sourceBreakdown: {
+      proxy: {
+        totalTokens: {
+          input: 2_000,
+          output: 1_000,
+        },
+      },
+    },
+  });
+  expect(snapshot?.byModel?.find((entry) => entry.modelId === "haiku")).toMatchObject({
+    modelId: "haiku",
+    inputTokens: 2_000,
+    outputTokens: 1_000,
+  });
+  expect(snapshot?.subagents?.[0]).toMatchObject({
+    agentId: "agent_coder",
+    role: "coder",
+    inputTokens: 2_000,
+    outputTokens: 1_000,
+  });
+});
