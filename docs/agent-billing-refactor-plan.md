@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`688 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution 近端类型错误已清理。
+- `bun test`: 通过，`694 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -183,6 +183,15 @@
 - 归因逻辑保留关键安全边界：只有 SubAgent role 能覆盖 billing role；非 planner 且无法解析 agent 时保持 unattributed，不把成本静默归到 planner。
 - 新增测试覆盖：parent tool use 解析、显式 SubAgent 绕过二次解析、registry role 回填、planner-only ledger agent fallback、非 SubAgent role 不覆盖、非 planner 未归因保持显式缺口。
 
+第十八批 SubAgent usage attribution 拆分已完成：
+
+- 新增 `subagent-usage-attribution`，把 proxy 与 SDK event 前置用量归因抽成纯函数，统一输出 `billingRole`、`subagentAgentId` 和是否尝试解析。
+- 新模块保持保守策略：只有原始 role 已是 SubAgent、存在显式 SubAgent agentId、或存在 parent tool use 时才调用 resolver；普通 planner/OTel API request 不做无来源 agent fallback。
+- `emitProxyUsage` 改为通过归因模块解析 SubAgent agent，并保留原 requestKey 维度，避免改变幂等键。
+- `recordSdkUsageFromEvent` 改为通过归因模块处理 explicitSubagentId、parentToolUseId 和 registry role 回填，减少与 `SubagentMetricsRegistry` 的直接耦合。
+- 归因逻辑继续禁止非 SubAgent registry role 覆盖 billing role；解析失败保持显式未归因，而不是回退到 planner。
+- 新增测试覆盖：planner 跳过、SubAgent role 解析、显式 agent、parent tool use、非 SubAgent role 不覆盖、解析失败保持未归因。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -192,7 +201,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；`index.ts` 仍保留 OTel/proxy SubAgent 归因编排、activeRuns、runtime event glue、activity/UI glue，下一批优先继续拆 OTel/proxy attribution 或 Context Domain 边界。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；`index.ts` 仍保留 OTel 普通 API request 观测、activeRuns、runtime event glue、activity/UI glue，下一批优先推进 Context Domain 或旧 accumulator 退场边界。
 
 ## 不做事项
 

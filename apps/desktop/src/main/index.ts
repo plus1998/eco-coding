@@ -200,6 +200,7 @@ import {
 } from "./subagent-session-hooks.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { resolveSdkRunBillingAttribution } from "./sdk-run-billing-attribution";
+import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -3678,12 +3679,15 @@ async function emitProxyUsage(
     info.usage.cacheCreationTokens,
   ].join(":");
 
-  const billingRole = normalizeBillingRole(info.role);
+  const initialBillingRole = normalizeBillingRole(info.role);
   const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
-  const subagentAgentId = isSubagentBillingRole(billingRole)
-    ? subagentMetricsRegistry.resolveAgentId(info.threadId, { role: billingRole })
-    : undefined;
+  const attribution = resolveSubagentUsageAttribution({
+    threadId: info.threadId,
+    role: initialBillingRole,
+    resolver: subagentMetricsRegistry,
+  });
+  const { billingRole, subagentAgentId } = attribution;
   const proxyUsage: ParsedUsage = {
     inputTokens: info.usage.inputTokens,
     outputTokens: info.usage.outputTokens,
@@ -4058,7 +4062,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
 
   const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
-  let billingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
+  const initialBillingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
   const parentToolUseId =
     isRecord(event.payload) && typeof event.payload.parent_tool_use_id === "string"
       ? event.payload.parent_tool_use_id
@@ -4067,17 +4071,14 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     isRecord(event.payload) && typeof event.payload.subagentAgentId === "string"
       ? event.payload.subagentAgentId
       : undefined;
-  const subagentAgentId = subagentMetricsRegistry.resolveAgentId(threadId, {
-    role: billingRole,
+  const attribution = resolveSubagentUsageAttribution({
+    threadId,
+    role: initialBillingRole,
+    resolver: subagentMetricsRegistry,
     ...(explicitSubagentId && { subagentAgentId: explicitSubagentId }),
     ...(parentToolUseId && { parentToolUseId }),
   });
-  if (subagentAgentId) {
-    const entryRole = subagentMetricsRegistry.roleForAgentId(threadId, subagentAgentId);
-    if (entryRole && isSubagentBillingRole(entryRole)) {
-      billingRole = entryRole;
-    }
-  }
+  const { billingRole, subagentAgentId } = attribution;
 
   if (!bundle.authoritative) {
     const messageId =
