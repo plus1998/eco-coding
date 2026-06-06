@@ -196,9 +196,9 @@ import {
 } from "./usage-billing-effects";
 import { createUsageContextService } from "./usage-context-effects";
 import {
-  buildCompactionLedgerEvent,
-  readCompactionBoundaryMetadata,
-} from "./compaction-ledger-events";
+  createCompactionAuditService,
+  type CompactionAuditService,
+} from "./compaction-audit-service";
 import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
@@ -331,15 +331,7 @@ interface ActiveThreadRun {
   usageObservations?: UsageBillingObservation[];
 }
 
-interface PendingCompactionAudit {
-  trigger: "auto" | "manual";
-  archiveId?: string;
-  sessionId?: string;
-  preTokens?: number;
-}
-
 const activeRuns = new Map<string, ActiveThreadRun>();
-const pendingCompactionAudits = new Map<string, PendingCompactionAudit>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
@@ -353,6 +345,7 @@ let billingRuntimeEnvironment: BillingRuntimeEnvironment;
 let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
+let compactionAuditService: CompactionAuditService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -441,6 +434,23 @@ app.whenReady().then(async () => {
     recordCompactionBoundary: (threadId, payload, sourceEventId) => {
       recordCompactionLedgerBoundary(threadId, payload, sourceEventId);
     },
+  });
+  compactionAuditService = createCompactionAuditService({
+    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    getContextSnapshot: (threadId) => contextScheduler.getDisplaySnapshot(threadId),
+    getSdkSession: (threadId) => conversationStore.getSdkSession(threadId),
+    getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
+    saveCompactionArchive: (threadId, input) => conversationStore.saveCompactionArchive(threadId, input),
+    getRunAttemptId: (threadId) => agentLifecycle.usageRunAttemptId(threadId),
+    getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
+    appendLedgerEvents: (events) => usageLedgerCoordinator.appendEvents(events),
+    emitActivity: (threadId, message) => {
+      emitThreadEvent(threadId, "otel.activity", message, "system", false);
+    },
+    markCompactInFlight: (threadId) => contextLifecycle.markCompactInFlight(threadId),
+    writeError: (message) => process.stderr.write(message),
+    nowIso: () => new Date().toISOString(),
+    nowMs: () => Date.now(),
   });
   loadThreadMetricsFromStore();
   try {
@@ -4274,62 +4284,10 @@ function archiveThreadContextBeforeCompaction(
   trigger: "auto" | "manual",
   sessionId?: string,
 ): void {
-  try {
-    const activityLines = conversationStore.listActivityLines(threadId);
-    const context = contextScheduler.getDisplaySnapshot(threadId);
-    const sdkSession = conversationStore.getSdkSession(threadId);
-    const pendingPlan = conversationStore.getPendingPlan(threadId);
-    const archive = conversationStore.saveCompactionArchive(threadId, {
-      trigger,
-      ...(sessionId && { sessionId }),
-      payload: {
-        archivedAt: new Date().toISOString(),
-        activityLineCount: activityLines.length,
-        activityLines,
-        ...(context && { context }),
-        ...(sdkSession && { sdkSession }),
-        ...(pendingPlan && {
-          pendingPlan: {
-            userPrompt: pendingPlan.userPrompt,
-            analysis: pendingPlan.analysis,
-            plan: pendingPlan.plan,
-            workspacePath: pendingPlan.workspacePath,
-            worktreePath: pendingPlan.worktreePath,
-          },
-        }),
-      },
-    });
-    const audit: PendingCompactionAudit = {
-      trigger,
-      archiveId: archive.id,
-      ...(sessionId && { sessionId }),
-      ...(context?.occupied !== undefined && { preTokens: context.occupied }),
-    };
-    pendingCompactionAudits.set(compactionAuditKey(threadId, sessionId), audit);
-    pendingCompactionAudits.set(compactionAuditKey(threadId), audit);
-    appendCompactionLedgerEvent({
-      threadId,
-      sourceEventId: `compact:${archive.id}:started`,
-      stage: "started",
-      trigger,
-      ...(sessionId && { sessionId }),
-      archiveId: archive.id,
-      ...(context?.occupied !== undefined && { preTokens: context.occupied }),
-    });
-    const triggerLabel = trigger === "manual" ? "手动" : "自动";
-    emitThreadEvent(
-      threadId,
-      "otel.activity",
-      `压缩前已归档上下文（${triggerLabel}）`,
-      "system",
-      false,
-    );
-    contextLifecycle.markCompactInFlight(threadId);
-  } catch (error) {
-    process.stderr.write(
-      `[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`,
-    );
-  }
+  compactionAuditService.archiveBeforeCompaction(threadId, {
+    trigger,
+    ...(sessionId && { sessionId }),
+  });
 }
 
 function recordCompactionLedgerBoundary(
@@ -4337,60 +4295,7 @@ function recordCompactionLedgerBoundary(
   payload: Record<string, unknown>,
   sourceEventId?: string,
 ): void {
-  const metadata = readCompactionBoundaryMetadata(payload);
-  const pending = takePendingCompactionAudit(threadId, metadata.sessionId);
-  const trigger = metadata.trigger ?? pending?.trigger;
-  const sessionId = metadata.sessionId ?? pending?.sessionId;
-  const preTokens = metadata.preTokens ?? pending?.preTokens;
-  appendCompactionLedgerEvent({
-    threadId,
-    sourceEventId: sourceEventId ? `compact:${sourceEventId}` : `compact:${threadId}:${Date.now()}:completed`,
-    stage: "completed",
-    ...(trigger && { trigger }),
-    ...(sessionId && { sessionId }),
-    ...(pending?.archiveId && { archiveId: pending.archiveId }),
-    ...(preTokens !== undefined && { preTokens }),
-    ...(metadata.postTokens !== undefined && { postTokens: metadata.postTokens }),
-    ...(metadata.rawMetadata && { payload: metadata.rawMetadata }),
-  });
-}
-
-function appendCompactionLedgerEvent(input: {
-  threadId: string;
-  sourceEventId: string;
-  stage: "started" | "completed";
-  trigger?: "auto" | "manual";
-  sessionId?: string;
-  archiveId?: string;
-  preTokens?: number;
-  postTokens?: number;
-  payload?: Record<string, unknown>;
-}): void {
-  const runAttemptId = agentLifecycle.usageRunAttemptId(input.threadId);
-  const plannerAgentId = agentLifecycle.usagePlannerAgentId(input.threadId);
-  usageLedgerCoordinator.appendEvents([
-    buildCompactionLedgerEvent({
-      ...input,
-      ...(runAttemptId && { runAttemptId }),
-      ...(plannerAgentId && { plannerAgentId }),
-    }),
-  ]);
-}
-
-function takePendingCompactionAudit(
-  threadId: string,
-  sessionId?: string,
-): PendingCompactionAudit | undefined {
-  const sessionKey = compactionAuditKey(threadId, sessionId);
-  const threadKey = compactionAuditKey(threadId);
-  const pending = pendingCompactionAudits.get(sessionKey) ?? pendingCompactionAudits.get(threadKey);
-  pendingCompactionAudits.delete(sessionKey);
-  pendingCompactionAudits.delete(threadKey);
-  return pending;
-}
-
-function compactionAuditKey(threadId: string, sessionId?: string): string {
-  return `${threadId}\u001f${sessionId ?? "thread"}`;
+  compactionAuditService.recordBoundary(threadId, payload, sourceEventId);
 }
 
 function createThreadHookContext(threadId: string): EcoHookContext {
