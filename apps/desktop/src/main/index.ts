@@ -198,12 +198,16 @@ import {
   reconcileBillingProjectionWithLegacy,
   summarizeBillingProjectionReconciliation,
 } from "./billing-projector-reconciliation";
+import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
-import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import {
+  SubagentMetricsRegistry,
+  type SubagentMetricsEntry,
+} from "./subagent-metrics-registry";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -3973,7 +3977,7 @@ function enrichBillingSnapshot(
   threadId: string,
   billing: ReturnType<ThreadUsageAccumulator["recordUsage"]>,
 ): ReturnType<ThreadUsageAccumulator["recordUsage"]> {
-  const subagents = subagentMetricsRegistry.listEntries(threadId).map((entry) => ({
+  const subagents = listSubagentBillingEntries(threadId).map((entry) => ({
     agentId: entry.agentId,
     role: entry.role,
     status: entry.status,
@@ -3988,6 +3992,27 @@ function enrichBillingSnapshot(
     ...(entry.modelId && { modelId: entry.modelId }),
   }));
   return subagents.length > 0 ? { ...billing, subagents } : billing;
+}
+
+function listSubagentBillingEntries(threadId: string): SubagentMetricsEntry[] {
+  const existingEntries = subagentMetricsRegistry.listEntries(threadId);
+  try {
+    const events = conversationStore.listUsageLedgerEvents(threadId);
+    if (events.length === 0) {
+      return existingEntries;
+    }
+    const projection = projectBillingFromUsageLedger({
+      events,
+      agents: conversationStore.listAgentInstances(threadId),
+    });
+    return projectSubagentMetricsEntriesFromBillingProjection({
+      projection,
+      existingEntries,
+    });
+  } catch (error) {
+    process.stderr.write(`[eco] subagent ledger projection failed: ${errorMessage(error)}\n`);
+    return existingEntries;
+  }
 }
 
 function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapshot): void {

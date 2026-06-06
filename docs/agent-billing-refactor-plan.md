@@ -28,7 +28,7 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`666 pass / 14 skip / 0 fail`
+- `bun test`: 通过，`668 pass / 14 skip / 0 fail`
 - `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
@@ -97,12 +97,21 @@
 - 主进程 shadow 日志拆分为 `sourceReconciliation`、`projection`、`projectionReconciliation`，避免 source ok 掩盖 projector mismatch。
 - 新增测试覆盖：完全对齐、synthetic SDK primary 兼容说明、SubAgent metrics token drift。
 
+第八批 SubAgent metrics ledger projection 已完成：
+
+- 新增 `subagent-metrics-projection`，把 `BillingProjector` 的 `byAgent` 账单投影转换为兼容现有 UI 的 `SubagentMetricsEntry`。
+- `enrichBillingSnapshot` 的 `billing.subagents` 账单字段优先来自 ledger projection；旧 `SubagentMetricsRegistry` 继续提供 status、context occupancy、context limit、last request key 等非账单兼容信息。
+- 当线程没有 ledger event 或 projection 失败时，仍回退到旧 SubAgent metrics，避免 UI 入口出现半切换状态。
+- projection 会保留没有 ledger usage 的既有 active 行，避免运行中的 SubAgent 因尚未产生账单事件而从 UI 消失。
+- 新增测试覆盖：ledger billing 覆盖旧累计账单、保留 context/status/model/last request 兼容信息、无 ledger usage 时保留旧 active 行。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
 - 进程重启后的 lifecycle 内存态恢复尚未接入；持久化表已具备记录能力，但恢复逻辑必须在 projector/settlement 阶段一并设计。
-- BillingProjector 已可生成 shadow billing，但旧 accumulator 仍是 UI 与当前结算的权威来源。
+- BillingProjector 已开始驱动 `billing.subagents` 账单行；线程 total/source/byModel 仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
 - projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
+- 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain 和 lifecycle recovery，再移除旧账单累计职责。
 
 ## 不做事项
 
@@ -224,11 +233,11 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
-2. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
-3. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
-4. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
-5. shadow 对账稳定后，再进入 UI/metrics 切换。
+1. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
+2. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
+3. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
+4. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
+5. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
 ## 每批提交必须满足
 
