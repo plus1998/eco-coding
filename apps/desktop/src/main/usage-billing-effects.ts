@@ -1,7 +1,10 @@
 import type { AgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
-import { resolveSubagentLegacyMetricsFallback } from "./subagent-legacy-metrics-fallback";
+import {
+  applySubagentLegacyMetricsFallback,
+  type SubagentLegacyMetricsRecordInput,
+} from "./subagent-legacy-metrics-fallback-effects";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import {
   resolveBillingSnapshotSelectionOptions,
@@ -135,26 +138,37 @@ export async function applySingleUsageBillingEffects(
     selectionOptions,
   );
 
-  const legacySubagentFallback = resolveSubagentLegacyMetricsFallback({
+  const legacySubagentRecords: SubagentLegacyMetricsRecordInput[] =
+    input.agentId && subagentContext
+      ? [
+          {
+            role: artifacts.billingRole,
+            agentId: input.agentId,
+            usage: artifacts.delta,
+            contextOccupied: subagentContext.contextOccupied,
+            ...(subagentContext.contextLimit !== undefined && {
+              contextLimit: subagentContext.contextLimit,
+            }),
+            billing: artifacts.requestBilling,
+            ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
+            requestKey: artifacts.requestKey,
+          },
+        ]
+      : [];
+  const legacySubagentFallback = applySubagentLegacyMetricsFallback({
+    threadId: input.threadId,
     hasSubagentContext: Boolean(input.agentId && subagentContext),
     billingSelection,
+    legacyBilling: legacyBilling.snapshot,
+    selectionOptions,
+    records: legacySubagentRecords,
+    services: {
+      recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
+      resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
+        services.usageLedger.resolveBillingSnapshot(threadId, legacySnapshot, options),
+    },
   });
-  if (input.agentId && subagentContext && legacySubagentFallback.record) {
-    services.subagentMetrics.recordSdkUsage(input.threadId, {
-      role: artifacts.billingRole,
-      agentId: input.agentId,
-      usage: artifacts.delta,
-      contextOccupied: subagentContext.contextOccupied,
-      ...(subagentContext.contextLimit !== undefined && { contextLimit: subagentContext.contextLimit }),
-      billing: artifacts.requestBilling,
-      ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-      requestKey: artifacts.requestKey,
-    });
-    billingSelection = services.usageLedger.resolveBillingSnapshot(input.threadId, legacyBilling.snapshot, {
-      ...selectionOptions,
-      useLedgerProjection: false,
-    });
-  }
+  billingSelection = legacySubagentFallback.billingSelection;
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
@@ -266,29 +280,37 @@ export async function applySdkRunBillingEffects(
     selectionOptions,
   );
 
-  const legacySubagentFallback = resolveSubagentLegacyMetricsFallback({
+  const resolvedSubagentId = input.resolvedSubagentId;
+  const legacySubagentRecords: SubagentLegacyMetricsRecordInput[] =
+    resolvedSubagentId && subagentContext
+      ? input.models.map((model) => ({
+          role: model.role ?? input.billingRole,
+          agentId: resolvedSubagentId,
+          ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+          usage: model.usage,
+          contextOccupied: subagentContext.contextOccupied,
+          ...(subagentContext.contextLimit !== undefined && {
+            contextLimit: subagentContext.contextLimit,
+          }),
+          billing: model.computedBilling,
+          ...(model.modelId && { modelId: model.modelId }),
+          requestKey: input.requestKey,
+        }))
+      : [];
+  const legacySubagentFallback = applySubagentLegacyMetricsFallback({
+    threadId: input.threadId,
     hasSubagentContext: Boolean(input.resolvedSubagentId && subagentContext),
     billingSelection,
+    legacyBilling,
+    selectionOptions,
+    records: legacySubagentRecords,
+    services: {
+      recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
+      resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
+        services.usageLedger.resolveBillingSnapshot(threadId, legacySnapshot, options),
+    },
   });
-  if (input.resolvedSubagentId && subagentContext && legacySubagentFallback.record) {
-    for (const model of input.models) {
-      services.subagentMetrics.recordSdkUsage(input.threadId, {
-        role: model.role ?? input.billingRole,
-        agentId: input.resolvedSubagentId,
-        ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-        usage: model.usage,
-        contextOccupied: subagentContext.contextOccupied,
-        ...(subagentContext.contextLimit !== undefined && { contextLimit: subagentContext.contextLimit }),
-        billing: model.computedBilling,
-        ...(model.modelId && { modelId: model.modelId }),
-        requestKey: input.requestKey,
-      });
-    }
-    billingSelection = services.usageLedger.resolveBillingSnapshot(input.threadId, legacyBilling, {
-      ...selectionOptions,
-      useLedgerProjection: false,
-    });
-  }
+  billingSelection = legacySubagentFallback.billingSelection;
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
