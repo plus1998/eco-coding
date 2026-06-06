@@ -3,15 +3,18 @@ import type {
   ThreadBillingSnapshot,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { computeWindowOccupancy, formatUsageBadge } from "@eco/runtime";
+import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
 import type { ContextWindowMonitor } from "./context-window-monitor";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import {
+  type ResolvedSdkRunBillingModel,
   type SingleUsageBillingArtifacts,
+  type UsageBillingContextUpdate,
 } from "./usage-billing-artifacts";
+import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 
 export interface UsageBillingUpdatedEvent {
   threadId: string;
@@ -28,7 +31,7 @@ export interface UsageBillingUpdatedEvent {
 export interface UsageBillingEffectsServices {
   contextMonitor: Pick<ContextWindowMonitor, "getSnapshot" | "updateFromUsage">;
   usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "enrichBillingSnapshot" | "reconcileShadow">;
-  accumulator: Pick<ThreadUsageAccumulator, "recordUsage" | "hasSeenRequestKey">;
+  accumulator: Pick<ThreadUsageAccumulator, "recordUsage" | "recordRunUsage" | "hasSeenRequestKey">;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordSdkUsage">;
   emitUsageUpdated(event: UsageBillingUpdatedEvent): void;
   schedulePersistThreadMetrics(threadId: string): void;
@@ -138,6 +141,112 @@ export async function applySingleUsageBillingEffects(
       totalCostUsd: billing.otelCostUsd,
       billing,
       ...(artifacts.parsedUsage.modelId && { modelId: artifacts.parsedUsage.modelId }),
+    },
+  });
+
+  services.schedulePersistThreadMetrics(input.threadId);
+  services.emitLiveContext(input.threadId);
+  return billing;
+}
+
+export interface ApplySdkRunBillingEffectsInput {
+  threadId: string;
+  role: AgentRole;
+  requestKey: string;
+  models: readonly ResolvedSdkRunBillingModel[];
+  billingRole: AgentRole;
+  contextUsage: ParsedUsage;
+  updateContext: boolean;
+  totalCostUsd?: number;
+  plannerModelLabel?: string;
+  runAttemptId?: string;
+  parentToolUseId?: string;
+  ledgerAgentId?: string;
+  resolvedSubagentId?: string;
+  contextUpdate?: UsageBillingContextUpdate;
+}
+
+export async function applySdkRunBillingEffects(
+  services: UsageBillingEffectsServices,
+  input: ApplySdkRunBillingEffectsInput,
+): Promise<ThreadBillingSnapshot> {
+  services.usageLedger.appendEvents(
+    buildSdkUsageLedgerEvents({
+      threadId: input.threadId,
+      role: input.role,
+      requestKey: input.requestKey,
+      models: input.models,
+      ...(input.totalCostUsd !== undefined && { totalCostUsd: input.totalCostUsd }),
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+      ...(input.ledgerAgentId && { agentId: input.ledgerAgentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      metadata: { path: "processSdkRunBilling" },
+    }),
+  );
+
+  if (input.updateContext && input.contextUpdate) {
+    await services.contextMonitor.updateFromUsage(input.threadId, input.contextUsage, {
+      role: input.contextUpdate.role,
+      ...(input.resolvedSubagentId && { agentId: input.resolvedSubagentId }),
+      modelId: input.contextUpdate.modelId,
+      providerBaseUrl: input.contextUpdate.providerBaseUrl,
+      ...(input.contextUpdate.modelsDevMapping && {
+        modelsDevMapping: input.contextUpdate.modelsDevMapping,
+      }),
+      ...(input.contextUpdate.manualSpec && { manualSpec: input.contextUpdate.manualSpec }),
+    });
+  }
+
+  if (input.resolvedSubagentId && isSubagentBillingRole(input.billingRole)) {
+    const roleSnap = services.contextMonitor.getSnapshot(input.threadId);
+    const instance = roleSnap?.instances?.find((row) => row.agentId === input.resolvedSubagentId);
+    for (const model of input.models) {
+      services.subagentMetrics.recordSdkUsage(input.threadId, {
+        role: model.role ?? input.billingRole,
+        agentId: input.resolvedSubagentId,
+        usage: model.usage,
+        contextOccupied: instance?.occupied ?? computeWindowOccupancy(input.contextUsage),
+        ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
+        billing: model.computedBilling,
+        ...(model.modelId && { modelId: model.modelId }),
+        requestKey: input.requestKey,
+      });
+    }
+  }
+
+  const billing = services.usageLedger.enrichBillingSnapshot(
+    input.threadId,
+    services.accumulator.recordRunUsage({
+      threadId: input.threadId,
+      role: input.role,
+      source: "sdk",
+      requestKey: input.requestKey,
+      models: [...input.models],
+      ...(input.totalCostUsd !== undefined && { otelCostUsd: input.totalCostUsd }),
+      ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
+    }),
+  );
+  services.usageLedger.reconcileShadow(input.threadId, billing);
+
+  const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
+  const primaryModel = input.models[0];
+  const snapshot = buildUsageSnapshotForRole({
+    usage: input.contextUsage,
+    role: input.billingRole,
+    ...(monitorSnap && { monitorSnap }),
+    fallbackContext: "none",
+    ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
+  });
+
+  services.emitUsageUpdated({
+    threadId: input.threadId,
+    role: input.billingRole,
+    badge: formatUsageBadge(input.contextUsage),
+    payload: {
+      usage: snapshot,
+      totalCostUsd: billing.otelCostUsd,
+      billing,
+      ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
     },
   });
 

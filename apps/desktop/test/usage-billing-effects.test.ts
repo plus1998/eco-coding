@@ -6,10 +6,12 @@ import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import { InMemoryUsageLedger, type AgentInstanceRecord, type UsageLedgerEvent } from "../src/main/usage-ledger";
 import { UsageLedgerCoordinator, type UsageLedgerCoordinatorStore } from "../src/main/usage-ledger-coordinator";
 import {
+  resolveSdkRunBillingModels,
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "../src/main/usage-billing-artifacts";
 import {
+  applySdkRunBillingEffects,
   applySingleUsageBillingEffects,
   type UsageBillingEffectsServices,
   type UsageBillingUpdatedEvent,
@@ -139,4 +141,71 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
   expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
   expect(persisted).toEqual(["thr_effects"]);
   expect(liveContext).toEqual(["thr_effects"]);
+});
+
+test("applySdkRunBillingEffects applies SDK final side effects", async () => {
+  const subagentMetricCalls: Array<Parameters<UsageBillingEffectsServices["subagentMetrics"]["recordSdkUsage"]>[1]> = [];
+  const subagentMetrics: UsageBillingEffectsServices["subagentMetrics"] = {
+    recordSdkUsage: (_threadId, input) => {
+      subagentMetricCalls.push(input);
+      return undefined;
+    },
+  };
+  const { ledger, coordinator } = createLedgerCoordinator();
+  const contextUpdates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
+  const emitted: UsageBillingUpdatedEvent[] = [];
+  const services: UsageBillingEffectsServices = {
+    contextMonitor: {
+      async updateFromUsage(threadId, nextUsage, options) {
+        contextUpdates.push({ threadId, usage: nextUsage, options });
+      },
+      getSnapshot: () => undefined,
+    },
+    usageLedger: coordinator,
+    accumulator: new ThreadUsageAccumulator(),
+    subagentMetrics,
+    emitUsageUpdated: (event) => emitted.push(event),
+    schedulePersistThreadMetrics: () => undefined,
+    emitLiveContext: () => undefined,
+  };
+  const billingModels = await resolveSdkRunBillingModels({
+    role: "coder",
+    models: [{ modelId: "haiku", usage: usage(2_000), sdkCostUsd: 0.01 }],
+    runtimeRoutes: routes,
+    lookupPricing,
+  });
+
+  const billing = await applySdkRunBillingEffects(services, {
+    threadId: "thr_sdk_effects",
+    role: "coder",
+    requestKey: "sdk-result:event_1",
+    models: billingModels.models,
+    billingRole: "coder",
+    contextUsage: usage(2_000),
+    updateContext: true,
+    totalCostUsd: 0.01,
+    ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
+    runAttemptId: "attempt_1",
+    ledgerAgentId: "agent_coder",
+    resolvedSubagentId: "agent_coder",
+    contextUpdate: {
+      role: "coder",
+      modelId: "haiku",
+      providerBaseUrl: "https://api.example.test",
+    },
+  });
+
+  expect(ledger.listUsageEvents("thr_sdk_effects")).toHaveLength(1);
+  expect(ledger.listUsageEvents("thr_sdk_effects")[0]).toMatchObject({
+    source: "sdk",
+    usageKind: "request_final",
+    runAttemptId: "attempt_1",
+    agentId: "agent_coder",
+  });
+  expect(contextUpdates).toHaveLength(1);
+  expect(subagentMetricCalls).toHaveLength(1);
+  expect(billing.primarySource).toBe("sdk");
+  expect(billing.otelCostUsd).toBe(0.01);
+  expect(emitted[0]?.payload.billing.primarySource).toBe("sdk");
+  expect(emitted[0]?.payload.modelId).toBe("haiku");
 });

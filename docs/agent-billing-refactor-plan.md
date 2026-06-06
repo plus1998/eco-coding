@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`681 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects 近端类型错误已清理。
+- `bun test`: 通过，`682 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -159,6 +159,14 @@
 - Effects 服务通过显式接口依赖 context monitor、ledger coordinator、legacy accumulator、SubAgent metrics 和 UI event emitter，可在无 Electron 主进程环境中单测。
 - 新增测试覆盖：单次 usage 副作用完整链路、context update、legacy SDK primary fill、SubAgent metrics、usage_updated event 和持久化调度。
 
+第十五批 SDK final billing effects 拆分已完成：
+
+- `applySdkRunBillingEffects` 集中执行 SDK result final 的副作用链：ledger append、context update、SubAgent metrics、legacy run accumulator、shadow projection enrichment、shadow reconciliation、usage_updated event、metrics persist 和 live context emit。
+- `processSdkRunBilling` 现在只保留 SDK final 解析后的 SubAgent 归因、context usage 选择和 context update artifact 组装，然后交给 effects 服务执行副作用。
+- SDK final ledger event 仍通过 `buildSdkUsageLedgerEvents` 生成，metadata path 保持 `processSdkRunBilling`，保证既有审计字段和影子对账日志可连续追踪。
+- Effects 服务接口显式声明 `recordRunUsage` 依赖，SDK 多模型输入在调用旧 accumulator 前复制为可变数组，避免把旧实现的可变类型泄漏到调用方。
+- 新增测试覆盖：SDK final effects 对 ledger、context update、SubAgent metrics、legacy billing、usage_updated payload 的完整副作用链路。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -168,7 +176,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling` 的单次 usage 副作用已抽出；`processSdkRunBilling` 的 SDK final context update、legacy accumulator、SubAgent metrics、UI event 副作用仍在 `index.ts` 内，下一批继续拆到 billing/context 领域服务。
+- `processUsageBilling` 的单次 usage 副作用已抽出；`processSdkRunBilling` 的 SDK final 副作用也已抽出；SDK stream partial 的 context update、ledger append 和 live context emit 仍在 `index.ts` 内，下一批继续拆到 billing/context 领域服务。
 
 ## 不做事项
 

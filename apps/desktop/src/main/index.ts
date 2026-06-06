@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   computeWindowOccupancy,
-  formatUsageBadge,
   parseSdkContextUsage,
   parseSdkUsageBilling,
   type ParsedUsage,
@@ -160,7 +159,6 @@ import {
 } from "./billing-resolver";
 import {
   buildAssistantUsageRequestKey,
-  buildUsageSnapshotForRole,
   isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
   nextOtelRequestDedupId,
@@ -183,8 +181,11 @@ import {
   resolveSingleUsageBillingArtifacts,
   type UsageBillingPricingRoute,
 } from "./usage-billing-artifacts";
-import { applySingleUsageBillingEffects } from "./usage-billing-effects";
-import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
+import {
+  applySdkRunBillingEffects,
+  applySingleUsageBillingEffects,
+  type UsageBillingUpdatedEvent,
+} from "./usage-billing-effects";
 import {
   buildCompactionLedgerEvent,
   readCompactionBoundaryMetadata,
@@ -3748,6 +3749,24 @@ function lookupUsageBillingPricing(route: UsageBillingPricingRoute) {
   });
 }
 
+function usageBillingEffectsServices() {
+  return {
+    contextMonitor,
+    usageLedger: usageLedgerCoordinator,
+    accumulator: threadUsageAccumulator,
+    subagentMetrics: subagentMetricsRegistry,
+    emitUsageUpdated: (event: UsageBillingUpdatedEvent) => {
+      emitUsageUpdatedFromBillingEffects(event);
+    },
+    schedulePersistThreadMetrics,
+    emitLiveContext: (threadId: string) => contextScheduler.emitLiveFromMonitor(threadId),
+  };
+}
+
+function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): void {
+  emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, event.payload);
+}
+
 async function processUsageBilling(input: {
   threadId: string;
   role: AgentRole;
@@ -3815,17 +3834,7 @@ async function processUsageBilling(input: {
   const updateContext =
     input.updateContext ?? shouldUpdateContextFromUsageSource(input.source, input.role);
   await applySingleUsageBillingEffects(
-    {
-      contextMonitor,
-      usageLedger: usageLedgerCoordinator,
-      accumulator: threadUsageAccumulator,
-      subagentMetrics: subagentMetricsRegistry,
-      emitUsageUpdated: (event) => {
-        emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, event.payload);
-      },
-      schedulePersistThreadMetrics,
-      emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
-    },
+    usageBillingEffectsServices(),
     {
       threadId: input.threadId,
       artifacts,
@@ -4288,19 +4297,6 @@ async function processSdkRunBilling(input: {
       });
     }
   }
-  usageLedgerCoordinator.appendEvents(
-    buildSdkUsageLedgerEvents({
-      threadId: input.threadId,
-      role: input.role,
-      requestKey: input.requestKey,
-      models,
-      ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
-      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
-      ...(ledgerAgentId && { agentId: ledgerAgentId }),
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-      metadata: { path: "processSdkRunBilling" },
-    }),
-  );
 
   const contextUsage =
     resolvedSubagentId && primaryModel?.modelId && input.usagePayload
@@ -4309,72 +4305,35 @@ async function processSdkRunBilling(input: {
       : input.bundle.contextUsage;
 
   const usageRoute = resolveUsageRoute(billingRole, primaryModel?.modelId, runtimeRoutes);
-  if (usageRoute && shouldUpdateContextFromUsageSource("sdk", billingRole)) {
-    await contextMonitor.updateFromUsage(input.threadId, contextUsage, {
-      role: billingRole,
-      ...(resolvedSubagentId && { agentId: resolvedSubagentId }),
-      modelId: usageRoute.modelId,
-      providerBaseUrl: usageRoute.provider.baseUrl,
-      ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-    });
-  }
+  const contextUpdate =
+    usageRoute && shouldUpdateContextFromUsageSource("sdk", billingRole)
+      ? {
+          role: billingRole,
+          modelId: usageRoute.modelId,
+          providerBaseUrl: usageRoute.provider.baseUrl,
+          ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
+        }
+      : undefined;
 
-  if (resolvedSubagentId && isSubagentBillingRole(billingRole)) {
-    const roleSnap = contextMonitor.getSnapshot(input.threadId);
-    const instance = roleSnap?.instances?.find((row) => row.agentId === resolvedSubagentId);
-    for (const model of models) {
-      subagentMetricsRegistry.recordSdkUsage(input.threadId, {
-        role: model.role ?? billingRole,
-        agentId: resolvedSubagentId,
-        usage: model.usage,
-        contextOccupied: instance?.occupied ?? computeWindowOccupancy(contextUsage),
-        ...(instance?.limit !== undefined && { contextLimit: instance.limit }),
-        billing: model.computedBilling,
-        ...(model.modelId && { modelId: model.modelId }),
-        requestKey: input.requestKey,
-      });
-    }
-  }
-
-  const billing = usageLedgerCoordinator.enrichBillingSnapshot(
-    input.threadId,
-    threadUsageAccumulator.recordRunUsage({
+  await applySdkRunBillingEffects(
+    usageBillingEffectsServices(),
+    {
       threadId: input.threadId,
       role: input.role,
-      source: "sdk",
       requestKey: input.requestKey,
       models,
-      ...(input.bundle.totalCostUsd !== undefined && { otelCostUsd: input.bundle.totalCostUsd }),
+      billingRole,
+      contextUsage,
+      updateContext: Boolean(contextUpdate),
+      ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
       ...(billingModels.plannerModelLabel && { plannerModelLabel: billingModels.plannerModelLabel }),
-    }),
-  );
-  usageLedgerCoordinator.reconcileShadow(input.threadId, billing);
-
-  const monitorSnap = contextMonitor.getSnapshot(input.threadId);
-  const snapshot = buildUsageSnapshotForRole({
-    usage: contextUsage,
-    role: billingRole,
-    ...(monitorSnap && { monitorSnap }),
-    fallbackContext: "none",
-    ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
-  });
-
-  emitThreadEvent(
-    input.threadId,
-    "thread.usage_updated",
-    formatUsageBadge(contextUsage),
-    billingRole,
-    false,
-    {
-      usage: snapshot,
-      totalCostUsd: billing.otelCostUsd,
-      billing,
-      ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(ledgerAgentId && { ledgerAgentId }),
+      ...(resolvedSubagentId && { resolvedSubagentId }),
+      ...(contextUpdate && { contextUpdate }),
     },
   );
-
-  schedulePersistThreadMetrics(input.threadId);
-  contextScheduler.emitLiveFromMonitor(input.threadId);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
