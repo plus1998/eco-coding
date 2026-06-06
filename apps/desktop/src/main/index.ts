@@ -194,6 +194,10 @@ import {
   projectBillingFromUsageLedger,
   summarizeUsageLedgerBillingProjection,
 } from "./billing-projector";
+import {
+  reconcileBillingProjectionWithLegacy,
+  summarizeBillingProjectionReconciliation,
+} from "./billing-projector-reconciliation";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import {
   createSubagentSessionHooks,
@@ -4055,21 +4059,25 @@ function reconcileUsageLedgerShadow(threadId: string, billing: ThreadBillingSnap
       return;
     }
     const result = reconcileUsageLedgerWithBilling(events, billing);
-    if (result.ok) {
-      return;
-    }
     const projection = projectBillingFromUsageLedger({
       events,
       agents: conversationStore.listAgentInstances(threadId),
       ...(billing.plannerModelLabel && { plannerModelLabel: billing.plannerModelLabel }),
     });
+    const projectionResult = reconcileBillingProjectionWithLegacy(projection, billing, {
+      subagentMetrics: subagentMetricsRegistry.listEntries(threadId),
+    });
+    if (result.ok && projectionResult.ok) {
+      return;
+    }
     logEcoDiagThrottled(
       `usage-ledger-reconcile:${threadId}`,
       "usage_ledger.reconcile_mismatch",
       {
         threadId: shortThreadId(threadId),
-        ...summarizeUsageLedgerReconciliation(result),
+        sourceReconciliation: summarizeUsageLedgerReconciliation(result),
         projection: summarizeUsageLedgerBillingProjection(projection),
+        projectionReconciliation: summarizeBillingProjectionReconciliation(projectionResult),
       },
       1000,
     );

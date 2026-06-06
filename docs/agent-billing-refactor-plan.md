@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`663 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector 近端类型错误已清理。
+- `bun test`: 通过，`666 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -87,6 +87,15 @@
 - SDK 多模型 request total 在 projector 中按 request 计一次；per-model `reportedCostUsd` 仍按模型行归集。
 - 主进程 shadow reconciliation mismatch 日志会附带 projector 摘要，便于观察新旧账单投影差异；不驱动 UI、不改变结算。
 - 新增 projector 测试覆盖：SDK primary、request total 不重复、byAgent/subagent/runAttempt、unattributed/unresolved、rate resolver fallback。
+
+第七批 BillingProjector shadow reconciliation 已完成：
+
+- 新增 `billing-projector-reconciliation`，对比 ledger projector 与旧 `ThreadUsageAccumulator` billing snapshot。
+- 对账覆盖 primary source、总 Token、Eco 成本、planner baseline 成本、reported/OTel 成本、SubAgent metrics Token/成本。
+- 已知兼容差异 `synthetic_sdk_primary` 被标记为 `info`，不会误判为新账本错误，但会在诊断中保留。
+- 真正风险如 primary source mismatch、Token/cost drift、SubAgent metrics 缺失、未归因 usage、未解析费率会标记为 `error`。
+- 主进程 shadow 日志拆分为 `sourceReconciliation`、`projection`、`projectionReconciliation`，避免 source ok 掩盖 projector mismatch。
+- 新增测试覆盖：完全对齐、synthetic SDK primary 兼容说明、SubAgent metrics token drift。
 
 当前边界：
 
@@ -215,10 +224,10 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 增加 projector 与旧 accumulator / `SubagentMetricsRegistry` 的 shadow 对账，明确 synthetic SDK primary 等兼容差异。
-2. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
-3. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
-4. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
+1. 用 ledger projection 替换 SubAgent metrics 的内部累计源，保持 UI 输出兼容。
+2. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
+3. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
+4. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
 5. shadow 对账稳定后，再进入 UI/metrics 切换。
 
 ## 每批提交必须满足
