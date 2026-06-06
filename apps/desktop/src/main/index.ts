@@ -160,7 +160,7 @@ import {
   isSubagentBillingRole,
   type UsageBillingObservation,
 } from "./billing-orchestration";
-import { appendUsageBillingObservation } from "./usage-billing-observations";
+import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
@@ -317,21 +317,10 @@ interface ActiveThreadRun {
   controller: AbortController;
   worktreePlan?: WorktreePlan;
   worktreeReady?: boolean;
-  /** True once OTel api_request token usage was billed this run. */
-  otelTokenBilled?: boolean;
-  otelRequestSeq?: number;
-  /** True once proxy-captured response usage was billed this run. */
-  proxyTokenBilled?: boolean;
-  proxyRequestSeq?: number;
-  /** Roles whose context window has been captured by the proxy during this run. */
-  proxyContextRolesSeen?: Set<AgentRole>;
-  /** Latest proxy-reported window occupancy per role (for count_tokens local stub). */
-  lastProxyContextByRole?: Partial<Record<AgentRole, number>>;
-  /** Authoritative billable observations used to gate assistant fallback per role/agent/request. */
-  usageObservations?: UsageBillingObservation[];
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
+const activeRunBillingState = new ActiveRunBillingStateStore();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
@@ -348,6 +337,16 @@ let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
+
+function startActiveRun(threadId: string, run: ActiveThreadRun): void {
+  activeRuns.set(threadId, run);
+  activeRunBillingState.startRun(threadId);
+}
+
+function finishActiveRun(threadId: string): void {
+  activeRuns.delete(threadId);
+  activeRunBillingState.clearRun(threadId);
+}
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -1483,7 +1482,7 @@ async function runQuestionThread(
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
-  activeRuns.set(thread.id, { controller, worktreePlan: createSessionPlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
+  startActiveRun(thread.id, { controller, worktreePlan: createSessionPlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
   resetSubagentContextWindows(thread.id);
 
   try {
@@ -1570,7 +1569,7 @@ async function runQuestionThread(
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    activeRuns.delete(thread.id);
+    finishActiveRun(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -1611,7 +1610,7 @@ async function runCodingThreadAutonomous(
   routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
-  activeRuns.set(thread.id, {
+  startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
@@ -1765,7 +1764,7 @@ async function runCodingThreadAutonomous(
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    activeRuns.delete(thread.id);
+    finishActiveRun(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -1788,7 +1787,7 @@ async function runCodingThreadPlanning(
   routesOverride?: readonly RoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
-  activeRuns.set(thread.id, {
+  startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
@@ -1939,7 +1938,7 @@ async function runCodingThreadPlanning(
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    activeRuns.delete(thread.id);
+    finishActiveRun(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -1974,7 +1973,7 @@ async function runCodingThreadAutonomousAfterApproval(
   const workspace = await ensureWorkspace(pending.workspacePath);
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
-  activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: false });
+  startActiveRun(threadId, { controller, worktreePlan, worktreeReady: false });
   resetSubagentContextWindows(threadId);
 
   const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
@@ -2065,7 +2064,7 @@ async function runCodingThreadAutonomousAfterApproval(
     cancelClarificationsForThread(threadId, "run finished");
     sdkStreamBridge.resetThread(threadId);
     await usageLedgerCoordinator.flushUsageUpdates(threadId);
-    activeRuns.delete(threadId);
+    finishActiveRun(threadId);
     afterRunContextRefresh(threadId, cwd);
   }
 }
@@ -2096,7 +2095,7 @@ async function runCodingThreadExecution(
 
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
-  activeRuns.set(threadId, { controller, worktreePlan, worktreeReady: false });
+  startActiveRun(threadId, { controller, worktreePlan, worktreeReady: false });
   resetSubagentContextWindows(threadId);
 
   const workspace = await ensureWorkspace(pending.workspacePath);
@@ -2264,7 +2263,7 @@ async function runCodingThreadExecution(
   } finally {
     sdkStreamBridge.resetThread(threadId);
     await usageLedgerCoordinator.flushUsageUpdates(threadId);
-    activeRuns.delete(threadId);
+    finishActiveRun(threadId);
     afterRunContextRefresh(threadId, worktreePlan.worktreePath);
     const thread = conversationStore.getThread(threadId);
     if (thread?.status === "running") {
@@ -3229,7 +3228,7 @@ async function runThreadContinuation(
 ): Promise<void> {
   if (threadOrchestrationMode(thread.id) === "autonomous" && mode !== "question") {
     const controller = new AbortController();
-    activeRuns.set(thread.id, {
+    startActiveRun(thread.id, {
       controller,
       worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
       worktreeReady: false,
@@ -3302,14 +3301,14 @@ async function runThreadContinuation(
       }
       await completeCodingThreadRun(thread.id, worktreePlan);
     } finally {
-      activeRuns.delete(thread.id);
+      finishActiveRun(thread.id);
       afterRunContextRefresh(thread.id, cwd);
     }
     return;
   }
 
   const controller = new AbortController();
-  activeRuns.set(thread.id, {
+  startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
     worktreeReady: false,
@@ -3522,7 +3521,7 @@ async function runThreadContinuation(
     cancelClarificationsForThread(thread.id, "run finished");
     sdkStreamBridge.resetThread(thread.id);
     await usageLedgerCoordinator.flushUsageUpdates(thread.id);
-    activeRuns.delete(thread.id);
+    finishActiveRun(thread.id);
     afterRunContextRefresh(thread.id, worktreePath);
     const currentThread = conversationStore.getThread(thread.id);
     if (currentThread?.status === "running") {
@@ -3605,30 +3604,22 @@ function noteUsageBillingObservation(
   threadId: string,
   observation: UsageBillingObservation,
 ): void {
-  const run = activeRuns.get(threadId);
-  if (!run) {
-    return;
-  }
-  const observations = (run.usageObservations ??= []);
-  appendUsageBillingObservation(observations, observation);
+  activeRunBillingState.appendObservation(threadId, observation);
 }
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
-  const run = activeRuns.get(usage.threadId);
   const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
+  const currentRequestSeq = activeRunBillingState.otelRequestSeq(usage.threadId);
   const resolved = resolveOtelUsageBilling({
     usage,
-    ...(run?.otelRequestSeq !== undefined && { currentRequestSeq: run.otelRequestSeq }),
+    ...(currentRequestSeq !== undefined && { currentRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
   });
-  if (run) {
-    run.otelRequestSeq = resolved.nextRequestSeq;
-    if (resolved.hasTokens) {
-      run.otelTokenBilled = true;
-    }
-  }
+  activeRunBillingState.recordOtelRequest(usage.threadId, {
+    nextRequestSeq: resolved.nextRequestSeq,
+  });
 
   if (resolved.observation) {
     noteUsageBillingObservation(usage.threadId, resolved.observation);
@@ -3647,24 +3638,21 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
 async function emitProxyUsage(
   info: AnthropicProxyUsageInfo & { threadId: string },
 ): Promise<UpstreamProxyCallBilling | null> {
-  const run = activeRuns.get(info.threadId);
   const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
+  const currentRequestSeq = activeRunBillingState.proxyRequestSeq(info.threadId);
   const resolved = resolveProxyUsageBilling({
     info,
-    ...(run?.proxyRequestSeq !== undefined && { currentRequestSeq: run.proxyRequestSeq }),
+    ...(currentRequestSeq !== undefined && { currentRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
     resolver: subagentMetricsRegistry,
   });
-  if (run) {
-    run.proxyRequestSeq = resolved.nextRequestSeq;
-    run.proxyTokenBilled = true;
-    run.lastProxyContextByRole = {
-      ...run.lastProxyContextByRole,
-      [resolved.contextRole]: resolved.contextOccupied,
-    };
-  }
+  activeRunBillingState.recordProxyRequest(info.threadId, {
+    nextRequestSeq: resolved.nextRequestSeq,
+    contextRole: resolved.contextRole,
+    contextOccupied: resolved.contextOccupied,
+  });
 
   noteUsageBillingObservation(info.threadId, resolved.observation);
   const billingTask = processUsageBilling(resolved.billingInput);
@@ -3794,7 +3782,7 @@ function resolveThreadWorktreePath(threadId: string): string | undefined {
   return worktreePathHint;
 }
 
-/** Call after activeRuns.delete to refresh the context meter from monitor state. */
+/** Call after finishActiveRun to refresh the context meter from monitor state. */
 function afterRunContextRefresh(threadId: string, worktreePath?: string): void {
   contextLifecycle.afterRunRefresh(threadId, worktreePath);
 }
@@ -3874,16 +3862,16 @@ function onSdkUsageRecordedEvent(threadId: string, event: AgentEventLike & { id:
 }
 
 function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id: string }): void {
-  const run = activeRuns.get(threadId);
   const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
+  const observedAuthoritativeUsage = activeRunBillingState.listObservations(threadId);
   const resolved = resolveSdkEventUsageBilling({
     threadId,
     event,
     resolver: subagentMetricsRegistry,
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
-    ...(run?.usageObservations && { observedAuthoritativeUsage: run.usageObservations }),
+    ...(observedAuthoritativeUsage && { observedAuthoritativeUsage }),
   });
 
   if (resolved.kind === "none" || resolved.kind === "assistant_ignored") {
@@ -4440,8 +4428,7 @@ function startRuntimeProxy(
       },
       onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
       resolveCountTokensInput: ({ role, body }) => {
-        const run = activeRuns.get(threadId);
-        const fromProxy = run?.lastProxyContextByRole?.[role];
+        const fromProxy = activeRunBillingState.proxyContextOccupied(threadId, role);
         if (typeof fromProxy === "number" && fromProxy > 0) {
           logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
             threadId: shortThreadId(threadId),

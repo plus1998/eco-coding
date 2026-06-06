@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`745 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、billing snapshot selection policy、legacy billing accumulator adapter、usage context effects、usage context service、thread metrics runtime、context lifecycle service、compaction audit service、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、SDK final run billing resolver、single usage billing orchestration、stream partial billing orchestration、billing runtime environment、telemetry billing role normalization 近端类型错误已清理。
+- `bun test`: 通过，`748 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、billing snapshot selection policy、active run billing state、legacy billing accumulator adapter、usage context effects、usage context service、thread metrics runtime、context lifecycle service、compaction audit service、OTel usage billing resolver、Proxy usage billing resolver、SDK event usage billing resolver、SDK final run billing resolver、single usage billing orchestration、stream partial billing orchestration、billing runtime environment、telemetry billing role normalization 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -335,6 +335,15 @@
 - 已稳定匹配的 proxy SubAgent 路径会返回真实 `primarySource: "proxy"`，不再把旧兼容 synthetic SDK source 作为主快照；sourceBreakdown 因此只表达真实观测来源。
 - 新增测试覆盖：默认策略、显式关闭策略、single usage effects 和 SDK final effects 均请求 verified ledger projection、匹配 proxy SubAgent 路径切到真实 source。
 
+第三十六批 Active run billing state 已完成：
+
+- 新增 `active-run-billing-state`，把 run-scoped 计费状态从 `ActiveThreadRun` 中拆出，集中管理 OTel request seq、Proxy request seq、Proxy context cache 和 authoritative usage observations。
+- `ActiveThreadRun` 现在只保留运行控制字段：`AbortController`、worktree plan、worktree ready；不再混入 Token/计费去重状态。
+- 新增 `startActiveRun` / `finishActiveRun` helper，所有 run 创建都会同步启动 billing state，所有 run 结束都会同步清理 billing state，避免跨 run 残留 observation 或 request seq。
+- `emitOtelUsage`、`emitProxyUsage`、SDK assistant fallback gating、count_tokens proxy context stub 都改为通过 `activeRunBillingState` 读写 run-scoped 计费状态。
+- 旧 `otelTokenBilled` / `proxyTokenBilled` 只写不读，本批没有搬迁，直接删除，避免把无意义隐式状态带入新模块。
+- 新增测试覆盖：未 start 不记录 observation、observation 去重、OTel/Proxy seq 推进、Proxy context cache、restart 后状态清空。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -344,7 +353,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造和 usage context service 已抽到 `usage-context-effects`；线程 metrics restore/persist/flush 已抽到 `thread-metrics-runtime`；context lifecycle/post-run compaction/SDK compact 状态已抽到 `context-lifecycle-service`；compaction archive/pending audit/ledger append 已抽到 `compaction-audit-service`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；SDK event usage 分流已抽到 `sdk-event-usage-billing`；SDK final run billing 编排已抽到 `sdk-run-billing-resolution`；single usage billing 编排已抽到 `single-usage-billing-orchestration`；stream partial billing 编排已抽到 `sdk-stream-partial-billing-orchestration`；billing runtime 依赖已收口到 `billing-runtime-environment`；账单快照选择已收口到 coordinator gate，并通过 `billing-snapshot-selection-policy` 默认请求 verified ledger projection；`index.ts` 仍保留 activeRuns 状态写入、pricing cache/provider store 拥有权、activity/UI glue，下一批优先拆 `activeRuns` runtime state。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造和 usage context service 已抽到 `usage-context-effects`；线程 metrics restore/persist/flush 已抽到 `thread-metrics-runtime`；context lifecycle/post-run compaction/SDK compact 状态已抽到 `context-lifecycle-service`；compaction archive/pending audit/ledger append 已抽到 `compaction-audit-service`；run-scoped billing state 已抽到 `active-run-billing-state`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；Proxy usage billing 解析已抽到 `proxy-usage-billing`；SDK event usage 分流已抽到 `sdk-event-usage-billing`；SDK final run billing 编排已抽到 `sdk-run-billing-resolution`；single usage billing 编排已抽到 `single-usage-billing-orchestration`；stream partial billing 编排已抽到 `sdk-stream-partial-billing-orchestration`；billing runtime 依赖已收口到 `billing-runtime-environment`；账单快照选择已收口到 coordinator gate，并通过 `billing-snapshot-selection-policy` 默认请求 verified ledger projection；`index.ts` 仍保留 activeRuns 运行控制状态写入、pricing cache/provider store 拥有权、activity/UI glue，下一批继续拆 run runtime controller/worktree state。
 
 ## 不做事项
 
@@ -466,7 +475,7 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 继续拆 `activeRuns` runtime state，把 run-scoped billing flags、request seq、context role cache 与 AbortController / worktree 状态分层。
+1. 继续拆 `activeRuns` runtime controller/worktree state，把 AbortController、worktree plan、worktree ready 封装成独立 runtime state store。
 2. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 3. 在更多真实路径对账稳定后，逐步删除 legacy synthetic SDK primary 兼容写入。
 
