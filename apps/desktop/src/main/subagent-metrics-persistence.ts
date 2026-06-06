@@ -1,6 +1,6 @@
 import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { ParsedUsage } from "@eco/runtime";
-import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
+import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 
 export type SubagentMetricsPersistenceStatus = "active" | "stopped";
 

@@ -12,39 +12,23 @@ import {
   subagentMetricsEntryToPersistenceInput,
   type SubagentMetricsPersistenceStore,
 } from "./subagent-metrics-persistence";
+import {
+  SubagentMetricsState,
+  type SubagentContextObservationInput,
+  type SubagentMetricsEntry,
+} from "./subagent-metrics-state";
 import { SubagentToolUseIndex } from "./subagent-tool-use-index";
 
-export type SubagentMetricsStatus = "active" | "stopped";
-
-export interface SubagentMetricsEntry {
-  agentId: string;
-  role: AgentRole;
-  status: SubagentMetricsStatus;
-  usage: ParsedUsage;
-  contextOccupied: number;
-  contextLimit?: number;
-  ecoCostUsd: number;
-  ecoCostBreakdown: TokenCostBreakdown;
-  modelId?: string;
-  lastRequestKey?: string;
-  updatedAt: number;
-}
+export type {
+  SubagentContextObservationInput,
+  SubagentMetricsEntry,
+  SubagentMetricsStatus,
+} from "./subagent-metrics-state";
 
 interface ThreadSubagentState {
-  activeByRole: Map<AgentRole, Set<string>>;
+  metrics: SubagentMetricsState;
   toolUses: SubagentToolUseIndex;
   seenUsageKeys: Set<string>;
-  byAgentId: Map<string, SubagentMetricsEntry>;
-}
-
-export interface SubagentContextObservationInput {
-  role: AgentRole;
-  agentId?: string;
-  parentToolUseId?: string;
-  contextOccupied: number;
-  contextLimit?: number;
-  modelId?: string;
-  requestKey?: string;
 }
 
 export class SubagentMetricsRegistry {
@@ -58,29 +42,18 @@ export class SubagentMetricsRegistry {
     }
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
-    let entry = state.byAgentId.get(input.agentId);
-    if (!entry) {
-      entry = createEmptyEntry(input.agentId, input.role, "active", now);
-      state.byAgentId.set(input.agentId, entry);
-    } else {
-      entry.status = "active";
-      entry.role = input.role;
-      entry.updatedAt = now;
-    }
+    const start = state.metrics.start(input, now);
     const pendingToolUseId = state.toolUses.consumeForRole(input.role);
     if (pendingToolUseId) {
       state.toolUses.link(pendingToolUseId, input.agentId);
     }
-    const active = state.activeByRole.get(input.role) ?? new Set();
-    active.add(input.agentId);
-    state.activeByRole.set(input.role, active);
-    this.persistEntry(threadId, entry);
+    this.persistEntry(threadId, start.entry);
     logEcoDiag("subagent.lifecycle", {
       threadId: shortThreadId(threadId),
       event: "start",
       role: input.role,
       agentId: shortAgentId(input.agentId),
-      activeCount: active.size,
+      activeCount: start.activeCount,
       toolUseLinks: state.toolUses.mappedCount,
     });
   }
@@ -90,20 +63,16 @@ export class SubagentMetricsRegistry {
     if (!state) {
       return;
     }
-    const entry = state.byAgentId.get(input.agentId);
-    if (entry) {
-      entry.status = "stopped";
-      entry.updatedAt = Date.now();
-      this.persistEntry(threadId, entry);
+    const stopped = state.metrics.stop(input, Date.now());
+    if (stopped.entry) {
+      this.persistEntry(threadId, stopped.entry);
     }
-    const active = state.activeByRole.get(input.role);
-    active?.delete(input.agentId);
     logEcoDiag("subagent.lifecycle", {
       threadId: shortThreadId(threadId),
       event: "stop",
       role: input.role,
       agentId: shortAgentId(input.agentId),
-      activeCount: active?.size ?? 0,
+      activeCount: stopped.activeCount,
     });
   }
 
@@ -139,12 +108,8 @@ export class SubagentMetricsRegistry {
     const state = this.threads.get(threadId);
     const linkedParentAgentId =
       input.parentToolUseId && state ? state.toolUses.resolve(input.parentToolUseId) : undefined;
-    const activeAgentIds = state ? [...(state.activeByRole.get(input.role) ?? [])] : undefined;
-    const stoppedAgentIdsForRole = state
-      ? [...state.byAgentId.values()]
-          .filter((entry) => entry.role === input.role)
-          .map((entry) => entry.agentId)
-      : undefined;
+    const activeAgentIds = state ? state.metrics.activeAgentIds(input.role) : undefined;
+    const stoppedAgentIdsForRole = state ? state.metrics.agentIdsForRole(input.role) : undefined;
     const result = resolveSubagentAgentId({
       role: input.role,
       ...(input.subagentAgentId && { explicitAgentId: input.subagentAgentId }),
@@ -171,7 +136,7 @@ export class SubagentMetricsRegistry {
   }
 
   roleForAgentId(threadId: string, agentId: string): AgentRole | undefined {
-    return this.threads.get(threadId)?.byAgentId.get(agentId)?.role;
+    return this.threads.get(threadId)?.metrics.roleForAgentId(agentId);
   }
 
   recordContextObservation(
@@ -190,23 +155,7 @@ export class SubagentMetricsRegistry {
 
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
-    let entry = state.byAgentId.get(resolvedAgentId);
-    if (!entry) {
-      entry = createEmptyEntry(resolvedAgentId, entryRole, "active", now);
-      state.byAgentId.set(resolvedAgentId, entry);
-    }
-
-    entry.contextOccupied = input.contextOccupied;
-    if (input.contextLimit !== undefined) {
-      entry.contextLimit = input.contextLimit;
-    }
-    if (input.modelId) {
-      entry.modelId = input.modelId;
-    }
-    if (input.requestKey) {
-      entry.lastRequestKey = input.requestKey;
-    }
-    entry.updatedAt = now;
+    const entry = state.metrics.recordContext(resolvedAgentId, entryRole, input, now);
     this.persistEntry(threadId, entry);
     return entry;
   }
@@ -263,15 +212,11 @@ export class SubagentMetricsRegistry {
         requestKey: input.requestKey,
         modelId: input.modelId ?? input.usage.modelId,
       });
-      return state.byAgentId.get(resolvedAgentId);
+      return state.metrics.getEntry(resolvedAgentId);
     }
     state.seenUsageKeys.add(usageKey);
     const now = Date.now();
-    let entry = state.byAgentId.get(resolvedAgentId);
-    if (!entry) {
-      entry = createEmptyEntry(resolvedAgentId, entryRole, "active", now);
-      state.byAgentId.set(resolvedAgentId, entry);
-    }
+    const entry = state.metrics.ensureEntry(resolvedAgentId, entryRole, "active", now);
     entry.usage = mergeUsage(entry.usage, input.usage);
     entry.contextOccupied = input.contextOccupied;
     if (input.contextLimit !== undefined) {
@@ -295,7 +240,7 @@ export class SubagentMetricsRegistry {
     if (!state) {
       return [];
     }
-    return [...state.byAgentId.values()].sort((left, right) => right.updatedAt - left.updatedAt);
+    return state.metrics.listEntries();
   }
 
   restoreFromStore(threadId: string): void {
@@ -306,7 +251,7 @@ export class SubagentMetricsRegistry {
     const state = this.getOrCreateThread(threadId);
     for (const row of rows) {
       const entry = subagentMetricsEntryFromPersistenceRecord(row);
-      state.byAgentId.set(row.agentId, entry);
+      state.metrics.restore(entry);
       if (row.lastRequestKey) {
         state.seenUsageKeys.add(
           buildSubagentUsageContributionKey(
@@ -317,11 +262,6 @@ export class SubagentMetricsRegistry {
             { agentId: row.agentId, role: row.role },
           ),
         );
-      }
-      if (entry.status === "active" && isSubagentBillingRole(entry.role)) {
-        const active = state.activeByRole.get(entry.role) ?? new Set();
-        active.add(entry.agentId);
-        state.activeByRole.set(entry.role, active);
       }
     }
   }
@@ -335,10 +275,9 @@ export class SubagentMetricsRegistry {
     let state = this.threads.get(threadId);
     if (!state) {
       state = {
-        activeByRole: new Map(),
+        metrics: new SubagentMetricsState(),
         toolUses: new SubagentToolUseIndex(),
         seenUsageKeys: new Set(),
-        byAgentId: new Map(),
       };
       this.threads.set(threadId, state);
     }
@@ -348,24 +287,6 @@ export class SubagentMetricsRegistry {
   private persistEntry(threadId: string, entry: SubagentMetricsEntry): void {
     this.store.upsertSubagentMetrics(threadId, subagentMetricsEntryToPersistenceInput(entry));
   }
-}
-
-function createEmptyEntry(
-  agentId: string,
-  role: AgentRole,
-  status: SubagentMetricsStatus,
-  updatedAt: number,
-): SubagentMetricsEntry {
-  return {
-    agentId,
-    role,
-    status,
-    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    contextOccupied: 0,
-    ecoCostUsd: 0,
-    ecoCostBreakdown: { inputUsd: 0, outputUsd: 0, cacheReadUsd: 0, cacheCreationUsd: 0, totalUsd: 0 },
-    updatedAt,
-  };
 }
 
 function mergeUsage(left: ParsedUsage, right: ParsedUsage): ParsedUsage {
