@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`650 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write 近端类型错误已清理。
+- `bun test`: 通过，`655 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -57,6 +57,15 @@
 - OTel usage 通过旧 `processUsageBilling` 旁路写入 ledger，保留 dedup id 元数据。
 - 旁路写入为 best-effort，写账本失败只记录 stderr，不影响旧 accumulator、UI、SubAgent metrics。
 - 新增 adapter 测试覆盖：多模型成本不重复、单模型 total cost、补归因幂等、source audit 字段、assistant fallback 身份。
+
+第四批 Usage Ledger shadow reconciliation 已完成：
+
+- 新增 `usage-ledger-reconciliation`，按 SDK/Proxy/OTel source 对比 ledger 与旧 `ThreadUsageAccumulator` sourceBreakdown。
+- reconciliation 会显式报告：billing source 缺失、ledger source 缺失、Token 差异、reported cost 差异、未归因 usage。
+- SDK 多模型 request total 只按 request 计一次；如果存在 per-model cost，则优先使用 per-model cost，避免 request total 与模型成本混加。
+- 主进程在旧 billing snapshot 生成后做 best-effort shadow compare，仅写 `eco-diag`，不驱动 UI、不抛错、不改变旧结算。
+- 当前会暴露旧链路的 synthetic SDK primary 差异，例如 proxy subagent usage 被旧 accumulator 复制到 SDK source 时，新 ledger 不伪造 SDK 来源。
+- 新增 reconciliation 测试覆盖：source token 对齐、token mismatch、SDK total cost 一次性归集、per-model cost 优先、缺失 source、未归因 usage。
 
 ## 不做事项
 
@@ -178,10 +187,10 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 写 shadow projector reconciliation，对比旧 billing snapshot 和 ledger projection。
-2. 增加运行时 shadow compare 日志或测试断言，不驱动 UI。
-3. 加并发、重复、retry、unattributed 测试。
-4. 接入 run attempt/lifecycle 状态机，为 ledger event 补 `runAttemptId`。
+1. 接入 run attempt/lifecycle 状态机，为 ledger event 补 `runAttemptId`。
+2. 建立 `AgentLifecycleService`，统一 Agent/SubAgent start/stop/cancel/fail/finalizer。
+3. 加并发、重复、retry、cancel、unattributed 集成测试。
+4. 实现真正的 `BillingProjector`，从 ledger 派生 byRole/byAgent/byModel/subagent。
 5. shadow 对账稳定后，再进入 UI/metrics 切换。
 
 ## 每批提交必须满足

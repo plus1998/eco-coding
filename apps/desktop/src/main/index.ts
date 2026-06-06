@@ -187,6 +187,10 @@ import {
 } from "./usage-ledger-adapters";
 import type { UsageLedgerEvent } from "./usage-ledger";
 import {
+  reconcileUsageLedgerWithBilling,
+  summarizeUsageLedgerReconciliation,
+} from "./usage-ledger-reconciliation";
+import {
   createSubagentSessionHooks,
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
@@ -3770,6 +3774,7 @@ async function processUsageBilling(input: {
       );
     }
   }
+  reconcileUsageLedgerShadow(input.threadId, billing);
 
   if (input.agentId && isSubagentBillingRole(billingRole)) {
     const roleSnap = contextMonitor.getSnapshot(input.threadId);
@@ -3984,6 +3989,30 @@ function appendUsageLedgerShadowEvents(events: readonly UsageLedgerEvent[]): voi
     } catch (error) {
       process.stderr.write(`[eco] usage ledger shadow write failed: ${errorMessage(error)}\n`);
     }
+  }
+}
+
+function reconcileUsageLedgerShadow(threadId: string, billing: ThreadBillingSnapshot): void {
+  try {
+    const events = conversationStore.listUsageLedgerEvents(threadId);
+    if (events.length === 0) {
+      return;
+    }
+    const result = reconcileUsageLedgerWithBilling(events, billing);
+    if (result.ok) {
+      return;
+    }
+    logEcoDiagThrottled(
+      `usage-ledger-reconcile:${threadId}`,
+      "usage_ledger.reconcile_mismatch",
+      {
+        threadId: shortThreadId(threadId),
+        ...summarizeUsageLedgerReconciliation(result),
+      },
+      1000,
+    );
+  } catch (error) {
+    process.stderr.write(`[eco] usage ledger shadow reconcile failed: ${errorMessage(error)}\n`);
   }
 }
 
@@ -4326,6 +4355,7 @@ async function processSdkRunBilling(input: {
       ...(plannerModelLabel && { plannerModelLabel }),
     }),
   );
+  reconcileUsageLedgerShadow(input.threadId, billing);
 
   const monitorSnap = contextMonitor.getSnapshot(input.threadId);
   const snapshot = buildUsageSnapshotForRole({
