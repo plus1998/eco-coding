@@ -3,18 +3,17 @@ import { formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole } from "./billing-orchestration";
 import {
   buildSubagentContextObservationInput,
-  buildSubagentLegacyMetricsRecordInput,
   resolveSubagentBillingMetricsContext,
 } from "./subagent-billing-metrics-effects";
-import {
-  applySubagentLegacyMetricsFallback,
-  type SubagentLegacyMetricsRecordInput,
-} from "./subagent-legacy-metrics-fallback-effects";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import {
   resolveBillingSnapshotSelectionOptions,
   type BillingSnapshotSelectionPolicy,
 } from "./billing-snapshot-selection-policy";
+import {
+  applySdkRunSubagentLegacyFallback,
+  applySingleUsageSubagentLegacyFallback,
+} from "./usage-subagent-legacy-fallback";
 import type { UsageContextService } from "./usage-context-effects";
 import {
   recordLegacySdkRunBilling,
@@ -140,23 +139,16 @@ export async function applySingleUsageBillingEffects(
     selectionOptions,
   );
 
-  const legacySubagentRecords: SubagentLegacyMetricsRecordInput[] = subagentContext
-    ? [
-        buildSubagentLegacyMetricsRecordInput(subagentContext, {
-          usage: artifacts.delta,
-          billing: artifacts.requestBilling,
-          ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-          requestKey: artifacts.requestKey,
-        }),
-      ]
-    : [];
-  const legacySubagentFallback = applySubagentLegacyMetricsFallback({
+  const legacySubagentFallback = applySingleUsageSubagentLegacyFallback({
     threadId: input.threadId,
-    hasSubagentContext: Boolean(subagentContext),
+    context: subagentContext,
     billingSelection,
     legacyBilling: legacyBilling.snapshot,
     selectionOptions,
-    records: legacySubagentRecords,
+    usage: artifacts.delta,
+    billing: artifacts.requestBilling,
+    ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
+    requestKey: artifacts.requestKey,
     services: {
       recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
       resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
@@ -272,25 +264,16 @@ export async function applySdkRunBillingEffects(
     selectionOptions,
   );
 
-  const legacySubagentRecords: SubagentLegacyMetricsRecordInput[] = subagentContext
-    ? input.models.map((model) =>
-        buildSubagentLegacyMetricsRecordInput(subagentContext, {
-          role: model.role ?? input.billingRole,
-          ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-          usage: model.usage,
-          billing: model.computedBilling,
-          ...(model.modelId && { modelId: model.modelId }),
-          requestKey: input.requestKey,
-        }),
-      )
-    : [];
-  const legacySubagentFallback = applySubagentLegacyMetricsFallback({
+  const legacySubagentFallback = applySdkRunSubagentLegacyFallback({
     threadId: input.threadId,
-    hasSubagentContext: Boolean(subagentContext),
+    context: subagentContext,
     billingSelection,
     legacyBilling,
     selectionOptions,
-    records: legacySubagentRecords,
+    models: input.models,
+    billingRole: input.billingRole,
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    requestKey: input.requestKey,
     services: {
       recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
       resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
