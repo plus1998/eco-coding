@@ -161,7 +161,6 @@ import {
   buildAssistantUsageRequestKey,
   isSdkIncrementalStreamUsage,
   isSubagentBillingRole,
-  nextOtelRequestDedupId,
   shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
   type UsageBillingObservation,
@@ -173,9 +172,12 @@ import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import {
-  buildUsageRequestKey,
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
+import {
+  normalizeTelemetryBillingRole,
+  resolveOtelUsageBilling,
+} from "./otel-usage-billing";
 import {
   resolveSdkRunBillingModels,
   resolveSdkStreamPartialBillingArtifacts,
@@ -3573,66 +3575,28 @@ function noteUsageBillingObservation(
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
   const run = activeRuns.get(usage.threadId);
-  const { seq, dedupId } = nextOtelRequestDedupId(run?.otelRequestSeq);
-  if (run) {
-    run.otelRequestSeq = seq;
-  }
-
-  const hasTokens =
-    usage.inputTokens > 0 ||
-    usage.outputTokens > 0 ||
-    (usage.cacheReadTokens ?? 0) > 0 ||
-    (usage.cacheCreationTokens ?? 0) > 0;
-
-  if (hasTokens && run) {
-    run.otelTokenBilled = true;
-  }
-  const billingRole = normalizeBillingRole(usage.role);
-  const requestKey = buildUsageRequestKey({
-    role: billingRole,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens ?? 0,
-    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-    ...(usage.modelId && { modelId: usage.modelId }),
-    dedupId,
-  });
-  if (hasTokens) {
-    noteUsageBillingObservation(usage.threadId, {
-      source: "otel",
-      role: billingRole,
-      usage: {
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens ?? 0,
-        cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-      },
-      requestKey,
-      ...(usage.modelId && { modelId: usage.modelId }),
-    });
-  }
   const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
+  const resolved = resolveOtelUsageBilling({
+    usage,
+    ...(run?.otelRequestSeq !== undefined && { currentRequestSeq: run.otelRequestSeq }),
+    ...(runAttemptId && { runAttemptId }),
+    ...(plannerAgentId && { plannerAgentId }),
+  });
+  if (run) {
+    run.otelRequestSeq = resolved.nextRequestSeq;
+    if (resolved.hasTokens) {
+      run.otelTokenBilled = true;
+    }
+  }
+
+  if (resolved.observation) {
+    noteUsageBillingObservation(usage.threadId, resolved.observation);
+  }
 
   usageLedgerCoordinator.trackUsageUpdate(
     usage.threadId,
-    processUsageBilling({
-      threadId: usage.threadId,
-      role: billingRole,
-      source: "otel",
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheReadTokens: usage.cacheReadTokens ?? 0,
-      cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-      ...(usage.costUsd !== undefined && { otelCostUsd: usage.costUsd }),
-      ...(usage.modelId && { modelId: usage.modelId }),
-      ...(runAttemptId && { runAttemptId }),
-      ...(plannerAgentId && { plannerAgentId }),
-      requestKey,
-      otelDedupId: dedupId,
-      reconciliationOnly: true,
-      updateContext: false,
-    })
+    processUsageBilling(resolved.billingInput)
       .then(() => undefined)
       .catch((error) => {
         process.stderr.write(`[eco] usage billing failed: ${errorMessage(error)}\n`);
@@ -3662,7 +3626,7 @@ async function emitProxyUsage(
     info.usage.cacheCreationTokens,
   ].join(":");
 
-  const initialBillingRole = normalizeBillingRole(info.role);
+  const initialBillingRole = normalizeTelemetryBillingRole(info.role);
   const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const attribution = resolveSubagentUsageAttribution({
@@ -3718,16 +3682,6 @@ async function emitProxyUsage(
     process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
     return null;
   }
-}
-
-function normalizeBillingRole(role: OtelUsageUpdate["role"]): AgentRole {
-  if (role === "system" || role === "thinking" || role === "tool") {
-    return "planner";
-  }
-  if (AGENT_ROLES.includes(role as AgentRole)) {
-    return role as AgentRole;
-  }
-  return "planner";
 }
 
 function lookupUsageBillingPricing(route: UsageBillingPricingRoute) {
@@ -4045,7 +3999,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
 
   const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
-  const initialBillingRole = normalizeBillingRole(event.role as OtelUsageUpdate["role"]);
+  const initialBillingRole = normalizeTelemetryBillingRole(event.role);
   const parentToolUseId =
     isRecord(event.payload) && typeof event.payload.parent_tool_use_id === "string"
       ? event.payload.parent_tool_use_id

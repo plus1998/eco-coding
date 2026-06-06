@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`706 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects 近端类型错误已清理。
+- `bun test`: 通过，`709 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit、lifecycle recovery settlement、usage ledger coordinator、usage billing artifacts、usage billing effects、SDK final billing effects、SDK stream partial effects、SDK run attribution、SubAgent usage attribution、usage observation dedupe、ledger billing snapshot projection、ledger billing selection gate、legacy billing accumulator adapter、usage context effects、OTel usage billing resolver 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -235,6 +235,14 @@
 - helper 使用严格 optional 传参，避免在 `exactOptionalPropertyTypes` 下把 `undefined` 显式写入 context update 输入。
 - 新增测试覆盖：context update options 构造、forward 到 context monitor、缺失 contextUpdate 或禁用 updateContext 时不触发更新。
 
+第二十四批 OTel usage billing resolver 已完成：
+
+- 新增 `otel-usage-billing`，集中生成 OTel usage 的 role normalization、run-scoped dedup id、request key、parsed usage、assistant fallback observation 和 `processUsageBilling` 输入。
+- `emitOtelUsage` 不再手写 Token fingerprint、requestKey、observation 或 billing input，只负责读取 active run/lifecycle 上下文、更新 `otelRequestSeq` / `otelTokenBilled`，再调度用量计费。
+- `normalizeTelemetryBillingRole` 替代主进程本地 `normalizeBillingRole`，Proxy usage 与 SDK event 前置归因也复用同一 telemetry role normalization 规则。
+- cost-only OTel record 不生成 observation，但仍生成 reconciliation-only billing input，避免没有 Token 的成本观测误挡 assistant fallback。
+- 新增测试覆盖：telemetry role normalization、OTel dedup/requestKey、observation/billingInput 构造、cost-only record 观测跳过。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -244,7 +252,7 @@
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain，再移除旧账单累计职责。
 - completed run 的 `request_partial` 仍只进入审计；failed/cancelled run 的 `request_partial` 会追加 final settlement event 并进入账单投影。
 - compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
-- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 OTel 普通 API request 观测、activeRuns、runtime event glue、activity/UI glue，下一批优先推进 Context Domain 或旧 accumulator 退场边界。
+- `processUsageBilling`、`processSdkRunBilling`、`processSdkStreamPartialUsage` 的用量副作用已抽到 `usage-billing-effects`；旧 accumulator 兼容写入已抽到 `usage-legacy-billing`；context update 参数构造已抽到 `usage-context-effects`；SDK run 计费归因已抽到 `sdk-run-billing-attribution`；proxy 与 SDK event 前置 SubAgent 归因已抽到 `subagent-usage-attribution`；assistant fallback gating observation 去重已抽到 `usage-billing-observations`；OTel usage billing 解析已抽到 `otel-usage-billing`；账单快照选择已收口到 coordinator gate；`index.ts` 仍保留 Proxy usage requestKey/active run 序号、SDK event runtime glue、activity/UI glue，下一批优先拆 Proxy usage billing resolver 或推进 Context Domain 退场边界。
 
 ## 不做事项
 
@@ -366,7 +374,7 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 将 `processSdkRunBilling` 中的 SDK final context update、legacy accumulator、SubAgent metrics、UI event side effects 继续拆到领域服务。
+1. 将 `emitProxyUsage` 中的 requestKey、proxy request 序号、context occupancy 判断、observation 和 billing input 构造拆成 `proxy-usage-billing`，与 OTel resolver 对称。
 2. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
 3. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。
 
