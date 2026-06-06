@@ -199,6 +199,7 @@ import {
   type PendingSubagentLaunch,
 } from "./subagent-session-hooks.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import { resolveSdkRunBillingAttribution } from "./sdk-run-billing-attribution";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -4259,23 +4260,16 @@ async function processSdkRunBilling(input: {
   const { models } = billingModels;
 
   const primaryModel = models[0];
-  let billingRole = primaryModel?.role ?? input.role;
-  const resolvedSubagentId =
-    input.subagentAgentId ??
-    subagentMetricsRegistry.resolveAgentId(input.threadId, {
-      role: billingRole,
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    });
-  if (resolvedSubagentId) {
-    const entryRole = subagentMetricsRegistry.roleForAgentId(input.threadId, resolvedSubagentId);
-    if (entryRole && isSubagentBillingRole(entryRole)) {
-      billingRole = entryRole;
-    }
-  }
-  const allLedgerRowsArePlanner = models.every((model) => (model.role ?? input.role) === "planner");
-  const ledgerAgentId =
-    resolvedSubagentId ??
-    (allLedgerRowsArePlanner ? input.plannerAgentId : undefined);
+  const attribution = resolveSdkRunBillingAttribution({
+    threadId: input.threadId,
+    role: input.role,
+    models,
+    resolver: subagentMetricsRegistry,
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
+    ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
+  });
+  const { billingRole, resolvedSubagentId, ledgerAgentId } = attribution;
   if (resolvedSubagentId && isSubagentBillingRole(billingRole)) {
     for (const model of models) {
       noteUsageBillingObservation(input.threadId, {
