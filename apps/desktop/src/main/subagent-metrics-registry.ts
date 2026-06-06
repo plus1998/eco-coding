@@ -7,11 +7,11 @@ import {
   defaultSubagentMetricsDiagnostics,
   type SubagentMetricsDiagnosticsPort,
 } from "./subagent-metrics-diagnostics";
+import type { SubagentMetricsPersistenceStore } from "./subagent-metrics-persistence";
 import {
-  type SubagentMetricsPersistenceStore,
-  subagentMetricsEntryFromPersistenceRecord,
-  subagentMetricsEntryToPersistenceInput,
-} from "./subagent-metrics-persistence";
+  type SubagentMetricsRegistryPersistence,
+  SubagentMetricsStoreFacade,
+} from "./subagent-metrics-registry-persistence";
 import {
   type SubagentContextObservationInput,
   type SubagentMetricsEntry,
@@ -33,11 +33,15 @@ interface ThreadSubagentState {
 
 export class SubagentMetricsRegistry {
   private readonly threads = new Map<string, ThreadSubagentState>();
+  private readonly persistence: SubagentMetricsRegistryPersistence;
 
   constructor(
-    private readonly store: SubagentMetricsPersistenceStore,
+    store: SubagentMetricsPersistenceStore,
     private readonly diagnostics: SubagentMetricsDiagnosticsPort = defaultSubagentMetricsDiagnostics,
-  ) {}
+    persistence?: SubagentMetricsRegistryPersistence,
+  ) {
+    this.persistence = persistence ?? new SubagentMetricsStoreFacade(store);
+  }
 
   onSubagentStart(threadId: string, input: { agentId: string; role: AgentRole }): void {
     if (!isSubagentBillingRole(input.role)) {
@@ -235,28 +239,22 @@ export class SubagentMetricsRegistry {
   }
 
   restoreFromStore(threadId: string): void {
-    const rows = this.store.listSubagentMetrics(threadId);
-    if (rows.length === 0) {
+    const restoredEntries = this.persistence.restoreThread(threadId);
+    if (restoredEntries.length === 0) {
       return;
     }
     const state = this.getOrCreateThread(threadId);
-    for (const row of rows) {
-      const entry = subagentMetricsEntryFromPersistenceRecord(row);
+    for (const { entry, legacyUsageContribution } of restoredEntries) {
       state.metrics.restore(entry);
-      if (row.lastRequestKey) {
-        state.legacyUsage.restoreContribution({
-          agentId: row.agentId,
-          role: row.role,
-          requestKey: row.lastRequestKey,
-          ...(entry.modelId && { modelId: entry.modelId }),
-        });
+      if (legacyUsageContribution) {
+        state.legacyUsage.restoreContribution(legacyUsageContribution);
       }
     }
   }
 
   clearThread(threadId: string): void {
     this.threads.delete(threadId);
-    this.store.clearSubagentMetrics(threadId);
+    this.persistence.clearThread(threadId);
   }
 
   private getOrCreateThread(threadId: string): ThreadSubagentState {
@@ -273,6 +271,6 @@ export class SubagentMetricsRegistry {
   }
 
   private persistEntry(threadId: string, entry: SubagentMetricsEntry): void {
-    this.store.upsertSubagentMetrics(threadId, subagentMetricsEntryToPersistenceInput(entry));
+    this.persistence.persistEntry(threadId, entry);
   }
 }
