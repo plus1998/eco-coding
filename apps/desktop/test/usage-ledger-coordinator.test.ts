@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { computeRequestBilling, type ParsedUsage } from "@eco/runtime";
+import { computeRequestBilling, emptyCostBreakdown, type ParsedUsage } from "@eco/runtime";
 import { ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 import {
   InMemoryUsageLedger,
@@ -11,6 +11,7 @@ import {
   type UsageLedgerCoordinatorStore,
 } from "../src/main/usage-ledger-coordinator";
 import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
+import { buildSubagentMetricsSummaries } from "../src/main/subagent-metrics-summary";
 import type { SubagentMetricsEntry } from "../src/main/subagent-metrics-registry";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
@@ -46,6 +47,22 @@ function createCoordinator(existingMetrics: SubagentMetricsEntry[] = []) {
     },
   });
   return { coordinator, ledger, logs };
+}
+
+function contextOnlyMetric(): SubagentMetricsEntry {
+  return {
+    agentId: "agent_coder",
+    role: "coder",
+    status: "active",
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    contextOccupied: 1234,
+    contextLimit: 100_000,
+    ecoCostUsd: 0,
+    ecoCostBreakdown: emptyCostBreakdown(),
+    modelId: "legacy-model",
+    lastRequestKey: "proxy:coder:req_1",
+    updatedAt: 42,
+  };
 }
 
 test("UsageLedgerCoordinator flushes async partial writes before interrupted settlement", async () => {
@@ -131,6 +148,41 @@ test("UsageLedgerCoordinator enriches billing snapshots from ledger projection",
     outputTokens: 1_000,
     modelId: "haiku",
   });
+});
+
+test("UsageLedgerCoordinator subagent summaries use ledger billing and preserved context", () => {
+  const { coordinator } = createCoordinator([contextOnlyMetric()]);
+  const delta = usage();
+  coordinator.appendEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_subagent_summary",
+      role: "coder",
+      source: "proxy",
+      sourceEventId: "proxy:coder:req_1",
+      requestKey: "proxy:coder:req_1",
+      usage: delta,
+      computedBilling: computeRequestBilling(delta, haikuRates, sonnetRates),
+      runAttemptId: "attempt_1",
+      agentId: "agent_coder",
+      modelId: "haiku",
+    }),
+  ]);
+
+  const summaries = buildSubagentMetricsSummaries(
+    coordinator.listSubagentBillingEntries("thr_subagent_summary"),
+  );
+
+  expect(summaries).toHaveLength(1);
+  expect(summaries[0]).toMatchObject({
+    agentId: "agent_coder",
+    role: "coder",
+    inputTokens: 10_000,
+    outputTokens: 1_000,
+    contextOccupied: 1234,
+    contextLimit: 100_000,
+    modelId: "haiku",
+  });
+  expect(summaries[0]?.ecoCostUsd).toBeGreaterThan(0);
 });
 
 test("UsageLedgerCoordinator projects full billing snapshots from ledger", () => {

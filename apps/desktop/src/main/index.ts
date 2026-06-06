@@ -223,6 +223,7 @@ import {
 } from "./sdk-stream-partial-billing-orchestration";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
+import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { getUpstreamLogFilePath } from "./upstream-log";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { localOtelReceiver } from "./otel-receiver";
@@ -668,19 +669,9 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
-    return conversationStore.listSubagentMetrics(threadId).map((row) => ({
-      agentId: row.agentId,
-      role: row.role,
-      status: row.status,
-      inputTokens: row.inputTokens,
-      outputTokens: row.outputTokens,
-      cacheReadTokens: row.cacheReadTokens,
-      cacheCreationTokens: row.cacheCreationTokens,
-      contextOccupied: row.contextOccupied,
-      ...(row.contextLimit !== undefined && { contextLimit: row.contextLimit }),
-      ecoCostUsd: row.ecoCostUsd,
-      ...(row.modelId && { modelId: row.modelId }),
-    }));
+    return buildSubagentMetricsSummaries(
+      usageLedgerCoordinator.listSubagentBillingEntries(threadId),
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
