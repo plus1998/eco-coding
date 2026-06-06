@@ -166,6 +166,7 @@ import {
   shouldUpdateContextFromUsageSource,
   type UsageBillingObservation,
 } from "./billing-orchestration";
+import { appendUsageBillingObservation } from "./usage-billing-observations";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
@@ -3567,25 +3568,7 @@ function noteUsageBillingObservation(
     return;
   }
   const observations = (run.usageObservations ??= []);
-  const key = usageBillingObservationKey(observation);
-  if (observations.some((entry) => usageBillingObservationKey(entry) === key)) {
-    return;
-  }
-  observations.push(observation);
-}
-
-function usageBillingObservationKey(observation: UsageBillingObservation): string {
-  return JSON.stringify([
-    observation.source,
-    observation.role,
-    observation.agentId ?? "unknown-agent",
-    observation.requestKey ?? "unknown-request",
-    observation.modelId ?? "unknown-model",
-    observation.usage.inputTokens,
-    observation.usage.outputTokens,
-    observation.usage.cacheReadTokens,
-    observation.usage.cacheCreationTokens,
-  ]);
+  appendUsageBillingObservation(observations, observation);
 }
 
 function emitOtelUsage(usage: OtelUsageUpdate): void {
