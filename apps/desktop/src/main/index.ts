@@ -202,6 +202,7 @@ import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { resolveSdkEventUsageBilling, type SdkUsageBillingBundle } from "./sdk-event-usage-billing";
 import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
+import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -3390,7 +3391,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }
   }
-  handleSdkContextSideEffects(threadId, event);
+  applySdkContextSideEffects(threadId, event);
   const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId;
   const activityAgentId = resolveActivityAgentId(threadId, event, {
     ...(plannerSessionId && { plannerSessionId }),
@@ -3649,39 +3650,40 @@ function flushAllThreadMetrics(): void {
   flushThreadMetrics(threadMetricsPersistenceServices());
 }
 
-function handleSdkContextSideEffects(threadId: string, event: AgentEventLike): boolean {
-  return contextLifecycle.handleSdkContextEvent({
+function onSdkUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: string }): void {
+  handleSdkUsageRecordedEvent({
+    threadId,
+    event,
+    services: sdkUsageRecordedEventHandlerServices(),
+  });
+}
+
+function applySdkContextSideEffects(threadId: string, event: AgentEventLike): boolean {
+  return applySdkContextEventSideEffects({
     threadId,
     eventId: event.id,
     payload: event.payload,
   });
 }
 
-function onSdkUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: string }): void {
-  if (handleSdkContextSideEffects(threadId, event)) {
-    return;
-  }
-  recordSdkUsageFromEvent(threadId, event);
+function applySdkContextEventSideEffects(input: {
+  threadId: string;
+  eventId: string;
+  payload: unknown;
+}): boolean {
+  return contextLifecycle.handleSdkContextEvent(input);
 }
 
-function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id: string }): void {
-  const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
-  const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
-  const observedAuthoritativeUsage = activeRunBillingState.listObservations(threadId);
-  const resolved = resolveSdkEventUsageBilling({
-    threadId,
-    event,
+function sdkUsageRecordedEventHandlerServices() {
+  return {
+    handleContextEvent: applySdkContextEventSideEffects,
+    usageRunAttemptId: (threadId: string) => agentLifecycle.usageRunAttemptId(threadId),
+    usagePlannerAgentId: (threadId: string) => agentLifecycle.usagePlannerAgentId(threadId),
+    listObservedAuthoritativeUsage: (threadId: string) => activeRunBillingState.listObservations(threadId),
     resolver: subagentMetricsRegistry,
-    ...(runAttemptId && { runAttemptId }),
-    ...(plannerAgentId && { plannerAgentId }),
-    ...(observedAuthoritativeUsage && { observedAuthoritativeUsage }),
-  });
-
-  dispatchSdkEventUsageBilling({
-    threadId,
-    resolved,
-    services: sdkUsageBillingDispatchServices(),
-  });
+    dispatchUsageBilling: dispatchSdkEventUsageBilling,
+    dispatchServices: sdkUsageBillingDispatchServices(),
+  };
 }
 
 function sdkUsageBillingDispatchServices() {
