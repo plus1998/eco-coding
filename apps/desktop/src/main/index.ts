@@ -160,6 +160,10 @@ import {
   isSubagentBillingRole,
   type UsageBillingObservation,
 } from "./billing-orchestration";
+import {
+  ActiveRunRuntimeStateStore,
+  type ActiveRunRuntimeStateInput,
+} from "./active-run-runtime-state";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
@@ -313,13 +317,7 @@ let sessionSyncStore: SessionSyncStore;
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
-interface ActiveThreadRun {
-  controller: AbortController;
-  worktreePlan?: WorktreePlan;
-  worktreeReady?: boolean;
-}
-
-const activeRuns = new Map<string, ActiveThreadRun>();
+const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
@@ -338,13 +336,13 @@ let compactionAuditService: CompactionAuditService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
-function startActiveRun(threadId: string, run: ActiveThreadRun): void {
-  activeRuns.set(threadId, run);
+function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void {
+  activeRunRuntimeState.startRun(threadId, run);
   activeRunBillingState.startRun(threadId);
 }
 
 function finishActiveRun(threadId: string): void {
-  activeRuns.delete(threadId);
+  activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
 }
 
@@ -409,7 +407,7 @@ app.whenReady().then(async () => {
   contextMonitor = new ContextWindowMonitor(pricingCache);
   contextScheduler = new ContextSnapshotScheduler({
     monitor: contextMonitor,
-    isThreadRunning: (threadId) => activeRuns.has(threadId),
+    isThreadRunning: (threadId) => activeRunRuntimeState.hasRun(threadId),
     getResume: (threadId, worktreePath) => resolveResumeOptions(threadId, worktreePath),
     isWorktreePathReady: async (worktreePath) => fileExists(worktreePath),
     withSdkDriver: (threadId, fn) => withThreadSdkDriver(threadId, fn),
@@ -1057,7 +1055,7 @@ function registerIpcHandlers(): void {
     if (thread.status !== "awaiting_plan") {
       throw new Error("This thread is not waiting for plan approval.");
     }
-    if (activeRuns.has(threadId)) {
+    if (activeRunRuntimeState.hasRun(threadId)) {
       throw new Error("Thread is already running.");
     }
 
@@ -1223,11 +1221,9 @@ function registerIpcHandlers(): void {
     if (worktreeDisposition) {
       pendingCancelDisposition.set(threadId, worktreeDisposition);
     }
-    const active = activeRuns.get(threadId);
-    if (active) {
+    if (activeRunRuntimeState.abortRun(threadId, "cancelled by user")) {
       updateThread(threadId, { status: "running", message: "正在停止…" });
       cancelClarificationsForThread(threadId, "cancelled by user");
-      active.controller.abort("cancelled by user");
       return;
     }
     const thread = conversationStore.getThread(threadId);
@@ -1482,7 +1478,7 @@ async function runQuestionThread(
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
-  startActiveRun(thread.id, { controller, worktreePlan: createSessionPlan(workspace.path, thread.id), worktreeReady: Boolean(worktreePath) });
+  startActiveRun(thread.id, { controller, worktreePlan: createSessionPlan(workspace.path, thread.id) });
   resetSubagentContextWindows(thread.id);
 
   try {
@@ -1613,7 +1609,6 @@ async function runCodingThreadAutonomous(
   startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-    worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
 
@@ -1626,8 +1621,7 @@ async function runCodingThreadAutonomous(
       existingWorktreePlan,
     );
     worktreePlan = resolvedPlan;
-    activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
-    activeRuns.get(thread.id)!.worktreeReady = true;
+    activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
     updateThread(thread.id, {
       message: `Working in project directory: ${workspace.path}`,
       status: "running",
@@ -1790,7 +1784,6 @@ async function runCodingThreadPlanning(
   startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-    worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
 
@@ -1800,8 +1793,7 @@ async function runCodingThreadPlanning(
       thread.id,
       existingWorktreePlan,
     );
-    activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
-    activeRuns.get(thread.id)!.worktreeReady = true;
+    activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
     updateThread(thread.id, {
       message: `Working in project directory: ${workspace.path}`,
       status: "running",
@@ -1973,14 +1965,13 @@ async function runCodingThreadAutonomousAfterApproval(
   const workspace = await ensureWorkspace(pending.workspacePath);
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
-  startActiveRun(threadId, { controller, worktreePlan, worktreeReady: false });
+  startActiveRun(threadId, { controller, worktreePlan });
   resetSubagentContextWindows(threadId);
 
   const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
   worktreePlan = resolved.worktreePlan;
   const cwd = resolved.cwd;
-  activeRuns.get(threadId)!.worktreePlan = worktreePlan;
-  activeRuns.get(threadId)!.worktreeReady = true;
+    activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
   try {
     await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
@@ -2095,15 +2086,14 @@ async function runCodingThreadExecution(
 
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
-  startActiveRun(threadId, { controller, worktreePlan, worktreeReady: false });
+  startActiveRun(threadId, { controller, worktreePlan });
   resetSubagentContextWindows(threadId);
 
   const workspace = await ensureWorkspace(pending.workspacePath);
   const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
   worktreePlan = resolved.worktreePlan;
   const executionCwd = resolved.cwd;
-  activeRuns.get(threadId)!.worktreePlan = worktreePlan;
-  activeRuns.get(threadId)!.worktreeReady = true;
+    activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
   try {
     await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
@@ -2340,7 +2330,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   if (!thread) {
     throw new Error("Thread was not found.");
   }
-  if (activeRuns.has(threadId)) {
+  if (activeRunRuntimeState.hasRun(threadId)) {
     throw new Error("请等待当前运行结束后再重试。");
   }
   if (thread.status === "running" || thread.status === "queued") {
@@ -2454,16 +2444,16 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? updated) };
 }
 
-/** After a crash, SQLite may still say running while activeRuns is empty. */
+/** After a crash, SQLite may still say running while no runtime run is active. */
 function recoverOrphanedRunningThreads(): void {
   for (const thread of conversationStore.listThreads()) {
-    if (!activeRuns.has(thread.id)) {
+    if (!activeRunRuntimeState.hasRun(thread.id)) {
       settleRecoveredLifecycleRecords(thread.id, "failed");
     }
     if (thread.status !== "running" && thread.status !== "queued") {
       continue;
     }
-    if (activeRuns.has(thread.id)) {
+    if (activeRunRuntimeState.hasRun(thread.id)) {
       continue;
     }
     updateThread(thread.id, {
@@ -2537,10 +2527,7 @@ async function restoreAfterExecutionFailure(
 }
 
 async function dismissPendingPlan(threadId: string, message: string): Promise<void> {
-  const active = activeRuns.get(threadId);
-  if (active) {
-    active.controller.abort("dismissed by user");
-  }
+  activeRunRuntimeState.abortRun(threadId, "dismissed by user");
   const pending = conversationStore.getPendingPlan(threadId);
   const thread = conversationStore.getThread(threadId);
   const workspacePath = pending?.workspacePath ?? thread?.workspacePath;
@@ -2575,7 +2562,7 @@ function resolveWorktreeContextForThread(threadId: string): {
     threadId,
     workspacePath,
   };
-  const activePath = activeRuns.get(threadId)?.worktreePlan?.worktreePath;
+  const activePath = activeRunRuntimeState.worktreePlan(threadId)?.worktreePath;
   if (activePath?.trim()) {
     hintInput.activeWorktreePath = activePath.trim();
   }
@@ -3231,7 +3218,6 @@ async function runThreadContinuation(
     startActiveRun(thread.id, {
       controller,
       worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-      worktreeReady: false,
     });
     resetSubagentContextWindows(thread.id);
     let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
@@ -3240,8 +3226,7 @@ async function runThreadContinuation(
       const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
       worktreePlan = resolved.worktreePlan;
       cwd = resolved.cwd;
-      activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
-      activeRuns.get(thread.id)!.worktreeReady = true;
+      activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
       const resumeOpts = resolveResumeOptions(thread.id, cwd);
       if (!resumeOpts) {
         markThreadInterrupted(thread.id, "无法恢复 SDK 会话，请重新发送完整需求。");
@@ -3311,7 +3296,6 @@ async function runThreadContinuation(
   startActiveRun(thread.id, {
     controller,
     worktreePlan: existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id),
-    worktreeReady: false,
   });
   resetSubagentContextWindows(thread.id);
 
@@ -3338,10 +3322,7 @@ async function runThreadContinuation(
       const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
       worktreePlan = resolved.worktreePlan;
       cwd = resolved.cwd;
-      activeRuns.get(thread.id)!.worktreePlan = worktreePlan;
-      activeRuns.get(thread.id)!.worktreeReady = true;
-    } else {
-      activeRuns.get(thread.id)!.worktreeReady = true;
+      activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
     }
 
     const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
@@ -4317,12 +4298,12 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       );
     },
     resolveChangedFiles: async () => {
-      const run = activeRuns.get(threadId);
-      if (!run?.worktreePlan) {
+      const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
+      if (!worktreePlan) {
         return [];
       }
       try {
-        return await gitWorktrees.changedFiles(run.worktreePlan);
+        return await gitWorktrees.changedFiles(worktreePlan);
       } catch (error) {
         console.error("Failed to list worktree files for reviewer scope:", error);
         return [];
