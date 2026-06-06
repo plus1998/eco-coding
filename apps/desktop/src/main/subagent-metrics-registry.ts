@@ -1,4 +1,4 @@
-import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
+import type { AgentRole } from "../shared/ipc";
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
@@ -7,11 +7,11 @@ import {
   type SubagentAgentResolveMissReason,
 } from "./subagent-agent-resolver";
 import {
-  buildSubagentUsageContributionKey,
   subagentMetricsEntryFromPersistenceRecord,
   subagentMetricsEntryToPersistenceInput,
   type SubagentMetricsPersistenceStore,
 } from "./subagent-metrics-persistence";
+import { SubagentLegacyUsageTracker } from "./subagent-legacy-usage";
 import {
   SubagentMetricsState,
   type SubagentContextObservationInput,
@@ -28,7 +28,7 @@ export type {
 interface ThreadSubagentState {
   metrics: SubagentMetricsState;
   toolUses: SubagentToolUseIndex;
-  seenUsageKeys: Set<string>;
+  legacyUsage: SubagentLegacyUsageTracker;
 }
 
 export class SubagentMetricsRegistry {
@@ -200,39 +200,32 @@ export class SubagentMetricsRegistry {
       return undefined;
     }
     const state = this.getOrCreateThread(threadId);
-    const usageKey = buildSubagentUsageContributionKey(input, {
-      agentId: resolvedAgentId,
-      role: entryRole,
-    });
-    if (state.seenUsageKeys.has(usageKey)) {
+    const result = state.legacyUsage.record(
+      state.metrics,
+      {
+        agentId: resolvedAgentId,
+        role: entryRole,
+        usage: input.usage,
+        contextOccupied: input.contextOccupied,
+        billing: input.billing,
+        requestKey: input.requestKey,
+        ...(input.contextLimit !== undefined && { contextLimit: input.contextLimit }),
+        ...(input.modelId && { modelId: input.modelId }),
+      },
+      Date.now(),
+    );
+    if (result.deduped) {
       logEcoDiag("subagent.usage_dedupe", {
         threadId: shortThreadId(threadId),
         role: entryRole,
         agentId: shortAgentId(resolvedAgentId),
         requestKey: input.requestKey,
-        modelId: input.modelId ?? input.usage.modelId,
+        modelId: result.modelId,
       });
-      return state.metrics.getEntry(resolvedAgentId);
+      return result.entry;
     }
-    state.seenUsageKeys.add(usageKey);
-    const now = Date.now();
-    const entry = state.metrics.ensureEntry(resolvedAgentId, entryRole, "active", now);
-    entry.usage = mergeUsage(entry.usage, input.usage);
-    entry.contextOccupied = input.contextOccupied;
-    if (input.contextLimit !== undefined) {
-      entry.contextLimit = input.contextLimit;
-    }
-    entry.ecoCostUsd += input.billing.ecoCostUsd;
-    if (input.billing.ecoBreakdown) {
-      entry.ecoCostBreakdown = mergeBreakdown(entry.ecoCostBreakdown, input.billing.ecoBreakdown);
-    }
-    if (input.modelId) {
-      entry.modelId = input.modelId;
-    }
-    entry.lastRequestKey = input.requestKey;
-    entry.updatedAt = now;
-    this.persistEntry(threadId, entry);
-    return entry;
+    this.persistEntry(threadId, result.entry);
+    return result.entry;
   }
 
   listEntries(threadId: string): SubagentMetricsEntry[] {
@@ -253,15 +246,12 @@ export class SubagentMetricsRegistry {
       const entry = subagentMetricsEntryFromPersistenceRecord(row);
       state.metrics.restore(entry);
       if (row.lastRequestKey) {
-        state.seenUsageKeys.add(
-          buildSubagentUsageContributionKey(
-            {
-              ...(entry.modelId && { modelId: entry.modelId }),
-              requestKey: row.lastRequestKey,
-            },
-            { agentId: row.agentId, role: row.role },
-          ),
-        );
+        state.legacyUsage.restoreContribution({
+          agentId: row.agentId,
+          role: row.role,
+          requestKey: row.lastRequestKey,
+          ...(entry.modelId && { modelId: entry.modelId }),
+        });
       }
     }
   }
@@ -277,7 +267,7 @@ export class SubagentMetricsRegistry {
       state = {
         metrics: new SubagentMetricsState(),
         toolUses: new SubagentToolUseIndex(),
-        seenUsageKeys: new Set(),
+        legacyUsage: new SubagentLegacyUsageTracker(),
       };
       this.threads.set(threadId, state);
     }
@@ -287,23 +277,4 @@ export class SubagentMetricsRegistry {
   private persistEntry(threadId: string, entry: SubagentMetricsEntry): void {
     this.store.upsertSubagentMetrics(threadId, subagentMetricsEntryToPersistenceInput(entry));
   }
-}
-
-function mergeUsage(left: ParsedUsage, right: ParsedUsage): ParsedUsage {
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    cacheReadTokens: left.cacheReadTokens + right.cacheReadTokens,
-    cacheCreationTokens: left.cacheCreationTokens + right.cacheCreationTokens,
-  };
-}
-
-function mergeBreakdown(left: TokenCostBreakdown, right: TokenCostBreakdown): TokenCostBreakdown {
-  return {
-    inputUsd: left.inputUsd + right.inputUsd,
-    outputUsd: left.outputUsd + right.outputUsd,
-    cacheReadUsd: left.cacheReadUsd + right.cacheReadUsd,
-    cacheCreationUsd: left.cacheCreationUsd + right.cacheCreationUsd,
-    totalUsd: left.totalUsd + right.totalUsd,
-  };
 }
