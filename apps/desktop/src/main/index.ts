@@ -14,7 +14,7 @@ import {
   type SessionCapturedPayload,
   type AgentEvent,
 } from "@eco/runtime";
-import { ClaudeAgentSdkDriver, type EcoHookContext, type SdkTodoUpdatedPayload } from "@eco/runtime/sdk";
+import { ClaudeAgentSdkDriver, type EcoHookContext } from "@eco/runtime/sdk";
 import { defaultSubagentAvailability, isSubagentRole, type SubagentRunPhase } from "@eco/runtime";
 import {
   createRedisSessionStore,
@@ -80,10 +80,10 @@ import {
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
-import { createSdkTaskTracker } from "./sdk-task-tracker";
-import { createSdkTaskRunHooks, type SdkRunHookContextExtras } from "./sdk-task-run-hooks";
+import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
@@ -2066,17 +2066,15 @@ async function runCodingThreadExecution(
     process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
   }
 
-  const todoTracker = createSdkTaskTracker(
+  const taskRuntime = createThreadSdkTaskRuntime({
     threadId,
-    {
-      listTodos: () => conversationStore.listCoderTodos(threadId),
-      replaceTodos: (todos) => conversationStore.replaceCoderTodos(threadId, todos),
+    store: {
+      listTodos: (id) => conversationStore.listCoderTodos(id),
+      replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
     },
     emitTodoList,
-  );
-  const taskRunHooks = createSdkTaskRunHooks({
-    createHookHandlers: (getStopStatus) => todoTracker.createHookHandlers(getStopStatus),
   });
+  const taskRunHooks = taskRuntime.taskRunHooks;
   const executionPlan = {
     ...pending,
     routesJson: pending.routesJson || "[]",
@@ -2147,9 +2145,7 @@ async function runCodingThreadExecution(
                 captureSession: captureSdkSessionFromEvent,
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
-                  if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
-                    todoTracker.handleTaskProgress(event.payload);
-                  }
+                  taskRuntime.handleEvent(event);
                 },
               });
             } catch (error) {
@@ -3196,22 +3192,18 @@ async function runThreadContinuation(
   let planningPlanCaptured = false;
   let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
   let cwd = workspace.path;
-  const todoTracker =
+  const taskRuntime =
     mode === "execution"
-      ? createSdkTaskTracker(
-          thread.id,
-          {
-            listTodos: () => conversationStore.listCoderTodos(thread.id),
-            replaceTodos: (todos) => conversationStore.replaceCoderTodos(thread.id, todos),
+      ? createThreadSdkTaskRuntime({
+          threadId: thread.id,
+          store: {
+            listTodos: (id) => conversationStore.listCoderTodos(id),
+            replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
           },
           emitTodoList,
-        )
+        })
       : undefined;
-  const taskRunHooks = todoTracker
-    ? createSdkTaskRunHooks({
-        createHookHandlers: (getStopStatus) => todoTracker.createHookHandlers(getStopStatus),
-      })
-    : undefined;
+  const taskRunHooks = taskRuntime?.taskRunHooks;
 
   try {
     if (mode !== "question") {
@@ -3295,13 +3287,7 @@ async function runThreadContinuation(
                       runtimeConfig,
                     });
                   }
-                  if (
-                    event.type === "todo.updated" &&
-                    todoTracker &&
-                    isSdkTodoProgressPayload(event.payload)
-                  ) {
-                    todoTracker.handleTaskProgress(event.payload);
-                  }
+                  taskRuntime?.handleEvent(event);
                 },
               });
             } catch (error) {
@@ -3813,10 +3799,6 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
     mcpServers: mcp.mcpServers,
     mcpAllowedTools: mcp.allowedTools,
   };
-}
-
-function isSdkTodoProgressPayload(payload: unknown): payload is SdkTodoUpdatedPayload {
-  return typeof payload === "object" && payload !== null && "sdkKind" in payload;
 }
 
 function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
