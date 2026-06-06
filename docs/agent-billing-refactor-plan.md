@@ -28,8 +28,8 @@
 
 当前验证基线：
 
-- `bun test`: 通过，`668 pass / 14 skip / 0 fail`
-- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation 近端类型错误已清理。
+- `bun test`: 通过，`672 pass / 14 skip / 0 fail`
+- `bun run typecheck`: 仍失败，剩余为项目既有 TypeScript 基线问题；本次新增 ledger、adapter、shadow write、reconciliation、lifecycle、billing projector、projector reconciliation、stream partial/context audit 近端类型错误已清理。
 
 第二批 Usage Ledger foundation 已完成：
 
@@ -105,6 +105,17 @@
 - projection 会保留没有 ledger usage 的既有 active 行，避免运行中的 SubAgent 因尚未产生账单事件而从 UI 消失。
 - 新增测试覆盖：ledger billing 覆盖旧累计账单、保留 context/status/model/last request 兼容信息、无 ledger usage 时保留旧 active 行。
 
+第九批 Streaming / Compaction 审计与 fallback gating 已完成：
+
+- SDK `message_delta` stream usage 不再只刷新 context；现在会写入 `UsageLedgerEvent(usageKind=request_partial)`，保留 thread、role、model、agent、runAttempt、本地费率计算结果和 partial settlement metadata。
+- `BillingProjector` 明确把 `request_partial` 与 `context` 事件分流到审计数组，不进入 thread total、byRole、byAgent、byModel 或 SubAgent billing，避免流式中间值和压缩事件重复结算。
+- 新增 `compaction-ledger-events`，把 PreCompact 归档和 SDK `compact_boundary` 转成 `UsageLedgerEvent(usageKind=context)`；completed 事件会尽量合并 trigger、sessionId、archiveId、preTokens、postTokens 和原始 compact metadata。
+- `ContextSnapshotScheduler` 在内部执行 `/compact` 时也会把 compact boundary 回调给主进程写账本，避免 scheduler 私有消费事件导致审计缺口。
+- SDK compact boundary 映射保留 `session_id`，用于把 PreCompact before context 与 boundary after context 关联。
+- assistant fallback gating 从 run 级 `otelTokenBilled` 布尔值改为 `UsageBillingObservation` 列表；只有同 role、同 agent、同 token 指纹的权威 SDK/Proxy/OTel observation 会阻止 fallback。
+- 未归因 OTel 不再压掉已明确归因的 SubAgent assistant fallback，避免并发 SubAgent 或跨角色请求被漏计。
+- 新增测试覆盖：fallback observation gating、未归因 OTel 不误伤、partial/context 不进入 billable projection、compaction ledger event 元数据、compact boundary session 保留。
+
 当前边界：
 
 - Agent lifecycle 仍为 shadow 写入，不驱动 UI、不替代旧 `activeRuns`、`SubagentMetricsRegistry` 或 activity 展示。
@@ -112,6 +123,8 @@
 - BillingProjector 已开始驱动 `billing.subagents` 账单行；线程 total/source/byModel 仍由旧 accumulator 驱动，projection mismatch 继续通过 shadow diag 观察。
 - projector 的 subagent 快照目前只表达 billing usage，不替代 context occupancy；context 归属仍需在 context-domain/settlement 阶段接入。
 - 旧 `SubagentMetricsRegistry.recordSdkUsage` 仍保留，用于 context/status/兼容持久化；后续必须先接入 context-domain 和 lifecycle recovery，再移除旧账单累计职责。
+- `request_partial` 目前只进入审计，不进入结算；后续 settlement 阶段必须明确中断流式请求是否、何时、按什么状态转成 billable final。
+- compaction ledger event 目前记录 before/after context 元数据，不改变 context monitor 的现有行为，也不把 context occupancy 计入 Token billing。
 
 ## 不做事项
 
@@ -233,8 +246,8 @@ flowchart TD
 
 下一批实现按以下顺序推进：
 
-1. 补齐 streaming partial/final、compaction event、request/source/agent 粒度 assistant fallback gating。
-2. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
+1. 接入 lifecycle / ledger 持久化恢复与 run settlement，确保退出后没有未结算 active agent。
+2. 在 settlement 中定义 interrupted stream partial 的最终状态，避免 partial 永久悬挂。
 3. 将 `index.ts` 内 usage/billing orchestration 继续拆到领域服务，降低主进程耦合。
 4. shadow 对账稳定后，将 thread total/source/byModel 与结算入口切到 ledger projection。
 5. context-domain 接管 SubAgent context occupancy 后，移除旧 `SubagentMetricsRegistry` 的账单累计职责。

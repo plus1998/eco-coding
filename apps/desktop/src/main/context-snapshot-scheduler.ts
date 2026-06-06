@@ -36,6 +36,10 @@ export interface ContextSnapshotSchedulerOptions {
   ) => Promise<void>;
   emitContext: (threadId: string, snapshot: ThreadContextSnapshot) => void;
   emitActivity: (threadId: string, message: string) => void;
+  onCompactionBoundary?: (
+    threadId: string,
+    input: { payload: Record<string, unknown>; sourceEventId?: string },
+  ) => void;
 }
 
 export class ContextSnapshotScheduler {
@@ -175,6 +179,10 @@ export class ContextSnapshotScheduler {
             }
             if (payload.subtype === "compact_boundary") {
               postTokens = extractCompactPostTokens(payload);
+              this.options.onCompactionBoundary?.(threadId, {
+                payload,
+                ...(typeof event.id === "string" && { sourceEventId: event.id }),
+              });
             }
           }
           if (event.type === "usage.recorded" && isRecord(event.payload)) {

@@ -86,6 +86,8 @@ export interface UsageLedgerBillingProjection {
   byAgent: Record<string, BillingProjectorAgentSnapshot>;
   byRunAttempt: Record<string, BillingProjectorRunAttemptSnapshot>;
   unattributedEvents: UsageLedgerEvent[];
+  unsettledPartialEvents: UsageLedgerEvent[];
+  contextEvents: UsageLedgerEvent[];
   unresolvedEventCount: number;
   eventCount: number;
 }
@@ -144,9 +146,19 @@ export function projectBillingFromUsageLedger(
   const byAgent = new Map<string, MutableAgentState>();
   const byRunAttempt = new Map<string, MutableRunAttemptState>();
   const unattributedEvents: UsageLedgerEvent[] = [];
+  const unsettledPartialEvents: UsageLedgerEvent[] = [];
+  const contextEvents: UsageLedgerEvent[] = [];
   let unresolvedEventCount = 0;
 
   for (const event of input.events) {
+    if (event.usageKind === "request_partial") {
+      unsettledPartialEvents.push(event);
+      continue;
+    }
+    if (event.usageKind === "context") {
+      contextEvents.push(event);
+      continue;
+    }
     const usage = usageFromEvent(event);
     const billing = resolveEventBilling(event, input.resolveRates);
     if (!billing.pricingResolved) {
@@ -189,6 +201,8 @@ export function projectBillingFromUsageLedger(
     byAgent: agentSnapshots,
     byRunAttempt: runAttemptSnapshots,
     unattributedEvents,
+    unsettledPartialEvents,
+    contextEvents,
     unresolvedEventCount,
     eventCount: input.events.length,
   };
@@ -201,6 +215,8 @@ export function summarizeUsageLedgerBillingProjection(
     eventCount: projection.eventCount,
     unresolvedEventCount: projection.unresolvedEventCount,
     unattributedEventCount: projection.unattributedEvents.length,
+    unsettledPartialEventCount: projection.unsettledPartialEvents.length,
+    contextEventCount: projection.contextEvents.length,
     byAgentCount: Object.keys(projection.byAgent).length,
     byRunAttemptCount: Object.keys(projection.byRunAttempt).length,
     primarySource: projection.snapshot?.primarySource,

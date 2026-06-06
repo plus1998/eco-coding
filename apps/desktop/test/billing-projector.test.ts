@@ -137,3 +137,33 @@ test("projectBillingFromUsageLedger can compute billing with a rate resolver", (
   expect(projection.snapshot?.ecoCostUsd).toBeCloseTo(0.012, 4);
   expect(projection.snapshot?.plannerTokenCostUsd).toBeCloseTo(0.045, 4);
 });
+
+test("projectBillingFromUsageLedger keeps partial and context events out of billable totals", () => {
+  const partial = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "sdk",
+    sourceEventId: "sdk-stream:partial-1",
+    usageKind: "request_partial",
+    usage: { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    computedBilling: billingFor({ inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+    agentId: "agent_coder",
+    modelId: "haiku",
+  });
+  const context = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "planner",
+    source: "sdk",
+    sourceEventId: "compact:1",
+    usageKind: "context",
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    agentId: "planner_1",
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [partial, context] });
+
+  expect(projection.snapshot).toBeUndefined();
+  expect(projection.unsettledPartialEvents).toEqual([partial]);
+  expect(projection.contextEvents).toEqual([context]);
+  expect(projection.byAgent).toEqual({});
+});

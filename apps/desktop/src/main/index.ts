@@ -171,6 +171,7 @@ import {
   nextOtelRequestDedupId,
   shouldBillAssistantSubagentUsage,
   shouldUpdateContextFromUsageSource,
+  type UsageBillingObservation,
 } from "./billing-orchestration";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
@@ -185,6 +186,10 @@ import {
   buildSdkUsageLedgerEvents,
   buildSingleUsageLedgerEvent,
 } from "./usage-ledger-adapters";
+import {
+  buildCompactionLedgerEvent,
+  readCompactionBoundaryMetadata,
+} from "./compaction-ledger-events";
 import type { RunAttemptPhase, RunAttemptStatus, UsageLedgerEvent } from "./usage-ledger";
 import {
   reconcileUsageLedgerWithBilling,
@@ -318,9 +323,19 @@ interface ActiveThreadRun {
   proxyContextRolesSeen?: Set<AgentRole>;
   /** Latest proxy-reported window occupancy per role (for count_tokens local stub). */
   lastProxyContextByRole?: Partial<Record<AgentRole, number>>;
+  /** Authoritative billable observations used to gate assistant fallback per role/agent/request. */
+  usageObservations?: UsageBillingObservation[];
+}
+
+interface PendingCompactionAudit {
+  trigger: "auto" | "manual";
+  archiveId?: string;
+  sessionId?: string;
+  preTokens?: number;
 }
 
 const activeRuns = new Map<string, ActiveThreadRun>();
+const pendingCompactionAudits = new Map<string, PendingCompactionAudit>();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
@@ -333,7 +348,7 @@ let pricingCatalogReady: Promise<void> = Promise.resolve();
 let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 
-type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
+type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
 async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -392,6 +407,9 @@ app.whenReady().then(async () => {
     emitContext: emitThreadContextUpdated,
     emitActivity: (threadId, message) => {
       emitThreadEvent(threadId, "otel.activity", message, "system", false);
+    },
+    onCompactionBoundary: (threadId, input) => {
+      recordCompactionLedgerBoundary(threadId, input.payload, input.sourceEventId);
     },
   });
   loadThreadMetricsFromStore();
@@ -3541,6 +3559,36 @@ async function flushUsageUpdates(threadId: string): Promise<void> {
   }
 }
 
+function noteUsageBillingObservation(
+  threadId: string,
+  observation: UsageBillingObservation,
+): void {
+  const run = activeRuns.get(threadId);
+  if (!run) {
+    return;
+  }
+  const observations = (run.usageObservations ??= []);
+  const key = usageBillingObservationKey(observation);
+  if (observations.some((entry) => usageBillingObservationKey(entry) === key)) {
+    return;
+  }
+  observations.push(observation);
+}
+
+function usageBillingObservationKey(observation: UsageBillingObservation): string {
+  return JSON.stringify([
+    observation.source,
+    observation.role,
+    observation.agentId ?? "unknown-agent",
+    observation.requestKey ?? "unknown-request",
+    observation.modelId ?? "unknown-model",
+    observation.usage.inputTokens,
+    observation.usage.outputTokens,
+    observation.usage.cacheReadTokens,
+    observation.usage.cacheCreationTokens,
+  ]);
+}
+
 function emitOtelUsage(usage: OtelUsageUpdate): void {
   const run = activeRuns.get(usage.threadId);
   const { seq, dedupId } = nextOtelRequestDedupId(run?.otelRequestSeq);
@@ -3557,6 +3605,30 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
   if (hasTokens && run) {
     run.otelTokenBilled = true;
   }
+  const billingRole = normalizeBillingRole(usage.role);
+  const requestKey = buildUsageRequestKey({
+    role: billingRole,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+    ...(usage.modelId && { modelId: usage.modelId }),
+    dedupId,
+  });
+  if (hasTokens) {
+    noteUsageBillingObservation(usage.threadId, {
+      source: "otel",
+      role: billingRole,
+      usage: {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens ?? 0,
+        cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+      },
+      requestKey,
+      ...(usage.modelId && { modelId: usage.modelId }),
+    });
+  }
   const runAttemptId = agentLifecycle.usageRunAttemptId(usage.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(usage.threadId);
 
@@ -3564,7 +3636,7 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
     usage.threadId,
     processUsageBilling({
       threadId: usage.threadId,
-      role: normalizeBillingRole(usage.role),
+      role: billingRole,
       source: "otel",
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -3574,6 +3646,7 @@ function emitOtelUsage(usage: OtelUsageUpdate): void {
       ...(usage.modelId && { modelId: usage.modelId }),
       ...(runAttemptId && { runAttemptId }),
       ...(plannerAgentId && { plannerAgentId }),
+      requestKey,
       otelDedupId: dedupId,
       reconciliationOnly: true,
       updateContext: false,
@@ -3613,6 +3686,20 @@ async function emitProxyUsage(
   const subagentAgentId = isSubagentBillingRole(billingRole)
     ? subagentMetricsRegistry.resolveAgentId(info.threadId, { role: billingRole })
     : undefined;
+  const proxyUsage: ParsedUsage = {
+    inputTokens: info.usage.inputTokens,
+    outputTokens: info.usage.outputTokens,
+    cacheReadTokens: info.usage.cacheReadTokens,
+    cacheCreationTokens: info.usage.cacheCreationTokens,
+  };
+  noteUsageBillingObservation(info.threadId, {
+    source: "proxy",
+    role: billingRole,
+    usage: proxyUsage,
+    requestKey,
+    modelId: info.modelId,
+    ...(subagentAgentId && { agentId: subagentAgentId }),
+  });
   const billingTask = processUsageBilling({
     threadId: info.threadId,
     role: billingRole,
@@ -4145,6 +4232,7 @@ function handleSdkContextSideEffects(
     return;
   }
   if (payload.subtype === "compact_boundary") {
+    recordCompactionLedgerBoundary(threadId, payload, event.id);
     const postTokens = extractCompactPostTokens(payload);
     contextMonitor.markCompactCompleted(threadId, postTokens);
     contextScheduler.emitLiveFromMonitor(threadId);
@@ -4202,16 +4290,19 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
         ? event.payload.messageId
         : undefined;
     const run = activeRuns.get(threadId);
+    const usage = bundle.models[0]?.usage ?? bundle.contextUsage;
     if (
       messageId &&
       subagentAgentId &&
       shouldBillAssistantSubagentUsage({
         role: billingRole,
         messageId,
-        otelTokenBilled: run?.otelTokenBilled,
+        agentId: subagentAgentId,
+        usage,
+        ...(bundle.models[0]?.modelId && { modelId: bundle.models[0].modelId }),
+        ...(run?.usageObservations && { observedAuthoritativeUsage: run.usageObservations }),
       })
     ) {
-      const usage = bundle.models[0]?.usage ?? bundle.contextUsage;
       trackUsageUpdate(
         threadId,
         processUsageBilling({
@@ -4281,11 +4372,19 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
         : bundle.contextUsage;
     trackUsageUpdate(
       threadId,
-      updateContextFromSdkUsage(threadId, billingRole, streamContextUsage, modelId, subagentAgentId).catch(
-        (error) => {
-          process.stderr.write(`[eco] SDK stream context update failed: ${errorMessage(error)}\n`);
-        },
-      ),
+      processSdkStreamPartialUsage({
+        threadId,
+        eventId: event.id,
+        role: billingRole,
+        usage: streamContextUsage,
+        ...(modelId && { modelId }),
+        ...(runAttemptId && { runAttemptId }),
+        ...(plannerAgentId && { plannerAgentId }),
+        ...(subagentAgentId && { subagentAgentId }),
+        ...(parentToolUseId && { parentToolUseId }),
+      }).catch((error) => {
+        process.stderr.write(`[eco] SDK stream partial usage failed: ${errorMessage(error)}\n`);
+      }),
     );
     return;
   }
@@ -4305,6 +4404,74 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
     }).catch((error) => {
       process.stderr.write(`[eco] SDK run billing failed: ${errorMessage(error)}\n`);
     }),
+  );
+}
+
+async function processSdkStreamPartialUsage(input: {
+  threadId: string;
+  eventId: string;
+  role: AgentRole;
+  usage: ParsedUsage;
+  modelId?: string;
+  runAttemptId?: string;
+  plannerAgentId?: string;
+  subagentAgentId?: string;
+  parentToolUseId?: string;
+}): Promise<void> {
+  await pricingCatalogReady;
+  const runtimeRoutes = resolveRuntimeRoutesForThread(input.threadId);
+  const usageRoute = resolveUsageRoute(input.role, input.modelId, runtimeRoutes);
+  const plannerRoute = runtimeRoutes.find((route) => route.role === "planner");
+  const actualLookup = usageRoute
+    ? await pricingCache.lookupForRoute({
+        baseUrl: usageRoute.provider.baseUrl,
+        modelId: usageRoute.modelId,
+        ...(usageRoute.modelsDevMapping && { mapping: usageRoute.modelsDevMapping }),
+      })
+    : null;
+  const plannerLookup = plannerRoute
+    ? await pricingCache.lookupForRoute({
+        baseUrl: plannerRoute.provider.baseUrl,
+        modelId: plannerRoute.modelId,
+        ...(plannerRoute.modelsDevMapping && { mapping: plannerRoute.modelsDevMapping }),
+      })
+    : null;
+  const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
+  const plannerRates = resolveRatesForRoute(plannerLookup, plannerRoute?.manualSpec);
+  const computedBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
+  const resolvedModelId = usageRoute?.modelId ?? input.modelId;
+  const ledgerAgentId =
+    input.subagentAgentId ??
+    (input.role === "planner" ? input.plannerAgentId : undefined);
+  const requestKey = `sdk-stream:${input.eventId}`;
+
+  appendUsageLedgerShadowEvents([
+    buildSingleUsageLedgerEvent({
+      threadId: input.threadId,
+      role: usageRoute?.role ?? input.role,
+      source: "sdk",
+      sourceEventId: requestKey,
+      usageKind: "request_partial",
+      usage: input.usage,
+      computedBilling,
+      requestKey,
+      ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+      ...(ledgerAgentId && { agentId: ledgerAgentId }),
+      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(resolvedModelId && { modelId: resolvedModelId }),
+      metadata: {
+        path: "processSdkStreamPartialUsage",
+        settlement: "partial",
+      },
+    }),
+  ]);
+
+  await updateContextFromSdkUsage(
+    input.threadId,
+    input.role,
+    input.usage,
+    resolvedModelId,
+    input.subagentAgentId,
   );
 }
 
@@ -4403,6 +4570,18 @@ async function processSdkRunBilling(input: {
   const ledgerAgentId =
     resolvedSubagentId ??
     (allLedgerRowsArePlanner ? input.plannerAgentId : undefined);
+  if (resolvedSubagentId && isSubagentBillingRole(billingRole)) {
+    for (const model of models) {
+      noteUsageBillingObservation(input.threadId, {
+        source: "sdk",
+        role: billingRole,
+        agentId: resolvedSubagentId,
+        usage: model.usage,
+        requestKey: input.requestKey,
+        ...(model.modelId && { modelId: model.modelId }),
+      });
+    }
+  }
   appendUsageLedgerShadowEvents(
     buildSdkUsageLedgerEvents({
       threadId: input.threadId,
@@ -4771,7 +4950,7 @@ function archiveThreadContextBeforeCompaction(
     const context = contextScheduler.getDisplaySnapshot(threadId);
     const sdkSession = conversationStore.getSdkSession(threadId);
     const pendingPlan = conversationStore.getPendingPlan(threadId);
-    conversationStore.saveCompactionArchive(threadId, {
+    const archive = conversationStore.saveCompactionArchive(threadId, {
       trigger,
       ...(sessionId && { sessionId }),
       payload: {
@@ -4791,6 +4970,23 @@ function archiveThreadContextBeforeCompaction(
         }),
       },
     });
+    const audit: PendingCompactionAudit = {
+      trigger,
+      archiveId: archive.id,
+      ...(sessionId && { sessionId }),
+      ...(context?.occupied !== undefined && { preTokens: context.occupied }),
+    };
+    pendingCompactionAudits.set(compactionAuditKey(threadId, sessionId), audit);
+    pendingCompactionAudits.set(compactionAuditKey(threadId), audit);
+    appendCompactionLedgerEvent({
+      threadId,
+      sourceEventId: `compact:${archive.id}:started`,
+      stage: "started",
+      trigger,
+      ...(sessionId && { sessionId }),
+      archiveId: archive.id,
+      ...(context?.occupied !== undefined && { preTokens: context.occupied }),
+    });
     const triggerLabel = trigger === "manual" ? "手动" : "自动";
     emitThreadEvent(
       threadId,
@@ -4805,6 +5001,67 @@ function archiveThreadContextBeforeCompaction(
       `[eco] compaction archive failed for ${threadId}: ${errorMessage(error)}\n`,
     );
   }
+}
+
+function recordCompactionLedgerBoundary(
+  threadId: string,
+  payload: Record<string, unknown>,
+  sourceEventId?: string,
+): void {
+  const metadata = readCompactionBoundaryMetadata(payload);
+  const pending = takePendingCompactionAudit(threadId, metadata.sessionId);
+  const trigger = metadata.trigger ?? pending?.trigger;
+  const sessionId = metadata.sessionId ?? pending?.sessionId;
+  const preTokens = metadata.preTokens ?? pending?.preTokens;
+  appendCompactionLedgerEvent({
+    threadId,
+    sourceEventId: sourceEventId ? `compact:${sourceEventId}` : `compact:${threadId}:${Date.now()}:completed`,
+    stage: "completed",
+    ...(trigger && { trigger }),
+    ...(sessionId && { sessionId }),
+    ...(pending?.archiveId && { archiveId: pending.archiveId }),
+    ...(preTokens !== undefined && { preTokens }),
+    ...(metadata.postTokens !== undefined && { postTokens: metadata.postTokens }),
+    ...(metadata.rawMetadata && { payload: metadata.rawMetadata }),
+  });
+}
+
+function appendCompactionLedgerEvent(input: {
+  threadId: string;
+  sourceEventId: string;
+  stage: "started" | "completed";
+  trigger?: "auto" | "manual";
+  sessionId?: string;
+  archiveId?: string;
+  preTokens?: number;
+  postTokens?: number;
+  payload?: Record<string, unknown>;
+}): void {
+  const runAttemptId = agentLifecycle.usageRunAttemptId(input.threadId);
+  const plannerAgentId = agentLifecycle.usagePlannerAgentId(input.threadId);
+  appendUsageLedgerShadowEvents([
+    buildCompactionLedgerEvent({
+      ...input,
+      ...(runAttemptId && { runAttemptId }),
+      ...(plannerAgentId && { plannerAgentId }),
+    }),
+  ]);
+}
+
+function takePendingCompactionAudit(
+  threadId: string,
+  sessionId?: string,
+): PendingCompactionAudit | undefined {
+  const sessionKey = compactionAuditKey(threadId, sessionId);
+  const threadKey = compactionAuditKey(threadId);
+  const pending = pendingCompactionAudits.get(sessionKey) ?? pendingCompactionAudits.get(threadKey);
+  pendingCompactionAudits.delete(sessionKey);
+  pendingCompactionAudits.delete(threadKey);
+  return pending;
+}
+
+function compactionAuditKey(threadId: string, sessionId?: string): string {
+  return `${threadId}\u001f${sessionId ?? "thread"}`;
 }
 
 function createThreadHookContext(threadId: string): EcoHookContext {

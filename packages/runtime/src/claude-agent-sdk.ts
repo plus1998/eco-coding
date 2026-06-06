@@ -1278,6 +1278,7 @@ function mapCompactBoundaryToEvents(
       payload: {
         type: "system",
         subtype: "compact_boundary",
+        ...(typeof message.session_id === "string" && { session_id: message.session_id }),
         ...(typeof message.compacted_summary === "string" && {
           compacted_summary: message.compacted_summary,
         }),

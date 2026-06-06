@@ -36,28 +36,75 @@ test("isSdkIncrementalStreamUsage is false for SDK result modelUsage", () => {
   expect(sdkPayloadHasModelUsage(payload)).toBe(true);
 });
 
-test("shouldBillAssistantSubagentUsage requires subagent role and messageId without OTel", () => {
+test("shouldBillAssistantSubagentUsage requires subagent role and no matching authoritative usage", () => {
   expect(
     shouldBillAssistantSubagentUsage({
       role: "coder",
       messageId: "msg_1",
-      otelTokenBilled: undefined,
+      agentId: "agent_coder",
+      usage: { inputTokens: 10, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
     }),
   ).toBe(true);
   expect(
     shouldBillAssistantSubagentUsage({
       role: "coder",
       messageId: "msg_1",
-      otelTokenBilled: true,
+      agentId: "agent_coder",
+      usage: { inputTokens: 10, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      observedAuthoritativeUsage: [
+        {
+          source: "proxy",
+          role: "coder",
+          agentId: "agent_coder",
+          usage: { inputTokens: 10, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        },
+      ],
     }),
   ).toBe(false);
   expect(
     shouldBillAssistantSubagentUsage({
       role: "planner",
       messageId: "msg_1",
-      otelTokenBilled: undefined,
+      agentId: "planner",
     }),
   ).toBe(false);
+});
+
+test("assistant fallback is not blocked by unrelated or unattributed authoritative usage", () => {
+  const usage = { inputTokens: 20_000, outputTokens: 2_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+
+  expect(
+    shouldBillAssistantSubagentUsage({
+      role: "explore",
+      messageId: "msg_explore_1",
+      agentId: "agent_explore",
+      usage,
+      observedAuthoritativeUsage: [
+        {
+          source: "otel",
+          role: "coder",
+          agentId: "agent_coder",
+          usage,
+        },
+      ],
+    }),
+  ).toBe(true);
+
+  expect(
+    shouldBillAssistantSubagentUsage({
+      role: "explore",
+      messageId: "msg_explore_1",
+      agentId: "agent_explore",
+      usage,
+      observedAuthoritativeUsage: [
+        {
+          source: "otel",
+          role: "explore",
+          usage,
+        },
+      ],
+    }),
+  ).toBe(true);
 });
 
 test("nextOtelRequestDedupId increments run-scoped sequence", () => {
@@ -247,7 +294,8 @@ test("assistant subagent fallback bills when OTel unavailable", () => {
     !shouldBillAssistantSubagentUsage({
       role: "explore",
       messageId: "msg_explore_1",
-      otelTokenBilled: undefined,
+      agentId: "agent_explore",
+      usage: delta,
     })
   ) {
     expect.fail("expected assistant fallback eligibility");

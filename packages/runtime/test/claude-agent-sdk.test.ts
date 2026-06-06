@@ -737,6 +737,7 @@ test("maps SDK compact_boundary system messages", () => {
     payload: {
       type: "system",
       subtype: "compact_boundary",
+      session_id: "session_1",
       compact_metadata: {
         trigger: "auto",
         pre_tokens: 180_000,

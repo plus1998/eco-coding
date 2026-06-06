@@ -27,12 +27,72 @@ export function buildAssistantUsageRequestKey(messageId: string): string {
   return `sdk-assistant:${messageId}`;
 }
 
+export interface UsageBillingObservation {
+  source: BillingUsageSource;
+  role: AgentRole;
+  usage: ParsedUsage;
+  agentId?: string;
+  requestKey?: string;
+  modelId?: string;
+}
+
 export function shouldBillAssistantSubagentUsage(input: {
   role: AgentRole;
   messageId: string | undefined;
-  otelTokenBilled: boolean | undefined;
-}): input is { role: SubagentBillingRole; messageId: string; otelTokenBilled: false | undefined } {
-  return Boolean(input.messageId) && isSubagentBillingRole(input.role) && input.otelTokenBilled !== true;
+  agentId?: string;
+  usage?: ParsedUsage;
+  modelId?: string;
+  observedAuthoritativeUsage?: readonly UsageBillingObservation[];
+}): input is { role: SubagentBillingRole; messageId: string } {
+  if (!input.messageId || !isSubagentBillingRole(input.role)) {
+    return false;
+  }
+  return !hasMatchingAuthoritativeUsage(input);
+}
+
+export function hasMatchingAuthoritativeUsage(input: {
+  role: AgentRole;
+  agentId?: string;
+  usage?: ParsedUsage;
+  modelId?: string;
+  observedAuthoritativeUsage?: readonly UsageBillingObservation[];
+}): boolean {
+  return (input.observedAuthoritativeUsage ?? []).some((observation) =>
+    matchesUsageObservation(observation, input),
+  );
+}
+
+function matchesUsageObservation(
+  observation: UsageBillingObservation,
+  input: {
+    role: AgentRole;
+    agentId?: string;
+    usage?: ParsedUsage;
+    modelId?: string;
+  },
+): boolean {
+  if (observation.role !== input.role) {
+    return false;
+  }
+  if (input.agentId && observation.agentId !== input.agentId) {
+    return false;
+  }
+  if (input.modelId && observation.modelId && observation.modelId !== input.modelId) {
+    return false;
+  }
+  if (input.usage && !sameUsageTotals(observation.usage, input.usage)) {
+    return false;
+  }
+  return true;
+}
+
+function sameUsageTotals(left: ParsedUsage, right: ParsedUsage): boolean {
+  return (
+    left.inputTokens === right.inputTokens &&
+    left.outputTokens === right.outputTokens &&
+    left.cacheReadTokens === right.cacheReadTokens &&
+    left.cacheCreationTokens === right.cacheCreationTokens
+  );
 }
 
 export function nextOtelRequestDedupId(currentSeq: number | undefined): {
