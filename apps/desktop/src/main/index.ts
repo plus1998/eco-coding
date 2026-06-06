@@ -28,12 +28,7 @@ import {
   type SessionStore,
 } from "@eco/persistence";
 import type { ResolvedModelRoute } from "@eco/model-router";
-import {
-  createSessionPlan,
-  GitWorktreeService,
-  type CommandRunner,
-  type WorktreePlan,
-} from "@eco/workspace";
+import { createSessionPlan, GitWorktreeService, type CommandRunner, type WorktreePlan } from "@eco/workspace";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, type NativeImage } from "electron";
 import {
   AGENT_ROLES,
@@ -73,7 +68,6 @@ import {
   type ThreadStartRequest,
   type ThreadStatus,
   type PromptImageAttachment,
-  type ThinkingEffort,
   type ThreadSummary,
   type ThreadUsageSnapshot,
   type ThreadUsageSnapshotResult,
@@ -91,11 +85,7 @@ import {
   formatWorktreeMergeThreadMessage,
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
-import { resolveUpstreamApiCompat } from "../shared/api-compat";
-import {
-  extractCoderTasksFromActivity,
-  mergeCoderTodoItems,
-} from "./coder-tasks";
+import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-tasks";
 import { createSdkTaskTracker } from "./sdk-task-tracker";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
@@ -124,10 +114,7 @@ import {
   threadEnteredExecutionPhase,
   type ThreadContinueAction,
 } from "../shared/thread-continuation";
-import {
-  computeRouteFingerprint,
-  routesMatchFingerprint,
-} from "../shared/route-fingerprint";
+import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
   pendingThreadTitle,
   shouldReplaceAutoThreadTitle,
@@ -137,10 +124,8 @@ import {
 import { createConversationStore, type ConversationStore } from "./conversation-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
-  createModelAlias,
   estimateInputTokensFromAnthropicBody,
   startAnthropicModelProxy,
-  type AnthropicProxyResolvedRoute,
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
@@ -150,33 +135,32 @@ import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
   resolveRuntimeRoutesFromSettings,
+  type RuntimeRoute,
 } from "./billing-resolver";
+import {
+  buildDriverRoutes,
+  buildDriverRoutesFromRuntime,
+  resolveThreadRuntimeConfig,
+  roleRoutesFromRuntime,
+  type RuntimeConfig,
+  type RuntimeConfigResolution,
+} from "./thread-runtime-routes";
+import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
 import {
   createBillingRuntimeEnvironment,
   resolveBillingRuntimeContext,
   type BillingRuntimeEnvironment,
 } from "./billing-runtime-environment";
-import {
-  isSubagentBillingRole,
-  type UsageBillingObservation,
-} from "./billing-orchestration";
-import {
-  ActiveRunRuntimeStateStore,
-  type ActiveRunRuntimeStateInput,
-} from "./active-run-runtime-state";
+import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
+import { ActiveRunRuntimeStateStore, type ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
-import {
-  createContextLifecycleService,
-  type ContextLifecycleService,
-} from "./context-lifecycle-service";
-import {
-  ThreadUsageAccumulator,
-} from "./thread-usage-accumulator";
+import { createContextLifecycleService, type ContextLifecycleService } from "./context-lifecycle-service";
+import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
@@ -189,9 +173,7 @@ import {
   resolveSingleUsageBillingOrchestration,
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
-import {
-  type UsageBillingPricingRoute,
-} from "./usage-billing-artifacts";
+import { type UsageBillingPricingRoute } from "./usage-billing-artifacts";
 import {
   applySdkRunBillingEffects,
   applySdkStreamPartialBillingEffects,
@@ -199,23 +181,14 @@ import {
   type UsageBillingUpdatedEvent,
 } from "./usage-billing-effects";
 import { createUsageContextService } from "./usage-context-effects";
-import {
-  createCompactionAuditService,
-  type CompactionAuditService,
-} from "./compaction-audit-service";
+import { createCompactionAuditService, type CompactionAuditService } from "./compaction-audit-service";
 import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
-import {
-  createSubagentSessionHooks,
-  type PendingSubagentLaunch,
-} from "./subagent-session-hooks.js";
+import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
-import {
-  resolveSdkEventUsageBilling,
-  type SdkUsageBillingBundle,
-} from "./sdk-event-usage-billing";
+import { resolveSdkEventUsageBilling, type SdkUsageBillingBundle } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import {
   resolveSdkStreamPartialBillingOrchestration,
@@ -257,7 +230,7 @@ import {
   resolveUpstreamUserAgentOverride,
   type ProxyBridgeSettingsStore,
 } from "./proxy-bridge-settings-store";
-import { createProviderStore, type ProviderConfigSecret, type ProviderStore } from "./provider-store";
+import { createProviderStore, type ProviderStore } from "./provider-store";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
 import {
@@ -457,7 +430,9 @@ app.whenReady().then(async () => {
     process.stderr.write(
       `[eco] SessionStore init failed (${errorMessage(error)}), using local SQLite fallback\n`,
     );
-    sdkSessionStore = await createSqliteSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
+    sdkSessionStore = await createSqliteSessionStore(
+      path.join(app.getPath("userData"), "eco-sessions.sqlite"),
+    );
   }
   await localOtelReceiver.start({
     onActivity: emitOtelActivity,
@@ -529,10 +504,7 @@ function roleRoutesForThreadConfig(
   return routes;
 }
 
-function resolveRoleRoutesForThread(
-  threadId: string,
-  routeProfileIdOverride?: string,
-): RoleRouteConfig[] {
+function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RoleRouteConfig[] {
   const settings = providerStore.getSettings();
   if (routeProfileIdOverride) {
     const routes = getRoutesForProfile(settings, routeProfileIdOverride);
@@ -611,7 +583,9 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.workspacePrepareGit, async (_event, payload: unknown) => {
     const workspacePath =
-      payload && typeof payload === "object" && typeof (payload as { workspacePath?: unknown }).workspacePath === "string"
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as { workspacePath?: unknown }).workspacePath === "string"
         ? (payload as { workspacePath: string }).workspacePath.trim()
         : "";
     if (!workspacePath) {
@@ -647,7 +621,10 @@ function registerIpcHandlers(): void {
     const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
     roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig);
     conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-    noteSdkSessionRouteChange(threadId, roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig));
+    noteSdkSessionRouteChange(
+      threadId,
+      roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig),
+    );
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
@@ -669,9 +646,7 @@ function registerIpcHandlers(): void {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
-    return buildSubagentMetricsSummaries(
-      usageLedgerCoordinator.listSubagentBillingEntries(threadId),
-    );
+    return buildSubagentMetricsSummaries(usageLedgerCoordinator.listSubagentBillingEntries(threadId));
   });
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
@@ -769,9 +744,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.billingRoutePricing,
-    async (_event, routesOverride?: RoleRouteConfig[]) => {
+  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async (_event, routesOverride?: RoleRouteConfig[]) => {
     await pricingCatalogReady;
     return lookupRoutePricingHints(
       pricingCache,
@@ -779,20 +752,19 @@ function registerIpcHandlers(): void {
       providerStore.listProvidersWithSecrets(),
       routesOverride,
     );
-  },
-  );
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.billingRouteCapabilities,
     async (_event, routesOverride?: RoleRouteConfig[]) => {
-    await pricingCatalogReady;
-    return lookupRouteCapabilityHints(
-      pricingCache,
-      providerStore.getSettings(),
-      providerStore.listProvidersWithSecrets(),
-      routesOverride,
-    );
-  },
+      await pricingCatalogReady;
+      return lookupRouteCapabilityHints(
+        pricingCache,
+        providerStore.getSettings(),
+        providerStore.listProvidersWithSecrets(),
+        routesOverride,
+      );
+    },
   );
 
   ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
@@ -925,7 +897,7 @@ function registerIpcHandlers(): void {
     const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
     const settings = providerStore.getSettings();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
-    const runtimeConfig = resolveRuntimeConfig(
+    const runtimeConfig = resolveThreadRuntimeConfig(
       settings,
       providerStore.listProvidersWithSecrets(),
       roleRoutes,
@@ -956,11 +928,38 @@ function registerIpcHandlers(): void {
     if (runtimeConfig.ok) {
       const attachments = payload.attachments;
       if (intent === "question") {
-        void runQuestionThread(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
+        void runQuestionThread(
+          thread,
+          workspace,
+          runtimeConfig,
+          prompt,
+          undefined,
+          undefined,
+          attachments,
+          roleRoutes,
+        );
       } else if (threadRuntime.orchestrationMode === "manual") {
-        void runCodingThreadPlanning(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
+        void runCodingThreadPlanning(
+          thread,
+          workspace,
+          runtimeConfig,
+          prompt,
+          undefined,
+          undefined,
+          attachments,
+          roleRoutes,
+        );
       } else {
-        void runCodingThreadAutonomous(thread, workspace, runtimeConfig, prompt, undefined, undefined, attachments, roleRoutes);
+        void runCodingThreadAutonomous(
+          thread,
+          workspace,
+          runtimeConfig,
+          prompt,
+          undefined,
+          undefined,
+          attachments,
+          roleRoutes,
+        );
       }
     }
 
@@ -1060,7 +1059,7 @@ function registerIpcHandlers(): void {
     }
 
     const roleRoutes = resolveRoleRoutesForThread(threadId);
-    const runtimeConfig = resolveRuntimeConfig(
+    const runtimeConfig = resolveThreadRuntimeConfig(
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
       roleRoutes,
@@ -1116,7 +1115,7 @@ function registerIpcHandlers(): void {
     const roleRoutes = resolveRoleRoutesForThread(payload.threadId);
     noteSdkSessionRouteChange(payload.threadId, roleRoutes);
 
-    const runtimeConfig = resolveRuntimeConfig(
+    const runtimeConfig = resolveThreadRuntimeConfig(
       settings,
       providerStore.listProvidersWithSecrets(),
       roleRoutes,
@@ -1358,8 +1357,7 @@ function scheduleThreadTitleSummary(
     });
 }
 
-const THREAD_INTERRUPTED_CONTINUE_HINT =
-  "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+const THREAD_INTERRUPTED_CONTINUE_HINT = "可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
 
 function markThreadInterrupted(threadId: string, reason: string): void {
   const summary = formatUserFacingRequestError(reason);
@@ -1377,12 +1375,7 @@ function clearSdkSessionAfterResumeFailure(threadId: string, hadResume: boolean)
     return;
   }
   conversationStore.clearSdkSession(threadId);
-  emitThreadEvent(
-    threadId,
-    "thread.session_cleared",
-    "原 session 无法接续，已改用对话摘要续聊。",
-    "system",
-  );
+  emitThreadEvent(threadId, "thread.session_cleared", "原 session 无法接续，已改用对话摘要续聊。", "system");
 }
 
 function threadHasResumableCheckpoint(
@@ -1431,9 +1424,7 @@ function isRequestAttemptAborted(result: RequestAttemptResult): boolean {
   return !result.ok && result.aborted === true;
 }
 
-function runAttemptPhaseFromThreadMode(
-  mode: "planning" | "execution" | "question",
-): RunAttemptPhase {
+function runAttemptPhaseFromThreadMode(mode: "planning" | "execution" | "question"): RunAttemptPhase {
   return mode;
 }
 
@@ -1453,67 +1444,74 @@ async function runQuestionThread(
   resetSubagentContextWindows(thread.id);
 
   try {
-    const outcome = await runThreadRequestWithAutoRetry(thread.id, "question", controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
-      process.stderr.write(
-        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-      );
-      updateThread(thread.id, {
-        status: "running",
-        message: `Local model router ready: ${attemptProxy.baseUrl}`,
-      });
-      const routes = buildDriverRoutes(attemptProxy.routes);
-      const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
-      if (effectiveResume) {
-        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-      }
-      try {
-        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "question");
-        if (!driver.runQuestion) {
-          throw new Error("Runtime driver does not support question answering.");
-        }
-
-        let sdkFailure: string | undefined;
-        for await (const event of driver.runQuestion({
+    const outcome = await runThreadRequestWithAutoRetry(
+      thread.id,
+      "question",
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
-          prompt,
-          workspacePath: workspace.path,
-          worktreePath: cwd,
-          routes,
-          signal: controller.signal,
-          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-          ...(effectiveResume ? { resume: effectiveResume } : {}),
-        })) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event);
-            continue;
-          }
-          captureSdkSessionFromEvent(thread.id, event, cwd);
-          emitSdkStreamActivity(thread.id, event);
-        }
+          attachments,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          onProxyReady: ({ proxy }) => {
+            process.stderr.write(
+              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
+            );
+            updateThread(thread.id, {
+              status: "running",
+              message: `Local model router ready: ${proxy.baseUrl}`,
+            });
+          },
+          run: async ({ proxy: attemptProxy, routes }) => {
+            const effectiveResume = resume ?? resolveResumeOptions(thread.id, cwd);
+            if (effectiveResume) {
+              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+            }
+            try {
+              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "question");
+              if (!driver.runQuestion) {
+                throw new Error("Runtime driver does not support question answering.");
+              }
 
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true };
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        return { ok: false, reason: errorMessage(error) };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+              let sdkFailure: string | undefined;
+              for await (const event of driver.runQuestion({
+                threadId: thread.id,
+                prompt,
+                workspacePath: workspace.path,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                ...(effectiveResume ? { resume: effectiveResume } : {}),
+              })) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(thread.id, event);
+                  continue;
+                }
+                captureSdkSessionFromEvent(thread.id, event, cwd);
+                emitSdkStreamActivity(thread.id, event);
+              }
+
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true };
+            } catch (error) {
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              return { ok: false, reason: errorMessage(error) };
+            }
+          },
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(outcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
@@ -1548,7 +1546,6 @@ async function runQuestionThread(
   }
 }
 
-
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
   emitThreadEvent(threadId, "thread.completed", "执行完成。", "system");
@@ -1560,9 +1557,7 @@ async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreeP
       emitThreadEvent(threadId, "workspace.changes", serializeWorktreeMergeMessage(summary), "system");
     }
   } catch (error) {
-    process.stderr.write(
-      `[eco] workspace diff snapshot failed: ${errorMessage(error)}\n`,
-    );
+    process.stderr.write(`[eco] workspace diff snapshot failed: ${errorMessage(error)}\n`);
   }
 }
 
@@ -1586,11 +1581,11 @@ async function runCodingThreadAutonomous(
   let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
 
   try {
-    const { worktreePlan: resolvedPlan, cwd, isolated } = await resolveThreadWorktree(
-      workspace,
-      thread.id,
-      existingWorktreePlan,
-    );
+    const {
+      worktreePlan: resolvedPlan,
+      cwd,
+      isolated,
+    } = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
     worktreePlan = resolvedPlan;
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
     updateThread(thread.id, {
@@ -1600,101 +1595,106 @@ async function runCodingThreadAutonomous(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const runOutcome = await runThreadRequestWithAutoRetry(thread.id, "execution", controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
-      process.stderr.write(
-        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-      );
-      updateThread(thread.id, {
-        message: `Local model router ready: ${attemptProxy.baseUrl}`,
-        status: "running",
-      });
-      const routes = buildDriverRoutes(attemptProxy.routes);
-      const plannerRoute = attemptProxy.routes.find((route) => route.role === "planner");
-      process.stderr.write(
-        `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
-      );
-
-      const effectiveResume = resumeOptsForRun;
-      if (effectiveResume) {
-        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-      }
-
-      try {
-        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
-        let sdkFailure: string | undefined;
-
-        let planCaptured = false;
-        for await (const event of driver.run({
+    const runOutcome = await runThreadRequestWithAutoRetry(
+      thread.id,
+      "execution",
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
-          prompt,
-          workspacePath: workspace.path,
-          worktreePath: cwd,
-          routes,
-          signal: controller.signal,
-          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-          ...(effectiveResume ? { resume: effectiveResume } : {}),
-        })) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event);
-            continue;
-          }
-          captureSdkSessionFromEvent(thread.id, event, cwd);
-          if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-            planCaptured = true;
-            conversationStore.savePendingPlan({
-              threadId: thread.id,
-              userPrompt: event.payload.userPrompt,
-              analysis: event.payload.analysis,
-              plan: event.payload.plan,
-              workspacePath: workspace.path,
-              worktreePath: cwd,
-              routesJson: JSON.stringify(routes),
-            });
-            emitThreadEvent(
-              thread.id,
-              "thread.awaiting_plan",
-              "Agent 请求确认计划，请审批后继续。",
-              "planner",
-              false,
-              {
-                plan: {
-                  userPrompt: event.payload.userPrompt,
-                  analysis: event.payload.analysis,
-                  plan: event.payload.plan,
-                },
-              },
+          attachments,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          onProxyReady: ({ proxy, plannerRoute }) => {
+            process.stderr.write(
+              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
             );
-            scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-              plan: event.payload.plan,
-              analysis: event.payload.analysis,
+            updateThread(thread.id, {
+              message: `Local model router ready: ${proxy.baseUrl}`,
+              status: "running",
             });
-          }
-          emitSdkStreamActivity(thread.id, event);
-        }
+            process.stderr.write(
+              `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (direct / claude_code preset)\n`,
+            );
+          },
+          run: async ({ proxy: attemptProxy, routes }) => {
+            const effectiveResume = resumeOptsForRun;
+            if (effectiveResume) {
+              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+            }
 
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true, planCaptured };
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        return { ok: false, reason: errorMessage(error) };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+            try {
+              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
+              let sdkFailure: string | undefined;
+
+              let planCaptured = false;
+              for await (const event of driver.run({
+                threadId: thread.id,
+                prompt,
+                workspacePath: workspace.path,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                ...(effectiveResume ? { resume: effectiveResume } : {}),
+              })) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(thread.id, event);
+                  continue;
+                }
+                captureSdkSessionFromEvent(thread.id, event, cwd);
+                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                  planCaptured = true;
+                  conversationStore.savePendingPlan({
+                    threadId: thread.id,
+                    userPrompt: event.payload.userPrompt,
+                    analysis: event.payload.analysis,
+                    plan: event.payload.plan,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routesJson: JSON.stringify(routes),
+                  });
+                  emitThreadEvent(
+                    thread.id,
+                    "thread.awaiting_plan",
+                    "Agent 请求确认计划，请审批后继续。",
+                    "planner",
+                    false,
+                    {
+                      plan: {
+                        userPrompt: event.payload.userPrompt,
+                        analysis: event.payload.analysis,
+                        plan: event.payload.plan,
+                      },
+                    },
+                  );
+                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                    plan: event.payload.plan,
+                    analysis: event.payload.analysis,
+                  });
+                }
+                emitSdkStreamActivity(thread.id, event);
+              }
+
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true, planCaptured };
+            } catch (error) {
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              return { ok: false, reason: errorMessage(error) };
+            }
+          },
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(runOutcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
@@ -1772,103 +1772,108 @@ async function runCodingThreadPlanning(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const planningOutcome = await runThreadRequestWithAutoRetry(thread.id, "planning", controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
-      process.stderr.write(
-        `[eco] 模型代理: ${attemptProxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
-      );
-      updateThread(thread.id, {
-        message: `Local model router ready: ${attemptProxy.baseUrl}`,
-        status: "running",
-      });
-      const routes = buildDriverRoutes(attemptProxy.routes);
-      const plannerRoute = attemptProxy.routes.find((route) => route.role === "planner");
-      process.stderr.write(
-        `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${attemptProxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
-      );
-
-      const effectiveResume = resumeOptsForRun;
-      if (effectiveResume) {
-        await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-      }
-
-      try {
-        const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
-
-        let sdkFailure: string | undefined;
-        let captured = false;
-
-        for await (const event of driver.run({
+    const planningOutcome = await runThreadRequestWithAutoRetry(
+      thread.id,
+      "planning",
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
-          prompt,
-          workspacePath: workspace.path,
-          worktreePath: cwd,
-          routes,
-          signal: controller.signal,
-          sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-          ...(effectiveResume ? { resume: effectiveResume } : {}),
-        })) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event);
-            continue;
-          }
-          captureSdkSessionFromEvent(thread.id, event, cwd);
-          if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-            captured = true;
-            conversationStore.savePendingPlan({
-              threadId: thread.id,
-              userPrompt: event.payload.userPrompt,
-              analysis: event.payload.analysis,
-              plan: event.payload.plan,
-              workspacePath: workspace.path,
-              worktreePath: cwd,
-              routesJson: JSON.stringify(routes),
-            });
-            emitThreadEvent(
-              thread.id,
-              "thread.awaiting_plan",
-              "计划已生成，请确认是否执行。",
-              "planner",
-              false,
-              {
-                plan: {
-                  userPrompt: event.payload.userPrompt,
-                  analysis: event.payload.analysis,
-                  plan: event.payload.plan,
-                },
-              },
+          attachments,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          onProxyReady: ({ proxy, plannerRoute }) => {
+            process.stderr.write(
+              `[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`,
             );
-            scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-              plan: event.payload.plan,
-              analysis: event.payload.analysis,
+            updateThread(thread.id, {
+              message: `Local model router ready: ${proxy.baseUrl}`,
+              status: "running",
             });
-          }
+            process.stderr.write(
+              `[eco] SDK model=${plannerRoute?.modelId ?? "?"} (proxy ${proxy.baseUrl}, alias ${plannerRoute?.aliasModelId ?? "?"})\n`,
+            );
+          },
+          run: async ({ proxy: attemptProxy, routes }) => {
+            const effectiveResume = resumeOptsForRun;
+            if (effectiveResume) {
+              await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
+            }
 
-          emitSdkStreamActivity(thread.id, event);
-        }
+            try {
+              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
 
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true };
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        return { ok: false, reason: errorMessage(error) };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+              let sdkFailure: string | undefined;
+              let captured = false;
+
+              for await (const event of driver.run({
+                threadId: thread.id,
+                prompt,
+                workspacePath: workspace.path,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                ...(effectiveResume ? { resume: effectiveResume } : {}),
+              })) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(thread.id, event);
+                  continue;
+                }
+                captureSdkSessionFromEvent(thread.id, event, cwd);
+                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                  captured = true;
+                  conversationStore.savePendingPlan({
+                    threadId: thread.id,
+                    userPrompt: event.payload.userPrompt,
+                    analysis: event.payload.analysis,
+                    plan: event.payload.plan,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routesJson: JSON.stringify(routes),
+                  });
+                  emitThreadEvent(
+                    thread.id,
+                    "thread.awaiting_plan",
+                    "计划已生成，请确认是否执行。",
+                    "planner",
+                    false,
+                    {
+                      plan: {
+                        userPrompt: event.payload.userPrompt,
+                        analysis: event.payload.analysis,
+                        plan: event.payload.plan,
+                      },
+                    },
+                  );
+                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                    plan: event.payload.plan,
+                    analysis: event.payload.analysis,
+                  });
+                }
+
+                emitSdkStreamActivity(thread.id, event);
+              }
+
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true };
+            } catch (error) {
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              return { ok: false, reason: errorMessage(error) };
+            }
+          },
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(planningOutcome)) {
       cancelClarificationsForThread(thread.id, "cancelled by user");
@@ -1942,69 +1947,69 @@ async function runCodingThreadAutonomousAfterApproval(
   const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
   worktreePlan = resolved.worktreePlan;
   const cwd = resolved.cwd;
-    activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
+  activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
   try {
     await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
   } catch (error) {
-    process.stderr.write(
-      `[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`,
-    );
+    process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
   }
 
   try {
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，继续同会话执行。", "system");
 
-    const outcome = await runThreadRequestWithAutoRetry(threadId, "execution", controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(options?.routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(threadId, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, undefined, threadId);
-      const routes = buildDriverRoutes(attemptProxy.routes);
-      const resume = resolveResumeOptions(threadId, cwd);
-      if (!resume) {
-        return { ok: false, reason: "无法恢复 SDK 会话以继续执行。" };
-      }
-      await ensureContextHeadroom(threadId, cwd, controller.signal, { ignoreRunningGuard: true });
-      try {
-        const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
-        let sdkFailure: string | undefined;
-        for await (const event of driver.runContinuation(
-          {
-            threadId,
-            prompt: pending.userPrompt,
-            workspacePath: pending.workspacePath,
-            worktreePath: cwd,
-            routes,
-            signal: controller.signal,
-            sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
-            resume,
+    const outcome = await runThreadRequestWithAutoRetry(
+      threadId,
+      "execution",
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
+          threadId,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(options?.routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          run: async ({ proxy: attemptProxy, routes }) => {
+            const resume = resolveResumeOptions(threadId, cwd);
+            if (!resume) {
+              return { ok: false, reason: "无法恢复 SDK 会话以继续执行。" };
+            }
+            await ensureContextHeadroom(threadId, cwd, controller.signal, { ignoreRunningGuard: true });
+            const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
+            let sdkFailure: string | undefined;
+            for await (const event of driver.runContinuation(
+              {
+                threadId,
+                prompt: pending.userPrompt,
+                workspacePath: pending.workspacePath,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+                sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
+                resume,
+              },
+              "execution",
+              planning,
+            )) {
+              if (event.type === "usage.recorded") {
+                sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                onSdkUsageRecordedEvent(threadId, event);
+                continue;
+              }
+              captureSdkSessionFromEvent(threadId, event, cwd);
+              emitSdkStreamActivity(threadId, event);
+            }
+            if (controller.signal.aborted) {
+              return { ok: false, reason: "cancelled by user", aborted: true };
+            }
+            if (sdkFailure) {
+              return { ok: false, reason: sdkFailure };
+            }
+            return { ok: true };
           },
-          "execution",
-          planning,
-        )) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(threadId, event);
-            continue;
-          }
-          captureSdkSessionFromEvent(threadId, event, cwd);
-          emitSdkStreamActivity(threadId, event);
-        }
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(outcome)) {
       cancelClarificationsForThread(threadId, "cancelled by user");
@@ -2064,23 +2069,25 @@ async function runCodingThreadExecution(
   const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
   worktreePlan = resolved.worktreePlan;
   const executionCwd = resolved.cwd;
-    activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
+  activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
   try {
     await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
   } catch (error) {
-    process.stderr.write(
-      `[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`,
-    );
+    process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
   }
 
   const stopStatusRef = { current: "completed" as "completed" | "blocked" | "cancelled" };
   let stopTodosHandled = false;
 
-  const todoTracker = createSdkTaskTracker(threadId, {
-    listTodos: () => conversationStore.listCoderTodos(threadId),
-    replaceTodos: (todos) => conversationStore.replaceCoderTodos(threadId, todos),
-  }, emitTodoList);
+  const todoTracker = createSdkTaskTracker(
+    threadId,
+    {
+      listTodos: () => conversationStore.listCoderTodos(threadId),
+      replaceTodos: (todos) => conversationStore.replaceCoderTodos(threadId, todos),
+    },
+    emitTodoList,
+  );
   const taskHookHandlers = todoTracker.createHookHandlers(() => stopStatusRef.current);
   const executionPlan = {
     ...pending,
@@ -2091,105 +2098,102 @@ async function runCodingThreadExecution(
     conversationStore.clearPendingPlan(threadId);
     emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
 
-    const executionOutcome = await runThreadRequestWithAutoRetry(threadId, "execution", controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(options?.routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(threadId, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(
-        freshConfig.routes,
-        options?.attachments,
-        threadId,
-      );
-      const attemptRoutes = buildDriverRoutes(attemptProxy.routes);
-      executionPlan.routesJson = JSON.stringify(attemptRoutes);
-      try {
-        const driver = createSdkDriver(
+    const executionOutcome = await runThreadRequestWithAutoRetry(
+      threadId,
+      "execution",
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
           threadId,
-          attemptProxy,
-          {
-            peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
-            taskTracker: {
-              ...taskHookHandlers,
-              onStop(status) {
-                stopTodosHandled = true;
-                taskHookHandlers.onStop(status);
-              },
-            },
-            getStopTodoStatus: () => stopStatusRef.current,
+          attachments: options?.attachments,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(options?.routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          run: async ({ proxy: attemptProxy, routes: attemptRoutes }) => {
+            executionPlan.routesJson = JSON.stringify(attemptRoutes);
+            try {
+              const driver = createSdkDriver(
+                threadId,
+                attemptProxy,
+                {
+                  peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
+                  taskTracker: {
+                    ...taskHookHandlers,
+                    onStop(status) {
+                      stopTodosHandled = true;
+                      taskHookHandlers.onStop(status);
+                    },
+                  },
+                  getStopTodoStatus: () => stopStatusRef.current,
+                },
+                "execution",
+              );
+
+              if (!driver.runExecution) {
+                throw new Error("Runtime driver does not support execution phase.");
+              }
+
+              let sdkFailure: string | undefined;
+              const resume = resolveResumeOptions(threadId, executionCwd);
+              if (resume) {
+                await ensureContextHeadroom(threadId, executionCwd, controller.signal, {
+                  ignoreRunningGuard: true,
+                });
+              }
+              const followUp = options?.followUp?.trim();
+              const runPrompt = followUp || pending.userPrompt;
+              let executionPromptOverride: string | undefined;
+              if (!resume && followUp && followUp !== pending.userPrompt.trim()) {
+                const activityLines = conversationStore.listActivityLines(threadId);
+                executionPromptOverride = buildAgentPromptWithContext(thread.prompt, followUp, activityLines);
+              }
+              for await (const event of driver.runExecution(
+                {
+                  threadId,
+                  prompt: runPrompt,
+                  workspacePath: pending.workspacePath,
+                  worktreePath: executionCwd,
+                  routes: attemptRoutes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
+                  ...(resume ? { resume } : {}),
+                  resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
+                  ...(executionPromptOverride && { executionPromptOverride }),
+                },
+                planning,
+              )) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(threadId, event);
+                  continue;
+                }
+
+                captureSdkSessionFromEvent(threadId, event, executionCwd);
+
+                if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
+                  todoTracker.handleTaskProgress(event.payload);
+                }
+
+                emitSdkStreamActivity(threadId, event);
+              }
+
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true };
+            } catch (error) {
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              return { ok: false, reason: errorMessage(error) };
+            }
           },
-          "execution",
-        );
-
-        if (!driver.runExecution) {
-          throw new Error("Runtime driver does not support execution phase.");
-        }
-
-        let sdkFailure: string | undefined;
-        const resume = resolveResumeOptions(threadId, executionCwd);
-        if (resume) {
-          await ensureContextHeadroom(threadId, executionCwd, controller.signal, {
-            ignoreRunningGuard: true,
-          });
-        }
-        const followUp = options?.followUp?.trim();
-        const runPrompt = followUp || pending.userPrompt;
-        let executionPromptOverride: string | undefined;
-        if (!resume && followUp && followUp !== pending.userPrompt.trim()) {
-          const activityLines = conversationStore.listActivityLines(threadId);
-          executionPromptOverride = buildAgentPromptWithContext(
-            thread.prompt,
-            followUp,
-            activityLines,
-          );
-        }
-        for await (const event of driver.runExecution(
-          {
-            threadId,
-            prompt: runPrompt,
-            workspacePath: pending.workspacePath,
-            worktreePath: executionCwd,
-            routes: attemptRoutes,
-            signal: controller.signal,
-            sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
-            ...(resume ? { resume } : {}),
-            resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
-            ...(executionPromptOverride && { executionPromptOverride }),
-          },
-          planning,
-        )) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(threadId, event);
-            continue;
-          }
-
-          captureSdkSessionFromEvent(threadId, event, executionCwd);
-
-          if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
-            todoTracker.handleTaskProgress(event.payload);
-          }
-
-          emitSdkStreamActivity(threadId, event);
-        }
-
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true };
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        return { ok: false, reason: errorMessage(error) };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(executionOutcome)) {
       stopStatusRef.current = "cancelled";
@@ -2254,19 +2258,7 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
   throw new Error("Thread id is required.");
 }
 
-function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig[] {
-  return routes.map((route) => ({
-    role: route.role,
-    providerId: route.provider.id,
-    modelId: route.modelId,
-    apiCompat: route.apiCompat,
-  }));
-}
-
-function noteSdkSessionRouteChange(
-  threadId: string,
-  roleRoutes: readonly RoleRouteConfig[],
-): void {
+function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RoleRouteConfig[]): void {
   const stored = conversationStore.getRouteFingerprint(threadId);
   if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
     emitThreadEvent(
@@ -2279,16 +2271,11 @@ function noteSdkSessionRouteChange(
 }
 
 function recordThreadRouteFingerprint(threadId: string, routes: readonly RuntimeRoute[]): void {
-  conversationStore.saveRouteFingerprint(
-    threadId,
-    computeRouteFingerprint(roleRoutesFromRuntime(routes)),
-  );
+  conversationStore.saveRouteFingerprint(threadId, computeRouteFingerprint(roleRoutesFromRuntime(routes)));
 }
 
-function resolveRuntimeConfigFresh(
-  routesOverride?: readonly RoleRouteConfig[],
-): RuntimeConfigResolution {
-  return resolveRuntimeConfig(
+function resolveRuntimeConfigFresh(routesOverride?: readonly RoleRouteConfig[]): RuntimeConfigResolution {
+  return resolveThreadRuntimeConfig(
     providerStore.getSettings(),
     providerStore.listProvidersWithSecrets(),
     routesOverride,
@@ -2325,8 +2312,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   }
 
   const retryLabel = request.routeProfileId
-    ? settings.routeProfiles.find((profile) => profile.id === request.routeProfileId)?.name ??
-      "备用路由"
+    ? (settings.routeProfiles.find((profile) => profile.id === request.routeProfileId)?.name ?? "备用路由")
     : undefined;
 
   if (thread.status === "awaiting_plan" && pending) {
@@ -2337,11 +2323,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
       retryLabel ? `正在使用「${retryLabel}」重试执行计划…` : "正在重试执行计划…",
       "system",
     );
-    void runCodingThreadExecution(
-      threadId,
-      runtimeConfig,
-      routesOverride ? { routesOverride } : undefined,
-    );
+    void runCodingThreadExecution(threadId, runtimeConfig, routesOverride ? { routesOverride } : undefined);
     return { thread: conversationStore.getThread(threadId) ?? thread };
   }
 
@@ -2479,8 +2461,7 @@ async function restoreAfterExecutionFailure(
   }
 
   const formattedReason = formatUserFacingRequestError(reason);
-  const summary =
-    formattedReason.length > 240 ? `${formattedReason.slice(0, 237)}…` : formattedReason;
+  const summary = formattedReason.length > 240 ? `${formattedReason.slice(0, 237)}…` : formattedReason;
   const failureMessage = buildPlanExecutionFailureMessage(summary);
   updateThread(threadId, {
     status: "awaiting_plan",
@@ -2556,8 +2537,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
   }
   const record = payload as ThreadRewindCheckpointRequest;
   const threadId = typeof record.threadId === "string" ? record.threadId.trim() : "";
-  const userMessageId =
-    typeof record.userMessageId === "string" ? record.userMessageId.trim() : "";
+  const userMessageId = typeof record.userMessageId === "string" ? record.userMessageId.trim() : "";
   if (!threadId || !userMessageId) {
     throw new Error("threadId and userMessageId are required.");
   }
@@ -2594,7 +2574,12 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
       await proxy.close();
     }
   });
-  emitThreadEvent(threadId, "thread.files_rewound", `已回滚文件到检查点 ${userMessageId.slice(0, 8)}…`, "system");
+  emitThreadEvent(
+    threadId,
+    "thread.files_rewound",
+    `已回滚文件到检查点 ${userMessageId.slice(0, 8)}…`,
+    "system",
+  );
   return { ok: true, message: "文件已回滚到所选检查点。" };
 }
 
@@ -2762,32 +2747,13 @@ async function cleanupWorktreeForThread(threadId: string): Promise<void> {
 function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
   return {
     updateThread: (threadId, patch) => updateThread(threadId, patch),
-    emitThreadEvent: (threadId, type, message, role) =>
-      emitThreadEvent(threadId, type, message, role),
+    emitThreadEvent: (threadId, type, message, role) => emitThreadEvent(threadId, type, message, role),
   };
 }
 
 async function handleRunCancelled(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   const explicit = takePendingCancelDisposition(pendingCancelDisposition, threadId);
   await finalizeCancelledRun(threadId, worktreePlan, explicit, createFinalizeCancelledRunDeps());
-}
-
-function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): ResolvedModelRoute[] {
-  return routes.map((route) => ({
-    role: route.role,
-    primary: {
-      id: `${route.role}:${route.provider.id}`,
-      provider: "custom",
-      displayName: `${route.provider.name} / ${route.modelId}`,
-      baseUrl: route.provider.baseUrl,
-      // Role-specific alias lets the local proxy attribute shared upstream models to the right context window.
-      modelId: route.aliasModelId,
-      capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
-      enabled: route.provider.enabled,
-    },
-    fallbacks: [],
-    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-  }));
 }
 
 function parseStoredRoutes(routesJson: string): ResolvedModelRoute[] {
@@ -2844,8 +2810,7 @@ function buildSdkHookContextExtras(
         return;
       }
       const missionKey = normalizeSubagentMissionKey(input.prompt);
-      const todoId =
-        input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
+      const todoId = input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
       pendingLaunches.push({
         role: input.role,
         ...(missionKey ? { missionKey } : {}),
@@ -2867,7 +2832,7 @@ async function withThreadSdkDriver(
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): Promise<void> {
   const roleRoutes = resolveRoleRoutesForThread(threadId);
-  const runtimeConfig = resolveRuntimeConfig(
+  const runtimeConfig = resolveThreadRuntimeConfig(
     providerStore.getSettings(),
     providerStore.listProvidersWithSecrets(),
     roleRoutes,
@@ -2904,8 +2869,7 @@ function createSdkDriver(
     throw new Error("Thread was not found.");
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
-  const orchestrationMode =
-    threadConfig?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
+  const orchestrationMode = threadConfig?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
@@ -2966,7 +2930,11 @@ function captureSdkSessionFromEvent(
 ): void {
   if (event.type === "file.checkpoint") {
     const payload = event.payload;
-    if (payload && typeof payload === "object" && typeof (payload as { userMessageId?: string }).userMessageId === "string") {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as { userMessageId?: string }).userMessageId === "string"
+    ) {
       conversationStore.saveFileCheckpoint(threadId, (payload as { userMessageId: string }).userMessageId);
     }
     return;
@@ -2986,13 +2954,14 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   }
   const thread = conversationStore.getThread(threadId);
   const workspacePath = thread?.workspacePath;
-  const sessionCwd = workspacePath
-    ? normalizeSessionCwd(workspacePath, session.cwd)
-    : session.cwd.trim();
+  const sessionCwd = workspacePath ? normalizeSessionCwd(workspacePath, session.cwd) : session.cwd.trim();
   const cwd = workspacePath
     ? normalizeSessionCwd(workspacePath, worktreePath || session.cwd)
     : worktreePath.trim();
-  if (existsSync(sessionCwd) && (!cwd || sessionCwd === cwd || path.resolve(sessionCwd) === path.resolve(cwd))) {
+  if (
+    existsSync(sessionCwd) &&
+    (!cwd || sessionCwd === cwd || path.resolve(sessionCwd) === path.resolve(cwd))
+  ) {
     return { resumeSessionId: session.sessionId };
   }
   return undefined;
@@ -3075,12 +3044,7 @@ async function dispatchThreadContinueAction(input: {
 
   if (action.kind === "resume_execution") {
     const worktreePath = existingWorktreePlan?.worktreePath ?? cwd;
-    const ok = await ensurePendingPlanForExecution(
-      threadId,
-      workspace.path,
-      worktreePath,
-      "[]",
-    );
+    const ok = await ensurePendingPlanForExecution(threadId, workspace.path, worktreePath, "[]");
     if (!ok) {
       markThreadInterrupted(threadId, "找不到可恢复的执行计划，请重新描述需求。");
       return;
@@ -3203,50 +3167,53 @@ async function runThreadContinuation(
         markThreadInterrupted(thread.id, "无法恢复 SDK 会话，请重新发送完整需求。");
         return;
       }
-      const outcome = await runThreadRequestWithAutoRetry(thread.id, runAttemptPhaseFromThreadMode(mode), controller.signal, async () => {
-        const freshConfig = resolveRuntimeConfigFresh(routesOverride);
-        if (!freshConfig.ok) {
-          return { ok: false, reason: freshConfig.reason };
-        }
-        recordThreadRouteFingerprint(thread.id, freshConfig.routes);
-        const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
-        const routes = buildDriverRoutes(attemptProxy.routes);
-        try {
-          const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
-          let sdkFailure: string | undefined;
-          for await (const event of driver.runContinuation(
-            {
-              threadId: thread.id,
-              prompt: followUp,
-              workspacePath: workspace.path,
-              worktreePath: cwd,
-              routes,
-              signal: controller.signal,
-              sdkSession: await buildSdkSessionOptions(thread.id, followUp),
-              resume: resumeOpts,
+      const outcome = await runThreadRequestWithAutoRetry(
+        thread.id,
+        runAttemptPhaseFromThreadMode(mode),
+        controller.signal,
+        async () => {
+          return runThreadRequestWithRuntimeProxy({
+            threadId: thread.id,
+            attachments,
+            resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+            recordRouteFingerprint: recordThreadRouteFingerprint,
+            startRuntimeProxy,
+            run: async ({ proxy: attemptProxy, routes }) => {
+              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
+              let sdkFailure: string | undefined;
+              for await (const event of driver.runContinuation(
+                {
+                  threadId: thread.id,
+                  prompt: followUp,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                  resume: resumeOpts,
+                },
+                mode,
+                planningContext,
+              )) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(thread.id, event);
+                  continue;
+                }
+                captureSdkSessionFromEvent(thread.id, event, cwd);
+                emitSdkStreamActivity(thread.id, event);
+              }
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true };
             },
-            mode,
-            planningContext,
-          )) {
-            if (event.type === "usage.recorded") {
-              sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-              onSdkUsageRecordedEvent(thread.id, event);
-              continue;
-            }
-            captureSdkSessionFromEvent(thread.id, event, cwd);
-            emitSdkStreamActivity(thread.id, event);
-          }
-          if (controller.signal.aborted) {
-            return { ok: false, reason: "cancelled by user", aborted: true };
-          }
-          if (sdkFailure) {
-            return { ok: false, reason: sdkFailure };
-          }
-          return { ok: true };
-        } finally {
-          await attemptProxy.close();
-        }
-      });
+          });
+        },
+      );
       if (isRequestAttemptAborted(outcome)) {
         await handleRunCancelled(thread.id, worktreePlan);
         return;
@@ -3298,131 +3265,133 @@ async function runThreadContinuation(
 
     const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
 
-    const outcome = await runThreadRequestWithAutoRetry(thread.id, runAttemptPhaseFromThreadMode(mode), controller.signal, async () => {
-      const freshConfig = resolveRuntimeConfigFresh(routesOverride);
-      if (!freshConfig.ok) {
-        return { ok: false, reason: freshConfig.reason };
-      }
-      recordThreadRouteFingerprint(thread.id, freshConfig.routes);
-      const attemptProxy = await startRuntimeProxy(freshConfig.routes, attachments, thread.id);
-      const routes = buildDriverRoutes(attemptProxy.routes);
-      const resume = resumeOptsForContinuation;
-      if (!resume) {
-        return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
-      }
-
-      await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
-
-      try {
-        const continuationPhase: SubagentRunPhase =
-          mode === "question" ? "question" : mode === "planning" ? "planning" : "execution";
-        const driver = createSdkDriver(
-          thread.id,
-          attemptProxy,
-          {
-            ...(taskHookHandlers
-              ? {
-                  peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
-                  taskTracker: {
-                    ...taskHookHandlers,
-                    onStop(status) {
-                      stopTodosHandled = true;
-                      taskHookHandlers.onStop(status);
-                    },
-                  },
-                  getStopTodoStatus: () => stopStatusRef.current,
-                }
-              : {}),
-          },
-          continuationPhase,
-        );
-        if (!driver.runQuestion && mode === "question") {
-          throw new Error("Runtime driver does not support question answering.");
-        }
-        if (!driver.runContinuation) {
-          throw new Error("Runtime driver does not support session continuation.");
-        }
-
-        let sdkFailure: string | undefined;
-        const runInput = {
+    const outcome = await runThreadRequestWithAutoRetry(
+      thread.id,
+      runAttemptPhaseFromThreadMode(mode),
+      controller.signal,
+      async () => {
+        return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
-          prompt: followUp,
-          workspacePath: workspace.path,
-          worktreePath: cwd,
-          routes,
-          signal: controller.signal,
-          sdkSession: await buildSdkSessionOptions(thread.id, followUp),
-          resume,
-          resumableSubagents: listResumableSubagentRefs(
-            thread.id,
-            continuationPhase,
-          ),
-        };
+          attachments,
+          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          recordRouteFingerprint: recordThreadRouteFingerprint,
+          startRuntimeProxy,
+          run: async ({ proxy: attemptProxy, routes }) => {
+            const resume = resumeOptsForContinuation;
+            if (!resume) {
+              return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
+            }
 
-        const eventStream =
-          mode === "question"
-            ? driver.runQuestion!(runInput)
-            : driver.runContinuation!(runInput, mode, planningContext);
+            await ensureContextHeadroom(thread.id, cwd, controller.signal, { ignoreRunningGuard: true });
 
-        for await (const event of eventStream) {
-          if (event.type === "usage.recorded") {
-            sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-            onSdkUsageRecordedEvent(thread.id, event);
-            continue;
-          }
-          captureSdkSessionFromEvent(thread.id, event, cwd);
-          if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-            planningPlanCaptured = true;
-            conversationStore.savePendingPlan({
-              threadId: thread.id,
-              userPrompt: event.payload.userPrompt,
-              analysis: event.payload.analysis,
-              plan: event.payload.plan,
-              workspacePath: workspace.path,
-              worktreePath: cwd,
-              routesJson: JSON.stringify(routes),
-            });
-            emitThreadEvent(
-              thread.id,
-              "thread.awaiting_plan",
-              "计划已生成，请确认是否执行。",
-              "planner",
-              false,
-              {
-                plan: {
-                  userPrompt: event.payload.userPrompt,
-                  analysis: event.payload.analysis,
-                  plan: event.payload.plan,
+            try {
+              const continuationPhase: SubagentRunPhase =
+                mode === "question" ? "question" : mode === "planning" ? "planning" : "execution";
+              const driver = createSdkDriver(
+                thread.id,
+                attemptProxy,
+                {
+                  ...(taskHookHandlers
+                    ? {
+                        peekPendingCoderTodoId: taskHookHandlers.peekPendingCoderTodoId,
+                        taskTracker: {
+                          ...taskHookHandlers,
+                          onStop(status) {
+                            stopTodosHandled = true;
+                            taskHookHandlers.onStop(status);
+                          },
+                        },
+                        getStopTodoStatus: () => stopStatusRef.current,
+                      }
+                    : {}),
                 },
-              },
-            );
-            scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-              plan: event.payload.plan,
-              analysis: event.payload.analysis,
-            });
-          }
-          if (event.type === "todo.updated" && todoTracker && isSdkTodoProgressPayload(event.payload)) {
-            todoTracker.handleTaskProgress(event.payload);
-          }
-          emitSdkStreamActivity(thread.id, event);
-        }
+                continuationPhase,
+              );
+              if (!driver.runQuestion && mode === "question") {
+                throw new Error("Runtime driver does not support question answering.");
+              }
+              if (!driver.runContinuation) {
+                throw new Error("Runtime driver does not support session continuation.");
+              }
 
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        if (sdkFailure) {
-          return { ok: false, reason: sdkFailure };
-        }
-        return { ok: true };
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return { ok: false, reason: "cancelled by user", aborted: true };
-        }
-        return { ok: false, reason: errorMessage(error) };
-      } finally {
-        await attemptProxy.close();
-      }
-    });
+              let sdkFailure: string | undefined;
+              const runInput = {
+                threadId: thread.id,
+                prompt: followUp,
+                workspacePath: workspace.path,
+                worktreePath: cwd,
+                routes,
+                signal: controller.signal,
+                sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                resume,
+                resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
+              };
+
+              const eventStream =
+                mode === "question"
+                  ? driver.runQuestion!(runInput)
+                  : driver.runContinuation!(runInput, mode, planningContext);
+
+              for await (const event of eventStream) {
+                if (event.type === "usage.recorded") {
+                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
+                  onSdkUsageRecordedEvent(thread.id, event);
+                  continue;
+                }
+                captureSdkSessionFromEvent(thread.id, event, cwd);
+                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                  planningPlanCaptured = true;
+                  conversationStore.savePendingPlan({
+                    threadId: thread.id,
+                    userPrompt: event.payload.userPrompt,
+                    analysis: event.payload.analysis,
+                    plan: event.payload.plan,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routesJson: JSON.stringify(routes),
+                  });
+                  emitThreadEvent(
+                    thread.id,
+                    "thread.awaiting_plan",
+                    "计划已生成，请确认是否执行。",
+                    "planner",
+                    false,
+                    {
+                      plan: {
+                        userPrompt: event.payload.userPrompt,
+                        analysis: event.payload.analysis,
+                        plan: event.payload.plan,
+                      },
+                    },
+                  );
+                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                    plan: event.payload.plan,
+                    analysis: event.payload.analysis,
+                  });
+                }
+                if (event.type === "todo.updated" && todoTracker && isSdkTodoProgressPayload(event.payload)) {
+                  todoTracker.handleTaskProgress(event.payload);
+                }
+                emitSdkStreamActivity(thread.id, event);
+              }
+
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              if (sdkFailure) {
+                return { ok: false, reason: sdkFailure };
+              }
+              return { ok: true };
+            } catch (error) {
+              if (controller.signal.aborted) {
+                return { ok: false, reason: "cancelled by user", aborted: true };
+              }
+              return { ok: false, reason: errorMessage(error) };
+            }
+          },
+        });
+      },
+    );
 
     if (isRequestAttemptAborted(outcome)) {
       stopStatusRef.current = "cancelled";
@@ -3488,10 +3457,8 @@ async function runThreadContinuation(
 /** OTel does not stream assistant text; SDK drives narrative, tool, and todo activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   if (event.type === "tool.started" && isRecord(event.payload)) {
-    const toolName =
-      typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
-    const toolUseId =
-      typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
+    const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
+    const toolUseId = typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
     if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
       const rawRole =
         typeof event.payload.subagent_type === "string"
@@ -3539,23 +3506,13 @@ function emitOtelActivity(line: OtelActivityLine): void {
     metricsRegistry: subagentMetricsRegistry,
   });
   const eventType = line.apiError ? "thread.api_error" : "otel.activity";
-  emitThreadEvent(
-    line.threadId,
-    eventType,
-    line.message,
-    line.role,
-    line.stream ?? false,
-    {
-      ...(otelAgentId && { agentId: otelAgentId }),
-      ...(line.apiError && { apiError: line.apiError }),
-    },
-  );
+  emitThreadEvent(line.threadId, eventType, line.message, line.role, line.stream ?? false, {
+    ...(otelAgentId && { agentId: otelAgentId }),
+    ...(line.apiError && { apiError: line.apiError }),
+  });
 }
 
-function noteUsageBillingObservation(
-  threadId: string,
-  observation: UsageBillingObservation,
-): void {
+function noteUsageBillingObservation(threadId: string, observation: UsageBillingObservation): void {
   activeRunBillingState.appendObservation(threadId, observation);
 }
 
@@ -3656,10 +3613,7 @@ function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): vo
 async function processUsageBilling(
   input: SingleUsageBillingRequest,
 ): Promise<UpstreamProxyCallBilling | null> {
-  const billingRuntime = await resolveBillingRuntimeContext(
-    billingRuntimeEnvironment,
-    input.threadId,
-  );
+  const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
 
   const resolved = await resolveSingleUsageBillingOrchestration({
     request: input,
@@ -3674,23 +3628,6 @@ async function processUsageBilling(
   return resolved.requestBillingLog;
 }
 
-function buildDriverRoutesFromRuntime(routes: ReturnType<typeof resolveRuntimeRoutesFromSettings>): ResolvedModelRoute[] {
-  return routes.map((route) => ({
-    role: route.role,
-    primary: {
-      id: `${route.role}:${route.provider.id}`,
-      provider: "custom",
-      displayName: `${route.provider.name} / ${route.modelId}`,
-      baseUrl: route.provider.baseUrl,
-      modelId: route.modelId,
-      capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
-      enabled: route.provider.enabled,
-    },
-    fallbacks: [],
-    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-  }));
-}
-
 /** Best-effort compaction before resume; failures must not block the main agent run. */
 async function ensureContextHeadroom(
   threadId: string,
@@ -3700,15 +3637,13 @@ async function ensureContextHeadroom(
 ): Promise<void> {
   try {
     const roleRoutes = resolveRoleRoutesForThread(threadId);
-    const runtimeConfig = resolveRuntimeConfig(
+    const runtimeConfig = resolveThreadRuntimeConfig(
       providerStore.getSettings(),
       providerStore.listProvidersWithSecrets(),
       roleRoutes,
     );
     if (!runtimeConfig.ok) {
-      process.stderr.write(
-        `[eco] context headroom skipped for ${threadId}: ${runtimeConfig.reason}\n`,
-      );
+      process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${runtimeConfig.reason}\n`);
       return;
     }
     const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
@@ -3716,13 +3651,7 @@ async function ensureContextHeadroom(
   } catch (error) {
     const detail = errorMessage(error);
     process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${detail}\n`);
-    emitThreadEvent(
-      threadId,
-      "otel.activity",
-      `上下文压缩已跳过：${detail}`,
-      "system",
-      false,
-    );
+    emitThreadEvent(threadId, "otel.activity", `上下文压缩已跳过：${detail}`, "system", false);
   }
 }
 
@@ -3760,11 +3689,14 @@ function loadThreadMetricsFromStore(): void {
 }
 
 function persistThreadMetricsNow(threadId: string): void {
-  persistThreadMetrics({
-    store: conversationStore,
-    accumulator: threadUsageAccumulator,
-    contextSnapshots: contextScheduler,
-  }, threadId);
+  persistThreadMetrics(
+    {
+      store: conversationStore,
+      accumulator: threadUsageAccumulator,
+      contextSnapshots: contextScheduler,
+    },
+    threadId,
+  );
 }
 
 function threadMetricsPersistenceServices() {
@@ -3864,10 +3796,7 @@ function recordSdkUsageFromEvent(threadId: string, event: AgentEventLike & { id:
 
 function logSdkUsageResolution(
   threadId: string,
-  resolved: Extract<
-    ReturnType<typeof resolveSdkEventUsageBilling>,
-    { kind: "stream_partial" | "sdk_run" }
-  >,
+  resolved: Extract<ReturnType<typeof resolveSdkEventUsageBilling>, { kind: "stream_partial" | "sdk_run" }>,
 ): void {
   if (resolved.kind === "sdk_run" && resolved.missDiagnostic) {
     logEcoDiag("sdk.usage_miss", {
@@ -3897,13 +3826,8 @@ function logSdkUsageResolution(
   );
 }
 
-async function processSdkStreamPartialUsage(
-  input: SdkStreamPartialBillingRequest,
-): Promise<void> {
-  const billingRuntime = await resolveBillingRuntimeContext(
-    billingRuntimeEnvironment,
-    input.threadId,
-  );
+async function processSdkStreamPartialUsage(input: SdkStreamPartialBillingRequest): Promise<void> {
+  const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
   const resolved = await resolveSdkStreamPartialBillingOrchestration({
     request: input,
     runtimeRoutes: billingRuntime.runtimeRoutes,
@@ -3924,10 +3848,7 @@ async function processSdkRunBilling(input: {
   subagentAgentId?: string;
   parentToolUseId?: string;
 }): Promise<void> {
-  const billingRuntime = await resolveBillingRuntimeContext(
-    billingRuntimeEnvironment,
-    input.threadId,
-  );
+  const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
   const resolved = await resolveSdkRunBillingResolution({
     threadId: input.threadId,
     role: input.role,
@@ -3964,10 +3885,7 @@ function isLinkAgentsSkillsRequest(value: unknown): value is LinkAgentsSkillsReq
   );
 }
 
-async function buildSdkSessionOptions(
-  threadId: string,
-  prompt?: string,
-): Promise<EcoSdkSessionOptions> {
+async function buildSdkSessionOptions(threadId: string, prompt?: string): Promise<EcoSdkSessionOptions> {
   const mcp = mcpStore.buildSdkConfig();
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
@@ -4021,10 +3939,7 @@ async function removeIsolatedWorktree(plan: WorktreePlan, threadId: string): Pro
   } catch (error) {
     console.error("Failed to remove worktree:", error);
   } finally {
-    if (
-      sessionCwd &&
-      path.resolve(sessionCwd) === path.resolve(plan.worktreePath)
-    ) {
+    if (sessionCwd && path.resolve(sessionCwd) === path.resolve(plan.worktreePath)) {
       conversationStore.clearSdkSession(threadId);
     }
   }
@@ -4317,20 +4232,6 @@ function emitSettingsUpdated(): void {
   });
 }
 
-interface RuntimeRoute {
-  role: AgentRole;
-  provider: ProviderConfigSecret;
-  modelId: string;
-  apiCompat: import("../shared/api-compat").UpstreamApiCompat;
-  thinkingEffort?: ThinkingEffort;
-}
-
-interface RuntimeConfig {
-  routes: RuntimeRoute[];
-}
-
-type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { ok: false; reason: string };
-
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
 
 function emitUpstreamModelRequestActivity(threadId: string, role: AgentRole): void {
@@ -4345,10 +4246,7 @@ function emitUpstreamConnectionErrorActivity(
 ): void {
   const detail = formatUserFacingRequestError(error);
   const summary = statusCode ? `HTTP ${statusCode}` : detail;
-  const message =
-    summary === detail
-      ? `【连接失败】${summary}`
-      : `【连接失败】${summary}：${detail}`;
+  const message = summary === detail ? `【连接失败】${summary}` : `【连接失败】${summary}：${detail}`;
   const now = Date.now();
   const last = lastConnectionErrorEmitByThread.get(threadId);
   if (last && last.message === message && now - last.at < 4000) {
@@ -4426,50 +4324,6 @@ function startRuntimeProxy(
     }),
   };
   return startAnthropicModelProxy(routes, options);
-}
-
-function resolveRuntimeConfig(
-  settings: ModelSettingsSnapshot,
-  providersWithSecrets: ProviderConfigSecret[],
-  routesOverride?: readonly RoleRouteConfig[],
-): RuntimeConfigResolution {
-  const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
-  const activeRoutes = routesOverride ?? [];
-  const routes = activeRoutes.map((route): RuntimeRoute | undefined => {
-    const provider = providersById.get(route.providerId);
-    if (!provider) return undefined;
-    return {
-      role: route.role,
-      provider,
-      modelId: route.modelId,
-      apiCompat: resolveUpstreamApiCompat(route.apiCompat, provider.apiCompat),
-      ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-      ...(route.modelsDevMapping && { modelsDevMapping: route.modelsDevMapping }),
-    };
-  });
-
-  const missingRoute = activeRoutes.find((route) => !providersById.has(route.providerId));
-  if (missingRoute) {
-    return { ok: false, reason: `Route ${missingRoute.role} references a missing provider.` };
-  }
-
-  for (const role of AGENT_ROLES) {
-    const route = routes.find((candidate): candidate is RuntimeRoute => candidate?.role === role);
-    if (!route) {
-      return { ok: false, reason: `Configure a ${role} route before starting a coding thread.` };
-    }
-    if (!route.modelId.trim()) {
-      return { ok: false, reason: `Model id is required for ${role}.` };
-    }
-    if (!route.provider.enabled) {
-      return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is disabled.` };
-    }
-  }
-
-  return {
-    ok: true,
-    routes: routes.filter((route): route is RuntimeRoute => Boolean(route)),
-  };
 }
 
 function errorMessage(error: unknown): string {
