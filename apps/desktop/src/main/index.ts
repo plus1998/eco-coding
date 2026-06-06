@@ -170,6 +170,11 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import {
   ThreadUsageAccumulator,
 } from "./thread-usage-accumulator";
+import {
+  flushThreadMetrics,
+  persistThreadMetrics,
+  restoreThreadMetricsFromStore,
+} from "./thread-metrics-runtime";
 import { resolveOtelUsageBilling } from "./otel-usage-billing";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
@@ -3800,36 +3805,29 @@ function emitThreadContextUpdated(threadId: string, context: ThreadContextSnapsh
 }
 
 function loadThreadMetricsFromStore(): void {
-  for (const record of conversationStore.listThreadMetrics()) {
-    if (record.accumulator) {
-      threadUsageAccumulator.restoreState(record.threadId, record.accumulator);
-    }
-    if (record.context) {
-      contextScheduler.restoreSnapshot(record.threadId, record.context);
-    }
-    subagentMetricsRegistry.restoreFromStore(record.threadId);
-    for (const entry of subagentMetricsRegistry.listEntries(record.threadId)) {
-      if (entry.contextOccupied <= 0 && entry.usage.inputTokens <= 0) {
-        continue;
-      }
-      void contextMonitor
-        .updateFromUsage(record.threadId, entry.usage, {
-          role: entry.role,
-          agentId: entry.agentId,
-          ...(entry.modelId && { modelId: entry.modelId }),
-        })
-        .catch(() => undefined);
-    }
-  }
+  restoreThreadMetricsFromStore({
+    store: conversationStore,
+    accumulator: threadUsageAccumulator,
+    contextSnapshots: contextScheduler,
+    subagentMetrics: subagentMetricsRegistry,
+    contextMonitor,
+  });
 }
 
 function persistThreadMetricsNow(threadId: string): void {
-  const accumulator = threadUsageAccumulator.serializeState(threadId);
-  const context = contextScheduler.getDisplaySnapshot(threadId);
-  conversationStore.saveThreadMetrics(threadId, {
-    ...(accumulator && { accumulator }),
-    ...(context && { context }),
-  });
+  persistThreadMetrics({
+    store: conversationStore,
+    accumulator: threadUsageAccumulator,
+    contextSnapshots: contextScheduler,
+  }, threadId);
+}
+
+function threadMetricsPersistenceServices() {
+  return {
+    store: conversationStore,
+    accumulator: threadUsageAccumulator,
+    contextSnapshots: contextScheduler,
+  };
 }
 
 function schedulePersistThreadMetrics(threadId: string): void {
@@ -3852,18 +3850,7 @@ function flushAllThreadMetrics(): void {
   }
   persistMetricsTimers.clear();
 
-  const threadIds = new Set<string>();
-  for (const record of conversationStore.listThreadMetrics()) {
-    threadIds.add(record.threadId);
-  }
-  for (const thread of conversationStore.listThreads()) {
-    threadIds.add(thread.id);
-  }
-  for (const threadId of threadIds) {
-    if (threadUsageAccumulator.serializeState(threadId) || contextScheduler.getDisplaySnapshot(threadId)) {
-      persistThreadMetricsNow(threadId);
-    }
-  }
+  flushThreadMetrics(threadMetricsPersistenceServices());
 }
 
 function handleSdkContextSideEffects(
