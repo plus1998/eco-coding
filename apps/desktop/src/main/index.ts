@@ -14,12 +14,7 @@ import {
   type SessionCapturedPayload,
   type AgentEvent,
 } from "@eco/runtime";
-import {
-  ClaudeAgentSdkDriver,
-  extractSdkRunFailure,
-  type EcoHookContext,
-  type SdkTodoUpdatedPayload,
-} from "@eco/runtime/sdk";
+import { ClaudeAgentSdkDriver, type EcoHookContext, type SdkTodoUpdatedPayload } from "@eco/runtime/sdk";
 import { defaultSubagentAvailability, isSubagentRole, type SubagentRunPhase } from "@eco/runtime";
 import {
   createRedisSessionStore,
@@ -87,6 +82,7 @@ import {
 } from "../shared/worktree-merge";
 import { extractCoderTasksFromActivity, mergeCoderTodoItems } from "./coder-tasks";
 import { createSdkTaskTracker } from "./sdk-task-tracker";
+import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
@@ -1475,33 +1471,24 @@ async function runQuestionThread(
                 throw new Error("Runtime driver does not support question answering.");
               }
 
-              let sdkFailure: string | undefined;
-              for await (const event of driver.runQuestion({
+              return await consumeSdkRunEvents({
+                events: driver.runQuestion({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
                 threadId: thread.id,
-                prompt,
-                workspacePath: workspace.path,
                 worktreePath: cwd,
-                routes,
                 signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                ...(effectiveResume ? { resume: effectiveResume } : {}),
-              })) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(thread.id, event);
-                  continue;
-                }
-                captureSdkSessionFromEvent(thread.id, event, cwd);
-                emitSdkStreamActivity(thread.id, event);
-              }
-
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
-              }
-              return { ok: true };
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+              });
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -1626,63 +1613,59 @@ async function runCodingThreadAutonomous(
 
             try {
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
-              let sdkFailure: string | undefined;
-
               let planCaptured = false;
-              for await (const event of driver.run({
+              const result = await consumeSdkRunEvents({
+                events: driver.run({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
                 threadId: thread.id,
-                prompt,
-                workspacePath: workspace.path,
                 worktreePath: cwd,
-                routes,
                 signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                ...(effectiveResume ? { resume: effectiveResume } : {}),
-              })) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(thread.id, event);
-                  continue;
-                }
-                captureSdkSessionFromEvent(thread.id, event, cwd);
-                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                  planCaptured = true;
-                  conversationStore.savePendingPlan({
-                    threadId: thread.id,
-                    userPrompt: event.payload.userPrompt,
-                    analysis: event.payload.analysis,
-                    plan: event.payload.plan,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routesJson: JSON.stringify(routes),
-                  });
-                  emitThreadEvent(
-                    thread.id,
-                    "thread.awaiting_plan",
-                    "Agent 请求确认计划，请审批后继续。",
-                    "planner",
-                    false,
-                    {
-                      plan: {
-                        userPrompt: event.payload.userPrompt,
-                        analysis: event.payload.analysis,
-                        plan: event.payload.plan,
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+                onEvent: (event) => {
+                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                    planCaptured = true;
+                    conversationStore.savePendingPlan({
+                      threadId: thread.id,
+                      userPrompt: event.payload.userPrompt,
+                      analysis: event.payload.analysis,
+                      plan: event.payload.plan,
+                      workspacePath: workspace.path,
+                      worktreePath: cwd,
+                      routesJson: JSON.stringify(routes),
+                    });
+                    emitThreadEvent(
+                      thread.id,
+                      "thread.awaiting_plan",
+                      "Agent 请求确认计划，请审批后继续。",
+                      "planner",
+                      false,
+                      {
+                        plan: {
+                          userPrompt: event.payload.userPrompt,
+                          analysis: event.payload.analysis,
+                          plan: event.payload.plan,
+                        },
                       },
-                    },
-                  );
-                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                    plan: event.payload.plan,
-                    analysis: event.payload.analysis,
-                  });
-                }
-                emitSdkStreamActivity(thread.id, event);
-              }
-
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
+                    );
+                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                      plan: event.payload.plan,
+                      analysis: event.payload.analysis,
+                    });
+                  }
+                },
+              });
+              if (!result.ok) {
+                return result;
               }
               return { ok: true, planCaptured };
             } catch (error) {
@@ -1804,66 +1787,55 @@ async function runCodingThreadPlanning(
             try {
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "planning");
 
-              let sdkFailure: string | undefined;
-              let captured = false;
-
-              for await (const event of driver.run({
+              return await consumeSdkRunEvents({
+                events: driver.run({
+                  threadId: thread.id,
+                  prompt,
+                  workspacePath: workspace.path,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                  ...(effectiveResume ? { resume: effectiveResume } : {}),
+                }),
                 threadId: thread.id,
-                prompt,
-                workspacePath: workspace.path,
                 worktreePath: cwd,
-                routes,
                 signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(thread.id, prompt),
-                ...(effectiveResume ? { resume: effectiveResume } : {}),
-              })) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(thread.id, event);
-                  continue;
-                }
-                captureSdkSessionFromEvent(thread.id, event, cwd);
-                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                  captured = true;
-                  conversationStore.savePendingPlan({
-                    threadId: thread.id,
-                    userPrompt: event.payload.userPrompt,
-                    analysis: event.payload.analysis,
-                    plan: event.payload.plan,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routesJson: JSON.stringify(routes),
-                  });
-                  emitThreadEvent(
-                    thread.id,
-                    "thread.awaiting_plan",
-                    "计划已生成，请确认是否执行。",
-                    "planner",
-                    false,
-                    {
-                      plan: {
-                        userPrompt: event.payload.userPrompt,
-                        analysis: event.payload.analysis,
-                        plan: event.payload.plan,
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+                onEvent: (event) => {
+                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                    conversationStore.savePendingPlan({
+                      threadId: thread.id,
+                      userPrompt: event.payload.userPrompt,
+                      analysis: event.payload.analysis,
+                      plan: event.payload.plan,
+                      workspacePath: workspace.path,
+                      worktreePath: cwd,
+                      routesJson: JSON.stringify(routes),
+                    });
+                    emitThreadEvent(
+                      thread.id,
+                      "thread.awaiting_plan",
+                      "计划已生成，请确认是否执行。",
+                      "planner",
+                      false,
+                      {
+                        plan: {
+                          userPrompt: event.payload.userPrompt,
+                          analysis: event.payload.analysis,
+                          plan: event.payload.plan,
+                        },
                       },
-                    },
-                  );
-                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                    plan: event.payload.plan,
-                    analysis: event.payload.analysis,
-                  });
-                }
-
-                emitSdkStreamActivity(thread.id, event);
-              }
-
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
-              }
-              return { ok: true };
+                    );
+                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                      plan: event.payload.plan,
+                      analysis: event.payload.analysis,
+                    });
+                  }
+                },
+              });
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -1976,36 +1948,28 @@ async function runCodingThreadAutonomousAfterApproval(
             }
             await ensureContextHeadroom(threadId, cwd, controller.signal, { ignoreRunningGuard: true });
             const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
-            let sdkFailure: string | undefined;
-            for await (const event of driver.runContinuation(
-              {
-                threadId,
-                prompt: pending.userPrompt,
-                workspacePath: pending.workspacePath,
-                worktreePath: cwd,
-                routes,
-                signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
-                resume,
-              },
-              "execution",
-              planning,
-            )) {
-              if (event.type === "usage.recorded") {
-                sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                onSdkUsageRecordedEvent(threadId, event);
-                continue;
-              }
-              captureSdkSessionFromEvent(threadId, event, cwd);
-              emitSdkStreamActivity(threadId, event);
-            }
-            if (controller.signal.aborted) {
-              return { ok: false, reason: "cancelled by user", aborted: true };
-            }
-            if (sdkFailure) {
-              return { ok: false, reason: sdkFailure };
-            }
-            return { ok: true };
+            return await consumeSdkRunEvents({
+              events: driver.runContinuation(
+                {
+                  threadId,
+                  prompt: pending.userPrompt,
+                  workspacePath: pending.workspacePath,
+                  worktreePath: cwd,
+                  routes,
+                  signal: controller.signal,
+                  sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
+                  resume,
+                },
+                "execution",
+                planning,
+              ),
+              threadId,
+              worktreePath: cwd,
+              signal: controller.signal,
+              onUsageRecorded: onSdkUsageRecordedEvent,
+              captureSession: captureSdkSessionFromEvent,
+              emitActivity: emitSdkStreamActivity,
+            });
           },
         });
       },
@@ -2133,7 +2097,6 @@ async function runCodingThreadExecution(
                 throw new Error("Runtime driver does not support execution phase.");
               }
 
-              let sdkFailure: string | undefined;
               const resume = resolveResumeOptions(threadId, executionCwd);
               if (resume) {
                 await ensureContextHeadroom(threadId, executionCwd, controller.signal, {
@@ -2147,43 +2110,34 @@ async function runCodingThreadExecution(
                 const activityLines = conversationStore.listActivityLines(threadId);
                 executionPromptOverride = buildAgentPromptWithContext(thread.prompt, followUp, activityLines);
               }
-              for await (const event of driver.runExecution(
-                {
-                  threadId,
-                  prompt: runPrompt,
-                  workspacePath: pending.workspacePath,
-                  worktreePath: executionCwd,
-                  routes: attemptRoutes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
-                  ...(resume ? { resume } : {}),
-                  resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
-                  ...(executionPromptOverride && { executionPromptOverride }),
+              return await consumeSdkRunEvents({
+                events: driver.runExecution(
+                  {
+                    threadId,
+                    prompt: runPrompt,
+                    workspacePath: pending.workspacePath,
+                    worktreePath: executionCwd,
+                    routes: attemptRoutes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
+                    ...(resume ? { resume } : {}),
+                    resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
+                    ...(executionPromptOverride && { executionPromptOverride }),
+                  },
+                  planning,
+                ),
+                threadId,
+                worktreePath: executionCwd,
+                signal: controller.signal,
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+                onEvent: (event) => {
+                  if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
+                    todoTracker.handleTaskProgress(event.payload);
+                  }
                 },
-                planning,
-              )) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(threadId, event);
-                  continue;
-                }
-
-                captureSdkSessionFromEvent(threadId, event, executionCwd);
-
-                if (event.type === "todo.updated" && isSdkTodoProgressPayload(event.payload)) {
-                  todoTracker.handleTaskProgress(event.payload);
-                }
-
-                emitSdkStreamActivity(threadId, event);
-              }
-
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
-              }
-              return { ok: true };
+              });
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -3180,36 +3134,28 @@ async function runThreadContinuation(
             startRuntimeProxy,
             run: async ({ proxy: attemptProxy, routes }) => {
               const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
-              let sdkFailure: string | undefined;
-              for await (const event of driver.runContinuation(
-                {
-                  threadId: thread.id,
-                  prompt: followUp,
-                  workspacePath: workspace.path,
-                  worktreePath: cwd,
-                  routes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, followUp),
-                  resume: resumeOpts,
-                },
-                mode,
-                planningContext,
-              )) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(thread.id, event);
-                  continue;
-                }
-                captureSdkSessionFromEvent(thread.id, event, cwd);
-                emitSdkStreamActivity(thread.id, event);
-              }
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
-              }
-              return { ok: true };
+              return await consumeSdkRunEvents({
+                events: driver.runContinuation(
+                  {
+                    threadId: thread.id,
+                    prompt: followUp,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                    resume: resumeOpts,
+                  },
+                  mode,
+                  planningContext,
+                ),
+                threadId: thread.id,
+                worktreePath: cwd,
+                signal: controller.signal,
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+              });
             },
           });
         },
@@ -3314,7 +3260,6 @@ async function runThreadContinuation(
                 throw new Error("Runtime driver does not support session continuation.");
               }
 
-              let sdkFailure: string | undefined;
               const runInput = {
                 threadId: thread.id,
                 prompt: followUp,
@@ -3332,56 +3277,54 @@ async function runThreadContinuation(
                   ? driver.runQuestion!(runInput)
                   : driver.runContinuation!(runInput, mode, planningContext);
 
-              for await (const event of eventStream) {
-                if (event.type === "usage.recorded") {
-                  sdkFailure = extractSdkRunFailure(event.payload) ?? sdkFailure;
-                  onSdkUsageRecordedEvent(thread.id, event);
-                  continue;
-                }
-                captureSdkSessionFromEvent(thread.id, event, cwd);
-                if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                  planningPlanCaptured = true;
-                  conversationStore.savePendingPlan({
-                    threadId: thread.id,
-                    userPrompt: event.payload.userPrompt,
-                    analysis: event.payload.analysis,
-                    plan: event.payload.plan,
-                    workspacePath: workspace.path,
-                    worktreePath: cwd,
-                    routesJson: JSON.stringify(routes),
-                  });
-                  emitThreadEvent(
-                    thread.id,
-                    "thread.awaiting_plan",
-                    "计划已生成，请确认是否执行。",
-                    "planner",
-                    false,
-                    {
-                      plan: {
-                        userPrompt: event.payload.userPrompt,
-                        analysis: event.payload.analysis,
-                        plan: event.payload.plan,
+              return await consumeSdkRunEvents({
+                events: eventStream,
+                threadId: thread.id,
+                worktreePath: cwd,
+                signal: controller.signal,
+                onUsageRecorded: onSdkUsageRecordedEvent,
+                captureSession: captureSdkSessionFromEvent,
+                emitActivity: emitSdkStreamActivity,
+                onEvent: (event) => {
+                  if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
+                    planningPlanCaptured = true;
+                    conversationStore.savePendingPlan({
+                      threadId: thread.id,
+                      userPrompt: event.payload.userPrompt,
+                      analysis: event.payload.analysis,
+                      plan: event.payload.plan,
+                      workspacePath: workspace.path,
+                      worktreePath: cwd,
+                      routesJson: JSON.stringify(routes),
+                    });
+                    emitThreadEvent(
+                      thread.id,
+                      "thread.awaiting_plan",
+                      "计划已生成，请确认是否执行。",
+                      "planner",
+                      false,
+                      {
+                        plan: {
+                          userPrompt: event.payload.userPrompt,
+                          analysis: event.payload.analysis,
+                          plan: event.payload.plan,
+                        },
                       },
-                    },
-                  );
-                  scheduleThreadTitleSummary(thread.id, runtimeConfig, {
-                    plan: event.payload.plan,
-                    analysis: event.payload.analysis,
-                  });
-                }
-                if (event.type === "todo.updated" && todoTracker && isSdkTodoProgressPayload(event.payload)) {
-                  todoTracker.handleTaskProgress(event.payload);
-                }
-                emitSdkStreamActivity(thread.id, event);
-              }
-
-              if (controller.signal.aborted) {
-                return { ok: false, reason: "cancelled by user", aborted: true };
-              }
-              if (sdkFailure) {
-                return { ok: false, reason: sdkFailure };
-              }
-              return { ok: true };
+                    );
+                    scheduleThreadTitleSummary(thread.id, runtimeConfig, {
+                      plan: event.payload.plan,
+                      analysis: event.payload.analysis,
+                    });
+                  }
+                  if (
+                    event.type === "todo.updated" &&
+                    todoTracker &&
+                    isSdkTodoProgressPayload(event.payload)
+                  ) {
+                    todoTracker.handleTaskProgress(event.payload);
+                  }
+                },
+              });
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
