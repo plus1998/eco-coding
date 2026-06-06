@@ -7,6 +7,7 @@ import { computeWindowOccupancy, formatUsageBadge, type ParsedUsage } from "@eco
 import { buildUsageSnapshotForRole, isSubagentBillingRole } from "./billing-orchestration";
 import type { ContextWindowMonitor } from "./context-window-monitor";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import { applyUsageContextUpdate } from "./usage-context-effects";
 import {
   recordLegacySdkRunBilling,
   recordLegacySingleUsageBilling,
@@ -67,22 +68,16 @@ export async function applySdkStreamPartialBillingEffects(
 ): Promise<void> {
   services.usageLedger.appendEvents([input.artifacts.ledgerEvent]);
 
-  if (!input.artifacts.contextUpdate) {
+  const contextUpdated = await applyUsageContextUpdate(services.contextMonitor, {
+    threadId: input.threadId,
+    usage: input.usage,
+    ...(input.artifacts.contextUpdate && { contextUpdate: input.artifacts.contextUpdate }),
+    ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
+  });
+  if (!contextUpdated) {
     return;
   }
 
-  await services.contextMonitor.updateFromUsage(input.threadId, input.usage, {
-    role: input.artifacts.contextUpdate.role,
-    ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
-    modelId: input.artifacts.contextUpdate.modelId,
-    providerBaseUrl: input.artifacts.contextUpdate.providerBaseUrl,
-    ...(input.artifacts.contextUpdate.modelsDevMapping && {
-      modelsDevMapping: input.artifacts.contextUpdate.modelsDevMapping,
-    }),
-    ...(input.artifacts.contextUpdate.manualSpec && {
-      manualSpec: input.artifacts.contextUpdate.manualSpec,
-    }),
-  });
   services.emitLiveContext(input.threadId);
 }
 
@@ -93,19 +88,14 @@ export async function applySingleUsageBillingEffects(
   const { artifacts } = input;
   services.usageLedger.appendEvents([artifacts.ledgerEvent]);
 
-  if (input.updateContext && artifacts.contextUpdate) {
-    await services.contextMonitor.updateFromUsage(input.threadId, artifacts.delta, {
-      role: artifacts.contextUpdate.role,
-      ...(input.agentId && { agentId: input.agentId }),
-      modelId: artifacts.contextUpdate.modelId,
-      providerBaseUrl: artifacts.contextUpdate.providerBaseUrl,
-      ...(artifacts.contextUpdate.modelsDevMapping && {
-        modelsDevMapping: artifacts.contextUpdate.modelsDevMapping,
-      }),
-      ...(artifacts.contextUpdate.manualSpec && { manualSpec: artifacts.contextUpdate.manualSpec }),
-      ...(input.messageId && { messageId: input.messageId }),
-    });
-  }
+  await applyUsageContextUpdate(services.contextMonitor, {
+    threadId: input.threadId,
+    usage: artifacts.delta,
+    updateContext: input.updateContext,
+    ...(artifacts.contextUpdate && { contextUpdate: artifacts.contextUpdate }),
+    ...(input.agentId && { agentId: input.agentId }),
+    ...(input.messageId && { messageId: input.messageId }),
+  });
 
   const monitorSnap = services.contextMonitor.getSnapshot(input.threadId);
   const legacyBilling = recordLegacySingleUsageBilling(services.accumulator, {
@@ -198,18 +188,13 @@ export async function applySdkRunBillingEffects(
     }),
   );
 
-  if (input.updateContext && input.contextUpdate) {
-    await services.contextMonitor.updateFromUsage(input.threadId, input.contextUsage, {
-      role: input.contextUpdate.role,
-      ...(input.resolvedSubagentId && { agentId: input.resolvedSubagentId }),
-      modelId: input.contextUpdate.modelId,
-      providerBaseUrl: input.contextUpdate.providerBaseUrl,
-      ...(input.contextUpdate.modelsDevMapping && {
-        modelsDevMapping: input.contextUpdate.modelsDevMapping,
-      }),
-      ...(input.contextUpdate.manualSpec && { manualSpec: input.contextUpdate.manualSpec }),
-    });
-  }
+  await applyUsageContextUpdate(services.contextMonitor, {
+    threadId: input.threadId,
+    usage: input.contextUsage,
+    updateContext: input.updateContext,
+    ...(input.contextUpdate && { contextUpdate: input.contextUpdate }),
+    ...(input.resolvedSubagentId && { agentId: input.resolvedSubagentId }),
+  });
 
   if (input.resolvedSubagentId && isSubagentBillingRole(input.billingRole)) {
     const roleSnap = services.contextMonitor.getSnapshot(input.threadId);
