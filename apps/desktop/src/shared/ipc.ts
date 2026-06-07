@@ -73,15 +73,6 @@ export type {
   McpSettingsSnapshot,
   McpTransport,
 } from "./mcp";
-
-export type {
-  LinkAgentsSkillsRequest,
-  LinkAgentsSkillsResult,
-  SkillInfo,
-  SkillSource,
-  SkillsListResult,
-} from "./skills";
-
 export type {
   ListUpstreamModelsRequest,
   ListUpstreamModelsResult,
@@ -100,6 +91,13 @@ export type {
   SessionSyncTestConnectionRequest,
   SessionSyncTestConnectionResult,
 } from "./session-sync";
+export type {
+  LinkAgentsSkillsRequest,
+  LinkAgentsSkillsResult,
+  SkillInfo,
+  SkillSource,
+  SkillsListResult,
+} from "./skills";
 export type {
   ThreadRunEvent,
   ThreadRunEventInput,
@@ -172,9 +170,21 @@ export interface ProxyBridgeSettingsSnapshot {
   upstreamUserAgent?: string;
 }
 
+import type { AgentTemplate, OrchestrationProfile } from "./agent-orchestration";
 import type { UpstreamApiCompat } from "./api-compat";
 import type { ThreadRuntimeConfig, ThreadRuntimeConfigInput } from "./thread-runtime-config";
 
+export type {
+  AgentDomain,
+  AgentInstanceConfig,
+  AgentTemplate,
+  MainAgentConfig,
+  ModelRef,
+  OrchestrationProfile,
+  OrchestrationStrategy,
+  ToolPolicy,
+  WorkflowStep,
+} from "./agent-orchestration";
 export type { UpstreamApiCompat };
 
 export interface ProviderConfigInput {
@@ -248,7 +258,6 @@ export interface RouteProfileInput {
   routes: RoleRouteConfig[];
 }
 
-export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 export {
   buildThreadRuntimeConfigFromDefaults,
   getDefaultRouteProfileId,
@@ -256,6 +265,7 @@ export {
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
 } from "./thread-runtime-config";
+export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
@@ -266,6 +276,8 @@ export interface PromptImageAttachment {
 export interface ModelSettingsSnapshot {
   providers: ProviderConfigView[];
   routeProfiles: RouteProfileView[];
+  agentTemplates: AgentTemplate[];
+  orchestrationProfiles: OrchestrationProfile[];
 }
 
 export type ThreadStatus =

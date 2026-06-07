@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { AgentRole, RoleRouteConfig } from "../src/shared/ipc";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
   buildDriverRoutes,
@@ -7,6 +6,7 @@ import {
   resolveThreadRuntimeConfig,
   roleRoutesFromRuntime,
 } from "../src/main/thread-runtime-routes";
+import type { AgentRole, RoleRouteConfig } from "../src/shared/ipc";
 
 function provider(id: string, enabled = true): ProviderConfigSecret {
   return {
@@ -38,7 +38,7 @@ function routes(providerId = "p1"): RoleRouteConfig[] {
 
 test("resolveThreadRuntimeConfig validates full role routes and keeps route metadata", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
     [provider("p1")],
     routes(),
   );
@@ -61,9 +61,19 @@ test("resolveThreadRuntimeConfig validates full role routes and keeps route meta
 });
 
 test("resolveThreadRuntimeConfig reports missing providers and disabled providers", () => {
-  expect(resolveThreadRuntimeConfig({ providers: [], routeProfiles: [] }, [], routes()).ok).toBe(false);
   expect(
-    resolveThreadRuntimeConfig({ providers: [], routeProfiles: [] }, [provider("p1", false)], routes()),
+    resolveThreadRuntimeConfig(
+      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      [],
+      routes(),
+    ).ok,
+  ).toBe(false);
+  expect(
+    resolveThreadRuntimeConfig(
+      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      [provider("p1", false)],
+      routes(),
+    ),
   ).toEqual({
     ok: false,
     reason: 'Provider "Provider p1" for planner is disabled.',
@@ -72,7 +82,7 @@ test("resolveThreadRuntimeConfig reports missing providers and disabled provider
 
 test("buildDriverRoutes uses proxy aliases while runtime routes use upstream model ids", () => {
   const resolved = resolveThreadRuntimeConfig(
-    { providers: [], routeProfiles: [] },
+    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
     [provider("p1")],
     routes(),
   );

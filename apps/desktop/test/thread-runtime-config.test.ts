@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildThreadRuntimeConfigFromDefaults,
   getDefaultRouteProfileId,
@@ -9,7 +10,6 @@ import {
   parseThreadRuntimeConfigJson,
   serializeThreadRuntimeConfig,
 } from "../src/shared/thread-runtime-config";
-import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 
 const subagentDefaults: SubagentEnabledSettings = {
   explore: true,
@@ -21,6 +21,8 @@ const subagentDefaults: SubagentEnabledSettings = {
 
 const settings: ModelSettingsSnapshot = {
   providers: [],
+  agentTemplates: [],
+  orchestrationProfiles: [],
   routeProfiles: [
     {
       id: "profile-a",

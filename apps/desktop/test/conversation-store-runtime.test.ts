@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createConversationStore } from "../src/main/conversation-store";
-import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
 import type { ModelSettingsSnapshot, SubagentEnabledSettings, ThreadSummary } from "../src/shared/ipc";
+import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
 
 const sqliteAvailable = await (async () => {
   try {
@@ -25,6 +25,8 @@ const subagentDefaults: SubagentEnabledSettings = {
 
 const settings: ModelSettingsSnapshot = {
   providers: [],
+  agentTemplates: [],
+  orchestrationProfiles: [],
   routeProfiles: [
     {
       id: "profile-a",

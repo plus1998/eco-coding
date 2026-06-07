@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import {
+  buildCodingOrchestrationProfilesFromRouteProfiles,
+  createBuiltInAgentTemplates,
+} from "../shared/agent-orchestration";
+import { normalizeUpstreamApiCompat } from "../shared/api-compat";
+import {
   AGENT_ROLES,
   type AgentRole,
   type ModelSettingsSnapshot,
@@ -13,7 +18,6 @@ import {
   type RouteProfileView,
   type ThinkingEffort,
 } from "../shared/ipc";
-import { normalizeUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import { normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
 
 interface ProviderRow {
@@ -66,7 +70,6 @@ export interface ProviderConfigSecret extends ProviderConfigView {
 
 const DEFAULT_ROUTE_PROFILE_ID = "default";
 
-
 export async function createProviderStore(dbPath: string): Promise<ProviderStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -111,9 +114,12 @@ export class ProviderStore {
   }
 
   getSettings(): ModelSettingsSnapshot {
+    const routeProfiles = this.listRouteProfiles();
     return {
       providers: this.listProviders(),
-      routeProfiles: this.listRouteProfiles(),
+      routeProfiles,
+      agentTemplates: createBuiltInAgentTemplates(),
+      orchestrationProfiles: buildCodingOrchestrationProfilesFromRouteProfiles(routeProfiles),
     };
   }
 
@@ -337,9 +343,11 @@ export class ProviderStore {
       this.db.exec(`ALTER TABLE provider_configs ADD COLUMN request_path TEXT NOT NULL DEFAULT ''`);
     }
 
-    const rows = this.db
-      .prepare("SELECT id, base_url, request_path FROM provider_configs")
-      .all() as Array<{ id: string; base_url: string; request_path: string }>;
+    const rows = this.db.prepare("SELECT id, base_url, request_path FROM provider_configs").all() as Array<{
+      id: string;
+      base_url: string;
+      request_path: string;
+    }>;
 
     for (const row of rows) {
       if (row.request_path) {

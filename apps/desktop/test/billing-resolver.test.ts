@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createModelAlias } from "../src/main/anthropic-proxy";
 import {
   manualSpecToRates,
   resolvePublicModelId,
@@ -7,7 +8,6 @@ import {
   resolveUsageRoute,
 } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
-import { createModelAlias } from "../src/main/anthropic-proxy";
 import type { ModelSettingsSnapshot } from "../src/shared/ipc";
 
 test("resolvePublicModelId maps OTel SDK alias to upstream model id", () => {
@@ -118,9 +118,7 @@ test("resolveRatesForRoute prefers models.dev lookup over manual spec", () => {
     modelId: "claude-sonnet-4",
     rates: { input: 1, output: 2 },
   };
-  expect(
-    resolveRatesForRoute(lookup, { inputPerM: 9, outputPerM: 9 }),
-  ).toEqual({ input: 1, output: 2 });
+  expect(resolveRatesForRoute(lookup, { inputPerM: 9, outputPerM: 9 })).toEqual({ input: 1, output: 2 });
 });
 
 test("resolveRatesForRoute falls back to manual spec", () => {
@@ -148,22 +146,33 @@ test("resolveRuntimeRoutesFromSettings returns empty routes without override", (
       },
     ],
     routeProfiles: [],
+    agentTemplates: [],
+    orchestrationProfiles: [],
   };
   expect(resolveRuntimeRoutesFromSettings(settings, [provider])).toEqual([]);
 });
 
 test("resolveRuntimeRoutesFromSettings preserves manualSpec and modelsDevMapping", () => {
   const provider = createProvider();
-  const settings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
-  const routes = resolveRuntimeRoutesFromSettings(settings, [provider], [
-    {
-      role: "planner",
-      providerId: provider.id,
-      modelId: "vendor-model",
-      modelsDevMapping: { providerKey: "anthropic", modelId: "claude-sonnet-4" },
-      manualSpec: { inputPerM: 3, outputPerM: 15, contextTokens: 200_000 },
-    },
-  ]);
+  const settings: ModelSettingsSnapshot = {
+    providers: [],
+    routeProfiles: [],
+    agentTemplates: [],
+    orchestrationProfiles: [],
+  };
+  const routes = resolveRuntimeRoutesFromSettings(
+    settings,
+    [provider],
+    [
+      {
+        role: "planner",
+        providerId: provider.id,
+        modelId: "vendor-model",
+        modelsDevMapping: { providerKey: "anthropic", modelId: "claude-sonnet-4" },
+        manualSpec: { inputPerM: 3, outputPerM: 15, contextTokens: 200_000 },
+      },
+    ],
+  );
   expect(routes).toHaveLength(1);
   expect(routes[0]?.modelsDevMapping).toEqual({
     providerKey: "anthropic",

@@ -127,7 +127,12 @@ import {
 } from "./project-sidebar-order";
 import "./styles.css";
 
-const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
+const emptySettings: ModelSettingsSnapshot = {
+  providers: [],
+  routeProfiles: [],
+  agentTemplates: [],
+  orchestrationProfiles: [],
+};
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
