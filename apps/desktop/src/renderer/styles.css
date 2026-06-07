@@ -7081,11 +7081,22 @@ button:not(:disabled) {
 }
 
 .models-preset-title-block,
+.models-preset-actions,
 .models-preset-section {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+
+.models-preset-actions {
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.models-preset-actions .models-section-button {
+  min-height: 30px;
+  white-space: nowrap;
 }
 
 .models-preset-name {

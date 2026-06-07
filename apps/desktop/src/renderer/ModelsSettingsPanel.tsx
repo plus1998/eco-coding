@@ -1,7 +1,13 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
 import { Download, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
-import { type BuiltInPresetDefinition, createBuiltInPresetCatalog } from "../shared/agent-orchestration";
+import {
+  type BuiltInPresetDefinition,
+  buildOrchestrationProfileFromPreset,
+  createBuiltInPresetCatalog,
+  createUserPresetProfileId,
+  createUserPresetProfileName,
+} from "../shared/agent-orchestration";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 import {
@@ -9,6 +15,7 @@ import {
   type AgentProfilePerformanceSnapshot,
   type AgentRole,
   type AgentTemplate,
+  type ModelRef,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type ProviderConfigInput,
@@ -141,6 +148,10 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
+  const [presetProfileMessage, setPresetProfileMessage] = useState<{
+    kind: AppMessageKind;
+    message: string;
+  }>();
   const [auditExportMessage, setAuditExportMessage] = useState<{
     kind: AppMessageKind;
     message: string;
@@ -149,6 +160,7 @@ export function ModelsSettingsPanel({
   const [profilePerformanceLoading, setProfilePerformanceLoading] = useState(false);
   const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
   const [auditExportBusy, setAuditExportBusy] = useState(false);
+  const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -206,6 +218,56 @@ export function ModelsSettingsPanel({
       setAuditExportBusy(false);
     }
   }, []);
+
+  const copyPresetToProfile = useCallback(
+    async (preset: BuiltInPresetDefinition) => {
+      if (!window.eco?.saveOrchestrationProfile) {
+        setPresetProfileMessage({ kind: "error", message: "编排配置保存接口不可用。" });
+        return;
+      }
+      const provider = selectPresetDefaultProvider(settings.providers);
+      if (!provider) {
+        setPresetProfileMessage({
+          kind: "error",
+          message: "请先在模型路由中配置至少一个启用且带默认模型的 provider。",
+        });
+        return;
+      }
+      setPresetProfileBusyId(preset.id);
+      setPresetProfileMessage(undefined);
+      onSavingChange?.(true);
+      try {
+        const profile = buildOrchestrationProfileFromPreset(preset, {
+          id: createUserPresetProfileId(
+            preset.id,
+            settings.orchestrationProfiles.map((profile) => profile.id),
+          ),
+          name: createUserPresetProfileName(
+            preset.name,
+            settings.orchestrationProfiles.map((profile) => profile.name),
+          ),
+          modelRef: modelRefFromProvider(provider),
+          templates: settings.agentTemplates,
+        });
+        await window.eco.saveOrchestrationProfile(profile);
+        await refreshSettings();
+        setActiveTab("routes");
+        setPresetProfileMessage({
+          kind: "success",
+          message: `已创建 Agent Profile「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
+        });
+      } catch (caught) {
+        setPresetProfileMessage({
+          kind: "error",
+          message: caught instanceof Error ? caught.message : String(caught),
+        });
+      } finally {
+        setPresetProfileBusyId(null);
+        onSavingChange?.(false);
+      }
+    },
+    [settings, refreshSettings, onSavingChange],
+  );
 
   useEffect(() => {
     if (activeTab !== "routes") {
@@ -793,6 +855,13 @@ export function ModelsSettingsPanel({
           onDismiss={() => setRouteTestMessage(undefined)}
         />
       )}
+      {presetProfileMessage && (
+        <AppMessage
+          kind={presetProfileMessage.kind}
+          message={presetProfileMessage.message}
+          onDismiss={() => setPresetProfileMessage(undefined)}
+        />
+      )}
       {auditExportMessage && (
         <AppMessage
           kind={auditExportMessage.kind}
@@ -1088,6 +1157,9 @@ export function ModelsSettingsPanel({
             presets={presetCatalog}
             templates={settings.agentTemplates}
             profiles={allProfileSummaries}
+            busy={busy || Boolean(presetProfileBusyId)}
+            copyingPresetId={presetProfileBusyId}
+            onCopyPreset={copyPresetToProfile}
           />
         </section>
       )}
@@ -2090,10 +2162,16 @@ function PresetOverview({
   presets,
   templates,
   profiles,
+  busy,
+  copyingPresetId,
+  onCopyPreset,
 }: {
   presets: readonly BuiltInPresetDefinition[];
   templates: readonly AgentTemplate[];
   profiles: readonly AgentProfileSummary[];
+  busy?: boolean;
+  copyingPresetId?: string | null;
+  onCopyPreset: (preset: BuiltInPresetDefinition) => void;
 }) {
   const templateById = new Map(templates.map((template) => [template.id, template]));
   return (
@@ -2111,15 +2189,26 @@ function PresetOverview({
                 <span className="models-preset-name">{formatAgentDomainLabel(preset.id)}</span>
                 <span className="models-preset-description">{preset.description}</span>
               </div>
-              <span
-                className={
-                  domainProfiles.some((profile) => profile.selectionId)
-                    ? "models-provider-badge on"
-                    : "models-provider-badge"
-                }
-              >
-                {domainProfiles.some((profile) => profile.selectionId) ? "可运行" : "模板可用"}
-              </span>
+              <div className="models-preset-actions">
+                <span
+                  className={
+                    domainProfiles.some((profile) => profile.selectionId)
+                      ? "models-provider-badge on"
+                      : "models-provider-badge"
+                  }
+                >
+                  {domainProfiles.some((profile) => profile.selectionId) ? "可运行" : "模板可用"}
+                </span>
+                <button
+                  type="button"
+                  className="models-section-button"
+                  disabled={busy}
+                  onClick={() => onCopyPreset(preset)}
+                >
+                  <Plus size={14} />
+                  {copyingPresetId === preset.id ? "创建中" : "复制为 Profile"}
+                </button>
+              </div>
             </div>
             <div className="models-preset-stats">
               <span>{preset.defaultAgents.length} 个默认子代理</span>
@@ -2195,6 +2284,23 @@ function formatModelPreview(modelId: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
+}
+
+function selectPresetDefaultProvider(
+  providers: readonly ProviderConfigView[],
+): ProviderConfigView | undefined {
+  return (
+    providers.find((provider) => provider.enabled && provider.defaultModel.trim()) ??
+    providers.find((provider) => provider.defaultModel.trim())
+  );
+}
+
+function modelRefFromProvider(provider: ProviderConfigView): ModelRef {
+  return {
+    providerId: provider.id,
+    modelId: provider.defaultModel,
+    apiCompat: provider.apiCompat,
+  };
 }
 
 function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {

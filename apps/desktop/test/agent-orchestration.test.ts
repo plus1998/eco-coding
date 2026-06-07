@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   buildCodingOrchestrationProfileFromRouteProfile,
+  buildOrchestrationProfileFromPreset,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
   createBuiltInPresetCatalog,
+  createUserPresetProfileId,
+  createUserPresetProfileName,
   DATA_OPS_AGENT_TEMPLATE_IDS,
   PRODUCT_AGENT_TEMPLATE_IDS,
   RESEARCH_AGENT_TEMPLATE_IDS,
@@ -97,6 +100,43 @@ test("non-coding preset prompts avoid coding workflow pollution", () => {
     expect(prompt).not.toContain("code review");
     expect(prompt).not.toContain("diff");
   }
+});
+
+test("built-in preset can be copied into a runnable user orchestration profile", () => {
+  const templates = createBuiltInAgentTemplates();
+  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "research");
+  if (!preset) {
+    throw new Error("Missing research preset.");
+  }
+  const profile = buildOrchestrationProfileFromPreset(preset, {
+    id: createUserPresetProfileId("research", ["user.research.profile"]),
+    name: createUserPresetProfileName("Research", ["Research Profile"]),
+    modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+    templates,
+    updatedAt: "2026-06-07T08:00:00.000Z",
+  });
+  expect(profile).toMatchObject({
+    id: "user.research.profile.2",
+    name: "Research Profile 2",
+    preset: "research",
+    source: "user",
+    updatedAt: "2026-06-07T08:00:00.000Z",
+    mainAgent: {
+      systemPromptPreset: "custom",
+      modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+    },
+    strategy: { kind: "fixed" },
+  });
+  expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
+    "researcher",
+    "source_verifier",
+    "synthesizer",
+  ]);
+  expect(profile.agents.every((agent) => agent.enabled)).toBe(true);
+  expect(profile.agents.every((agent) => agent.modelRef.modelId === "research-model")).toBe(true);
+  expect(profile.agents.find((agent) => agent.agentKey === "source_verifier")?.tools.allowed).toContain(
+    "WebSearch",
+  );
 });
 
 test("route profile migrates to a coding orchestration profile", () => {

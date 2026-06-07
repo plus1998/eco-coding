@@ -1148,6 +1148,78 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
   ];
 }
 
+export function createUserPresetProfileId(presetId: AgentDomain, existingIds: readonly string[]): string {
+  return uniquePresetProfileValue(
+    `user.${presetId}.profile`,
+    existingIds,
+    (base, index) => `${base}.${index}`,
+  );
+}
+
+export function createUserPresetProfileName(presetName: string, existingNames: readonly string[]): string {
+  return uniquePresetProfileValue(
+    `${presetName} Profile`,
+    existingNames,
+    (base, index) => `${base} ${index}`,
+  );
+}
+
+export function buildOrchestrationProfileFromPreset(
+  preset: BuiltInPresetDefinition,
+  options: {
+    id: string;
+    name: string;
+    modelRef: ModelRef;
+    templates?: readonly AgentTemplate[];
+    source?: Extract<AgentConfigSource, "user" | "project">;
+    updatedAt?: string;
+  },
+): OrchestrationProfile {
+  const modelRef = cloneModelRef(options.modelRef);
+  if (!modelRef.providerId || !modelRef.modelId) {
+    throw new Error("复制场景预设需要可用的默认模型。");
+  }
+  const templateById = new Map(
+    (options.templates ?? createBuiltInAgentTemplates()).map((template) => [template.id, template]),
+  );
+  const now = options.updatedAt ?? new Date().toISOString();
+  return {
+    id: options.id.trim(),
+    name: options.name.trim(),
+    preset: preset.id,
+    mainAgent: {
+      agentKey: "main",
+      name: `${preset.name} Main Agent`,
+      domain: preset.id,
+      systemPromptPreset: preset.id === "coding" ? "claude_code" : "custom",
+      prompt: preset.mainAgentPrompt.trim(),
+      modelRef,
+      tools: cloneToolPolicy(preset.mainAgentTools),
+      skills: [],
+    },
+    agents: preset.defaultAgents.map((agent) => {
+      const template = templateById.get(agent.templateId);
+      if (!template) {
+        throw new Error(`场景预设 ${preset.name} 缺少子代理模板：${agent.templateId}`);
+      }
+      return {
+        agentKey: agent.agentKey,
+        templateId: agent.templateId,
+        displayName: agent.displayName,
+        modelRef: cloneModelRef(modelRef),
+        tools: cloneToolPolicy(template.defaultTools),
+        mcpServers: [...template.mcpServers],
+        skills: [...template.skills],
+        enabled: true,
+      };
+    }),
+    strategy: cloneOrchestrationStrategy(selectPresetDefaultStrategy(preset)),
+    version: 1,
+    updatedAt: now,
+    source: options.source ?? "user",
+  };
+}
+
 export function buildCodingOrchestrationProfileFromRouteProfile(
   routeProfile: RouteProfileView,
   options: {
@@ -1572,6 +1644,71 @@ function cloneWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
     ...step,
     dependsOn: [...step.dependsOn],
   }));
+}
+
+function uniquePresetProfileValue(
+  base: string,
+  existingValues: readonly string[],
+  buildCandidate: (base: string, index: number) => string,
+): string {
+  const existing = new Set(existingValues.map((value) => value.trim()).filter(Boolean));
+  if (!existing.has(base)) {
+    return base;
+  }
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = buildCandidate(base, index);
+    if (!existing.has(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error(`无法为 ${base} 生成唯一名称。`);
+}
+
+function selectPresetDefaultStrategy(preset: BuiltInPresetDefinition): OrchestrationStrategy {
+  if (preset.strategies.defaultKind === "fixed") {
+    return preset.strategies.fixed;
+  }
+  if (preset.strategies.defaultKind === "hybrid") {
+    return preset.strategies.hybrid;
+  }
+  return preset.strategies.autonomous;
+}
+
+function cloneOrchestrationStrategy(strategy: OrchestrationStrategy): OrchestrationStrategy {
+  if (strategy.kind === "autonomous") {
+    return {
+      kind: "autonomous",
+      ...(strategy.guidancePrompt && { guidancePrompt: strategy.guidancePrompt }),
+    };
+  }
+  if (strategy.kind === "hybrid") {
+    return {
+      kind: "hybrid",
+      recommendedSteps: cloneWorkflowSteps(strategy.recommendedSteps),
+      allowPlannerAdjustments: strategy.allowPlannerAdjustments,
+    };
+  }
+  return {
+    kind: "fixed",
+    steps: cloneWorkflowSteps(strategy.steps),
+    ...(strategy.finalAggregator && {
+      finalAggregator: {
+        ...strategy.finalAggregator,
+        dependsOn: [...strategy.finalAggregator.dependsOn],
+      },
+    }),
+  };
+}
+
+function cloneModelRef(modelRef: ModelRef): ModelRef {
+  return {
+    providerId: modelRef.providerId.trim(),
+    modelId: modelRef.modelId.trim(),
+    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
+    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
+    ...(modelRef.modelsDevMapping && { modelsDevMapping: { ...modelRef.modelsDevMapping } }),
+    ...(modelRef.manualSpec && { manualSpec: { ...modelRef.manualSpec } }),
+  };
 }
 
 function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
