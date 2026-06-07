@@ -2,7 +2,6 @@ import { Folder, FolderOpen } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
-import { formatSkillDisplayName } from "./composer-skills";
 import { formatRelativeTime } from "./relative-time";
 
 const PROJECT_DRAG_MIME = "application/x-eco-project-path";
@@ -210,7 +209,7 @@ export function ProjectSidebarTree({
                   className="project-group-header"
                   onClick={() => onSwitchProject(project.path)}
                 >
-                  <span>{formatSkillDisplayName(project.name)}</span>
+                  <span>{project.name}</span>
                 </button>
               </div>
             </div>
