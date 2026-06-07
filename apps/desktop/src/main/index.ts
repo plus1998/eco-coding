@@ -56,6 +56,7 @@ import {
   type ThreadRetryResult,
   type ThreadLiveEvent,
   type ThreadRunProjectionSnapshot,
+  type ThreadRunToolMetadata,
   type ThreadBillingSnapshot,
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
@@ -3444,14 +3445,14 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   sdkStreamBridge.handleEvent(
     threadId,
     event,
-    (id, type, message, role, stream, agentId) => {
+    (id, type, message, role, stream, agentId, extras) => {
       emitThreadEvent(
         id,
         type,
         message,
         role as AgentRole | "system" | "thinking" | "tool" | "user",
         stream,
-        agentId ? { agentId } : undefined,
+        agentId || extras ? { ...(agentId && { agentId }), ...(extras?.tool && { tool: extras.tool }) } : undefined,
       );
     },
     undefined,
@@ -3475,6 +3476,14 @@ function emitOtelActivity(line: OtelActivityLine): void {
   emitThreadEvent(line.threadId, eventType, line.message, line.role, line.stream ?? false, {
     ...(otelAgentId && { agentId: otelAgentId }),
     ...(line.apiError && { apiError: line.apiError }),
+    ...(line.toolName && {
+      tool: {
+        name: line.toolName,
+        ...(line.toolDetail && { detail: line.toolDetail }),
+        ...(line.toolUseId && { toolUseId: line.toolUseId }),
+        ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
+      },
+    }),
   });
 }
 
@@ -3990,6 +3999,7 @@ interface EmitThreadEventExtras {
   agentId?: string;
   subagentSessions?: ThreadLiveEvent["subagentSessions"];
   apiError?: ThreadLiveEvent["apiError"];
+  tool?: ThreadRunToolMetadata;
 }
 
 function emitThreadEvent(
@@ -4200,6 +4210,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     ...(input.extras?.agentId?.trim() && { agentId: input.extras.agentId.trim() }),
     ...(input.persistedActivityLine && { streamKey: input.persistedActivityLine.id }),
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
+    ...(input.extras?.tool && { tool: input.extras.tool }),
   });
   if (!event) {
     return;

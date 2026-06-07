@@ -920,6 +920,36 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
 });
 
+test("projectionItemToDetailBlock prefers structured tool metadata", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "otel-webfetch",
+      eventType: "tool.completed",
+      scope: "agent",
+      role: "explore",
+      agentId: "agent_weather",
+      text: "Tool: WebFetch",
+      metadata: {
+        liveType: "otel.activity",
+        tool: {
+          name: "WebFetch",
+          detail: "https://weather.example/guangzhou",
+          toolUseId: "toolu_fetch_1",
+          durationMs: 8300,
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "action",
+    icon: "agent",
+    label: "WebFetch · https://weather.example/guangzhou (8.3s)",
+    subagent: "explore",
+    agentId: "agent_weather",
+  });
+});
+
 test("isProjectionRequestActive follows request span status", () => {
   expect(
     isProjectionRequestActive({

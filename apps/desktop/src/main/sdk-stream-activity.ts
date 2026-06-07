@@ -6,6 +6,7 @@ import {
   isEcoStreamPlaceholder,
   isUpstreamStatusActivityMessage,
 } from "@eco/runtime/sdk";
+import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id.js";
 
 type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
@@ -39,6 +40,7 @@ export type SdkActivityEmit = (
   role: string,
   stream: boolean,
   agentId?: string,
+  extras?: { tool?: ThreadRunToolMetadata },
 ) => void;
 
 export class SdkStreamActivityBridge {
@@ -203,6 +205,9 @@ export class SdkStreamActivityBridge {
       return;
     }
 
+    const emitExtras =
+      event.type === "tool.started" ? resolveSdkToolMetadata(event.payload, message) : undefined;
+
     this.flushPending(threadId, emit);
     if (stream) {
       this.lastStreamLine.set(streamKey, {
@@ -213,7 +218,7 @@ export class SdkStreamActivityBridge {
     } else {
       this.lastStreamLine.delete(streamKey);
     }
-    emit(threadId, event.type, message, role, stream, activityAgentId);
+    emit(threadId, event.type, message, role, stream, activityAgentId, emitExtras ? { tool: emitExtras } : undefined);
   }
 
   private scheduleThrottledDelta(
@@ -260,6 +265,67 @@ export class SdkStreamActivityBridge {
       emit(threadId, "message.delta", pending.message, pending.role, pending.stream, pending.agentId);
     }
   }
+}
+
+function resolveSdkToolMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "tool_use" || typeof record.tool_name !== "string" || !record.tool_name.trim()) {
+    return undefined;
+  }
+  const name = record.tool_name.trim();
+  const detail = resolveSdkToolDisplayDetail(name, record.input) ?? parseToolDisplayDetail(message);
+  const toolUseId = readString(record.tool_use_id);
+  return {
+    name,
+    ...(detail && { detail }),
+    ...(toolUseId && { toolUseId }),
+  };
+}
+
+function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  if (toolName === "Agent") {
+    return normalizeSubagentToolDisplayLabel(
+      readString(record.subagent_type) ?? readString(record.agent_type),
+    );
+  }
+  return (
+    readString(record.full_command) ??
+    readString(record.bash_command) ??
+    readString(record.command) ??
+    readString(record.file_path) ??
+    readString(record.path) ??
+    readString(record.pattern) ??
+    readString(record.query) ??
+    readString(record.url)
+  );
+}
+
+function parseToolDisplayDetail(message: string): string | undefined {
+  const match = message.trim().match(/^Tool:\s*.+?\s*·\s*(.+)$/);
+  return readString(match?.[1]);
+}
+
+function normalizeSubagentToolDisplayLabel(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  const roleLabels: Record<string, string> = {
+    explore: "探索",
+    architect: "架构",
+    coder: "编码",
+    reviewer: "审查",
+    tester: "测试",
+  };
+  return roleLabels[normalized] ?? normalized;
 }
 
 interface ParsedOtelToolLine {

@@ -121,6 +121,40 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
   });
 });
 
+test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "otel_tool",
+    liveType: "otel.activity",
+    role: "explore",
+    agentId: "agent_explore_a",
+    stream: false,
+    message: "Tool: WebFetch · https://weather.example/guangzhou (8.3s)",
+    tool: {
+      name: "WebFetch",
+      detail: "https://weather.example/guangzhou",
+      toolUseId: "toolu_fetch_1",
+      durationMs: 8300,
+    },
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "tool.completed",
+    scope: "agent",
+    streamState: "none",
+    metadata: {
+      liveType: "otel.activity",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example/guangzhou",
+        toolUseId: "toolu_fetch_1",
+        durationMs: 8300,
+      },
+    },
+  });
+});
+
 test("buildSubagentLifecycleRunEvent includes parent and mission metadata", () => {
   const event = buildSubagentLifecycleRunEvent({
     threadId: "thr_1",

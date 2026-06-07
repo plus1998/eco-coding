@@ -66,6 +66,57 @@ test("suppresses OTel tool summaries by structured tool metadata", () => {
   ).toBe(true);
 });
 
+test("emits structured SDK tool metadata with tool started activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    agentId?: string;
+    tool?: { name: string; detail?: string; toolUseId?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "explore",
+      agentId: "agent_weather",
+      payload: {
+        type: "tool_use",
+        tool_name: "WebFetch",
+        tool_use_id: "toolu_fetch_1",
+        input: { url: "https://weather.example/guangzhou" },
+      },
+    },
+    (_threadId, type, message, role, _stream, agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        role,
+        ...(agentId && { agentId }),
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+    undefined,
+    { activityAgentId: "agent_weather" },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "tool.started",
+      message: "Tool: WebFetch",
+      role: "explore",
+      agentId: "agent_weather",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example/guangzhou",
+        toolUseId: "toolu_fetch_1",
+      },
+    },
+  ]);
+});
+
 test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", () => {
   const bridge = new SdkStreamActivityBridge();
   bridge.handleEvent(

@@ -34,6 +34,13 @@ export type ThreadRunEventType =
   | "api.error"
   | "diagnostic";
 
+export interface ThreadRunToolMetadata {
+  name: string;
+  detail?: string;
+  toolUseId?: string;
+  durationMs?: number;
+}
+
 export interface ThreadRunEvent {
   id: string;
   threadId: string;

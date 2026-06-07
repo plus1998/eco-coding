@@ -3,6 +3,7 @@ import type {
   ThreadRunEventInput,
   ThreadRunEventScope,
   ThreadRunEventStreamState,
+  ThreadRunToolMetadata,
   ThreadRunEventType,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
@@ -21,6 +22,7 @@ export interface BuildThreadRunEventFromLiveInput {
   agentId?: string;
   streamKey?: string;
   apiError?: ThreadApiErrorInfo;
+  tool?: ThreadRunToolMetadata;
 }
 
 export interface BuildSubagentLifecycleRunEventInput {
@@ -68,8 +70,7 @@ export function buildThreadRunEventFromLiveEvent(
     ...(input.agentId && { agentId: input.agentId }),
     ...(requestId && { requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
-    ...(input.apiError && { metadata: { liveType: input.liveType, apiError: input.apiError } }),
-    ...(!input.apiError && { metadata: { liveType: input.liveType } }),
+    metadata: buildLiveEventMetadata(input),
   };
 }
 
@@ -133,8 +134,8 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     if (/^Tool failed:/i.test(input.message)) {
       return "tool.failed";
     }
-    if (/^Tool:/i.test(input.message)) {
-      return "tool.started";
+    if (input.tool || /^Tool:/i.test(input.message)) {
+      return "tool.completed";
     }
     return input.stream ? "message.delta" : "message.final";
   }
@@ -179,4 +180,26 @@ function resolveRequestId(input: {
     return undefined;
   }
   return `req:${input.threadId}:${input.eventId}`;
+}
+
+function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record<string, unknown> {
+  const tool = input.tool ? normalizeThreadRunToolMetadata(input.tool) : undefined;
+  return {
+    liveType: input.liveType,
+    ...(input.apiError && { apiError: input.apiError }),
+    ...(tool && { tool }),
+  };
+}
+
+function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunToolMetadata | undefined {
+  const name = tool.name.trim();
+  if (!name) {
+    return undefined;
+  }
+  return {
+    name,
+    ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
+    ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
+    ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
+  };
 }

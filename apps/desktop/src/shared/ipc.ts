@@ -106,6 +106,7 @@ export type {
   ThreadRunEventScope,
   ThreadRunEventStreamState,
   ThreadRunEventType,
+  ThreadRunToolMetadata,
 } from "./thread-run-events";
 export type {
   ThreadRunProjectionAgent,

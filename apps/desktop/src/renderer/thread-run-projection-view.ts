@@ -2,6 +2,7 @@ import type {
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
+  ThreadRunToolMetadata,
 } from "../shared/ipc";
 import {
   resolveSubagentRunDisplayTitle,
@@ -200,8 +201,15 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
 }
 
 function isProjectionOtelToolDurationSummary(item: ThreadRunProjectionTimelineItem): boolean {
-  if (item.eventType !== "tool.started" || projectionLiveType(item) !== "otel.activity") {
+  if (
+    (item.eventType !== "tool.started" && item.eventType !== "tool.completed") ||
+    projectionLiveType(item) !== "otel.activity"
+  ) {
     return false;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (metadataTool?.durationMs !== undefined) {
+    return true;
   }
   const text = item.text.trim();
   return (
@@ -502,7 +510,7 @@ export function projectionItemToDetailBlock(
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
     return {
       kind: "action",
-      icon: resolveProjectionActionIcon(text),
+      icon: resolveProjectionActionIcon(resolveProjectionToolIconText(item)),
       label: resolveProjectionToolActionLabel(item),
       ...(item.role && { subagent: item.role }),
       ...(item.agentId && { agentId: item.agentId }),
@@ -627,6 +635,24 @@ function readProjectionApiError(
   };
 }
 
+function readProjectionToolMetadata(item: ThreadRunProjectionTimelineItem): ThreadRunToolMetadata | undefined {
+  const raw = item.metadata?.tool;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  if (!name) {
+    return undefined;
+  }
+  return {
+    name,
+    ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
+    ...(typeof record.toolUseId === "string" && record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
+    ...(typeof record.durationMs === "number" && Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
+  };
+}
+
 function isProjectionLifecycleText(text: string): boolean {
   return /^Subagent\s+\S+\s+(started|stopped|abandoned)$/i.test(text);
 }
@@ -676,6 +702,10 @@ function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): str
 }
 
 function resolveProjectionToolName(item: ThreadRunProjectionTimelineItem): string {
+  const metadataTool = readProjectionToolMetadata(item);
+  if (metadataTool) {
+    return metadataTool.name;
+  }
   const text = item.text.trim();
   const failedMatch = /^Tool failed:\s*([^:]+)(?::\s*(.*))?$/iu.exec(text);
   if (failedMatch?.[1]?.trim()) {
@@ -689,11 +719,31 @@ function resolveProjectionToolName(item: ThreadRunProjectionTimelineItem): strin
 }
 
 function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem): string {
+  const metadataTool = readProjectionToolMetadata(item);
+  if (metadataTool) {
+    return formatProjectionToolActionLabel(metadataTool);
+  }
   const text = item.text.trim();
   if (!text) {
     return item.eventType === "tool.completed" ? "工具完成" : "工具调用";
   }
   return text.replace(/^Tool:\s*/iu, "").trim();
+}
+
+function resolveProjectionToolIconText(item: ThreadRunProjectionTimelineItem): string {
+  const metadataTool = readProjectionToolMetadata(item);
+  if (!metadataTool) {
+    return item.text.trim();
+  }
+  return `${metadataTool.name} ${metadataTool.detail ?? ""}`.trim();
+}
+
+function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
+  const base = tool.detail ? `${tool.name} · ${tool.detail}` : tool.name;
+  if (tool.durationMs === undefined) {
+    return base;
+  }
+  return `${base} (${(tool.durationMs / 1000).toFixed(1)}s)`;
 }
 
 function resolveProjectionActionIcon(text: string): ActivityActionIcon {
