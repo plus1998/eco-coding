@@ -82,6 +82,14 @@ test("normalizers reject built-in and derived configs for user storage", () => {
   expect(() => normalizeStoredAgentTemplate(createBuiltInAgentTemplates()[0] as AgentTemplate)).toThrow(
     "内置子代理模板不可写入用户配置",
   );
+  expect(() =>
+    normalizeStoredAgentTemplate({
+      ...customTemplate(),
+      id: "builtin.research.custom",
+      builtIn: false,
+      source: "user",
+    }),
+  ).toThrow("内置子代理模板 id 不可用于用户配置");
 
   const routeProfile: RouteProfileView = {
     id: "coding",

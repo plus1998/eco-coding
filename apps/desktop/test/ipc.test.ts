@@ -7,6 +7,12 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.modelSettingsGet).toBe("model-settings:get");
   expect(IPC_CHANNELS.modelProviderSave).toBe("model-provider:save");
   expect(IPC_CHANNELS.modelRouteProfileSave).toBe("model-route-profile:save");
+  expect(IPC_CHANNELS.agentTemplateList).toBe("agent-template:list");
+  expect(IPC_CHANNELS.agentTemplateSave).toBe("agent-template:save");
+  expect(IPC_CHANNELS.agentTemplateDelete).toBe("agent-template:delete");
+  expect(IPC_CHANNELS.orchestrationProfileList).toBe("orchestration-profile:list");
+  expect(IPC_CHANNELS.orchestrationProfileSave).toBe("orchestration-profile:save");
+  expect(IPC_CHANNELS.orchestrationProfileDelete).toBe("orchestration-profile:delete");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadUpdateRuntimeConfig).toBe("thread:update-runtime-config");
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");

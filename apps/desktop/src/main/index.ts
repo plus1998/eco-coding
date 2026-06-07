@@ -3,263 +3,140 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  type ParsedUsage,
-  type EcoPlanningContext,
-  type EcoSdkResumeOptions,
-  type EcoSdkSessionOptions,
-  type OtelActivityLine,
-  type OtelUsageUpdate,
-  type PlanReadyPayload,
-  type SessionCapturedPayload,
-  type AgentEvent,
-} from "@eco/runtime";
-import { ClaudeAgentSdkDriver, deleteClaudeAgentSdkSession, type EcoHookContext } from "@eco/runtime/sdk";
-import { defaultSubagentAvailability, isSubagentRole, type SubagentRunPhase } from "@eco/runtime";
+import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   createRedisSessionStore,
   createSqliteSessionStore,
-  testRedisConnection,
   type SessionStore,
+  testRedisConnection,
 } from "@eco/persistence";
-import type { ResolvedModelRoute } from "@eco/model-router";
-import { createSessionPlan, GitWorktreeService, type CommandRunner, type WorktreePlan } from "@eco/workspace";
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, type NativeImage } from "electron";
+import {
+  type AgentEvent,
+  defaultSubagentAvailability,
+  type EcoPlanningContext,
+  type EcoSdkResumeOptions,
+  type EcoSdkSessionOptions,
+  isSubagentRole,
+  type OtelActivityLine,
+  type OtelUsageUpdate,
+  type ParsedUsage,
+  type PlanReadyPayload,
+  type SessionCapturedPayload,
+  type SubagentRunPhase,
+} from "@eco/runtime";
+import { ClaudeAgentSdkDriver, deleteClaudeAgentSdkSession, type EcoHookContext } from "@eco/runtime/sdk";
+import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
+import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
+import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   AGENT_ROLES,
   type AgentRole,
-  IPC_CHANNELS,
-  isKnownIpcChannel,
-  type McpServerConfigInput,
-  type ListUpstreamModelsRequest,
-  type TestProviderConnectionRequest,
-  type TestRoleRoutesRequest,
-  type ModelSettingsSnapshot,
-  type ProviderConfigInput,
-  type RoleRouteConfig,
-  type ThreadRuntimeConfig,
-  type ThreadRuntimeConfigInput,
-  type ThreadUpdateRuntimeConfigRequest,
-  isThreadRuntimeConfig,
-  normalizeThreadRuntimeConfig,
+  type AgentTemplate,
   buildThreadRuntimeConfigFromDefaults,
-  getRoutesForProfile,
-  type RouteProfileInput,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
-  type ThreadActivityLine,
+  getRoutesForProfile,
+  IPC_CHANNELS,
+  isKnownIpcChannel,
+  isThreadRuntimeConfig,
+  type ListUpstreamModelsRequest,
+  type McpServerConfigInput,
+  type ModelSettingsSnapshot,
+  normalizeThreadRuntimeConfig,
+  type OrchestrationProfile,
+  type PromptImageAttachment,
+  type ProviderConfigInput,
+  type RoleRouteConfig,
+  type RouteProfileInput,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
+  type TestProviderConnectionRequest,
+  type TestRoleRoutesRequest,
+  type ThreadActivityLine,
+  type ThreadAppliedDiffResult,
+  type ThreadBillingSnapshot,
+  type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
-  type ThreadRetryRequest,
-  type ThreadRetryResult,
   type ThreadLiveEvent,
-  type ThreadRunProjectionSnapshot,
-  type ThreadRunToolMetadata,
-  type ThreadBillingSnapshot,
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
-  type ThreadRollbackResult,
-  type WorktreeCancelDisposition,
-  type ThreadStartRequest,
-  type ThreadStatus,
-  type PromptImageAttachment,
-  type ThreadSummary,
-  type ThreadUsageSnapshot,
-  type ThreadUsageSnapshotResult,
-  type ThreadContextSnapshot,
-  type WorktreeApplyResult,
-  type WorktreeStatusResult,
-  type ThreadAppliedDiffResult,
+  type ThreadRetryRequest,
+  type ThreadRetryResult,
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
+  type ThreadRollbackResult,
+  type ThreadRunProjectionSnapshot,
+  type ThreadRunToolMetadata,
+  type ThreadRuntimeConfig,
+  type ThreadRuntimeConfigInput,
+  type ThreadStartRequest,
+  type ThreadStatus,
+  type ThreadSummary,
+  type ThreadUpdateRuntimeConfigRequest,
+  type ThreadUsageSnapshot,
+  type ThreadUsageSnapshotResult,
   type WorkspaceInfo,
+  type WorktreeApplyResult,
+  type WorktreeCancelDisposition,
+  type WorktreeStatusResult,
 } from "../shared/ipc";
-import {
-  buildWorktreeMergeSummary,
-  formatWorktreeMergeThreadMessage,
-  serializeWorktreeMergeMessage,
-} from "../shared/worktree-merge";
-import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
-import { consumeSdkRunEvents } from "./sdk-run-event-loop";
-import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
-import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
-import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
-import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
-import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
-import { loadThreadTodoList } from "./thread-todo-list-runtime";
-import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
-import { buildThreadRunProjection } from "./thread-run-projection";
-import {
-  REQUEST_AUTO_RETRY_INTERVAL_MS,
-  formatUserFacingRequestError,
-  type RequestAttemptResult,
-} from "./request-retry";
-import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
-import { finalizeThreadRunCleanup, type FinalizeThreadRunCleanupInput } from "./thread-run-cleanup";
-import {
-  applyThreadRunDecisionEffects,
-  type ApplyThreadRunDecisionEffectsInput,
-} from "./thread-run-decision-effects";
-import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
-import {
-  resolveAutonomousRunOutcome,
-  resolveContinuationRunOutcome,
-  resolveExecutionRunOutcome,
-  resolvePlanningRunOutcome,
-  resolveQuestionRunOutcome,
-  runAttemptPhaseFromThreadMode,
-} from "./thread-run-outcome";
-import { classifyThreadIntent } from "./thread-intent";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
-  approvedPlanSnapshotExists,
-  isWorktreeGitCwdError,
-  readApprovedPlanSnapshot,
-  resolveWorktreePathHint,
-  writeApprovedPlanSnapshot,
-} from "./worktree-lifecycle";
-import {
-  buildPlanExecutionFailureMessage,
-  planExecutionFailurePrefix,
-} from "../shared/thread-failure-message";
+  filterExplicitUserSkillNames,
+  type LinkAgentsSkillsRequest,
+  listSdkReadyProjectSkills,
+  mergeSkillNames,
+} from "../shared/skills";
 import {
   buildAgentPromptWithContext,
   continueStatusMessage,
   isContinuableThreadStatus,
   resolveThreadContinueAction,
-  threadEnteredExecutionPhase,
   type ThreadContinueAction,
+  threadEnteredExecutionPhase,
 } from "../shared/thread-continuation";
-import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
-  pendingThreadTitle,
-  shouldReplaceAutoThreadTitle,
-  summarizeThreadTitle,
-  threadTitleFromPlannerPlan,
-} from "./thread-title";
-import { createConversationStore, type ConversationStore } from "./conversation-store";
-import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
+  buildPlanExecutionFailureMessage,
+  planExecutionFailurePrefix,
+} from "../shared/thread-failure-message";
 import {
-  estimateInputTokensFromAnthropicBody,
-  startAnthropicModelProxy,
+  buildWorktreeMergeSummary,
+  formatWorktreeMergeThreadMessage,
+  serializeWorktreeMergeMessage,
+} from "../shared/worktree-merge";
+import { ActiveRunBillingStateStore } from "./active-run-billing-state";
+import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
+import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
+import { AgentLifecycleService } from "./agent-lifecycle-service";
+import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
+import { mergeAgentRegistrySettings } from "./agent-registry-settings";
+import {
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
+  estimateInputTokensFromAnthropicBody,
+  startAnthropicModelProxy,
 } from "./anthropic-proxy";
-import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
-  resolveRuntimeRoutesFromSettings,
   type RuntimeRoute,
+  resolveRuntimeRoutesFromSettings,
 } from "./billing-resolver";
 import {
-  buildDriverRoutes,
-  buildDriverRoutesFromRuntime,
-  resolveThreadRuntimeConfig,
-  roleRoutesFromRuntime,
-  type RuntimeConfig,
-  type RuntimeConfigResolution,
-} from "./thread-runtime-routes";
-import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
-import {
+  type BillingRuntimeEnvironment,
   createBillingRuntimeEnvironment,
   resolveBillingRuntimeContext,
-  type BillingRuntimeEnvironment,
 } from "./billing-runtime-environment";
-import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
-import { enrichBillingDisplaySource } from "../shared/billing-display-source";
-import { ActiveRunRuntimeStateStore, type ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
-import { ActiveRunBillingStateStore } from "./active-run-billing-state";
-import { logContextSnapshot } from "./context-snapshot-log";
-import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
-import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
-import { ContextWindowMonitor } from "./context-window-monitor";
-import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
-import { createContextLifecycleService, type ContextLifecycleService } from "./context-lifecycle-service";
-import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import {
-  flushThreadMetrics,
-  persistThreadMetrics,
-  restoreThreadMetricsFromStore,
-} from "./thread-metrics-runtime";
-import { resolveOtelUsageBilling } from "./otel-usage-billing";
-import { resolveProxyUsageBilling } from "./proxy-usage-billing";
-import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
-import {
-  resolveSingleUsageBillingOrchestration,
-  type SingleUsageBillingRequest,
-} from "./single-usage-billing-orchestration";
-import { type UsageBillingPricingRoute } from "./usage-billing-artifacts";
-import {
-  applySdkRunBillingEffects,
-  applySdkStreamPartialBillingEffects,
-  applySingleUsageBillingEffects,
-  type UsageBillingUpdatedEvent,
-} from "./usage-billing-effects";
-import { createUsageContextService } from "./usage-context-effects";
-import { createCompactionAuditService, type CompactionAuditService } from "./compaction-audit-service";
-import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
-import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import { AgentLifecycleService } from "./agent-lifecycle-service";
-import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
-import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
-import { resolveSdkEventUsageBilling, type SdkUsageBillingBundle } from "./sdk-event-usage-billing";
-import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
-import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
-import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
-import {
-  resolveSdkStreamPartialBillingOrchestration,
-  type SdkStreamPartialBillingRequest,
-} from "./sdk-stream-partial-billing-orchestration";
-import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
-import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
-import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
-import { getUpstreamLogFilePath } from "./upstream-log";
-import { createMcpStore, type McpStore } from "./mcp-store";
-import { localOtelReceiver } from "./otel-receiver";
-import { listDiscoveredSkills } from "./skills-discovery";
-import { linkAgentsSkillsToClaude } from "./skills-symlink";
-import {
-  filterExplicitUserSkillNames,
-  listSdkReadyProjectSkills,
-  mergeSkillNames,
-  type LinkAgentsSkillsRequest,
-} from "../shared/skills";
-import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
-import { SdkStreamActivityBridge } from "./sdk-stream-activity";
-import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
-import {
-  createSubagentSettingsStore,
-  isSubagentEnabledSettings,
-  type SubagentSettingsStore,
-} from "./subagent-settings-store";
-import {
-  createWorkflowSettingsStore,
-  isWorkflowSettingsSnapshot,
-  normalizeWorkflowSettingsSnapshot,
-  orchestrationModeFromSnapshot,
-  type WorkflowSettingsStore,
-} from "./workflow-settings-store";
-import {
-  createProxyBridgeSettingsStore,
-  isProxyBridgeSettingsSnapshot,
-  normalizeProxyBridgeSettingsSnapshot,
-  resolveUpstreamUserAgentOverride,
-  type ProxyBridgeSettingsStore,
-} from "./proxy-bridge-settings-store";
-import { createProviderStore, type ProviderStore } from "./provider-store";
-import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
-import { prepareWorkspaceGit } from "./workspace-git-setup";
-import {
+  type FinalizeCancelledRunDeps,
   finalizeCancelledRun,
   parseThreadCancelRequest,
   takePendingCancelDisposition,
-  type FinalizeCancelledRunDeps,
 } from "./cancel-worktree";
 import {
   buildAskUserQuestionUpdatedInput,
@@ -271,6 +148,135 @@ import {
   registerPendingClarification,
   submitClarification,
 } from "./clarification-bridge";
+import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
+import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
+import { logContextSnapshot } from "./context-snapshot-log";
+import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
+import { ContextWindowMonitor } from "./context-window-monitor";
+import { type ConversationStore, createConversationStore } from "./conversation-store";
+import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
+import { createMcpStore, type McpStore } from "./mcp-store";
+import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import { localOtelReceiver } from "./otel-receiver";
+import { resolveOtelUsageBilling } from "./otel-usage-billing";
+import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
+import { createProviderStore, type ProviderStore } from "./provider-store";
+import {
+  createProxyBridgeSettingsStore,
+  isProxyBridgeSettingsSnapshot,
+  normalizeProxyBridgeSettingsSnapshot,
+  type ProxyBridgeSettingsStore,
+  resolveUpstreamUserAgentOverride,
+} from "./proxy-bridge-settings-store";
+import { resolveProxyUsageBilling } from "./proxy-usage-billing";
+import {
+  formatUserFacingRequestError,
+  REQUEST_AUTO_RETRY_INTERVAL_MS,
+  type RequestAttemptResult,
+} from "./request-retry";
+import type { resolveSdkEventUsageBilling, SdkUsageBillingBundle } from "./sdk-event-usage-billing";
+import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
+import { consumeSdkRunEvents } from "./sdk-run-event-loop";
+import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
+import { SdkStreamActivityBridge } from "./sdk-stream-activity";
+import {
+  resolveSdkStreamPartialBillingOrchestration,
+  type SdkStreamPartialBillingRequest,
+} from "./sdk-stream-partial-billing-orchestration";
+import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
+import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
+import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
+import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
+import {
+  resolveSingleUsageBillingOrchestration,
+  type SingleUsageBillingRequest,
+} from "./single-usage-billing-orchestration";
+import { listDiscoveredSkills } from "./skills-discovery";
+import { linkAgentsSkillsToClaude } from "./skills-symlink";
+import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
+import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
+import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
+import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
+import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
+import {
+  createSubagentSettingsStore,
+  isSubagentEnabledSettings,
+  type SubagentSettingsStore,
+} from "./subagent-settings-store";
+import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
+import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
+import { classifyThreadIntent } from "./thread-intent";
+import {
+  flushThreadMetrics,
+  persistThreadMetrics,
+  restoreThreadMetricsFromStore,
+} from "./thread-metrics-runtime";
+import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
+import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
+import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
+import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
+import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
+import { type FinalizeThreadRunCleanupInput, finalizeThreadRunCleanup } from "./thread-run-cleanup";
+import {
+  type ApplyThreadRunDecisionEffectsInput,
+  applyThreadRunDecisionEffects,
+} from "./thread-run-decision-effects";
+import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
+import {
+  resolveAutonomousRunOutcome,
+  resolveContinuationRunOutcome,
+  resolveExecutionRunOutcome,
+  resolvePlanningRunOutcome,
+  resolveQuestionRunOutcome,
+  runAttemptPhaseFromThreadMode,
+} from "./thread-run-outcome";
+import { buildThreadRunProjection } from "./thread-run-projection";
+import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
+import {
+  buildDriverRoutes,
+  buildDriverRoutesFromRuntime,
+  type RuntimeConfig,
+  type RuntimeConfigResolution,
+  resolveThreadRuntimeConfig,
+  roleRoutesFromRuntime,
+} from "./thread-runtime-routes";
+import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
+import {
+  pendingThreadTitle,
+  shouldReplaceAutoThreadTitle,
+  summarizeThreadTitle,
+  threadTitleFromPlannerPlan,
+} from "./thread-title";
+import { loadThreadTodoList } from "./thread-todo-list-runtime";
+import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
+import { getUpstreamLogFilePath } from "./upstream-log";
+import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
+import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
+import {
+  applySdkRunBillingEffects,
+  applySdkStreamPartialBillingEffects,
+  applySingleUsageBillingEffects,
+  type UsageBillingUpdatedEvent,
+} from "./usage-billing-effects";
+import { createUsageContextService } from "./usage-context-effects";
+import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
+import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
+import {
+  createWorkflowSettingsStore,
+  isWorkflowSettingsSnapshot,
+  normalizeWorkflowSettingsSnapshot,
+  orchestrationModeFromSnapshot,
+  type WorkflowSettingsStore,
+} from "./workflow-settings-store";
+import { prepareWorkspaceGit } from "./workspace-git-setup";
+import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
+import {
+  approvedPlanSnapshotExists,
+  isWorktreeGitCwdError,
+  readApprovedPlanSnapshot,
+  resolveWorktreePathHint,
+  writeApprovedPlanSnapshot,
+} from "./worktree-lifecycle";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
@@ -304,6 +310,7 @@ const gitRunner: CommandRunner = {
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
+let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let subagentSettingsStore: SubagentSettingsStore;
@@ -373,6 +380,7 @@ app.whenReady().then(async () => {
   }
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
+  agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
   subagentMetricsRegistry = new SubagentMetricsRegistry(conversationStore);
@@ -480,9 +488,37 @@ app.on("will-quit", () => {
   void closeSdkSessionStore?.();
 });
 
+function getModelSettingsSnapshot(): ModelSettingsSnapshot {
+  return mergeAgentRegistrySettings(providerStore.getSettings(), agentOrchestrationStore);
+}
+
+function assertCanWriteAgentTemplateId(id: string): void {
+  const templateId = id.trim();
+  if (!templateId) {
+    return;
+  }
+  const protectedIds = new Set(providerStore.getSettings().agentTemplates.map((template) => template.id));
+  if (protectedIds.has(templateId)) {
+    throw new Error("内置子代理模板不可直接修改，请先复制为用户模板。");
+  }
+}
+
+function assertCanWriteOrchestrationProfileId(id: string): void {
+  const profileId = id.trim();
+  if (!profileId) {
+    return;
+  }
+  const protectedIds = new Set(
+    providerStore.getSettings().orchestrationProfiles.map((profile) => profile.id),
+  );
+  if (protectedIds.has(profileId)) {
+    throw new Error("派生编排配置不可直接修改，请先复制为用户配置。");
+  }
+}
+
 function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
   return buildThreadRuntimeConfigFromDefaults({
-    settings: providerStore.getSettings(),
+    settings: getModelSettingsSnapshot(),
     subagentDefaults: subagentSettingsStore.get(),
     workflowDefaults: workflowSettingsStore.get(),
   });
@@ -524,7 +560,7 @@ function roleRoutesForThreadConfig(
 }
 
 function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RoleRouteConfig[] {
-  const settings = providerStore.getSettings();
+  const settings = getModelSettingsSnapshot();
   if (routeProfileIdOverride) {
     const routes = getRoutesForProfile(settings, routeProfileIdOverride);
     if (!routes) {
@@ -546,7 +582,7 @@ function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: s
 function resolveRuntimeRoutesForThread(
   threadId: string,
 ): ReturnType<typeof resolveRuntimeRoutesFromSettings> {
-  const settings = providerStore.getSettings();
+  const settings = getModelSettingsSnapshot();
   const providers = providerStore.listProvidersWithSecrets();
   const roleRoutes = resolveRoleRoutesForThread(threadId);
   return resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
@@ -658,12 +694,9 @@ function registerIpcHandlers(): void {
       throw new Error("请等待当前运行结束后再修改配置。");
     }
     const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
-    roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig);
+    roleRoutesForThreadConfig(getModelSettingsSnapshot(), runtimeConfig);
     conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-    noteSdkSessionRouteChange(
-      threadId,
-      roleRoutesForThreadConfig(providerStore.getSettings(), runtimeConfig),
-    );
+    noteSdkSessionRouteChange(threadId, roleRoutesForThreadConfig(getModelSettingsSnapshot(), runtimeConfig));
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
@@ -709,7 +742,7 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => providerStore.getSettings());
+  ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => getModelSettingsSnapshot());
 
   ipcMain.handle(IPC_CHANNELS.modelProviderSave, async (_event, payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
@@ -776,6 +809,61 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
+  ipcMain.handle(IPC_CHANNELS.agentTemplateList, async () => getModelSettingsSnapshot().agentTemplates);
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateSave, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("子代理模板配置不能为空。");
+    }
+    const template = payload as AgentTemplate;
+    if (typeof template.id !== "string") {
+      throw new Error("子代理模板 id 不能为空。");
+    }
+    assertCanWriteAgentTemplateId(template.id);
+    const saved = agentOrchestrationStore.saveAgentTemplate(template);
+    emitSettingsUpdated();
+    return saved;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateDelete, async (_event, templateId: unknown) => {
+    if (typeof templateId !== "string" || !templateId.trim()) {
+      throw new Error("子代理模板 id 不能为空。");
+    }
+    assertCanWriteAgentTemplateId(templateId);
+    agentOrchestrationStore.deleteAgentTemplate(templateId);
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.orchestrationProfileList,
+    async () => getModelSettingsSnapshot().orchestrationProfiles,
+  );
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileSave, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("编排配置不能为空。");
+    }
+    const profile = payload as OrchestrationProfile;
+    if (typeof profile.id !== "string") {
+      throw new Error("编排配置 id 不能为空。");
+    }
+    assertCanWriteOrchestrationProfileId(profile.id);
+    const saved = agentOrchestrationStore.saveOrchestrationProfile(profile);
+    emitSettingsUpdated();
+    return saved;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileDelete, async (_event, profileId: unknown) => {
+    if (typeof profileId !== "string" || !profileId.trim()) {
+      throw new Error("编排配置 id 不能为空。");
+    }
+    assertCanWriteOrchestrationProfileId(profileId);
+    agentOrchestrationStore.deleteOrchestrationProfile(profileId);
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
   ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {
     await pricingCatalogReady;
     return pricingCache.listModelOptions();
@@ -790,7 +878,7 @@ function registerIpcHandlers(): void {
     await pricingCatalogReady;
     return lookupRoutePricingHints(
       pricingCache,
-      providerStore.getSettings(),
+      getModelSettingsSnapshot(),
       providerStore.listProvidersWithSecrets(),
       routesOverride,
     );
@@ -802,7 +890,7 @@ function registerIpcHandlers(): void {
       await pricingCatalogReady;
       return lookupRouteCapabilityHints(
         pricingCache,
-        providerStore.getSettings(),
+        getModelSettingsSnapshot(),
         providerStore.listProvidersWithSecrets(),
         routesOverride,
       );
@@ -937,7 +1025,7 @@ function registerIpcHandlers(): void {
 
     const workspace = await ensureWorkspace(payload.workspacePath);
     const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
-    const settings = providerStore.getSettings();
+    const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveThreadRuntimeConfig(
       settings,
@@ -1083,7 +1171,7 @@ function registerIpcHandlers(): void {
       resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
       resolveRuntimeConfig: (routes) =>
         resolveThreadRuntimeConfig(
-          providerStore.getSettings(),
+          getModelSettingsSnapshot(),
           providerStore.listProvidersWithSecrets(),
           routes,
         ),
@@ -1132,7 +1220,7 @@ function registerIpcHandlers(): void {
     }
 
     const workspace = await ensureWorkspace(thread.workspacePath);
-    const settings = providerStore.getSettings();
+    const settings = getModelSettingsSnapshot();
     if (payload.runtimeConfig) {
       const nextConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
       roleRoutesForThreadConfig(settings, nextConfig);
@@ -1281,7 +1369,7 @@ function registerIpcHandlers(): void {
     return revertThreadAppliedDiff(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => providerStore.getSettings().providers);
+  ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => getModelSettingsSnapshot().providers);
 
   ipcMain.on("message", (event) => {
     if (!isKnownIpcChannel(event.type)) {
@@ -2245,7 +2333,7 @@ function recordThreadRouteFingerprint(threadId: string, routes: readonly Runtime
 
 function resolveRuntimeConfigFresh(routesOverride?: readonly RoleRouteConfig[]): RuntimeConfigResolution {
   return resolveThreadRuntimeConfig(
-    providerStore.getSettings(),
+    getModelSettingsSnapshot(),
     providerStore.listProvidersWithSecrets(),
     routesOverride,
   );
@@ -2264,7 +2352,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     throw new Error("对话正在运行中。");
   }
 
-  const settings = providerStore.getSettings();
+  const settings = getModelSettingsSnapshot();
   const routesOverride = resolveRoleRoutesForThread(threadId, request.routeProfileId);
 
   noteSdkSessionRouteChange(threadId, routesOverride);
@@ -2803,7 +2891,7 @@ async function withThreadSdkDriver(
 ): Promise<void> {
   const roleRoutes = resolveRoleRoutesForThread(threadId);
   const runtimeConfig = resolveThreadRuntimeConfig(
-    providerStore.getSettings(),
+    getModelSettingsSnapshot(),
     providerStore.listProvidersWithSecrets(),
     roleRoutes,
   );
@@ -3452,7 +3540,9 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
         message,
         role as AgentRole | "system" | "thinking" | "tool" | "user",
         stream,
-        agentId || extras ? { ...(agentId && { agentId }), ...(extras?.tool && { tool: extras.tool }) } : undefined,
+        agentId || extras
+          ? { ...(agentId && { agentId }), ...(extras?.tool && { tool: extras.tool }) }
+          : undefined,
       );
     },
     undefined,
@@ -3620,7 +3710,7 @@ async function ensureContextHeadroom(
   try {
     const roleRoutes = resolveRoleRoutesForThread(threadId);
     const runtimeConfig = resolveThreadRuntimeConfig(
-      providerStore.getSettings(),
+      getModelSettingsSnapshot(),
       providerStore.listProvidersWithSecrets(),
       roleRoutes,
     );
@@ -4138,7 +4228,8 @@ function emitContextCompactionStatus(
   const trigger = input.trigger ?? "auto";
   const message = formatContextCompactionMessage(input.stage, trigger, input.detail);
   const now = new Date().toISOString();
-  const unique = input.archiveId ?? input.sessionId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const unique =
+    input.archiveId ?? input.sessionId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const runAttemptId = resolveCurrentRunAttemptId(threadId);
   const metadata: Record<string, unknown> = {
     liveType: `context.compaction.${input.stage}`,
@@ -4197,7 +4288,9 @@ function recordThreadRunEventFromLiveEvent(input: {
     return;
   }
   const liveEventId = `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const eventId = input.persistedActivityLine ? `${input.persistedActivityLine.id}:${liveEventId}` : liveEventId;
+  const eventId = input.persistedActivityLine
+    ? `${input.persistedActivityLine.id}:${liveEventId}`
+    : liveEventId;
   const runAttemptId = resolveCurrentRunAttemptId(input.threadId);
   const event = buildThreadRunEventFromLiveEvent({
     threadId: input.threadId,
@@ -4242,7 +4335,9 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
     threadId,
     legacyBilling?.plannerModelLabel,
   );
-  const billing = ledgerBilling ?? (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
+  const billing =
+    ledgerBilling ??
+    (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
   const context = contextScheduler.getDisplaySnapshot(threadId);
   const projection = buildThreadRunProjection({
     threadId,

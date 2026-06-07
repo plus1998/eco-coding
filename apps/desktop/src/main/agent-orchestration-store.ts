@@ -89,6 +89,9 @@ export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemp
   if (!template.id.trim()) {
     throw new Error("子代理模板 id 不能为空。");
   }
+  if (template.id.trim().startsWith("builtin.")) {
+    throw new Error("内置子代理模板 id 不可用于用户配置。");
+  }
   if (!template.name.trim()) {
     throw new Error("子代理模板名称不能为空。");
   }
@@ -115,6 +118,9 @@ export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfil
   }
   if (!profile.id.trim()) {
     throw new Error("编排配置 id 不能为空。");
+  }
+  if (profile.id.trim().startsWith("builtin.")) {
+    throw new Error("内置编排配置 id 不可用于用户配置。");
   }
   if (!profile.name.trim()) {
     throw new Error("编排配置名称不能为空。");

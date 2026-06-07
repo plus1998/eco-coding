@@ -340,7 +340,15 @@ type WorkflowStep = {
 
 ## 阶段 2：Agent Registry 子代理库
 
-状态：未开始。
+状态：进行中。
+
+已完成子项：
+
+- 内置 agent template registry 已从 Coding 扩展到 Research、Writing、Product、Data/Ops 第一批模板。
+- 新增 Agent Registry IPC：子代理模板和编排配置均支持 list / save / delete。
+- `modelSettingsGet` 已合并内置模板、派生 Coding profile、用户模板和用户编排配置。
+- 用户 store 与 IPC 保存路径会保护内置模板和派生编排配置，禁止直接覆盖保留 ID。
+- 验证：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/agent-registry-settings.test.ts apps/desktop/test/ipc.test.ts apps/desktop/test/provider-store.test.ts` 通过。
 
 目标：让用户可以创建、编辑、复制、导入、导出、版本化自己的子代理。
 

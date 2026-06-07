@@ -1,68 +1,68 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
+  type AgentTemplate,
+  type ClarificationRequest,
+  type ClarificationSubmitPayload,
+  type CoderTodoItem,
+  type FileCheckpointRecord,
   IPC_CHANNELS,
   type IpcChannel,
+  type LinkAgentsSkillsRequest,
+  type LinkAgentsSkillsResult,
+  type ListUpstreamModelsRequest,
+  type ListUpstreamModelsResult,
   type McpServerConfigInput,
   type McpServerConfigView,
   type McpSettingsSnapshot,
-  type ListUpstreamModelsRequest,
-  type ListUpstreamModelsResult,
-  type TestProviderConnectionRequest,
-  type TestProviderConnectionResult,
-  type TestRoleRoutesRequest,
-  type TestRoleRoutesResult,
   type ModelSettingsSnapshot,
+  type ModelsDevModelOption,
+  type OrchestrationProfile,
   type ProviderConfigInput,
   type ProviderConfigView,
+  type ProxyBridgeSettingsSnapshot,
+  type RoleRouteConfig,
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RouteProfileInput,
-  type ModelsDevModelOption,
-  type ModelsDevMapping,
   type RouteProfileView,
-  type RoleRouteConfig,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
   type SessionSyncSettingsView,
   type SessionSyncTestConnectionRequest,
   type SessionSyncTestConnectionResult,
-  type LinkAgentsSkillsRequest,
-  type LinkAgentsSkillsResult,
   type SkillsListResult,
   type SubagentEnabledSettings,
-  type ProxyBridgeSettingsSnapshot,
-  type WorkflowSettingsSnapshot,
-  type ClarificationAnswers,
-  type ClarificationRequest,
-  type ClarificationSubmitPayload,
-  type CoderTodoItem,
+  type TestProviderConnectionRequest,
+  type TestProviderConnectionResult,
+  type TestRoleRoutesRequest,
+  type TestRoleRoutesResult,
   type ThreadActivityLine,
-  type ThreadRunProjectionSnapshot,
-  type ThreadSubagentSessionTiming,
-  type ThreadSubagentMetricsSummary,
+  type ThreadAppliedDiffResult,
+  type ThreadApprovePlanRequest,
+  type ThreadCancelRequest,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadDeleteResult,
+  type ThreadPendingPlan,
   type ThreadRetryRequest,
   type ThreadRetryResult,
-  type ThreadApprovePlanRequest,
-  type ThreadPendingPlan,
-  type ThreadUsageSnapshotResult,
-  type ThreadCancelRequest,
-  type ThreadRollbackResult,
-  type ThreadAppliedDiffResult,
   type ThreadRevertAppliedDiffResult,
-  type FileCheckpointRecord,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
+  type ThreadRollbackResult,
+  type ThreadRunProjectionSnapshot,
   type ThreadStartRequest,
   type ThreadStartResult,
-  type ThreadUpdateRuntimeConfigRequest,
+  type ThreadSubagentMetricsSummary,
+  type ThreadSubagentSessionTiming,
   type ThreadSummary,
-  type WorktreeApplyResult,
-  type WorktreeStatusResult,
+  type ThreadUpdateRuntimeConfigRequest,
+  type ThreadUsageSnapshotResult,
+  type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
+  type WorktreeApplyResult,
+  type WorktreeStatusResult,
 } from "../shared/ipc";
 
 type InvokePayload = Record<string, unknown> | undefined;
@@ -114,9 +114,25 @@ const api = {
   deleteRouteProfile(profileId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileDelete, profileId);
   },
-  updateThreadRuntimeConfig(
-    request: ThreadUpdateRuntimeConfigRequest,
-  ): Promise<{ thread: ThreadSummary }> {
+  listAgentTemplates(): Promise<AgentTemplate[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateList);
+  },
+  saveAgentTemplate(template: AgentTemplate): Promise<AgentTemplate> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateSave, template);
+  },
+  deleteAgentTemplate(templateId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateDelete, templateId);
+  },
+  listOrchestrationProfiles(): Promise<OrchestrationProfile[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileList);
+  },
+  saveOrchestrationProfile(profile: OrchestrationProfile): Promise<OrchestrationProfile> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileSave, profile);
+  },
+  deleteOrchestrationProfile(profileId: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileDelete, profileId);
+  },
+  updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);
   },
   getRoutePricing(routes?: RoleRouteConfig[]): Promise<RoutePricingHint[]> {

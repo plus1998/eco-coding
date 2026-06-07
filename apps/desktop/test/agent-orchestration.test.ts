@@ -3,6 +3,10 @@ import {
   buildCodingOrchestrationProfileFromRouteProfile,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
+  DATA_OPS_AGENT_TEMPLATE_IDS,
+  PRODUCT_AGENT_TEMPLATE_IDS,
+  RESEARCH_AGENT_TEMPLATE_IDS,
+  WRITING_AGENT_TEMPLATE_IDS,
 } from "../src/shared/agent-orchestration";
 import type { RouteProfileView } from "../src/shared/ipc";
 
@@ -25,18 +29,28 @@ function codingRouteProfile(): RouteProfileView {
 
 test("built-in agent templates define the default coding library", () => {
   const templates = createBuiltInAgentTemplates();
-  expect(templates.map((template) => template.id)).toEqual([
-    CODING_AGENT_TEMPLATE_IDS.explorer,
-    CODING_AGENT_TEMPLATE_IDS.architect,
-    CODING_AGENT_TEMPLATE_IDS.coder,
-    CODING_AGENT_TEMPLATE_IDS.reviewer,
-    CODING_AGENT_TEMPLATE_IDS.tester,
-  ]);
-  expect(templates.every((template) => template.builtIn && template.domain === "coding")).toBe(true);
+  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.explorer);
+  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.architect);
+  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.coder);
+  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.reviewer);
+  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.tester);
+  expect(templates.filter((template) => template.domain === "coding")).toHaveLength(5);
   expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
     templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.allowed,
   ).toContain("Write");
+});
+
+test("built-in agent registry includes non-coding presets", () => {
+  const ids = createBuiltInAgentTemplates().map((template) => template.id);
+  expect(ids).toContain(RESEARCH_AGENT_TEMPLATE_IDS.researcher);
+  expect(ids).toContain(RESEARCH_AGENT_TEMPLATE_IDS.sourceVerifier);
+  expect(ids).toContain(WRITING_AGENT_TEMPLATE_IDS.editor);
+  expect(ids).toContain(WRITING_AGENT_TEMPLATE_IDS.factChecker);
+  expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.pmAnalyst);
+  expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.specWriter);
+  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.dataAnalyst);
+  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.incidentTriage);
 });
 
 test("route profile migrates to a coding orchestration profile", () => {
