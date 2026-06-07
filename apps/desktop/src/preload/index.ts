@@ -19,6 +19,7 @@ import {
   type McpServerConfigInput,
   type McpServerConfigView,
   type McpSettingsSnapshot,
+  type AgentProfilePerformanceSnapshot,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type OrchestrationProfile,
@@ -137,9 +138,7 @@ const api = {
   listAgentTemplateVersions(templateId: string): Promise<AgentTemplateVersionView[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionsList, templateId);
   },
-  restoreAgentTemplateVersion(
-    request: AgentTemplateVersionRestoreRequest,
-  ): Promise<AgentTemplate> {
+  restoreAgentTemplateVersion(request: AgentTemplateVersionRestoreRequest): Promise<AgentTemplate> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionRestore, request);
   },
   listOrchestrationProfiles(): Promise<OrchestrationProfile[]> {
@@ -284,6 +283,9 @@ const api = {
   },
   listSubagentMetrics(threadId: string): Promise<ThreadSubagentMetricsSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentMetricsList, threadId);
+  },
+  listAgentProfilePerformance(): Promise<AgentProfilePerformanceSnapshot[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentProfilePerformanceList);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

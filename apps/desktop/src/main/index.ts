@@ -116,6 +116,7 @@ import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./a
 import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
+import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
 import {
   type AnthropicProxyStartOptions,
@@ -813,6 +814,14 @@ function registerIpcHandlers(): void {
     }
     return buildSubagentMetricsSummaries(usageLedgerCoordinator.listSubagentBillingEntries(threadId));
   });
+
+  ipcMain.handle(IPC_CHANNELS.agentProfilePerformanceList, async () =>
+    buildAgentProfilePerformanceSnapshots({
+      threads: hydrateThreads(conversationStore.listThreads()),
+      profiles: getModelSettingsSnapshot().orchestrationProfiles,
+      getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
+    }),
+  );
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {

@@ -1,10 +1,11 @@
-import { DEFAULT_CONTEXT_LIMIT, formatContextLimit } from "@eco/runtime";
+import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
 import { Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 import {
   AGENT_ROLES,
+  type AgentProfilePerformanceSnapshot,
   type AgentTemplate,
   type AgentRole,
   type ModelSettingsSnapshot,
@@ -139,6 +140,9 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
+  const [profilePerformance, setProfilePerformance] = useState<AgentProfilePerformanceSnapshot[]>([]);
+  const [profilePerformanceLoading, setProfilePerformanceLoading] = useState(false);
+  const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -154,6 +158,29 @@ export function ModelsSettingsPanel({
     const snapshot = await window.eco.getModelSettings();
     onSettingsChange(snapshot);
   }, [onSettingsChange]);
+
+  const refreshProfilePerformance = useCallback(async () => {
+    if (!window.eco?.listAgentProfilePerformance) {
+      return;
+    }
+    setProfilePerformanceLoading(true);
+    setProfilePerformanceError(undefined);
+    try {
+      const snapshot = await window.eco.listAgentProfilePerformance();
+      setProfilePerformance(snapshot);
+    } catch (caught) {
+      setProfilePerformanceError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setProfilePerformanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "routes") {
+      return;
+    }
+    void refreshProfilePerformance();
+  }, [activeTab, refreshProfilePerformance]);
 
   const fetchModels = useCallback(async (target: ProviderConfigInput, options?: { silent?: boolean }) => {
     if (!window.eco) {
@@ -708,6 +735,14 @@ export function ModelsSettingsPanel({
     () => settings.orchestrationProfiles.map((profile) => buildAgentProfileSummary(settings, profile)),
     [settings],
   );
+  const performanceByProfileKey = useMemo(() => {
+    const map = new Map<string, AgentProfilePerformanceSnapshot>();
+    for (const performance of profilePerformance) {
+      map.set(performance.profileId, performance);
+      map.set(performance.selectionId, performance);
+    }
+    return map;
+  }, [profilePerformance]);
 
   return (
     <>
@@ -876,11 +911,33 @@ export function ModelsSettingsPanel({
 
           <div className="mcp-list-toolbar">
             <span className="mcp-list-toolbar-label">Agent Profile</span>
-            <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateRouteProfile}>
-              <Plus size={16} />
-              添加 Coding Profile
-            </button>
+            <div className="models-route-toolbar-actions">
+              <button
+                type="button"
+                className="models-section-button"
+                disabled={busy || profilePerformanceLoading}
+                onClick={() => void refreshProfilePerformance()}
+              >
+                <RefreshCw
+                  size={14}
+                  className={profilePerformanceLoading ? "model-refresh-spin" : undefined}
+                />
+                刷新表现
+              </button>
+              <button
+                type="button"
+                className="mcp-add-button"
+                disabled={busy}
+                onClick={openCreateRouteProfile}
+              >
+                <Plus size={16} />
+                添加 Coding Profile
+              </button>
+            </div>
           </div>
+          {profilePerformanceError ? (
+            <p className="settings-form-error mcp-list-error">{profilePerformanceError}</p>
+          ) : null}
 
           {selectableProfileSummaries.length === 0 ? (
             <p className="mcp-list-empty">尚未添加可运行的 Agent Profile</p>
@@ -890,9 +947,18 @@ export function ModelsSettingsPanel({
                 const routeProfile = settings.routeProfiles.find(
                   (profile) => profile.id === summary.selectionId,
                 );
+                const performance =
+                  performanceByProfileKey.get(summary.profile.id) ??
+                  (summary.selectionId ? performanceByProfileKey.get(summary.selectionId) : undefined);
                 return (
                   <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
-                    <AgentProfileSummaryBlock summary={summary} />
+                    <div className="models-agent-profile-stack">
+                      <AgentProfileSummaryBlock summary={summary} />
+                      <AgentProfilePerformanceStrip
+                        performance={performance}
+                        loading={profilePerformanceLoading}
+                      />
+                    </div>
                     <div className="mcp-server-actions">
                       <button
                         type="button"
@@ -1842,6 +1908,50 @@ function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary })
   );
 }
 
+function AgentProfilePerformanceStrip({
+  performance,
+  loading,
+}: {
+  performance?: AgentProfilePerformanceSnapshot | undefined;
+  loading: boolean;
+}) {
+  if (!performance || performance.runCount === 0) {
+    return (
+      <div className="models-agent-profile-performance muted">
+        <span>{loading ? "刷新中" : "暂无历史表现"}</span>
+      </div>
+    );
+  }
+  const topStep = performance.workflowSteps[0];
+  return (
+    <div className="models-agent-profile-performance">
+      <span className="models-agent-profile-performance-pill">运行 {performance.runCount}</span>
+      <span className="models-agent-profile-performance-pill">
+        成功率 {formatPerformanceSuccessRate(performance)}
+      </span>
+      <span className="models-agent-profile-performance-pill">
+        平均 {formatPerformanceDuration(performance.avgDurationMs)}
+      </span>
+      <span className="models-agent-profile-performance-pill">
+        Token {formatPerformanceTokens(performance.totalTokens)}
+      </span>
+      <span className="models-agent-profile-performance-pill">
+        成本 {formatCostUsd(performance.ecoCostUsd)}
+      </span>
+      {performance.latestRunAt ? (
+        <span className="models-agent-profile-performance-pill">
+          最近 {formatPerformanceDate(performance.latestRunAt)}
+        </span>
+      ) : null}
+      {topStep ? (
+        <span className="models-agent-profile-performance-pill emphasis">
+          Step {topStep.stepId} · {formatCostUsd(topStep.ecoCostUsd)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function AgentPermissionProfile({ summary }: { summary: AgentProfileSummary }) {
   return (
     <article className="models-permission-profile">
@@ -1864,6 +1974,34 @@ function AgentPermissionProfile({ summary }: { summary: AgentProfileSummary }) {
       </div>
     </article>
   );
+}
+
+function formatPerformanceSuccessRate(performance: AgentProfilePerformanceSnapshot): string {
+  return performance.successRatePct === undefined ? "—" : `${performance.successRatePct.toFixed(1)}%`;
+}
+
+function formatPerformanceDuration(durationMs: number | undefined): string {
+  return durationMs === undefined ? "—" : formatDurationMs(durationMs);
+}
+
+function formatPerformanceTokens(tokens: number): string {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(tokens);
+}
+
+function formatPerformanceDate(value: string): string {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(time);
 }
 
 function PermissionAgentRow({

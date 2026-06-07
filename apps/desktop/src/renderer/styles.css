@@ -6931,6 +6931,24 @@ button:not(:disabled) {
   align-items: flex-start;
 }
 
+.models-route-toolbar-actions,
+.models-agent-profile-stack {
+  display: flex;
+  gap: 10px;
+}
+
+.models-route-toolbar-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.models-agent-profile-stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+}
+
 .models-agent-profile-main {
   display: flex;
   flex: 1 1 auto;
@@ -6963,6 +6981,36 @@ button:not(:disabled) {
   color: #fbbf24;
   font-size: 11px;
   line-height: 1.35;
+}
+
+.models-agent-profile-performance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: #a3a3a3;
+  font-size: 11px;
+}
+
+.models-agent-profile-performance.muted {
+  color: #737373;
+}
+
+.models-agent-profile-performance-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  line-height: 1.4;
+}
+
+.models-agent-profile-performance-pill.emphasis {
+  border-color: rgba(59, 130, 246, 0.26);
+  background: rgba(59, 130, 246, 0.1);
+  color: #bfdbfe;
 }
 
 .models-permission-profile-list,

@@ -657,7 +657,9 @@ type WorkflowStep = {
 - Phase 7.3 验证：`bun test apps/desktop/test/sdk-stream-activity.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts apps/desktop/test/thread-run-projection-view.test.ts`、`bun run typecheck`。
 - Phase 7.4 已完成：固定 workflow step 的 SDK 事件会携带 `ecoWorkflowStepContext`，SDK usage billing 会把 step metadata 传入 assistant fallback、stream partial 和 final run 三条链路；usage ledger metadata 记录 `ecoWorkflowStep`，billing projector 聚合每个 step 的 token、cost 和 modelIds，活动日志的“子代理编排”摘要会显示每步 token/cost。
 - Phase 7.4 验证：`bun test packages/runtime/test/claude-agent-sdk.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/usage-billing-artifacts.test.ts apps/desktop/test/usage-billing-effects.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/thread-run-projection-view.test.ts`。
-- Profile 历史表现和审计导出还没有用户入口；底层有 run events、ledger events 和 projection diagnostics，可作为后续导出的数据源。
+- Phase 7.5 已完成：新增 Agent Profile 历史表现聚合，按 profile 汇总运行次数、成功率、平均耗时、token、成本、最近运行、模型和 workflow step 成本；Agent Builder 的“编排配置”列表展示每个 profile 的历史表现，并提供刷新入口。旧线程若没有 usage ledger，仍会进入运行次数统计，但不做旧格式 billing 兜底。
+- Phase 7.5 验证：`bun test apps/desktop/test/agent-profile-performance.test.ts apps/desktop/test/ipc.test.ts`。
+- 企业审计导出还没有用户入口；底层有 run events、ledger events 和 projection diagnostics，可作为后续导出的数据源。
 
 与既有计划关系：
 

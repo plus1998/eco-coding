@@ -31,6 +31,7 @@ export const IPC_CHANNELS = {
   threadRunProjectionGet: "thread:run-projection-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
+  agentProfilePerformanceList: "agent-profile:performance-list",
   threadDelete: "thread:delete",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
@@ -710,6 +711,58 @@ export interface ThreadBillingSnapshot {
 export interface ThreadUsageSnapshotResult {
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
+}
+
+export interface AgentProfilePerformanceRunSnapshot {
+  threadId: string;
+  title: string;
+  status: ThreadStatus;
+  updatedAt: string;
+  durationMs?: number;
+  totalTokens: number;
+  ecoCostUsd: number;
+}
+
+export interface AgentProfileWorkflowStepPerformanceSnapshot {
+  stepId: string;
+  agentKey: string;
+  outputKey: string;
+  runCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  totalTokens: number;
+  ecoCostUsd: number;
+  modelIds: string[];
+}
+
+export interface AgentProfilePerformanceSnapshot {
+  profileId: string;
+  selectionId: string;
+  profileName: string;
+  preset: string;
+  strategyKind: "autonomous" | "hybrid" | "fixed" | "unknown";
+  source: "configured" | "historical";
+  runCount: number;
+  completedCount: number;
+  failedCount: number;
+  blockedCount: number;
+  idleCount: number;
+  activeCount: number;
+  successRatePct?: number;
+  avgDurationMs?: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  totalTokens: number;
+  ecoCostUsd: number;
+  avgCostUsd?: number;
+  latestRunAt?: string;
+  modelIds: string[];
+  workflowSteps: AgentProfileWorkflowStepPerformanceSnapshot[];
+  recentRuns: AgentProfilePerformanceRunSnapshot[];
 }
 
 export interface RoutePricingRates {
