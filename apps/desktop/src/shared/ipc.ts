@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
   threadActivityList: "thread:activity-list",
+  threadRunProjectionGet: "thread:run-projection-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
   threadCancel: "thread:cancel",
@@ -721,6 +722,7 @@ export interface ThreadLiveEvent {
   modelUsage?: Record<string, ThreadModelUsageEntry>;
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
+  projection?: ThreadRunProjectionSnapshot;
   subagentSessions?: ThreadSubagentSessionTiming[];
   apiError?: ThreadApiErrorInfo;
 }

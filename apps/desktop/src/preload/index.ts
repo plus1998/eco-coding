@@ -36,6 +36,7 @@ import {
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   type ThreadActivityLine,
+  type ThreadRunProjectionSnapshot,
   type ThreadSubagentSessionTiming,
   type ThreadSubagentMetricsSummary,
   type ThreadContinueRequest,
@@ -234,6 +235,9 @@ const api = {
   },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
+  },
+  getThreadRunProjection(threadId: string): Promise<ThreadRunProjectionSnapshot | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRunProjectionGet, threadId);
   },
   listSubagentSessions(threadId: string): Promise<ThreadSubagentSessionTiming[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentSessionsList, threadId);

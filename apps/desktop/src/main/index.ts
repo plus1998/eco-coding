@@ -55,6 +55,7 @@ import {
   type ThreadRetryRequest,
   type ThreadRetryResult,
   type ThreadLiveEvent,
+  type ThreadRunProjectionSnapshot,
   type ThreadBillingSnapshot,
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
@@ -89,6 +90,7 @@ import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismiss
 import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
+import { buildThreadRunProjection } from "./thread-run-projection";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
@@ -318,6 +320,7 @@ let agentLifecycle: AgentLifecycleService;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
 const persistMetricsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const sdkStreamBridge = new SdkStreamActivityBridge();
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
@@ -652,6 +655,13 @@ function registerIpcHandlers(): void {
       return [];
     }
     return conversationStore.listActivityLines(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadRunProjectionGet, async (_event, threadId: string) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return undefined;
+    }
+    return buildCurrentThreadRunProjection(threadId.trim());
   });
 
   ipcMain.handle(IPC_CHANNELS.threadSubagentSessionsList, async (_event, threadId: string) => {
@@ -4053,6 +4063,7 @@ function recordThreadRunEventFromLiveEvent(input: {
   }
   try {
     conversationStore.appendThreadRunEvent(event);
+    scheduleThreadRunProjectionUpdated(input.threadId);
   } catch (error) {
     process.stderr.write(`[eco] thread run event shadow write failed: ${errorMessage(error)}\n`);
   }
@@ -4064,6 +4075,61 @@ function resolveCurrentRunAttemptId(threadId: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionSnapshot | undefined {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return undefined;
+  }
+  const legacyBilling = threadUsageAccumulator.getSnapshot(threadId);
+  const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(
+    threadId,
+    legacyBilling?.plannerModelLabel,
+  );
+  const billing = ledgerBilling ?? (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
+  const context = contextScheduler.getDisplaySnapshot(threadId);
+  return buildThreadRunProjection({
+    threadId,
+    status: thread.status,
+    message: thread.message,
+    attempts: conversationStore.listRunAttempts(threadId),
+    agents: conversationStore.listAgentInstances(threadId),
+    events: conversationStore.listThreadRunEvents(threadId),
+    ...(billing && { billing }),
+    ...(context && { context }),
+    subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
+  });
+}
+
+function scheduleThreadRunProjectionUpdated(threadId: string): void {
+  const existing = runProjectionEmitTimers.get(threadId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    runProjectionEmitTimers.delete(threadId);
+    emitThreadRunProjectionUpdated(threadId);
+  }, 80);
+  runProjectionEmitTimers.set(threadId, timer);
+}
+
+function emitThreadRunProjectionUpdated(threadId: string): void {
+  const projection = buildCurrentThreadRunProjection(threadId);
+  if (!projection) {
+    return;
+  }
+  const payload: ThreadLiveEvent = {
+    threadId,
+    type: "thread.run_projection_updated",
+    message: "运行投影已更新",
+    role: "system",
+    stream: false,
+    projection,
+  };
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
+  });
 }
 
 function recordUserPrompt(threadId: string, prompt: string): void {
