@@ -7,7 +7,7 @@ import { formatRelativeTime } from "./relative-time";
 const PROJECT_DRAG_MIME = "application/x-eco-project-path";
 
 export interface ProjectTreeItem {
-  project: { path: string; name: string };
+  project: { path: string; name: string; pinned?: boolean };
   projectThreads: ThreadSummary[];
   collapsed: boolean;
   visibleThreads: ThreadSummary[];
@@ -202,6 +202,228 @@ export function ProjectSidebarTree({
     treeClassNames.push("project-tree-menu-open");
   }
 
+  const pinnedProjectTree = projectTree.filter(({ project }) => project.pinned);
+  const regularProjectTree = projectTree.filter(({ project }) => !project.pinned);
+  const hasPinnedProjects = pinnedProjectTree.length > 0;
+
+  function renderProjectItem({
+    project,
+    projectThreads,
+    collapsed,
+    visibleThreads,
+    hasMore,
+  }: ProjectTreeItem) {
+    const rowClassNames = ["project-group-row"];
+    if (draggingPath === project.path) {
+      rowClassNames.push("dragging");
+    }
+    if (dropTarget?.path === project.path && dropTarget.position === "before") {
+      rowClassNames.push("drop-before");
+    }
+    if (dropTarget?.path === project.path && dropTarget.position === "after") {
+      rowClassNames.push("drop-after");
+    }
+    const isProjectActive = currentProjectPath === project.path && !activeThreadId;
+    const projectMainClassNames = ["project-group-main"];
+    if (isProjectActive) {
+      projectMainClassNames.push("active");
+    }
+    if (openMenuPath === project.path) {
+      projectMainClassNames.push("menu-open");
+    }
+
+    return (
+      <div key={project.path} className="project-group">
+        <div
+          className={rowClassNames.join(" ")}
+          onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
+          onDrop={(event) => handleProjectRowDrop(event, project.path)}
+        >
+          <div
+            className={projectMainClassNames.join(" ")}
+            draggable
+            onDragStart={(event) => handleProjectDragStart(event, project.path)}
+            onDragEnd={handleProjectDragEnd}
+          >
+            <button
+              type="button"
+              className="project-group-toggle"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? `展开项目 ${project.name}` : `折叠项目 ${project.name}`}
+              onClick={() => onToggleProjectCollapsed(project.path)}
+            >
+              {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
+              <span>{project.name}</span>
+            </button>
+            <span
+              className={
+                openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
+              }
+            >
+              <span className="project-menu-wrap sidebar-menu-wrap">
+                <button
+                  type="button"
+                  className="project-menu-trigger"
+                  title={`${project.name} 操作`}
+                  aria-label={`${project.name} 操作`}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenuPath === project.path}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
+                  }}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+                {openMenuPath === project.path ? (
+                  <div className="project-menu" role="menu">
+                    <button
+                      type="button"
+                      className="project-menu-item"
+                      role="menuitem"
+                      onClick={() => {
+                        onPinProject(project.path);
+                        setOpenMenuPath(undefined);
+                      }}
+                    >
+                      <Pin size={16} aria-hidden />
+                      <span>置顶</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="project-menu-item danger"
+                      role="menuitem"
+                      onClick={() => {
+                        onRemoveProject(project.path);
+                        setOpenMenuPath(undefined);
+                      }}
+                    >
+                      <Trash2 size={16} aria-hidden />
+                      <span>移除</span>
+                    </button>
+                  </div>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                className="project-new-chat"
+                title={`在 ${project.name} 中新建对话`}
+                aria-label={`在 ${project.name} 中新建对话`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSwitchProject(project.path);
+                }}
+              >
+                <MessageSquarePlus size={16} />
+              </button>
+            </span>
+          </div>
+        </div>
+        {!collapsed ? (
+          projectThreads.length > 0 ? (
+            <>
+              {visibleThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"}
+                >
+                  <button
+                    type="button"
+                    className={activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"}
+                    onClick={() => onSelectThread(thread)}
+                  >
+                    <span className="chat-item-title">{thread.title}</span>
+                    <span className="chat-item-meta">
+                      {thread.status === "running" || thread.status === "queued" ? (
+                        <span
+                          className="chat-item-loading"
+                          title={thread.status}
+                          role="img"
+                          aria-label={thread.status}
+                        >
+                          <LoaderCircle size={14} aria-hidden />
+                        </span>
+                      ) : thread.status === "failed" || thread.status === "blocked" ? (
+                        <span className={`status-dot ${thread.status}`} title={thread.status} />
+                      ) : null}
+                      <span className="chat-item-time">
+                        {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                      </span>
+                    </span>
+                  </button>
+                  <span
+                    className={
+                      openThreadMenuId === thread.id ? "thread-row-actions menu-open" : "thread-row-actions"
+                    }
+                  >
+                    <span className="thread-menu-wrap sidebar-menu-wrap">
+                      <button
+                        type="button"
+                        className="thread-menu-trigger"
+                        title={`${thread.title} 操作`}
+                        aria-label={`${thread.title} 操作`}
+                        aria-haspopup="menu"
+                        aria-expanded={openThreadMenuId === thread.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenMenuPath(undefined);
+                          setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
+                        }}
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {openThreadMenuId === thread.id ? (
+                        <div className="project-menu thread-menu" role="menu">
+                          <button
+                            type="button"
+                            className="project-menu-item danger"
+                            role="menuitem"
+                            onClick={() => {
+                              onDeleteThread(thread);
+                              setOpenThreadMenuId(undefined);
+                            }}
+                          >
+                            <Trash2 size={16} aria-hidden />
+                            <span>删除对话</span>
+                          </button>
+                        </div>
+                      ) : null}
+                    </span>
+                  </span>
+                </div>
+              ))}
+              {hasMore ? (
+                <button
+                  type="button"
+                  className="project-expand"
+                  onClick={() => onExpandProjectThreads(project.path)}
+                >
+                  展开显示
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <p className="project-empty">暂无对话</p>
+          )
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderProjectSection(label: string, items: ProjectTreeItem[]) {
+    if (items.length === 0 && !hasPinnedProjects) {
+      return null;
+    }
+    return (
+      <section className="project-tree-section" aria-label={label}>
+        <div className="project-tree-section-label">{label}</div>
+        {items.length > 0 ? (
+          <div className="project-tree-section-list">{items.map(renderProjectItem)}</div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <div
       className={treeClassNames.join(" ")}
@@ -211,209 +433,8 @@ export function ProjectSidebarTree({
       onDrop={handleTreeDrop}
     >
       {projectTree.length === 0 ? <p className="project-tree-empty-drop">将文件夹拖到此处打开项目</p> : null}
-      {projectTree.map(({ project, projectThreads, collapsed, visibleThreads, hasMore }) => {
-        const rowClassNames = ["project-group-row"];
-        if (draggingPath === project.path) {
-          rowClassNames.push("dragging");
-        }
-        if (dropTarget?.path === project.path && dropTarget.position === "before") {
-          rowClassNames.push("drop-before");
-        }
-        if (dropTarget?.path === project.path && dropTarget.position === "after") {
-          rowClassNames.push("drop-after");
-        }
-        const isProjectActive = currentProjectPath === project.path && !activeThreadId;
-        const projectMainClassNames = ["project-group-main"];
-        if (isProjectActive) {
-          projectMainClassNames.push("active");
-        }
-        if (openMenuPath === project.path) {
-          projectMainClassNames.push("menu-open");
-        }
-
-        return (
-          <div key={project.path} className="project-group">
-            <div
-              className={rowClassNames.join(" ")}
-              onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
-              onDrop={(event) => handleProjectRowDrop(event, project.path)}
-            >
-              <div
-                className={projectMainClassNames.join(" ")}
-                draggable
-                onDragStart={(event) => handleProjectDragStart(event, project.path)}
-                onDragEnd={handleProjectDragEnd}
-              >
-                <button
-                  type="button"
-                  className="project-group-toggle"
-                  aria-expanded={!collapsed}
-                  aria-label={collapsed ? `展开项目 ${project.name}` : `折叠项目 ${project.name}`}
-                  onClick={() => onToggleProjectCollapsed(project.path)}
-                >
-                  {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
-                  <span>{project.name}</span>
-                </button>
-                <span
-                  className={
-                    openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
-                  }
-                >
-                  <span className="project-menu-wrap sidebar-menu-wrap">
-                    <button
-                      type="button"
-                      className="project-menu-trigger"
-                      title={`${project.name} 操作`}
-                      aria-label={`${project.name} 操作`}
-                      aria-haspopup="menu"
-                      aria-expanded={openMenuPath === project.path}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
-                      }}
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-                    {openMenuPath === project.path ? (
-                      <div className="project-menu" role="menu">
-                        <button
-                          type="button"
-                          className="project-menu-item"
-                          role="menuitem"
-                          onClick={() => {
-                            onPinProject(project.path);
-                            setOpenMenuPath(undefined);
-                          }}
-                        >
-                          <Pin size={16} aria-hidden />
-                          <span>置顶</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="project-menu-item danger"
-                          role="menuitem"
-                          onClick={() => {
-                            onRemoveProject(project.path);
-                            setOpenMenuPath(undefined);
-                          }}
-                        >
-                          <Trash2 size={16} aria-hidden />
-                          <span>移除</span>
-                        </button>
-                      </div>
-                    ) : null}
-                  </span>
-                  <button
-                    type="button"
-                    className="project-new-chat"
-                    title={`在 ${project.name} 中新建对话`}
-                    aria-label={`在 ${project.name} 中新建对话`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSwitchProject(project.path);
-                    }}
-                  >
-                    <MessageSquarePlus size={16} />
-                  </button>
-                </span>
-              </div>
-            </div>
-            {!collapsed ? (
-              projectThreads.length > 0 ? (
-                <>
-                  {visibleThreads.map((thread) => (
-                    <div
-                      key={thread.id}
-                      className={
-                        activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={
-                          activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"
-                        }
-                        onClick={() => onSelectThread(thread)}
-                      >
-                        <span className="chat-item-title">{thread.title}</span>
-                        <span className="chat-item-meta">
-                          {thread.status === "running" || thread.status === "queued" ? (
-                            <span
-                              className="chat-item-loading"
-                              title={thread.status}
-                              role="img"
-                              aria-label={thread.status}
-                            >
-                              <LoaderCircle size={14} aria-hidden />
-                            </span>
-                          ) : thread.status === "failed" || thread.status === "blocked" ? (
-                            <span className={`status-dot ${thread.status}`} title={thread.status} />
-                          ) : null}
-                          <span className="chat-item-time">
-                            {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                          </span>
-                        </span>
-                      </button>
-                      <span
-                        className={
-                          openThreadMenuId === thread.id
-                            ? "thread-row-actions menu-open"
-                            : "thread-row-actions"
-                        }
-                      >
-                        <span className="thread-menu-wrap sidebar-menu-wrap">
-                          <button
-                            type="button"
-                            className="thread-menu-trigger"
-                            title={`${thread.title} 操作`}
-                            aria-label={`${thread.title} 操作`}
-                            aria-haspopup="menu"
-                            aria-expanded={openThreadMenuId === thread.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenMenuPath(undefined);
-                              setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
-                            }}
-                          >
-                            <MoreHorizontal size={16} />
-                          </button>
-                          {openThreadMenuId === thread.id ? (
-                            <div className="project-menu thread-menu" role="menu">
-                              <button
-                                type="button"
-                                className="project-menu-item danger"
-                                role="menuitem"
-                                onClick={() => {
-                                  onDeleteThread(thread);
-                                  setOpenThreadMenuId(undefined);
-                                }}
-                              >
-                                <Trash2 size={16} aria-hidden />
-                                <span>删除对话</span>
-                              </button>
-                            </div>
-                          ) : null}
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                  {hasMore ? (
-                    <button
-                      type="button"
-                      className="project-expand"
-                      onClick={() => onExpandProjectThreads(project.path)}
-                    >
-                      展开显示
-                    </button>
-                  ) : null}
-                </>
-              ) : (
-                <p className="project-empty">暂无对话</p>
-              )
-            ) : null}
-          </div>
-        );
-      })}
+      {hasPinnedProjects ? renderProjectSection("置顶", pinnedProjectTree) : null}
+      {projectTree.length > 0 ? renderProjectSection("项目", regularProjectTree) : null}
     </div>
   );
 }

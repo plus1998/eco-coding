@@ -157,7 +157,29 @@ button:not(:disabled) {
 .project-tree {
   display: flex;
   flex-direction: column;
+  gap: 18px;
+}
+
+.project-tree-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-tree-section-label {
+  padding: 0 12px;
+  color: #7f7f7f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.project-tree-section-list {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 
 .project-tree-drop-target {

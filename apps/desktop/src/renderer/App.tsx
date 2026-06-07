@@ -130,6 +130,7 @@ import "./styles.css";
 const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] };
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
+const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
 const sidebarThreadsCollapsed = 5;
@@ -173,6 +174,7 @@ function App() {
   const [collapsedProjectPaths, setCollapsedProjectPaths] = useState<Set<string>>(() => new Set());
   const [expandedProjectThreadPaths, setExpandedProjectThreadPaths] = useState<Set<string>>(() => new Set());
   const [hiddenProjectPaths, setHiddenProjectPaths] = useState<Set<string>>(() => new Set());
+  const [pinnedProjectPaths, setPinnedProjectPaths] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
@@ -556,6 +558,19 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(pinnedProjectsStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setPinnedProjectPaths(new Set(parsed));
+      }
+    } catch {
+      window.localStorage.removeItem(pinnedProjectsStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
     const saved = window.localStorage.getItem(collapsedProjectsStorageKey);
     if (!saved) return;
     try {
@@ -641,14 +656,14 @@ function App() {
         const threadsExpanded = expandedProjectThreadPaths.has(project.path);
         const visibleCount = threadsExpanded ? projectThreads.length : sidebarThreadsCollapsed;
         return {
-          project,
+          project: { ...project, pinned: pinnedProjectPaths.has(project.path) },
           projectThreads,
           collapsed: collapsedProjectPaths.has(project.path),
           visibleThreads: projectThreads.slice(0, visibleCount),
           hasMore: !threadsExpanded && projectThreads.length > visibleCount,
         };
       }),
-    [collapsedProjectPaths, expandedProjectThreadPaths, projects, threadsByProject],
+    [collapsedProjectPaths, expandedProjectThreadPaths, pinnedProjectPaths, projects, threadsByProject],
   );
 
   const currentProjectPath = useMemo(() => {
@@ -1611,6 +1626,15 @@ function App() {
   }
 
   function pinProject(projectPath: string) {
+    setPinnedProjectPaths((current) => {
+      if (current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(projectPath);
+      window.localStorage.setItem(pinnedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
     setProjectOrder((current) => {
       const next = prependProjectOrder(current, projectPath);
       window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
@@ -1634,6 +1658,15 @@ function App() {
     setProjectOrder((current) => {
       const next = current.filter((path) => path !== projectPath);
       window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
+      return next;
+    });
+    setPinnedProjectPaths((current) => {
+      if (!current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectPath);
+      window.localStorage.setItem(pinnedProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
     setCollapsedProjectPaths((current) => {
@@ -2070,7 +2103,6 @@ function App() {
         </button>
 
         <div className="sidebar-section sidebar-section-grow">
-          <div className="sidebar-section-label">项目</div>
           <ProjectSidebarTree
             projectTree={projectTree}
             currentProjectPath={currentProjectPath}
