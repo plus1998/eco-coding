@@ -62,7 +62,10 @@ function createArchiveRecord(input: {
 function createService(overrides: Partial<CompactionAuditServiceInput> = {}) {
   const savedArchives: Array<Parameters<CompactionAuditServiceInput["saveCompactionArchive"]>> = [];
   const ledgerEvents: UsageLedgerEvent[] = [];
-  const activity: Array<{ threadId: string; message: string }> = [];
+  const compactionStatuses: Array<{
+    threadId: string;
+    status: Parameters<CompactionAuditServiceInput["emitCompactionStatus"]>[1];
+  }> = [];
   const inFlight: string[] = [];
   const errors: string[] = [];
   const services: CompactionAuditServiceInput = {
@@ -77,7 +80,7 @@ function createService(overrides: Partial<CompactionAuditServiceInput> = {}) {
     getRunAttemptId: () => "attempt_1",
     getPlannerAgentId: () => "planner_attempt_1",
     appendLedgerEvents: (events) => ledgerEvents.push(...events),
-    emitActivity: (threadId, message) => activity.push({ threadId, message }),
+    emitCompactionStatus: (threadId, status) => compactionStatuses.push({ threadId, status }),
     markCompactInFlight: (threadId) => inFlight.push(threadId),
     writeError: (message) => errors.push(message),
     nowIso: () => "2026-01-01T00:00:00.000Z",
@@ -89,14 +92,14 @@ function createService(overrides: Partial<CompactionAuditServiceInput> = {}) {
     service: createCompactionAuditService(services),
     savedArchives,
     ledgerEvents,
-    activity,
+    compactionStatuses,
     inFlight,
     errors,
   };
 }
 
 test("archiveBeforeCompaction saves archive records pending audit and started ledger", () => {
-  const { service, savedArchives, ledgerEvents, activity, inFlight } = createService();
+  const { service, savedArchives, ledgerEvents, compactionStatuses, inFlight } = createService();
 
   service.archiveBeforeCompaction("thr_compact", {
     trigger: "manual",
@@ -131,14 +134,23 @@ test("archiveBeforeCompaction saves archive records pending audit and started le
       preTokens: 12_345,
     },
   });
-  expect(activity).toEqual([
-    { threadId: "thr_compact", message: "压缩前已归档上下文（手动）" },
+  expect(compactionStatuses).toEqual([
+    {
+      threadId: "thr_compact",
+      status: {
+        stage: "started",
+        trigger: "manual",
+        sessionId: "sdk_session_1",
+        archiveId: "archive_1",
+        preTokens: 12_345,
+      },
+    },
   ]);
   expect(inFlight).toEqual(["thr_compact"]);
 });
 
 test("recordBoundary links completed ledger to pending archive", () => {
-  const { service, ledgerEvents } = createService();
+  const { service, ledgerEvents, compactionStatuses } = createService();
 
   service.archiveBeforeCompaction("thr_compact", {
     trigger: "auto",
@@ -161,6 +173,17 @@ test("recordBoundary links completed ledger to pending archive", () => {
     sourceEventId: "compact:evt_boundary",
     metadata: {
       path: "compaction",
+      stage: "completed",
+      trigger: "auto",
+      sessionId: "sdk_session_1",
+      archiveId: "archive_1",
+      preTokens: 12_345,
+      postTokens: 456,
+    },
+  });
+  expect(compactionStatuses.at(-1)).toEqual({
+    threadId: "thr_compact",
+    status: {
       stage: "completed",
       trigger: "auto",
       sessionId: "sdk_session_1",

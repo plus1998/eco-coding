@@ -364,6 +364,61 @@ test("buildThreadRunProjectionViewModel hides request placeholder once the same 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:thinking-placeholder"]);
 });
 
+test("buildThreadRunProjectionViewModel collapses superseded context compaction started states", () => {
+  const running = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "compact-start-1",
+          eventType: "context.compaction.started",
+          text: "正在自动压缩上下文",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "compact-start-2",
+          eventType: "context.compaction.started",
+          text: "正在自动压缩上下文",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+  expect(running.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:compact-start-2"]);
+
+  const completed = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "compact-start",
+          eventType: "context.compaction.started",
+          text: "正在自动压缩上下文",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "compact-done",
+          eventType: "context.compaction.completed",
+          text: "上下文已自动压缩",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(completed.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:compact-done"]);
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "compact-done",
+      eventType: "context.compaction.completed",
+      text: "上下文已自动压缩",
+    }),
+  );
+  expect(detail).toEqual({ kind: "phase", label: "上下文已自动压缩" });
+});
+
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

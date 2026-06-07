@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
+import { Bot, ChevronDown, Copy, FileText, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
@@ -1159,6 +1159,9 @@ function PhaseBlock({
   reconnecting?: boolean;
   reconnectDetail?: string;
 }) {
+  if (isContextCompactionPhaseLabel(label)) {
+    return <ContextCompactionDivider label={label} />;
+  }
   if (reconnecting) {
     const isFailure = label.startsWith("连接失败");
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
@@ -1183,6 +1186,36 @@ function PhaseBlock({
     );
   }
   return <div className="run-log-phase">{label}</div>;
+}
+
+function isContextCompactionPhaseLabel(label: string): boolean {
+  return (
+    /^正在(?:自动|手动)压缩上下文$/u.test(label) ||
+    /^上下文已(?:自动|手动)压缩$/u.test(label) ||
+    /^上下文压缩失败/u.test(label)
+  );
+}
+
+function ContextCompactionDivider({ label }: { label: string }) {
+  const completed = /^上下文已/u.test(label);
+  const failed = /^上下文压缩失败/u.test(label);
+  const className = [
+    "run-log-context-compaction",
+    completed ? "run-log-context-compaction--completed" : "",
+    failed ? "run-log-context-compaction--failed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <div className={className} role="status" aria-live="polite">
+      <span className="run-log-context-compaction-line" aria-hidden />
+      <span className="run-log-context-compaction-label">
+        {completed ? <FileText size={16} strokeWidth={1.8} aria-hidden /> : null}
+        <span>{label}</span>
+      </span>
+      <span className="run-log-context-compaction-line" aria-hidden />
+    </div>
+  );
 }
 
 function RequestTimingBadge({

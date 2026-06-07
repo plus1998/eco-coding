@@ -131,13 +131,35 @@ function filterMainTimelineForFeed(
     requestsWithStreamRows.add(requestKey);
   }
 
-  return timeline.filter((item) => {
+  const requestFiltered = timeline.filter((item) => {
     if (item.eventType !== "request.started") {
       return true;
     }
     const requestKey = projectionRequestKey(item);
     return !requestKey || !requestsWithStreamRows.has(requestKey);
   });
+  return filterCompactionTimelineForFeed(requestFiltered);
+}
+
+function filterCompactionTimelineForFeed(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  return timeline.filter((item, index) => {
+    if (item.eventType !== "context.compaction.started") {
+      return true;
+    }
+    return !timeline
+      .slice(index + 1)
+      .some((later) => isProjectionContextCompactionItem(later));
+  });
+}
+
+function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return (
+    item.eventType === "context.compaction.started" ||
+    item.eventType === "context.compaction.completed" ||
+    item.eventType === "context.compaction.failed"
+  );
 }
 
 function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {
@@ -383,6 +405,15 @@ function isProjectionLifecycleText(text: string): boolean {
 
 function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): string | undefined {
   const text = item.text.trim();
+  if (item.eventType === "context.compaction.started") {
+    return text || "正在自动压缩上下文";
+  }
+  if (item.eventType === "context.compaction.completed") {
+    return text || "上下文已自动压缩";
+  }
+  if (item.eventType === "context.compaction.failed") {
+    return text || "上下文压缩失败";
+  }
   if (item.eventType === "agent.started") {
     return `${resolveSubagentRunDisplayTitle(item.role ?? "子代理")} 已启动`;
   }

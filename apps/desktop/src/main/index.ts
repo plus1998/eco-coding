@@ -408,9 +408,7 @@ app.whenReady().then(async () => {
     isWorktreePathReady: async (worktreePath) => fileExists(worktreePath),
     withSdkDriver: (threadId, fn) => withThreadSdkDriver(threadId, fn),
     emitContext: emitThreadContextUpdated,
-    emitActivity: (threadId, message) => {
-      emitThreadEvent(threadId, "otel.activity", message, "system", false);
-    },
+    emitCompactionStatus: emitContextCompactionStatus,
     onCompactionBoundary: (threadId, input) => {
       recordCompactionLedgerBoundary(threadId, input.payload, input.sourceEventId);
     },
@@ -437,9 +435,7 @@ app.whenReady().then(async () => {
     getRunAttemptId: (threadId) => agentLifecycle.usageRunAttemptId(threadId),
     getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
     appendLedgerEvents: (events) => usageLedgerCoordinator.appendEvents(events),
-    emitActivity: (threadId, message) => {
-      emitThreadEvent(threadId, "otel.activity", message, "system", false);
-    },
+    emitCompactionStatus: emitContextCompactionStatus,
     markCompactInFlight: (threadId) => contextLifecycle.markCompactInFlight(threadId),
     writeError: (message) => process.stderr.write(message),
     nowIso: () => new Date().toISOString(),
@@ -3433,6 +3429,13 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     }
   }
   applySdkContextSideEffects(threadId, event);
+  if (isSdkCompactionStatusEvent(event)) {
+    emitContextCompactionStatus(threadId, { stage: "started", trigger: "auto" });
+    return;
+  }
+  if (isSdkCompactionBoundaryEvent(event)) {
+    return;
+  }
   const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId;
   const activityAgentId = resolveActivityAgentId(threadId, event, {
     ...(plannerSessionId && { plannerSessionId }),
@@ -3459,6 +3462,8 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
 function emitOtelActivity(line: OtelActivityLine): void {
   if (/^Compacting context/i.test(line.message)) {
     contextLifecycle.noteOtelCompaction(line.threadId);
+    emitContextCompactionStatus(line.threadId, { stage: "started", trigger: "auto" });
+    return;
   }
   if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
     return;
@@ -3618,7 +3623,7 @@ async function ensureContextHeadroom(
   } catch (error) {
     const detail = errorMessage(error);
     process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${detail}\n`);
-    emitThreadEvent(threadId, "otel.activity", `上下文压缩已跳过：${detail}`, "system", false);
+    emitContextCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
   }
 }
 
@@ -3824,6 +3829,21 @@ async function processSdkRunBilling(input: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSdkCompactionStatusEvent(event: AgentEventLike): boolean {
+  if (!isRecord(event.payload)) {
+    return false;
+  }
+  return (
+    event.payload.type === "system" &&
+    event.payload.subtype === "status" &&
+    event.payload.status === "compacting"
+  );
+}
+
+function isSdkCompactionBoundaryEvent(event: AgentEventLike): boolean {
+  return isRecord(event.payload) && event.payload.subtype === "compact_boundary";
 }
 
 function isLinkAgentsSkillsRequest(value: unknown): value is LinkAgentsSkillsRequest {
@@ -4087,6 +4107,70 @@ function emitThreadEvent(
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
+}
+
+function emitContextCompactionStatus(
+  threadId: string,
+  input: {
+    stage: "started" | "completed" | "failed";
+    trigger?: "auto" | "manual";
+    sessionId?: string;
+    archiveId?: string;
+    preTokens?: number;
+    postTokens?: number;
+    detail?: string;
+  },
+): void {
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
+  const trigger = input.trigger ?? "auto";
+  const message = formatContextCompactionMessage(input.stage, trigger, input.detail);
+  const now = new Date().toISOString();
+  const unique = input.archiveId ?? input.sessionId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const runAttemptId = resolveCurrentRunAttemptId(threadId);
+  const metadata: Record<string, unknown> = {
+    liveType: `context.compaction.${input.stage}`,
+    compaction: {
+      stage: input.stage,
+      trigger,
+      ...(input.sessionId && { sessionId: input.sessionId }),
+      ...(input.archiveId && { archiveId: input.archiveId }),
+      ...(input.preTokens !== undefined && { preTokens: input.preTokens }),
+      ...(input.postTokens !== undefined && { postTokens: input.postTokens }),
+      ...(input.detail && { detail: input.detail }),
+    },
+  };
+  try {
+    conversationStore.appendThreadRunEvent({
+      id: `tre:${threadId}:context-compaction:${input.stage}:${unique}`,
+      threadId,
+      eventType: `context.compaction.${input.stage}`,
+      scope: "main",
+      streamState: "none",
+      message,
+      observedAt: now,
+      ...(runAttemptId && { runAttemptId }),
+      metadata,
+    });
+    scheduleThreadRunProjectionUpdated(threadId);
+  } catch (error) {
+    process.stderr.write(`[eco] context compaction status write failed: ${errorMessage(error)}\n`);
+  }
+}
+
+function formatContextCompactionMessage(
+  stage: "started" | "completed" | "failed",
+  trigger: "auto" | "manual",
+  detail?: string,
+): string {
+  if (stage === "failed") {
+    return detail ? `上下文压缩失败：${detail}` : "上下文压缩失败";
+  }
+  if (stage === "started") {
+    return trigger === "manual" ? "正在手动压缩上下文" : "正在自动压缩上下文";
+  }
+  return trigger === "manual" ? "上下文已手动压缩" : "上下文已自动压缩";
 }
 
 function recordThreadRunEventFromLiveEvent(input: {

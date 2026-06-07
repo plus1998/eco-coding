@@ -4,13 +4,13 @@ import {
   normalizeContextSegments,
   parseSdkGetContextUsageBreakdown,
   parseUsagePayload,
+  type AgentRuntimeDriver,
   type EcoSdkResumeOptions,
 } from "@eco/runtime";
 import {
   extractCompactPostTokens,
   readSdkSlashCommands,
   sdkSupportsSlashCommand,
-  type AgentRuntimeDriver,
   type ClaudeAgentSdkDriver,
 } from "@eco/runtime/sdk";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
@@ -35,7 +35,10 @@ export interface ContextSnapshotSchedulerOptions {
     fn: (driver: SdkDriver, signal: AbortSignal, routes: readonly ResolvedModelRoute[]) => Promise<void>,
   ) => Promise<void>;
   emitContext: (threadId: string, snapshot: ThreadContextSnapshot) => void;
-  emitActivity: (threadId: string, message: string) => void;
+  emitCompactionStatus: (
+    threadId: string,
+    status: { stage: "started" | "completed" | "failed"; trigger: "auto" | "manual"; detail?: string },
+  ) => void;
   onCompactionBoundary?: (
     threadId: string,
     input: { payload: Record<string, unknown>; sourceEventId?: string },
@@ -150,7 +153,7 @@ export class ContextSnapshotScheduler {
     }
 
     this.options.monitor.markCompactInFlight(threadId);
-    this.options.emitActivity(threadId, "Compacting context…");
+    this.options.emitCompactionStatus(threadId, { stage: "started", trigger: "auto" });
 
     try {
       await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
@@ -211,7 +214,7 @@ export class ContextSnapshotScheduler {
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      this.options.emitActivity(threadId, `Context compact failed: ${detail}`);
+      this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
       process.stderr.write(
         `[eco] context compact failed: ${detail}\n`,
       );

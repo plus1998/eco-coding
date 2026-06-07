@@ -36,7 +36,17 @@ export interface CompactionAuditServiceInput {
   getRunAttemptId(threadId: string): string | undefined;
   getPlannerAgentId(threadId: string): string | undefined;
   appendLedgerEvents(events: UsageLedgerEvent[]): void;
-  emitActivity(threadId: string, message: string): void;
+  emitCompactionStatus(
+    threadId: string,
+    status: {
+      stage: "started" | "completed";
+      trigger?: "auto" | "manual";
+      sessionId?: string;
+      archiveId?: string;
+      preTokens?: number;
+      postTokens?: number;
+    },
+  ): void;
   markCompactInFlight(threadId: string): void;
   writeError(message: string): void;
   nowIso(): string;
@@ -138,8 +148,13 @@ export function createCompactionAuditService(
           archiveId: archive.id,
           ...(context?.occupied !== undefined && { preTokens: context.occupied }),
         });
-        const triggerLabel = input.trigger === "manual" ? "手动" : "自动";
-        services.emitActivity(threadId, `压缩前已归档上下文（${triggerLabel}）`);
+        services.emitCompactionStatus(threadId, {
+          stage: "started",
+          trigger: input.trigger,
+          ...(input.sessionId && { sessionId: input.sessionId }),
+          archiveId: archive.id,
+          ...(context?.occupied !== undefined && { preTokens: context.occupied }),
+        });
         services.markCompactInFlight(threadId);
       } catch (error) {
         services.writeError(
@@ -165,6 +180,14 @@ export function createCompactionAuditService(
         ...(preTokens !== undefined && { preTokens }),
         ...(metadata.postTokens !== undefined && { postTokens: metadata.postTokens }),
         ...(metadata.rawMetadata && { payload: metadata.rawMetadata }),
+      });
+      services.emitCompactionStatus(threadId, {
+        stage: "completed",
+        ...(trigger && { trigger }),
+        ...(sessionId && { sessionId }),
+        ...(pending?.archiveId && { archiveId: pending.archiveId }),
+        ...(preTokens !== undefined && { preTokens }),
+        ...(metadata.postTokens !== undefined && { postTokens: metadata.postTokens }),
       });
     },
   };

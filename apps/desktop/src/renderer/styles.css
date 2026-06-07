@@ -2738,6 +2738,51 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
+.run-log-context-compaction {
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 16px;
+  color: #8a8a8a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.run-log-context-compaction-line {
+  height: 1px;
+  min-width: 0;
+  background: #333333;
+}
+
+.run-log-context-compaction-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: min(680px, 70vw);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.run-log-context-compaction-label svg {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.run-log-context-compaction-label span {
+  min-width: 0;
+}
+
+.run-log-context-compaction--completed {
+  color: #a3a3a3;
+}
+
+.run-log-context-compaction--failed {
+  color: #c9a0a0;
+}
+
 .run-log-surfaced-detail {
   margin: 0 0 10px;
 }
@@ -7315,6 +7360,17 @@ button:not(:disabled) {
   gap: 10px;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-context-compaction {
+  margin: 20px 0 22px;
+  color: var(--codex-log-muted);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-context-compaction-line {
+  background: #3a3a3a;
+}
+
 .codex-main:not(.codex-main-landing) .run-log-action-icon,
 .codex-main:not(.codex-main-landing) .run-log-agent-request-icon,
 .codex-main:not(.codex-main-landing) .run-log-reconnect-icon {
@@ -7612,6 +7668,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .run-log-phase,
   .codex-main:not(.codex-main-landing) .run-log-action,
   .codex-main:not(.codex-main-landing) .run-log-agent-request,
+  .codex-main:not(.codex-main-landing) .run-log-context-compaction,
   .codex-main:not(.codex-main-landing) .run-log-thinking-label,
   .codex-main:not(.codex-main-landing) .run-log-thinking-preview,
   .codex-main:not(.codex-main-landing) .subagent-run-title-role,

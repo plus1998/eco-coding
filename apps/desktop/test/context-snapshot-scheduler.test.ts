@@ -43,7 +43,7 @@ test("emits one occupancy segment per independent role window", () => {
     getResume: () => undefined,
     withSdkDriver: async () => {},
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   scheduler.restoreSnapshot("t1", {
@@ -116,7 +116,7 @@ test("clearSubagentState drops cached child role snapshots and segments", () => 
     getResume: () => undefined,
     withSdkDriver: async () => {},
     emitContext: () => {},
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   scheduler.restoreSnapshot("t1", {
@@ -197,7 +197,7 @@ test("applySdkContextUsageBreakdown updates planner segments from getContextUsag
     getResume: () => undefined,
     withSdkDriver: async () => {},
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   scheduler.applySdkContextUsageBreakdown("t1", {
@@ -249,7 +249,7 @@ test("ensureHeadroom runs while thread is running when ignoreRunningGuard is set
       await fn(driver as never, new AbortController().signal, []);
     },
     emitContext: () => {},
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal, {
@@ -276,7 +276,7 @@ test("ensureHeadroom skips while thread is running without ignoreRunningGuard", 
       compactCalled = true;
     },
     emitContext: () => {},
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
@@ -350,7 +350,7 @@ test("ensureHeadroom applies sdk_context_usage from compact session events", asy
       await fn(driver as never, new AbortController().signal, []);
     },
     emitContext: (_threadId, snapshot) => emitted.push(snapshot),
-    emitActivity: () => {},
+    emitCompactionStatus: () => {},
   });
 
   await scheduler.ensureHeadroom("t1", [], "/tmp", new AbortController().signal);
