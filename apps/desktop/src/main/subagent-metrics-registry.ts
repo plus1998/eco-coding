@@ -1,5 +1,5 @@
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { AgentRole, RuntimeAgentRole } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import { resolveSubagentAgentId, type SubagentAgentResolveMissReason } from "./subagent-agent-resolver";
 import { SubagentLegacyUsageTracker } from "./subagent-legacy-usage";
@@ -116,7 +116,7 @@ export class SubagentMetricsRegistry {
   resolveAgentId(
     threadId: string,
     input: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       subagentAgentId?: string;
       parentToolUseId?: string;
     },
@@ -146,7 +146,7 @@ export class SubagentMetricsRegistry {
     return undefined;
   }
 
-  roleForAgentId(threadId: string, agentId: string): AgentRole | undefined {
+  roleForAgentId(threadId: string, agentId: string): RuntimeAgentRole | undefined {
     return this.threads.get(threadId)?.metrics.roleForAgentId(agentId);
   }
 
@@ -168,7 +168,7 @@ export class SubagentMetricsRegistry {
 
   private logResolveMiss(
     threadId: string,
-    input: { role: AgentRole; parentToolUseId?: string },
+    input: { role: RuntimeAgentRole; parentToolUseId?: string },
     reason: SubagentAgentResolveMissReason,
     active?: Set<string>,
   ): void {
@@ -185,7 +185,7 @@ export class SubagentMetricsRegistry {
   recordSdkUsage(
     threadId: string,
     input: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       agentId?: string;
       parentToolUseId?: string;
       usage: ParsedUsage;
@@ -258,7 +258,7 @@ export class SubagentMetricsRegistry {
 
   private resolveRecordTarget(
     threadId: string,
-    input: { role: AgentRole; agentId?: string; parentToolUseId?: string },
+    input: { role: RuntimeAgentRole; agentId?: string; parentToolUseId?: string },
   ): SubagentMetricsRecordTarget | undefined {
     return resolveSubagentMetricsRecordTarget({
       threadId,

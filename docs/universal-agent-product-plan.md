@@ -847,6 +847,8 @@ type WorkflowStep = {
 - Phase 10.2 保留边界：runtime SDK 内部的 Coding prompt、旧 subagent resume、route/model billing 仍有固定 role 依赖，后续阶段继续削减；本点只完成运行观察和活动日志的动态 key 主路径。
 - Phase 10.3 已完成：IPC 中 billing、context、subagent timing/metrics/live event 的 role 字段收敛为 `RuntimeAgentRole`，用量拆解、用量摘要、上下文窗口监控和 renderer 活动模型映射都能保留动态 agent key。
 - Phase 10.3 上下文主路径已支持自定义 role 汇总与动态实例：`ContextWindowMonitor` 会按固定 Coding role 优先、动态 role 字母序补充排序；带 `agentId` 的非 planner agent 会作为独立实例记录，清理子代理状态时统一保留 planner、清掉其他 agent。
+- Phase 10.4 已完成：usage ledger、usage ledger adapters、billing projector、thread usage accumulator、SDK/proxy billing attribution、active run billing state、subagent metrics projection/persistence 的运行期 role 字段改为 `RuntimeAgentRole`，动态 agent key 从事件生成、归因、账单投影到 metrics 持久化不会再被固定 Coding role 类型截断。
+- Phase 10.4 行为收敛：有 `agentId` 的动态子代理可进入 billing observations、legacy metrics fallback 和 subagent billing snapshot；metrics record target 不再因为 role 不是固定 Coding 子代理而丢弃 resolver 已确认的 agent。
 
 Phase 10.1 验证：
 
@@ -861,6 +863,11 @@ Phase 10.2 验证：
 Phase 10.3 验证：
 
 - `bun test apps/desktop/test/context-window-monitor.test.ts apps/desktop/test/billing-token-breakdown.test.ts apps/desktop/test/thread-usage-summary.test.ts apps/desktop/test/usage-breakdown-panel.test.ts`
+- `bun run typecheck`
+
+Phase 10.4 验证：
+
+- `bun test apps/desktop/test/thread-usage-accumulator.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/subagent-metrics-record-target.test.ts apps/desktop/test/sdk-run-billing-resolution.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/proxy-usage-billing.test.ts`
 - `bun run typecheck`
 
 验收标准：

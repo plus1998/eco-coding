@@ -1,28 +1,28 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 
 export interface SubagentUsageAttributionResolver {
   resolveAgentId(
     threadId: string,
     input: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       subagentAgentId?: string;
       parentToolUseId?: string;
     },
   ): string | undefined;
-  roleForAgentId(threadId: string, agentId: string): AgentRole | undefined;
+  roleForAgentId(threadId: string, agentId: string): RuntimeAgentRole | undefined;
 }
 
 export interface ResolveSubagentUsageAttributionInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   resolver: SubagentUsageAttributionResolver;
   explicitSubagentId?: string;
   parentToolUseId?: string;
 }
 
 export interface SubagentUsageAttribution {
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   attempted: boolean;
   subagentAgentId?: string;
 }
@@ -48,7 +48,7 @@ export function resolveSubagentUsageAttribution(
 
   if (subagentAgentId) {
     const entryRole = input.resolver.roleForAgentId(input.threadId, subagentAgentId);
-    if (entryRole && isSubagentBillingRole(entryRole)) {
+    if (entryRole) {
       billingRole = entryRole;
     }
   }

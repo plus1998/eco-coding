@@ -1,5 +1,5 @@
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole, ThreadBillingSnapshot } from "../shared/ipc";
+import type { RuntimeAgentRole, ThreadBillingSnapshot } from "../shared/ipc";
 import {
   buildSubagentLegacyMetricsRecordInput,
   type SubagentBillingMetricsContext,
@@ -28,7 +28,7 @@ export interface ApplySingleUsageSubagentLegacyFallbackInput {
 }
 
 export interface SdkRunSubagentLegacyFallbackModel {
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
   usage: ParsedUsage;
   computedBilling: RequestBillingDelta;
   modelId?: string;
@@ -41,7 +41,7 @@ export interface ApplySdkRunSubagentLegacyFallbackInput {
   legacyBilling: ThreadBillingSnapshot;
   selectionOptions: UsageLedgerBillingSnapshotSelectionOptions;
   models: readonly SdkRunSubagentLegacyFallbackModel[];
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   parentToolUseId?: string;
   requestKey: string;
   services: SubagentLegacyMetricsFallbackServices;

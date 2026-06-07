@@ -1,6 +1,6 @@
 import type {
-  AgentRole,
   BillingUsageSource,
+  RuntimeAgentRole,
   ThreadBillingModelSnapshot,
   ThreadBillingSnapshot,
   ThreadBillingSourceSnapshot,
@@ -25,7 +25,7 @@ const BILLING_SOURCE_PRIORITY: BillingUsageSource[] = ["sdk", "proxy", "otel"];
 
 export interface RecordUsageInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   delta: ParsedUsage;
   /** Cost reported by the source itself, when available (SDK/OTel estimate). */
   otelCostUsd?: number;
@@ -40,7 +40,7 @@ export interface RecordUsageInput {
 }
 
 export interface RecordRunUsageModel {
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
   modelId: string;
   usage: ParsedUsage;
   actualRates: ModelCostRates | null;
@@ -51,7 +51,7 @@ export interface RecordRunUsageModel {
 
 export interface RecordRunUsageInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   models: RecordRunUsageModel[];
   /** Total cost reported by the SDK, used only for comparison. */
@@ -62,21 +62,21 @@ export interface RecordRunUsageInput {
 
 interface SourceModelUsageState {
   modelId: string;
-  roles: AgentRole[];
+  roles: RuntimeAgentRole[];
   usage: ParsedUsage;
   ecoCostUsd: number;
   reportedCostUsd: number;
 }
 
 export interface SerializedBillingSourceState {
-  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   total: ParsedUsage;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
   plannerCostBreakdown: TokenCostBreakdown;
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
-  roleModelIds: Partial<Record<AgentRole, string>>;
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>;
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>;
   byModel: Record<string, SourceModelUsageState>;
   reportedCostUsd: number;
   pricingResolved: boolean;
@@ -87,15 +87,15 @@ type SourceUsageState = SerializedBillingSourceState;
 
 type ThreadUsageAccumulatorState = {
   /** Legacy aggregate retained for old persisted snapshots. New billing reads from sources. */
-  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   total: ParsedUsage;
   otelCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
   plannerCostBreakdown: TokenCostBreakdown;
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
-  roleModelIds: Partial<Record<AgentRole, string>>;
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>;
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>;
   sources: Partial<Record<BillingUsageSource, SourceUsageState>>;
   seenRequestKeys: Set<string>;
   pricingResolved: boolean;
@@ -105,15 +105,15 @@ type ThreadUsageAccumulatorState = {
 
 /** JSON-serializable accumulator state for SQLite persistence. */
 export interface SerializedThreadUsageState {
-  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   total: ParsedUsage;
   otelCostUsd: number;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
   plannerCostBreakdown: TokenCostBreakdown;
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
-  roleModelIds: Partial<Record<AgentRole, string>>;
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>;
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>;
   sources?: Partial<Record<BillingUsageSource, SerializedBillingSourceState>>;
   seenRequestKeys: string[];
   pricingResolved: boolean;
@@ -383,7 +383,7 @@ function createEmptySourceState(): SourceUsageState {
 function applyUsageContribution(
   source: SourceUsageState,
   input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     modelId?: string;
     usage: ParsedUsage;
     billing: RequestBillingDelta;
@@ -438,7 +438,7 @@ function applyUsageContribution(
   }
 }
 
-function addRole(roles: AgentRole[], role: AgentRole): void {
+function addRole(roles: RuntimeAgentRole[], role: RuntimeAgentRole): void {
   if (!roles.includes(role)) {
     roles.push(role);
   }
@@ -509,12 +509,12 @@ function sourceToSnapshot(
 }
 
 function buildRoleSnapshot(
-  byRoleState: Partial<Record<AgentRole, ParsedUsage>>,
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>,
-  roleModelIds: Partial<Record<AgentRole, string>>,
+  byRoleState: Partial<Record<RuntimeAgentRole, ParsedUsage>>,
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>,
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>,
 ): NonNullable<ThreadBillingSnapshot["byRole"]> {
   const byRole: NonNullable<ThreadBillingSnapshot["byRole"]> = {};
-  for (const [role, usage] of Object.entries(byRoleState) as [AgentRole, ParsedUsage][]) {
+  for (const [role, usage] of Object.entries(byRoleState) as [RuntimeAgentRole, ParsedUsage][]) {
     byRole[role] = {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,

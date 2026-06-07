@@ -1,12 +1,12 @@
 import type { ParsedUsage } from "@eco/runtime";
-import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
+import type { RuntimeAgentRole, TokenCostBreakdown } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 
 export type SubagentMetricsStatus = "active" | "stopped";
 
 export interface SubagentMetricsEntry {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: SubagentMetricsStatus;
   usage: ParsedUsage;
   contextOccupied: number;
@@ -19,7 +19,7 @@ export interface SubagentMetricsEntry {
 }
 
 export interface SubagentContextObservationInput {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId?: string;
   parentToolUseId?: string;
   contextOccupied: number;
@@ -29,11 +29,11 @@ export interface SubagentContextObservationInput {
 }
 
 export class SubagentMetricsState {
-  private readonly activeByRole = new Map<AgentRole, Set<string>>();
+  private readonly activeByRole = new Map<RuntimeAgentRole, Set<string>>();
   private readonly byAgentId = new Map<string, SubagentMetricsEntry>();
 
   start(
-    input: { agentId: string; role: AgentRole },
+    input: { agentId: string; role: RuntimeAgentRole },
     updatedAt: number,
   ): { entry: SubagentMetricsEntry; activeCount: number } {
     const entry = this.ensureEntry(input.agentId, input.role, "active", updatedAt);
@@ -49,7 +49,7 @@ export class SubagentMetricsState {
   }
 
   stop(
-    input: { agentId: string; role: AgentRole },
+    input: { agentId: string; role: RuntimeAgentRole },
     updatedAt: number,
   ): { entry?: SubagentMetricsEntry; activeCount: number } {
     const entry = this.byAgentId.get(input.agentId);
@@ -64,7 +64,7 @@ export class SubagentMetricsState {
 
   recordContext(
     agentId: string,
-    role: AgentRole,
+    role: RuntimeAgentRole,
     input: Pick<
       SubagentContextObservationInput,
       "contextOccupied" | "contextLimit" | "modelId" | "requestKey"
@@ -88,7 +88,7 @@ export class SubagentMetricsState {
 
   ensureEntry(
     agentId: string,
-    role: AgentRole,
+    role: RuntimeAgentRole,
     status: SubagentMetricsStatus,
     updatedAt: number,
   ): SubagentMetricsEntry {
@@ -110,15 +110,15 @@ export class SubagentMetricsState {
     }
   }
 
-  roleForAgentId(agentId: string): AgentRole | undefined {
+  roleForAgentId(agentId: string): RuntimeAgentRole | undefined {
     return this.byAgentId.get(agentId)?.role;
   }
 
-  activeAgentIds(role: AgentRole): string[] {
+  activeAgentIds(role: RuntimeAgentRole): string[] {
     return [...(this.activeByRole.get(role) ?? [])];
   }
 
-  agentIdsForRole(role: AgentRole): string[] {
+  agentIdsForRole(role: RuntimeAgentRole): string[] {
     return [...this.byAgentId.values()]
       .filter((entry) => entry.role === role)
       .map((entry) => entry.agentId);
@@ -135,7 +135,7 @@ export class SubagentMetricsState {
 
 export function createEmptySubagentMetricsEntry(
   agentId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   status: SubagentMetricsStatus,
   updatedAt: number,
 ): SubagentMetricsEntry {

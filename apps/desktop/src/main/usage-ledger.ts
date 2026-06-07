@@ -1,4 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 
 export type RunAttemptPhase = "planning" | "execution" | "question" | "continuation";
 export type RunAttemptStatus = "running" | "completed" | "failed" | "cancelled";
@@ -22,7 +22,7 @@ export interface RunAttemptRecord {
 export interface AgentInstanceRecord {
   threadId: string;
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   kind: AgentInstanceKind;
   status: AgentInstanceStatus;
   runAttemptId?: string;
@@ -49,7 +49,7 @@ export interface UsageLedgerEvent {
   source: UsageLedgerSource;
   sourceEventId: string;
   usageKind: UsageLedgerKind;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

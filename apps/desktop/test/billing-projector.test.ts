@@ -99,6 +99,45 @@ test("projectBillingFromUsageLedger projects agent subagent and run attempt tota
   expect(projection.snapshot?.subagents?.[0]?.modelId).toBe("haiku");
 });
 
+test("projectBillingFromUsageLedger preserves dynamic Agent Profile roles", () => {
+  const usage = { inputTokens: 12_000, outputTokens: 1_200, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const events = [
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_projector",
+      role: "researcher",
+      source: "sdk",
+      sourceEventId: "sdk:researcher:req_1",
+      requestKey: "sdk:researcher:req_1",
+      usage,
+      computedBilling: billingFor(usage),
+      agentId: "agent_researcher",
+      modelId: "research-model",
+    }),
+  ];
+  const agents: AgentInstanceRecord[] = [
+    {
+      threadId: "thr_projector",
+      agentId: "agent_researcher",
+      role: "researcher",
+      kind: "subagent",
+      status: "stopped",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ];
+
+  const projection = projectBillingFromUsageLedger({ events, agents });
+
+  expect(projection.snapshot?.byRole?.researcher?.inputTokens).toBe(12_000);
+  expect(projection.snapshot?.byModel?.[0]?.roles).toEqual(["researcher"]);
+  expect(projection.snapshot?.subagents?.[0]).toMatchObject({
+    agentId: "agent_researcher",
+    role: "researcher",
+    modelId: "research-model",
+  });
+});
+
 test("projectBillingFromUsageLedger attributes billing to workflow steps", () => {
   const usage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 200, cacheCreationTokens: 50 };
   const event = buildSingleUsageLedgerEvent({

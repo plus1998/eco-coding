@@ -1,6 +1,5 @@
 import { computeWindowOccupancy, type ParsedUsage, type RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { SubagentLegacyMetricsRecordInput } from "./subagent-legacy-metrics-fallback-effects";
 import type { SubagentContextObservationInput } from "./subagent-metrics-state";
 import type { UsageContextService } from "./usage-context-effects";
@@ -8,19 +7,19 @@ import type { UsageContextService } from "./usage-context-effects";
 export type UsageContextSnapshot = ReturnType<UsageContextService["getSnapshot"]>;
 
 export interface SubagentBillingMetricsContext {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId: string;
   contextOccupied: number;
   contextLimit?: number;
 }
 
 export function resolveSubagentBillingMetricsContext(input: {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId?: string;
   snapshot: UsageContextSnapshot;
   fallbackUsage: ParsedUsage;
 }): SubagentBillingMetricsContext | undefined {
-  if (!input.agentId || !isSubagentBillingRole(input.role)) {
+  if (!input.agentId) {
     return undefined;
   }
 
@@ -55,7 +54,7 @@ export function buildSubagentContextObservationInput(
 export function buildSubagentLegacyMetricsRecordInput(
   context: SubagentBillingMetricsContext,
   input: {
-    role?: AgentRole;
+    role?: RuntimeAgentRole;
     parentToolUseId?: string;
     usage: ParsedUsage;
     billing: RequestBillingDelta;

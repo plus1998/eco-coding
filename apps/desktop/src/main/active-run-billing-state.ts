@@ -1,4 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UsageBillingObservation } from "./billing-orchestration";
 import { appendUsageBillingObservation } from "./usage-billing-observations";
 
@@ -6,7 +6,7 @@ interface ActiveRunBillingState {
   otelRequestSeq?: number;
   proxyRequestSeq?: number;
   usageObservations: UsageBillingObservation[];
-  lastProxyContextByRole: Partial<Record<AgentRole, number>>;
+  lastProxyContextByRole: Partial<Record<RuntimeAgentRole, number>>;
 }
 
 export class ActiveRunBillingStateStore {
@@ -63,7 +63,7 @@ export class ActiveRunBillingStateStore {
     threadId: string,
     input: {
       nextRequestSeq: number;
-      contextRole: AgentRole;
+      contextRole: RuntimeAgentRole;
       contextOccupied: number;
     },
   ): void {
@@ -75,7 +75,7 @@ export class ActiveRunBillingStateStore {
     state.lastProxyContextByRole[input.contextRole] = input.contextOccupied;
   }
 
-  proxyContextOccupied(threadId: string, role: AgentRole): number | undefined {
+  proxyContextOccupied(threadId: string, role: RuntimeAgentRole): number | undefined {
     return this.states.get(threadId)?.lastProxyContextByRole[role];
   }
 }

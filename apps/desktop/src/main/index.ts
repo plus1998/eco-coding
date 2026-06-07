@@ -53,6 +53,7 @@ import {
   resolveThreadAgentProfile,
   type RoleRouteConfig,
   type RouteProfileInput,
+  type RuntimeAgentRole,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
@@ -182,7 +183,7 @@ import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   type RequestAttemptResult,
 } from "./request-retry";
-import type { resolveSdkEventUsageBilling, SdkUsageBillingBundle } from "./sdk-event-usage-billing";
+import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
@@ -4197,24 +4198,7 @@ async function processSdkStreamPartialUsage(input: SdkStreamPartialBillingReques
   await applySdkStreamPartialBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
 }
 
-async function processSdkRunBilling(input: {
-  threadId: string;
-  role: AgentRole;
-  requestKey: string;
-  bundle: SdkUsageBillingBundle;
-  usagePayload?: unknown;
-  runAttemptId?: string;
-  plannerAgentId?: string;
-  subagentAgentId?: string;
-  parentToolUseId?: string;
-  workflowStep?: {
-    id: string;
-    agentKey: string;
-    outputKey: string;
-    attempt: number;
-    batchIndex: number;
-  };
-}): Promise<void> {
+async function processSdkRunBilling(input: SdkRunUsageBillingInput): Promise<void> {
   const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
   const resolved = await resolveSdkRunBillingResolution({
     threadId: input.threadId,
@@ -4410,7 +4394,7 @@ function emitThreadEvent(
   threadId: string,
   type: string,
   message: string,
-  role: AgentRole | "system" | "thinking" | "tool" | "user" = "system",
+  role: RuntimeAgentRole | "system" | "thinking" | "tool" | "user" = "system",
   stream = false,
   extras?: EmitThreadEventExtras,
 ): void {

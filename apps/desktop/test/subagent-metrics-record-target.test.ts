@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AgentRole } from "../src/shared/ipc";
+import type { RuntimeAgentRole } from "../src/shared/ipc";
 import {
   resolveSubagentMetricsRecordTarget,
   type SubagentMetricsRecordTargetResolver,
@@ -8,12 +8,12 @@ import {
 function resolver(
   input: {
     resolve?: (request: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       subagentAgentId?: string;
       parentToolUseId?: string;
     }) => string | undefined;
-    roleFor?: (agentId: string) => AgentRole | undefined;
-    resolveCalls?: Array<{ role: AgentRole; subagentAgentId?: string; parentToolUseId?: string }>;
+    roleFor?: (agentId: string) => RuntimeAgentRole | undefined;
+    resolveCalls?: Array<{ role: RuntimeAgentRole; subagentAgentId?: string; parentToolUseId?: string }>;
     roleCalls?: string[];
   } = {},
 ): SubagentMetricsRecordTargetResolver {
@@ -45,7 +45,7 @@ test("resolveSubagentMetricsRecordTarget returns resolved subagent role and agen
 
 test("resolveSubagentMetricsRecordTarget forwards explicit agent and parent tool use", () => {
   const resolveCalls: Array<{
-    role: AgentRole;
+    role: RuntimeAgentRole;
     subagentAgentId?: string;
     parentToolUseId?: string;
   }> = [];
@@ -84,15 +84,15 @@ test("resolveSubagentMetricsRecordTarget skips unresolved agents without role lo
   expect(roleCalls).toEqual([]);
 });
 
-test("resolveSubagentMetricsRecordTarget rejects non-subagent registry roles", () => {
+test("resolveSubagentMetricsRecordTarget preserves dynamic registry roles", () => {
   const target = resolveSubagentMetricsRecordTarget({
     threadId: "thr_metrics_target",
-    role: "coder",
+    role: "researcher",
     resolver: resolver({
-      resolve: () => "agent_planner_like",
-      roleFor: () => "planner",
+      resolve: () => "agent_researcher",
+      roleFor: () => "researcher",
     }),
   });
 
-  expect(target).toBeUndefined();
+  expect(target).toEqual({ agentId: "agent_researcher", role: "researcher" });
 });

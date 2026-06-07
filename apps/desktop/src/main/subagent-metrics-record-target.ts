@@ -1,21 +1,20 @@
-import type { AgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
+import type { RuntimeAgentRole } from "../shared/ipc";
 
 export interface SubagentMetricsRecordTargetResolver {
   resolveAgentId(
     threadId: string,
     input: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       subagentAgentId?: string;
       parentToolUseId?: string;
     },
   ): string | undefined;
-  roleForAgentId(threadId: string, agentId: string): AgentRole | undefined;
+  roleForAgentId(threadId: string, agentId: string): RuntimeAgentRole | undefined;
 }
 
 export interface ResolveSubagentMetricsRecordTargetInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   resolver: SubagentMetricsRecordTargetResolver;
   agentId?: string;
   parentToolUseId?: string;
@@ -23,7 +22,7 @@ export interface ResolveSubagentMetricsRecordTargetInput {
 
 export interface SubagentMetricsRecordTarget {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
 }
 
 export function resolveSubagentMetricsRecordTarget(
@@ -39,7 +38,7 @@ export function resolveSubagentMetricsRecordTarget(
   }
 
   const role = input.resolver.roleForAgentId(input.threadId, agentId);
-  if (!role || !isSubagentBillingRole(role)) {
+  if (!role) {
     return undefined;
   }
 

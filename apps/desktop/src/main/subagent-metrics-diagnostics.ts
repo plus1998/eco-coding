@@ -1,4 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { logEcoDiag, shortAgentId, shortThreadId } from "./eco-diag-log";
 import type { SubagentAgentResolveMissReason } from "./subagent-agent-resolver";
 
@@ -7,7 +7,7 @@ export type SubagentMetricsDiagnosticLog = (topic: string, fields: Record<string
 export interface SubagentMetricsLifecycleDiagnosticInput {
   threadId: string;
   event: "start" | "stop";
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId: string;
   activeCount: number;
   toolUseLinks?: number;
@@ -16,14 +16,14 @@ export interface SubagentMetricsLifecycleDiagnosticInput {
 export interface SubagentMetricsTaskToolDiagnosticInput {
   threadId: string;
   toolUseId: string;
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
   pending: boolean;
   pendingCount: number;
 }
 
 export interface SubagentMetricsResolveMissDiagnosticInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   reason: SubagentAgentResolveMissReason;
   parentToolUseId?: string;
   activeAgentIds?: readonly string[];
@@ -32,7 +32,7 @@ export interface SubagentMetricsResolveMissDiagnosticInput {
 
 export interface SubagentMetricsUsageDedupeDiagnosticInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId: string;
   requestKey: string;
   modelId?: string;

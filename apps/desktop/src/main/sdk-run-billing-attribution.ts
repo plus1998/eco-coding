@@ -1,22 +1,21 @@
-import type { AgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { ResolvedSdkRunBillingModel } from "./usage-billing-artifacts";
 
 export interface SdkRunBillingAttributionResolver {
   resolveAgentId(
     threadId: string,
     input: {
-      role: AgentRole;
+      role: RuntimeAgentRole;
       subagentAgentId?: string;
       parentToolUseId?: string;
     },
   ): string | undefined;
-  roleForAgentId(threadId: string, agentId: string): AgentRole | undefined;
+  roleForAgentId(threadId: string, agentId: string): RuntimeAgentRole | undefined;
 }
 
 export interface ResolveSdkRunBillingAttributionInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   models: readonly ResolvedSdkRunBillingModel[];
   resolver: SdkRunBillingAttributionResolver;
   parentToolUseId?: string;
@@ -25,7 +24,7 @@ export interface ResolveSdkRunBillingAttributionInput {
 }
 
 export interface SdkRunBillingAttribution {
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   allLedgerRowsArePlanner: boolean;
   resolvedSubagentId?: string;
   ledgerAgentId?: string;
@@ -45,7 +44,7 @@ export function resolveSdkRunBillingAttribution(
 
   if (resolvedSubagentId) {
     const entryRole = input.resolver.roleForAgentId(input.threadId, resolvedSubagentId);
-    if (entryRole && isSubagentBillingRole(entryRole)) {
+    if (entryRole) {
       billingRole = entryRole;
     }
   }

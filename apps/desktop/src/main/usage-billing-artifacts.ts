@@ -6,7 +6,13 @@ import {
   type ParsedUsage,
   type RequestBillingDelta,
 } from "@eco/runtime";
-import type { AgentRole, BillingUsageSource, ModelsDevMapping, RouteManualSpec } from "../shared/ipc";
+import type {
+  AgentRole,
+  BillingUsageSource,
+  ModelsDevMapping,
+  RouteManualSpec,
+  RuntimeAgentRole,
+} from "../shared/ipc";
 import {
   buildPlannerModelLabel,
   resolvePublicModelId,
@@ -32,7 +38,7 @@ export type UsageBillingPricingLookup = (
 ) => Promise<ModelPricingLookup | null>;
 
 export interface UsageBillingContextUpdate {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   modelId: string;
   providerBaseUrl: string;
   modelsDevMapping?: ModelsDevMapping;
@@ -50,7 +56,7 @@ export interface WorkflowStepUsageMetadata {
 export interface SingleUsageBillingArtifacts {
   delta: ParsedUsage;
   source: BillingUsageSource;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   requestKey: string;
   requestBilling: RequestBillingDelta;
   requestBillingLog: UpstreamProxyCallBilling;
@@ -65,7 +71,7 @@ export interface SingleUsageBillingArtifacts {
 
 export interface ResolveSingleUsageBillingArtifactsInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   runtimeRoutes: readonly RuntimeRoute[];
   lookupPricing: UsageBillingPricingLookup;
@@ -183,7 +189,7 @@ export interface SdkStreamPartialBillingArtifacts {
 export interface ResolveSdkStreamPartialBillingArtifactsInput {
   threadId: string;
   eventId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   runtimeRoutes: readonly RuntimeRoute[];
   lookupPricing: UsageBillingPricingLookup;
@@ -243,7 +249,7 @@ export interface SdkRunUsageInputModel {
 }
 
 export interface ResolvedSdkRunBillingModel {
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
   modelId: string;
   usage: ParsedUsage;
   actualRates: ModelCostRates | null;
@@ -259,7 +265,7 @@ export interface SdkRunBillingModels {
 }
 
 export interface ResolveSdkRunBillingModelsInput {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   models: readonly SdkRunUsageInputModel[];
   runtimeRoutes: readonly RuntimeRoute[];
   lookupPricing: UsageBillingPricingLookup;
@@ -301,7 +307,7 @@ export async function resolveSdkRunBillingModels(
 }
 
 function resolveSingleUsageContextUpdate(input: {
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   resolvedModelId?: string;
   runtimeRoutes: readonly RuntimeRoute[];
   usageRoute?: ResolvedUsageRoute;
@@ -324,7 +330,7 @@ function resolveSingleUsageContextUpdate(input: {
   };
 }
 
-function contextUpdateFromRoute(role: AgentRole, route: ResolvedUsageRoute): UsageBillingContextUpdate {
+function contextUpdateFromRoute(role: RuntimeAgentRole, route: ResolvedUsageRoute): UsageBillingContextUpdate {
   return {
     role,
     modelId: route.modelId,

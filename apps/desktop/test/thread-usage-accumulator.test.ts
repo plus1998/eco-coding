@@ -124,6 +124,31 @@ test("ThreadUsageAccumulator recordRunUsage attributes per-model role", () => {
   expect(billing?.plannerTokenCostUsd).toBeCloseTo(0.045, 4);
 });
 
+test("ThreadUsageAccumulator preserves dynamic Agent Profile roles", () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const delta = { inputTokens: 12_000, outputTokens: 1_200, cacheReadTokens: 0, cacheCreationTokens: 0 };
+
+  accumulator.recordRunUsage({
+    threadId: "t1",
+    role: "researcher",
+    source: "sdk",
+    requestKey: "sdk-result:dynamic-researcher",
+    models: [
+      {
+        role: "source_verifier",
+        modelId: "research-model",
+        usage: delta,
+        actualRates: haikuRates,
+        plannerRates: sonnetRates,
+      },
+    ],
+  });
+
+  const billing = accumulator.getSnapshot("t1");
+  expect(billing?.byRole?.source_verifier?.inputTokens).toBe(12_000);
+  expect(billing?.byModel?.[0]?.roles).toEqual(["source_verifier"]);
+});
+
 test("ThreadUsageAccumulator keeps separate source totals for proxy otel and sdk", () => {
   const accumulator = new ThreadUsageAccumulator();
   const delta = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };

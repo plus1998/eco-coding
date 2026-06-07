@@ -1,12 +1,12 @@
 import { mergeCostBreakdowns, type ParsedUsage, type RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { buildSubagentUsageContributionKey } from "./subagent-metrics-persistence";
 import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 import { SubagentMetricsState } from "./subagent-metrics-state";
 
 export interface SubagentLegacyUsageRecordTarget {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
 }
 
 export interface SubagentLegacyUsageObservationInput {
@@ -109,7 +109,7 @@ export class SubagentLegacyUsageTracker {
 
   restoreContribution(input: {
     agentId: string;
-    role: AgentRole;
+    role: RuntimeAgentRole;
     requestKey: string;
     modelId?: string;
   }): void {

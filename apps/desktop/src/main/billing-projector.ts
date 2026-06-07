@@ -1,6 +1,6 @@
 import type {
-  AgentRole,
   BillingUsageSource,
+  RuntimeAgentRole,
   ThreadBillingModelSnapshot,
   ThreadBillingSnapshot,
   ThreadBillingSourceSnapshot,
@@ -49,7 +49,7 @@ export interface ProjectBillingFromUsageLedgerInput {
 
 export interface BillingProjectorAgentSnapshot {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -100,9 +100,9 @@ interface MutableSourceState {
   ecoCostUsd: number;
   ecoCostBreakdown: TokenCostBreakdown;
   plannerCostBreakdown: TokenCostBreakdown;
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>;
-  roleModelIds: Partial<Record<AgentRole, string>>;
-  byRole: Partial<Record<AgentRole, ParsedUsage>>;
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>;
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>;
+  byRole: Partial<Record<RuntimeAgentRole, ParsedUsage>>;
   byModel: Record<string, MutableModelState>;
   byWorkflowStep: Record<string, MutableWorkflowStepState>;
   reportedCostUsd: number;
@@ -113,7 +113,7 @@ interface MutableSourceState {
 
 interface MutableModelState {
   modelId: string;
-  roles: AgentRole[];
+  roles: RuntimeAgentRole[];
   usage: ParsedUsage;
   ecoCostUsd: number;
   reportedCostUsd: number;
@@ -133,7 +133,7 @@ interface MutableWorkflowStepState {
 
 interface MutableAgentState {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   plannerTokenCostUsd: number;
   ecoCostUsd: number;
@@ -399,12 +399,12 @@ function buildSourceBreakdown(
 }
 
 function buildRoleSnapshot(
-  byRoleState: Partial<Record<AgentRole, ParsedUsage>>,
-  roleEcoCostUsd: Partial<Record<AgentRole, number>>,
-  roleModelIds: Partial<Record<AgentRole, string>>,
+  byRoleState: Partial<Record<RuntimeAgentRole, ParsedUsage>>,
+  roleEcoCostUsd: Partial<Record<RuntimeAgentRole, number>>,
+  roleModelIds: Partial<Record<RuntimeAgentRole, string>>,
 ): NonNullable<ThreadBillingSnapshot["byRole"]> {
   const byRole: NonNullable<ThreadBillingSnapshot["byRole"]> = {};
-  for (const [role, usage] of Object.entries(byRoleState) as [AgentRole, ParsedUsage][]) {
+  for (const [role, usage] of Object.entries(byRoleState) as [RuntimeAgentRole, ParsedUsage][]) {
     byRole[role] = {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
@@ -778,7 +778,7 @@ function usageFromEvent(event: UsageLedgerEvent): ParsedUsage {
   };
 }
 
-function addRole(roles: AgentRole[], role: AgentRole): void {
+function addRole(roles: RuntimeAgentRole[], role: RuntimeAgentRole): void {
   if (!roles.includes(role)) {
     roles.push(role);
   }

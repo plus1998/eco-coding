@@ -1,4 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import {
   type SubagentMetricsPersistenceStore,
   subagentMetricsEntryFromPersistenceRecord,
@@ -8,7 +8,7 @@ import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 
 export interface RestoredSubagentUsageContribution {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   modelId?: string;
 }

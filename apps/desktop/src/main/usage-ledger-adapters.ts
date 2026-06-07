@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import {
   buildUsageLedgerEventKey,
   type UsageLedgerEvent,
@@ -13,7 +13,7 @@ import {
 } from "./usage-ledger-cost-metadata";
 
 export interface UsageLedgerModelUsage {
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
   modelId: string;
   usage: ParsedUsage;
   sdkCostUsd?: number;
@@ -22,7 +22,7 @@ export interface UsageLedgerModelUsage {
 
 export interface BuildSdkUsageLedgerEventsInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   models: readonly UsageLedgerModelUsage[];
   totalCostUsd?: number;
@@ -35,7 +35,7 @@ export interface BuildSdkUsageLedgerEventsInput {
 
 export interface BuildSingleUsageLedgerEventInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   source: UsageLedgerSource;
   sourceEventId: string;
   usageKind?: UsageLedgerKind;

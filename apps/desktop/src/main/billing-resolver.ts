@@ -13,6 +13,7 @@ import {
   type ModelSettingsSnapshot,
   type ModelsDevMapping,
   type RoleRouteConfig,
+  type RuntimeAgentRole,
   type UpstreamApiCompat,
   type RouteCapabilityHint,
   type RouteManualSpec,
@@ -84,7 +85,7 @@ export function buildResolvedProxyRoutes(routes: readonly RuntimeRoute[]): Anthr
 }
 
 export function resolveUsageRoute(
-  role: AgentRole,
+  role: RuntimeAgentRole,
   requestedModel: string | undefined,
   routes: readonly RuntimeRoute[],
 ): ResolvedUsageRoute | undefined {
@@ -162,7 +163,7 @@ export function resolveUsageRoute(
 
 /** Resolve SDK alias / OTel model to the upstream id shown in UI and billing snapshots. */
 export function resolvePublicModelId(
-  role: AgentRole,
+  role: RuntimeAgentRole,
   requestedModel: string | undefined,
   routes: readonly RuntimeRoute[],
 ): string | undefined {

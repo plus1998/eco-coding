@@ -98,7 +98,7 @@ test("resolveSdkRunBillingAttribution falls back to planner agent for planner-on
   });
 });
 
-test("resolveSdkRunBillingAttribution does not let non-subagent registry roles override billing role", () => {
+test("resolveSdkRunBillingAttribution uses registry role for resolved agents", () => {
   const resolver: SdkRunBillingAttributionResolver = {
     resolveAgentId: () => undefined,
     roleForAgentId: () => "planner",
@@ -113,7 +113,7 @@ test("resolveSdkRunBillingAttribution does not let non-subagent registry roles o
   });
 
   expect(attribution).toMatchObject({
-    billingRole: "coder",
+    billingRole: "planner",
     resolvedSubagentId: "agent_planner_like",
     ledgerAgentId: "agent_planner_like",
   });

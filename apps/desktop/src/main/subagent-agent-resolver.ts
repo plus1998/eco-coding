@@ -1,4 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 
 export type SubagentAgentResolveMissReason =
@@ -8,7 +8,7 @@ export type SubagentAgentResolveMissReason =
   | "no_active_subagent";
 
 export interface SubagentAgentResolveInput {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   explicitAgentId?: string;
   parentToolUseId?: string;
   linkedParentAgentId?: string;

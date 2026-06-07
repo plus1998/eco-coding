@@ -1,7 +1,6 @@
 import { parseSdkContextUsage } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import {
-  isSubagentBillingRole,
   shouldUpdateContextFromUsageSource,
   type UsageBillingObservation,
 } from "./billing-orchestration";
@@ -22,7 +21,7 @@ import {
 
 export interface ResolveSdkRunBillingResolutionInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   bundle: SdkUsageBillingBundle;
   runtimeRoutes: readonly RuntimeRoute[];
@@ -38,7 +37,7 @@ export interface ResolveSdkRunBillingResolutionInput {
 
 export interface SdkRunBillingResolution {
   billingModels: SdkRunBillingModels;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   contextUsage: ApplySdkRunBillingEffectsInput["contextUsage"];
   observations: UsageBillingObservation[];
   effectsInput: ApplySdkRunBillingEffectsInput;
@@ -128,12 +127,12 @@ export function resolveSdkRunBillingResolutionFromModels(
 
 function buildSdkRunUsageObservations(input: {
   source: "sdk";
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   requestKey: string;
   models: SdkRunBillingModels["models"];
   resolvedSubagentId?: string;
 }): UsageBillingObservation[] {
-  if (!input.resolvedSubagentId || !isSubagentBillingRole(input.billingRole)) {
+  if (!input.resolvedSubagentId) {
     return [];
   }
   return input.models.map((model) => ({
@@ -147,7 +146,7 @@ function buildSdkRunUsageObservations(input: {
 }
 
 function resolveSdkRunContextUpdate(input: {
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   runtimeRoutes: readonly RuntimeRoute[];
   primaryModelId?: string;
 }): UsageBillingContextUpdate | undefined {

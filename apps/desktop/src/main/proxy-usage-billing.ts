@@ -1,5 +1,5 @@
 import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { AnthropicProxyUsageInfo } from "./anthropic-proxy";
 import {
   isSubagentBillingRole,
@@ -13,7 +13,7 @@ import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 
 export interface ProxyUsageBillingInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   source: "proxy";
   inputTokens: number;
   outputTokens: number;
@@ -40,10 +40,10 @@ export interface ResolveProxyUsageBillingInput {
 
 export interface ProxyUsageBillingResolution {
   nextRequestSeq: number;
-  contextRole: AgentRole;
+  contextRole: RuntimeAgentRole;
   contextOccupied: number;
   requestKey: string;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   usage: ParsedUsage;
   observation: UsageBillingObservation;
   billingInput: ProxyUsageBillingInput;

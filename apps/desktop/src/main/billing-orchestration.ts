@@ -1,5 +1,5 @@
 import { estimateContextTokens, type ParsedUsage } from "@eco/runtime";
-import type { AgentRole, BillingUsageSource, ThreadUsageSnapshot } from "../shared/ipc";
+import type { BillingUsageSource, RuntimeAgentRole, ThreadUsageSnapshot } from "../shared/ipc";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
 
 const SUBAGENT_BILLING_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
@@ -29,7 +29,7 @@ export function buildAssistantUsageRequestKey(messageId: string): string {
 
 export interface UsageBillingObservation {
   source: BillingUsageSource;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   agentId?: string;
   requestKey?: string;
@@ -37,7 +37,7 @@ export interface UsageBillingObservation {
 }
 
 export function shouldBillAssistantSubagentUsage(input: {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   messageId: string | undefined;
   agentId?: string;
   usage?: ParsedUsage;
@@ -51,7 +51,7 @@ export function shouldBillAssistantSubagentUsage(input: {
 }
 
 export function hasMatchingAuthoritativeUsage(input: {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId?: string;
   usage?: ParsedUsage;
   modelId?: string;
@@ -65,7 +65,7 @@ export function hasMatchingAuthoritativeUsage(input: {
 function matchesUsageObservation(
   observation: UsageBillingObservation,
   input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     agentId?: string;
     usage?: ParsedUsage;
     modelId?: string;
@@ -105,7 +105,7 @@ export function nextOtelRequestDedupId(currentSeq: number | undefined): {
 
 export function shouldUpdateContextFromUsageSource(
   source: BillingUsageSource | undefined,
-  role?: AgentRole,
+  role?: RuntimeAgentRole,
 ): boolean {
   if (source === "sdk") {
     return true;
@@ -118,7 +118,7 @@ export function shouldUpdateContextFromUsageSource(
 
 export function buildUsageSnapshotForRole(input: {
   usage: ParsedUsage;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   monitorSnap?: ContextMonitorSnapshot;
   modelId?: string;
   fallbackContext: "estimate" | "none";

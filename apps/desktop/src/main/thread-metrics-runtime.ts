@@ -1,5 +1,5 @@
 import type { ParsedUsage } from "@eco/runtime";
-import type { AgentRole, ThreadContextSnapshot } from "../shared/ipc";
+import type { RuntimeAgentRole, ThreadContextSnapshot } from "../shared/ipc";
 import type { ThreadMetricsRecord } from "./conversation-store";
 import type { SerializedThreadUsageState } from "./thread-usage-accumulator";
 import type { UsageContextUpdateMonitor } from "./usage-context-effects";
@@ -27,7 +27,7 @@ export interface ThreadMetricsContextSnapshots {
 
 export interface ThreadMetricsSubagentEntry {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   contextOccupied: number;
   modelId?: string;

@@ -1,4 +1,4 @@
-import type { AgentRole, ThreadBillingSnapshot } from "../shared/ipc";
+import type { RuntimeAgentRole, ThreadBillingSnapshot } from "../shared/ipc";
 import { isSubagentBillingRole } from "./billing-orchestration";
 import type { RecordRunUsageInput, RecordUsageInput } from "./thread-usage-accumulator";
 import type { ResolvedSdkRunBillingModel, SingleUsageBillingArtifacts } from "./usage-billing-artifacts";
@@ -26,7 +26,7 @@ export interface RecordLegacySingleUsageBillingResult {
 
 export interface RecordLegacySdkRunBillingInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   models: readonly ResolvedSdkRunBillingModel[];
   totalCostUsd?: number;
@@ -106,7 +106,7 @@ export function buildSyntheticSdkPrimaryRequestKey(requestKey: string): string {
 
 export function resolveSyntheticSdkPrimaryFill(input: {
   requested: boolean;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   hasAgent: boolean;
   alreadySeen: boolean;
 }): SyntheticSdkPrimaryFillDecision {

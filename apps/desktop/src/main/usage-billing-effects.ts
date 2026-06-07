@@ -1,4 +1,4 @@
-import type { AgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
+import type { RuntimeAgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { formatUsageBadge, type ParsedUsage } from "@eco/runtime";
 import { buildUsageSnapshotForRole } from "./billing-orchestration";
 import {
@@ -32,7 +32,7 @@ import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 
 export interface UsageBillingUpdatedEvent {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   badge: string;
   payload: {
     usage: ThreadUsageSnapshot;
@@ -187,10 +187,10 @@ export async function applySingleUsageBillingEffects(
 
 export interface ApplySdkRunBillingEffectsInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   models: readonly ResolvedSdkRunBillingModel[];
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   contextUsage: ParsedUsage;
   updateContext: boolean;
   totalCostUsd?: number;

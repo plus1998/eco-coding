@@ -1,4 +1,4 @@
-import type { AgentRole, BillingUsageSource } from "../shared/ipc";
+import type { BillingUsageSource, RuntimeAgentRole } from "../shared/ipc";
 import type { RuntimeRoute } from "./billing-resolver";
 import { shouldUpdateContextFromUsageSource } from "./billing-orchestration";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
@@ -10,7 +10,7 @@ import {
 
 export interface SingleUsageBillingRequest {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId?: string;
   source?: BillingUsageSource;
   inputTokens: number;

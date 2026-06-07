@@ -1,4 +1,4 @@
-import type { AgentRole, TokenCostBreakdown } from "../shared/ipc";
+import type { RuntimeAgentRole, TokenCostBreakdown } from "../shared/ipc";
 import type { ParsedUsage } from "@eco/runtime";
 import type { SubagentMetricsEntry } from "./subagent-metrics-state";
 
@@ -7,7 +7,7 @@ export type SubagentMetricsPersistenceStatus = "active" | "stopped";
 export interface SubagentMetricsPersistenceRecord {
   threadId: string;
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: SubagentMetricsPersistenceStatus;
   inputTokens: number;
   outputTokens: number;
@@ -24,7 +24,7 @@ export interface SubagentMetricsPersistenceRecord {
 
 export interface UpsertSubagentMetricsPersistenceInput {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: SubagentMetricsPersistenceStatus;
   inputTokens: number;
   outputTokens: number;
@@ -92,7 +92,7 @@ export function subagentMetricsEntryToPersistenceInput(
 
 export function buildSubagentUsageContributionKey(
   input: { requestKey: string; modelId?: string; usage?: Pick<ParsedUsage, "modelId"> },
-  resolved: { agentId: string; role: AgentRole },
+  resolved: { agentId: string; role: RuntimeAgentRole },
 ): string {
   const modelId = input.modelId ?? input.usage?.modelId ?? "unknown-model";
   return [resolved.agentId, resolved.role, input.requestKey, modelId].join("\u001f");

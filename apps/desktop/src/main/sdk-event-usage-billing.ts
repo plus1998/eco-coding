@@ -1,5 +1,5 @@
 import { parseSdkContextUsage, parseSdkUsageBilling, type ParsedUsage } from "@eco/runtime";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import {
   buildAssistantUsageRequestKey,
   isSdkIncrementalStreamUsage,
@@ -31,7 +31,7 @@ export interface SdkWorkflowStepUsageMetadata {
 
 export interface SdkAssistantSubagentBillingInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   agentId: string;
   source: "sdk";
   inputTokens: number;
@@ -50,7 +50,7 @@ export interface SdkAssistantSubagentBillingInput {
 export interface SdkStreamPartialUsageInput {
   threadId: string;
   eventId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   usage: ParsedUsage;
   modelId?: string;
   runAttemptId?: string;
@@ -62,7 +62,7 @@ export interface SdkStreamPartialUsageInput {
 
 export interface SdkRunUsageBillingInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   requestKey: string;
   bundle: SdkUsageBillingBundle;
   usagePayload: unknown;
@@ -75,7 +75,7 @@ export interface SdkRunUsageBillingInput {
 
 export interface SdkUsageDiagnostic {
   throttleKey: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   stream: boolean;
   explicit: boolean;
   subagentAgentId?: string;
@@ -85,7 +85,7 @@ export interface SdkUsageDiagnostic {
 }
 
 export interface SdkUsageMissDiagnostic {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   eventId: string;
   parentToolUseId?: string;
   explicitSubagentId?: string;
@@ -93,7 +93,7 @@ export interface SdkUsageMissDiagnostic {
 
 interface SdkEventUsageResolvedBase {
   bundle: SdkUsageBillingBundle;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   parentToolUseId?: string;
   explicitSubagentId?: string;
   subagentAgentId?: string;
@@ -241,7 +241,7 @@ export function resolveSdkEventUsageBilling(
 function resolveAssistantSubagentBilling(input: {
   threadId: string;
   bundle: SdkUsageBillingBundle;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   eventPayload: unknown;
   subagentAgentId?: string;
   parentToolUseId?: string;
@@ -303,7 +303,7 @@ function buildStreamPartialInput(input: {
   threadId: string;
   event: SdkUsageEventLike;
   bundle: SdkUsageBillingBundle;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   subagentAgentId?: string;
   parentToolUseId?: string;
   runAttemptId?: string;
@@ -331,7 +331,7 @@ function buildStreamPartialInput(input: {
 
 function buildUsageDiagnostic(input: {
   threadId: string;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   bundle: SdkUsageBillingBundle;
   stream: boolean;
   explicitSubagentId?: string;
@@ -351,7 +351,7 @@ function buildUsageDiagnostic(input: {
   };
 }
 
-function shouldReportUsageMiss(input: { billingRole: AgentRole; subagentAgentId?: string }): boolean {
+function shouldReportUsageMiss(input: { billingRole: RuntimeAgentRole; subagentAgentId?: string }): boolean {
   return isSubagentBillingRole(input.billingRole) && !input.subagentAgentId;
 }
 

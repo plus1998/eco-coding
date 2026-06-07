@@ -94,7 +94,7 @@ test("resolveSubagentUsageAttribution resolves parent tool use before role fallb
   });
 });
 
-test("resolveSubagentUsageAttribution does not apply non-subagent registry roles", () => {
+test("resolveSubagentUsageAttribution applies registry role for resolved agents", () => {
   const attribution = resolveSubagentUsageAttribution({
     threadId: "thr_attr",
     role: "coder",
@@ -105,7 +105,7 @@ test("resolveSubagentUsageAttribution does not apply non-subagent registry roles
   });
 
   expect(attribution).toEqual({
-    billingRole: "coder",
+    billingRole: "planner",
     attempted: true,
     subagentAgentId: "agent_planner_like",
   });
