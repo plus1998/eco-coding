@@ -349,6 +349,9 @@ type WorkflowStep = {
 - `modelSettingsGet` 已合并内置模板、派生 Coding profile、用户模板和用户编排配置。
 - 用户 store 与 IPC 保存路径会保护内置模板和派生编排配置，禁止直接覆盖保留 ID。
 - 验证：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/agent-registry-settings.test.ts apps/desktop/test/ipc.test.ts apps/desktop/test/provider-store.test.ts` 通过。
+- 子代理库 UI 已支持创建、复制、编辑和删除用户/项目模板；内置模板只允许复制为用户模板。
+- Prompt 编辑器已覆盖名称、领域、作用域、描述、使用时机、prompt、输出契约、默认模型、工具、MCP、skills 和委派开关。
+- 验证补充：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-template-form.test.ts apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-registry-settings.test.ts` 通过；`bun run --cwd apps/desktop build` 通过。
 
 目标：让用户可以创建、编辑、复制、导入、导出、版本化自己的子代理。
 

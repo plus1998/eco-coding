@@ -4339,7 +4339,6 @@ button:not(:disabled) {
   background: #3a3a3a;
 }
 
-
 .context-card-role-main {
   display: flex;
   min-width: 0;
@@ -6442,7 +6441,17 @@ button:not(:disabled) {
   background: rgba(0, 0, 0, 0.55);
 }
 
+.settings-modal-backdrop-close {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: transparent;
+  cursor: default;
+}
+
 .settings-modal {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   width: min(520px, 100%);
@@ -6455,6 +6464,11 @@ button:not(:disabled) {
 
 .settings-modal-route-profile {
   width: min(720px, calc(100vw - 48px));
+  max-height: min(92vh, 900px);
+}
+
+.settings-modal-agent-template {
+  width: min(860px, calc(100vw - 48px));
   max-height: min(92vh, 900px);
 }
 
@@ -6479,6 +6493,20 @@ button:not(:disabled) {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
   align-items: end;
+}
+
+.models-agent-template-form {
+  max-width: none;
+}
+
+.models-agent-template-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.models-agent-prompt-textarea {
+  min-height: 180px;
 }
 
 .models-route-profile-section {
@@ -6568,6 +6596,80 @@ button:not(:disabled) {
   font-size: 13px;
   line-height: 1.45;
   color: #a3a3a3;
+}
+
+.models-agent-library,
+.models-subagent-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.models-agent-template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.models-agent-template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.models-agent-template-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.models-agent-template-title-row,
+.models-agent-template-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-agent-template-title-row {
+  margin-bottom: 6px;
+}
+
+.models-agent-template-meta {
+  margin-top: 10px;
+  color: #737373;
+  font-size: 12px;
+}
+
+.models-agent-domain-badge,
+.models-agent-source-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.models-agent-domain-badge {
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+
+.models-agent-source-badge {
+  background: rgba(255, 255, 255, 0.07);
+  color: #a3a3a3;
+}
+
+.models-subagent-defaults-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .models-subagent-list {
@@ -6927,7 +7029,8 @@ button:not(:disabled) {
 }
 
 @media (max-width: 560px) {
-  .models-route-profile-meta {
+  .models-route-profile-meta,
+  .models-agent-template-form-grid {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
