@@ -7,6 +7,7 @@ import {
 import type {
   ModelSettingsSnapshot,
   OrchestrationModeSetting,
+  OrchestrationProfile,
   RoleRouteConfig,
   SubagentEnabledSettings,
   WorkflowSettingsSnapshot,
@@ -14,6 +15,7 @@ import type {
 
 export interface ThreadRuntimeConfig {
   routeProfileId: string;
+  agentProfileId?: string;
   subagentEnabled: SubagentEnabledSettings;
   orchestrationMode: OrchestrationModeSetting;
 }
@@ -24,11 +26,40 @@ export function getDefaultRouteProfileId(settings: ModelSettingsSnapshot): strin
   return settings.routeProfiles[0]?.id;
 }
 
+export function getDefaultAgentProfileId(settings: ModelSettingsSnapshot): string | undefined {
+  return settings.orchestrationProfiles[0]?.id;
+}
+
 export function getRoutesForProfile(
   settings: ModelSettingsSnapshot,
   routeProfileId: string,
 ): RoleRouteConfig[] | undefined {
   return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
+}
+
+export function getAgentProfileById(
+  settings: ModelSettingsSnapshot,
+  agentProfileId: string | undefined,
+): OrchestrationProfile | undefined {
+  const id = agentProfileId?.trim();
+  if (!id) {
+    return undefined;
+  }
+  return settings.orchestrationProfiles.find((profile) => profile.id === id);
+}
+
+export function resolveThreadAgentProfile(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+): OrchestrationProfile | undefined {
+  return (
+    getAgentProfileById(settings, config.agentProfileId) ??
+    settings.orchestrationProfiles.find(
+      (profile) =>
+        profile.id === config.routeProfileId ||
+        profile.sourceRouteProfileId === config.routeProfileId,
+    )
+  );
 }
 
 function normalizeOrchestrationMode(value: unknown): OrchestrationModeSetting {
@@ -52,7 +83,9 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.routeProfileId !== "string" || !record.routeProfileId.trim()) {
+  const hasRouteProfileId = typeof record.routeProfileId === "string" && record.routeProfileId.trim();
+  const hasAgentProfileId = typeof record.agentProfileId === "string" && record.agentProfileId.trim();
+  if (!hasRouteProfileId && !hasAgentProfileId) {
     return false;
   }
   const orchestration = record.orchestrationMode ?? record.planModeEnabled;
@@ -96,8 +129,10 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const orchestrationMode = normalizeOrchestrationMode(
     record.orchestrationMode ?? record.planModeEnabled,
   );
+  const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
   return {
-    routeProfileId: config.routeProfileId.trim(),
+    routeProfileId,
+    ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     orchestrationMode,
   };
@@ -108,12 +143,25 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   subagentDefaults: SubagentEnabledSettings;
   workflowDefaults: WorkflowSettingsSnapshot;
   routeProfileId?: string;
+  agentProfileId?: string;
 }): ThreadRuntimeConfig {
-  const routeProfileId = input.routeProfileId?.trim() || getDefaultRouteProfileId(input.settings);
-  if (!routeProfileId) {
-    throw new Error("至少添加一套子代理编排配置。");
+  const requestedAgentProfileId = input.agentProfileId?.trim();
+  const requestedRouteProfileId = input.routeProfileId?.trim();
+  const agentProfile =
+    getAgentProfileById(input.settings, requestedAgentProfileId) ??
+    input.settings.orchestrationProfiles.find(
+      (profile) =>
+        profile.id === requestedRouteProfileId ||
+        profile.sourceRouteProfileId === requestedRouteProfileId,
+    ) ??
+    getAgentProfileById(input.settings, getDefaultAgentProfileId(input.settings));
+  const routeProfileId = agentProfile
+    ? (agentProfile.sourceRouteProfileId ?? agentProfile.id)
+    : requestedRouteProfileId || getDefaultRouteProfileId(input.settings);
+  if (!agentProfile && !routeProfileId) {
+    throw new Error("至少添加一套 Agent Profile。");
   }
-  if (!getRoutesForProfile(input.settings, routeProfileId)) {
+  if (routeProfileId && !agentProfile && !getRoutesForProfile(input.settings, routeProfileId)) {
     throw new Error(`找不到路由配置：${routeProfileId}`);
   }
   const orchestrationMode = input.workflowDefaults.orchestrationMode;
@@ -122,7 +170,8 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
       ? defaultSubagentAvailability()
       : normalizeSubagentAvailability(input.subagentDefaults);
   return {
-    routeProfileId,
+    routeProfileId: routeProfileId ?? agentProfile?.id ?? "",
+    ...(agentProfile && { agentProfileId: agentProfile.id }),
     subagentEnabled,
     orchestrationMode,
   };

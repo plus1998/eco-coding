@@ -815,9 +815,9 @@ type WorkflowStep = {
 
 ## 阶段 10：迁移与兼容收敛
 
-状态：未开始。
+状态：进行中。
 
-目标：逐步让新模型成为主路径，同时保留必要旧线程读取能力。
+目标：让 Agent Profile 成为新线程主路径，旧 `routeProfile` 只保留为 Coding preset 的路由代理字段。按当前产品决策，不为历史数据做额外兜底；遇到兼容冲突时优先收敛到新 schema。
 
 迁移映射：
 
@@ -830,20 +830,31 @@ type WorkflowStep = {
 
 收敛步骤：
 
-1. 新旧 schema 双读。
-2. 新线程使用新 schema。
-3. 旧线程继续旧 projection fallback。
-4. 新 projection 支持动态 agent key。
-5. 删除新路径上的固定 role 依赖。
-6. 保留旧数据 migration reader。
+1. 新线程使用 `agentProfileId` 作为选择主键，`routeProfileId` 降级为 legacy/proxy 字段。
+2. Runtime config 解析支持 `agentProfileId` only payload。
+3. Coding profile 继续要求完整 `planner/explore/architect/coder/reviewer/tester` 路由。
+4. 非 Coding / Custom profile 不再要求完整编程路由，只要求 profile 能解析出至少一个可用模型路由。
+5. 新 projection 支持动态 agent key。
+6. 删除新路径上的固定 role 依赖。
+
+已完成：
+
+- Phase 10.1 已完成：`ThreadRuntimeConfig` 新增 `agentProfileId`，默认线程配置优先选择 `OrchestrationProfile`，并支持只包含 `agentProfileId` 的 JSON payload。
+- Phase 10.1 主进程已收敛：线程启动、继续、批准计划、重试、上下文压缩和 SDK driver 都通过线程的 Agent Profile 决定 runtime 校验规则；Coding profile 仍要求完整编程角色，非 Coding profile 使用 profile 主模型/可映射 agent 模型生成运行路由。
+- Phase 10.1 renderer 已收敛：Composer 的 Agent Profile popover 使用 Profile ID 作为选择值，自定义/复制出的非 route-backed profile 可以被选择；发送可用状态按选中 profile 的模型/provider 就绪判断，不再硬性要求全部编程 role。
+- Phase 10.1 测试已覆盖：默认 profile 选择、agentProfileId-only payload、自定义 profile 可选、generic profile partial routes、Coding 默认完整路由校验。
+
+Phase 10.1 验证：
+
+- `bun test apps/desktop/test/thread-runtime-config.test.ts apps/desktop/test/agent-profile-summary.test.ts apps/desktop/test/thread-runtime-routes.test.ts`
+- `bun run typecheck`
 
 验收标准：
 
-- 老线程能打开。
-- 老配置能自动迁移。
-- 用户不需要重新配置模型。
-- 迁移失败可回退，不丢配置。
-- 新线程不再要求固定 role 完整配置。
+- 新线程不再依赖固定 role 作为 Profile 选择主键。
+- 非 Coding profile 不再要求固定 role 完整配置。
+- Coding profile 的旧路由体验保持可用。
+- UI、runtime 校验、审计和投影使用同一个 Agent Profile 选择结果。
 
 ## 技术主线优先级
 

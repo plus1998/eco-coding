@@ -272,10 +272,12 @@ export interface RouteProfileInput {
 
 export {
   buildThreadRuntimeConfigFromDefaults,
+  getDefaultAgentProfileId,
   getDefaultRouteProfileId,
   getRoutesForProfile,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
+  resolveThreadAgentProfile,
 } from "./thread-runtime-config";
 export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 

@@ -42,14 +42,16 @@ function settings(): ModelSettingsSnapshot {
   };
 }
 
-test("listSelectableAgentProfileSummaries returns runnable profiles only", () => {
+test("listSelectableAgentProfileSummaries returns route-backed and custom profiles", () => {
   const summaries = listSelectableAgentProfileSummaries(settings());
 
-  expect(summaries).toHaveLength(1);
+  expect(summaries).toHaveLength(2);
   expect(summaries[0]?.selectionId).toBe("coding-default");
   expect(summaries[0]?.name).toBe("默认编程");
   expect(summaries[0]?.presetLabel).toBe("编程");
   expect(summaries[0]?.strategyLabel).toBe("混合编排");
+  expect(summaries[1]?.selectionId).toBe("custom-unbound");
+  expect(summaries[1]?.sourceLabel).toBe("用户");
 });
 
 test("profile summary applies current runtime subagent switches", () => {
@@ -70,7 +72,7 @@ test("profile summary applies current runtime subagent switches", () => {
   expect(summary?.highRiskLabels).toEqual(["Bash", "写文件", "联网"]);
 });
 
-test("buildAgentProfileSummary keeps unbound custom profile visible but not selectable", () => {
+test("buildAgentProfileSummary keeps unbound custom profile selectable by profile id", () => {
   const snapshot = settings();
   const profile = snapshot.orchestrationProfiles.find((candidate) => candidate.id === "custom-unbound");
   if (!profile) {
@@ -79,6 +81,6 @@ test("buildAgentProfileSummary keeps unbound custom profile visible but not sele
 
   const summary = buildAgentProfileSummary(snapshot, profile);
 
-  expect(summary.selectionId).toBeUndefined();
+  expect(summary.selectionId).toBe("custom-unbound");
   expect(summary.sourceLabel).toBe("用户");
 });

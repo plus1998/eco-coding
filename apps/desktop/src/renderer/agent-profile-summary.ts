@@ -63,14 +63,14 @@ export function listSelectableAgentProfileSummaries(
 
 export function findSelectableAgentProfileSummary(
   settings: ModelSettingsSnapshot,
-  routeProfileId: string | undefined,
+  selectionId: string | undefined,
   runtimeConfig?: ThreadRuntimeConfig | undefined,
 ): AgentProfileSummary | undefined {
-  if (!routeProfileId) {
+  if (!selectionId) {
     return undefined;
   }
   return listSelectableAgentProfileSummaries(settings, runtimeConfig).find(
-    (summary) => summary.selectionId === routeProfileId,
+    (summary) => summary.selectionId === selectionId,
   );
 }
 
@@ -80,7 +80,6 @@ export function buildAgentProfileSummary(
   runtimeConfig?: ThreadRuntimeConfig | undefined,
 ): AgentProfileSummary {
   const templatesById = new Map(settings.agentTemplates.map((template) => [template.id, template]));
-  const routeProfileIds = new Set(settings.routeProfiles.map((routeProfile) => routeProfile.id));
   const mainRiskLabels = summarizeToolRiskLabels(profile.mainAgent.tools);
   const main: AgentProfileMainSummary = {
     name: profile.mainAgent.name.trim() || "主 Agent",
@@ -97,7 +96,7 @@ export function buildAgentProfileSummary(
   const enabledAgents = agents.filter((agent) => agent.enabled);
   return {
     profile,
-    selectionId: resolveProfileSelectionId(profile, routeProfileIds),
+    selectionId: profile.id,
     name: profile.name,
     presetLabel: formatAgentDomainLabel(profile.preset),
     sourceLabel: formatProfileSourceLabel(profile),
@@ -150,19 +149,6 @@ function buildAgentSummary(
       mcpServers: agent.mcpServers,
     }),
   };
-}
-
-function resolveProfileSelectionId(
-  profile: OrchestrationProfile,
-  routeProfileIds: ReadonlySet<string>,
-): string | undefined {
-  if (profile.sourceRouteProfileId && routeProfileIds.has(profile.sourceRouteProfileId)) {
-    return profile.sourceRouteProfileId;
-  }
-  if (routeProfileIds.has(profile.id)) {
-    return profile.id;
-  }
-  return undefined;
 }
 
 function resolveAgentEnabled(

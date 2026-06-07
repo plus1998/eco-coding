@@ -80,6 +80,45 @@ test("resolveThreadRuntimeConfig reports missing providers and disabled provider
   });
 });
 
+test("resolveThreadRuntimeConfig accepts partial routes for generic Agent Profiles", () => {
+  const resolved = resolveThreadRuntimeConfig(
+    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    [provider("p1")],
+    [{ role: "planner", providerId: "p1", modelId: "research-model" }],
+    { requireCompleteCodingRoutes: false },
+  );
+
+  expect(resolved.ok).toBe(true);
+  if (!resolved.ok) return;
+  expect(resolved.routes).toHaveLength(1);
+  expect(resolved.routes[0]?.role).toBe("planner");
+
+  expect(
+    resolveThreadRuntimeConfig(
+      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      [provider("p1")],
+      [],
+      { requireCompleteCodingRoutes: false },
+    ),
+  ).toEqual({
+    ok: false,
+    reason: "At least one model route is required for this Agent Profile.",
+  });
+});
+
+test("resolveThreadRuntimeConfig still requires full coding routes by default", () => {
+  expect(
+    resolveThreadRuntimeConfig(
+      { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+      [provider("p1")],
+      [{ role: "planner", providerId: "p1", modelId: "planner-model" }],
+    ),
+  ).toEqual({
+    ok: false,
+    reason: "Configure a explore route before starting a coding thread.",
+  });
+});
+
 test("buildDriverRoutes uses proxy aliases while runtime routes use upstream model ids", () => {
   const resolved = resolveThreadRuntimeConfig(
     { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },

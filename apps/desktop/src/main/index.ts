@@ -50,6 +50,7 @@ import {
   type OrchestrationProfile,
   type PromptImageAttachment,
   type ProviderConfigInput,
+  resolveThreadAgentProfile,
   type RoleRouteConfig,
   type RouteProfileInput,
   type SessionSyncSettingsInput,
@@ -616,11 +617,88 @@ function roleRoutesForThreadConfig(
   settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
 ): RoleRouteConfig[] {
-  const routes = getRoutesForProfile(settings, config.routeProfileId);
-  if (!routes) {
-    throw new Error(`找不到路由配置：${config.routeProfileId}`);
+  const profile = resolveThreadAgentProfile(settings, config);
+  const routes = config.routeProfileId ? getRoutesForProfile(settings, config.routeProfileId) : undefined;
+  if (routes) {
+    return routes;
   }
-  return routes;
+  if (profile) {
+    return roleRoutesForAgentProfile(profile);
+  }
+  throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
+}
+
+function roleRoutesForAgentProfile(profile: OrchestrationProfile): RoleRouteConfig[] {
+  const routes = new Map<AgentRole, RoleRouteConfig>();
+  routes.set("planner", routeFromModelRef("planner", profile.mainAgent.modelRef));
+  for (const agent of profile.agents) {
+    if (isAgentRole(agent.agentKey) && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
+      routes.set(agent.agentKey, routeFromModelRef(agent.agentKey, agent.modelRef));
+    }
+  }
+  return [...routes.values()];
+}
+
+function routeFromModelRef(
+  role: AgentRole,
+  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+): RoleRouteConfig {
+  return {
+    role,
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
+    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
+    ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
+    ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
+  };
+}
+
+function isAgentRole(value: string): value is AgentRole {
+  return AGENT_ROLES.includes(value as AgentRole);
+}
+
+function runtimeValidationOptionsForThreadConfig(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+): { requireCompleteCodingRoutes?: boolean } {
+  const profile = resolveThreadAgentProfile(settings, config);
+  return { requireCompleteCodingRoutes: !profile || profile.preset === "coding" };
+}
+
+function resolveRuntimeConfigForThreadConfig(
+  settings: ModelSettingsSnapshot,
+  config: ThreadRuntimeConfig,
+  roleRoutes?: readonly RoleRouteConfig[],
+): RuntimeConfigResolution {
+  return resolveThreadRuntimeConfig(
+    settings,
+    providerStore.listProvidersWithSecrets(),
+    roleRoutes ?? roleRoutesForThreadConfig(settings, config),
+    runtimeValidationOptionsForThreadConfig(settings, config),
+  );
+}
+
+function resolveRuntimeConfigForThreadId(
+  threadId: string,
+  routesOverride?: readonly RoleRouteConfig[],
+  optionsOverride?: { requireCompleteCodingRoutes?: boolean },
+): RuntimeConfigResolution {
+  const settings = getModelSettingsSnapshot();
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  const config = ensureThreadRuntimeConfig(thread).runtimeConfig;
+  if (!config) {
+    throw new Error("Thread runtime configuration is missing.");
+  }
+  return resolveThreadRuntimeConfig(
+    settings,
+    providerStore.listProvidersWithSecrets(),
+    routesOverride ?? roleRoutesForThreadConfig(settings, config),
+    optionsOverride ?? runtimeValidationOptionsForThreadConfig(settings, config),
+  );
 }
 
 function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RoleRouteConfig[] {
@@ -658,11 +736,7 @@ function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRunt
     return undefined;
   }
   const settings = getModelSettingsSnapshot();
-  const profile = settings.orchestrationProfiles.find(
-    (candidate) =>
-      candidate.id === runtimeConfig.routeProfileId ||
-      candidate.sourceRouteProfileId === runtimeConfig.routeProfileId,
-  );
+  const profile = resolveThreadAgentProfile(settings, runtimeConfig);
   if (!profile) {
     return undefined;
   }
@@ -783,9 +857,10 @@ function registerIpcHandlers(): void {
       throw new Error("请等待当前运行结束后再修改配置。");
     }
     const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
-    roleRoutesForThreadConfig(getModelSettingsSnapshot(), runtimeConfig);
+    const settings = getModelSettingsSnapshot();
+    const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-    noteSdkSessionRouteChange(threadId, roleRoutesForThreadConfig(getModelSettingsSnapshot(), runtimeConfig));
+    noteSdkSessionRouteChange(threadId, roleRoutes);
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
@@ -1264,11 +1339,7 @@ function registerIpcHandlers(): void {
     const threadRuntime = parseThreadRuntimeConfigInput(payload.runtimeConfig);
     const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
-    const runtimeConfig = resolveThreadRuntimeConfig(
-      settings,
-      providerStore.listProvidersWithSecrets(),
-      roleRoutes,
-    );
+    const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const intent = classifyThreadIntent(prompt);
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
     const now = new Date().toISOString();
@@ -1406,12 +1477,7 @@ function registerIpcHandlers(): void {
       hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
       getPendingPlan: (id) => conversationStore.getPendingPlan(id),
       resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
-      resolveRuntimeConfig: (routes) =>
-        resolveThreadRuntimeConfig(
-          getModelSettingsSnapshot(),
-          providerStore.listProvidersWithSecrets(),
-          routes,
-        ),
+      resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
       usesManualOrchestration: (id) => threadUsesManualOrchestration(id),
     });
 
@@ -1463,14 +1529,15 @@ function registerIpcHandlers(): void {
       roleRoutesForThreadConfig(settings, nextConfig);
       conversationStore.saveThreadRuntimeConfig(payload.threadId, nextConfig);
     }
-    const roleRoutes = resolveRoleRoutesForThread(payload.threadId);
+    const activeThread = ensureThreadRuntimeConfig(conversationStore.getThread(payload.threadId) ?? thread);
+    const activeRuntimeConfig = activeThread.runtimeConfig;
+    if (!activeRuntimeConfig) {
+      throw new Error("Thread runtime configuration is missing.");
+    }
+    const roleRoutes = roleRoutesForThreadConfig(settings, activeRuntimeConfig);
     noteSdkSessionRouteChange(payload.threadId, roleRoutes);
 
-    const runtimeConfig = resolveThreadRuntimeConfig(
-      settings,
-      providerStore.listProvidersWithSecrets(),
-      roleRoutes,
-    );
+    const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, activeRuntimeConfig, roleRoutes);
     if (!runtimeConfig.ok) {
       throw new Error(runtimeConfig.reason);
     }
@@ -1854,7 +1921,7 @@ async function runQuestionThread(
         return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
           attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           onProxyReady: ({ proxy }) => {
@@ -1997,7 +2064,7 @@ async function runCodingThreadAutonomous(
         return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
           attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           onProxyReady: ({ proxy, plannerRoute }) => {
@@ -2148,7 +2215,7 @@ async function runCodingThreadPlanning(
         return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
           attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           onProxyReady: ({ proxy, plannerRoute }) => {
@@ -2300,7 +2367,7 @@ async function runCodingThreadAutonomousAfterApproval(
       async () => {
         return runThreadRequestWithRuntimeProxy({
           threadId,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(options?.routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(threadId, options?.routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           run: async ({ proxy: attemptProxy, routes }) => {
@@ -2437,7 +2504,7 @@ async function runCodingThreadExecution(
         return runThreadRequestWithRuntimeProxy({
           threadId,
           attachments: options?.attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(options?.routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(threadId, options?.routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           run: async ({ proxy: attemptProxy, routes: attemptRoutes }) => {
@@ -2573,14 +2640,6 @@ function recordThreadRouteFingerprint(threadId: string, routes: readonly Runtime
   conversationStore.saveRouteFingerprint(threadId, computeRouteFingerprint(roleRoutesFromRuntime(routes)));
 }
 
-function resolveRuntimeConfigFresh(routesOverride?: readonly RoleRouteConfig[]): RuntimeConfigResolution {
-  return resolveThreadRuntimeConfig(
-    getModelSettingsSnapshot(),
-    providerStore.listProvidersWithSecrets(),
-    routesOverride,
-  );
-}
-
 async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResult> {
   const threadId = request.threadId;
   const thread = conversationStore.getThread(threadId);
@@ -2599,7 +2658,11 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
 
   noteSdkSessionRouteChange(threadId, routesOverride);
 
-  const runtimeConfig = resolveRuntimeConfigFresh(routesOverride);
+  const runtimeConfig = resolveRuntimeConfigForThreadId(
+    threadId,
+    routesOverride,
+    request.routeProfileId ? { requireCompleteCodingRoutes: true } : undefined,
+  );
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
   }
@@ -2850,7 +2913,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
     throw new Error("没有可恢复的 SDK 会话，无法回滚文件。");
   }
   await withThreadSdkDriver(threadId, async (driver) => {
-    const routes = resolveRuntimeConfigFresh();
+    const routes = resolveRuntimeConfigForThreadId(threadId);
     if (!routes.ok) {
       throw new Error(routes.reason);
     }
@@ -3133,11 +3196,7 @@ async function withThreadSdkDriver(
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void,
 ): Promise<void> {
   const roleRoutes = resolveRoleRoutesForThread(threadId);
-  const runtimeConfig = resolveThreadRuntimeConfig(
-    getModelSettingsSnapshot(),
-    providerStore.listProvidersWithSecrets(),
-    roleRoutes,
-  );
+  const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
   }
@@ -3515,7 +3574,7 @@ async function runThreadContinuation(
           return runThreadRequestWithRuntimeProxy({
             threadId: thread.id,
             attachments,
-            resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+            resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
             recordRouteFingerprint: recordThreadRouteFingerprint,
             startRuntimeProxy,
             run: async ({ proxy: attemptProxy, routes }) => {
@@ -3611,7 +3670,7 @@ async function runThreadContinuation(
         return runThreadRequestWithRuntimeProxy({
           threadId: thread.id,
           attachments,
-          resolveRuntimeConfig: () => resolveRuntimeConfigFresh(routesOverride),
+          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
           run: async ({ proxy: attemptProxy, routes }) => {
@@ -3958,11 +4017,7 @@ async function ensureContextHeadroom(
 ): Promise<void> {
   try {
     const roleRoutes = resolveRoleRoutesForThread(threadId);
-    const runtimeConfig = resolveThreadRuntimeConfig(
-      getModelSettingsSnapshot(),
-      providerStore.listProvidersWithSecrets(),
-      roleRoutes,
-    );
+    const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
     if (!runtimeConfig.ok) {
       process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${runtimeConfig.reason}\n`);
       return;

@@ -1,13 +1,19 @@
 import { expect, test } from "bun:test";
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
+  buildOrchestrationProfileFromPreset,
+  createBuiltInPresetCatalog,
+} from "../src/shared/agent-orchestration";
+import {
   buildThreadRuntimeConfigFromDefaults,
+  getDefaultAgentProfileId,
   getDefaultRouteProfileId,
   getRoutesForProfile,
   isAutonomousThreadRuntime,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
+  resolveThreadAgentProfile,
   serializeThreadRuntimeConfig,
 } from "../src/shared/thread-runtime-config";
 
@@ -55,12 +61,38 @@ const settings: ModelSettingsSnapshot = {
   ],
 };
 
+const researchProfile = buildOrchestrationProfileFromPreset(
+  createBuiltInPresetCatalog().find((preset) => preset.id === "research")!,
+  {
+    id: "research-copy",
+    name: "研究副本",
+    modelRef: { providerId: "p1", modelId: "m-research" },
+    updatedAt: "2026-06-07T00:00:00.000Z",
+  },
+);
+
+const genericSettings: ModelSettingsSnapshot = {
+  providers: [],
+  routeProfiles: [],
+  agentTemplates: [],
+  orchestrationProfiles: [researchProfile],
+};
+
+const mixedSettings: ModelSettingsSnapshot = {
+  ...genericSettings,
+  routeProfiles: settings.routeProfiles,
+};
+
 test("getDefaultRouteProfileId returns first profile", () => {
   expect(getDefaultRouteProfileId(settings)).toBe("profile-a");
 });
 
 test("getRoutesForProfile resolves routes by id", () => {
   expect(getRoutesForProfile(settings, "profile-b")?.[0]?.modelId).toBe("m2");
+});
+
+test("getDefaultAgentProfileId returns first orchestration profile", () => {
+  expect(getDefaultAgentProfileId(genericSettings)).toBe("research-copy");
 });
 
 test("buildThreadRuntimeConfigFromDefaults uses autonomous subagents all on", () => {
@@ -86,6 +118,33 @@ test("buildThreadRuntimeConfigFromDefaults respects manual subagent toggles", ()
   expect(config.subagentEnabled.reviewer).toBe(false);
 });
 
+test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile without routes", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: genericSettings,
+    subagentDefaults,
+    workflowDefaults: { orchestrationMode: "autonomous" },
+    agentProfileId: "research-copy",
+  });
+
+  expect(config.agentProfileId).toBe("research-copy");
+  expect(config.routeProfileId).toBe("research-copy");
+  expect(resolveThreadAgentProfile(genericSettings, config)?.preset).toBe("research");
+});
+
+test("buildThreadRuntimeConfigFromDefaults does not let default routes override selected Agent Profile", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: mixedSettings,
+    subagentDefaults,
+    workflowDefaults: { orchestrationMode: "autonomous" },
+    agentProfileId: "research-copy",
+    routeProfileId: "profile-a",
+  });
+
+  expect(config.agentProfileId).toBe("research-copy");
+  expect(config.routeProfileId).toBe("research-copy");
+  expect(getRoutesForProfile(mixedSettings, config.routeProfileId)).toBeUndefined();
+});
+
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
@@ -94,6 +153,23 @@ test("serialize and parse thread runtime config round-trip", () => {
   });
   const json = serializeThreadRuntimeConfig(config);
   expect(parseThreadRuntimeConfigJson(json)).toEqual(normalizeThreadRuntimeConfig(config));
+});
+
+test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => {
+  expect(
+    parseThreadRuntimeConfigJson(
+      JSON.stringify({
+        agentProfileId: "research-copy",
+        subagentEnabled: subagentDefaults,
+        orchestrationMode: "autonomous",
+      }),
+    ),
+  ).toEqual({
+    routeProfileId: "",
+    agentProfileId: "research-copy",
+    subagentEnabled: subagentDefaults,
+    orchestrationMode: "autonomous",
+  });
 });
 
 test("normalizeThreadRuntimeConfig migrates legacy planModeEnabled", () => {

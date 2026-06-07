@@ -8,7 +8,11 @@ export function buildRuntimeAgentDisplayNames(
   settings: ModelSettingsSnapshot,
   runtimeConfig: ThreadRuntimeConfig | undefined,
 ): RuntimeAgentDisplayNames {
-  const summary = findSelectableAgentProfileSummary(settings, runtimeConfig?.routeProfileId, runtimeConfig);
+  const summary = findSelectableAgentProfileSummary(
+    settings,
+    runtimeConfig?.agentProfileId ?? runtimeConfig?.routeProfileId,
+    runtimeConfig,
+  );
   if (!summary) {
     return {};
   }

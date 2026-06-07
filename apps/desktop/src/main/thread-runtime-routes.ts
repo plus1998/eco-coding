@@ -15,6 +15,7 @@ export function resolveThreadRuntimeConfig(
   _settings: ModelSettingsSnapshot,
   providersWithSecrets: readonly ProviderConfigSecret[],
   routesOverride?: readonly RoleRouteConfig[],
+  options: { requireCompleteCodingRoutes?: boolean } = {},
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
   const activeRoutes = routesOverride ?? [];
@@ -37,22 +38,33 @@ export function resolveThreadRuntimeConfig(
     return { ok: false, reason: `Route ${missingRoute.role} references a missing provider.` };
   }
 
-  for (const role of AGENT_ROLES) {
-    const route = routes.find((candidate): candidate is RuntimeRoute => candidate?.role === role);
-    if (!route) {
-      return { ok: false, reason: `Configure a ${role} route before starting a coding thread.` };
-    }
+  const resolvedRoutes = routes.filter((route): route is RuntimeRoute => Boolean(route));
+  for (const route of resolvedRoutes) {
     if (!route.modelId.trim()) {
-      return { ok: false, reason: `Model id is required for ${role}.` };
+      return { ok: false, reason: `Model id is required for ${route.role}.` };
     }
     if (!route.provider.enabled) {
-      return { ok: false, reason: `Provider "${route.provider.name}" for ${role} is disabled.` };
+      return { ok: false, reason: `Provider "${route.provider.name}" for ${route.role} is disabled.` };
+    }
+  }
+
+  if (options.requireCompleteCodingRoutes === false) {
+    if (resolvedRoutes.length === 0) {
+      return { ok: false, reason: "At least one model route is required for this Agent Profile." };
+    }
+    return { ok: true, routes: resolvedRoutes };
+  }
+
+  for (const role of AGENT_ROLES) {
+    const route = resolvedRoutes.find((candidate) => candidate.role === role);
+    if (!route) {
+      return { ok: false, reason: `Configure a ${role} route before starting a coding thread.` };
     }
   }
 
   return {
     ok: true,
-    routes: routes.filter((route): route is RuntimeRoute => Boolean(route)),
+    routes: resolvedRoutes,
   };
 }
 

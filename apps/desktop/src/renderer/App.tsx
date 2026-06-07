@@ -30,9 +30,12 @@ import { createRoot } from "react-dom/client";
 import {
   AGENT_ROLES,
   buildThreadRuntimeConfigFromDefaults,
-  getDefaultRouteProfileId,
+  getDefaultAgentProfileId,
   getRoutesForProfile,
+  resolveThreadAgentProfile,
   type AgentRole,
+  type OrchestrationProfile,
+  type RoleRouteConfig,
   type ThreadRuntimeConfig,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
@@ -135,6 +138,75 @@ const emptySettings: ModelSettingsSnapshot = {
   agentTemplates: [],
   orchestrationProfiles: [],
 };
+
+function roleRoutesFromAgentProfile(profile: OrchestrationProfile): RoleRouteConfig[] {
+  const routes = new Map<AgentRole, RoleRouteConfig>();
+  routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
+  for (const agent of profile.agents) {
+    if (isKnownAgentRole(agent.agentKey) && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
+      routes.set(agent.agentKey, routeFromAgentProfileModelRef(agent.agentKey, agent.modelRef));
+    }
+  }
+  return [...routes.values()];
+}
+
+function routeFromAgentProfileModelRef(
+  role: AgentRole,
+  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+): RoleRouteConfig {
+  return {
+    role,
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
+    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
+    ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
+    ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
+  };
+}
+
+function isKnownAgentRole(value: string): value is AgentRole {
+  return AGENT_ROLES.includes(value as AgentRole);
+}
+
+function isModelRefReady(
+  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
+): boolean {
+  const provider = providersById.get(modelRef.providerId);
+  return Boolean(modelRef.modelId.trim() && provider?.enabled);
+}
+
+function isAgentProfileReady(
+  profile: OrchestrationProfile,
+  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
+): boolean {
+  return (
+    isModelRefReady(profile.mainAgent.modelRef, providersById) &&
+    profile.agents.every((agent) => isModelRefReady(agent.modelRef, providersById))
+  );
+}
+
+function areCodingRoutesReady(
+  routes: readonly RoleRouteConfig[],
+  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
+): boolean {
+  return AGENT_ROLES.every((role) => {
+    const route = routes.find((candidate) => candidate.role === role);
+    const provider = route ? providersById.get(route.providerId) : undefined;
+    return Boolean(route?.modelId.trim() && provider?.enabled);
+  });
+}
+
+function findOrchestrationProfileBySelectionId(
+  settings: ModelSettingsSnapshot,
+  selectionId: string,
+): OrchestrationProfile | undefined {
+  return (
+    settings.orchestrationProfiles.find((profile) => profile.id === selectionId) ??
+    settings.orchestrationProfiles.find((profile) => profile.sourceRouteProfileId === selectionId)
+  );
+}
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
@@ -793,21 +865,32 @@ function App() {
   }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
   const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
-    if (!subagentSettings || !workflowSettings || settings.routeProfiles.length === 0) {
+    if (!subagentSettings || !workflowSettings || settings.orchestrationProfiles.length === 0) {
       return undefined;
     }
     try {
-      const routeProfileId = composerRuntimeConfig?.routeProfileId ?? getDefaultRouteProfileId(settings);
+      const agentProfileId =
+        composerRuntimeConfig?.agentProfileId ??
+        composerRuntimeConfig?.routeProfileId ??
+        getDefaultAgentProfileId(settings);
+      const routeProfileId = composerRuntimeConfig?.routeProfileId;
       return buildThreadRuntimeConfigFromDefaults({
         settings,
         subagentDefaults: subagentSettings,
         workflowDefaults: workflowSettings,
+        ...(agentProfileId && { agentProfileId }),
         ...(routeProfileId && { routeProfileId }),
       });
     } catch {
       return undefined;
     }
-  }, [settings, subagentSettings, workflowSettings, composerRuntimeConfig?.routeProfileId]);
+  }, [
+    settings,
+    subagentSettings,
+    workflowSettings,
+    composerRuntimeConfig?.agentProfileId,
+    composerRuntimeConfig?.routeProfileId,
+  ]);
 
   useEffect(() => {
     if (activeThread?.runtimeConfig) {
@@ -822,18 +905,29 @@ function App() {
     activeThread?.id,
     activeThread?.runtimeConfig,
     buildComposerDefaultConfig,
+    settings.orchestrationProfiles,
     settings.routeProfiles,
     subagentSettings,
     workflowSettings,
   ]);
 
+  const selectedRuntimeProfileId =
+    composerRuntimeConfig?.agentProfileId ?? composerRuntimeConfig?.routeProfileId;
+  const selectedRuntimeProfile = useMemo(
+    () =>
+      composerRuntimeConfig
+        ? resolveThreadAgentProfile(settings, composerRuntimeConfig)
+        : undefined,
+    [settings, composerRuntimeConfig],
+  );
   const activeRoutes = useMemo(() => {
-    const profileId = composerRuntimeConfig?.routeProfileId;
-    if (!profileId) {
-      return [];
+    const routeProfileId = composerRuntimeConfig?.routeProfileId;
+    const routeProfileRoutes = routeProfileId ? getRoutesForProfile(settings, routeProfileId) : undefined;
+    if (routeProfileRoutes) {
+      return routeProfileRoutes;
     }
-    return getRoutesForProfile(settings, profileId) ?? [];
-  }, [settings, composerRuntimeConfig?.routeProfileId]);
+    return selectedRuntimeProfile ? roleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
+  }, [settings, composerRuntimeConfig?.routeProfileId, selectedRuntimeProfile]);
 
   useEffect(() => {
     if (!window.eco?.getRouteCapabilities || activeRoutes.length === 0) {
@@ -847,11 +941,10 @@ function App() {
     () => new Map(settings.providers.map((provider) => [provider.id, provider])),
     [settings.providers],
   );
-  const routesReady = AGENT_ROLES.every((role) => {
-    const route = activeRoutes.find((candidate) => candidate.role === role);
-    const provider = route ? providerById.get(route.providerId) : undefined;
-    return Boolean(route?.modelId.trim() && provider?.enabled);
-  });
+  const routesReady = selectedRuntimeProfile
+    ? isAgentProfileReady(selectedRuntimeProfile, providerById) &&
+      (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
+    : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
@@ -942,10 +1035,10 @@ function App() {
     () =>
       findSelectableAgentProfileSummary(
         settings,
-        composerRuntimeConfig?.routeProfileId,
+        selectedRuntimeProfileId,
         composerRuntimeConfig ?? undefined,
       ),
-    [settings, composerRuntimeConfig],
+    [settings, selectedRuntimeProfileId, composerRuntimeConfig],
   );
   const canEditComposerConfig =
     !activeThread ||
@@ -1493,7 +1586,17 @@ function App() {
     if (!composerRuntimeConfig) {
       return;
     }
-    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, routeProfileId: profileId };
+    const profile = findOrchestrationProfileBySelectionId(settings, profileId);
+    const routeProfileId =
+      profile?.sourceRouteProfileId ??
+      (settings.routeProfiles.some((routeProfile) => routeProfile.id === profileId)
+        ? profileId
+        : profile?.id ?? profileId);
+    const next: ThreadRuntimeConfig = {
+      ...composerRuntimeConfig,
+      routeProfileId,
+      agentProfileId: profile?.id ?? profileId,
+    };
     await persistComposerRuntimeConfig(next);
     setComposerRoutePopoverOpen(false);
   }
@@ -2035,7 +2138,7 @@ function App() {
                   runtimeConfig={composerRuntimeConfig ?? undefined}
                   onClose={() => setComposerRoutePopoverOpen(false)}
                   onSelectProfile={selectComposerRouteProfile}
-                  selectedProfileId={composerRuntimeConfig?.routeProfileId}
+                  selectedProfileId={selectedRuntimeProfileId}
                   onOpenFullSettings={() => openModelsSettings("routes")}
                 />
               </div>
