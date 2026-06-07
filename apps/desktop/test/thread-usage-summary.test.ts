@@ -57,6 +57,30 @@ test("buildThreadUsageSummary always includes context when tokens known", () => 
   expect(summary.context?.roles?.find((role) => role.role === "coder")?.occupied).toBe(80_000);
 });
 
+test("buildThreadUsageSummary preserves dynamic Agent Profile context roles", () => {
+  const summary = buildThreadUsageSummary({
+    usageByRole: {
+      researcher: {
+        inputTokens: 20,
+        outputTokens: 10,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        contextTokens: 50_000,
+        contextLimit: 100_000,
+        occupancyPct: 50,
+        modelId: "research-model",
+      },
+    },
+  });
+
+  expect(summary.context?.displayRole).toBe("researcher");
+  expect(summary.context?.roles?.[0]).toMatchObject({
+    role: "researcher",
+    occupied: 50_000,
+    modelId: "research-model",
+  });
+});
+
 test("contextCardPlaceholder differs for awaiting_plan vs idle", () => {
   expect(contextCardPlaceholder("awaiting_plan")).toContain("计划");
   expect(contextCardPlaceholder("running")).toContain("模型响应");

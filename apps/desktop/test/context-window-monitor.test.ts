@@ -72,6 +72,35 @@ test("prefers planner display while retaining subagent role snapshots", async ()
   expect(snapshot?.roles.find((role) => role.role === "coder")?.occupied).toBe(80_000);
 });
 
+test("tracks dynamic Agent Profile context roles and instances", async () => {
+  const monitor = new ContextWindowMonitor(mockCache());
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 40_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "planner" },
+  );
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 60_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "researcher" },
+  );
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 25_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "source_verifier", agentId: "source-agent-1" },
+  );
+
+  const snapshot = monitor.getSnapshot("t1");
+  expect(snapshot?.displayRole).toBe("planner");
+  expect(snapshot?.roles.map((role) => role.role)).toEqual(["planner", "researcher"]);
+  expect(snapshot?.roles.find((role) => role.role === "researcher")?.occupied).toBe(60_000);
+  expect(snapshot?.instances?.[0]).toMatchObject({
+    agentId: "source-agent-1",
+    role: "source_verifier",
+    occupied: 25_000,
+  });
+});
+
 test("resolves context limits per role model", async () => {
   const monitor = new ContextWindowMonitor(roleAwareMockCache());
   await monitor.updateFromUsage(

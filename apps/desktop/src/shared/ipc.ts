@@ -164,6 +164,7 @@ export interface WorkspacePrepareGitRequest {
 export const AGENT_ROLES = ["planner", "explore", "architect", "coder", "reviewer", "tester"] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
+export type RuntimeAgentRole = string;
 
 export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
@@ -535,7 +536,7 @@ export interface ContextBreakdownSegment {
 }
 
 export interface ThreadRoleContextSnapshot {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   occupied: number;
   limit: number;
   occupancyPct: number;
@@ -547,7 +548,7 @@ export interface ThreadRoleContextSnapshot {
 
 export interface ThreadContextInstanceSnapshot {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   occupied: number;
   limit: number;
   occupancyPct: number;
@@ -563,8 +564,8 @@ export interface ThreadContextSnapshot {
   limit: number;
   occupancyPct: number;
   limitsResolved: boolean;
-  /** Which role's session fill is shown (planner vs subagent). */
-  displayRole?: AgentRole;
+  /** Which agent role/key's session fill is shown. */
+  displayRole?: RuntimeAgentRole;
   modelId?: string;
   segments: ContextBreakdownSegment[];
   roles?: ThreadRoleContextSnapshot[];
@@ -604,7 +605,7 @@ export interface TokenCostBreakdown {
 
 export interface ThreadBillingModelSnapshot {
   modelId: string;
-  roles: AgentRole[];
+  roles: RuntimeAgentRole[];
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -630,7 +631,7 @@ export interface ThreadBillingSourceSnapshot {
   byModel?: ThreadBillingModelSnapshot[];
   byRole?: Partial<
     Record<
-      AgentRole,
+      RuntimeAgentRole,
       {
         inputTokens: number;
         outputTokens: number;
@@ -645,7 +646,7 @@ export interface ThreadBillingSourceSnapshot {
 
 export interface ThreadSubagentBillingSnapshot {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: "active" | "stopped";
   inputTokens: number;
   outputTokens: number;
@@ -696,7 +697,7 @@ export interface ThreadBillingSnapshot {
   byModel?: ThreadBillingModelSnapshot[];
   byRole?: Partial<
     Record<
-      AgentRole,
+      RuntimeAgentRole,
       {
         inputTokens: number;
         outputTokens: number;
@@ -822,7 +823,7 @@ export interface ModelsDevModelOption {
 
 export interface ThreadSubagentSessionTiming {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: "active" | "stopped";
   startedAt: string;
   lastActiveAt: string;
@@ -834,7 +835,7 @@ export interface ThreadSubagentSessionTiming {
 
 export interface ThreadSubagentMetricsSummary {
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: "active" | "stopped";
   inputTokens: number;
   outputTokens: number;
@@ -851,7 +852,7 @@ export interface ThreadLiveEvent {
   type: string;
   message: string;
   title?: string;
-  role?: AgentRole | "system" | "thinking" | "tool" | "user";
+  role?: RuntimeAgentRole | "system" | "thinking" | "tool" | "user";
   stream?: boolean;
   /** Set when the main process persisted this event as a thread_activity row. */
   activityLine?: ThreadActivityLine;

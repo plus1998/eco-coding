@@ -6,19 +6,24 @@ import {
   occupancyPercent,
   type ParsedUsage,
 } from "@eco/runtime";
-import type { AgentRole, ModelsDevMapping, RouteManualSpec, ThreadContextSnapshot } from "../shared/ipc";
+import type {
+  AgentRole,
+  ModelsDevMapping,
+  RouteManualSpec,
+  RuntimeAgentRole,
+  ThreadContextSnapshot,
+} from "../shared/ipc";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
 
 const COMPACT_COOLDOWN_MS = 60_000;
 const DEFAULT_COMPACT_THRESHOLD = 0.85;
 
-const SUBAGENT_ROLES: readonly AgentRole[] = ["explore", "coder", "architect", "reviewer", "tester"];
-
 const ROLE_ORDER: readonly AgentRole[] = ["planner", "explore", "architect", "coder", "reviewer", "tester"];
+const ROLE_ORDER_INDEX = new Map<string, number>(ROLE_ORDER.map((role, index) => [role, index]));
 
 export interface ContextMonitorRoleSnapshot {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   occupied: number;
   limit: number;
   ratio: number;
@@ -37,7 +42,7 @@ export interface ContextMonitorSnapshot {
   limitsResolved: boolean;
   maxOutputTokens?: number;
   /** Role whose occupancy is shown in the UI. */
-  displayRole?: AgentRole;
+  displayRole?: RuntimeAgentRole;
   roles: ContextMonitorRoleSnapshot[];
   instances: ThreadContextSnapshot["instances"];
 }
@@ -54,9 +59,9 @@ interface RoleOccupancyState {
 }
 
 interface ThreadMonitorState {
-  byRole: Partial<Record<AgentRole, RoleOccupancyState>>;
-  byInstance: Map<string, RoleOccupancyState & { role: AgentRole; updatedAt: number }>;
-  displayRole: AgentRole;
+  byRole: Partial<Record<RuntimeAgentRole, RoleOccupancyState>>;
+  byInstance: Map<string, RoleOccupancyState & { role: RuntimeAgentRole; updatedAt: number }>;
+  displayRole: RuntimeAgentRole;
   seenMessageIds: Set<string>;
   compactInFlight: boolean;
   lastCompactAt: number;
@@ -71,7 +76,7 @@ export class ContextWindowMonitor {
     threadId: string,
     usage: ParsedUsage,
     options?: {
-      role?: AgentRole;
+      role?: RuntimeAgentRole;
       agentId?: string;
       modelId?: string;
       providerBaseUrl?: string;
@@ -114,8 +119,7 @@ export class ContextWindowMonitor {
     if (manualSpec) {
       next.manualSpec = manualSpec;
     }
-    const subagentAgentId =
-      options?.agentId && role !== "planner" && SUBAGENT_ROLES.includes(role) ? options.agentId : undefined;
+    const subagentAgentId = options?.agentId && role !== "planner" ? options.agentId : undefined;
     if (subagentAgentId) {
       state.byInstance.set(subagentAgentId, {
         role,
@@ -160,7 +164,7 @@ export class ContextWindowMonitor {
 
   async updateOccupied(
     threadId: string,
-    role: AgentRole,
+    role: RuntimeAgentRole,
     occupied: number,
     options?: { limit?: number },
   ): Promise<ContextMonitorSnapshot> {
@@ -226,8 +230,10 @@ export class ContextWindowMonitor {
       limit: planner?.limit ?? DEFAULT_CONTEXT_LIMIT,
       limitsResolved: planner?.limitsResolved ?? false,
     };
-    for (const role of SUBAGENT_ROLES) {
-      delete state.byRole[role];
+    for (const role of Object.keys(state.byRole)) {
+      if (role !== "planner") {
+        delete state.byRole[role];
+      }
     }
     state.byInstance.clear();
     this.refreshDisplayRole(state);
@@ -249,7 +255,7 @@ export class ContextWindowMonitor {
     return this.toSnapshot(state);
   }
 
-  getRoleOccupancy(threadId: string, role: AgentRole): number {
+  getRoleOccupancy(threadId: string, role: RuntimeAgentRole): number {
     return this.states.get(threadId)?.byRole[role]?.occupied ?? 0;
   }
 
@@ -278,11 +284,13 @@ export class ContextWindowMonitor {
     if (!state) {
       return undefined;
     }
-    for (const role of SUBAGENT_ROLES) {
-      delete state.byRole[role];
+    for (const role of Object.keys(state.byRole)) {
+      if (role !== "planner") {
+        delete state.byRole[role];
+      }
     }
     for (const [agentId, instance] of state.byInstance.entries()) {
-      if (SUBAGENT_ROLES.includes(instance.role)) {
+      if (instance.role !== "planner") {
         state.byInstance.delete(agentId);
       }
     }
@@ -363,8 +371,8 @@ export class ContextWindowMonitor {
     }
 
     let maxOccupied = 0;
-    let maxRole: AgentRole | undefined;
-    for (const role of ROLE_ORDER) {
+    let maxRole: RuntimeAgentRole | undefined;
+    for (const role of sortRuntimeRoles(Object.keys(state.byRole))) {
       const occupied = state.byRole[role]?.occupied ?? 0;
       if (occupied > maxOccupied) {
         maxOccupied = occupied;
@@ -414,7 +422,7 @@ export class ContextWindowMonitor {
   }
 
   private toRoleSnapshots(state: ThreadMonitorState): ContextMonitorRoleSnapshot[] {
-    return ROLE_ORDER.flatMap((role) => {
+    return sortRuntimeRoles(Object.keys(state.byRole)).flatMap((role) => {
       const roleState = state.byRole[role];
       if (!roleState || roleState.occupied <= 0) {
         return [];
@@ -452,6 +460,17 @@ export class ContextWindowMonitor {
       }));
     return instances.sort((left, right) => right.occupied - left.occupied);
   }
+}
+
+function sortRuntimeRoles(roles: Iterable<RuntimeAgentRole>): RuntimeAgentRole[] {
+  return [...roles].sort((left, right) => {
+    const leftOrder = ROLE_ORDER_INDEX.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = ROLE_ORDER_INDEX.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function fallbackSegment(tokens: number): ThreadContextSnapshot["segments"][number] {

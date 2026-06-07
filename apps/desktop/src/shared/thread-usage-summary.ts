@@ -1,15 +1,16 @@
 import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime";
 import type {
-  AgentRole,
+  RuntimeAgentRole,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadRoleContextSnapshot,
   ThreadStatus,
   ThreadUsageSnapshot,
 } from "./ipc";
+import { AGENT_ROLES } from "./ipc";
 import { pickDisplayContextTokens } from "./thread-continuation";
 
-const ROLE_ORDER: readonly AgentRole[] = ["planner", "explore", "architect", "coder", "reviewer", "tester"];
+const ROLE_ORDER = new Map<string, number>(AGENT_ROLES.map((role, index) => [role, index]));
 
 export interface ThreadUsageSummaryInput {
   billing?: ThreadBillingSnapshot;
@@ -87,7 +88,7 @@ function buildFallbackRoleSnapshots(
     return snapshots;
   }
 
-  for (const role of ROLE_ORDER) {
+  for (const role of sortRuntimeRoles(Object.keys(source))) {
     const usage = source[role];
     if (!usage || usage.contextTokens <= 0) {
       continue;
@@ -104,6 +105,17 @@ function buildFallbackRoleSnapshots(
     });
   }
   return snapshots;
+}
+
+function sortRuntimeRoles(roles: Iterable<RuntimeAgentRole>): RuntimeAgentRole[] {
+  return [...roles].sort((left, right) => {
+    const leftOrder = ROLE_ORDER.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = ROLE_ORDER.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function fallbackSegments(tokens: number): ThreadRoleContextSnapshot["segments"] {

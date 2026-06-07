@@ -83,6 +83,60 @@ test("buildBillingTokenBreakdown merges roles that share the same model", () => 
   expect(breakdown?.byModel[0]?.ecoCostUsd).toBeCloseTo(0.06);
 });
 
+test("buildBillingTokenBreakdown includes dynamic Agent Profile roles", () => {
+  const breakdown = buildBillingTokenBreakdown(
+    makeBilling({
+      researcher: {
+        inputTokens: 4000,
+        outputTokens: 400,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.03,
+        modelId: "research-model",
+      },
+      planner: {
+        inputTokens: 1000,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        ecoCostUsd: 0.01,
+        modelId: "planner-model",
+      },
+    }),
+  );
+
+  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "researcher"]);
+  expect(breakdown?.byAgent.find((row) => row.role === "researcher")?.tokenBadge).toBe("↑4k ↓400");
+  expect(breakdown?.byModel.map((row) => row.roles).flat()).toContain("researcher");
+});
+
+test("buildBillingTokenBreakdown supplements dynamic roles from non-primary sources", () => {
+  const billing = makeBilling({});
+  billing.primarySource = "sdk";
+  billing.sourceBreakdown = {
+    otel: {
+      source: "otel",
+      totalTokens: { input: 4000, output: 400, cacheRead: 0, cacheCreation: 0 },
+      plannerTokenCostUsd: 0,
+      ecoCostUsd: 0.03,
+      pricingResolved: true,
+      byRole: {
+        researcher: {
+          inputTokens: 4000,
+          outputTokens: 400,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          ecoCostUsd: 0.03,
+          modelId: "research-model",
+        },
+      },
+    },
+  };
+
+  const breakdown = buildBillingTokenBreakdown(billing);
+  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["researcher"]);
+});
+
 test("buildBillingTokenBreakdown prefers explicit byModel rows", () => {
   const billing = makeBilling({
     planner: {

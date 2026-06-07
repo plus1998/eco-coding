@@ -845,6 +845,8 @@ type WorkflowStep = {
 - Phase 10.1 测试已覆盖：默认 profile 选择、agentProfileId-only payload、自定义 profile 可选、generic profile partial routes、Coding 默认完整路由校验。
 - Phase 10.2 已完成：activity/projection 展示层从固定 `SubagentRole` 判断扩展为动态 agent display role；`researcher`、`source_verifier`、`eco_source_verifier` 等自定义/SDK agent key 会被归入子代理运行卡片、参与 active delegation、run bounds、耗时计算，并优先使用 Agent Profile display map 展示名称。
 - Phase 10.2 保留边界：runtime SDK 内部的 Coding prompt、旧 subagent resume、route/model billing 仍有固定 role 依赖，后续阶段继续削减；本点只完成运行观察和活动日志的动态 key 主路径。
+- Phase 10.3 已完成：IPC 中 billing、context、subagent timing/metrics/live event 的 role 字段收敛为 `RuntimeAgentRole`，用量拆解、用量摘要、上下文窗口监控和 renderer 活动模型映射都能保留动态 agent key。
+- Phase 10.3 上下文主路径已支持自定义 role 汇总与动态实例：`ContextWindowMonitor` 会按固定 Coding role 优先、动态 role 字母序补充排序；带 `agentId` 的非 planner agent 会作为独立实例记录，清理子代理状态时统一保留 planner、清掉其他 agent。
 
 Phase 10.1 验证：
 
@@ -854,6 +856,11 @@ Phase 10.1 验证：
 Phase 10.2 验证：
 
 - `bun test apps/desktop/test/activity-log.test.ts apps/desktop/test/thread-run-projection-view.test.ts`
+- `bun run typecheck`
+
+Phase 10.3 验证：
+
+- `bun test apps/desktop/test/context-window-monitor.test.ts apps/desktop/test/billing-token-breakdown.test.ts apps/desktop/test/thread-usage-summary.test.ts apps/desktop/test/usage-breakdown-panel.test.ts`
 - `bun run typecheck`
 
 验收标准：

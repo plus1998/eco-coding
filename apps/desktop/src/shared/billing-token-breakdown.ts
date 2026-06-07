@@ -1,18 +1,19 @@
 import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
 import {
   AGENT_ROLES,
-  type AgentRole,
   type BillingUsageSource,
+  type RuntimeAgentRole,
   type ThreadBillingModelSnapshot,
   type ThreadBillingSnapshot,
 } from "./ipc";
 
-type RoleUsageEntry = NonNullable<ThreadBillingSnapshot["byRole"]>[AgentRole];
+type RoleUsageEntry = NonNullable<ThreadBillingSnapshot["byRole"]>[string];
 
 const SUPPLEMENTAL_SOURCE_ORDER: BillingUsageSource[] = ["otel", "proxy", "sdk"];
+const ROLE_ORDER = new Map<string, number>(AGENT_ROLES.map((role, index) => [role, index]));
 
 export interface BillingAgentRow {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   label: string;
   modelId?: string;
   inputTokens: number;
@@ -26,7 +27,7 @@ export interface BillingAgentRow {
 export interface BillingModelRow {
   modelId: string;
   label: string;
-  roles: AgentRole[];
+  roles: RuntimeAgentRole[];
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -50,7 +51,7 @@ function roleUsageTotal(entry: {
 }
 
 /** Primary (non-subagent) agent rows use role · 主 to mirror subagent role · agentId labels. */
-function formatPrimaryAgentLabel(role: AgentRole): string {
+function formatPrimaryAgentLabel(role: RuntimeAgentRole): string {
   return `${formatRoleModelLabel(role)} · 主`;
 }
 
@@ -75,38 +76,43 @@ function hasRoleUsage(entry: RoleUsageEntry | undefined): entry is NonNullable<R
 /** Primary source drives headline byRole; fill missing roles from other sources without double-counting overlaps. */
 function collectDisplayByRole(
   billing: ThreadBillingSnapshot,
-): Partial<Record<AgentRole, NonNullable<RoleUsageEntry>>> {
-  const merged: Partial<Record<AgentRole, NonNullable<RoleUsageEntry>>> = {};
+): Partial<Record<RuntimeAgentRole, NonNullable<RoleUsageEntry>>> {
+  const merged: Partial<Record<RuntimeAgentRole, NonNullable<RoleUsageEntry>>> = {};
 
-  for (const role of AGENT_ROLES) {
-    const entry = billing.byRole?.[role];
-    if (hasRoleUsage(entry)) {
-      merged[role] = entry;
+  const mergeEntries = (entries: ThreadBillingSnapshot["byRole"] | undefined) => {
+    for (const [role, entry] of Object.entries(entries ?? {})) {
+      if (merged[role]) {
+        continue;
+      }
+      if (hasRoleUsage(entry)) {
+        merged[role] = entry;
+      }
     }
-  }
+  };
+
+  mergeEntries(billing.byRole);
 
   if (billing.sourceBreakdown) {
     for (const source of SUPPLEMENTAL_SOURCE_ORDER) {
       if (source === billing.primarySource) {
         continue;
       }
-      const snap = billing.sourceBreakdown[source];
-      if (!snap?.byRole) {
-        continue;
-      }
-      for (const role of AGENT_ROLES) {
-        if (merged[role]) {
-          continue;
-        }
-        const entry = snap.byRole[role];
-        if (hasRoleUsage(entry)) {
-          merged[role] = entry;
-        }
-      }
+      mergeEntries(billing.sourceBreakdown[source]?.byRole);
     }
   }
 
   return merged;
+}
+
+function sortRoleKeys(roles: Iterable<string>): string[] {
+  return [...roles].sort((left, right) => {
+    const leftOrder = ROLE_ORDER.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = ROLE_ORDER.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.localeCompare(right);
+  });
 }
 
 function collectDisplayByModel(billing: ThreadBillingSnapshot): ThreadBillingModelSnapshot[] {
@@ -146,7 +152,7 @@ function toModelRows(entries: ThreadBillingModelSnapshot[]): BillingModelRow[] {
   return entries.map((entry) => ({
     modelId: entry.modelId,
     label: shortenModelId(entry.modelId),
-    roles: entry.roles,
+    roles: sortRoleKeys(entry.roles),
     inputTokens: entry.inputTokens,
     outputTokens: entry.outputTokens,
     cacheReadTokens: entry.cacheReadTokens,
@@ -167,7 +173,7 @@ export function buildBillingTokenBreakdown(
   const displayByModelEntries = collectDisplayByModel(billing);
 
   const byAgent: BillingAgentRow[] = [];
-  for (const role of AGENT_ROLES) {
+  for (const role of sortRoleKeys(Object.keys(displayByRole))) {
     const entry = displayByRole[role];
     if (!entry) {
       continue;
@@ -197,7 +203,7 @@ export function buildBillingTokenBreakdown(
     string,
     {
       modelId: string;
-      roles: AgentRole[];
+      roles: RuntimeAgentRole[];
       inputTokens: number;
       outputTokens: number;
       cacheReadTokens: number;
@@ -233,7 +239,7 @@ export function buildBillingTokenBreakdown(
     .map((entry) => ({
       modelId: entry.modelId,
       label: shortenModelId(entry.modelId),
-      roles: entry.roles,
+      roles: sortRoleKeys(entry.roles),
       inputTokens: entry.inputTokens,
       outputTokens: entry.outputTokens,
       cacheReadTokens: entry.cacheReadTokens,

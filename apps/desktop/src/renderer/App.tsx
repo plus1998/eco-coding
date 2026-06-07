@@ -1070,8 +1070,7 @@ function App() {
       }
     }
     const merged: Record<string, string> = { ...configured };
-    for (const role of AGENT_ROLES) {
-      const live = threadModelByRole?.[role];
+    for (const [role, live] of Object.entries(threadModelByRole ?? {})) {
       const displayModelId = pickDisplayModelId(live, configured[role]);
       if (displayModelId) {
         merged[role] = displayModelId;
