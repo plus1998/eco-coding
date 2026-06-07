@@ -50,6 +50,7 @@ import {
   type SessionSyncSettingsSnapshot,
   type ThreadActivityLine,
   type ThreadLiveEvent,
+  type ThreadRunProjectionSnapshot,
   type ThreadSubagentSessionTiming,
   type ThreadSubagentMetricsSummary,
   type ThreadPendingPlan,
@@ -214,6 +215,9 @@ function App() {
   const [subagentMetricsByThread, setSubagentMetricsByThread] = useState<
     Record<string, ThreadSubagentMetricsSummary[]>
   >({});
+  const [runProjectionByThread, setRunProjectionByThread] = useState<
+    Record<string, ThreadRunProjectionSnapshot>
+  >({});
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -258,6 +262,14 @@ function App() {
 
     return window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {
+        return;
+      }
+
+      if (event.type === "thread.run_projection_updated" && event.projection) {
+        setRunProjectionByThread((current) => ({
+          ...current,
+          [event.threadId]: event.projection!,
+        }));
         return;
       }
 
@@ -415,6 +427,18 @@ function App() {
         [selectedThreadId]: lines,
       }));
     });
+
+    if (typeof window.eco.getThreadRunProjection === "function") {
+      void window.eco.getThreadRunProjection(selectedThreadId).then((projection) => {
+        if (cancelled || !projection) {
+          return;
+        }
+        setRunProjectionByThread((current) => ({
+          ...current,
+          [selectedThreadId]: projection,
+        }));
+      });
+    }
 
     // Preload may be stale until Electron restarts; skip rather than throw.
     if (typeof window.eco.listSubagentSessions === "function") {
@@ -834,6 +858,7 @@ function App() {
   const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
@@ -900,6 +925,24 @@ function App() {
   const activityEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
+  const runProjectionLayoutSignature = useMemo(() => {
+    if (!runProjection?.sourceEventCount) {
+      return "";
+    }
+    const lastMainItem = runProjection.timeline.at(-1);
+    const agentSignature = runProjection.agents
+      .map((agent) => {
+        const lastAgentItem = agent.timeline.at(-1);
+        return `${agent.agentId}:${agent.status}:${agent.durationMs}:${lastAgentItem?.id ?? ""}`;
+      })
+      .join(",");
+    return [
+      runProjection.sourceEventCount,
+      runProjection.thread.status,
+      lastMainItem?.id ?? "",
+      agentSignature,
+    ].join("|");
+  }, [runProjection]);
 
   const composerSkillsByName = useMemo(
     () => buildSkillMap([...userSkills, ...projectSdkReadySkills]),
@@ -929,6 +972,16 @@ function App() {
     const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(isStreaming));
     return () => cancelAnimationFrame(frame);
   }, [activityLines, activeThread?.id, scrollActivityFeedToEnd]);
+
+  useLayoutEffect(() => {
+    if (!runProjectionLayoutSignature) {
+      return;
+    }
+    const force = activeThread?.status === "running" || activeThread?.status === "queued";
+    scrollActivityFeedToEnd(force);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(force));
+    return () => cancelAnimationFrame(frame);
+  }, [activeThread?.status, runProjectionLayoutSignature, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     if (
@@ -1969,6 +2022,7 @@ function App() {
                 <ActivityLogView
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
+                  {...(runProjection && { projection: runProjection })}
                   onRestorePrompt={restorePrompt}
                   onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
