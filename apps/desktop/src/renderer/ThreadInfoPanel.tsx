@@ -1,6 +1,17 @@
 import { DollarSign, Folder, GitBranch, HardDrive, ListTodo, Package, X } from "lucide-react";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
-import { useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type FocusEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } from "@eco/runtime";
 import type {
   BillingUsageSource,
@@ -145,6 +156,103 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   );
 }
 
+function formatBillingPillCost(billing?: ThreadBillingSnapshot): string {
+  const cost = billing?.ecoCostUsd ?? 0;
+  if (cost <= 0) {
+    return "$0";
+  }
+  return formatCostUsd(cost);
+}
+
+function resolvePlannerOccupancyPct(context?: ThreadContextSnapshot): number | undefined {
+  if (!context) {
+    return undefined;
+  }
+  const planner = context.roles?.find((role) => role.role === "planner");
+  return planner?.occupancyPct ?? context.occupancyPct;
+}
+
+function contextRingStroke(pct: number): string {
+  if (pct >= 95) {
+    return "#f87171";
+  }
+  if (pct >= 85) {
+    return "#fbbf24";
+  }
+  return "#60a5fa";
+}
+
+function ContextOccupancyRing({
+  pct,
+  size = 14,
+  strokeWidth = 2,
+}: {
+  pct?: number | undefined;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clampedPct = Math.max(0, Math.min(100, pct ?? 0));
+  const offset = circumference * (1 - clampedPct / 100);
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="thread-info-context-ring"
+      aria-hidden
+    >
+      <circle
+        cx={center}
+        cy={center}
+        r={radius}
+        fill="none"
+        stroke="#3a3a3a"
+        strokeWidth={strokeWidth}
+      />
+      {clampedPct > 0 ? (
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke={contextRingStroke(clampedPct)}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      ) : null}
+    </svg>
+  );
+}
+
+function BillingFloatPillLabel({ billing }: { billing?: ThreadBillingSnapshot }) {
+  const cost = billing?.ecoCostUsd ?? 0;
+  return (
+    <span className="thread-info-float-pill-label">
+      <span>计费</span>
+      <span className={cost > 0 ? "thread-info-float-pill-cost" : "thread-info-float-pill-cost is-empty"}>
+        {formatBillingPillCost(billing)}
+      </span>
+    </span>
+  );
+}
+
+function ContextFloatPillLabel({ context }: { context?: ThreadContextSnapshot }) {
+  const occupancyPct = resolvePlannerOccupancyPct(context);
+  return (
+    <span className="thread-info-float-pill-label">
+      <ContextOccupancyRing pct={occupancyPct} />
+      <span>Context</span>
+    </span>
+  );
+}
+
 function BillingFloatingCard({
   billing,
   threadStatus,
@@ -233,6 +341,188 @@ function BillingFloatingCard({
   );
 }
 
+function ThreadInfoFloatControl({
+  label,
+  ariaLabel,
+  resetKey,
+  width = 320,
+  minHeight = 200,
+  children,
+}: {
+  label: ReactNode;
+  ariaLabel: string;
+  resetKey?: string | undefined;
+  width?: number;
+  minHeight?: number;
+  children: (closePanel: () => void) => ReactNode;
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
+  const open = hovered || pinned;
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const updatePanelPosition = useCallback(() => {
+    const anchor = triggerRef.current;
+    if (!anchor) {
+      return;
+    }
+    setPanelStyle(
+      composerFloatingStyleForAnchor(anchor, {
+        width,
+        minHeight,
+        prefer: "above",
+        align: "start",
+      }),
+    );
+  }, [minHeight, width]);
+
+  const showPanel = useCallback(() => {
+    clearCloseTimer();
+    updatePanelPosition();
+    setHovered(true);
+  }, [clearCloseTimer, updatePanelPosition]);
+
+  const scheduleClose = useCallback(() => {
+    if (pinned) {
+      return;
+    }
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      setHovered(false);
+      closeTimerRef.current = null;
+    }, 120);
+  }, [clearCloseTimer, pinned]);
+
+  const closePanel = useCallback(() => {
+    clearCloseTimer();
+    setHovered(false);
+    setPinned(false);
+  }, [clearCloseTimer]);
+
+  const handleBlur = useCallback(
+    (event: FocusEvent<HTMLElement>) => {
+      const nextTarget = event.relatedTarget as Node | null;
+      if (
+        nextTarget &&
+        (triggerRef.current?.contains(nextTarget) || panelRef.current?.contains(nextTarget))
+      ) {
+        return;
+      }
+      scheduleClose();
+    },
+    [scheduleClose],
+  );
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    updatePanelPosition();
+    window.addEventListener("resize", updatePanelPosition);
+    window.addEventListener("scroll", updatePanelPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePanelPosition);
+      window.removeEventListener("scroll", updatePanelPosition, true);
+    };
+  }, [open, updatePanelPosition]);
+
+  useEffect(() => {
+    return () => clearCloseTimer();
+  }, [clearCloseTimer]);
+
+  useEffect(() => {
+    clearCloseTimer();
+    setHovered(false);
+    setPinned(false);
+  }, [clearCloseTimer, resetKey]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) {
+        return;
+      }
+      closePanel();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closePanel();
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [closePanel, open]);
+
+  const popover =
+    open &&
+    createPortal(
+      <div
+        ref={panelRef}
+        className="thread-info-float-popover"
+        role="dialog"
+        aria-label={ariaLabel}
+        style={panelStyle}
+        onMouseEnter={showPanel}
+        onMouseLeave={scheduleClose}
+        onFocus={showPanel}
+        onBlur={handleBlur}
+      >
+        <div className="thread-info-float-popover-body">{children(closePanel)}</div>
+      </div>,
+      document.body,
+    );
+
+  return (
+    <span className="thread-info-float-control">
+      <button
+        ref={triggerRef}
+        type="button"
+        className={
+          open
+            ? "thread-info-float-reopen is-clickable is-active"
+            : "thread-info-float-reopen is-clickable"
+        }
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onMouseEnter={showPanel}
+        onMouseLeave={scheduleClose}
+        onFocus={showPanel}
+        onBlur={handleBlur}
+        onClick={() => {
+          if (pinned) {
+            closePanel();
+            return;
+          }
+          updatePanelPosition();
+          setHovered(true);
+          setPinned(true);
+        }}
+      >
+        {label}
+      </button>
+      {popover}
+    </span>
+  );
+}
+
 function ThreadInfoFloatStack({
   threadId,
   showBillingSection,
@@ -256,16 +546,9 @@ function ThreadInfoFloatStack({
   context?: ThreadContextSnapshot;
   contextPlaceholder: string;
 }) {
-  const [billingOpen, setBillingOpen] = useState(true);
-  const [contextOpen, setContextOpen] = useState(true);
-
-  useEffect(() => {
-    setBillingOpen(true);
-    setContextOpen(true);
-  }, [threadId]);
-
   const showBillingFloat = showBillingSection;
   const showContextFloat = true;
+  const contextOccupancyPct = resolvePlannerOccupancyPct(context);
 
   if (!showBillingFloat && !showContextFloat) {
     return null;
@@ -274,52 +557,50 @@ function ThreadInfoFloatStack({
   return (
     <div className="thread-info-float-stack">
       <div className="thread-info-float-pills">
-        {showBillingFloat && !billingOpen ? (
-          <button
-            type="button"
-            className="thread-info-float-reopen"
-            onClick={() => setBillingOpen(true)}
-            aria-label="显示计费对比"
+        {showBillingFloat ? (
+          <ThreadInfoFloatControl
+            label={<BillingFloatPillLabel {...(billing !== undefined && { billing })} />}
+            ariaLabel={`计费对比，当前 ${formatBillingPillCost(billing)}`}
+            resetKey={threadId}
+            width={320}
+            minHeight={220}
           >
-            计费
-          </button>
+            {(closePanel) => (
+              <BillingFloatingCard
+                {...(billing !== undefined && { billing })}
+                {...(threadStatus !== undefined && { threadStatus })}
+                tokenBadge={tokenBadge}
+                plannerLabel={plannerLabel}
+                cacheCostSuffix={cacheCostSuffix}
+                showBilling={showBilling}
+                onDismiss={closePanel}
+              />
+            )}
+          </ThreadInfoFloatControl>
         ) : null}
-        {showContextFloat && !contextOpen ? (
-          <button
-            type="button"
-            className="thread-info-float-reopen"
-            onClick={() => setContextOpen(true)}
-            aria-label="显示 Context"
+        {showContextFloat ? (
+          <ThreadInfoFloatControl
+            label={<ContextFloatPillLabel {...(context !== undefined && { context })} />}
+            ariaLabel={
+              contextOccupancyPct !== undefined
+                ? `Context，主 Agent 占用 ${contextOccupancyPct}%`
+                : "Context"
+            }
+            resetKey={threadId}
+            width={320}
+            minHeight={200}
           >
-            Context
-          </button>
+            {(closePanel) => (
+              <ContextCard
+                {...(context !== undefined && { context })}
+                placeholder={contextPlaceholder}
+                showWhenEmpty
+                onDismiss={closePanel}
+              />
+            )}
+          </ThreadInfoFloatControl>
         ) : null}
       </div>
-
-      {showBillingFloat && billingOpen ? (
-        <div className="thread-info-float-panel">
-          <BillingFloatingCard
-            {...(billing !== undefined && { billing })}
-            {...(threadStatus !== undefined && { threadStatus })}
-            tokenBadge={tokenBadge}
-            plannerLabel={plannerLabel}
-            cacheCostSuffix={cacheCostSuffix}
-            showBilling={showBilling}
-            onDismiss={() => setBillingOpen(false)}
-          />
-        </div>
-      ) : null}
-
-      {showContextFloat && contextOpen ? (
-        <div className="thread-info-float-panel">
-          <ContextCard
-            {...(context !== undefined && { context })}
-            placeholder={contextPlaceholder}
-            showWhenEmpty
-            onDismiss={() => setContextOpen(false)}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -355,7 +636,13 @@ export function ThreadInfoPanel({
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
-      <div className="thread-info-panel-scroll">
+      <div
+        className={
+          showUsagePanels
+            ? "thread-info-panel-scroll thread-info-panel-scroll-with-float"
+            : "thread-info-panel-scroll"
+        }
+      >
         <section className="thread-info-section">
           <h3 className="thread-info-heading">工作区</h3>
           <ul className="thread-info-list">
