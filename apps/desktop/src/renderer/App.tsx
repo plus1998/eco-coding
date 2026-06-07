@@ -98,6 +98,7 @@ import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRou
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
+import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import {
   applySlashSkillSelection,
   buildSkillMap,
@@ -931,6 +932,15 @@ function App() {
     () =>
       settings.routeProfiles.find((profile) => profile.id === composerRuntimeConfig?.routeProfileId),
     [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
+  );
+  const selectedAgentProfileSummary = useMemo(
+    () =>
+      findSelectableAgentProfileSummary(
+        settings,
+        composerRuntimeConfig?.routeProfileId,
+        composerRuntimeConfig ?? undefined,
+      ),
+    [settings, composerRuntimeConfig],
   );
   const canEditComposerConfig =
     !activeThread ||
@@ -2004,7 +2014,7 @@ function App() {
                   buttonRef={composerRouteButtonRef}
                   open={composerRoutePopoverOpen}
                   disabled={!canSwitchRouteProfile || isSavingSettings}
-                  profileName={selectedRouteProfile?.name}
+                  profileName={selectedAgentProfileSummary?.name ?? selectedRouteProfile?.name}
                   onToggle={() => {
                     if (!canSwitchRouteProfile) {
                       return;
@@ -2017,6 +2027,7 @@ function App() {
                   settings={settings}
                   busy={isSavingSettings}
                   anchorRef={composerRouteButtonRef}
+                  runtimeConfig={composerRuntimeConfig ?? undefined}
                   onClose={() => setComposerRoutePopoverOpen(false)}
                   onSelectProfile={selectComposerRouteProfile}
                   selectedProfileId={composerRuntimeConfig?.routeProfileId}

@@ -1,9 +1,18 @@
 import { Check, ChevronRight, Settings2, SlidersHorizontal } from "lucide-react";
-import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
-import type { ModelSettingsSnapshot, RouteProfileView } from "../shared/ipc";
+import type { ModelSettingsSnapshot, ThreadRuntimeConfig } from "../shared/ipc";
+import { type AgentProfileSummary, listSelectableAgentProfileSummaries } from "./agent-profile-summary";
 
-const POPOVER_WIDTH = 320;
+const POPOVER_WIDTH = 420;
 const VIEWPORT_MARGIN = 8;
 const ANCHOR_GAP = 8;
 const MIN_POPOVER_HEIGHT = 120;
@@ -32,6 +41,7 @@ interface ComposerRoutePopoverProps {
   open: boolean;
   settings: ModelSettingsSnapshot;
   selectedProfileId?: string | undefined;
+  runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -43,6 +53,7 @@ export function ComposerRoutePopover({
   open,
   settings,
   selectedProfileId,
+  runtimeConfig,
   busy,
   anchorRef,
   onClose,
@@ -51,6 +62,7 @@ export function ComposerRoutePopover({
 }: ComposerRoutePopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
+  const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
 
   const updatePanelPosition = useCallback(() => {
     const anchor = anchorRef.current;
@@ -71,7 +83,7 @@ export function ComposerRoutePopover({
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
-  }, [open, updatePanelPosition, settings.routeProfiles.length]);
+  }, [open, updatePanelPosition, profileSummaries.length]);
 
   useEffect(() => {
     if (!open) {
@@ -106,23 +118,27 @@ export function ComposerRoutePopover({
       ref={panelRef}
       className="composer-route-popover"
       role="dialog"
-      aria-label="切换路由方案"
+      aria-label="切换 Agent Profile"
       style={panelStyle}
     >
-      <p className="composer-route-popover-title">路由方案</p>
+      <p className="composer-route-popover-title">Agent Profile</p>
       <ul className="composer-route-popover-list">
-        {settings.routeProfiles.map((profile) => (
-          <RouteProfileOption
-            key={profile.id}
-            profile={profile}
-            selected={profile.id === selectedProfileId}
+        {profileSummaries.map((summary) => (
+          <AgentProfileOption
+            key={summary.selectionId}
+            summary={summary}
+            selected={summary.selectionId === selectedProfileId}
             disabled={busy}
-            onSelect={() => void onSelectProfile(profile.id)}
+            onSelect={() => {
+              if (summary.selectionId) {
+                void onSelectProfile(summary.selectionId);
+              }
+            }}
           />
         ))}
       </ul>
-      {settings.routeProfiles.length === 0 ? (
-        <p className="composer-route-popover-empty">尚未配置路由方案</p>
+      {profileSummaries.length === 0 ? (
+        <p className="composer-route-popover-empty">尚未配置可运行的 Agent Profile</p>
       ) : null}
       <button
         type="button"
@@ -134,7 +150,7 @@ export function ComposerRoutePopover({
         }}
       >
         <Settings2 size={14} />
-        打开完整模型设置
+        打开 Agent Builder
         <ChevronRight size={14} />
       </button>
     </div>,
@@ -142,28 +158,56 @@ export function ComposerRoutePopover({
   );
 }
 
-function RouteProfileOption({
-  profile,
+function AgentProfileOption({
+  summary,
   selected,
   disabled,
   onSelect,
 }: {
-  profile: RouteProfileView;
+  summary: AgentProfileSummary;
   selected: boolean;
   disabled?: boolean | undefined;
   onSelect: () => void;
 }) {
+  const visibleAgents = summary.enabledAgents.slice(0, 3);
+  const extraAgentCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
   return (
     <li>
       <button
         type="button"
-        className={
-          selected ? "composer-route-popover-item active" : "composer-route-popover-item"
-        }
+        className={selected ? "composer-route-popover-item active" : "composer-route-popover-item"}
         disabled={disabled || selected}
         onClick={onSelect}
       >
-        <span className="composer-route-popover-item-name">{profile.name}</span>
+        <span className="composer-agent-profile-main">
+          <span className="composer-route-popover-item-name">{summary.name}</span>
+          <span className="composer-agent-profile-meta">
+            {summary.presetLabel} · {summary.strategyLabel} · {summary.enabledAgents.length} 个子代理
+          </span>
+          <span className="composer-agent-profile-model">主 Agent：{summary.main.modelLabel}</span>
+          {summary.highRiskLabels.length > 0 ? (
+            <span className="composer-agent-profile-risks">
+              {summary.highRiskLabels.map((label) => (
+                <span key={label} className="composer-agent-profile-risk">
+                  {label}
+                </span>
+              ))}
+            </span>
+          ) : null}
+          {visibleAgents.length > 0 ? (
+            <span className="composer-agent-profile-agents">
+              {visibleAgents.map((agent) => (
+                <span key={agent.agentKey} className="composer-agent-profile-agent">
+                  <span>{agent.name}</span>
+                  <small>{agent.modelLabel}</small>
+                </span>
+              ))}
+              {extraAgentCount > 0 ? (
+                <span className="composer-agent-profile-agent is-extra">+{extraAgentCount}</span>
+              ) : null}
+            </span>
+          ) : null}
+        </span>
         {selected ? (
           <span className="composer-route-popover-item-check" aria-hidden>
             <Check size={14} />
@@ -190,21 +234,19 @@ export function ComposerRoutePopoverTrigger({
   buttonRef: RefObject<HTMLButtonElement | null>;
   onToggle: () => void;
 }) {
-  const label = profileName?.trim() || "未选择方案";
+  const label = profileName?.trim() || "选择 Agent Profile";
 
   return (
     <button
       ref={buttonRef}
       type="button"
       className={
-        open
-          ? "composer-meta-pill composer-route-pill is-active"
-          : "composer-meta-pill composer-route-pill"
+        open ? "composer-meta-pill composer-route-pill is-active" : "composer-meta-pill composer-route-pill"
       }
       onClick={onToggle}
       disabled={disabled}
-      title={profileName ? `当前方案：${profileName}` : "切换路由方案"}
-      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换路由方案"}
+      title={profileName ? `当前 Agent Profile：${profileName}` : "切换 Agent Profile"}
+      aria-label={profileName ? `当前 Agent Profile：${profileName}，点击切换` : "切换 Agent Profile"}
       aria-expanded={open}
     >
       <SlidersHorizontal size={14} aria-hidden className="composer-route-pill-icon" />

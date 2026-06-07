@@ -5726,10 +5726,10 @@ button:not(:disabled) {
 .composer-route-popover-item {
   display: flex;
   width: 100%;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -5754,13 +5754,87 @@ button:not(:disabled) {
 }
 
 .composer-route-popover-item-name {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.composer-agent-profile-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.composer-agent-profile-meta,
+.composer-agent-profile-model {
+  overflow: hidden;
+  color: #8a8a8a;
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-agent-profile-risks,
+.composer-agent-profile-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.composer-agent-profile-risk {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 6px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  font-size: 10px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.composer-agent-profile-agent {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #d4d4d4;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.composer-agent-profile-agent span,
+.composer-agent-profile-agent small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-agent-profile-agent small {
+  color: #737373;
+  font-size: 10px;
+}
+
+.composer-agent-profile-agent.is-extra {
+  display: inline-flex;
+  color: #8a8a8a;
+}
+
 .composer-route-popover-item-check {
   display: inline-flex;
+  margin-top: 2px;
   align-items: center;
   gap: 4px;
   color: #93c5fd;
@@ -5769,6 +5843,7 @@ button:not(:disabled) {
 }
 
 .composer-route-popover-item-hint {
+  margin-top: 2px;
   color: #737373;
   font-size: 11px;
   flex-shrink: 0;

@@ -574,7 +574,7 @@ type WorkflowStep = {
 
 ## 阶段 6：UI 产品化
 
-状态：未开始。
+状态：进行中。
 
 目标：把设置体验从开发者配置页升级为可商用的 agent builder。
 
@@ -595,6 +595,18 @@ type WorkflowStep = {
 - 启动前展示本次启用的子代理。
 - 展示每个 agent 的模型和高风险工具。
 - 支持保存为 profile。
+
+已完成：
+
+- 新增 renderer 侧 `agent-profile-summary`，把 `OrchestrationProfile + AgentTemplate + ThreadRuntimeConfig` 汇总成可复用 UI 摘要。
+- Composer 入口已从“路由方案”升级为 “Agent Profile”，底层仍使用当前可运行的 `routeProfileId` 兼容线程运行链路。
+- 启动前 profile popover 已展示场景、编排策略、启用子代理数量、主 agent 模型、高风险工具和启用子代理模型预览。
+- 当前线程的手动子代理开关会参与 profile 摘要计算，用户看到的是本次实际启用的子代理。
+
+已验证：
+
+- `bun test apps/desktop/test/agent-profile-summary.test.ts`
+- `bun run typecheck`
 
 运行中 UI：
 
