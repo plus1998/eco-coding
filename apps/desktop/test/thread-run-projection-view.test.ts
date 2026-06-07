@@ -692,6 +692,24 @@ test("buildThreadRunProjectionViewModel hides planner OTel tool duration summari
   expect(view.mainFeedEntries).toEqual([]);
 });
 
+test("buildThreadRunProjectionViewModel hides planner OTel agent elapsed summaries from main feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "otel-agent-duration",
+          eventType: "tool.started",
+          role: "planner",
+          text: "Tool: Agent · eco_explore (29.6s)",
+          metadata: { liveType: "otel.activity" },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toEqual([]);
+});
+
 test("buildThreadRunProjectionViewModel collapses agent card stream rows without losing final echo", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

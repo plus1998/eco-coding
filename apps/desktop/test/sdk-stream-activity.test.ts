@@ -34,6 +34,28 @@ test("suppresses OTel duration summaries after detailed SDK subagent tool start"
   expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: WebSearch (5.9s)")).toBe(true);
 });
 
+test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", () => {
+  const bridge = new SdkStreamActivityBridge();
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Agent",
+        input: {
+          subagent_type: "eco_explore",
+          description: "查询广州天气",
+        },
+      },
+    },
+    () => {},
+  );
+
+  expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: Agent · eco_explore (29.6s)")).toBe(true);
+});
+
 test("keeps parallel subagent narrative streams isolated by agentId", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; role: string; agentId?: string }> = [];

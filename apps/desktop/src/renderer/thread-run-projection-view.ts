@@ -203,7 +203,11 @@ function isProjectionOtelToolDurationSummary(item: ThreadRunProjectionTimelineIt
   if (item.eventType !== "tool.started" || projectionLiveType(item) !== "otel.activity") {
     return false;
   }
-  return /^Tool:\s*[^·]+?\s+\(\d+(?:\.\d+)?s\)$/i.test(item.text.trim());
+  const text = item.text.trim();
+  return (
+    /^Tool:\s*[^·]+?\s+\(\d+(?:\.\d+)?s\)$/i.test(text) ||
+    /^Tool:\s*Agent\s*·\s*.+\s+\(\d+(?:\.\d+)?s\)$/i.test(text)
+  );
 }
 
 function isProjectionUsageNoiseText(text: string): boolean {
