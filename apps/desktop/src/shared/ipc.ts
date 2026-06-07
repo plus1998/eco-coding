@@ -32,6 +32,7 @@ export const IPC_CHANNELS = {
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
   agentProfilePerformanceList: "agent-profile:performance-list",
+  agentAuditExport: "agent-audit:export",
   threadDelete: "thread:delete",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
@@ -763,6 +764,17 @@ export interface AgentProfilePerformanceSnapshot {
   modelIds: string[];
   workflowSteps: AgentProfileWorkflowStepPerformanceSnapshot[];
   recentRuns: AgentProfilePerformanceRunSnapshot[];
+}
+
+export interface AgentAuditExportRequest {
+  threadIds?: string[];
+}
+
+export interface AgentAuditExportResult {
+  ok: true;
+  canceled: boolean;
+  exportedThreads: number;
+  path?: string;
 }
 
 export interface RoutePricingRates {

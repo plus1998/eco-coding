@@ -31,6 +31,7 @@ import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } fr
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   AGENT_ROLES,
+  type AgentAuditExportRequest,
   type AgentRole,
   type AgentTemplate,
   type AgentTemplateExportRequest,
@@ -115,6 +116,7 @@ import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
+import { buildAgentAuditExportArchive } from "./agent-audit-export";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
@@ -822,6 +824,53 @@ function registerIpcHandlers(): void {
       getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
     }),
   );
+
+  ipcMain.handle(IPC_CHANNELS.agentAuditExport, async (_event, payload?: unknown) => {
+    const request = payload && typeof payload === "object" ? (payload as AgentAuditExportRequest) : {};
+    const requestedThreadIds = Array.isArray(request.threadIds)
+      ? new Set(request.threadIds.map((id) => id.trim()).filter(Boolean))
+      : undefined;
+    const threads = hydrateThreads(conversationStore.listThreads()).filter((thread) =>
+      requestedThreadIds ? requestedThreadIds.has(thread.id) : true,
+    );
+    if (threads.length === 0) {
+      throw new Error("没有可导出的审计线程。");
+    }
+    const result = await dialog.showSaveDialog({
+      title: "导出 Agent 审计日志",
+      defaultPath: `eco-agent-audit-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: true as const, canceled: true, exportedThreads: 0 };
+    }
+    const settings = getModelSettingsSnapshot();
+    const profilePerformance = buildAgentProfilePerformanceSnapshots({
+      threads,
+      profiles: settings.orchestrationProfiles,
+      getBillingSnapshot: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
+    });
+    const archive = buildAgentAuditExportArchive({
+      appVersion: app.getVersion(),
+      threads,
+      profiles: settings.orchestrationProfiles,
+      agentTemplates: settings.agentTemplates,
+      profilePerformance,
+      getThreadBilling: (threadId) => usageLedgerCoordinator.projectBillingSnapshot(threadId),
+      getThreadRunProjection: (threadId) => buildCurrentThreadRunProjection(threadId),
+      listThreadActivity: (threadId) => conversationStore.listActivityLines(threadId),
+      listRunAttempts: (threadId) => conversationStore.listRunAttempts(threadId),
+      listAgentInstances: (threadId) => conversationStore.listAgentInstances(threadId),
+      listUsageLedgerEvents: (threadId) => conversationStore.listUsageLedgerEvents(threadId),
+    });
+    await fs.writeFile(result.filePath, JSON.stringify(archive, null, 2), "utf8");
+    return {
+      ok: true as const,
+      canceled: false,
+      exportedThreads: threads.length,
+      path: result.filePath,
+    };
+  });
 
   ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {

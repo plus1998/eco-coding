@@ -659,7 +659,8 @@ type WorkflowStep = {
 - Phase 7.4 验证：`bun test packages/runtime/test/claude-agent-sdk.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/usage-billing-artifacts.test.ts apps/desktop/test/usage-billing-effects.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/thread-run-projection-view.test.ts`。
 - Phase 7.5 已完成：新增 Agent Profile 历史表现聚合，按 profile 汇总运行次数、成功率、平均耗时、token、成本、最近运行、模型和 workflow step 成本；Agent Builder 的“编排配置”列表展示每个 profile 的历史表现，并提供刷新入口。旧线程若没有 usage ledger，仍会进入运行次数统计，但不做旧格式 billing 兜底。
 - Phase 7.5 验证：`bun test apps/desktop/test/agent-profile-performance.test.ts apps/desktop/test/ipc.test.ts`。
-- 企业审计导出还没有用户入口；底层有 run events、ledger events 和 projection diagnostics，可作为后续导出的数据源。
+- Phase 7.6 已完成：新增 Agent 审计 JSON 导出，schema 为 `eco.agent-audit.v1`，包含 orchestration profiles、agent templates、profile performance、thread summary、billing、run projection、activity、run attempts、agent instances 和 usage ledger events；Agent Builder 的“编排配置”页提供导出入口。
+- Phase 7.6 验证：`bun test apps/desktop/test/agent-audit-export.test.ts apps/desktop/test/ipc.test.ts`。
 
 与既有计划关系：
 

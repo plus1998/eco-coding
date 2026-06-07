@@ -1,5 +1,5 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
-import { Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
+import { Download, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
@@ -140,9 +140,14 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
+  const [auditExportMessage, setAuditExportMessage] = useState<{
+    kind: AppMessageKind;
+    message: string;
+  }>();
   const [profilePerformance, setProfilePerformance] = useState<AgentProfilePerformanceSnapshot[]>([]);
   const [profilePerformanceLoading, setProfilePerformanceLoading] = useState(false);
   const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
+  const [auditExportBusy, setAuditExportBusy] = useState(false);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -172,6 +177,32 @@ export function ModelsSettingsPanel({
       setProfilePerformanceError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setProfilePerformanceLoading(false);
+    }
+  }, []);
+
+  const exportAgentAudit = useCallback(async () => {
+    if (!window.eco?.exportAgentAudit) {
+      setAuditExportMessage({ kind: "error", message: "审计导出接口不可用。" });
+      return;
+    }
+    setAuditExportBusy(true);
+    setAuditExportMessage(undefined);
+    try {
+      const result = await window.eco.exportAgentAudit();
+      if (result.canceled) {
+        return;
+      }
+      setAuditExportMessage({
+        kind: "success",
+        message: `已导出 ${result.exportedThreads} 个线程的 Agent 审计日志${result.path ? `：${result.path}` : ""}`,
+      });
+    } catch (caught) {
+      setAuditExportMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setAuditExportBusy(false);
     }
   }, []);
 
@@ -760,6 +791,13 @@ export function ModelsSettingsPanel({
           onDismiss={() => setRouteTestMessage(undefined)}
         />
       )}
+      {auditExportMessage && (
+        <AppMessage
+          kind={auditExportMessage.kind}
+          message={auditExportMessage.message}
+          onDismiss={() => setAuditExportMessage(undefined)}
+        />
+      )}
 
       <header className="mcp-page-header">
         <h1>Agent Builder</h1>
@@ -923,6 +961,15 @@ export function ModelsSettingsPanel({
                   className={profilePerformanceLoading ? "model-refresh-spin" : undefined}
                 />
                 刷新表现
+              </button>
+              <button
+                type="button"
+                className="models-section-button"
+                disabled={busy || auditExportBusy}
+                onClick={() => void exportAgentAudit()}
+              >
+                <Download size={14} />
+                导出审计 JSON
               </button>
               <button
                 type="button"

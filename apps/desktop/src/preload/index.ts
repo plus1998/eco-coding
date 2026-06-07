@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
+  type AgentAuditExportRequest,
+  type AgentAuditExportResult,
+  type AgentProfilePerformanceSnapshot,
   type AgentTemplate,
   type AgentTemplateExportRequest,
   type AgentTemplateExportResult,
@@ -19,7 +22,6 @@ import {
   type McpServerConfigInput,
   type McpServerConfigView,
   type McpSettingsSnapshot,
-  type AgentProfilePerformanceSnapshot,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type OrchestrationProfile,
@@ -286,6 +288,9 @@ const api = {
   },
   listAgentProfilePerformance(): Promise<AgentProfilePerformanceSnapshot[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentProfilePerformanceList);
+  },
+  exportAgentAudit(request?: AgentAuditExportRequest): Promise<AgentAuditExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentAuditExport, request);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
