@@ -7332,16 +7332,16 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative p {
   color: var(--codex-log-text);
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.72;
+  line-height: 1.68;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .run-log-narrative-body,
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact p {
   color: #d6d6d6;
-  font-size: 17px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -7710,7 +7710,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
   .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
   .codex-main:not(.codex-main-landing) .run-log-narrative p {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .codex-main:not(.codex-main-landing) .run-log-phase,
