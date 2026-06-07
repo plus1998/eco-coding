@@ -605,10 +605,13 @@ type WorkflowStep = {
 - 设置页已升级为 Agent Builder 结构，包含 Agent Library、编排配置、模型路由、工具权限和场景预设。
 - 编排配置列表已使用通用 Agent Profile 摘要展示场景、策略、主 agent、启用子代理和高风险工具，不再用固定 role 横排作为主要信息架构。
 - 工具权限页已按 profile 展示主 agent 与每个子代理的实际权限 chip；场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
+- 运行观察 UI 已根据当前线程绑定的 Agent Profile 生成 runtime display map，projection agent card、agent echo badge 与 Context 子代理条目会优先显示用户配置的 agent/template 名称，并继续保留 `agentId` 实例标识。
 
 已验证：
 
 - `bun test apps/desktop/test/agent-profile-summary.test.ts`
+- `bun test apps/desktop/test/runtime-agent-display.test.ts apps/desktop/test/thread-run-projection-view.test.ts`
+- `bun test apps/desktop/test/thread-run-projection-view.test.ts apps/desktop/test/activity-log.test.ts apps/desktop/test/activity-agent-id.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts`
 - `bun run typecheck`
 
 运行中 UI：

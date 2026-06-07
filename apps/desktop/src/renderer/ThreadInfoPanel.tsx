@@ -29,6 +29,7 @@ import {
 } from "../shared/thread-usage-summary";
 import { ContextCard } from "./ContextCard";
 import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
+import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -46,6 +47,7 @@ interface ThreadInfoPanelProps {
   workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }
 
 function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
@@ -534,6 +536,7 @@ function ThreadInfoFloatStack({
   showBilling,
   context,
   contextPlaceholder,
+  agentDisplayNames,
 }: {
   threadId?: string;
   showBillingSection: boolean;
@@ -545,6 +548,7 @@ function ThreadInfoFloatStack({
   showBilling: boolean;
   context?: ThreadContextSnapshot;
   contextPlaceholder: string;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const showBillingFloat = showBillingSection;
   const showContextFloat = true;
@@ -595,6 +599,7 @@ function ThreadInfoFloatStack({
                 {...(context !== undefined && { context })}
                 placeholder={contextPlaceholder}
                 showWhenEmpty
+                {...(agentDisplayNames && { agentDisplayNames })}
                 onDismiss={closePanel}
               />
             )}
@@ -615,6 +620,7 @@ export function ThreadInfoPanel({
   workspaceDirtyFiles,
   threadStatus,
   usageSummary,
+  agentDisplayNames,
 }: ThreadInfoPanelProps) {
   const projectLabel = workspacePath?.split("/").filter(Boolean).pop() ?? workspace?.name ?? "未打开项目";
   const billing = usageSummary?.billing;
@@ -713,6 +719,7 @@ export function ThreadInfoPanel({
           showBilling={showBilling}
           {...(usageSummary?.context !== undefined && { context: usageSummary.context })}
           contextPlaceholder={contextCardPlaceholder(threadStatus)}
+          {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}
     </aside>

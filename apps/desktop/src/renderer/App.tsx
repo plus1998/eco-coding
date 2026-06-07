@@ -99,6 +99,7 @@ import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
+import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import {
   applySlashSkillSelection,
   buildSkillMap,
@@ -914,6 +915,10 @@ function App() {
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
   const threadUsageByRole = activeThread ? usageByThread[activeThread.id] : undefined;
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
+  const activeRuntimeAgentDisplayNames = useMemo(
+    () => buildRuntimeAgentDisplayNames(settings, activeThread?.runtimeConfig),
+    [settings, activeThread?.runtimeConfig],
+  );
   const threadUsageSummary = useMemo(() => {
     if (!activeThread) {
       return undefined;
@@ -2195,6 +2200,7 @@ function App() {
                   onRestorePrompt={restorePrompt}
                   onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
+                  agentDisplayNames={activeRuntimeAgentDisplayNames}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(subagentTimings && { subagentTimings })}
                   {...(subagentMetrics && { subagentMetrics })}
@@ -2311,6 +2317,7 @@ function App() {
           {...(projectWorkspace?.branch && { gitBranch: projectWorkspace.branch })}
           {...(projectWorkspace?.dirtyFileCount !== undefined && { dirtyFileCount: projectWorkspace.dirtyFileCount })}
           {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+          agentDisplayNames={activeRuntimeAgentDisplayNames}
           {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
         />
       ) : null}

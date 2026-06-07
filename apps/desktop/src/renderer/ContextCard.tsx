@@ -1,18 +1,19 @@
-import {
-  CONTEXT_SEGMENT_LABELS,
-  contextSegmentDisplayLabel,
-  formatRoleModelLabel,
-  formatTokenCount,
-} from "@eco/runtime";
+import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel, formatTokenCount } from "@eco/runtime";
 import { X } from "lucide-react";
 import { useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
+import {
+  type RuntimeAgentDisplayNames,
+  formatRuntimeRoleModelLabel,
+  resolveRuntimeAgentName,
+} from "./runtime-agent-display";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
   placeholder?: string;
   /** When false, hide the card if there is no snapshot yet. */
   showWhenEmpty?: boolean;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
   onDismiss?: () => void;
 }
 
@@ -125,6 +126,7 @@ interface FlatSubagentRow {
 function buildFlatSubagentRows(
   instanceEntries: ThreadContextSnapshot["instances"],
   subagentRoles: ThreadRoleContextSnapshot[],
+  agentDisplayNames?: RuntimeAgentDisplayNames,
 ): FlatSubagentRow[] {
   const instances = [...(instanceEntries ?? [])]
     .filter((instance) => instance.role !== "planner" && instance.occupied > 0)
@@ -134,7 +136,7 @@ function buildFlatSubagentRows(
     return instances.map((instance) => ({
       key: instance.agentId,
       role: instance.role,
-      title: `${SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role} #${shortAgentId(instance.agentId)}`,
+      title: `${resolveRuntimeAgentName(instance.role, agentDisplayNames) ?? SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role} #${shortAgentId(instance.agentId)}`,
       snapshot: {
         role: instance.role,
         occupied: instance.occupied,
@@ -151,7 +153,7 @@ function buildFlatSubagentRows(
   return subagentRoles.map((role) => ({
     key: role.role,
     role: role.role,
-    title: formatRoleModelLabel(role.role, role.modelId),
+    title: formatRuntimeRoleModelLabel(role.role, role.modelId, agentDisplayNames),
     snapshot: role,
   }));
 }
@@ -214,9 +216,11 @@ function SubagentContextRow({ row }: { row: FlatSubagentRow }) {
 function ContextRoleBody({
   role,
   detailsOpen,
+  agentDisplayNames,
 }: {
   role: ThreadRoleContextSnapshot;
   detailsOpen: boolean;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   const occupied = role.occupied;
@@ -224,7 +228,7 @@ function ContextRoleBody({
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
   const freeTokens = Math.max(limit - occupied, 0);
   const detailed = hasDetailedBreakdown(role);
-  const roleLabel = formatRoleModelLabel(role.role, role.modelId);
+  const roleLabel = formatRuntimeRoleModelLabel(role.role, role.modelId, agentDisplayNames);
 
   return (
     <div className="context-card-role-body context-card-role-body-main">
@@ -276,15 +280,19 @@ function ContextRoleBody({
       ) : null}
 
       {!role.limitsResolved ? (
-        <p className="context-card-footnote">
-          上限未匹配 models.dev，按 {formatContextK(role.limit)} 估算
-        </p>
+        <p className="context-card-footnote">上限未匹配 models.dev，按 {formatContextK(role.limit)} 估算</p>
       ) : null}
     </div>
   );
 }
 
-export function ContextCard({ context, placeholder, showWhenEmpty = true, onDismiss }: ContextCardProps) {
+export function ContextCard({
+  context,
+  placeholder,
+  showWhenEmpty = true,
+  agentDisplayNames,
+  onDismiss,
+}: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
 
   if (!context) {
@@ -301,7 +309,7 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
   const roles = contextRoles(context);
   const planner = resolvePlannerSnapshot(context, roles);
   const subagentRoles = roles.filter((role) => role.role !== "planner");
-  const flatSubagents = buildFlatSubagentRows(context.instances, subagentRoles);
+  const flatSubagents = buildFlatSubagentRows(context.instances, subagentRoles, agentDisplayNames);
   const plannerDetailed = hasDetailedBreakdown(planner);
   const hasSubagents = flatSubagents.length > 0;
 
@@ -339,9 +347,15 @@ export function ContextCard({ context, placeholder, showWhenEmpty = true, onDism
       <section className="context-card-main" aria-label="主 Agent 上下文">
         <div className="context-card-main-head">
           <span className="context-card-main-badge">主 Agent</span>
-          <span className="context-card-main-model">{formatRoleModelLabel(planner.role, planner.modelId)}</span>
+          <span className="context-card-main-model">
+            {formatRuntimeRoleModelLabel(planner.role, planner.modelId, agentDisplayNames)}
+          </span>
         </div>
-        <ContextRoleBody role={planner} detailsOpen={plannerDetailsOpen} />
+        <ContextRoleBody
+          role={planner}
+          detailsOpen={plannerDetailsOpen}
+          {...(agentDisplayNames && { agentDisplayNames })}
+        />
       </section>
 
       {hasSubagents ? (

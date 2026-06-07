@@ -1,4 +1,16 @@
-import { Bot, ChevronDown, Copy, FileText, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  Copy,
+  FileText,
+  FileSearch,
+  Pencil,
+  RefreshCw,
+  Reply,
+  Search,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
@@ -41,15 +53,13 @@ import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import { useStreamRequestTiming } from "./useStreamRequestTiming";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
   return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
 }
 
-function shouldOmitSubagentIdentity(
-  block: ActivityDetailBlock,
-  hideSubagentIdentity?: boolean,
-): boolean {
+function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIdentity?: boolean): boolean {
   if (!hideSubagentIdentity) {
     return false;
   }
@@ -73,6 +83,7 @@ interface ActivityLogViewProps {
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
   projection?: ThreadRunProjectionSnapshot;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
   subagentTimings?: ThreadSubagentSessionTiming[];
   subagentMetrics?: ThreadSubagentMetricsSummary[];
   /** Called when planner / main-window log content changes — scroll the activity feed. */
@@ -85,6 +96,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
       <ProjectionActivityLogView
         projection={props.projection}
         {...(props.thread && { thread: props.thread })}
+        {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
         {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
         {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
       />
@@ -175,9 +187,9 @@ function LegacyActivityLogView({
               ? block.sessionKey
               : block.kind === "subagent-run-group"
                 ? `subagent-group-${block.items.map((item) => item.sessionKey).join("-")}`
-              : block.kind === "user-prompt"
-                ? `user-${block.lineId}`
-                : `${block.kind}-${index}`
+                : block.kind === "user-prompt"
+                  ? `user-${block.lineId}`
+                  : `${block.kind}-${index}`
           }
           block={block}
           {...(onRestorePrompt && { onRestorePrompt })}
@@ -200,9 +212,11 @@ function ProjectionActivityLogView({
   thread,
   onRestorePrompt,
   onPlannerLayoutChange,
+  agentDisplayNames,
 }: {
   projection: ThreadRunProjectionSnapshot;
   thread?: ThreadSummary;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
   onRestorePrompt?: (prompt: string) => void;
   onPlannerLayoutChange?: () => void;
 }) {
@@ -215,8 +229,9 @@ function ProjectionActivityLogView({
       buildThreadRunProjectionViewModel(
         projection,
         thread ? { id: thread.id, prompt: thread.prompt } : undefined,
+        { agentDisplayNames },
       ),
-    [projection, thread?.id, thread?.prompt],
+    [agentDisplayNames, projection, thread?.id, thread?.prompt],
   );
   const [expandedAgentKeys, setExpandedAgentKeys] = useState<Record<string, boolean>>({});
   const showThreadPrompt = viewModel.showThreadPrompt;
@@ -250,10 +265,7 @@ function ProjectionActivityLogView({
   return (
     <div className="run-log">
       {showThreadPrompt && thread?.prompt ? (
-        <UserPromptBlock
-          text={thread.prompt}
-          {...(onRestorePrompt && { onRestorePrompt })}
-        />
+        <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />
       ) : null}
       {viewModel.mainFeedEntries.map((entry) => (
         <ProjectionMainFeedEntry
@@ -267,6 +279,7 @@ function ProjectionActivityLogView({
               [agentId]: !current[agentId],
             }));
           }}
+          {...(agentDisplayNames && { agentDisplayNames })}
           {...(onRestorePrompt && { onRestorePrompt })}
         />
       ))}
@@ -280,12 +293,14 @@ function ProjectionMainFeedEntry({
   expandedAgentKeys,
   onToggleAgent,
   onRestorePrompt,
+  agentDisplayNames,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
   onRestorePrompt?: (prompt: string) => void;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   if (entry.kind === "timeline") {
     return (
@@ -303,15 +318,11 @@ function ProjectionMainFeedEntry({
         requestSpansById={requestSpansById}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
+        {...(agentDisplayNames && { agentDisplayNames })}
       />
     );
   }
-  return (
-    <ProjectionAgentEchoEntry
-      entry={entry}
-      requestSpansById={requestSpansById}
-    />
-  );
+  return <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />;
 }
 
 function ProjectionAgentEchoEntry({
@@ -351,11 +362,7 @@ function ProjectionAgentEchoEntry({
   }
   return (
     <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
-      <DetailBlock
-        block={block}
-        requestActive={requestActive}
-        hideSubagentIdentity
-      />
+      <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity />
     </ProjectionAgentEchoShell>
   );
 }
@@ -384,11 +391,13 @@ function ProjectionSubagentRunRow({
   requestSpansById,
   expanded,
   onToggle,
+  agentDisplayNames,
 }: {
   agent: ThreadRunProjectionAgent;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expanded: boolean;
   onToggle: () => void;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const running = agent.status === "active" || agent.status === "launching";
   const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
@@ -406,29 +415,19 @@ function ProjectionSubagentRunRow({
     return () => clearInterval(timer);
   }, [agent.agentId, agent.durationMs, running]);
 
-  const roleLabel = resolveSubagentRunDisplayTitle(agent.role);
+  const roleLabel =
+    resolveRuntimeAgentName(agent.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(agent.role);
   const modelId = agent.usage?.modelId ?? agent.context?.modelId;
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
-  const statusText =
-    resolveProjectionAgentStatusText(agent) ??
-    (running ? "工作中" : "点击查看执行详情");
+  const statusText = resolveProjectionAgentStatusText(agent) ?? (running ? "工作中" : "点击查看执行详情");
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
-    elapsedMs > 0
-      ? running
-        ? formatDuration(elapsedMs)
-        : `用时 ${formatDuration(elapsedMs)}`
-      : undefined;
+    elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
   const hasDetails = agent.timeline.length > 0 || Boolean(agent.usage || agent.context);
 
   return (
     <div className="subagent-run-row-wrap has-agent-id" data-agent-id={agent.agentId}>
-      <button
-        type="button"
-        className="subagent-run-row"
-        onClick={onToggle}
-        aria-expanded={expanded}
-      >
+      <button type="button" className="subagent-run-row" onClick={onToggle} aria-expanded={expanded}>
         <Sparkles size={14} className="subagent-run-icon" aria-hidden />
         <div className="subagent-run-main">
           <div className="subagent-run-title-row">
@@ -489,9 +488,7 @@ function ProjectionSubagentRunRow({
 
 function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProjectionAgent }) {
   const contextLabel =
-    agent.context && agent.context.limit > 0
-      ? `上下文 ${agent.context.occupancyPct}%`
-      : undefined;
+    agent.context && agent.context.limit > 0 ? `上下文 ${agent.context.occupancyPct}%` : undefined;
   const modelId = agent.usage?.modelId ?? agent.context?.modelId;
 
   if (!agent.usage && !contextLabel && !modelId) {
@@ -532,12 +529,7 @@ function ProjectionTimelineEntry({
     if (compact) {
       return null;
     }
-    return (
-      <UserPromptBlock
-        text={item.text}
-        {...(onRestorePrompt && { onRestorePrompt })}
-      />
-    );
+    return <UserPromptBlock text={item.text} {...(onRestorePrompt && { onRestorePrompt })} />;
   }
 
   const block = projectionItemToDetailBlock(item);
@@ -579,11 +571,7 @@ function ProjectionTimelineEntry({
 
   return (
     <div className={compact ? undefined : "run-log-surfaced-detail"}>
-      <DetailBlock
-        block={block}
-        requestActive={requestActive}
-        hideSubagentIdentity={compact}
-      />
+      <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity={compact} />
     </div>
   );
 }
@@ -654,16 +642,10 @@ function RunLogBlock({
     );
   }
   if (block.kind === "worktree-merge") {
-    return (
-      <WorkspaceChangesCard
-        summary={block.summary}
-        {...(threadId && { threadId })}
-      />
-    );
+    return <WorkspaceChangesCard summary={block.summary} {...(threadId && { threadId })} />;
   }
   if (block.kind === "surfaced-detail") {
-    const requestActive =
-      threadStatus === "running" || threadStatus === "queued";
+    const requestActive = threadStatus === "running" || threadStatus === "queued";
     return (
       <div className="run-log-surfaced-detail">
         <DetailBlock
@@ -712,9 +694,7 @@ function SubagentRunInstanceStrip({
   context?: ThreadContextSnapshot;
   modelByRole?: Record<string, string>;
 }) {
-  const instance = agentId
-    ? context?.instances?.find((entry) => entry.agentId === agentId)
-    : undefined;
+  const instance = agentId ? context?.instances?.find((entry) => entry.agentId === agentId) : undefined;
   const contextLabel =
     instance && instance.limit > 0
       ? `上下文 ${Math.round((instance.occupied / instance.limit) * 100)}%`
@@ -804,20 +784,14 @@ function SubagentRunRow({
         : `用时 ${formatDuration(elapsedMs)}`
       : undefined;
   const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
-  const scopedUsageByRole =
-    usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
+  const scopedUsageByRole = usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
 
   return (
     <div
       className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}`}
       data-agent-id={item.agentId}
     >
-      <button
-        type="button"
-        className="subagent-run-row"
-        onClick={onToggle}
-        aria-expanded={expanded}
-      >
+      <button type="button" className="subagent-run-row" onClick={onToggle} aria-expanded={expanded}>
         <Sparkles size={14} className="subagent-run-icon" aria-hidden />
         <div className="subagent-run-main">
           <div className="subagent-run-title-row">
@@ -947,13 +921,7 @@ function WorkSessionBlock({
       return;
     }
     onPlannerLayoutChange?.();
-  }, [
-    block.awaitingFirstToken,
-    block.children,
-    block.inlineContent,
-    block.running,
-    onPlannerLayoutChange,
-  ]);
+  }, [block.awaitingFirstToken, block.children, block.inlineContent, block.running, onPlannerLayoutChange]);
 
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
@@ -1000,7 +968,10 @@ function WorkSessionBlock({
           ) : null}
         </span>
         {!block.running && block.children.length > 0 ? (
-          <ChevronDown size={16} className={expanded ? "work-session-chevron" : "work-session-chevron collapsed"} />
+          <ChevronDown
+            size={16}
+            className={expanded ? "work-session-chevron" : "work-session-chevron collapsed"}
+          />
         ) : null}
       </button>
       {expanded && block.children.length > 0 ? (
@@ -1019,10 +990,7 @@ function WorkSessionBlock({
       {!expanded && !block.running && block.children.length > 0 ? (
         <ul className="work-session-preview" aria-label="步骤摘要">
           {block.children
-            .filter(
-              (child) =>
-                child.kind === "phase" || child.kind === "subagent-mission",
-            )
+            .filter((child) => child.kind === "phase" || child.kind === "subagent-mission")
             .slice(-4)
             .map((child, index) => (
               <li key={`preview-${index}`}>
@@ -1218,11 +1186,7 @@ function ContextCompactionDivider({ label }: { label: string }) {
   );
 }
 
-function RequestTimingBadge({
-  timing,
-}: {
-  timing: ReturnType<typeof useStreamRequestTiming>;
-}) {
+function RequestTimingBadge({ timing }: { timing: ReturnType<typeof useStreamRequestTiming> }) {
   if (timing.phase === "idle") {
     return null;
   }
@@ -1250,11 +1214,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
 
   return (
     <div
-      className={[
-        "run-log-thinking",
-        streaming ? "streaming" : "",
-        !hasBody && streaming ? "empty" : "",
-      ]
+      className={["run-log-thinking", streaming ? "streaming" : "", !hasBody && streaming ? "empty" : ""]
         .filter(Boolean)
         .join(" ")}
     >
@@ -1331,21 +1291,13 @@ function UserPromptBlock({
     <article className="run-log-user-prompt">
       <div className="run-log-user-prompt-content">
         <div
-          className={[
-            "run-log-user-prompt-body-wrap",
-            !expanded ? "collapsed" : "",
-          ]
+          className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
             .filter(Boolean)
             .join(" ")}
         >
           <pre
             ref={bodyRef}
-            className={[
-              "run-log-user-prompt-body",
-              !expanded ? "collapsed" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
           >
             {text}
           </pre>
@@ -1534,12 +1486,14 @@ function SubagentMissionBlock({
 }) {
   const trimmedPrompt = prompt?.trim() ?? "";
   const genericSummary = isGenericMissionSummary(summary);
-  const showPrompt = Boolean(
-    trimmedPrompt && (trimmedPrompt !== summary.trim() || genericSummary),
-  );
+  const showPrompt = Boolean(trimmedPrompt && (trimmedPrompt !== summary.trim() || genericSummary));
   const displaySummary =
     genericSummary && trimmedPrompt
-      ? trimmedPrompt.split("\n").find((line) => line.trim())?.trim().slice(0, 200) ?? summary
+      ? (trimmedPrompt
+          .split("\n")
+          .find((line) => line.trim())
+          ?.trim()
+          .slice(0, 200) ?? summary)
       : summary;
 
   return (
@@ -1589,9 +1543,7 @@ function ToolFailedBlock({
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
         </span>
       ) : null}
-      <span className="run-log-tool-failed-label">
-        工具失败 · {tool}
-      </span>
+      <span className="run-log-tool-failed-label">工具失败 · {tool}</span>
       {error ? <p className="run-log-tool-failed-error">{error}</p> : null}
     </div>
   );
@@ -1610,10 +1562,7 @@ function ApiErrorBlock({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
-  const title =
-    statusCode !== undefined
-      ? `模型请求失败 · HTTP ${statusCode}`
-      : "模型请求失败";
+  const title = statusCode !== undefined ? `模型请求失败 · HTTP ${statusCode}` : "模型请求失败";
 
   return (
     <div className="run-log-api-error" role="alert">

@@ -153,6 +153,8 @@ test("buildThreadRunProjectionViewModel echoes agent narrative in main feed whil
         }),
       ],
     }),
+    undefined,
+    { agentDisplayNames: { coder: "Implementation Agent" } },
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "agent-card", "agent-echo"]);
@@ -162,7 +164,7 @@ test("buildThreadRunProjectionViewModel echoes agent narrative in main feed whil
     expect(echo.item.id).toBe("coder-says");
     expect(echo.agent.agentId).toBe("coder_agent_00000001");
     expect(echo.shortAgentId).toBe("00000001");
-    expect(echo.agentLabel).toContain("#00000001");
+    expect(echo.agentLabel).toBe("Implementation Agent #00000001");
   }
   const card = view.mainFeedEntries[1];
   expect(card?.kind).toBe("agent-card");

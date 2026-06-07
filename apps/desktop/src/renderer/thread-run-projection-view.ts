@@ -10,6 +10,7 @@ import {
   type ActivityActionIcon,
   type ActivityDetailBlock,
 } from "./activity-log";
+import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -55,6 +56,7 @@ export interface ThreadRunProjectionSubagentCard {
 export function buildThreadRunProjectionViewModel(
   projection: ThreadRunProjectionSnapshot,
   thread?: { id: string; prompt: string },
+  options: { agentDisplayNames?: RuntimeAgentDisplayNames | undefined } = {},
 ): ThreadRunProjectionViewModel {
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
@@ -77,6 +79,7 @@ export function buildThreadRunProjectionViewModel(
     projection.timeline,
     subagentCards,
     requestSpansById,
+    options.agentDisplayNames,
   );
   return {
     showThreadPrompt,
@@ -92,6 +95,7 @@ function buildProjectionMainFeedEntries(
   mainTimeline: readonly ThreadRunProjectionTimelineItem[],
   subagentCards: readonly ThreadRunProjectionSubagentCard[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+  agentDisplayNames?: RuntimeAgentDisplayNames | undefined,
 ): ThreadRunProjectionMainFeedEntry[] {
   const displayMainTimeline = filterMainTimelineForFeed(mainTimeline, requestSpansById);
   const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => ({
@@ -118,7 +122,7 @@ function buildProjectionMainFeedEntries(
         key: `agent:${card.agent.agentId}:${item.id}`,
         item,
         agent: card.agent,
-        agentLabel: formatProjectionAgentLabel(card.agent),
+        agentLabel: formatProjectionAgentLabel(card.agent, agentDisplayNames),
         shortAgentId: shortProjectionAgentId(card.agent.agentId),
         at: item.at,
         sequence: item.sequence,
@@ -473,8 +477,9 @@ function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean
 
 export function formatProjectionAgentLabel(
   agent: Pick<ThreadRunProjectionAgent, "agentId" | "role">,
+  displayNames?: RuntimeAgentDisplayNames | undefined,
 ): string {
-  return `${resolveSubagentRunDisplayTitle(agent.role)} #${shortProjectionAgentId(agent.agentId)}`;
+  return `${resolveRuntimeAgentName(agent.role, displayNames) ?? resolveSubagentRunDisplayTitle(agent.role)} #${shortProjectionAgentId(agent.agentId)}`;
 }
 
 export function shortProjectionAgentId(agentId: string): string {
