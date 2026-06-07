@@ -54,7 +54,10 @@ const profile: EcoOrchestrationProfileConfig = {
     systemPromptPreset: "custom",
     prompt: "You coordinate research work without assuming a coding task.",
     modelRef: modelRef("main-model"),
-    tools: toolPolicy(["Agent", "Read", "WebSearch"], ["Write"]),
+    tools: toolPolicy(["Agent", "Read", "WebSearch"], ["Write"], {
+      allowedServers: ["browser"],
+      allowedTools: ["mcp__sources__quote"],
+    }),
     skills: [],
   },
   agents: [
@@ -93,7 +96,7 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
   expect(definition).toMatchObject({
     model: "research-model",
-    tools: ["Read", "WebSearch"],
+    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*"],
     disallowedTools: ["Bash"],
     prompt: researchTemplate.prompt,
     mcpServers: ["sources", "browser"],
@@ -149,15 +152,23 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
 });
 
 test("resolveMainAgentAllowedTools uses profile tools for universal profiles and merges coding tools", () => {
-  expect(resolveMainAgentAllowedTools(profile, ["Bash", "Write"])).toEqual(["Agent", "Read", "WebSearch"]);
-
-  const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
-  expect(resolveMainAgentAllowedTools(codingProfile, ["Bash", "Write"])).toEqual([
-    "Bash",
-    "Write",
+  expect(resolveMainAgentAllowedTools(profile, ["Bash", "Write"])).toEqual([
     "Agent",
     "Read",
     "WebSearch",
+    "mcp__sources__quote",
+    "mcp__browser__*",
+  ]);
+
+  const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
+  expect(resolveMainAgentAllowedTools(codingProfile, ["Bash", "Write"])).toEqual([
+    "Agent",
+    "Read",
+    "WebSearch",
+    "Bash",
+    "Write",
+    "mcp__sources__quote",
+    "mcp__browser__*",
   ]);
 });
 
@@ -168,12 +179,12 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
   });
 
   expect(policy.main).toEqual({
-    allowed: ["Agent", "Read", "WebSearch", "AskUserQuestion"],
+    allowed: ["Agent", "Read", "WebSearch", "AskUserQuestion", "mcp__sources__quote", "mcp__browser__*"],
     disallowed: ["Write"],
   });
   expect(policy.agents).toEqual({
     eco_researcher: {
-      allowed: ["Read", "WebSearch"],
+      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*"],
       disallowed: ["Bash"],
     },
   });

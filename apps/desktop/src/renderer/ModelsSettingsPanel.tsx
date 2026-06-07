@@ -1478,6 +1478,20 @@ export function ModelsSettingsPanel({
   );
 }
 
+interface AgentProfileToolPolicyFieldValues {
+  allowedTools: string;
+  disallowedTools: string;
+  mcpServers: string;
+  mcpTools: string;
+  bashApproval: AgentProfileAgentFormState["bashApproval"];
+  bashCommandAllowlist: string;
+  bashCommandDenylist: string;
+  filesystemRead: AgentProfileAgentFormState["filesystemRead"];
+  filesystemWrite: AgentProfileAgentFormState["filesystemWrite"];
+  networkWebSearch: boolean;
+  networkWebFetch: boolean;
+}
+
 function AgentProfileEditorModal({
   form,
   setForm,
@@ -1539,6 +1553,47 @@ function AgentProfileEditorModal({
         agentIndex === index ? { ...agent, ...patch } : agent,
       ),
     }));
+  }
+
+  function patchMainToolPolicy(toolPatch: Partial<AgentProfileToolPolicyFieldValues>) {
+    setForm((current) => ({
+      ...current,
+      ...(toolPatch.allowedTools !== undefined ? { mainAllowedTools: toolPatch.allowedTools } : {}),
+      ...(toolPatch.disallowedTools !== undefined ? { mainDisallowedTools: toolPatch.disallowedTools } : {}),
+      ...(toolPatch.mcpServers !== undefined ? { mainMcpServers: toolPatch.mcpServers } : {}),
+      ...(toolPatch.mcpTools !== undefined ? { mainMcpTools: toolPatch.mcpTools } : {}),
+      ...(toolPatch.bashApproval !== undefined ? { mainBashApproval: toolPatch.bashApproval } : {}),
+      ...(toolPatch.bashCommandAllowlist !== undefined
+        ? { mainBashCommandAllowlist: toolPatch.bashCommandAllowlist }
+        : {}),
+      ...(toolPatch.bashCommandDenylist !== undefined
+        ? { mainBashCommandDenylist: toolPatch.bashCommandDenylist }
+        : {}),
+      ...(toolPatch.filesystemRead !== undefined ? { mainFilesystemRead: toolPatch.filesystemRead } : {}),
+      ...(toolPatch.filesystemWrite !== undefined ? { mainFilesystemWrite: toolPatch.filesystemWrite } : {}),
+      ...(toolPatch.networkWebSearch !== undefined ? { mainNetworkWebSearch: toolPatch.networkWebSearch } : {}),
+      ...(toolPatch.networkWebFetch !== undefined ? { mainNetworkWebFetch: toolPatch.networkWebFetch } : {}),
+    }));
+  }
+
+  function patchAgentToolPolicy(index: number, toolPatch: Partial<AgentProfileToolPolicyFieldValues>) {
+    patchAgent(index, {
+      ...(toolPatch.allowedTools !== undefined ? { allowedTools: toolPatch.allowedTools } : {}),
+      ...(toolPatch.disallowedTools !== undefined ? { disallowedTools: toolPatch.disallowedTools } : {}),
+      ...(toolPatch.mcpServers !== undefined ? { mcpServers: toolPatch.mcpServers } : {}),
+      ...(toolPatch.mcpTools !== undefined ? { mcpTools: toolPatch.mcpTools } : {}),
+      ...(toolPatch.bashApproval !== undefined ? { bashApproval: toolPatch.bashApproval } : {}),
+      ...(toolPatch.bashCommandAllowlist !== undefined
+        ? { bashCommandAllowlist: toolPatch.bashCommandAllowlist }
+        : {}),
+      ...(toolPatch.bashCommandDenylist !== undefined
+        ? { bashCommandDenylist: toolPatch.bashCommandDenylist }
+        : {}),
+      ...(toolPatch.filesystemRead !== undefined ? { filesystemRead: toolPatch.filesystemRead } : {}),
+      ...(toolPatch.filesystemWrite !== undefined ? { filesystemWrite: toolPatch.filesystemWrite } : {}),
+      ...(toolPatch.networkWebSearch !== undefined ? { networkWebSearch: toolPatch.networkWebSearch } : {}),
+      ...(toolPatch.networkWebFetch !== undefined ? { networkWebFetch: toolPatch.networkWebFetch } : {}),
+    });
   }
 
   function updateAgentKey(index: number, agentKey: string) {
@@ -1751,6 +1806,20 @@ function AgentProfileEditorModal({
       allowedTools: template.defaultTools.allowed.join(", "),
       disallowedTools: template.defaultTools.disallowed.join(", "),
       mcpServers: template.mcpServers.join(", "),
+      mcpTools: template.defaultTools.mcp?.allowedTools.join(", ") ?? "",
+      bashApproval: template.defaultTools.bash?.approval ?? "risky",
+      bashCommandAllowlist: template.defaultTools.bash?.commandAllowlist?.join(", ") ?? "",
+      bashCommandDenylist: template.defaultTools.bash?.commandDenylist?.join(", ") ?? "",
+      filesystemRead: template.defaultTools.filesystem?.read ?? "workspace",
+      filesystemWrite: template.defaultTools.filesystem?.write ?? "none",
+      networkWebSearch:
+        template.defaultTools.network?.webSearch ??
+        (template.defaultTools.allowed.includes("WebSearch") &&
+          !template.defaultTools.disallowed.includes("WebSearch")),
+      networkWebFetch:
+        template.defaultTools.network?.webFetch ??
+        (template.defaultTools.allowed.includes("WebFetch") &&
+          !template.defaultTools.disallowed.includes("WebFetch")),
       skills: template.skills.join(", "),
       providerId: template.defaultModelRef?.providerId ?? form.agents[index]?.providerId ?? "",
       modelId: template.defaultModelRef?.modelId ?? form.agents[index]?.modelId ?? "",
@@ -1904,35 +1973,32 @@ function AgentProfileEditorModal({
                 onChange={(event) => patch({ mainPrompt: event.target.value })}
               />
             </label>
-            <div className="models-agent-template-form-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">允许工具</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.mainAllowedTools}
-                  disabled={busy}
-                  onChange={(event) => patch({ mainAllowedTools: event.target.value })}
-                />
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">禁用工具</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.mainDisallowedTools}
-                  disabled={busy}
-                  onChange={(event) => patch({ mainDisallowedTools: event.target.value })}
-                />
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">Skills</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.mainSkills}
-                  disabled={busy}
-                  onChange={(event) => patch({ mainSkills: event.target.value })}
-                />
-              </label>
-            </div>
+            <AgentProfileToolPolicyFields
+              disabled={busy}
+              values={{
+                allowedTools: form.mainAllowedTools,
+                disallowedTools: form.mainDisallowedTools,
+                mcpServers: form.mainMcpServers,
+                mcpTools: form.mainMcpTools,
+                bashApproval: form.mainBashApproval,
+                bashCommandAllowlist: form.mainBashCommandAllowlist,
+                bashCommandDenylist: form.mainBashCommandDenylist,
+                filesystemRead: form.mainFilesystemRead,
+                filesystemWrite: form.mainFilesystemWrite,
+                networkWebSearch: form.mainNetworkWebSearch,
+                networkWebFetch: form.mainNetworkWebFetch,
+              }}
+              onChange={patchMainToolPolicy}
+            />
+            <label className="mcp-field">
+              <span className="mcp-field-label">Skills</span>
+              <input
+                className="mcp-field-input"
+                value={form.mainSkills}
+                disabled={busy}
+                onChange={(event) => patch({ mainSkills: event.target.value })}
+              />
+            </label>
           </section>
 
           <section className="models-agent-profile-form-section">
@@ -2306,33 +2372,6 @@ function AgentProfileEditorModal({
                           />
                         </label>
                         <label className="mcp-field">
-                          <span className="mcp-field-label">MCP Servers</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.mcpServers}
-                            disabled={busy}
-                            onChange={(event) => patchAgent(index, { mcpServers: event.target.value })}
-                          />
-                        </label>
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">允许工具</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.allowedTools}
-                            disabled={busy}
-                            onChange={(event) => patchAgent(index, { allowedTools: event.target.value })}
-                          />
-                        </label>
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">禁用工具</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.disallowedTools}
-                            disabled={busy}
-                            onChange={(event) => patchAgent(index, { disallowedTools: event.target.value })}
-                          />
-                        </label>
-                        <label className="mcp-field">
                           <span className="mcp-field-label">Skills</span>
                           <input
                             className="mcp-field-input"
@@ -2342,6 +2381,23 @@ function AgentProfileEditorModal({
                           />
                         </label>
                       </div>
+                      <AgentProfileToolPolicyFields
+                        disabled={busy}
+                        values={{
+                          allowedTools: agent.allowedTools,
+                          disallowedTools: agent.disallowedTools,
+                          mcpServers: agent.mcpServers,
+                          mcpTools: agent.mcpTools,
+                          bashApproval: agent.bashApproval,
+                          bashCommandAllowlist: agent.bashCommandAllowlist,
+                          bashCommandDenylist: agent.bashCommandDenylist,
+                          filesystemRead: agent.filesystemRead,
+                          filesystemWrite: agent.filesystemWrite,
+                          networkWebSearch: agent.networkWebSearch,
+                          networkWebFetch: agent.networkWebFetch,
+                        }}
+                        onChange={(toolPatch) => patchAgentToolPolicy(index, toolPatch)}
+                      />
                       <label className="mcp-field">
                         <span className="mcp-field-label">实例提示词覆盖</span>
                         <textarea
@@ -2369,6 +2425,147 @@ function AgentProfileEditorModal({
             保存
           </button>
         </footer>
+      </div>
+    </div>
+  );
+}
+
+function AgentProfileToolPolicyFields({
+  values,
+  disabled,
+  onChange,
+}: {
+  values: AgentProfileToolPolicyFieldValues;
+  disabled?: boolean | undefined;
+  onChange: (patch: Partial<AgentProfileToolPolicyFieldValues>) => void;
+}) {
+  return (
+    <div className="models-agent-profile-tool-policy">
+      <div className="models-agent-template-form-grid">
+        <label className="mcp-field">
+          <span className="mcp-field-label">允许工具</span>
+          <input
+            className="mcp-field-input"
+            value={values.allowedTools}
+            disabled={disabled}
+            onChange={(event) => onChange({ allowedTools: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">禁用工具</span>
+          <input
+            className="mcp-field-input"
+            value={values.disallowedTools}
+            disabled={disabled}
+            onChange={(event) => onChange({ disallowedTools: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">MCP Servers</span>
+          <input
+            className="mcp-field-input"
+            value={values.mcpServers}
+            disabled={disabled}
+            onChange={(event) => onChange({ mcpServers: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">MCP Tools</span>
+          <input
+            className="mcp-field-input"
+            value={values.mcpTools}
+            disabled={disabled}
+            onChange={(event) => onChange({ mcpTools: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">Bash 审批</span>
+          <select
+            className="mcp-field-input"
+            value={values.bashApproval}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ bashApproval: event.target.value as AgentProfileToolPolicyFieldValues["bashApproval"] })
+            }
+          >
+            <option value="risky">风险确认</option>
+            <option value="always">每次确认</option>
+            <option value="never">免确认</option>
+          </select>
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">命令白名单</span>
+          <input
+            className="mcp-field-input"
+            value={values.bashCommandAllowlist}
+            disabled={disabled}
+            onChange={(event) => onChange({ bashCommandAllowlist: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">命令黑名单</span>
+          <input
+            className="mcp-field-input"
+            value={values.bashCommandDenylist}
+            disabled={disabled}
+            onChange={(event) => onChange({ bashCommandDenylist: event.target.value })}
+          />
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">文件读取</span>
+          <select
+            className="mcp-field-input"
+            value={values.filesystemRead}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({ filesystemRead: event.target.value as AgentProfileToolPolicyFieldValues["filesystemRead"] })
+            }
+          >
+            <option value="workspace">工作区</option>
+            <option value="extra_dirs">工作区+扩展</option>
+            <option value="none">禁用</option>
+          </select>
+        </label>
+        <label className="mcp-field">
+          <span className="mcp-field-label">文件写入</span>
+          <select
+            className="mcp-field-input"
+            value={values.filesystemWrite}
+            disabled={disabled}
+            onChange={(event) =>
+              onChange({
+                filesystemWrite: event.target.value as AgentProfileToolPolicyFieldValues["filesystemWrite"],
+              })
+            }
+          >
+            <option value="workspace">工作区</option>
+            <option value="none">禁用</option>
+          </select>
+        </label>
+        <label className="mcp-field models-toggle-field">
+          <span className="mcp-field-label">WebSearch</span>
+          <label className="mcp-toggle" title={values.networkWebSearch ? "已启用" : "已禁用"}>
+            <input
+              type="checkbox"
+              checked={values.networkWebSearch}
+              disabled={disabled}
+              onChange={(event) => onChange({ networkWebSearch: event.target.checked })}
+            />
+            <span className="mcp-toggle-track" aria-hidden />
+          </label>
+        </label>
+        <label className="mcp-field models-toggle-field">
+          <span className="mcp-field-label">WebFetch</span>
+          <label className="mcp-toggle" title={values.networkWebFetch ? "已启用" : "已禁用"}>
+            <input
+              type="checkbox"
+              checked={values.networkWebFetch}
+              disabled={disabled}
+              onChange={(event) => onChange({ networkWebFetch: event.target.checked })}
+            />
+            <span className="mcp-toggle-track" aria-hidden />
+          </label>
+        </label>
       </div>
     </div>
   );

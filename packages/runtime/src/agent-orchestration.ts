@@ -266,7 +266,7 @@ export function resolveMainAgentAllowedTools(
     profile.preset === "coding"
       ? [...phaseAllowedTools, ...profile.mainAgent.tools.allowed]
       : profile.mainAgent.tools.allowed;
-  return [...new Set(tools)];
+  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, tools);
 }
 
 export function sdkAgentKeyForProfileAgent(agentKey: string): string {
@@ -285,11 +285,17 @@ function buildSdkAgentDefinition(
   template: EcoAgentTemplateConfig,
   extraSkills: readonly string[] = [],
 ): Record<string, unknown> {
-  const tools = agent.tools.allowed.length > 0 ? agent.tools.allowed : template.defaultTools.allowed;
+  const toolPolicy = resolveAgentToolPolicy(agent, template);
+  const mcpServers = [
+    ...new Set([...template.mcpServers, ...agent.mcpServers, ...(toolPolicy.mcp?.allowedServers ?? [])]),
+  ];
+  const tools = allowedToolPatternsFromPolicy(
+    toolPolicy,
+    mcpServers.map((server) => `mcp__${server}__*`),
+  );
   const disallowedTools =
     agent.tools.disallowed.length > 0 ? agent.tools.disallowed : template.defaultTools.disallowed;
   const skills = [...new Set([...template.skills, ...agent.skills, ...extraSkills])];
-  const mcpServers = [...new Set([...template.mcpServers, ...agent.mcpServers])];
   return {
     description: buildAgentDescription(agent, template),
     ...(tools.length > 0 ? { tools } : {}),
@@ -323,9 +329,14 @@ function resolveAgentToolPermission(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
 ): EcoRuntimeToolPermissionEntry {
-  const tools =
-    agent.tools.allowed.length > 0 || agent.tools.disallowed.length > 0 ? agent.tools : template.defaultTools;
-  return normalizeToolPermissionEntry(tools);
+  const tools = resolveAgentToolPolicy(agent, template);
+  const mcpServers = [
+    ...new Set([...template.mcpServers, ...agent.mcpServers, ...(tools.mcp?.allowedServers ?? [])]),
+  ];
+  return normalizeToolPermissionEntry(
+    tools,
+    mcpServers.map((server) => `mcp__${server}__*`),
+  );
 }
 
 function normalizeToolPermissionEntry(
@@ -333,12 +344,7 @@ function normalizeToolPermissionEntry(
   extraAllowed: readonly string[] = [],
 ): EcoRuntimeToolPermissionEntry {
   return {
-    allowed: uniqueToolPatterns([
-      ...policy.allowed,
-      ...extraAllowed,
-      ...(policy.mcp?.allowedTools ?? []),
-      ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
-    ]),
+    allowed: allowedToolPatternsFromPolicy(policy, extraAllowed),
     disallowed: uniqueToolPatterns(policy.disallowed),
     ...(policy.bash && {
       bash: {
@@ -354,6 +360,24 @@ function normalizeToolPermissionEntry(
     ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
     ...(policy.network && { network: { ...policy.network } }),
   };
+}
+
+function resolveAgentToolPolicy(
+  agent: EcoAgentInstanceConfig,
+  template: EcoAgentTemplateConfig,
+): EcoToolPolicy {
+  return agent.tools.allowed.length > 0 || agent.tools.disallowed.length > 0
+    ? agent.tools
+    : template.defaultTools;
+}
+
+function allowedToolPatternsFromPolicy(policy: EcoToolPolicy, extraAllowed: readonly string[] = []): string[] {
+  return uniqueToolPatterns([
+    ...policy.allowed,
+    ...extraAllowed,
+    ...(policy.mcp?.allowedTools ?? []),
+    ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
+  ]);
 }
 
 function uniqueToolPatterns(patterns: readonly string[]): string[] {

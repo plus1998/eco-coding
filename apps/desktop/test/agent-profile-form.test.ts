@@ -181,6 +181,51 @@ test("buildOrchestrationProfileFromForm preserves edited fixed workflow steps", 
   });
 });
 
+test("buildOrchestrationProfileFromForm saves structured tool policy fields", () => {
+  const form = agentProfileToForm(profile());
+  form.id = "user.structured";
+  form.mainAllowedTools = "Agent, Bash, WebFetch";
+  form.mainDisallowedTools = "Write";
+  form.mainMcpServers = "docs";
+  form.mainMcpTools = "mcp__docs__search";
+  form.mainBashApproval = "always";
+  form.mainBashCommandAllowlist = "bun test";
+  form.mainBashCommandDenylist = "rm*";
+  form.mainFilesystemRead = "workspace";
+  form.mainFilesystemWrite = "none";
+  form.mainNetworkWebSearch = false;
+  form.mainNetworkWebFetch = true;
+  form.agents[0]!.allowedTools = "Read, WebSearch, Bash";
+  form.agents[0]!.disallowedTools = "Write";
+  form.agents[0]!.mcpServers = "browser";
+  form.agents[0]!.mcpTools = "mcp__browser__open";
+  form.agents[0]!.bashApproval = "never";
+  form.agents[0]!.bashCommandDenylist = "curl *";
+  form.agents[0]!.filesystemWrite = "none";
+  form.agents[0]!.networkWebFetch = false;
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.tools).toMatchObject({
+    allowed: ["Agent", "Bash", "WebFetch"],
+    disallowed: ["Write"],
+    bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
+    mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
+    filesystem: { read: "workspace", write: "none" },
+    network: { webSearch: false, webFetch: true },
+  });
+  expect(built.agents[0]?.tools).toMatchObject({
+    allowed: ["Read", "WebSearch", "Bash"],
+    bash: { enabled: true, approval: "never", commandDenylist: ["curl *"] },
+    mcp: { allowedServers: ["browser"], allowedTools: ["mcp__browser__open"] },
+    filesystem: { read: "workspace", write: "none" },
+    network: { webSearch: true, webFetch: false },
+  });
+});
+
 test("createWorkflowStepFormsFromAgents reuses existing steps and chains new agents", () => {
   const form = agentProfileToForm(profile());
   form.agents.push(

@@ -165,7 +165,10 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       systemPromptPreset: "custom",
       prompt: "Coordinate a research answer without assuming a coding task.",
       modelRef: { providerId: "anthropic", modelId: "research-main-model" },
-      tools: universalToolPolicy(["Agent", "Read", "WebSearch"], ["Write"]),
+      tools: {
+        ...universalToolPolicy(["Agent", "Read", "WebSearch"], ["Write"]),
+        mcp: { allowedServers: ["browser"], allowedTools: ["mcp__sources__quote"] },
+      },
       skills: [],
     },
     agents: [
@@ -1292,13 +1295,20 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
 
   const options = query?.options ?? {};
   expect(options.model).toBe("research-main-model");
-  expect(options.allowedTools).toEqual(["Agent", "Read", "WebSearch", "mcp__browser__open"]);
+  expect(options.allowedTools).toEqual([
+    "Agent",
+    "Read",
+    "WebSearch",
+    "mcp__sources__quote",
+    "mcp__browser__*",
+    "mcp__browser__open",
+  ]);
 
   const agents = options.agents as Record<string, Record<string, unknown>>;
   expect(Object.keys(agents)).toEqual(["eco_researcher"]);
   expect(agents.eco_researcher).toMatchObject({
     model: "research-agent-model",
-    tools: ["WebSearch", "WebFetch"],
+    tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*"],
     disallowedTools: ["Bash"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],

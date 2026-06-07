@@ -869,6 +869,8 @@ type WorkflowStep = {
 - Phase 10.13 行为边界：旧 Route Profile modal 内部的逐角色测试仍服务 Coding 模型路线；profile 级测试只验证上游连通性，不实际执行 prompt/工具权限审计。
 - Phase 10.14 已完成：Agent Profile 编辑器补齐 fixed/hybrid workflow step 编辑能力，用户可以配置 step id、Agent、依赖、运行方式、必需性、输出 key、失败策略和 step prompt；新增/停用/删除/改名子 Agent 会同步步骤引用，保存时校验重复 step、缺失依赖、循环依赖和未启用 Agent 引用。
 - Phase 10.14 行为边界：本阶段完成 Profile 配置与 UI 编辑，不扩大 fixed workflow engine 的执行语义；fixed/hybrid 的运行仍沿用既有 runtime workflow 解析与执行路径。
+- Phase 10.15 已完成：Agent Profile 编辑器补齐结构化 ToolPolicy 覆盖，主 Agent 与子 Agent 都可编辑 MCP servers/tools、Bash 审批、命令白/黑名单、文件读写范围和 WebSearch/WebFetch；保存后的策略进入 SDK allowedTools、动态子 Agent definitions 和 PreToolUse hook，MCP server 自动映射为 `mcp__server__*`。
+- Phase 10.15 行为边界：MCP server 的实际连接定义仍来自全局 MCP 设置，本阶段只控制 profile/agent 对已配置 MCP 工具的允许范围和运行时硬约束。
 
 Phase 10.1 验证：
 
@@ -940,6 +942,12 @@ Phase 10.13 验证：
 Phase 10.14 验证：
 
 - `bun test apps/desktop/test/agent-profile-form.test.ts apps/desktop/test/thread-runtime-config.test.ts packages/runtime/test/workflow-orchestration.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.15 验证：
+
+- `bun test apps/desktop/test/agent-profile-form.test.ts packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/runtime/test/eco-sdk-hooks.test.ts`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 

@@ -6775,6 +6775,12 @@ button:not(:disabled) {
   gap: 8px;
 }
 
+.models-agent-profile-tool-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .models-agent-profile-workflow-editor {
   display: flex;
   flex-direction: column;
