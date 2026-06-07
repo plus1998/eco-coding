@@ -9,6 +9,7 @@ import {
 } from "../src/shared/worktree-merge";
 import {
   buildActivityLogBlocks,
+  buildSubagentSessionKey,
   buildSubagentTimingsByAgentId,
   countOpenAgentDelegations,
   stripTrailingPendingRequestBlocks,
@@ -1300,6 +1301,42 @@ test("backfills subagent card agentId from persisted session timings", () => {
   expect(item?.role).toBe("explore");
   expect(item?.title).toBe("探索");
   expect(item?.agentId).toBe(agentId);
+});
+
+test("keeps stable sessionKey when agentId is backfilled from timings", () => {
+  const agentId = "agent-coder-stable";
+  const startedAt = new Date(Date.now() - 30_000).toISOString();
+  const lines = [
+    { id: "u1", role: "user", message: "go" },
+    { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+    { id: "2", role: "tool", message: "Tool: Agent (1s)" },
+  ] as const;
+  const withoutTimings = buildActivityLogBlocks([...lines], {
+    status: "running",
+    createdAt: new Date().toISOString(),
+  });
+  const withTimings = buildActivityLogBlocks([...lines], {
+    status: "running",
+    createdAt: new Date().toISOString(),
+    subagentTimingsByAgentId: buildSubagentTimingsByAgentId([
+      {
+        agentId,
+        role: "coder",
+        status: "active",
+        startedAt,
+        lastActiveAt: startedAt,
+        accumulatedMs: 5000,
+        durationMs: 30_000,
+      },
+    ]),
+  });
+
+  const before = subagentItems(withoutTimings)[0];
+  const after = subagentItems(withTimings)[0];
+  expect(before?.sessionKey).toBe(buildSubagentSessionKey("coder", 0));
+  expect(after?.sessionKey).toBe(before?.sessionKey);
+  expect(before?.agentId).toBeUndefined();
+  expect(after?.agentId).toBe(agentId);
 });
 
 test("merges legacy subagent blocks into agentId run instead of splitting cards", () => {

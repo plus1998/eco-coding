@@ -94,6 +94,12 @@ function resolveSubagentRunAgentId(
   return agentId ?? resolveSubagentAgentIdFromTimings(role, occurrence, timingsByAgentId);
 }
 
+/** Stable React key for a sub-agent run; does not change when agentId is backfilled. */
+export function buildSubagentSessionKey(role: string, occurrence: number): string {
+  const normalizedRole = normalizeSubagentDisplayRole(role) ?? role;
+  return `subagent-${normalizedRole}-${occurrence}`;
+}
+
 /** Whether a new activity line should scroll the main feed (planner/user), not sub-agent panels. */
 export function shouldScrollMainActivityFeedForLine(line: Pick<ThreadActivityLine, "role"> | undefined): boolean {
   if (!line) {
@@ -1376,25 +1382,40 @@ function pushWorkSessionsFromRuns(
   };
 
   const upsertSubagentItem = (item: SubagentRunItem): void => {
+    const mergeInto = (existingIndex: number): void => {
+      const existing = pendingSubagentItems[existingIndex]!;
+      const mergedChildren = [...existing.children, ...item.children];
+      const mergedDuration = Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0);
+      const agentId = item.agentId ?? existing.agentId;
+      pendingSubagentItems[existingIndex] = {
+        ...existing,
+        ...item,
+        sessionKey: existing.sessionKey,
+        running: existing.running || item.running,
+        children: mergedChildren,
+        statusLine:
+          resolveSubagentRunStatusLine(mergedChildren, existing.role) ??
+          item.statusLine ??
+          existing.statusLine,
+        ...(agentId && { agentId }),
+        ...(mergedDuration > 0 && { runDurationMs: mergedDuration }),
+      };
+    };
+
+    const bySessionKey = pendingSubagentItems.findIndex((entry) => entry.sessionKey === item.sessionKey);
+    if (bySessionKey >= 0) {
+      mergeInto(bySessionKey);
+      return;
+    }
+
     if (item.agentId) {
-      const existingIndex = pendingSubagentItems.findIndex((entry) => entry.agentId === item.agentId);
-      if (existingIndex >= 0) {
-        const existing = pendingSubagentItems[existingIndex]!;
-        const mergedChildren = [...existing.children, ...item.children];
-        const mergedDuration = Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0);
-        pendingSubagentItems[existingIndex] = {
-          ...existing,
-          running: existing.running || item.running,
-          children: mergedChildren,
-          statusLine:
-            resolveSubagentRunStatusLine(mergedChildren, existing.role) ??
-            item.statusLine ??
-            existing.statusLine,
-          ...(mergedDuration > 0 && { runDurationMs: mergedDuration }),
-        };
+      const byAgentId = pendingSubagentItems.findIndex((entry) => entry.agentId === item.agentId);
+      if (byAgentId >= 0) {
+        mergeInto(byAgentId);
         return;
       }
     }
+
     pendingSubagentItems.push(item);
   };
 
@@ -1455,7 +1476,7 @@ function pushWorkSessionsFromRuns(
         const title = resolveSubagentRunDisplayTitle(role);
         const statusLine = resolveSubagentRunStatusLine(run.blocks, role);
         return {
-          sessionKey: `subagent-${agentId}`,
+          sessionKey: buildSubagentSessionKey(role, run.occurrence),
           role,
           title,
           running: false,
@@ -1497,9 +1518,7 @@ function pushWorkSessionsFromRuns(
       options.lines,
       options.subagentTimingsByAgentId,
     );
-    const sessionKey = agentId
-      ? `subagent-${agentId}`
-      : `subagent-${role}-${mergedRun.occurrence}`;
+    const sessionKey = buildSubagentSessionKey(role, mergedRun.occurrence);
 
     return {
       sessionKey,
@@ -1583,9 +1602,7 @@ function pushWorkSessionsFromRuns(
       options.subagentTimingsByAgentId,
     );
     upsertSubagentItem({
-      sessionKey: agentId
-        ? `subagent-${agentId}`
-        : `subagent-${role}-${missionRun.occurrence}`,
+      sessionKey: buildSubagentSessionKey(role, missionRun.occurrence),
       role,
       title,
       ...(agentId && { agentId }),
