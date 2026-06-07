@@ -2,7 +2,7 @@
 
 本文档记录 Agent 编排、SubAgent 生命周期、Token 统计、成本归集与结算链路的重构计划。后续实施必须按本文档推进；如需调整顺序，先更新本文档，再改代码。
 
-相关后续计划：运行态投影与 Activity UI 重构已拆分到 [`docs/thread-run-projection-refactor-plan.md`](thread-run-projection-refactor-plan.md)。涉及主代理 / 子代理消息分组、请求状态、计时、子代理卡片稳定性的实现，以该文档为准。
+相关后续计划：运行态投影与 Activity UI 重构已在 [`docs/thread-run-projection-refactor-plan.md`](thread-run-projection-refactor-plan.md) 完成。涉及主代理 / 子代理消息分组、请求状态、计时、子代理卡片稳定性的后续维护，以该文档记录的 projection 主路径与 legacy 边界为准。
 
 ## 目标
 

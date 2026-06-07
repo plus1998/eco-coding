@@ -60,7 +60,7 @@
 
 ## 阶段 0：基线与护栏
 
-状态：In Progress
+状态：Completed
 
 目标：先把现状问题固定成可验证清单，避免实现中把旧问题搬到新投影。
 
@@ -91,7 +91,7 @@
 
 ## 阶段 1：结构化运行事件契约与持久化
 
-状态：Planned
+状态：Completed
 
 目标：把 UI 需要的语义从“文本行”提升为结构化事件。
 
@@ -111,7 +111,7 @@
 
 ## 阶段 2：主进程事件标准化接入
 
-状态：Planned
+状态：Completed
 
 目标：把 SDK、Proxy、OTel、thread status、SubagentStart/Stop 接入结构化事件，不再让 renderer 从文本里猜。
 
@@ -132,7 +132,7 @@
 
 ## 阶段 3：运行投影服务
 
-状态：Planned
+状态：Completed
 
 目标：从结构化事件和已有领域状态生成 renderer 可直接消费的 view-model。
 
@@ -155,7 +155,7 @@
 
 ## 阶段 4：IPC 与 live projection 更新
 
-状态：Planned
+状态：Completed
 
 目标：让 renderer 通过一个入口读取和订阅运行投影。
 
@@ -174,7 +174,7 @@
 
 ## 阶段 5：Renderer 切换
 
-状态：Planned
+状态：Completed
 
 目标：将新线程 UI 从 legacy `activity-log.ts` 切到 projection view-model。
 
@@ -196,7 +196,7 @@
 
 ## 阶段 6：诊断、测试与回归
 
-状态：Planned
+状态：Completed
 
 目标：用测试和诊断防止状态混乱回归。
 
@@ -221,7 +221,7 @@
 
 ## 阶段 7：Legacy 收敛
 
-状态：Planned
+状态：Completed
 
 目标：在新路径稳定后减少重复逻辑和后续维护成本。
 
@@ -237,6 +237,23 @@
 - 新线程运行展示不依赖 `ThreadActivityLine` 文本解析。
 - legacy path 与 projection path 的边界清晰，后续工程师不会继续在 `activity-log.ts` 修新线程状态 bug。
 - 文档阶段状态已更新。
+
+完成记录：
+
+- `activity-log.ts` 已标注为 legacy adapter；新运行 UI 主路径使用 `ThreadRunProjectionSnapshot` 与 `thread-run-projection-view.ts`。
+- `ActivityLogView` 在有 projection 时不调用 `buildActivityLogBlocks`；旧 `activityLines`、`subagentTimings`、`subagentMetrics`、`usageByRole` 只服务 legacy fallback。
+- 已按阶段提交：
+  - `e39c39c`：记录运行态投影重构基线。
+  - `8877491`：新增结构化运行事件持久化。
+  - `480d5c4`：接入运行事件影子写入。
+  - `8657c1a`：实现线程运行投影。
+  - `46b5920`：开放运行投影 IPC。
+  - `edb3f3b`：切换运行投影界面渲染。
+  - `431a25d`：补齐运行投影诊断测试。
+- 最终验证：
+  - `bun test apps/desktop/test/thread-run-projection.test.ts apps/desktop/test/thread-run-projection-view.test.ts apps/desktop/test/thread-run-events.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts apps/desktop/test/activity-log.test.ts apps/desktop/test/ipc.test.ts`：`81 pass / 3 skip / 0 fail`。
+  - `bun run --cwd apps/desktop build`：通过。
+  - `bunx tsc -b --pretty false`：仍失败，但剩余错误不再包含 `thread-run-projection*`、`thread-run-events`、`thread-run-event-normalizer`、`ActivityLogView.tsx`、`useStreamRequestTiming.ts`、`activity-log.ts` 或 `ipc.ts` 的本计划相关类型错误；剩余为仓库既有跨模块/strict optional 基线问题。
 
 ## 执行顺序
 

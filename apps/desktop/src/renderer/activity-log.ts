@@ -11,6 +11,9 @@ import {
   type SubagentMissionPayload,
   type ThreadApiErrorInfo,
 } from "@eco/runtime";
+
+// Legacy adapter for old ThreadActivityLine-based threads. New run-state UI must use
+// ThreadRunProjectionSnapshot and should not add new state/ownership inference here.
 import {
   activityActionKey,
   formatMcpToolDisplayName,
