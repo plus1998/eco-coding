@@ -7435,9 +7435,9 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative p {
   color: var(--codex-log-text);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 400;
-  line-height: 1.62;
+  line-height: 1.55;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .run-log-narrative-body,
@@ -7525,7 +7525,7 @@ button:not(:disabled) {
   border: 0;
   background: transparent;
   color: var(--codex-log-muted);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 450;
   line-height: 1.55;
 }
@@ -7537,7 +7537,7 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {
   margin: 20px 0 22px;
   color: var(--codex-log-muted);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -7592,7 +7592,7 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-thinking-preview,
 .codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-label {
   color: var(--codex-log-muted);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -7639,7 +7639,7 @@ button:not(:disabled) {
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-role {
   color: #a6a6a6;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -7712,6 +7712,8 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-expand {
   background: #242424;
   color: #f0f0f0;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-fade {
@@ -7831,7 +7833,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
   .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
   .codex-main:not(.codex-main-landing) .run-log-narrative p {
-    font-size: 15px;
+    font-size: 13px;
   }
 
   .codex-main:not(.codex-main-landing) .run-log-phase,
@@ -7844,7 +7846,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .subagent-run-title-model,
   .codex-main:not(.codex-main-landing) .subagent-run-title-sep,
   .codex-main:not(.codex-main-landing) .subagent-run-status {
-    font-size: 13px;
+    font-size: 12px;
   }
 }
 
