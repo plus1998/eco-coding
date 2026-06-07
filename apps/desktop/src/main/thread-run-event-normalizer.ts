@@ -109,6 +109,9 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "tool.completed") {
     return "tool.completed";
   }
+  if (input.liveType === "tool.failed") {
+    return "tool.failed";
+  }
   if (input.liveType === "request.started") {
     return "request.started";
   }

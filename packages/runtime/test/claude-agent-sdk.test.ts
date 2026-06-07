@@ -21,6 +21,7 @@ import {
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
   createSessionCapturedEvent,
+  createToolPermissionDeniedEvent,
   executePhaseSystemAppend,
   extractSdkRunFailure,
   formatAgentEventDisplay,
@@ -873,6 +874,41 @@ test("formatSdkPayloadMessage omits result cost lines", () => {
   ).toBeNull();
 });
 
+test("createToolPermissionDeniedEvent formats audit-friendly tool failures", () => {
+  const event = createToolPermissionDeniedEvent(
+    "thr_1",
+    {
+      permissionDecision: "deny",
+      toolName: "Bash",
+      toolUseId: "tool_denied",
+      reason: "Bash is disabled for this Eco agent.",
+      actor: "eco_researcher",
+      sessionId: "session_1",
+      agentId: "agent_researcher",
+      agentType: "eco_researcher",
+      cwd: "/repo",
+    },
+    () => "uuid_1",
+  );
+
+  expect(event).toMatchObject({
+    id: "thr_1:tool-permission-denied:tool_denied:uuid_1",
+    type: "tool.failed",
+    agentId: "agent_researcher",
+    payload: {
+      type: "tool_permission_denied",
+      tool_name: "Bash",
+      tool_use_id: "tool_denied",
+      message: "Bash is disabled for this Eco agent.",
+      actor: "eco_researcher",
+    },
+  });
+  expect(formatAgentEventLine(event)).toBe(
+    "Permission denied for Bash: Bash is disabled for this Eco agent.",
+  );
+  expect(inferActivityRole(event)).toBe("tool");
+});
+
 test("adapts SDK permission callbacks to app approval decisions", async () => {
   const canUseTool = createCanUseTool(async (request) => {
     expect(request.toolName).toBe("Bash");
@@ -1266,6 +1302,87 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(systemPrompt).toContain("Agent(eco_researcher)");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
+});
+
+test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic permissions", async () => {
+  const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        capturedQueries.push({ prompt, options });
+        return {
+          async *[Symbol.asyncIterator]() {
+            const hooks = options.hooks as
+              | Record<
+                  string,
+                  Array<{ hooks: Array<(input: unknown, toolUseId?: string, ctx?: unknown) => unknown> }>
+                >
+              | undefined;
+            for (const matcher of hooks?.PreToolUse ?? []) {
+              for (const hook of matcher.hooks) {
+                await hook(
+                  {
+                    hook_event_name: "PreToolUse",
+                    tool_name: "Bash",
+                    tool_input: { command: "rm -rf src" },
+                    tool_use_id: "tool_denied",
+                    session_id: "sess-denied",
+                    cwd: "/tmp/workspace",
+                    agent_id: "agent_researcher",
+                    agent_type: "eco_researcher",
+                  },
+                  "tool_denied",
+                  { signal: new AbortController().signal },
+                );
+              }
+            }
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-denied",
+              uuid: "init-denied",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-denied",
+              uuid: "result-denied",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const events = [];
+  for await (const event of driver.runQuestion({
+    threadId: "thr_denied",
+    prompt: "Research with a denied command.",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/workspace",
+    routes,
+    signal: new AbortController().signal,
+    agentRegistry: universalAgentRegistry,
+  })) {
+    events.push(event);
+  }
+
+  expect(capturedQueries[0]?.options.hooks).toBeDefined();
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.failed",
+      agentId: "agent_researcher",
+      payload: expect.objectContaining({
+        type: "tool_permission_denied",
+        tool_name: "Bash",
+        tool_use_id: "tool_denied",
+        actor: "eco_researcher",
+      }),
+    }),
+  );
 });
 
 test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", async () => {

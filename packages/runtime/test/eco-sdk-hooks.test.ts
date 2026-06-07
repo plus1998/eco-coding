@@ -464,6 +464,49 @@ test("createToolPermissionPreToolHook asks for risky bash commands", async () =>
   expect(riskyBash.hookSpecificOutput?.permissionDecisionReason).toContain("Dependency changes");
 });
 
+test("createToolPermissionPreToolHook reports denied permissions for audit", async () => {
+  const decisions: Array<{ toolName: string; toolUseId: string; reason: string; actor: string }> = [];
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: { allowed: ["Read"], disallowed: ["Bash"] },
+      agents: {},
+    },
+    {
+      onDecision: (decision) => {
+        decisions.push({
+          toolName: decision.toolName,
+          toolUseId: decision.toolUseId,
+          reason: decision.reason,
+          actor: decision.actor,
+        });
+      },
+    },
+  );
+  expect(hook).toBeDefined();
+
+  await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf src" },
+      tool_use_id: "tool_audit",
+      session_id: "session_1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_audit",
+    { signal: new AbortController().signal },
+  );
+
+  expect(decisions).toEqual([
+    {
+      toolName: "Bash",
+      toolUseId: "tool_audit",
+      reason: 'Tool "Bash" is disallowed for main.',
+      actor: "main",
+    },
+  ]);
+});
+
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {
   const hook = createDisabledSubagentPreToolHook({
     explore: false,

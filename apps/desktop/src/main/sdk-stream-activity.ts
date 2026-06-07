@@ -180,7 +180,8 @@ export class SdkStreamActivityBridge {
       event.type === "message.delta" ||
       event.type === "todo.updated" ||
       event.type === "tool.started" ||
-      event.type === "tool.completed";
+      event.type === "tool.completed" ||
+      event.type === "tool.failed";
     if (!allowed) {
       return;
     }
@@ -324,10 +325,29 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
   if (event.type === "tool.started") {
     return resolveSdkToolUseMetadata(event.payload) ?? resolveSdkToolProgressMetadata(event.payload);
   }
+  if (event.type === "tool.failed") {
+    return resolveSdkToolPermissionDeniedMetadata(event.payload);
+  }
   if (event.type === "todo.updated") {
     return resolveSdkTaskProgressToolMetadata(event.payload);
   }
   return undefined;
+}
+
+function resolveSdkToolPermissionDeniedMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "tool_permission_denied" || typeof record.tool_name !== "string") {
+    return undefined;
+  }
+  return {
+    name: record.tool_name,
+    ...(typeof record.message === "string" && { detail: record.message }),
+    ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
+    status: "failed",
+  };
 }
 
 function isSdkToolInputPlaceholder(payload: unknown): boolean {

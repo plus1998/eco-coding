@@ -117,6 +117,59 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("emits permission denied tool failures with structured metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    agentId?: string;
+    tool?: { name: string; detail?: string; toolUseId?: string; status?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.failed",
+      role: "planner",
+      agentId: "agent_researcher",
+      payload: {
+        type: "tool_permission_denied",
+        tool_name: "Bash",
+        tool_use_id: "tool_denied",
+        message: "Bash is disabled for this Eco agent.",
+        actor: "eco_researcher",
+      },
+    },
+    (_threadId, type, message, role, _stream, agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        role,
+        ...(agentId && { agentId }),
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+    undefined,
+    { activityAgentId: "agent_researcher" },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "tool.failed",
+      message: "Permission denied for Bash: Bash is disabled for this Eco agent.",
+      role: "tool",
+      agentId: "agent_researcher",
+      tool: {
+        name: "Bash",
+        detail: "Bash is disabled for this Eco agent.",
+        toolUseId: "tool_denied",
+        status: "failed",
+      },
+    },
+  ]);
+});
+
 test("emits fixed workflow lifecycle activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; role: string }> = [];

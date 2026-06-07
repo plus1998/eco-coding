@@ -33,7 +33,11 @@ import {
 } from "./sdk-stream-events.js";
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
-import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
+import {
+  buildEcoSdkHooks,
+  type EcoHookContext,
+  type EcoToolPermissionDecisionAudit,
+} from "./eco-sdk-hooks.js";
 import {
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
@@ -930,6 +934,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           mainAllowedTools,
         })
       : undefined;
+    const pendingToolPermissionDecisions: EcoToolPermissionDecisionAudit[] = [];
+    const onToolPermissionDecision = (decision: EcoToolPermissionDecisionAudit) => {
+      this.options.hookContext?.onToolPermissionDecision?.(decision);
+      pendingToolPermissionDecisions.push(decision);
+    };
+    const shouldBuildHooks = Boolean(this.options.hookContext || dynamicAgentKeys || toolPermissions);
     const allowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
     const mainModel = input.agentRegistry?.profile.mainAgent.modelRef.modelId ?? plannerRoute.primary.modelId;
     const systemPrompt = input.agentRegistry
@@ -965,13 +975,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       allowedTools,
       systemPrompt,
       tools: { type: "preset", preset: "claude_code" },
-      ...(this.options.hookContext
+      ...(shouldBuildHooks
         ? {
             hooks: buildEcoSdkHooks({
-              ...this.options.hookContext,
+              ...(this.options.hookContext ?? {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
+              ...(toolPermissions ? { onToolPermissionDecision } : {}),
               subagentAvailability:
                 phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
             }),
@@ -1032,6 +1043,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
     for await (const message of query) {
+      for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
+        yield event;
+      }
       if (!sessionCaptured && isSdkInitMessage(message)) {
         const sessionId = readSdkSessionId(message);
         if (sessionId) {
@@ -1070,6 +1084,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (input.signal.aborted) {
         break;
       }
+    }
+    for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
+      yield event;
     }
 
     return { transcript: transcript.trim(), ...(finalizedPlan ? { finalizedPlan } : {}) };
@@ -1453,6 +1470,48 @@ export function createSessionCapturedEvent(threadId: string, sessionId: string, 
     type: "session.captured",
     payload: { sessionId, cwd },
   });
+}
+
+export function createToolPermissionDeniedEvent(
+  threadId: string,
+  decision: EcoToolPermissionDecisionAudit,
+  uuidFactory: () => string = () => crypto.randomUUID(),
+): AgentEvent {
+  const subagentRole = normalizeSdkSubagentType(decision.agentType ?? decision.actor);
+  return createAgentEvent({
+    id: `${threadId}:tool-permission-denied:${decision.toolUseId}:${uuidFactory()}`,
+    threadId,
+    agentId: decision.agentId ?? decision.sessionId ?? decision.actor,
+    role: subagentRole ?? "planner",
+    type: "tool.failed",
+    payload: {
+      type: "tool_permission_denied",
+      tool_name: decision.toolName,
+      tool_use_id: decision.toolUseId,
+      permission_decision: decision.permissionDecision,
+      message: decision.reason,
+      actor: decision.actor,
+      cwd: decision.cwd,
+      ...(decision.sessionId && { session_id: decision.sessionId }),
+      ...(decision.agentId && { agent_id: decision.agentId }),
+      ...(decision.agentType && { agent_type: decision.agentType }),
+    },
+  });
+}
+
+function drainToolPermissionDecisionEvents(
+  threadId: string,
+  queue: EcoToolPermissionDecisionAudit[],
+  uuidFactory: () => string = () => crypto.randomUUID(),
+): AgentEvent[] {
+  const events: AgentEvent[] = [];
+  while (queue.length > 0) {
+    const decision = queue.shift();
+    if (decision) {
+      events.push(createToolPermissionDeniedEvent(threadId, decision, uuidFactory));
+    }
+  }
+  return events;
 }
 
 export {
@@ -2229,6 +2288,9 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
   }
 
   if (isRecord(event.payload)) {
+    if (event.payload.type === "tool_permission_denied") {
+      return "tool";
+    }
     if (event.payload.type === "tool_progress" || event.payload.type === "tool_use_summary") {
       return "tool";
     }
@@ -2351,6 +2413,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
 
   if (!isRecord(payload)) {
     return null;
+  }
+
+  if (payload.type === "tool_permission_denied" && typeof payload.tool_name === "string") {
+    const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
+    return `Permission denied for ${payload.tool_name}${reason}`;
   }
 
   if (typeof payload.label === "string" && typeof payload.ecoPhase === "string") {

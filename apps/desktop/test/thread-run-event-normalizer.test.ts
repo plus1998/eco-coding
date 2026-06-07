@@ -271,6 +271,40 @@ test("buildThreadRunEventFromLiveEvent maps structured OTel tool failure without
   });
 });
 
+test("buildThreadRunEventFromLiveEvent maps SDK tool failed events", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "sdk_tool_failed",
+    liveType: "tool.failed",
+    role: "tool",
+    agentId: "agent_researcher",
+    stream: false,
+    message: "Permission denied for Bash: Bash is disabled for this Eco agent.",
+    tool: {
+      name: "Bash",
+      detail: "Bash is disabled for this Eco agent.",
+      toolUseId: "tool_denied",
+      status: "failed",
+    },
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "tool.failed",
+    scope: "agent",
+    agentId: "agent_researcher",
+    metadata: {
+      liveType: "tool.failed",
+      tool: {
+        name: "Bash",
+        detail: "Bash is disabled for this Eco agent.",
+        toolUseId: "tool_denied",
+        status: "failed",
+      },
+    },
+  });
+});
+
 test("buildSubagentLifecycleRunEvent includes parent and mission metadata", () => {
   const event = buildSubagentLifecycleRunEvent({
     threadId: "thr_1",

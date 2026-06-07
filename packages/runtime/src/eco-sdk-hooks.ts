@@ -88,6 +88,7 @@ export interface EcoHookContext {
   allowedAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
   workspacePath?: string;
+  onToolPermissionDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,6 +100,18 @@ const WRITE_FILESYSTEM_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookE
 const PACKAGE_INSTALL_COMMANDS = new Set(["npm", "pnpm", "yarn", "bun"]);
 const PACKAGE_INSTALL_ARGS = new Set(["install", "i", "add", "remove"]);
 const ALWAYS_ASK_COMMANDS = new Set(["docker", "sudo"]);
+
+export interface EcoToolPermissionDecisionAudit {
+  permissionDecision: "deny";
+  toolName: string;
+  toolUseId: string;
+  reason: string;
+  actor: string;
+  sessionId?: string;
+  agentId?: string;
+  agentType?: string;
+  cwd: string;
+}
 
 export function createWorkflowDenyPreToolHook(): HookCallback {
   return async (input) => {
@@ -242,7 +255,10 @@ export function createDisabledSubagentPreToolHook(
 
 export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
-  options: { workspacePath?: string } = {},
+  options: {
+    workspacePath?: string;
+    onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
+  } = {},
 ): HookCallback | undefined {
   if (!policy) {
     return undefined;
@@ -255,17 +271,32 @@ export function createToolPermissionPreToolHook(
     const actor = resolveToolPermissionActor(preInput);
     const entry = resolveToolPermissionEntry(policy, actor);
     if (!entry) {
-      return denyTool(preInput.tool_name, `No Eco tool policy is registered for agent ${actor}.`);
+      return recordToolPermissionDecision(
+        preInput,
+        actor,
+        denyTool(preInput.tool_name, `No Eco tool policy is registered for agent ${actor}.`),
+        options,
+      );
     }
     if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
-      return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`);
+      return recordToolPermissionDecision(
+        preInput,
+        actor,
+        denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`),
+        options,
+      );
     }
     const structuredDecision = evaluateStructuredToolPolicy(preInput, entry, options);
     if (structuredDecision) {
-      return structuredDecision;
+      return recordToolPermissionDecision(preInput, actor, structuredDecision, options);
     }
     if (entry.allowed.length > 0 && !matchesAnyToolPattern(preInput.tool_name, entry.allowed)) {
-      return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is not allowed for ${actor}.`);
+      return recordToolPermissionDecision(
+        preInput,
+        actor,
+        denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is not allowed for ${actor}.`),
+        options,
+      );
     }
     return {};
   };
@@ -586,6 +617,30 @@ function askTool(toolName: string, reason: string): HookJSONOutput {
   };
 }
 
+function recordToolPermissionDecision(
+  input: PreToolUseHookInput,
+  actor: string,
+  output: HookJSONOutput,
+  options: { onDecision?: (decision: EcoToolPermissionDecisionAudit) => void },
+): HookJSONOutput {
+  const hookOutput = "hookSpecificOutput" in output ? output.hookSpecificOutput : undefined;
+  if (hookOutput?.hookEventName !== "PreToolUse" || hookOutput.permissionDecision !== "deny") {
+    return output;
+  }
+  options.onDecision?.({
+    permissionDecision: "deny",
+    toolName: input.tool_name,
+    toolUseId: input.tool_use_id,
+    reason: hookOutput.permissionDecisionReason || `Tool "${input.tool_name}" is denied by Eco policy.`,
+    actor,
+    ...(typeof input.session_id === "string" && { sessionId: input.session_id }),
+    ...(typeof input.agent_id === "string" && { agentId: input.agent_id }),
+    ...(typeof input.agent_type === "string" && { agentType: input.agent_type }),
+    cwd: input.cwd,
+  });
+  return output;
+}
+
 function denyTool(toolName: string, reason: string): HookJSONOutput {
   return {
     hookSpecificOutput: {
@@ -866,10 +921,10 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(
     hooks,
     "PreToolUse",
-    createToolPermissionPreToolHook(
-      ctx.toolPermissions,
-      ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {},
-    ),
+    createToolPermissionPreToolHook(ctx.toolPermissions, {
+      ...(ctx.workspacePath && { workspacePath: ctx.workspacePath }),
+      ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
+    }),
   );
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
