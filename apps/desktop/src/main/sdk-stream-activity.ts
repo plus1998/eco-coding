@@ -147,7 +147,7 @@ export class SdkStreamActivityBridge {
         return;
       }
       this.flushPending(threadId, emit);
-      emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
+      emit(threadId, resolveSdkStatusLiveType(display.message), display.message, String(display.role), false, activityAgentId);
       return;
     }
 
@@ -271,12 +271,16 @@ function resolveSdkActivityToolMetadata(
   message: string,
 ): ThreadRunToolMetadata | undefined {
   if (event.type === "tool.started") {
-    return resolveSdkToolUseMetadata(event.payload, message);
+    return resolveSdkToolUseMetadata(event.payload, message) ?? resolveSdkToolProgressMetadata(event.payload);
   }
   if (event.type === "todo.updated") {
     return resolveSdkTaskProgressToolMetadata(event.payload, message);
   }
   return undefined;
+}
+
+function resolveSdkStatusLiveType(message: string): string {
+  return /^Requesting model/i.test(message.trim()) ? "request.started" : "agent.started";
 }
 
 function resolveSdkToolUseMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
@@ -294,6 +298,27 @@ function resolveSdkToolUseMetadata(payload: unknown, message: string): ThreadRun
     name,
     ...(detail && { detail }),
     ...(toolUseId && { toolUseId }),
+  };
+}
+
+function resolveSdkToolProgressMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "tool_progress") {
+    return undefined;
+  }
+  const name = readString(record.tool_name);
+  if (!name) {
+    return undefined;
+  }
+  const elapsedSeconds = typeof record.elapsed_time_seconds === "number" ? record.elapsed_time_seconds : undefined;
+  const toolUseId = readString(record.tool_use_id);
+  return {
+    name,
+    ...(toolUseId && { toolUseId }),
+    ...(elapsedSeconds !== undefined && Number.isFinite(elapsedSeconds) && { durationMs: elapsedSeconds * 1000 }),
   };
 }
 

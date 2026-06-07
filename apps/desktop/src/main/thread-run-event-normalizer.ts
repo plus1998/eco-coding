@@ -109,6 +109,9 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "tool.completed") {
     return "tool.completed";
   }
+  if (input.liveType === "request.started") {
+    return "request.started";
+  }
   if (input.liveType === "agent.started") {
     return "agent.started";
   }

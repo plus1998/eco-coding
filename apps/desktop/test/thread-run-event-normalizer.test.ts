@@ -85,6 +85,27 @@ test("buildThreadRunEventFromLiveEvent keeps stable streamKey separate from uniq
   });
 });
 
+test("buildThreadRunEventFromLiveEvent maps SDK request status to request span", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "request_1",
+    liveType: "request.started",
+    role: "planner",
+    stream: false,
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    id: "tre:request_1",
+    eventType: "request.started",
+    scope: "main",
+    requestId: "req:thr_1:request_1",
+    streamState: "none",
+    metadata: { liveType: "request.started" },
+  });
+});
+
 test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messages", () => {
   const toolEvent = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

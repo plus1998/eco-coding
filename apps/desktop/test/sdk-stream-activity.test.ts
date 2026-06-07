@@ -117,6 +117,54 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("emits structured SDK tool metadata for tool progress activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    tool?: { name: string; toolUseId?: string; durationMs?: number };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "explore",
+      agentId: "agent_weather",
+      payload: {
+        type: "tool_progress",
+        tool_name: "WebFetch",
+        tool_use_id: "toolu_fetch_1",
+        elapsed_time_seconds: 8.3,
+      },
+    },
+    (_threadId, type, message, role, _stream, _agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        role,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+    undefined,
+    { activityAgentId: "agent_weather" },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "tool.started",
+      message: "Tool: WebFetch (8.3s)",
+      role: "tool",
+      tool: {
+        name: "WebFetch",
+        toolUseId: "toolu_fetch_1",
+        durationMs: 8300,
+      },
+    },
+  ]);
+});
+
 test("emits structured SDK tool metadata for task progress activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{
@@ -229,9 +277,9 @@ test("keeps parallel subagent narrative streams isolated by agentId", () => {
   ]);
 });
 
-test("emits Requesting model status from agent.started events", () => {
+test("emits Requesting model status as request started activity", () => {
   const bridge = new SdkStreamActivityBridge();
-  const emitted: Array<{ message: string; role: string }> = [];
+  const emitted: Array<{ type: string; message: string; role: string }> = [];
   bridge.handleEvent(
     "thr_1",
     {
@@ -240,10 +288,10 @@ test("emits Requesting model status from agent.started events", () => {
       payload: { type: "system", subtype: "status", status: "requesting" },
     },
     (_threadId, _type, message, role) => {
-      emitted.push({ message, role });
+      emitted.push({ type: _type, message, role });
     },
   );
-  expect(emitted).toEqual([{ message: "Requesting model…", role: "planner" }]);
+  expect(emitted).toEqual([{ type: "request.started", message: "Requesting model…", role: "planner" }]);
 });
 
 test("emits finalize text when only an empty placeholder preceded it", () => {
