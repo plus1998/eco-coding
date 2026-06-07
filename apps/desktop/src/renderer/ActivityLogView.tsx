@@ -50,7 +50,7 @@ import {
   type ThreadRunProjectionMainFeedEntry,
   type ThreadRunProjectionWorkflowStep,
 } from "./thread-run-projection-view";
-import { isSubagentDisplayRole } from "../shared/subagent-roles";
+import { isAgentDisplayRole } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
@@ -66,13 +66,13 @@ function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIden
     return false;
   }
   if (block.kind === "model-request") {
-    return isSubagentDisplayRole(block.role);
+    return isAgentDisplayRole(block.role);
   }
   if (block.kind === "phase" || block.kind === "thinking") {
     return false;
   }
   if ("subagent" in block && block.subagent) {
-    return isSubagentDisplayRole(block.subagent);
+    return isAgentDisplayRole(block.subagent);
   }
   return false;
 }
@@ -118,6 +118,7 @@ function LegacyActivityLogView({
   context,
   subagentTimings,
   subagentMetrics,
+  agentDisplayNames,
   onPlannerLayoutChange,
 }: ActivityLogViewProps) {
   const effectiveLines = useMemo(() => {
@@ -202,6 +203,7 @@ function LegacyActivityLogView({
           {...(context && { context })}
           {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
           {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
+          {...(agentDisplayNames && { agentDisplayNames })}
           {...(onPlannerLayoutChange && { onPlannerLayoutChange })}
           {...(thread?.id && { threadId: thread.id })}
           {...(thread?.status && { threadStatus: thread.status })}
@@ -657,7 +659,7 @@ function ProjectionTimelineEntry({
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(block.subagent && { subagent: block.subagent })}
-        omitSubagentBadge={compact || isSubagentDisplayRole(block.subagent)}
+        omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
         compact={compact}
       />
     );
@@ -695,6 +697,7 @@ function RunLogBlock({
   context,
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
+  agentDisplayNames,
   onPlannerLayoutChange,
   threadId,
   threadStatus,
@@ -706,6 +709,7 @@ function RunLogBlock({
   context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
   onPlannerLayoutChange?: () => void;
   threadId?: string;
   threadStatus?: ThreadStatus;
@@ -736,6 +740,7 @@ function RunLogBlock({
         {...(usageByRole && { usageByRole })}
         {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
         {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
+        {...(agentDisplayNames && { agentDisplayNames })}
         {...(context && { context })}
       />
     );
@@ -841,6 +846,7 @@ function SubagentRunRow({
   context,
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
+  agentDisplayNames,
 }: {
   item: SubagentRunItem;
   expanded: boolean;
@@ -851,6 +857,7 @@ function SubagentRunRow({
   context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const persistedTiming = item.agentId ? subagentTimingsByAgentId?.[item.agentId] : undefined;
   const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
@@ -876,7 +883,8 @@ function SubagentRunRow({
   }, [durationMs, item.running, item.sessionKey, persistedTiming]);
 
   const instanceMetrics = item.agentId ? subagentMetricsByAgentId?.[item.agentId] : undefined;
-  const roleLabel = resolveSubagentRunDisplayTitle(item.role);
+  const roleLabel =
+    resolveRuntimeAgentName(item.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(item.role);
   const modelId = instanceMetrics?.modelId ?? modelByRole?.[item.role];
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
   const titleWithModel = formatRoleModelLabel(item.role, modelId);
@@ -975,6 +983,7 @@ function SubagentRunGroup({
   context,
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
+  agentDisplayNames,
 }: {
   block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
   requestActive: boolean;
@@ -983,6 +992,7 @@ function SubagentRunGroup({
   context?: ThreadContextSnapshot;
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
@@ -999,6 +1009,7 @@ function SubagentRunGroup({
           {...(context && { context })}
           {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
           {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
+          {...(agentDisplayNames && { agentDisplayNames })}
           onToggle={() => {
             setExpandedKeys((current) => ({
               ...current,
@@ -1470,7 +1481,7 @@ function AssistantMessageBlock({
       text={text}
       {...(streaming !== undefined && { streaming })}
       {...(subagent && { subagent })}
-      omitSubagentBadge={isSubagentDisplayRole(subagent)}
+      omitSubagentBadge={isAgentDisplayRole(subagent)}
       {...(modelByRole && { modelByRole })}
       {...(usageByRole && { usageByRole })}
     />

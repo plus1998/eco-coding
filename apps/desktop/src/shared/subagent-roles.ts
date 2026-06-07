@@ -11,6 +11,16 @@ export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
 
 export const SUBAGENT_ROLES = new Set(Object.keys(SUBAGENT_ROLE_SHORT));
 
+const NON_AGENT_ACTIVITY_ROLES = new Set([
+  "assistant",
+  "main",
+  "planner",
+  "system",
+  "thinking",
+  "tool",
+  "user",
+]);
+
 const CHINESE_ROLE_TO_ID: Record<string, string> = {
   探索: "explore",
   架构: "architect",
@@ -40,10 +50,38 @@ export function normalizeSubagentDisplayRole(role: string | undefined): string |
   return isSubagentRole(trimmed) ? trimmed : undefined;
 }
 
+export function normalizeAgentDisplayRole(role: string | undefined): string | undefined {
+  const fixedRole = normalizeSubagentDisplayRole(role);
+  if (fixedRole) {
+    return fixedRole;
+  }
+  if (!role?.trim()) {
+    return undefined;
+  }
+  const trimmed = role.trim();
+  const withoutEcoPrefix = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  if (!withoutEcoPrefix || NON_AGENT_ACTIVITY_ROLES.has(withoutEcoPrefix)) {
+    return undefined;
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(withoutEcoPrefix)) {
+    return undefined;
+  }
+  return withoutEcoPrefix;
+}
+
+export function isAgentDisplayRole(role?: string): boolean {
+  return Boolean(normalizeAgentDisplayRole(role));
+}
+
 export function resolveSubagentRunDisplayTitle(role: string): string {
-  const normalized = normalizeSubagentDisplayRole(role) ?? role;
+  const normalized = normalizeAgentDisplayRole(role) ?? role;
   if (SUBAGENT_ROLE_SHORT[normalized]) {
     return SUBAGENT_ROLE_SHORT[normalized];
   }
-  return isSubagentDisplayRole(normalized) ? normalized : "子代理";
+  if (isAgentDisplayRole(normalized)) {
+    return normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+  return "子代理";
 }

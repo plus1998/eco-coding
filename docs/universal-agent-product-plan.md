@@ -843,10 +843,17 @@ type WorkflowStep = {
 - Phase 10.1 主进程已收敛：线程启动、继续、批准计划、重试、上下文压缩和 SDK driver 都通过线程的 Agent Profile 决定 runtime 校验规则；Coding profile 仍要求完整编程角色，非 Coding profile 使用 profile 主模型/可映射 agent 模型生成运行路由。
 - Phase 10.1 renderer 已收敛：Composer 的 Agent Profile popover 使用 Profile ID 作为选择值，自定义/复制出的非 route-backed profile 可以被选择；发送可用状态按选中 profile 的模型/provider 就绪判断，不再硬性要求全部编程 role。
 - Phase 10.1 测试已覆盖：默认 profile 选择、agentProfileId-only payload、自定义 profile 可选、generic profile partial routes、Coding 默认完整路由校验。
+- Phase 10.2 已完成：activity/projection 展示层从固定 `SubagentRole` 判断扩展为动态 agent display role；`researcher`、`source_verifier`、`eco_source_verifier` 等自定义/SDK agent key 会被归入子代理运行卡片、参与 active delegation、run bounds、耗时计算，并优先使用 Agent Profile display map 展示名称。
+- Phase 10.2 保留边界：runtime SDK 内部的 Coding prompt、旧 subagent resume、route/model billing 仍有固定 role 依赖，后续阶段继续削减；本点只完成运行观察和活动日志的动态 key 主路径。
 
 Phase 10.1 验证：
 
 - `bun test apps/desktop/test/thread-runtime-config.test.ts apps/desktop/test/agent-profile-summary.test.ts apps/desktop/test/thread-runtime-routes.test.ts`
+- `bun run typecheck`
+
+Phase 10.2 验证：
+
+- `bun test apps/desktop/test/activity-log.test.ts apps/desktop/test/thread-run-projection-view.test.ts`
 - `bun run typecheck`
 
 验收标准：

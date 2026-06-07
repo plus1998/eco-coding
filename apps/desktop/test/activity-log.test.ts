@@ -64,6 +64,10 @@ test("only planner-side activity lines scroll the main feed", () => {
     false,
   );
   expect(shouldScrollMainActivityFeedForLine({ role: "coder", message: "editing", id: "5" })).toBe(false);
+  expect(shouldScrollMainActivityFeedForLine({ role: "researcher", message: "searching", id: "6" })).toBe(false);
+  expect(
+    shouldScrollMainActivityFeedForLine({ role: "eco_source_verifier", message: "checking", id: "7" }),
+  ).toBe(false);
 });
 
 test("groups narrative and compact tool summaries into collapsible work session", () => {
@@ -347,6 +351,46 @@ test("uses compact mode for reviewer subagent work", () => {
   expect(item?.role).toBe("reviewer");
   expect(item?.title).toBe("审查");
   expect(item?.statusLine).toContain("src/api.ts");
+});
+
+test("groups dynamic Agent Profile keys into subagent runs", () => {
+  const missionLine = formatSubagentMissionMessage("researcher", "Collect market evidence");
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "research" },
+      { id: "1", role: "planner", message: missionLine },
+      { id: "2", role: "researcher", message: "Tool: WebSearch · market size", agentId: "agent_r" },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("researcher");
+  expect(item?.title).toBe("Researcher");
+  expect(item?.agentId).toBe("agent_r");
+  expect(item?.children.some((child) => child.kind === "action" && child.label.includes("market size"))).toBe(
+    true,
+  );
+});
+
+test("normalizes SDK dynamic eco agent keys in activity runs", () => {
+  const lines = [
+    { id: "1", role: "planner", message: formatSubagentMissionMessage("eco_source_verifier", "Verify sources") },
+    { id: "2", role: "tool", message: "Tool: Agent · Source Verifier (eco_source_verifier)" },
+    { id: "3", role: "eco_source_verifier", message: "Tool: Read · sources.md", agentId: "agent_v" },
+    { id: "4", role: "tool", message: "Tool: Agent (5s)" },
+  ];
+  const blocks = buildActivityLogBlocks(lines, {
+    status: "completed",
+    createdAt: new Date().toISOString(),
+  });
+
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("source_verifier");
+  expect(item?.title).toBe("Source Verifier");
+  expect(findSubagentRunLineBounds(lines, "source_verifier", 0)).toEqual({ start: 0, end: 4 });
+  expect(resolveSubagentRunDurationMs(lines, "source_verifier", 0)).toBe(5000);
+  expect(resolveActiveSubagents(lines.slice(0, 2), "running")).toContain("source_verifier");
 });
 
 test("assigns unique planner session keys across user segments", () => {
@@ -1300,6 +1344,37 @@ test("backfills subagent card agentId from persisted session timings", () => {
   const item = subagentItems(blocks)[0];
   expect(item?.role).toBe("explore");
   expect(item?.title).toBe("探索");
+  expect(item?.agentId).toBe(agentId);
+});
+
+test("backfills dynamic agentId from persisted eco-key session timings", () => {
+  const agentId = "agent-source-verifier-live";
+  const startedAt = new Date(Date.now() - 60_000).toISOString();
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · Source Verifier (eco_source_verifier)" },
+      { id: "2", role: "tool", message: "Tool: Agent (2s)" },
+    ],
+    {
+      status: "running",
+      createdAt: new Date().toISOString(),
+      subagentTimingsByAgentId: buildSubagentTimingsByAgentId([
+        {
+          agentId,
+          role: "eco_source_verifier",
+          status: "active",
+          startedAt,
+          lastActiveAt: startedAt,
+          accumulatedMs: 10_000,
+          durationMs: 60_000,
+        },
+      ]),
+    },
+  );
+
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("source_verifier");
   expect(item?.agentId).toBe(agentId);
 });
 
