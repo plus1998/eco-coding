@@ -25,6 +25,17 @@ export interface AgentProfileAgentFormState {
   skills: string;
 }
 
+export interface AgentProfileWorkflowStepFormState {
+  id: string;
+  agentKey: string;
+  promptTemplate: string;
+  dependsOn: string;
+  runMode: WorkflowStep["runMode"];
+  required: boolean;
+  outputKey: string;
+  failurePolicy: WorkflowStep["failurePolicy"];
+}
+
 export interface AgentProfileFormState {
   id: string;
   name: string;
@@ -41,6 +52,7 @@ export interface AgentProfileFormState {
   strategyKind: OrchestrationStrategy["kind"];
   guidancePrompt: string;
   allowPlannerAdjustments: boolean;
+  workflowSteps: AgentProfileWorkflowStepFormState[];
   agents: AgentProfileAgentFormState[];
 }
 
@@ -71,6 +83,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     strategyKind: "autonomous",
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     allowPlannerAdjustments: true,
+    workflowSteps: [],
     agents: [],
   };
 }
@@ -93,6 +106,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     guidancePrompt: strategyGuidance(profile.strategy),
     allowPlannerAdjustments:
       profile.strategy.kind === "hybrid" ? profile.strategy.allowPlannerAdjustments : true,
+    workflowSteps: workflowStepFormsFromStrategy(profile.strategy),
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
       templateId: agent.templateId,
@@ -139,6 +153,51 @@ export function createProfileAgentFormFromTemplate(
     mcpServers: formatList(template.mcpServers),
     skills: formatList(template.skills),
   };
+}
+
+export function createProfileWorkflowStepFormFromAgent(
+  agent: Pick<AgentProfileAgentFormState, "agentKey" | "displayName">,
+  options: {
+    existingStepIds?: readonly string[];
+    previousStepId?: string;
+  } = {},
+): AgentProfileWorkflowStepFormState {
+  const id = createUniqueStepId(sanitizeStepId(agent.agentKey), options.existingStepIds ?? []);
+  return {
+    id,
+    agentKey: agent.agentKey,
+    promptTemplate: `Run the ${agent.displayName.trim() || agent.agentKey} step for {{userPrompt}}.`,
+    dependsOn: options.previousStepId ?? "",
+    runMode: "sequential",
+    required: true,
+    outputKey: `${id}_output`,
+    failurePolicy: options.previousStepId ? "ask_user" : "stop",
+  };
+}
+
+export function createWorkflowStepFormsFromAgents(
+  agents: readonly Pick<AgentProfileAgentFormState, "agentKey" | "displayName" | "enabled">[],
+  existingSteps: readonly AgentProfileWorkflowStepFormState[] = [],
+): AgentProfileWorkflowStepFormState[] {
+  const existingByAgent = new Map(existingSteps.map((step) => [step.agentKey.trim(), step]));
+  const stepIds = new Set(existingSteps.map((step) => step.id.trim()).filter(Boolean));
+  let previousStepId: string | undefined;
+  return agents
+    .filter((agent) => agent.enabled)
+    .map((agent) => {
+      const existingStep = existingByAgent.get(agent.agentKey.trim());
+      if (existingStep) {
+        previousStepId = existingStep.id.trim();
+        return { ...existingStep };
+      }
+      const step = createProfileWorkflowStepFormFromAgent(agent, {
+        existingStepIds: [...stepIds],
+        ...(previousStepId ? { previousStepId } : {}),
+      });
+      stepIds.add(step.id);
+      previousStepId = step.id;
+      return step;
+    });
 }
 
 export function buildOrchestrationProfileFromForm(
@@ -237,7 +296,10 @@ function buildStrategyFromForm(
       ...(form.guidancePrompt.trim() ? { guidancePrompt: form.guidancePrompt.trim() } : {}),
     };
   }
-  const steps = buildStepsFromAgents(agents, existing);
+  const steps =
+    form.workflowSteps.length > 0
+      ? buildStepsFromWorkflowForm(form.workflowSteps, agents)
+      : buildStepsFromAgents(agents, existing);
   if (steps.length === 0) {
     throw new Error("固定或混合编排至少需要启用一个子 Agent。");
   }
@@ -249,6 +311,57 @@ function buildStrategyFromForm(
     recommendedSteps: steps,
     allowPlannerAdjustments: form.allowPlannerAdjustments,
   };
+}
+
+function workflowStepFormsFromStrategy(strategy: OrchestrationStrategy): AgentProfileWorkflowStepFormState[] {
+  const steps =
+    strategy.kind === "fixed" ? strategy.steps : strategy.kind === "hybrid" ? strategy.recommendedSteps : [];
+  return steps.map((step) => ({
+    id: step.id,
+    agentKey: step.agentKey,
+    promptTemplate: step.promptTemplate,
+    dependsOn: formatList(step.dependsOn),
+    runMode: step.runMode,
+    required: step.required,
+    outputKey: step.outputKey,
+    failurePolicy: step.failurePolicy,
+  }));
+}
+
+function buildStepsFromWorkflowForm(
+  stepForms: readonly AgentProfileWorkflowStepFormState[],
+  agents: readonly { agentKey: string; enabled: boolean }[],
+): WorkflowStep[] {
+  const enabledAgentKeys = new Set(agents.filter((agent) => agent.enabled).map((agent) => agent.agentKey));
+  const stepIds = new Set<string>();
+  const steps = stepForms.map((stepForm) => {
+    const id = normalizeStepId(stepForm.id);
+    if (stepIds.has(id)) {
+      throw new Error(`Workflow step id 重复：${id}`);
+    }
+    stepIds.add(id);
+    const agentKey = normalizeAgentKey(stepForm.agentKey);
+    if (!enabledAgentKeys.has(agentKey)) {
+      throw new Error(`Workflow step ${id} 引用了未启用的 Agent：${agentKey}`);
+    }
+    const outputKey = normalizeStepOutputKey(stepForm.outputKey);
+    const promptTemplate = stepForm.promptTemplate.trim();
+    if (!promptTemplate) {
+      throw new Error(`Workflow step ${id} 的提示词不能为空。`);
+    }
+    return {
+      id,
+      agentKey,
+      promptTemplate,
+      dependsOn: parseList(stepForm.dependsOn),
+      runMode: stepForm.runMode,
+      required: stepForm.required,
+      outputKey,
+      failurePolicy: stepForm.failurePolicy,
+    };
+  });
+  validateWorkflowStepDependencies(steps);
+  return steps;
 }
 
 function buildStepsFromAgents(
@@ -341,8 +454,83 @@ function sanitizeStepId(value: string): string {
   return sanitizeAgentKey(value) || "step";
 }
 
+function normalizeStepId(raw: string): string {
+  const id = raw.trim();
+  if (!id) {
+    throw new Error("Workflow step id 不能为空。");
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(id)) {
+    throw new Error(`Workflow step id ${id} 只能包含字母、数字、下划线和短横线，并且必须以字母开头。`);
+  }
+  return id;
+}
+
+function normalizeStepOutputKey(raw: string): string {
+  const outputKey = raw.trim();
+  if (!outputKey) {
+    throw new Error("Workflow step output key 不能为空。");
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(outputKey)) {
+    throw new Error(
+      `Workflow step output key ${outputKey} 只能包含字母、数字、下划线和短横线，并且必须以字母开头。`,
+    );
+  }
+  return outputKey;
+}
+
+function validateWorkflowStepDependencies(steps: readonly WorkflowStep[]): void {
+  const stepIds = new Set(steps.map((step) => step.id));
+  for (const step of steps) {
+    for (const dependency of step.dependsOn) {
+      if (!stepIds.has(dependency)) {
+        throw new Error(`Workflow step ${step.id} 依赖不存在的 step：${dependency}`);
+      }
+      if (dependency === step.id) {
+        throw new Error(`Workflow step ${step.id} 不能依赖自己。`);
+      }
+    }
+  }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const visit = (step: WorkflowStep) => {
+    if (visited.has(step.id)) {
+      return;
+    }
+    if (visiting.has(step.id)) {
+      throw new Error("Workflow step 依赖存在循环。");
+    }
+    visiting.add(step.id);
+    for (const dependency of step.dependsOn) {
+      const dependencyStep = byId.get(dependency);
+      if (dependencyStep) {
+        visit(dependencyStep);
+      }
+    }
+    visiting.delete(step.id);
+    visited.add(step.id);
+  };
+  for (const step of steps) {
+    visit(step);
+  }
+}
+
 function createUniqueAgentKey(base: string, existing: readonly string[]): string {
   const normalizedBase = sanitizeAgentKey(base) || "agent";
+  const used = new Set(existing);
+  if (!used.has(normalizedBase)) {
+    return normalizedBase;
+  }
+  for (let index = 2; ; index += 1) {
+    const candidate = `${normalizedBase}_${index}`;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+function createUniqueStepId(base: string, existing: readonly string[]): string {
+  const normalizedBase = sanitizeStepId(base);
   const used = new Set(existing);
   if (!used.has(normalizedBase)) {
     return normalizedBase;

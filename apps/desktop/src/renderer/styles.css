@@ -6775,6 +6775,75 @@ button:not(:disabled) {
   gap: 8px;
 }
 
+.models-agent-profile-workflow-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.models-agent-profile-workflow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.models-agent-profile-workflow-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+
+.models-agent-profile-workflow-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.models-agent-profile-step-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.models-agent-profile-step-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.models-agent-profile-step-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.models-agent-profile-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  margin-right: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: #d4d4d4;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.models-agent-profile-step-textarea {
+  min-height: 110px;
+}
+
 .models-route-profile-section {
   display: flex;
   flex-direction: column;
@@ -7708,6 +7777,12 @@ button:not(:disabled) {
 
   .models-route-list-modal .models-route-card-fields {
     grid-template-columns: 1fr;
+  }
+
+  .models-agent-profile-workflow-head,
+  .models-agent-profile-workflow-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

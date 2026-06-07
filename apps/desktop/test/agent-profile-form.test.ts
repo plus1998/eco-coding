@@ -5,6 +5,8 @@ import {
   buildOrchestrationProfileFromForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
+  createProfileWorkflowStepFormFromAgent,
+  createWorkflowStepFormsFromAgents,
 } from "../src/renderer/agent-profile-form";
 
 const provider: ProviderConfigView = {
@@ -117,6 +119,7 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
   form.agents[1]!.agentKey = "source_verifier";
   form.agents[1]!.displayName = "Source Verifier";
   form.agents[1]!.allowedTools = "Read, WebFetch";
+  form.workflowSteps = createWorkflowStepFormsFromAgents(form.agents, form.workflowSteps);
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -140,6 +143,96 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
       { id: "source_verifier", agentKey: "source_verifier", dependsOn: ["research"] },
     ],
   });
+});
+
+test("buildOrchestrationProfileFromForm preserves edited fixed workflow steps", () => {
+  const form = agentProfileToForm(profile());
+  form.id = "user.research";
+  form.workflowSteps[0] = {
+    ...form.workflowSteps[0]!,
+    id: "collect_sources",
+    promptTemplate: "Collect sources for {{userPrompt}} and return citations.",
+    runMode: "parallel",
+    required: false,
+    outputKey: "sources",
+    failurePolicy: "retry",
+  };
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+    nowIso: "2026-06-08T00:00:00.000Z",
+  });
+
+  expect(built.strategy).toEqual({
+    kind: "fixed",
+    steps: [
+      {
+        id: "collect_sources",
+        agentKey: "researcher",
+        promptTemplate: "Collect sources for {{userPrompt}} and return citations.",
+        dependsOn: [],
+        runMode: "parallel",
+        required: false,
+        outputKey: "sources",
+        failurePolicy: "retry",
+      },
+    ],
+  });
+});
+
+test("createWorkflowStepFormsFromAgents reuses existing steps and chains new agents", () => {
+  const form = agentProfileToForm(profile());
+  form.agents.push(
+    createProfileAgentFormFromTemplate(researcherTemplate, {
+      provider,
+      existingAgentKeys: form.agents.map((agent) => agent.agentKey),
+    }),
+  );
+  form.agents[1]!.agentKey = "source_verifier";
+  form.agents[1]!.displayName = "Source Verifier";
+
+  const steps = createWorkflowStepFormsFromAgents(form.agents, form.workflowSteps);
+
+  expect(steps).toEqual([
+    expect.objectContaining({ id: "research", agentKey: "researcher", outputKey: "research_notes" }),
+    expect.objectContaining({
+      id: "source_verifier",
+      agentKey: "source_verifier",
+      dependsOn: "research",
+      outputKey: "source_verifier_output",
+    }),
+  ]);
+});
+
+test("createProfileWorkflowStepFormFromAgent creates unique workflow step defaults", () => {
+  const step = createProfileWorkflowStepFormFromAgent(
+    { agentKey: "researcher", displayName: "Researcher" },
+    { existingStepIds: ["researcher"], previousStepId: "triage" },
+  );
+
+  expect(step).toMatchObject({
+    id: "researcher_2",
+    agentKey: "researcher",
+    dependsOn: "triage",
+    outputKey: "researcher_2_output",
+    failurePolicy: "ask_user",
+  });
+});
+
+test("buildOrchestrationProfileFromForm rejects invalid workflow steps", () => {
+  const form = agentProfileToForm(profile());
+  form.id = "user.bad.workflow";
+  form.workflowSteps[0] = { ...form.workflowSteps[0]!, dependsOn: "missing_step" };
+
+  expect(() =>
+    buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
+  ).toThrow("依赖不存在");
+
+  form.workflowSteps[0] = { ...form.workflowSteps[0]!, dependsOn: "", agentKey: "disabled_agent" };
+  expect(() =>
+    buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
+  ).toThrow("未启用的 Agent");
 });
 
 test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent keys", () => {

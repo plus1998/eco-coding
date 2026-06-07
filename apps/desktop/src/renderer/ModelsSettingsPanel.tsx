@@ -45,12 +45,15 @@ import { ApiCompatToggle } from "./ApiCompatToggle";
 import {
   type AgentProfileAgentFormState,
   type AgentProfileFormState,
+  type AgentProfileWorkflowStepFormState,
   agentProfileToForm,
   buildOrchestrationProfileFromForm,
   canEditStoredAgentProfile,
   createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
+  createProfileWorkflowStepFormFromAgent,
+  createWorkflowStepFormsFromAgents,
 } from "./agent-profile-form";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import {
@@ -1518,6 +1521,17 @@ function AgentProfileEditorModal({
     setForm((current) => ({ ...current, ...patch }));
   }
 
+  function patchStrategyKind(strategyKind: AgentProfileFormState["strategyKind"]) {
+    setForm((current) => ({
+      ...current,
+      strategyKind,
+      workflowSteps:
+        strategyKind !== "autonomous" && current.workflowSteps.length === 0
+          ? createWorkflowStepFormsFromAgents(current.agents, current.workflowSteps)
+          : current.workflowSteps,
+    }));
+  }
+
   function patchAgent(index: number, patch: Partial<AgentProfileAgentFormState>) {
     setForm((current) => ({
       ...current,
@@ -1525,6 +1539,86 @@ function AgentProfileEditorModal({
         agentIndex === index ? { ...agent, ...patch } : agent,
       ),
     }));
+  }
+
+  function updateAgentKey(index: number, agentKey: string) {
+    setForm((current) => {
+      const previousKey = current.agents[index]?.agentKey;
+      return {
+        ...current,
+        agents: current.agents.map((agent, agentIndex) =>
+          agentIndex === index ? { ...agent, agentKey } : agent,
+        ),
+        workflowSteps: previousKey
+          ? current.workflowSteps.map((step) =>
+              step.agentKey === previousKey ? { ...step, agentKey } : step,
+            )
+          : current.workflowSteps,
+      };
+    });
+  }
+
+  function setAgentEnabled(index: number, enabled: boolean) {
+    setForm((current) => {
+      const agent = current.agents[index];
+      if (!agent) {
+        return current;
+      }
+      const agents = current.agents.map((entry, agentIndex) =>
+        agentIndex === index ? { ...entry, enabled } : entry,
+      );
+      if (!enabled) {
+        return {
+          ...current,
+          agents,
+          workflowSteps: current.workflowSteps.filter((step) => step.agentKey !== agent.agentKey),
+        };
+      }
+      const alreadyHasStep = current.workflowSteps.some((step) => step.agentKey === agent.agentKey);
+      if (current.strategyKind === "autonomous" || alreadyHasStep) {
+        return { ...current, agents };
+      }
+      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
+      return {
+        ...current,
+        agents,
+        workflowSteps: [
+          ...current.workflowSteps,
+          createProfileWorkflowStepFormFromAgent(agent, {
+            existingStepIds: current.workflowSteps.map((step) => step.id),
+            ...(previousStepId ? { previousStepId } : {}),
+          }),
+        ],
+      };
+    });
+  }
+
+  function patchWorkflowStep(index: number, patch: Partial<AgentProfileWorkflowStepFormState>) {
+    setForm((current) => ({
+      ...current,
+      workflowSteps: current.workflowSteps.map((step, stepIndex) =>
+        stepIndex === index ? { ...step, ...patch } : step,
+      ),
+    }));
+  }
+
+  function updateWorkflowStepId(index: number, id: string) {
+    setForm((current) => {
+      const previousId = current.workflowSteps[index]?.id.trim();
+      const nextId = id.trim();
+      return {
+        ...current,
+        workflowSteps: current.workflowSteps.map((step, stepIndex) => {
+          if (stepIndex === index) {
+            return { ...step, id };
+          }
+          if (!previousId || !nextId) {
+            return step;
+          }
+          return { ...step, dependsOn: replaceDependencyToken(step.dependsOn, previousId, nextId) };
+        }),
+      };
+    });
   }
 
   function addAgent(templateId: string) {
@@ -1535,21 +1629,37 @@ function AgentProfileEditorModal({
     const provider =
       providers.find((entry) => entry.id === template.defaultModelRef?.providerId) ??
       selectPresetDefaultProvider(providers);
-    setForm((current) => ({
-      ...current,
-      agents: [
+    setForm((current) => {
+      const agents = [
         ...current.agents,
         createProfileAgentFormFromTemplate(template, {
           ...(provider && { provider }),
           existingAgentKeys: current.agents.map((agent) => agent.agentKey),
         }),
-      ],
-    }));
+      ];
+      const addedAgent = agents[agents.length - 1];
+      if (!addedAgent || current.strategyKind === "autonomous") {
+        return { ...current, agents };
+      }
+      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
+      return {
+        ...current,
+        agents,
+        workflowSteps: [
+          ...current.workflowSteps,
+          createProfileWorkflowStepFormFromAgent(addedAgent, {
+            existingStepIds: current.workflowSteps.map((step) => step.id),
+            ...(previousStepId ? { previousStepId } : {}),
+          }),
+        ],
+      };
+    });
   }
 
   function removeAgent(index: number) {
     setForm((current) => ({
       ...current,
+      workflowSteps: current.workflowSteps.filter((step) => step.agentKey !== current.agents[index]?.agentKey),
       agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
     }));
   }
@@ -1568,6 +1678,65 @@ function AgentProfileEditorModal({
       agents.splice(nextIndex, 0, agent);
       return { ...current, agents };
     });
+  }
+
+  function addWorkflowStep(agentKey?: string) {
+    setForm((current) => {
+      const agent =
+        current.agents.find((entry) => entry.enabled && entry.agentKey === agentKey) ??
+        current.agents.find((entry) => entry.enabled);
+      if (!agent) {
+        return current;
+      }
+      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
+      return {
+        ...current,
+        workflowSteps: [
+          ...current.workflowSteps,
+          createProfileWorkflowStepFormFromAgent(agent, {
+            existingStepIds: current.workflowSteps.map((step) => step.id),
+            ...(previousStepId ? { previousStepId } : {}),
+          }),
+        ],
+      };
+    });
+  }
+
+  function removeWorkflowStep(index: number) {
+    setForm((current) => ({
+      ...current,
+      workflowSteps: current.workflowSteps
+        .filter((_, stepIndex) => stepIndex !== index)
+        .map((step) => ({
+          ...step,
+          dependsOn: current.workflowSteps[index]?.id.trim()
+            ? removeDependencyToken(step.dependsOn, current.workflowSteps[index]!.id.trim())
+            : step.dependsOn,
+        })),
+    }));
+  }
+
+  function moveWorkflowStep(index: number, direction: -1 | 1) {
+    setForm((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.workflowSteps.length) {
+        return current;
+      }
+      const workflowSteps = [...current.workflowSteps];
+      const [step] = workflowSteps.splice(index, 1);
+      if (!step) {
+        return current;
+      }
+      workflowSteps.splice(nextIndex, 0, step);
+      return { ...current, workflowSteps };
+    });
+  }
+
+  function rebuildWorkflowSteps() {
+    setForm((current) => ({
+      ...current,
+      workflowSteps: createWorkflowStepFormsFromAgents(current.agents, current.workflowSteps),
+    }));
   }
 
   function updateAgentTemplate(index: number, templateId: string) {
@@ -1776,7 +1945,7 @@ function AgentProfileEditorModal({
                   value={form.strategyKind}
                   disabled={busy}
                   onChange={(event) =>
-                    patch({ strategyKind: event.target.value as AgentProfileFormState["strategyKind"] })
+                    patchStrategyKind(event.target.value as AgentProfileFormState["strategyKind"])
                   }
                 >
                   <option value="autonomous">Agent 自主编排</option>
@@ -1807,6 +1976,190 @@ function AgentProfileEditorModal({
                   onChange={(event) => patch({ guidancePrompt: event.target.value })}
                 />
               </label>
+            ) : null}
+            {form.strategyKind !== "autonomous" ? (
+              <div className="models-agent-profile-workflow-editor">
+                <div className="models-agent-profile-workflow-head">
+                  <h4 className="models-agent-profile-workflow-title">Workflow Steps</h4>
+                  <div className="models-agent-profile-workflow-actions">
+                    <button
+                      type="button"
+                      className="models-section-button"
+                      disabled={busy}
+                      onClick={rebuildWorkflowSteps}
+                    >
+                      <RefreshCw size={14} />
+                      同步
+                    </button>
+                    <button
+                      type="button"
+                      className="models-section-button"
+                      disabled={busy || !form.agents.some((agent) => agent.enabled)}
+                      onClick={() => addWorkflowStep()}
+                    >
+                      <Plus size={14} />
+                      步骤
+                    </button>
+                  </div>
+                </div>
+
+                {form.workflowSteps.length === 0 ? (
+                  <p className="mcp-list-empty">当前编排没有步骤。</p>
+                ) : (
+                  <div className="models-agent-profile-step-editor-list">
+                    {form.workflowSteps.map((step, index) => {
+                      const enabledAgents = form.agents.filter((agent) => agent.enabled);
+                      const stepAgentEnabled = enabledAgents.some((agent) => agent.agentKey === step.agentKey);
+                      return (
+                        <article key={`${step.id}-${index}`} className="models-agent-profile-step-editor">
+                          <div className="models-agent-profile-step-editor-head">
+                            <span className="models-agent-profile-step-index">{index + 1}</span>
+                            <button
+                              type="button"
+                              className="mcp-icon-button"
+                              disabled={busy || index === 0}
+                              onClick={() => moveWorkflowStep(index, -1)}
+                              aria-label={`上移 step ${step.id || index + 1}`}
+                            >
+                              <ArrowUp size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="mcp-icon-button"
+                              disabled={busy || index === form.workflowSteps.length - 1}
+                              onClick={() => moveWorkflowStep(index, 1)}
+                              aria-label={`下移 step ${step.id || index + 1}`}
+                            >
+                              <ArrowDown size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="mcp-icon-button danger"
+                              disabled={busy}
+                              onClick={() => removeWorkflowStep(index)}
+                              aria-label={`移除 step ${step.id || index + 1}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+
+                          <div className="models-agent-template-form-grid">
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">Step ID</span>
+                              <input
+                                className="mcp-field-input"
+                                value={step.id}
+                                disabled={busy}
+                                onChange={(event) => updateWorkflowStepId(index, event.target.value)}
+                              />
+                            </label>
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">Agent</span>
+                              <select
+                                className="mcp-field-input"
+                                value={step.agentKey}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  patchWorkflowStep(index, { agentKey: event.target.value })
+                                }
+                              >
+                                {!stepAgentEnabled ? (
+                                  <option value={step.agentKey}>{step.agentKey || "未选择"}</option>
+                                ) : null}
+                                {enabledAgents.map((agent) => (
+                                  <option key={agent.agentKey} value={agent.agentKey}>
+                                    {agent.displayName || agent.agentKey}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">输出 Key</span>
+                              <input
+                                className="mcp-field-input"
+                                value={step.outputKey}
+                                disabled={busy}
+                                onChange={(event) => patchWorkflowStep(index, { outputKey: event.target.value })}
+                              />
+                            </label>
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">依赖 Step</span>
+                              <input
+                                className="mcp-field-input"
+                                value={step.dependsOn}
+                                disabled={busy}
+                                onChange={(event) => patchWorkflowStep(index, { dependsOn: event.target.value })}
+                              />
+                            </label>
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">运行方式</span>
+                              <select
+                                className="mcp-field-input"
+                                value={step.runMode}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  patchWorkflowStep(index, {
+                                    runMode: event.target.value as AgentProfileWorkflowStepFormState["runMode"],
+                                  })
+                                }
+                              >
+                                <option value="sequential">顺序</option>
+                                <option value="parallel">并行</option>
+                              </select>
+                            </label>
+                            <label className="mcp-field">
+                              <span className="mcp-field-label">失败策略</span>
+                              <select
+                                className="mcp-field-input"
+                                value={step.failurePolicy}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  patchWorkflowStep(index, {
+                                    failurePolicy:
+                                      event.target
+                                        .value as AgentProfileWorkflowStepFormState["failurePolicy"],
+                                  })
+                                }
+                              >
+                                <option value="stop">停止</option>
+                                <option value="retry">重试</option>
+                                <option value="skip">跳过</option>
+                                <option value="ask_user">询问用户</option>
+                              </select>
+                            </label>
+                            <label className="mcp-field models-toggle-field">
+                              <span className="mcp-field-label">必需步骤</span>
+                              <label className="mcp-toggle" title={step.required ? "必需" : "可选"}>
+                                <input
+                                  type="checkbox"
+                                  checked={step.required}
+                                  disabled={busy}
+                                  onChange={(event) =>
+                                    patchWorkflowStep(index, { required: event.target.checked })
+                                  }
+                                />
+                                <span className="mcp-toggle-track" aria-hidden />
+                              </label>
+                            </label>
+                          </div>
+
+                          <label className="mcp-field">
+                            <span className="mcp-field-label">Step Prompt</span>
+                            <textarea
+                              className="mcp-field-input mcp-field-textarea models-agent-profile-step-textarea"
+                              value={step.promptTemplate}
+                              disabled={busy}
+                              onChange={(event) =>
+                                patchWorkflowStep(index, { promptTemplate: event.target.value })
+                              }
+                            />
+                          </label>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             ) : null}
           </section>
 
@@ -1852,7 +2205,7 @@ function AgentProfileEditorModal({
                             type="checkbox"
                             checked={agent.enabled}
                             disabled={busy}
-                            onChange={(event) => patchAgent(index, { enabled: event.target.checked })}
+                            onChange={(event) => setAgentEnabled(index, event.target.checked)}
                           />
                           <span className="mcp-toggle-track" aria-hidden />
                         </label>
@@ -1892,7 +2245,7 @@ function AgentProfileEditorModal({
                             className="mcp-field-input"
                             value={agent.agentKey}
                             disabled={busy}
-                            onChange={(event) => patchAgent(index, { agentKey: event.target.value })}
+                            onChange={(event) => updateAgentKey(index, event.target.value)}
                           />
                         </label>
                         <label className="mcp-field">
@@ -3158,6 +3511,25 @@ function formatModelPreview(modelId: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
+}
+
+function replaceDependencyToken(raw: string, previousId: string, nextId: string): string {
+  return dependencyTokens(raw)
+    .map((token) => (token === previousId ? nextId : token))
+    .join(", ");
+}
+
+function removeDependencyToken(raw: string, removedId: string): string {
+  return dependencyTokens(raw)
+    .filter((token) => token !== removedId)
+    .join(", ");
+}
+
+function dependencyTokens(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
 }
 
 function selectPresetDefaultProvider(
