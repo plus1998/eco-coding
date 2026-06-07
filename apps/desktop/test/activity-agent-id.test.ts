@@ -131,3 +131,46 @@ test("resolveActivityAgentId resolves parallel coders via parent tool use", () =
   expect(agentA).toBe("agent_coder_a");
   expect(agentB).toBe("agent_coder_b");
 });
+
+test("resolveActivityAgentId maps parent tool use when activity role is tool", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  registry.noteTaskToolUse("thr_1", "toolu_task_1");
+  registry.linkToolUseToAgent("thr_1", "toolu_task_1", "agent_coder_a");
+
+  const agentId = resolveActivityAgentId(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "tool",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        parent_tool_use_id: "toolu_task_1",
+      },
+    },
+    { metricsRegistry: registry },
+  );
+
+  expect(agentId).toBe("agent_coder_a");
+});
+
+test("resolveActivityAgentId accepts distinct session id registered in metrics", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  registry.onSubagentStart("thr_1", { agentId: "agent_coder_solo", role: "coder" });
+
+  const agentId = resolveActivityAgentId(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "tool",
+      agentId: "agent_coder_solo",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+      },
+    },
+    { plannerSessionId: "session_planner", metricsRegistry: registry },
+  );
+
+  expect(agentId).toBe("agent_coder_solo");
+});

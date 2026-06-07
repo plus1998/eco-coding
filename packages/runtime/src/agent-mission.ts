@@ -1,3 +1,6 @@
+import { isSubagentRole, type SubagentRole } from "./subagent-availability.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
+
 export interface SubagentMissionPayload {
   role: string;
   summary: string;
@@ -5,13 +8,6 @@ export interface SubagentMissionPayload {
 }
 
 const MISSION_PREFIX = "@mission ";
-
-const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
-type SubagentRole = (typeof SUBAGENT_ROLES)[number];
-
-function isSubagentRole(role: string): role is SubagentRole {
-  return (SUBAGENT_ROLES as readonly string[]).includes(role);
-}
 
 const ROLE_DEFAULT_SUMMARY: Record<SubagentRole, string> = {
   explore: "只读探索代码库以收集上下文",
@@ -125,7 +121,7 @@ export function parseSubagentMissionMessage(message: string): SubagentMissionPay
       return null;
     }
     return {
-      role: parsed.role,
+      role: normalizeMissionRole(parsed.role),
       summary: parsed.summary.trim(),
       prompt: typeof parsed.prompt === "string" ? parsed.prompt.trim() : "",
     };
@@ -135,11 +131,21 @@ export function parseSubagentMissionMessage(message: string): SubagentMissionPay
 }
 
 const CHINESE_ROLE_TO_ID: Record<string, string> = {
+  探索: "explore",
   架构: "architect",
   编码: "coder",
   审查: "reviewer",
   测试: "tester",
 };
+
+function normalizeMissionRole(role: string): string {
+  const trimmed = role.trim();
+  const fromChinese = CHINESE_ROLE_TO_ID[trimmed];
+  if (fromChinese) {
+    return fromChinese;
+  }
+  return normalizeSdkSubagentType(trimmed) ?? trimmed;
+}
 
 /** Matches tool progress elapsed suffixes like `(32.5s)` or bare `32.5s`. */
 export function isToolElapsedDuration(value: string): boolean {
@@ -155,7 +161,7 @@ export function missionFromAgentToolDetail(
   }
   const legacyRole = detail.match(/\(([^)]+)\)\s*(?:·\s*(.+))?$/);
   if (legacyRole?.[1]) {
-    const role = legacyRole[1].trim();
+    const role = normalizeMissionRole(legacyRole[1]);
     if (isToolElapsedDuration(role)) {
       return null;
     }
@@ -165,7 +171,7 @@ export function missionFromAgentToolDetail(
       summary: rest ? clampSummary(rest) : summarizeAgentObjective(role, ""),
     };
   }
-  const chinese = detail.match(/^(架构|编码|审查|测试)(?:\s*·\s*(.+))?$/);
+  const chinese = detail.match(/^(探索|架构|编码|审查|测试)(?:\s*·\s*(.+))?$/);
   if (chinese?.[1]) {
     const role = CHINESE_ROLE_TO_ID[chinese[1]] ?? chinese[1];
     const rest = chinese[2]?.trim();

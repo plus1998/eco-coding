@@ -1266,6 +1266,59 @@ test("resolveSubagentRunTitle returns mission summary text", () => {
 test("resolveSubagentRunDisplayTitle uses fixed Chinese role label", () => {
   expect(resolveSubagentRunDisplayTitle("coder")).toBe("编码");
   expect(resolveSubagentRunDisplayTitle("reviewer")).toBe("审查");
+  expect(resolveSubagentRunDisplayTitle("探索")).toBe("探索");
+  expect(resolveSubagentRunDisplayTitle("Explore")).toBe("探索");
+});
+
+test("backfills subagent card agentId from persisted session timings", () => {
+  const agentId = "agent-explore-live";
+  const startedAt = new Date(Date.now() - 60_000).toISOString();
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 探索 (explore)" },
+      { id: "2", role: "tool", message: "Tool: Agent (2s)" },
+    ],
+    {
+      status: "running",
+      createdAt: new Date().toISOString(),
+      subagentTimingsByAgentId: buildSubagentTimingsByAgentId([
+        {
+          agentId,
+          role: "explore",
+          status: "active",
+          startedAt,
+          lastActiveAt: startedAt,
+          accumulatedMs: 10_000,
+          durationMs: 60_000,
+        },
+      ]),
+    },
+  );
+
+  const item = subagentItems(blocks)[0];
+  expect(item?.role).toBe("explore");
+  expect(item?.title).toBe("探索");
+  expect(item?.agentId).toBe(agentId);
+});
+
+test("merges legacy subagent blocks into agentId run instead of splitting cards", () => {
+  const agentId = "agent-coder-merge";
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      { id: "1", role: "tool", message: "Tool: Agent · 编码 (coder)" },
+      { id: "2", role: "tool", message: "Tool: Agent (1s)" },
+      { id: "3", role: "coder", message: "Tool: Read · a.ts", agentId },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const items = subagentItems(blocks);
+  expect(items).toHaveLength(1);
+  expect(items[0]?.agentId).toBe(agentId);
+  expect(items[0]?.children.some((child) => child.kind === "subagent-mission")).toBe(true);
+  expect(items[0]?.children.some((child) => child.kind === "action")).toBe(true);
 });
 
 test("resolveSubagentRunStatusLine prefers tool action over duplicate mission summary", () => {

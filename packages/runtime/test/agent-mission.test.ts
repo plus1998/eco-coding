@@ -35,3 +35,8 @@ test("detects generic mission summaries and weak agent tool labels", () => {
   expect(isWeakAgentToolDetail("编码 (coder)")).toBe(true);
   expect(isWeakAgentToolDetail("Implement export filters in src/api.ts")).toBe(false);
 });
+
+test("normalizes explore labels in agent tool detail", () => {
+  expect(missionFromAgentToolDetail("探索 · 搜索代码库")?.role).toBe("explore");
+  expect(missionFromAgentToolDetail("编码 (Explore)")?.role).toBe("explore");
+});

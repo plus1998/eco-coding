@@ -25,6 +25,21 @@ function readBillingRole(role: string): AgentRole | undefined {
   return isSubagentRole(role) ? role : undefined;
 }
 
+function readDistinctSubagentSessionId(
+  agentId: string | undefined,
+  plannerSessionId: string | undefined,
+): string | undefined {
+  const explicitAgentId = agentId?.trim();
+  if (
+    !explicitAgentId ||
+    explicitAgentId === "unknown-session" ||
+    explicitAgentId === plannerSessionId
+  ) {
+    return undefined;
+  }
+  return explicitAgentId;
+}
+
 /** Resolve sub-agent instance id for activity persistence. */
 export function resolveActivityAgentId(
   threadId: string,
@@ -36,21 +51,35 @@ export function resolveActivityAgentId(
 ): string | undefined {
   const displayRole = inferActivityRole(event);
   const billingRole = readBillingRole(displayRole);
+  const distinctExplicit = readDistinctSubagentSessionId(
+    event.agentId,
+    options.plannerSessionId?.trim(),
+  );
+  const parentToolUseId = readParentToolUseId(event.payload);
+
+  if (parentToolUseId && options.metricsRegistry) {
+    const linked = options.metricsRegistry.resolveAgentIdByParentToolUse(threadId, parentToolUseId);
+    if (linked) {
+      return linked;
+    }
+  }
+
+  if (distinctExplicit && billingRole) {
+    return distinctExplicit;
+  }
+
+  if (distinctExplicit && options.metricsRegistry?.roleForAgentId(threadId, distinctExplicit)) {
+    return distinctExplicit;
+  }
+
   if (!billingRole) {
     return undefined;
   }
 
-  const explicitAgentId = event.agentId?.trim();
-  const plannerSessionId = options.plannerSessionId?.trim();
-  if (
-    explicitAgentId &&
-    explicitAgentId !== "unknown-session" &&
-    explicitAgentId !== plannerSessionId
-  ) {
-    return explicitAgentId;
+  if (distinctExplicit) {
+    return distinctExplicit;
   }
 
-  const parentToolUseId = readParentToolUseId(event.payload);
   if (options.metricsRegistry) {
     const resolved = options.metricsRegistry.resolveAgentId(threadId, {
       role: billingRole,

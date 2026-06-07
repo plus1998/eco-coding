@@ -22,10 +22,10 @@ import {
   stripSubagentBracketPrefix,
 } from "../shared/activity-display";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
-import { resolveSubagentRunDisplayTitle } from "../shared/subagent-roles";
+import { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
 import type { ThreadActivityLine, ThreadStatus, ThreadSubagentSessionTiming } from "../shared/ipc";
 
-export { resolveSubagentRunDisplayTitle } from "../shared/subagent-roles";
+export { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
 import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
 
@@ -68,6 +68,30 @@ function resolveSubagentRunDurationMsForItem(
     return resolveSubagentRunDurationMsByAgentId(lines, agentId);
   }
   return resolveSubagentRunDurationMs(lines, role, occurrence);
+}
+
+function resolveSubagentAgentIdFromTimings(
+  role: string,
+  occurrence: number,
+  timingsByAgentId?: Record<string, ThreadSubagentSessionTiming>,
+): string | undefined {
+  if (!timingsByAgentId) {
+    return undefined;
+  }
+  const normalizedRole = normalizeSubagentDisplayRole(role) ?? role;
+  const entries = Object.values(timingsByAgentId)
+    .filter((entry) => entry.role === normalizedRole)
+    .sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+  return entries[occurrence]?.agentId;
+}
+
+function resolveSubagentRunAgentId(
+  agentId: string | undefined,
+  role: string,
+  occurrence: number,
+  timingsByAgentId?: Record<string, ThreadSubagentSessionTiming>,
+): string | undefined {
+  return agentId ?? resolveSubagentAgentIdFromTimings(role, occurrence, timingsByAgentId);
 }
 
 /** Whether a new activity line should scroll the main feed (planner/user), not sub-agent panels. */
@@ -387,15 +411,16 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   const upsertAgentRequest = (subagent?: string) => {
+    const normalizedSubagent = subagent ? normalizeSubagentDisplayRole(subagent) ?? subagent : undefined;
     const last = current.details[current.details.length - 1];
-    if (last?.kind === "agent-request" && last.subagent === subagent) {
+    if (last?.kind === "agent-request" && last.subagent === normalizedSubagent) {
       repositionPendingRequestBlocksToEnd();
       return;
     }
     removePendingRequestBlocks();
     current.details.push({
       kind: "agent-request",
-      ...(subagent && { subagent }),
+      ...(normalizedSubagent && { subagent: normalizedSubagent }),
       ...(toolContextAgentId && { agentId: toolContextAgentId }),
     });
   };
@@ -496,6 +521,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const noteNarrativeRole = (line: ThreadActivityLine) => {
     if (isSubagentRole(line.role)) {
       narrativeSubagent = line.role;
+    } else {
+      const normalized = normalizeSubagentDisplayRole(line.role);
+      if (normalized) {
+        narrativeSubagent = normalized;
+      }
     }
     if (line.agentId?.trim()) {
       narrativeAgentId = line.agentId.trim();
@@ -505,6 +535,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   const noteToolContext = (line: ThreadActivityLine) => {
     if (isSubagentRole(line.role)) {
       toolContextSubagent = line.role;
+    } else {
+      const normalized = normalizeSubagentDisplayRole(line.role);
+      if (normalized) {
+        toolContextSubagent = normalized;
+      }
     }
     if (line.agentId?.trim()) {
       toolContextAgentId = line.agentId.trim();
@@ -513,10 +548,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
   const pushSubagentMission = (mission: SubagentMissionPayload) => {
     removePendingRequestBlocks();
-    toolContextSubagent = mission.role;
-    const stored = missionByRole.get(mission.role);
+    const normalizedRole = normalizeSubagentDisplayRole(mission.role) ?? mission.role;
+    toolContextSubagent = normalizedRole;
+    const stored = missionByRole.get(normalizedRole);
     const merged: SubagentMissionPayload = {
-      role: mission.role,
+      role: normalizedRole,
       summary:
         stored && !isGenericMissionSummary(stored.summary) && isGenericMissionSummary(mission.summary)
           ? stored.summary
@@ -541,10 +577,12 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
               ? merged.summary
               : last.summary,
           ...((merged.prompt || last.prompt) && { prompt: merged.prompt || last.prompt }),
+          ...(toolContextAgentId && { agentId: toolContextAgentId }),
         };
         if (
           upgraded.summary === last.summary &&
-          upgraded.prompt === last.prompt
+          upgraded.prompt === last.prompt &&
+          upgraded.agentId === last.agentId
         ) {
           return;
         }
@@ -557,14 +595,16 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       subagent: merged.role,
       summary: merged.summary,
       ...(merged.prompt && { prompt: merged.prompt }),
+      ...(toolContextAgentId && { agentId: toolContextAgentId }),
     });
   };
 
   const pushToolAction = (tool: ParsedToolAction, line: ThreadActivityLine) => {
     removePendingRequestBlocks();
     noteToolContext(line);
-    const subagent =
+    const subagentRaw =
       tool.subagent ?? (isSubagentRole(line.role) ? line.role : toolContextSubagent);
+    const subagent = subagentRaw ? normalizeSubagentDisplayRole(subagentRaw) ?? subagentRaw : undefined;
     if (tool.tool === "Agent") {
       if (subagent) {
         toolContextSubagent = subagent;
@@ -875,25 +915,27 @@ export function extractSurfacedRequestFailureBlocks(
 }
 
 function getBlockSubagentRole(block: ActivityDetailBlock): string | undefined {
+  let raw: string | undefined;
   if (block.kind === "subagent-mission") {
-    return block.subagent;
-  }
-  if (block.kind === "model-request" && block.role && isSubagentRole(block.role)) {
-    return block.role;
-  }
-  if (
+    raw = block.subagent;
+  } else if (block.kind === "model-request" && block.role) {
+    raw = block.role;
+  } else if (
     (block.kind === "thinking" ||
       block.kind === "action" ||
       block.kind === "narrative" ||
       block.kind === "agent-request" ||
       block.kind === "tool-failed" ||
       block.kind === "api-error") &&
-    block.subagent &&
-    isSubagentRole(block.subagent)
+    block.subagent
   ) {
-    return block.subagent;
+    raw = block.subagent;
   }
-  return undefined;
+  if (!raw) {
+    return undefined;
+  }
+  const normalized = normalizeSubagentDisplayRole(raw);
+  return normalized && isSubagentRole(normalized) ? normalized : undefined;
 }
 
 export function partitionDetailsIntoRuns(
@@ -919,15 +961,16 @@ export function partitionDetailsIntoRuns(
 
   const flushLegacySubagent = () => {
     if (currentRole && subagentBlocks.length > 0) {
-      const occurrence = roleOccurrences.get(currentRole) ?? 0;
+      const normalizedRole = normalizeSubagentDisplayRole(currentRole) ?? currentRole;
+      const occurrence = roleOccurrences.get(normalizedRole) ?? 0;
       runs.push({
         kind: "subagent",
-        role: currentRole,
+        role: normalizedRole,
         ...(currentAgentId && { agentId: currentAgentId }),
         occurrence,
         blocks: subagentBlocks,
       });
-      roleOccurrences.set(currentRole, occurrence + 1);
+      roleOccurrences.set(normalizedRole, occurrence + 1);
     }
     subagentBlocks = [];
     currentRole = undefined;
@@ -951,24 +994,33 @@ export function partitionDetailsIntoRuns(
 
   const pushAgentBlock = (agentId: string, role: string, block: ActivityDetailBlock) => {
     flushPlanner();
+    const normalizedRole = normalizeSubagentDisplayRole(role) ?? role;
     const missionPrefix = takeMissionOnlyPrefix();
+    let legacyPrefix: ActivityDetailBlock[] = [];
     if (missionPrefix.length === 0) {
-      flushLegacySubagent();
+      if (currentRole === normalizedRole && subagentBlocks.length > 0) {
+        legacyPrefix = [...subagentBlocks];
+        subagentBlocks = [];
+        currentRole = undefined;
+        currentAgentId = undefined;
+      } else {
+        flushLegacySubagent();
+      }
     }
     let run = runsByAgentId.get(agentId);
     if (!run) {
       run = {
         kind: "subagent",
-        role,
+        role: normalizedRole,
         agentId,
-        occurrence: roleOccurrences.get(role) ?? 0,
-        blocks: [...missionPrefix],
+        occurrence: roleOccurrences.get(normalizedRole) ?? 0,
+        blocks: [...missionPrefix, ...legacyPrefix],
       };
-      roleOccurrences.set(role, (roleOccurrences.get(role) ?? 0) + 1);
+      roleOccurrences.set(normalizedRole, (roleOccurrences.get(normalizedRole) ?? 0) + 1);
       runsByAgentId.set(agentId, run);
       runs.push(run);
-    } else if (missionPrefix.length > 0) {
-      run.blocks = [...missionPrefix, ...run.blocks];
+    } else if (missionPrefix.length > 0 || legacyPrefix.length > 0) {
+      run.blocks = [...missionPrefix, ...legacyPrefix, ...run.blocks];
     }
     run.blocks.push(block);
   };
@@ -1385,37 +1437,51 @@ function pushWorkSessionsFromRuns(
       if (mergeMissionOnlyRunIntoItems(run)) {
         return undefined;
       }
-      const completedDurationMs = resolveSubagentRunDurationMsForItem(
+      const agentId = resolveSubagentRunAgentId(
         run.agentId,
+        run.role,
+        run.occurrence,
+        options.subagentTimingsByAgentId,
+      );
+      const completedDurationMs = resolveSubagentRunDurationMsForItem(
+        agentId,
         run.role,
         run.occurrence,
         options.lines,
         options.subagentTimingsByAgentId,
       );
-      if (completedDurationMs > 0 && run.agentId) {
+      if (completedDurationMs > 0 && agentId) {
         const role = run.role;
         const title = resolveSubagentRunDisplayTitle(role);
         const statusLine = resolveSubagentRunStatusLine(run.blocks, role);
         return {
-          sessionKey: `subagent-${run.agentId}`,
+          sessionKey: `subagent-${agentId}`,
           role,
           title,
           running: false,
-          agentId: run.agentId,
+          agentId,
           ...(statusLine && { statusLine }),
           runDurationMs: completedDurationMs,
           children: run.blocks,
         };
       }
-      pendingMissionRuns.push(run);
+      pendingMissionRuns.push(
+        agentId && !run.agentId ? { ...run, agentId } : run,
+      );
       return undefined;
     }
 
     const mergedRun = mergeMissionPrecursor(run);
     const role = mergedRun.role;
+    const agentId = resolveSubagentRunAgentId(
+      mergedRun.agentId,
+      role,
+      mergedRun.occurrence,
+      options.subagentTimingsByAgentId,
+    );
     const running = resolveSubagentRunOpen(
       options.lines,
-      { role, occurrence: mergedRun.occurrence, ...(mergedRun.agentId && { agentId: mergedRun.agentId }) },
+      { role, occurrence: mergedRun.occurrence, ...(agentId && { agentId }) },
       segmentRunning,
     );
     const title = resolveSubagentRunDisplayTitle(role);
@@ -1425,14 +1491,14 @@ function pushWorkSessionsFromRuns(
       options.activeSubagent === role ? options.activeMissionSummary : undefined,
     );
     const runDurationMs = resolveSubagentRunDurationMsForItem(
-      mergedRun.agentId,
+      agentId,
       role,
       mergedRun.occurrence,
       options.lines,
       options.subagentTimingsByAgentId,
     );
-    const sessionKey = mergedRun.agentId
-      ? `subagent-${mergedRun.agentId}`
+    const sessionKey = agentId
+      ? `subagent-${agentId}`
       : `subagent-${role}-${mergedRun.occurrence}`;
 
     return {
@@ -1440,7 +1506,7 @@ function pushWorkSessionsFromRuns(
       role,
       title,
       running,
-      ...(mergedRun.agentId && { agentId: mergedRun.agentId }),
+      ...(agentId && { agentId }),
       ...(statusLine && { statusLine }),
       ...(runDurationMs > 0 && { runDurationMs }),
       children: mergedRun.blocks,
@@ -1501,28 +1567,34 @@ function pushWorkSessionsFromRuns(
       continue;
     }
     const role = missionRun.role;
+    const agentId = resolveSubagentRunAgentId(
+      missionRun.agentId,
+      role,
+      missionRun.occurrence,
+      options.subagentTimingsByAgentId,
+    );
     const title = resolveSubagentRunDisplayTitle(role);
     const statusLine = resolveSubagentRunStatusLine(missionRun.blocks, role);
     const runDurationMs = resolveSubagentRunDurationMsForItem(
-      missionRun.agentId,
+      agentId,
       role,
       missionRun.occurrence,
       options.lines,
       options.subagentTimingsByAgentId,
     );
     upsertSubagentItem({
-      sessionKey: missionRun.agentId
-        ? `subagent-${missionRun.agentId}`
+      sessionKey: agentId
+        ? `subagent-${agentId}`
         : `subagent-${role}-${missionRun.occurrence}`,
       role,
       title,
-      ...(missionRun.agentId && { agentId: missionRun.agentId }),
+      ...(agentId && { agentId }),
       running: resolveSubagentRunOpen(
         options.lines,
         {
           role,
           occurrence: missionRun.occurrence,
-          ...(missionRun.agentId && { agentId: missionRun.agentId }),
+          ...(agentId && { agentId }),
         },
         options.segmentRunning,
       ),
@@ -2203,8 +2275,9 @@ function parseToolLine(message: string): ParsedToolAction | null {
     tool === "Agent" && detail
       ? detail.match(/\(([^)]+)\)\s*$/)?.[1] ?? detail.split(" ")[0]
       : undefined;
-  const subagent =
+  const subagentRaw =
     rawSubagent && !isToolElapsedDuration(rawSubagent) ? rawSubagent : undefined;
+  const subagent = subagentRaw ? normalizeSubagentDisplayRole(subagentRaw) ?? subagentRaw : undefined;
   return {
     tool,
     ...(detail && { detail }),

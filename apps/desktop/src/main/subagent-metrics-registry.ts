@@ -105,6 +105,14 @@ export class SubagentMetricsRegistry {
     state.toolUses.link(toolUseId, agentId);
   }
 
+  resolveAgentIdByParentToolUse(threadId: string, parentToolUseId: string): string | undefined {
+    const state = this.threads.get(threadId);
+    if (!state) {
+      return undefined;
+    }
+    return state.toolUses.resolve(parentToolUseId.trim());
+  }
+
   resolveAgentId(
     threadId: string,
     input: {
