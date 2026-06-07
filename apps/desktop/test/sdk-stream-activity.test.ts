@@ -117,6 +117,42 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("emits fixed workflow lifecycle activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; role: string }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "agent.completed",
+      role: "planner",
+      agentId: "eco-workflow:research",
+      payload: {
+        ecoWorkflowStep: {
+          id: "research",
+          agentKey: "researcher",
+          outputKey: "research_notes",
+          status: "completed",
+          attempt: 1,
+          batchIndex: 0,
+        },
+        label: "固定编排步骤完成：research",
+      },
+    },
+    (_threadId, type, message, role) => {
+      emitted.push({ type, message, role });
+    },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "agent.completed",
+      message: "固定编排步骤完成：research",
+      role: "planner",
+    },
+  ]);
+});
+
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];

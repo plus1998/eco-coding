@@ -2348,6 +2348,13 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return payload.label.trim() || null;
   }
 
+  if (
+    typeof payload.label === "string" &&
+    (isRecord(payload.ecoWorkflow) || isRecord(payload.ecoWorkflowStep))
+  ) {
+    return payload.label.trim() || null;
+  }
+
   if (payload.type === "assistant" && isRecord(payload.message)) {
     return extractBetaMessageText(payload.message);
   }

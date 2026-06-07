@@ -11,7 +11,9 @@ import {
   projectionItemToDetailBlock,
 } from "../src/renderer/thread-run-projection-view";
 
-function item(input: Partial<ThreadRunProjectionTimelineItem> & { id: string }): ThreadRunProjectionTimelineItem {
+function item(
+  input: Partial<ThreadRunProjectionTimelineItem> & { id: string },
+): ThreadRunProjectionTimelineItem {
   return {
     id: input.id,
     sequence: input.sequence ?? 1,
@@ -86,6 +88,38 @@ test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   expect(view.subagentCards.map((card) => card.key)).toEqual(["coder_a", "coder_b"]);
   expect(view.subagentCards.map((card) => card.timelineIds)).toEqual([["a-msg"], ["b-msg"]]);
   expect(view.subagentCards.map((card) => card.statusText)).toEqual(["Read API", "Edit UI"]);
+});
+
+test("buildThreadRunProjectionViewModel surfaces fixed workflow lifecycle rows", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "workflow-start",
+          eventType: "agent.started",
+          text: "固定编排步骤开始：research",
+          role: "planner",
+        }),
+        item({
+          id: "normal-agent-start",
+          eventType: "agent.started",
+          text: "Agent session started.",
+          role: "planner",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:workflow-start"]);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(entry.item)).toEqual({
+      kind: "phase",
+      label: "固定编排步骤开始：research",
+    });
+  }
 });
 
 test("buildThreadRunProjectionViewModel echoes agent narrative in main feed while preserving agent card details", () => {
@@ -320,7 +354,7 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
           id: "worktree-merge",
           eventType: "message.final",
           role: "system",
-          text: "__eco_worktree_merge__\n{\"fileCount\":1}",
+          text: '__eco_worktree_merge__\n{"fileCount":1}',
           sequence: 6,
         }),
         item({
@@ -334,10 +368,7 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
-    "main:prompt",
-    "main:substantive",
-  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
 });
 
 test("buildThreadRunProjectionViewModel keeps pre-speech current action on the agent card", () => {

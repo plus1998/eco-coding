@@ -4,10 +4,7 @@ import type {
   ThreadRunProjectionTimelineItem,
   ThreadRunToolMetadata,
 } from "../shared/ipc";
-import {
-  formatMcpToolDisplayName,
-  isMcpToolName,
-} from "../shared/activity-display";
+import { formatMcpToolDisplayName, isMcpToolName } from "../shared/activity-display";
 import {
   resolveSubagentRunDisplayTitle,
   type ActivityActionIcon,
@@ -189,6 +186,9 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionOtelToolDurationSummary(item)) {
     return true;
   }
+  if (isProjectionWorkflowLifecycleItem(item)) {
+    return false;
+  }
   if (
     item.eventType === "agent.started" ||
     item.eventType === "agent.stopped" ||
@@ -202,10 +202,7 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   }
   const text = item.text.trim();
   return (
-    !text ||
-    text === "状态已更新" ||
-    isProjectionLifecycleText(text) ||
-    isProjectionUsageNoiseText(text)
+    !text || text === "状态已更新" || isProjectionLifecycleText(text) || isProjectionUsageNoiseText(text)
   );
 }
 
@@ -242,6 +239,10 @@ function isProjectionInternalMessageText(text: string): boolean {
     /^Working in project directory:/u.test(trimmed) ||
     /^Local model router ready:/u.test(trimmed)
   );
+}
+
+function isProjectionWorkflowLifecycleItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return /^固定编排(?:开始|完成|步骤开始|步骤完成|步骤失败)：/u.test(item.text.trim());
 }
 
 export function buildProjectionDisplayTimelineItems(
@@ -313,9 +314,7 @@ function filterCompactionTimelineForFeed(
     if (item.eventType !== "context.compaction.started") {
       return true;
     }
-    return !timeline
-      .slice(index + 1)
-      .some((later) => isProjectionContextCompactionItem(later));
+    return !timeline.slice(index + 1).some((later) => isProjectionContextCompactionItem(later));
   });
 }
 
@@ -340,10 +339,7 @@ function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): b
 }
 
 function isProjectionRequestCompletionItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return (
-    item.eventType === "request.completed" ||
-    item.eventType === "request.cancelled"
-  );
+  return item.eventType === "request.completed" || item.eventType === "request.cancelled";
 }
 
 function projectionRequestKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -382,9 +378,7 @@ function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): stri
     return undefined;
   }
   const channel =
-    item.eventType === "thinking.delta" || item.eventType === "thinking.final"
-      ? "thinking"
-      : "message";
+    item.eventType === "thinking.delta" || item.eventType === "thinking.final" ? "thinking" : "message";
   return `${channel}:${projectionRequestKey(item) ?? projectionOwnerKey(item) ?? item.id}`;
 }
 
@@ -477,7 +471,9 @@ function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean
   return item.text.trim().length > 0;
 }
 
-export function formatProjectionAgentLabel(agent: Pick<ThreadRunProjectionAgent, "agentId" | "role">): string {
+export function formatProjectionAgentLabel(
+  agent: Pick<ThreadRunProjectionAgent, "agentId" | "role">,
+): string {
   return `${resolveSubagentRunDisplayTitle(agent.role)} #${shortProjectionAgentId(agent.agentId)}`;
 }
 
@@ -590,9 +586,7 @@ export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem
   return liveType === "thread.user_prompt" || (item.role === "user" && item.text.trim().length > 0);
 }
 
-export function resolveProjectionAgentStatusText(
-  agent: ThreadRunProjectionAgent,
-): string | undefined {
+export function resolveProjectionAgentStatusText(agent: ThreadRunProjectionAgent): string | undefined {
   const speech = findLatestAgentSpeechSummary(agent.timeline);
   if (speech) {
     return speech;
@@ -651,11 +645,13 @@ function findLatestAgentToolAction(
 }
 
 function firstReadableLine(text: string): string {
-  return text
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find(Boolean)
-    ?.slice(0, 160) ?? "";
+  return (
+    text
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean)
+      ?.slice(0, 160) ?? ""
+  );
 }
 
 function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -668,7 +664,10 @@ function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): bool
 }
 
 function isProjectionTodoToolActionItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return isProjectionTodoStatusItem(item) && (Boolean(readProjectionToolMetadata(item)) || /^Tool:/iu.test(item.text.trim()));
+  return (
+    isProjectionTodoStatusItem(item) &&
+    (Boolean(readProjectionToolMetadata(item)) || /^Tool:/iu.test(item.text.trim()))
+  );
 }
 
 function readProjectionApiError(
@@ -690,7 +689,9 @@ function readProjectionApiError(
   };
 }
 
-function readProjectionToolMetadata(item: ThreadRunProjectionTimelineItem): ThreadRunToolMetadata | undefined {
+function readProjectionToolMetadata(
+  item: ThreadRunProjectionTimelineItem,
+): ThreadRunToolMetadata | undefined {
   const raw = item.metadata?.tool;
   if (!raw || typeof raw !== "object") {
     return undefined;
@@ -703,8 +704,10 @@ function readProjectionToolMetadata(item: ThreadRunProjectionTimelineItem): Thre
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
-    ...(typeof record.toolUseId === "string" && record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
-    ...(typeof record.durationMs === "number" && Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
+    ...(typeof record.toolUseId === "string" &&
+      record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
+    ...(typeof record.durationMs === "number" &&
+      Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
     ...(isProjectionToolStatus(record.status) && { status: record.status }),
   };
 }
@@ -719,6 +722,9 @@ function isProjectionLifecycleText(text: string): boolean {
 
 function resolveProjectionPhaseLabel(item: ThreadRunProjectionTimelineItem): string | undefined {
   const text = item.text.trim();
+  if (isProjectionWorkflowLifecycleItem(item)) {
+    return text;
+  }
   if (item.eventType === "context.compaction.started") {
     return text || "正在自动压缩上下文";
   }

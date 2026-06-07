@@ -455,8 +455,9 @@ type WorkflowStep = {
 - `ClaudeAgentSdkDriver` 已对非 Coding fixed profile 启用产品层 workflow engine：runtime 负责逐 step 执行，而不是只在 prompt 里要求“按顺序”。
 - fixed workflow 每个 step 会限制 SDK `agents` 只暴露当前 step 指定的 Eco agent key；上一步 transcript 会作为后续 step 模板输入。
 - fixed workflow 已支持依赖顺序、并行 batch、final aggregator、`stop / retry / skip / ask_user` failure policy 和 step start / complete / fail 事件。
+- fixed workflow lifecycle 已接入桌面 activity bridge 和 run projection；主运行流会展示“固定编排开始/步骤开始/步骤完成/步骤失败/固定编排完成”，不会被普通 agent lifecycle 噪声过滤。
 - 默认 Coding 手动审批流仍走旧成熟路径，避免破坏现有编程体验；Coding fixed workflow parity 与 UI 展示留在本阶段后续子项。
-- 验证：`bun run typecheck` 通过；`bun test` 通过（986 pass / 21 skip / 0 fail）；`bun run --cwd apps/desktop build` 通过（保留既有 Vite chunk size warning）。
+- 验证：`bun run typecheck` 通过；`bun test` 通过（988 pass / 21 skip / 0 fail）；`bun run --cwd apps/desktop build` 通过（保留既有 Vite chunk size warning）。
 
 目标：让编排成为正式 runtime 能力，而不是一个 UI 开关。
 

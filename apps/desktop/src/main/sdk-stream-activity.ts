@@ -4,11 +4,7 @@ import {
   type AgentEvent,
   type OtelActivityLine,
 } from "@eco/runtime";
-import {
-  formatAgentEventDisplay,
-  isEcoStreamFinalize,
-  isEcoStreamPlaceholder,
-} from "@eco/runtime/sdk";
+import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id.js";
 
@@ -95,22 +91,22 @@ export class SdkStreamActivityBridge {
     const list = this.recentSdkTools.get(threadId) ?? [];
     list.push(entry);
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    this.recentSdkTools.set(
-      threadId,
-      list.filter((item) => item.at >= cutoff).slice(-40),
-    );
+    this.recentSdkTools.set(threadId, list.filter((item) => item.at >= cutoff).slice(-40));
   }
 
-  shouldSuppressOtelToolLine(threadId: string, line: string | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">): boolean {
+  shouldSuppressOtelToolLine(
+    threadId: string,
+    line:
+      | string
+      | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
+  ): boolean {
     const parsed = parseOtelToolLine(line);
     if (!parsed) {
       return false;
     }
     const recent = this.recentSdkTools.get(threadId) ?? [];
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    const candidates = [...recent]
-      .reverse()
-      .filter((item) => item.at >= cutoff && !item.matchedAt);
+    const candidates = [...recent].reverse().filter((item) => item.at >= cutoff && !item.matchedAt);
     const sdkMatch =
       matchByToolUseId(candidates, parsed) ??
       matchByToolNameAndDetail(candidates, parsed) ??
@@ -144,6 +140,16 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "agent.started") {
+      if (isEcoWorkflowLifecyclePayload(event.payload)) {
+        const display = formatAgentEventDisplay(event);
+        if (!display) {
+          return;
+        }
+        this.flushPending(threadId, emit);
+        emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
+        return;
+      }
+
       const status = resolveSdkAgentStatusActivity(event.payload);
       if (!status) {
         return;
@@ -154,6 +160,19 @@ export class SdkStreamActivityBridge {
       }
       this.flushPending(threadId, emit);
       emit(threadId, status.type, status.message, String(display.role), false, activityAgentId);
+      return;
+    }
+
+    if (
+      (event.type === "agent.completed" || event.type === "agent.failed") &&
+      isEcoWorkflowLifecyclePayload(event.payload)
+    ) {
+      const display = formatAgentEventDisplay(event);
+      if (!display) {
+        return;
+      }
+      this.flushPending(threadId, emit);
+      emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
       return;
     }
 
@@ -194,7 +213,11 @@ export class SdkStreamActivityBridge {
 
     if (event.payload && isEcoStreamPlaceholder(event.payload)) {
       this.flushPending(threadId, emit);
-      this.lastStreamLine.set(streamKey, { role, message: "", ...(activityAgentId && { agentId: activityAgentId }) });
+      this.lastStreamLine.set(streamKey, {
+        role,
+        message: "",
+        ...(activityAgentId && { agentId: activityAgentId }),
+      });
       emit(threadId, event.type, message, role, true, activityAgentId);
       return;
     }
@@ -207,7 +230,16 @@ export class SdkStreamActivityBridge {
         message: accumulated,
         ...(activityAgentId && { agentId: activityAgentId }),
       });
-      this.scheduleThrottledDelta(threadId, streamKey, event.type, accumulated, role, stream, activityAgentId, emit);
+      this.scheduleThrottledDelta(
+        threadId,
+        streamKey,
+        event.type,
+        accumulated,
+        role,
+        stream,
+        activityAgentId,
+        emit,
+      );
       return;
     }
 
@@ -223,7 +255,15 @@ export class SdkStreamActivityBridge {
     } else {
       this.lastStreamLine.delete(streamKey);
     }
-    emit(threadId, event.type, message, role, stream, activityAgentId, emitExtras ? { tool: emitExtras } : undefined);
+    emit(
+      threadId,
+      event.type,
+      message,
+      role,
+      stream,
+      activityAgentId,
+      emitExtras ? { tool: emitExtras } : undefined,
+    );
   }
 
   private scheduleThrottledDelta(
@@ -270,6 +310,14 @@ export class SdkStreamActivityBridge {
       emit(threadId, "message.delta", pending.message, pending.role, pending.stream, pending.agentId);
     }
   }
+}
+
+function isEcoWorkflowLifecyclePayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  return Boolean(record.ecoWorkflow || record.ecoWorkflowStep);
 }
 
 function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMetadata | undefined {
@@ -351,12 +399,14 @@ function resolveSdkToolProgressMetadata(payload: unknown): ThreadRunToolMetadata
   if (!name) {
     return undefined;
   }
-  const elapsedSeconds = typeof record.elapsed_time_seconds === "number" ? record.elapsed_time_seconds : undefined;
+  const elapsedSeconds =
+    typeof record.elapsed_time_seconds === "number" ? record.elapsed_time_seconds : undefined;
   const toolUseId = readString(record.tool_use_id);
   return {
     name,
     ...(toolUseId && { toolUseId }),
-    ...(elapsedSeconds !== undefined && Number.isFinite(elapsedSeconds) && { durationMs: elapsedSeconds * 1000 }),
+    ...(elapsedSeconds !== undefined &&
+      Number.isFinite(elapsedSeconds) && { durationMs: elapsedSeconds * 1000 }),
   };
 }
 
@@ -401,7 +451,9 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     return `${skillName} 技能`;
   }
   if (toolName === "Agent") {
-    const label = normalizeSubagentToolDisplayLabel(readString(record.subagent_type) ?? readString(record.agent_type));
+    const label = normalizeSubagentToolDisplayLabel(
+      readString(record.subagent_type) ?? readString(record.agent_type),
+    );
     if (!label) {
       return undefined;
     }
@@ -413,7 +465,8 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     return `${label} · ${summary}`;
   }
   const filePath = readString(record.file_path) ?? readString(record.path);
-  const command = readString(record.full_command) ?? readString(record.bash_command) ?? readString(record.command);
+  const command =
+    readString(record.full_command) ?? readString(record.bash_command) ?? readString(record.command);
   return (
     (filePath ? pathBasename(filePath) : undefined) ??
     (command ? truncateText(command, 80) : undefined) ??
@@ -476,7 +529,9 @@ interface ParsedOtelToolLine {
 }
 
 function parseOtelToolLine(
-  line: string | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
+  line:
+    | string
+    | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
 ): ParsedOtelToolLine | undefined {
   if (typeof line !== "string" && line.toolName?.trim()) {
     const promotedMcpToolName = promoteMcpWrapperToolName(line.toolName, line.toolDetail);
