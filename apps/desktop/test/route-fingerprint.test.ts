@@ -3,7 +3,7 @@ import {
   computeRouteFingerprint,
   routesMatchFingerprint,
 } from "../src/shared/route-fingerprint";
-import type { RoleRouteConfig } from "../src/shared/ipc";
+import type { RoleRouteConfig, RuntimeRoleRouteConfig } from "../src/shared/ipc";
 
 const sampleRoutes: RoleRouteConfig[] = [
   { role: "planner", providerId: "p1", modelId: "model-a" },
@@ -24,6 +24,24 @@ test("routesMatchFingerprint detects provider or model changes", () => {
     routesMatchFingerprint(
       sampleRoutes.map((route) =>
         route.role === "planner" ? { ...route, providerId: "other" } : route,
+      ),
+      fingerprint,
+    ),
+  ).toBe(false);
+});
+
+test("routesMatchFingerprint includes dynamic runtime roles", () => {
+  const routes: RuntimeRoleRouteConfig[] = [
+    { role: "planner", providerId: "p1", modelId: "main" },
+    { role: "researcher", providerId: "p1", modelId: "research-a" },
+  ];
+  const fingerprint = computeRouteFingerprint(routes);
+
+  expect(routesMatchFingerprint([...routes].reverse(), fingerprint)).toBe(true);
+  expect(
+    routesMatchFingerprint(
+      routes.map((route) =>
+        route.role === "researcher" ? { ...route, modelId: "research-b" } : route,
       ),
       fingerprint,
     ),

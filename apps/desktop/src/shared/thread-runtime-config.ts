@@ -8,6 +8,8 @@ import type {
   ModelSettingsSnapshot,
   OrchestrationModeSetting,
   OrchestrationProfile,
+  RuntimeAgentRole,
+  RuntimeRoleRouteConfig,
   RoleRouteConfig,
   SubagentEnabledSettings,
   WorkflowSettingsSnapshot,
@@ -35,6 +37,34 @@ export function getRoutesForProfile(
   routeProfileId: string,
 ): RoleRouteConfig[] | undefined {
   return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
+}
+
+export function runtimeRoleRoutesFromAgentProfile(
+  profile: OrchestrationProfile,
+): RuntimeRoleRouteConfig[] {
+  const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
+  routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
+  for (const agent of profile.agents) {
+    if (agent.enabled && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
+      routes.set(agent.agentKey, routeFromAgentProfileModelRef(agent.agentKey, agent.modelRef));
+    }
+  }
+  return [...routes.values()];
+}
+
+function routeFromAgentProfileModelRef(
+  role: RuntimeAgentRole,
+  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
+): RuntimeRoleRouteConfig {
+  return {
+    role,
+    providerId: modelRef.providerId,
+    modelId: modelRef.modelId,
+    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
+    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
+    ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
+    ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
+  };
 }
 
 export function getAgentProfileById(

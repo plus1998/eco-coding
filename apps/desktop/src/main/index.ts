@@ -52,9 +52,11 @@ import {
   type PromptImageAttachment,
   type ProviderConfigInput,
   resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
   type RoleRouteConfig,
   type RouteProfileInput,
   type RuntimeAgentRole,
+  type RuntimeRoleRouteConfig,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
@@ -619,46 +621,19 @@ function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
 function roleRoutesForThreadConfig(
   settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
-): RoleRouteConfig[] {
+): RuntimeRoleRouteConfig[] {
   const profile = resolveThreadAgentProfile(settings, config);
+  if (profile && config.agentProfileId?.trim()) {
+    return runtimeRoleRoutesFromAgentProfile(profile);
+  }
   const routes = config.routeProfileId ? getRoutesForProfile(settings, config.routeProfileId) : undefined;
   if (routes) {
     return routes;
   }
   if (profile) {
-    return roleRoutesForAgentProfile(profile);
+    return runtimeRoleRoutesFromAgentProfile(profile);
   }
   throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
-}
-
-function roleRoutesForAgentProfile(profile: OrchestrationProfile): RoleRouteConfig[] {
-  const routes = new Map<AgentRole, RoleRouteConfig>();
-  routes.set("planner", routeFromModelRef("planner", profile.mainAgent.modelRef));
-  for (const agent of profile.agents) {
-    if (isAgentRole(agent.agentKey) && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
-      routes.set(agent.agentKey, routeFromModelRef(agent.agentKey, agent.modelRef));
-    }
-  }
-  return [...routes.values()];
-}
-
-function routeFromModelRef(
-  role: AgentRole,
-  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
-): RoleRouteConfig {
-  return {
-    role,
-    providerId: modelRef.providerId,
-    modelId: modelRef.modelId,
-    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
-    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
-    ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
-    ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
-  };
-}
-
-function isAgentRole(value: string): value is AgentRole {
-  return AGENT_ROLES.includes(value as AgentRole);
 }
 
 function runtimeValidationOptionsForThreadConfig(
@@ -672,7 +647,7 @@ function runtimeValidationOptionsForThreadConfig(
 function resolveRuntimeConfigForThreadConfig(
   settings: ModelSettingsSnapshot,
   config: ThreadRuntimeConfig,
-  roleRoutes?: readonly RoleRouteConfig[],
+  roleRoutes?: readonly RuntimeRoleRouteConfig[],
 ): RuntimeConfigResolution {
   return resolveThreadRuntimeConfig(
     settings,
@@ -684,7 +659,7 @@ function resolveRuntimeConfigForThreadConfig(
 
 function resolveRuntimeConfigForThreadId(
   threadId: string,
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
   optionsOverride?: { requireCompleteCodingRoutes?: boolean },
 ): RuntimeConfigResolution {
   const settings = getModelSettingsSnapshot();
@@ -704,7 +679,7 @@ function resolveRuntimeConfigForThreadId(
   );
 }
 
-function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RoleRouteConfig[] {
+function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RuntimeRoleRouteConfig[] {
   const settings = getModelSettingsSnapshot();
   if (routeProfileIdOverride) {
     const routes = getRoutesForProfile(settings, routeProfileIdOverride);
@@ -1189,7 +1164,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
   });
 
-  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async (_event, routesOverride?: RoleRouteConfig[]) => {
+  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
     await pricingCatalogReady;
     return lookupRoutePricingHints(
       pricingCache,
@@ -1201,7 +1176,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.billingRouteCapabilities,
-    async (_event, routesOverride?: RoleRouteConfig[]) => {
+    async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
       await pricingCatalogReady;
       return lookupRouteCapabilityHints(
         pricingCache,
@@ -1908,7 +1883,7 @@ async function runQuestionThread(
   worktreePath?: string,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   const cwd = worktreePath?.trim() || workspace.path;
@@ -2033,7 +2008,7 @@ async function runCodingThreadAutonomous(
   existingWorktreePlan?: WorktreePlan,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   startActiveRun(thread.id, {
@@ -2187,7 +2162,7 @@ async function runCodingThreadPlanning(
   existingWorktreePlan?: WorktreePlan,
   resume?: EcoSdkResumeOptions,
   attachments?: PromptImageAttachment[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): Promise<void> {
   const controller = new AbortController();
   startActiveRun(thread.id, {
@@ -2326,7 +2301,7 @@ async function runCodingThreadAutonomousAfterApproval(
   threadId: string,
   runtimeConfig: RuntimeConfig,
   options?: {
-    routesOverride?: readonly RoleRouteConfig[];
+    routesOverride?: readonly RuntimeRoleRouteConfig[];
   },
 ): Promise<void> {
   const pending = conversationStore.getPendingPlan(threadId);
@@ -2445,7 +2420,7 @@ async function runCodingThreadExecution(
   runtimeConfig: RuntimeConfig,
   options?: {
     planUserEdited?: boolean;
-    routesOverride?: readonly RoleRouteConfig[];
+    routesOverride?: readonly RuntimeRoleRouteConfig[];
     followUp?: string;
     attachments?: PromptImageAttachment[];
   },
@@ -2627,7 +2602,7 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
   throw new Error("Thread id is required.");
 }
 
-function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RoleRouteConfig[]): void {
+function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RuntimeRoleRouteConfig[]): void {
   const stored = conversationStore.getRouteFingerprint(threadId);
   if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
     emitThreadEvent(
@@ -3426,7 +3401,7 @@ async function dispatchThreadContinueAction(input: {
   cwd: string;
   existingWorktreePlan?: WorktreePlan;
   attachments?: PromptImageAttachment[];
-  roleRoutes: readonly RoleRouteConfig[];
+  roleRoutes: readonly RuntimeRoleRouteConfig[];
 }): Promise<void> {
   const {
     threadId,
@@ -3544,7 +3519,7 @@ async function runThreadContinuation(
   mode: "planning" | "execution" | "question",
   existingWorktreePlan?: WorktreePlan,
   attachments?: PromptImageAttachment[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
   planningContext?: EcoPlanningContext,
 ): Promise<void> {
   if (threadOrchestrationMode(thread.id) === "autonomous" && mode !== "question") {
@@ -4811,13 +4786,13 @@ function emitSettingsUpdated(): void {
 
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
 
-function emitUpstreamModelRequestActivity(threadId: string, role: AgentRole): void {
+function emitUpstreamModelRequestActivity(threadId: string, role: RuntimeAgentRole): void {
   emitThreadEvent(threadId, "request.started", "Requesting model…", role, false);
 }
 
 function emitUpstreamConnectionErrorActivity(
   threadId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   error: string,
   statusCode?: number,
 ): void {

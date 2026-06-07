@@ -1,4 +1,4 @@
-import type { RoleRouteConfig, ThreadSummary } from "../shared/ipc";
+import type { RuntimeRoleRouteConfig, ThreadSummary } from "../shared/ipc";
 import type { RuntimeConfig, RuntimeConfigResolution } from "./thread-runtime-routes";
 import type { ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
 
@@ -8,15 +8,15 @@ export interface ThreadPlanApprovalRuntimeServices {
   getThread(threadId: string): ThreadSummary | undefined;
   hasActiveRun(threadId: string): boolean;
   getPendingPlan(threadId: string): ThreadPendingPlanWithRoutes | undefined;
-  resolveRoleRoutes(threadId: string): readonly RoleRouteConfig[];
-  resolveRuntimeConfig(routes: readonly RoleRouteConfig[]): RuntimeConfigResolution;
+  resolveRoleRoutes(threadId: string): readonly RuntimeRoleRouteConfig[];
+  resolveRuntimeConfig(routes: readonly RuntimeRoleRouteConfig[]): RuntimeConfigResolution;
   usesManualOrchestration(threadId: string): boolean;
 }
 
 export interface ThreadPlanApprovalRuntime {
   thread: ThreadSummary;
   pendingPlan: ThreadPendingPlanWithRoutes;
-  roleRoutes: readonly RoleRouteConfig[];
+  roleRoutes: readonly RuntimeRoleRouteConfig[];
   runtimeConfig: RuntimeConfig;
   launchMode: ThreadPlanApprovalLaunchMode;
 }

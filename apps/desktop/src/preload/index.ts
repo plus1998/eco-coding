@@ -29,6 +29,7 @@ import {
   type ProviderConfigView,
   type ProxyBridgeSettingsSnapshot,
   type RoleRouteConfig,
+  type RuntimeRoleRouteConfig,
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RouteProfileInput,
@@ -155,10 +156,10 @@ const api = {
   updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);
   },
-  getRoutePricing(routes?: RoleRouteConfig[]): Promise<RoutePricingHint[]> {
+  getRoutePricing(routes?: RuntimeRoleRouteConfig[]): Promise<RoutePricingHint[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRoutePricing, routes);
   },
-  getRouteCapabilities(routes?: RoleRouteConfig[]): Promise<RouteCapabilityHint[]> {
+  getRouteCapabilities(routes?: RuntimeRoleRouteConfig[]): Promise<RouteCapabilityHint[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.billingRouteCapabilities, routes);
   },
   listModelsDevModels(): Promise<ModelsDevModelOption[]> {

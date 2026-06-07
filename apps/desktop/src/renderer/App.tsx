@@ -33,9 +33,10 @@ import {
   getDefaultAgentProfileId,
   getRoutesForProfile,
   resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
   type AgentRole,
   type OrchestrationProfile,
-  type RoleRouteConfig,
+  type RuntimeRoleRouteConfig,
   type ThreadRuntimeConfig,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
@@ -139,36 +140,6 @@ const emptySettings: ModelSettingsSnapshot = {
   orchestrationProfiles: [],
 };
 
-function roleRoutesFromAgentProfile(profile: OrchestrationProfile): RoleRouteConfig[] {
-  const routes = new Map<AgentRole, RoleRouteConfig>();
-  routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
-  for (const agent of profile.agents) {
-    if (isKnownAgentRole(agent.agentKey) && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
-      routes.set(agent.agentKey, routeFromAgentProfileModelRef(agent.agentKey, agent.modelRef));
-    }
-  }
-  return [...routes.values()];
-}
-
-function routeFromAgentProfileModelRef(
-  role: AgentRole,
-  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
-): RoleRouteConfig {
-  return {
-    role,
-    providerId: modelRef.providerId,
-    modelId: modelRef.modelId,
-    ...(modelRef.apiCompat && { apiCompat: modelRef.apiCompat }),
-    ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
-    ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
-    ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
-  };
-}
-
-function isKnownAgentRole(value: string): value is AgentRole {
-  return AGENT_ROLES.includes(value as AgentRole);
-}
-
 function isModelRefReady(
   modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
   providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
@@ -188,7 +159,7 @@ function isAgentProfileReady(
 }
 
 function areCodingRoutesReady(
-  routes: readonly RoleRouteConfig[],
+  routes: readonly RuntimeRoleRouteConfig[],
   providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
 ): boolean {
   return AGENT_ROLES.every((role) => {
@@ -921,12 +892,15 @@ function App() {
     [settings, composerRuntimeConfig],
   );
   const activeRoutes = useMemo(() => {
+    if (selectedRuntimeProfile && composerRuntimeConfig?.agentProfileId?.trim()) {
+      return runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile);
+    }
     const routeProfileId = composerRuntimeConfig?.routeProfileId;
     const routeProfileRoutes = routeProfileId ? getRoutesForProfile(settings, routeProfileId) : undefined;
     if (routeProfileRoutes) {
       return routeProfileRoutes;
     }
-    return selectedRuntimeProfile ? roleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
+    return selectedRuntimeProfile ? runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
   }, [settings, composerRuntimeConfig?.routeProfileId, selectedRuntimeProfile]);
 
   useEffect(() => {

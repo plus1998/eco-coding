@@ -26,7 +26,7 @@ export interface ModelProfile {
 }
 
 export interface AgentRoleRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   primaryModelId: string;
   fallbackModelIds: string[];
   maxCostUsd?: number;

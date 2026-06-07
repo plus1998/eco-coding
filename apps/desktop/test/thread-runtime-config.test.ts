@@ -14,6 +14,7 @@ import {
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
   resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
   serializeThreadRuntimeConfig,
 } from "../src/shared/thread-runtime-config";
 
@@ -143,6 +144,35 @@ test("buildThreadRuntimeConfigFromDefaults does not let default routes override 
   expect(config.agentProfileId).toBe("research-copy");
   expect(config.routeProfileId).toBe("research-copy");
   expect(getRoutesForProfile(mixedSettings, config.routeProfileId)).toBeUndefined();
+});
+
+test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => {
+  const profile = {
+    ...researchProfile,
+    mainAgent: {
+      ...researchProfile.mainAgent,
+      modelRef: { providerId: "main-provider", modelId: "main-model" },
+    },
+    agents: [
+      {
+        ...researchProfile.agents[0]!,
+        agentKey: "research lead",
+        modelRef: { providerId: "agent-provider", modelId: "agent-model" },
+        enabled: true,
+      },
+      {
+        ...researchProfile.agents[0]!,
+        agentKey: "disabled_agent",
+        modelRef: { providerId: "disabled-provider", modelId: "disabled-model" },
+        enabled: false,
+      },
+    ],
+  };
+
+  expect(runtimeRoleRoutesFromAgentProfile(profile)).toEqual([
+    { role: "planner", providerId: "main-provider", modelId: "main-model" },
+    { role: "research lead", providerId: "agent-provider", modelId: "agent-model" },
+  ]);
 });
 
 test("serialize and parse thread runtime config round-trip", () => {

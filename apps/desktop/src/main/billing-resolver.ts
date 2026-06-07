@@ -9,10 +9,9 @@ import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute }
 import type { ProviderConfigSecret } from "./provider-store";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
-  type AgentRole,
   type ModelSettingsSnapshot,
   type ModelsDevMapping,
-  type RoleRouteConfig,
+  type RuntimeRoleRouteConfig,
   type RuntimeAgentRole,
   type UpstreamApiCompat,
   type RouteCapabilityHint,
@@ -23,7 +22,7 @@ import {
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 export interface RuntimeRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
   apiCompat: UpstreamApiCompat;
@@ -33,7 +32,7 @@ export interface RuntimeRoute {
 }
 
 export interface ResolvedUsageRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
   modelsDevMapping?: ModelsDevMapping;
@@ -199,7 +198,7 @@ export function buildPlannerModelLabel(
 export function resolveRuntimeRoutesFromSettings(
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): RuntimeRoute[] {
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
   const sourceRoutes = routesOverride ?? [];
@@ -259,7 +258,7 @@ export async function lookupRouteCapabilityHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): Promise<RouteCapabilityHint[]> {
   const routes = resolveRuntimeRoutesFromSettings(settings, providers, routesOverride);
   const hints: RouteCapabilityHint[] = [];
@@ -312,7 +311,7 @@ export async function lookupRoutePricingHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
   providers: readonly ProviderConfigSecret[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
 ): Promise<RoutePricingHint[]> {
   const routes = resolveRuntimeRoutesFromSettings(settings, providers, routesOverride);
   const hints: RoutePricingHint[] = [];

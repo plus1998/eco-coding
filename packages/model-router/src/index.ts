@@ -4,12 +4,13 @@ import {
   hasCapabilities,
   type ModelCapability,
   type ModelProfile,
+  type RuntimeAgentRole,
 } from "../../shared/src";
 
 export type RouteThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ResolvedModelRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   primary: ModelProfile;
   fallbacks: ModelProfile[];
   thinkingEffort?: RouteThinkingEffort;

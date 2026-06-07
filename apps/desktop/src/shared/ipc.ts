@@ -246,8 +246,8 @@ export interface RouteManualSpec {
   cacheWritePerM?: number;
 }
 
-export interface RoleRouteConfig {
-  role: AgentRole;
+export interface RuntimeRoleRouteConfig {
+  role: RuntimeAgentRole;
   providerId: string;
   modelId: string;
   /** Overrides provider default when set. */
@@ -255,6 +255,10 @@ export interface RoleRouteConfig {
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
+}
+
+export interface RoleRouteConfig extends RuntimeRoleRouteConfig {
+  role: AgentRole;
 }
 
 export interface RouteProfileView {
@@ -279,6 +283,7 @@ export {
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
 } from "./thread-runtime-config";
 export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 
@@ -788,7 +793,7 @@ export interface RoutePricingRates {
 }
 
 export interface RoutePricingHint {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   modelId: string;
   providerName: string;
   /** models.dev 参考单价（每百万 token，USD） */
@@ -799,7 +804,7 @@ export interface RoutePricingHint {
 }
 
 export interface RouteCapabilityHint {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   modelId: string;
   providerName: string;
   supportsImageInput: boolean;

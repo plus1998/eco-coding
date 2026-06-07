@@ -106,6 +106,30 @@ test("resolveThreadRuntimeConfig accepts partial routes for generic Agent Profil
   });
 });
 
+test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic Agent Profiles", () => {
+  const resolved = resolveThreadRuntimeConfig(
+    { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
+    [provider("p1")],
+    [
+      { role: "planner", providerId: "p1", modelId: "main-model" },
+      { role: "researcher", providerId: "p1", modelId: "research-model" },
+    ],
+    { requireCompleteCodingRoutes: false },
+  );
+
+  expect(resolved.ok).toBe(true);
+  if (!resolved.ok) return;
+  expect(resolved.routes.map((route) => route.role)).toEqual(["planner", "researcher"]);
+  expect(roleRoutesFromRuntime(resolved.routes).map((route) => route.role)).toEqual([
+    "planner",
+    "researcher",
+  ]);
+  expect(buildDriverRoutesFromRuntime(resolved.routes)[1]).toMatchObject({
+    role: "researcher",
+    primary: { modelId: "research-model" },
+  });
+});
+
 test("resolveThreadRuntimeConfig still requires full coding routes by default", () => {
   expect(
     resolveThreadRuntimeConfig(

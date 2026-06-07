@@ -2,7 +2,7 @@ import { createHash, randomInt } from "node:crypto";
 import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
-import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
+import type { AgentRole, PromptImageAttachment, RuntimeAgentRole, ThinkingEffort } from "../shared/ipc";
 import {
   forwardMessagesViaBridge,
   type BridgeForwardContext,
@@ -25,7 +25,7 @@ import {
 } from "./upstream-log";
 
 export interface AnthropicProxyRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
   apiCompat?: UpstreamApiCompat;
@@ -33,18 +33,18 @@ export interface AnthropicProxyRoute {
 }
 
 export interface AnthropicProxyMessagesRequestInfo {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   modelId: string;
 }
 
 export interface AnthropicProxyUpstreamErrorInfo {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   error: string;
   statusCode?: number;
 }
 
 export interface AnthropicProxyUsageInfo {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   providerId: string;
   providerName: string;
   providerBaseUrl: string;
@@ -65,7 +65,7 @@ export interface AnthropicProxyStartOptions {
    * return a non-zero estimate so Claude Code does not see perpetual 0 occupancy.
    */
   resolveCountTokensInput?: (input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     body: Record<string, unknown>;
   }) => number | undefined;
   /** Non-empty: overrides SDK User-Agent on upstream requests. */
@@ -186,7 +186,7 @@ export async function startAnthropicModelProxy(
         ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
         ...(onUpstreamConnectionError && {
           onUpstreamConnectionError: (info: {
-            role: AgentRole;
+            role: RuntimeAgentRole;
             error: string;
             statusCode?: number;
           }) => {
@@ -289,7 +289,7 @@ export async function startAnthropicModelProxy(
   };
 }
 
-export function createModelAlias(role: AgentRole, providerId: string, modelId: string): string {
+export function createModelAlias(role: RuntimeAgentRole, providerId: string, modelId: string): string {
   const digest = createHash("sha256").update(`${role}:${providerId}:${modelId}`).digest("hex").slice(0, 12);
   return `eco-${role}-${digest}`;
 }
@@ -490,7 +490,7 @@ export function estimateInputTokensFromAnthropicBody(body: Record<string, unknow
 
 function resolveCountTokensStubInput(
   body: Record<string, unknown>,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   resolve?: AnthropicProxyStartOptions["resolveCountTokensInput"],
 ): number {
   const fromHook = resolve?.({ role, body });

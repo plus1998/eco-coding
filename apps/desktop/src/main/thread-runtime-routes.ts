@@ -1,6 +1,6 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
-import { AGENT_ROLES, type ModelSettingsSnapshot, type RoleRouteConfig } from "../shared/ipc";
+import { AGENT_ROLES, type ModelSettingsSnapshot, type RuntimeRoleRouteConfig } from "../shared/ipc";
 import type { AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { ProviderConfigSecret } from "./provider-store";
@@ -14,7 +14,7 @@ export type RuntimeConfigResolution = { ok: true; routes: RuntimeRoute[] } | { o
 export function resolveThreadRuntimeConfig(
   _settings: ModelSettingsSnapshot,
   providersWithSecrets: readonly ProviderConfigSecret[],
-  routesOverride?: readonly RoleRouteConfig[],
+  routesOverride?: readonly RuntimeRoleRouteConfig[],
   options: { requireCompleteCodingRoutes?: boolean } = {},
 ): RuntimeConfigResolution {
   const providersById = new Map(providersWithSecrets.map((provider) => [provider.id, provider]));
@@ -68,7 +68,7 @@ export function resolveThreadRuntimeConfig(
   };
 }
 
-export function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RoleRouteConfig[] {
+export function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RuntimeRoleRouteConfig[] {
   return routes.map((route) => ({
     role: route.role,
     providerId: route.provider.id,

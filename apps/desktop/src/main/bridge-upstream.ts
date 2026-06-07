@@ -25,7 +25,7 @@ import {
   type ResponsesResponse,
   type ResponsesStreamEvent,
 } from "@eco/openai-anthropic-bridge";
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import {
   anthropicResponseToStreamEvents,
@@ -61,7 +61,7 @@ import {
 } from "./upstream-log";
 
 export interface BridgeForwardRoute {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
   apiCompat: UpstreamApiCompat;
@@ -69,7 +69,7 @@ export interface BridgeForwardRoute {
 }
 
 export interface BridgeUpstreamConnectionErrorInfo {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   error: string;
   statusCode?: number;
 }
@@ -85,7 +85,7 @@ export interface BridgeForwardContext {
 }
 
 export interface BridgeUsageInfo {
-  role: AgentRole;
+  role: RuntimeAgentRole;
   providerId: string;
   providerName: string;
   providerBaseUrl: string;
@@ -123,7 +123,7 @@ function buildBridgeUsageInfo(
   requestId?: string,
 ): BridgeUsageInfo {
   return {
-    role: route.role as AgentRole,
+    role: route.role,
     providerId: route.provider.id,
     providerName: route.provider.name,
     providerBaseUrl: route.provider.baseUrl,
