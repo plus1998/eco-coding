@@ -5,6 +5,7 @@ import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compa
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 import {
   AGENT_ROLES,
+  type AgentTemplate,
   type AgentRole,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
@@ -25,6 +26,12 @@ import {
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
+import {
+  buildAgentProfileSummary,
+  formatAgentDomainLabel,
+  listSelectableAgentProfileSummaries,
+  type AgentProfileSummary,
+} from "./agent-profile-summary";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
@@ -32,12 +39,14 @@ import { RoutePricingDisplay } from "./RoutePricingDisplay";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { WorkflowSettingsSection } from "./WorkflowSettingsSection";
 
-export type ModelsSettingsTab = "providers" | "subagents" | "routes";
+export type ModelsSettingsTab = "subagents" | "routes" | "providers" | "permissions" | "presets";
 
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
-  { id: "providers", label: "提供商和模型" },
-  { id: "subagents", label: "子代理库" },
-  { id: "routes", label: "子代理编排" },
+  { id: "subagents", label: "Agent Library" },
+  { id: "routes", label: "编排配置" },
+  { id: "providers", label: "模型路由" },
+  { id: "permissions", label: "工具权限" },
+  { id: "presets", label: "场景预设" },
 ];
 
 interface ModelsSettingsPanelProps {
@@ -694,6 +703,11 @@ export function ModelsSettingsPanel({
   }
 
   const providerOptions = useMemo(() => settings.providers, [settings.providers]);
+  const selectableProfileSummaries = useMemo(() => listSelectableAgentProfileSummaries(settings), [settings]);
+  const allProfileSummaries = useMemo(
+    () => settings.orchestrationProfiles.map((profile) => buildAgentProfileSummary(settings, profile)),
+    [settings],
+  );
 
   return (
     <>
@@ -713,9 +727,10 @@ export function ModelsSettingsPanel({
       )}
 
       <header className="mcp-page-header">
-        <h1>模型与路由</h1>
+        <h1>Agent Builder</h1>
         <p className="mcp-page-desc">
-          配置 Provider、子代理库与子代理编排配置。新对话在输入区选择方案；子代理与编排策略按对话独立保存。
+          配置子代理库、编排配置、模型路线和工具权限。新对话在输入区选择 Agent
+          Profile；子代理与编排策略按对话独立保存。
         </p>
       </header>
 
@@ -847,63 +862,114 @@ export function ModelsSettingsPanel({
         <section className="mcp-list-section models-routes-section">
           <header className="models-section-header">
             <div className="models-section-intro">
-              <h2 className="models-section-title">子代理编排</h2>
+              <h2 className="models-section-title">编排配置</h2>
               <p className="models-section-desc">
-                可保存多套子代理编排配置。每个对话在输入区选择方案；运行到对应 agent
-                时使用该对话绑定的模型路线。
+                每个对话在输入区选择一个 Agent Profile；运行时按 profile 注册主
+                agent、子代理、模型和工具权限。
               </p>
               <p className="models-section-meta">
-                能力、上下文与参考单价优先来自
-                models.dev；未匹配时可手动填写，并用「测试」验证各角色模型能否调用 /v1/messages。
+                当前可运行 profile 仍通过兼容模型路线绑定 provider；可用「测试」验证每个 agent 模型能否调用
+                /v1/messages。
               </p>
             </div>
           </header>
 
           <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">编排配置</span>
+            <span className="mcp-list-toolbar-label">Agent Profile</span>
             <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateRouteProfile}>
               <Plus size={16} />
-              添加配置
+              添加 Coding Profile
             </button>
           </div>
 
-          {settings.routeProfiles.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加子代理编排配置</p>
+          {selectableProfileSummaries.length === 0 ? (
+            <p className="mcp-list-empty">尚未添加可运行的 Agent Profile</p>
           ) : (
             <ul className="mcp-server-list">
-              {settings.routeProfiles.map((profile) => (
-                <li key={profile.id} className="mcp-server-row models-route-profile-row">
-                  <div className="models-provider-row-main">
-                    <span className="mcp-server-name">{profile.name}</span>
-                    <RouteProfilePreview profile={profile} />
-                  </div>
-                  <div className="mcp-server-actions">
-                    <button
-                      type="button"
-                      className="models-section-button"
-                      disabled={busy || testingRouteProfileId !== null}
-                      onClick={() => void testRouteProfile(profile.routes, profile.id)}
-                    >
-                      <RefreshCw
-                        size={14}
-                        className={testingRouteProfileId === profile.id ? "model-refresh-spin" : undefined}
-                      />
-                      测试
-                    </button>
-                    <button
-                      type="button"
-                      className="mcp-icon-button"
-                      onClick={() => openEditRouteProfile(profile)}
-                      aria-label={`编辑 ${profile.name}`}
-                      disabled={busy}
-                    >
-                      <Settings2 size={18} />
-                    </button>
-                  </div>
-                </li>
-              ))}
+              {selectableProfileSummaries.map((summary) => {
+                const routeProfile = settings.routeProfiles.find(
+                  (profile) => profile.id === summary.selectionId,
+                );
+                return (
+                  <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
+                    <AgentProfileSummaryBlock summary={summary} />
+                    <div className="mcp-server-actions">
+                      <button
+                        type="button"
+                        className="models-section-button"
+                        disabled={busy || testingRouteProfileId !== null || !routeProfile}
+                        onClick={() => {
+                          if (routeProfile) {
+                            void testRouteProfile(routeProfile.routes, routeProfile.id);
+                          }
+                        }}
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={
+                            testingRouteProfileId === routeProfile?.id ? "model-refresh-spin" : undefined
+                          }
+                        />
+                        测试
+                      </button>
+                      <button
+                        type="button"
+                        className="mcp-icon-button"
+                        onClick={() => {
+                          if (routeProfile) {
+                            openEditRouteProfile(routeProfile);
+                          }
+                        }}
+                        aria-label={`编辑 ${summary.name}`}
+                        disabled={busy || !routeProfile}
+                      >
+                        <Settings2 size={18} />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
+        </section>
+      )}
+
+      {activeTab === "permissions" && (
+        <section className="mcp-list-section models-permissions-section">
+          <header className="models-section-header">
+            <div className="models-section-intro">
+              <h2 className="models-section-title">工具权限</h2>
+              <p className="models-section-desc">
+                每个 profile 的主 agent 和子代理都会在运行时生成硬权限策略；这里展示的是实际会注入 SDK hook
+                的权限摘要。
+              </p>
+            </div>
+          </header>
+
+          {allProfileSummaries.length === 0 ? (
+            <p className="mcp-list-empty">尚未添加 Agent Profile</p>
+          ) : (
+            <div className="models-permission-profile-list">
+              {allProfileSummaries.map((summary) => (
+                <AgentPermissionProfile key={summary.profile.id} summary={summary} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "presets" && (
+        <section className="mcp-list-section models-presets-section">
+          <header className="models-section-header">
+            <div className="models-section-intro">
+              <h2 className="models-section-title">场景预设</h2>
+              <p className="models-section-desc">
+                内置预设由 agent template 组成；可运行状态取决于是否已有绑定模型路线的 Agent Profile。
+              </p>
+            </div>
+          </header>
+
+          <PresetOverview templates={settings.agentTemplates} profiles={allProfileSummaries} />
         </section>
       )}
 
@@ -1731,19 +1797,153 @@ function RouteManualSpecFields({
   );
 }
 
-function RouteProfilePreview({ profile }: { profile: RouteProfileView }) {
+function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary }) {
+  const visibleAgents = summary.enabledAgents.slice(0, 5);
+  const hiddenCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
   return (
-    <div className="models-route-profile-preview">
-      {AGENT_ROLES.map((role) => {
-        const route = profile.routes.find((candidate) => candidate.role === role);
-        const modelId = route?.modelId.trim();
-        return (
-          <div key={role} className="models-route-profile-preview-item">
-            <span className="models-route-profile-preview-role">{ROLE_LABELS[role]}</span>
-            <span className="models-route-profile-preview-model" title={modelId || "未配置"}>
-              {modelId ? formatModelPreview(modelId) : "—"}
+    <div className="models-agent-profile-main">
+      <div className="models-agent-profile-title-row">
+        <span className="mcp-server-name">{summary.name}</span>
+        <span className="models-agent-domain-badge">{summary.presetLabel}</span>
+        <span className="models-agent-source-badge">{summary.sourceLabel}</span>
+        <span className="models-agent-source-badge">{summary.strategyLabel}</span>
+      </div>
+      <div className="models-agent-profile-meta">
+        <span>主 Agent：{summary.main.modelLabel}</span>
+        <span>{summary.enabledAgents.length} 个启用子代理</span>
+        {summary.disabledAgentCount > 0 ? <span>{summary.disabledAgentCount} 个停用</span> : null}
+      </div>
+      {summary.highRiskLabels.length > 0 ? (
+        <div className="models-agent-profile-risks">
+          {summary.highRiskLabels.map((label) => (
+            <span key={label} className="models-agent-profile-risk">
+              {label}
             </span>
-          </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="models-agent-profile-agents">
+        {visibleAgents.map((agent) => (
+          <span key={agent.agentKey} className="models-agent-profile-agent-pill">
+            <span className="models-agent-profile-agent-name">{agent.name}</span>
+            <span className="models-agent-profile-agent-model" title={agent.modelLabel}>
+              {formatModelPreview(agent.modelLabel)}
+            </span>
+          </span>
+        ))}
+        {hiddenCount > 0 ? (
+          <span className="models-agent-profile-agent-pill">
+            <span className="models-agent-profile-agent-name">更多</span>
+            <span className="models-agent-profile-agent-model">+{hiddenCount}</span>
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AgentPermissionProfile({ summary }: { summary: AgentProfileSummary }) {
+  return (
+    <article className="models-permission-profile">
+      <AgentProfileSummaryBlock summary={summary} />
+      <div className="models-permission-agent-list">
+        <PermissionAgentRow
+          name={summary.main.name}
+          modelLabel={summary.main.modelLabel}
+          chips={summary.main.permissionChips}
+        />
+        {summary.agents.map((agent) => (
+          <PermissionAgentRow
+            key={agent.agentKey}
+            name={agent.name}
+            modelLabel={agent.modelLabel}
+            chips={agent.permissionChips}
+            disabled={!agent.enabled}
+          />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function PermissionAgentRow({
+  name,
+  modelLabel,
+  chips,
+  disabled,
+}: {
+  name: string;
+  modelLabel: string;
+  chips: AgentProfileSummary["main"]["permissionChips"];
+  disabled?: boolean | undefined;
+}) {
+  return (
+    <div className={disabled ? "models-permission-agent-row is-disabled" : "models-permission-agent-row"}>
+      <div className="models-permission-agent-head">
+        <span className="models-route-role">{name}</span>
+        <span className="models-route-role-id">{formatModelPreview(modelLabel)}</span>
+        {disabled ? <span className="models-agent-source-badge">停用</span> : null}
+      </div>
+      <div className="models-agent-template-permissions">
+        {chips.map((chip) => (
+          <span key={`${name}:${chip.label}`} className={`models-agent-permission-chip is-${chip.tone}`}>
+            {chip.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PresetOverview({
+  templates,
+  profiles,
+}: {
+  templates: readonly AgentTemplate[];
+  profiles: readonly AgentProfileSummary[];
+}) {
+  const domains = Array.from(
+    new Set([
+      ...templates.map((template) => template.domain),
+      ...profiles.map((summary) => summary.profile.preset),
+    ]),
+  );
+  return (
+    <div className="models-preset-grid">
+      {domains.map((domain) => {
+        const domainTemplates = templates.filter((template) => template.domain === domain);
+        const domainProfiles = profiles.filter((summary) => summary.profile.preset === domain);
+        const builtInCount = domainTemplates.filter((template) => template.builtIn).length;
+        return (
+          <article key={domain} className="models-preset-panel">
+            <div className="models-preset-panel-head">
+              <span className="models-preset-name">{formatAgentDomainLabel(domain)}</span>
+              <span
+                className={
+                  domainProfiles.some((profile) => profile.selectionId)
+                    ? "models-provider-badge on"
+                    : "models-provider-badge"
+                }
+              >
+                {domainProfiles.some((profile) => profile.selectionId) ? "可运行" : "模板可用"}
+              </span>
+            </div>
+            <div className="models-preset-stats">
+              <span>{domainTemplates.length} 个模板</span>
+              <span>{builtInCount} 个内置</span>
+              <span>{domainProfiles.length} 个 profile</span>
+            </div>
+            <div className="models-preset-template-list">
+              {domainTemplates.slice(0, 4).map((template) => (
+                <span key={template.id} className="models-preset-template">
+                  {template.name}
+                </span>
+              ))}
+              {domainTemplates.length > 4 ? (
+                <span className="models-preset-template is-extra">+{domainTemplates.length - 4}</span>
+              ) : null}
+            </div>
+          </article>
         );
       })}
     </div>

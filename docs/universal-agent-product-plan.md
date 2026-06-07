@@ -602,6 +602,9 @@ type WorkflowStep = {
 - Composer 入口已从“路由方案”升级为 “Agent Profile”，底层仍使用当前可运行的 `routeProfileId` 兼容线程运行链路。
 - 启动前 profile popover 已展示场景、编排策略、启用子代理数量、主 agent 模型、高风险工具和启用子代理模型预览。
 - 当前线程的手动子代理开关会参与 profile 摘要计算，用户看到的是本次实际启用的子代理。
+- 设置页已升级为 Agent Builder 结构，包含 Agent Library、编排配置、模型路由、工具权限和场景预设。
+- 编排配置列表已使用通用 Agent Profile 摘要展示场景、策略、主 agent、启用子代理和高风险工具，不再用固定 role 横排作为主要信息架构。
+- 工具权限页已按 profile 展示主 agent 与每个子代理的实际权限 chip；场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
 
 已验证：
 

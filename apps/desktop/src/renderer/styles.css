@@ -6793,6 +6793,133 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
+.models-agent-profile-row {
+  align-items: flex-start;
+}
+
+.models-agent-profile-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.models-agent-profile-title-row,
+.models-agent-profile-meta,
+.models-agent-profile-risks,
+.models-agent-profile-agents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.models-agent-profile-meta {
+  color: #858585;
+  font-size: 12px;
+}
+
+.models-agent-profile-risk {
+  padding: 3px 7px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.models-permission-profile-list,
+.models-permission-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.models-permission-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.models-permission-agent-row {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.models-permission-agent-row.is-disabled {
+  opacity: 0.58;
+}
+
+.models-permission-agent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.models-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.models-preset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.models-preset-panel-head,
+.models-preset-stats,
+.models-preset-template-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.models-preset-panel-head {
+  justify-content: space-between;
+}
+
+.models-preset-name {
+  color: #f0f0f0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.models-preset-stats {
+  color: #858585;
+  font-size: 12px;
+}
+
+.models-preset-template {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #cfcfcf;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.models-preset-template.is-extra {
+  color: #8a8a8a;
+}
+
 .models-subagent-defaults-head {
   display: flex;
   align-items: center;
@@ -7204,35 +7331,19 @@ button:not(:disabled) {
   }
 }
 
-.models-route-profile-row {
-  align-items: flex-start;
-}
-
-.models-route-profile-row .models-provider-row-main {
-  flex: 1;
-  min-width: 0;
-  gap: 8px;
-}
-
-.models-route-profile-preview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 14px;
-}
-
-.models-route-profile-preview-item {
+.models-agent-profile-agent-pill {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.models-route-profile-preview-role {
+.models-agent-profile-agent-name {
   font-size: 11px;
   color: #737373;
 }
 
-.models-route-profile-preview-model {
+.models-agent-profile-agent-model {
   font-size: 12px;
   color: #d4d4d4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -7257,12 +7368,6 @@ button:not(:disabled) {
 
 .models-dev-select-auto {
   color: #d4d4d4;
-}
-
-@media (max-width: 720px) {
-  .models-route-profile-preview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .settings-modal-header {
