@@ -15,6 +15,7 @@
     "pack:linux-x64": "bun run --cwd apps/desktop pack:linux-x64",
     "pack": "bun run --cwd apps/desktop pack",
     "test": "bun test",
+    "test:agent-presets": "bun test apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-orchestration.test.ts packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/workflow-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write ."

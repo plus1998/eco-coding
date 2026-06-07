@@ -794,6 +794,8 @@ type WorkflowStep = {
 
 - Phase 9.1 已完成：Agent Builder 新增“效果评测”页，读取内置 preset eval suite，按 preset 展示配置级 eval 总数、通过/失败状态、case prompt、必需 agent 和失败原因。
 - Phase 9.1 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts`、`bun run typecheck`、`bun run --cwd apps/desktop build`。
+- Phase 9.2 已完成：根目录新增 `bun run test:agent-presets`，一条命令覆盖 preset catalog、本地 eval suite、runtime dynamic agent definition、workflow orchestration 和工具权限 hook。
+- Phase 9.2 验证：`bun run test:agent-presets`。
 
 发布前测试要求：
 
