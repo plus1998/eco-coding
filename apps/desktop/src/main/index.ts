@@ -88,6 +88,7 @@ import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
+import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
 import {
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   formatUserFacingRequestError,
@@ -3886,27 +3887,29 @@ function emitSubagentTimingUpdated(threadId: string): void {
   });
 }
 
+interface EmitThreadEventExtras {
+  plan?: ThreadLiveEvent["plan"];
+  clarification?: ThreadLiveEvent["clarification"];
+  todoList?: ThreadLiveEvent["todoList"];
+  title?: ThreadLiveEvent["title"];
+  usage?: ThreadUsageSnapshot;
+  modelId?: string;
+  totalCostUsd?: number;
+  modelUsage?: Record<string, ThreadModelUsageEntry>;
+  billing?: ThreadBillingSnapshot;
+  context?: ThreadContextSnapshot;
+  agentId?: string;
+  subagentSessions?: ThreadLiveEvent["subagentSessions"];
+  apiError?: ThreadLiveEvent["apiError"];
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
   message: string,
   role: AgentRole | "system" | "thinking" | "tool" | "user" = "system",
   stream = false,
-  extras?: {
-    plan?: ThreadLiveEvent["plan"];
-    clarification?: ThreadLiveEvent["clarification"];
-    todoList?: ThreadLiveEvent["todoList"];
-    title?: ThreadLiveEvent["title"];
-    usage?: ThreadUsageSnapshot;
-    modelId?: string;
-    totalCostUsd?: number;
-    modelUsage?: Record<string, ThreadModelUsageEntry>;
-    billing?: ThreadBillingSnapshot;
-    context?: ThreadContextSnapshot;
-    agentId?: string;
-    subagentSessions?: ThreadLiveEvent["subagentSessions"];
-    apiError?: ThreadLiveEvent["apiError"];
-  },
+  extras?: EmitThreadEventExtras,
 ): void {
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
@@ -3959,6 +3962,16 @@ function emitThreadEvent(
     });
   }
 
+  recordThreadRunEventFromLiveEvent({
+    threadId,
+    type,
+    displayMessage,
+    role: String(role),
+    stream,
+    extras,
+    persistedActivityLine,
+  });
+
   const payload: ThreadLiveEvent = {
     threadId,
     type,
@@ -4005,6 +4018,52 @@ function emitThreadEvent(
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
+}
+
+function recordThreadRunEventFromLiveEvent(input: {
+  threadId: string;
+  type: string;
+  displayMessage: string;
+  role: string;
+  stream: boolean;
+  extras?: EmitThreadEventExtras;
+  persistedActivityLine?: ThreadActivityLine;
+}): void {
+  if (!conversationStore.getThread(input.threadId)) {
+    return;
+  }
+  const eventId =
+    input.persistedActivityLine?.id ??
+    `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const runAttemptId = resolveCurrentRunAttemptId(input.threadId);
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: input.threadId,
+    eventId,
+    liveType: input.type,
+    message: input.displayMessage,
+    role: input.role,
+    stream: input.stream,
+    observedAt: new Date().toISOString(),
+    ...(runAttemptId && { runAttemptId }),
+    ...(input.extras?.agentId?.trim() && { agentId: input.extras.agentId.trim() }),
+    ...(input.extras?.apiError && { apiError: input.extras.apiError }),
+  });
+  if (!event) {
+    return;
+  }
+  try {
+    conversationStore.appendThreadRunEvent(event);
+  } catch (error) {
+    process.stderr.write(`[eco] thread run event shadow write failed: ${errorMessage(error)}\n`);
+  }
+}
+
+function resolveCurrentRunAttemptId(threadId: string): string | undefined {
+  try {
+    return agentLifecycle.currentRunAttemptId(threadId) ?? agentLifecycle.usageRunAttemptId(threadId);
+  } catch {
+    return undefined;
+  }
 }
 
 function recordUserPrompt(threadId: string, prompt: string): void {
