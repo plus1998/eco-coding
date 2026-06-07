@@ -539,32 +539,14 @@ function WorkSessionBlock({
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
     : "";
-  const sessionTiming = useStreamRequestTiming(
-    block.running && Boolean(block.awaitingFirstToken),
-    block.running && !block.awaitingFirstToken,
-  );
 
   const label = block.running
     ? `处理中${activeLabel ? ` · ${activeLabel}` : ""}…`
     : `已处理 ${formatDuration(block.durationMs)}`;
 
   if (block.inlineContent) {
-    const showRunningHint =
-      block.running && (block.children.length === 0 || Boolean(block.awaitingFirstToken));
     return (
       <section className="work-session work-session-inline">
-        {showRunningHint ? (
-          <div className="work-session-inline-status" aria-live="polite">
-            <span className="work-session-dot running" />
-            <span className="work-session-label">
-              {label}
-              <RequestTimingBadge timing={sessionTiming} />
-              {block.activeMissionSummary ? (
-                <span className="work-session-mission">{block.activeMissionSummary}</span>
-              ) : null}
-            </span>
-          </div>
-        ) : null}
         {block.children.length > 0 ? (
           <div className="work-session-details">
             {block.children.map((child, index) => (
@@ -594,7 +576,6 @@ function WorkSessionBlock({
         <span className={`work-session-dot${block.running ? " running" : ""}`} />
         <span className="work-session-label">
           {label}
-          {block.running ? <RequestTimingBadge timing={sessionTiming} /> : null}
           {block.activeMissionSummary ? (
             <span className="work-session-mission">{block.activeMissionSummary}</span>
           ) : null}
