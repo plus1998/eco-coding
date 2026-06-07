@@ -596,8 +596,12 @@ button:not(:disabled) {
 
 .chat-item-loading {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   color: #a3a3a3;
-  animation: eco-spin 0.8s linear infinite;
 }
 
 .project-expand {
@@ -2618,6 +2622,7 @@ button:not(:disabled) {
 .settings-icon-button .spinning,
 .activity-icon-button .spinning,
 .coder-todo-icon .spinning,
+.chat-item-loading .spinning,
 .run-log-reconnect-icon.spinning {
   animation: eco-spin 0.8s linear infinite;
 }

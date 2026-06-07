@@ -322,7 +322,9 @@ export function ProjectSidebarTree({
         {!collapsed ? (
           projectThreads.length > 0 ? (
             <>
-              {visibleThreads.map((thread) => (
+              {visibleThreads.map((thread) => {
+                const isThreadBusy = thread.status === "running" || thread.status === "queued";
+                return (
                 <div
                   key={thread.id}
                   className={activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"}
@@ -334,21 +336,23 @@ export function ProjectSidebarTree({
                   >
                     <span className="chat-item-title">{thread.title}</span>
                     <span className="chat-item-meta">
-                      {thread.status === "running" || thread.status === "queued" ? (
+                      {isThreadBusy ? (
                         <span
                           className="chat-item-loading"
                           title={thread.status}
                           role="img"
                           aria-label={thread.status}
                         >
-                          <LoaderCircle size={14} aria-hidden />
+                          <LoaderCircle size={14} className="spinning" aria-hidden />
                         </span>
                       ) : thread.status === "failed" || thread.status === "blocked" ? (
                         <span className={`status-dot ${thread.status}`} title={thread.status} />
                       ) : null}
-                      <span className="chat-item-time">
-                        {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                      </span>
+                      {!isThreadBusy ? (
+                        <span className="chat-item-time">
+                          {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                   <span
@@ -391,7 +395,8 @@ export function ProjectSidebarTree({
                     </span>
                   </span>
                 </div>
-              ))}
+                );
+              })}
               {hasMore ? (
                 <button
                   type="button"
