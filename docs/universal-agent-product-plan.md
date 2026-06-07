@@ -298,7 +298,7 @@ type WorkflowStep = {
 
 ## 阶段 1：通用数据模型与兼容迁移
 
-状态：进行中。
+状态：已完成。
 
 已完成子项：
 
@@ -306,12 +306,9 @@ type WorkflowStep = {
 - 新增内置 Coding agent template library，并提供从现有 route profile 生成默认 Coding orchestration profile 的迁移适配器。
 - `ModelSettingsSnapshot` 已暴露 `agentTemplates` 与 `orchestrationProfiles`，ProviderStore settings 会返回内置模板和由 route profiles 生成的新编排配置。
 - 验证：`bun test` 通过（961 pass / 20 skip / 0 fail）；`bun run typecheck` 通过；阶段目标文件 `bunx biome check ...` 通过。全仓 `bun run lint` 仍失败于既有 Biome 基线问题，本阶段未扩大处理范围。
-
-待完成子项：
-
-- 新增可复用 store，用于持久化用户级 agent templates 与 orchestration profiles。
-- 将 `subagentEnabled` 映射为默认 Coding profile 的 `agents[].enabled`。
-- 将 `orchestrationMode` 映射为默认 profile 的 `strategy.kind`。
+- 新增 `AgentOrchestrationStore`，支持用户/项目级 agent templates 与 orchestration profiles 的持久化、删除和读取；内置/派生配置禁止写入用户 store。
+- 默认 Coding profile builder 已支持 `subagentEnabled -> agents[].enabled`，并将 `manual/autonomous -> fixed/autonomous strategy`。
+- 验证补充：`bun test` 通过（963 pass / 21 skip / 0 fail）；`bun run typecheck` 通过；阶段目标文件 `bunx biome check ...` 通过。
 
 目标：建立通用 agent / profile 数据模型，并把旧编程配置迁移为默认 Coding profile。
 

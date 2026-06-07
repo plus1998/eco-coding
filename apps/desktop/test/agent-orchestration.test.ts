@@ -33,6 +33,7 @@ test("built-in agent templates define the default coding library", () => {
     CODING_AGENT_TEMPLATE_IDS.tester,
   ]);
   expect(templates.every((template) => template.builtIn && template.domain === "coding")).toBe(true);
+  expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
     templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.allowed,
   ).toContain("Write");
@@ -45,6 +46,7 @@ test("route profile migrates to a coding orchestration profile", () => {
     name: "默认编程",
     preset: "coding",
     sourceRouteProfileId: "coding-default",
+    source: "derived",
     mainAgent: {
       agentKey: "main",
       systemPromptPreset: "claude_code",
@@ -60,6 +62,28 @@ test("route profile migrates to a coding orchestration profile", () => {
     "tester",
   ]);
   expect(profile.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId).toBe("coder-model");
+});
+
+test("coding orchestration migration maps legacy settings to strategy and enabled agents", () => {
+  const manualProfile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
+    orchestrationMode: "manual",
+    subagentEnabled: {
+      explore: true,
+      architect: false,
+      coder: true,
+      reviewer: false,
+      tester: true,
+    },
+  });
+  expect(manualProfile.strategy.kind).toBe("fixed");
+  expect(manualProfile.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(false);
+  expect(manualProfile.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(false);
+  expect(manualProfile.agents.find((agent) => agent.agentKey === "coder")?.enabled).toBe(true);
+
+  const autonomousProfile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
+    orchestrationMode: "autonomous",
+  });
+  expect(autonomousProfile.strategy.kind).toBe("autonomous");
 });
 
 test("coding orchestration migration requires a complete coding route set", () => {

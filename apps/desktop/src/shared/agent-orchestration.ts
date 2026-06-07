@@ -1,13 +1,16 @@
 import type { UpstreamApiCompat } from "./api-compat";
 import type {
   ModelsDevMapping,
+  OrchestrationModeSetting,
   RoleRouteConfig,
   RouteManualSpec,
   RouteProfileView,
+  SubagentEnabledSettings,
   ThinkingEffort,
 } from "./ipc";
 
 export type AgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
+export type AgentConfigSource = "built_in" | "user" | "project" | "derived";
 
 export interface ModelRef {
   providerId: string;
@@ -55,6 +58,7 @@ export interface AgentTemplate {
   skills: string[];
   allowDelegation: boolean;
   builtIn: boolean;
+  source: AgentConfigSource;
   version: number;
   updatedAt: string;
 }
@@ -107,6 +111,7 @@ export interface OrchestrationProfile {
   strategy: OrchestrationStrategy;
   version: number;
   updatedAt: string;
+  source: AgentConfigSource;
   sourceRouteProfileId?: string;
 }
 
@@ -175,6 +180,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       skills: [],
       allowDelegation: false,
       builtIn: true,
+      source: "built_in",
       version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
@@ -191,6 +197,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       skills: [],
       allowDelegation: false,
       builtIn: true,
+      source: "built_in",
       version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
@@ -208,6 +215,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       skills: [],
       allowDelegation: false,
       builtIn: true,
+      source: "built_in",
       version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
@@ -224,6 +232,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       skills: [],
       allowDelegation: false,
       builtIn: true,
+      source: "built_in",
       version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
@@ -240,6 +249,7 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
       skills: [],
       allowDelegation: false,
       builtIn: true,
+      source: "built_in",
       version: 1,
       updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
     },
@@ -248,6 +258,10 @@ export function createBuiltInAgentTemplates(): AgentTemplate[] {
 
 export function buildCodingOrchestrationProfileFromRouteProfile(
   routeProfile: RouteProfileView,
+  options: {
+    subagentEnabled?: Partial<SubagentEnabledSettings>;
+    orchestrationMode?: OrchestrationModeSetting;
+  } = {},
 ): OrchestrationProfile {
   const routeByRole = new Map(routeProfile.routes.map((route) => [route.role, route]));
   const plannerRoute = requireRoute(routeByRole, "planner", routeProfile.id);
@@ -271,49 +285,56 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
         CODING_AGENT_KEYS.explore,
         CODING_AGENT_TEMPLATE_IDS.explorer,
         requireRoute(routeByRole, "explore", routeProfile.id),
+        subagentEnabledFor("explore", options.subagentEnabled),
       ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.architect,
         CODING_AGENT_TEMPLATE_IDS.architect,
         requireRoute(routeByRole, "architect", routeProfile.id),
+        subagentEnabledFor("architect", options.subagentEnabled),
       ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.coder,
         CODING_AGENT_TEMPLATE_IDS.coder,
         requireRoute(routeByRole, "coder", routeProfile.id),
+        true,
       ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.reviewer,
         CODING_AGENT_TEMPLATE_IDS.reviewer,
         requireRoute(routeByRole, "reviewer", routeProfile.id),
+        subagentEnabledFor("reviewer", options.subagentEnabled),
       ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.tester,
         CODING_AGENT_TEMPLATE_IDS.tester,
         requireRoute(routeByRole, "tester", routeProfile.id),
+        subagentEnabledFor("tester", options.subagentEnabled),
       ),
     ],
-    strategy: {
-      kind: "hybrid",
-      recommendedSteps: codingRecommendedSteps(),
-      allowPlannerAdjustments: true,
-    },
+    strategy: codingStrategyFromMode(options.orchestrationMode),
     version: 1,
     updatedAt,
+    source: "derived",
     sourceRouteProfileId: routeProfile.id,
   };
 }
 
 export function buildCodingOrchestrationProfilesFromRouteProfiles(
   routeProfiles: readonly RouteProfileView[],
+  options: {
+    subagentEnabled?: Partial<SubagentEnabledSettings>;
+    orchestrationMode?: OrchestrationModeSetting;
+  } = {},
 ): OrchestrationProfile[] {
-  return routeProfiles.map((profile) => buildCodingOrchestrationProfileFromRouteProfile(profile));
+  return routeProfiles.map((profile) => buildCodingOrchestrationProfileFromRouteProfile(profile, options));
 }
 
 function buildCodingAgentInstance(
   agentKey: string,
   templateId: string,
   route: RoleRouteConfig,
+  enabled: boolean,
 ): AgentInstanceConfig {
   const template = createBuiltInAgentTemplates().find((candidate) => candidate.id === templateId);
   if (!template) {
@@ -327,7 +348,35 @@ function buildCodingAgentInstance(
     tools: cloneToolPolicy(template.defaultTools),
     mcpServers: [],
     skills: [],
-    enabled: true,
+    enabled,
+  };
+}
+
+function subagentEnabledFor(
+  key: keyof SubagentEnabledSettings,
+  settings: Partial<SubagentEnabledSettings> | undefined,
+): boolean {
+  return settings?.[key] ?? true;
+}
+
+function codingStrategyFromMode(mode: OrchestrationModeSetting | undefined): OrchestrationStrategy {
+  if (mode === "autonomous") {
+    return {
+      kind: "autonomous",
+      guidancePrompt:
+        "Use the available coding subagents only when their specialization improves the result.",
+    };
+  }
+  if (mode === "manual") {
+    return {
+      kind: "fixed",
+      steps: codingRecommendedSteps(),
+    };
+  }
+  return {
+    kind: "hybrid",
+    recommendedSteps: codingRecommendedSteps(),
+    allowPlannerAdjustments: true,
   };
 }
 
