@@ -969,6 +969,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? {
             hooks: buildEcoSdkHooks({
               ...this.options.hookContext,
+              workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
               subagentAvailability:

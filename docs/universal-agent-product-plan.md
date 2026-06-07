@@ -538,12 +538,17 @@ type WorkflowStep = {
 - 动态子代理支持 `eco_*` agent key 与未加前缀的运行时 agent type 回退，避免 SDK 事件命名差异导致误拒绝。
 - `ClaudeAgentSdkDriver` 已在动态 agent registry 下把工具权限传入 SDK hooks；固定 workflow step 通过 step agent key 继承对应子代理权限。
 - Coding 默认阶段工具会合并进入主 agent 权限，避免计划审批工具和阶段工具被通用权限层误拦截。
+- 运行时 `ToolPolicy` 已镜像 `bash`、`filesystem`、`network` 结构化字段，不再只依赖工具名白/黑名单。
+- Bash 策略已支持 `enabled`、`approval`、`commandAllowlist`、`commandDenylist`：`always/risky` 可返回 SDK `ask`，风险命令复用 Eco 命令风险规则，拒绝命令直接 deny。
+- 文件系统策略已对 `Read/Glob/Grep/LS/NotebookRead` 和 `Write/Edit/MultiEdit/NotebookEdit` 做硬约束，支持禁读、禁写和 workspace 范围校验。
+- 网络策略已对 `WebSearch/WebFetch` 做硬约束，即使工具名在 allowlist 中，结构化 `network` 关闭时也会拒绝。
+- `ClaudeAgentSdkDriver` 已把当前线程 `workspacePath` 传入权限 hook，文件路径判断按线程工作区执行；runtime 权限逻辑不再把 Node-only workspace 模块拖入 renderer 构建图。
 
 已验证：
 
 - `bun run typecheck`
-- `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/claude-agent-sdk.test.ts`
-- `bun test`：990 pass，21 skip，0 fail。
+- `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/workspace/test/workspace.test.ts`
+- `bun test`：993 pass，21 skip，0 fail。
 - `bun run --cwd apps/desktop build`
 
 主要代码落点：

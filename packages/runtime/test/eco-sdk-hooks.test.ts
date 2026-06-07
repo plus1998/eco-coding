@@ -313,6 +313,157 @@ test("createToolPermissionPreToolHook enforces main and subagent tool policies",
   expect(unprefixedSubagentSearch.hookSpecificOutput).toBeUndefined();
 });
 
+test("createToolPermissionPreToolHook enforces structured bash filesystem and network policies", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Bash", "Read", "Write", "WebSearch", "WebFetch"],
+        disallowed: [],
+        bash: { enabled: true, approval: "risky", commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
+        filesystem: { read: "workspace", write: "none" },
+        network: { webSearch: false, webFetch: true },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo" },
+  );
+  expect(hook).toBeDefined();
+
+  const safeBash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "bun test packages/runtime/test/eco-sdk-hooks.test.ts" },
+      tool_use_id: "tool_bash_safe",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_bash_safe",
+    { signal: new AbortController().signal },
+  );
+  expect(safeBash.hookSpecificOutput).toBeUndefined();
+
+  const deniedBash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "rm -rf src" },
+      tool_use_id: "tool_bash_deny",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_bash_deny",
+    { signal: new AbortController().signal },
+  );
+  expect(deniedBash.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(deniedBash.hookSpecificOutput?.permissionDecisionReason).toContain("denylist");
+
+  const deniedWrite = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/output.md" },
+      tool_use_id: "tool_write",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_write",
+    { signal: new AbortController().signal },
+  );
+  expect(deniedWrite.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(deniedWrite.hookSpecificOutput?.permissionDecisionReason).toContain("writes are disabled");
+
+  const outsideRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "/tmp/secret.txt" },
+      tool_use_id: "tool_read_outside",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_read_outside",
+    { signal: new AbortController().signal },
+  );
+  expect(outsideRead.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(outsideRead.hookSpecificOutput?.permissionDecisionReason).toContain("outside");
+
+  const disabledSearch = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "WebSearch",
+      tool_input: {},
+      tool_use_id: "tool_web_search",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_web_search",
+    { signal: new AbortController().signal },
+  );
+  expect(disabledSearch.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(disabledSearch.hookSpecificOutput?.permissionDecisionReason).toContain("WebSearch is disabled");
+
+  const allowedFetch = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "WebFetch",
+      tool_input: { url: "https://example.com" },
+      tool_use_id: "tool_web_fetch",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_web_fetch",
+    { signal: new AbortController().signal },
+  );
+  expect(allowedFetch.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook asks for risky bash commands", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Bash"],
+        disallowed: [],
+        bash: { enabled: true, approval: "risky" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo" },
+  );
+  expect(hook).toBeDefined();
+
+  const riskyBash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "npm install left-pad" },
+      tool_use_id: "tool_bash_risky",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_bash_risky",
+    { signal: new AbortController().signal },
+  );
+
+  expect(riskyBash.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
+  expect(riskyBash.hookSpecificOutput?.permissionDecisionReason).toContain("Dependency changes");
+});
+
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {
   const hook = createDisabledSubagentPreToolHook({
     explore: false,

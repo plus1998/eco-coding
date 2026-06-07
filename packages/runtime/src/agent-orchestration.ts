@@ -11,9 +11,23 @@ export interface EcoModelRef {
 export interface EcoToolPolicy {
   allowed: string[];
   disallowed: string[];
+  bash?: {
+    enabled: boolean;
+    approval: "always" | "risky" | "never";
+    commandAllowlist?: string[];
+    commandDenylist?: string[];
+  };
   mcp?: {
     allowedServers: string[];
     allowedTools: string[];
+  };
+  filesystem?: {
+    read: "workspace" | "extra_dirs" | "none";
+    write: "workspace" | "none";
+  };
+  network?: {
+    webSearch: boolean;
+    webFetch: boolean;
   };
 }
 
@@ -101,6 +115,9 @@ export interface EcoResolvedAgentDefinitionSet {
 export interface EcoRuntimeToolPermissionEntry {
   allowed: string[];
   disallowed: string[];
+  bash?: EcoToolPolicy["bash"];
+  filesystem?: EcoToolPolicy["filesystem"];
+  network?: EcoToolPolicy["network"];
 }
 
 export interface EcoRuntimeToolPermissionPolicy {
@@ -303,6 +320,19 @@ function normalizeToolPermissionEntry(
       ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
     ]),
     disallowed: uniqueToolPatterns(policy.disallowed),
+    ...(policy.bash && {
+      bash: {
+        ...policy.bash,
+        ...(policy.bash.commandAllowlist && {
+          commandAllowlist: uniqueToolPatterns(policy.bash.commandAllowlist),
+        }),
+        ...(policy.bash.commandDenylist && {
+          commandDenylist: uniqueToolPatterns(policy.bash.commandDenylist),
+        }),
+      },
+    }),
+    ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
+    ...(policy.network && { network: { ...policy.network } }),
   };
 }
 

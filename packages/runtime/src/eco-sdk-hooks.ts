@@ -87,11 +87,18 @@ export interface EcoHookContext {
   subagentAvailability?: SubagentAvailability;
   allowedAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
+  workspacePath?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+const READ_FILESYSTEM_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead"]);
+const WRITE_FILESYSTEM_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const PACKAGE_INSTALL_COMMANDS = new Set(["npm", "pnpm", "yarn", "bun"]);
+const PACKAGE_INSTALL_ARGS = new Set(["install", "i", "add", "remove"]);
+const ALWAYS_ASK_COMMANDS = new Set(["docker", "sudo"]);
 
 export function createWorkflowDenyPreToolHook(): HookCallback {
   return async (input) => {
@@ -235,6 +242,7 @@ export function createDisabledSubagentPreToolHook(
 
 export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
+  options: { workspacePath?: string } = {},
 ): HookCallback | undefined {
   if (!policy) {
     return undefined;
@@ -251,6 +259,10 @@ export function createToolPermissionPreToolHook(
     }
     if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
       return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`);
+    }
+    const structuredDecision = evaluateStructuredToolPolicy(preInput, entry, options);
+    if (structuredDecision) {
+      return structuredDecision;
     }
     if (entry.allowed.length > 0 && !matchesAnyToolPattern(preInput.tool_name, entry.allowed)) {
       return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is not allowed for ${actor}.`);
@@ -287,6 +299,291 @@ function resolveToolPermissionEntry(
   }
   const normalizedRole = normalizeSdkSubagentType(actor);
   return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
+}
+
+function evaluateStructuredToolPolicy(
+  input: PreToolUseHookInput,
+  entry: EcoRuntimeToolPermissionEntry,
+  options: { workspacePath?: string },
+): HookJSONOutput | undefined {
+  if (input.tool_name === "Bash") {
+    return evaluateBashToolPolicy(input, entry, options);
+  }
+  const filesystemDecision = evaluateFilesystemToolPolicy(input, entry, options);
+  if (filesystemDecision) {
+    return filesystemDecision;
+  }
+  return evaluateNetworkToolPolicy(input, entry);
+}
+
+function evaluateBashToolPolicy(
+  input: PreToolUseHookInput,
+  entry: EcoRuntimeToolPermissionEntry,
+  options: { workspacePath?: string },
+): HookJSONOutput | undefined {
+  const bash = entry.bash;
+  if (!bash?.enabled) {
+    return denyTool("Bash", "Bash is disabled for this Eco agent.");
+  }
+  const command = readBashCommand(input.tool_input);
+  if (command) {
+    if (matchesAnyCommandPattern(command, bash.commandDenylist ?? [])) {
+      return denyTool("Bash", "Bash command is denied by this Eco agent command denylist.");
+    }
+    if (
+      (bash.commandAllowlist?.length ?? 0) > 0 &&
+      !matchesAnyCommandPattern(command, bash.commandAllowlist ?? [])
+    ) {
+      return denyTool("Bash", "Bash command is outside this Eco agent command allowlist.");
+    }
+  }
+  if (bash.approval === "always") {
+    return askTool("Bash", "Bash requires approval for this Eco agent.");
+  }
+  if (bash.approval === "risky") {
+    if (!command) {
+      return askTool("Bash", "Bash command could not be evaluated and requires approval.");
+    }
+    const workspacePath = options.workspacePath?.trim() || input.cwd;
+    const decision = evaluateShellCommandTextPolicy({
+      command,
+      cwd: input.cwd,
+      workspacePath,
+    });
+    if (decision.action === "deny") {
+      return denyTool("Bash", decision.reason);
+    }
+    if (decision.action === "ask") {
+      return askTool("Bash", decision.reason);
+    }
+  }
+  return undefined;
+}
+
+function evaluateFilesystemToolPolicy(
+  input: PreToolUseHookInput,
+  entry: EcoRuntimeToolPermissionEntry,
+  options: { workspacePath?: string },
+): HookJSONOutput | undefined {
+  const filesystem = entry.filesystem;
+  if (!filesystem) {
+    return undefined;
+  }
+  const isReadTool = READ_FILESYSTEM_TOOLS.has(input.tool_name);
+  const isWriteTool = WRITE_FILESYSTEM_TOOLS.has(input.tool_name);
+  if (!isReadTool && !isWriteTool) {
+    return undefined;
+  }
+  if (isReadTool && filesystem.read === "none") {
+    return denyTool(input.tool_name, "Filesystem reads are disabled for this Eco agent.");
+  }
+  if (isWriteTool && filesystem.write === "none") {
+    return denyTool(input.tool_name, "Filesystem writes are disabled for this Eco agent.");
+  }
+  const filePath = readFilesystemPath(input.tool_input);
+  if (!filePath) {
+    return undefined;
+  }
+  const workspacePath = options.workspacePath?.trim();
+  if (!workspacePath) {
+    return undefined;
+  }
+  const absolutePath = resolvePolicyPath(filePath, input.cwd);
+  if (isReadTool && filesystem.read !== "none" && !isPathInsidePolicyScope(absolutePath, workspacePath)) {
+    return denyTool(input.tool_name, "Filesystem read path is outside this Eco agent workspace scope.");
+  }
+  if (
+    isWriteTool &&
+    filesystem.write === "workspace" &&
+    !isPathInsidePolicyScope(absolutePath, workspacePath)
+  ) {
+    return denyTool(input.tool_name, "Filesystem write path is outside this Eco agent workspace scope.");
+  }
+  return undefined;
+}
+
+function evaluateNetworkToolPolicy(
+  input: PreToolUseHookInput,
+  entry: EcoRuntimeToolPermissionEntry,
+): HookJSONOutput | undefined {
+  if (!entry.network) {
+    return undefined;
+  }
+  if (input.tool_name === "WebSearch" && !entry.network.webSearch) {
+    return denyTool("WebSearch", "WebSearch is disabled for this Eco agent.");
+  }
+  if (input.tool_name === "WebFetch" && !entry.network.webFetch) {
+    return denyTool("WebFetch", "WebFetch is disabled for this Eco agent.");
+  }
+  return undefined;
+}
+
+type EcoPolicyDecision = {
+  action: "allow" | "ask" | "deny";
+  riskRank: number;
+  reason: string;
+};
+
+function evaluateShellCommandTextPolicy(input: {
+  command: string;
+  cwd: string;
+  workspacePath: string;
+}): EcoPolicyDecision {
+  if (!isPathInsidePolicyScope(input.cwd, input.workspacePath)) {
+    return { action: "deny", riskRank: 4, reason: "Command cwd is outside the workspace" };
+  }
+  const decisions = input.command
+    .split(/\s*(?:&&|\|\||;|\|)\s*/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map(evaluateShellSegmentPolicy);
+
+  if (decisions.length === 0) {
+    return { action: "deny", riskRank: 3, reason: "Empty command is not allowed" };
+  }
+  const denied = decisions.find((decision) => decision.action === "deny");
+  if (denied) {
+    return denied;
+  }
+  const asks = decisions.filter((decision) => decision.action === "ask");
+  if (asks.length > 0) {
+    return asks.reduce((strictest, decision) =>
+      decision.riskRank > strictest.riskRank ? decision : strictest,
+    );
+  }
+  return { action: "allow", riskRank: 1, reason: "Command is allowed by default policy" };
+}
+
+function evaluateShellSegmentPolicy(segment: string): EcoPolicyDecision {
+  const [program, ...args] = tokenizeShellSegment(segment);
+  if (!program) {
+    return { action: "deny", riskRank: 3, reason: "Empty command is not allowed" };
+  }
+  if (program === "rm") {
+    return { action: "ask", riskRank: 4, reason: "File deletion requires approval" };
+  }
+  if (program === "git" && args[0] === "reset") {
+    return { action: "ask", riskRank: 4, reason: "git reset requires approval" };
+  }
+  if (program === "git" && args[0] === "clean") {
+    return { action: "ask", riskRank: 3, reason: "git clean can delete files" };
+  }
+  if (PACKAGE_INSTALL_COMMANDS.has(program) && args.some((arg) => PACKAGE_INSTALL_ARGS.has(arg))) {
+    return { action: "ask", riskRank: 2, reason: "Dependency changes require approval" };
+  }
+  if (ALWAYS_ASK_COMMANDS.has(program)) {
+    return { action: "ask", riskRank: 3, reason: `${program} requires approval` };
+  }
+  return { action: "allow", riskRank: 1, reason: "Command is allowed by default policy" };
+}
+
+function tokenizeShellSegment(segment: string): string[] {
+  return segment
+    .replace(/^\s*(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*/, "")
+    .split(/\s+/g)
+    .filter(Boolean);
+}
+
+function resolvePolicyPath(filePath: string, cwd: string): string {
+  const normalizedPath = normalizePolicyPathSeparators(filePath);
+  if (isAbsolutePolicyPath(normalizedPath)) {
+    return normalizePolicyPath(normalizedPath);
+  }
+  return normalizePolicyPath(`${cwd}/${normalizedPath}`);
+}
+
+function isPathInsidePolicyScope(candidatePath: string, parentPath: string): boolean {
+  const candidate = normalizePolicyPath(candidatePath);
+  const parent = normalizePolicyPath(parentPath);
+  if (candidate === parent) {
+    return true;
+  }
+  const parentPrefix = parent.endsWith("/") ? parent : `${parent}/`;
+  return candidate.startsWith(parentPrefix);
+}
+
+function normalizePolicyPath(value: string): string {
+  const normalized = normalizePolicyPathSeparators(value.trim());
+  const driveMatch = /^([A-Za-z]:)(?:\/(.*))?$/.exec(normalized);
+  const prefix = driveMatch ? driveMatch[1] : normalized.startsWith("/") ? "/" : "";
+  const body = driveMatch ? (driveMatch[2] ?? "") : normalized.replace(/^\/+/, "");
+  const parts: string[] = [];
+  for (const part of body.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  if (prefix === "/") {
+    return `/${parts.join("/")}`.replace(/\/+$/u, "") || "/";
+  }
+  if (prefix) {
+    return `${prefix}/${parts.join("/")}`.replace(/\/+$/u, "");
+  }
+  return parts.join("/");
+}
+
+function normalizePolicyPathSeparators(value: string): string {
+  return value.replace(/\\/g, "/");
+}
+
+function isAbsolutePolicyPath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:\//.test(value);
+}
+
+function readBashCommand(input: unknown): string | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  for (const key of ["command", "bash_command", "full_command"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function readFilesystemPath(input: unknown): string | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  for (const key of ["file_path", "filePath", "path", "notebook_path", "notebookPath"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function matchesAnyCommandPattern(command: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => matchesCommandPattern(command, pattern));
+}
+
+function matchesCommandPattern(command: string, pattern: string): boolean {
+  const trimmedPattern = pattern.trim();
+  if (!trimmedPattern) {
+    return false;
+  }
+  if (trimmedPattern.includes("*")) {
+    return matchesToolPattern(command, trimmedPattern);
+  }
+  return command === trimmedPattern || command.startsWith(`${trimmedPattern} `);
+}
+
+function askTool(toolName: string, reason: string): HookJSONOutput {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "ask",
+      permissionDecisionReason: reason || `Tool "${toolName}" requires approval by Eco policy.`,
+    },
+  };
 }
 
 function denyTool(toolName: string, reason: string): HookJSONOutput {
@@ -566,7 +863,14 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
-  pushHook(hooks, "PreToolUse", createToolPermissionPreToolHook(ctx.toolPermissions));
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createToolPermissionPreToolHook(
+      ctx.toolPermissions,
+      ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {},
+    ),
+  );
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
     if (sessions.onAgentToolCapture) {

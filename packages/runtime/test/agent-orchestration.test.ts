@@ -170,6 +170,45 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
   });
 });
 
+test("buildToolPermissionPolicyFromProfile preserves structured tool policies", () => {
+  const structuredProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        ...profile.mainAgent.tools,
+        bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"] },
+        filesystem: { read: "workspace", write: "none" },
+        network: { webSearch: false, webFetch: true },
+      },
+    },
+    agents: [
+      {
+        ...profile.agents[0]!,
+        tools: {
+          ...profile.agents[0]!.tools,
+          bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
+          filesystem: { read: "workspace", write: "none" },
+          network: { webSearch: true, webFetch: false },
+        },
+      },
+    ],
+  };
+
+  const policy = buildToolPermissionPolicyFromProfile(structuredProfile, [researchTemplate]);
+
+  expect(policy.main).toMatchObject({
+    bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"] },
+    filesystem: { read: "workspace", write: "none" },
+    network: { webSearch: false, webFetch: true },
+  });
+  expect(policy.agents.eco_researcher).toMatchObject({
+    bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
+    filesystem: { read: "workspace", write: "none" },
+    network: { webSearch: true, webFetch: false },
+  });
+});
+
 test("sdkAgentKeyForProfileAgent normalizes custom keys", () => {
   expect(sdkAgentKeyForProfileAgent(" Research Lead ")).toBe("eco_Research_Lead");
   expect(sdkAgentKeyForProfileAgent("eco_writer")).toBe("eco_writer");
