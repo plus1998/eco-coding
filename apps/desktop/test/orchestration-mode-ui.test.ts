@@ -9,7 +9,7 @@ test("ORCHESTRATION_MODE_UI defines autonomous and manual copy", () => {
   expect(ORCHESTRATION_MODE_UI.map((entry) => entry.value)).toEqual(["autonomous", "manual"]);
   expect(orchestrationModeUi("autonomous").title).toBe("自主编排");
   expect(orchestrationModeUi("manual").title).toBe("固定编排");
-  expect(orchestrationModeUi("manual").description).toContain("预设流水线");
+  expect(orchestrationModeUi("manual").description).toContain("编排配置");
 });
 
 test("toggleOrchestrationMode switches between modes", () => {

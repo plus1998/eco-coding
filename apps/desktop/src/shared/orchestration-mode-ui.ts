@@ -12,13 +12,13 @@ export const ORCHESTRATION_MODE_UI: OrchestrationModeUiOption[] = [
     value: "autonomous",
     title: "自主编排",
     subtitle: "autonomous",
-    description: "主 Agent 按任务风险自选子代理；子代理默认全开，不可单独开关。",
+    description: "主 Agent 根据任务目标选择可用子代理，适合开放式任务和通用场景。",
   },
   {
     value: "manual",
     title: "固定编排",
     subtitle: "manual",
-    description: "强制先计划后执行，走预设流水线；可在设置中单独开关子代理。",
+    description: "按当前编排配置执行预设步骤，适合需要稳定流程和人工审批的任务。",
   },
 ];
 

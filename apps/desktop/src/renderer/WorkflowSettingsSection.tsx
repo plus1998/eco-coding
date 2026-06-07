@@ -12,8 +12,8 @@ export function WorkflowSettingsSection({ settings, disabled, onChange }: Workfl
     <section className="mcp-list-section models-plan-mode-section">
       <header className="models-section-header">
         <div className="models-section-intro">
-          <h2 className="models-section-title">编排模式</h2>
-          <p className="models-section-desc">仅影响新启动的对话。默认自主编排，由 Agent 决定子代理与是否提交计划。</p>
+          <h2 className="models-section-title">编排策略</h2>
+          <p className="models-section-desc">仅影响新启动的对话。默认自主编排，由主 Agent 基于当前子代理编排配置决策。</p>
         </div>
       </header>
       <ul className="models-subagent-list">

@@ -37,8 +37,8 @@ export type ModelsSettingsTab = "providers" | "subagents" | "routes";
 
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
   { id: "providers", label: "提供商和模型" },
-  { id: "subagents", label: "子代理" },
-  { id: "routes", label: "角色路由" },
+  { id: "subagents", label: "子代理库" },
+  { id: "routes", label: "子代理编排" },
 ];
 
 interface ModelsSettingsPanelProps {
@@ -388,7 +388,7 @@ export function ModelsSettingsPanel({
       return;
     }
     const providerName = providerForm.name.trim() || "Provider";
-    if (!window.confirm(`确定删除 Provider「${providerName}」？引用它的角色路由将改用到其他 Provider。`)) {
+    if (!window.confirm(`确定删除 Provider「${providerName}」？引用它的子代理编排配置将改用到其他 Provider。`)) {
       return;
     }
 
@@ -621,7 +621,7 @@ export function ModelsSettingsPanel({
       return;
     }
     if (settings.routeProfiles.length <= 1) {
-      setRouteProfileModalError("至少保留一套角色路由配置。");
+      setRouteProfileModalError("至少保留一套子代理编排配置。");
       return;
     }
     const profileName = routeProfileForm.name.trim() || "路由配置";
@@ -718,7 +718,7 @@ export function ModelsSettingsPanel({
       <header className="mcp-page-header">
         <h1>模型与路由</h1>
         <p className="mcp-page-desc">
-          配置 Provider、子代理默认值与角色路由模板。新对话在输入区选择方案；子代理与计划模式按对话独立保存。
+          配置 Provider、子代理库与子代理编排配置。新对话在输入区选择方案；子代理与编排策略按对话独立保存。
         </p>
       </header>
 
@@ -749,11 +749,11 @@ export function ModelsSettingsPanel({
           <section className="mcp-list-section models-subagent-section">
             <header className="models-section-header">
               <div className="models-section-intro">
-                <h2 className="models-section-title">子代理</h2>
+                <h2 className="models-section-title">子代理库</h2>
                 <p className="models-section-desc">
                   {workflowSettings.orchestrationMode === "manual"
-                    ? "固定编排下可单独开关各角色；关闭后不会注册到 SDK。"
-                    : "自主编排下子代理默认全开，由 Agent 选用；切到固定编排后可在此开关。"}
+                    ? "固定编排下可停用部分子代理声明；停用后不会注册到 SDK。"
+                    : "自主编排下使用当前子代理声明集合，由主 Agent 按任务目标选用。"}
                 </p>
               </div>
             </header>
@@ -843,9 +843,9 @@ export function ModelsSettingsPanel({
       <section className="mcp-list-section models-routes-section">
         <header className="models-section-header">
           <div className="models-section-intro">
-            <h2 className="models-section-title">角色路由</h2>
+            <h2 className="models-section-title">子代理编排</h2>
             <p className="models-section-desc">
-              可保存多套角色路由模板。每个对话在输入区选择方案；运行到对应角色时使用该对话绑定的路线。
+              可保存多套子代理编排配置。每个对话在输入区选择方案；运行到对应 agent 时使用该对话绑定的模型路线。
             </p>
             <p className="models-section-meta">
               能力、上下文与参考单价优先来自 models.dev；未匹配时可手动填写，并用「测试」验证各角色模型能否调用
@@ -855,7 +855,7 @@ export function ModelsSettingsPanel({
         </header>
 
         <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">路由配置</span>
+          <span className="mcp-list-toolbar-label">编排配置</span>
           <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateRouteProfile}>
             <Plus size={16} />
             添加配置
@@ -863,7 +863,7 @@ export function ModelsSettingsPanel({
         </div>
 
         {settings.routeProfiles.length === 0 ? (
-          <p className="mcp-list-empty">尚未添加角色路由配置</p>
+          <p className="mcp-list-empty">尚未添加子代理编排配置</p>
         ) : (
           <ul className="mcp-server-list">
             {settings.routeProfiles.map((profile) => (
@@ -1378,7 +1378,7 @@ function RouteProfileEditorModal({
               className="mcp-uninstall-button"
               onClick={onDelete}
               disabled={busy || !canDelete}
-              title={canDelete ? undefined : "至少保留一套角色路由配置"}
+              title={canDelete ? undefined : "至少保留一套子代理编排配置"}
             >
               <Trash2 size={16} />
               删除

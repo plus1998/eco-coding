@@ -241,7 +241,7 @@ export class ProviderStore {
   deleteRouteProfile(id: string): void {
     const profiles = this.listRouteProfileRows();
     if (profiles.length <= 1) {
-      throw new Error("至少保留一套角色路由配置。");
+      throw new Error("至少保留一套子代理编排配置。");
     }
     const target = profiles.find((profile) => profile.id === id);
     if (!target) {

@@ -210,7 +210,7 @@ export function ComposerAgentModels({
         ref={panelRef}
         className="composer-agents-popover"
         role="dialog"
-        aria-label="角色路由详情"
+        aria-label="子代理编排详情"
         style={panelStyle}
         onMouseEnter={showPanel}
         onMouseLeave={scheduleClose}
@@ -218,7 +218,7 @@ export function ComposerAgentModels({
         onBlur={handleBlur}
       >
         <div className="composer-agents-popover-header">
-          <span>角色路由</span>
+          <span>子代理编排</span>
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
@@ -232,8 +232,8 @@ export function ComposerAgentModels({
             );
             const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
             const className = rowClassName({ subagent, enabled, clickable, locked, planner });
-            const status = planner ? "主线" : locked ? "必需" : enabled ? "开启" : "关闭";
-            const action = clickable ? (enabled ? "点击关闭" : "点击开启") : undefined;
+            const status = planner ? "主 Agent" : locked ? "必需" : enabled ? "启用" : "停用";
+            const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
             const content = (
               <AgentRowContent
                 role={role}
@@ -245,11 +245,11 @@ export function ComposerAgentModels({
             const tip = planner
               ? title
               : locked
-                ? "编码子代理不可关闭"
+                ? "默认编程执行子代理不可停用"
                 : clickable
                   ? enabled
-                    ? `${title} · 点击关闭`
-                    : `${title} · 点击开启`
+                    ? `${title} · 点击停用`
+                    : `${title} · 点击启用`
                   : title;
 
             if (clickable && subagent) {
@@ -289,7 +289,7 @@ export function ComposerAgentModels({
             ? "composer-meta-pill composer-agents-trigger is-clickable is-active"
             : "composer-meta-pill composer-agents-trigger is-clickable"
         }
-        aria-label={`查看角色路由详情，已启用 ${summary}`}
+        aria-label={`查看子代理编排详情，已启用 ${summary}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onMouseEnter={showPanel}
@@ -307,7 +307,7 @@ export function ComposerAgentModels({
         }}
       >
         <Users size={14} aria-hidden className="composer-agents-trigger-icon" />
-        <span>角色</span>
+        <span>编排</span>
         <span className="composer-agents-trigger-count">{summary}</span>
       </button>
       {popover}

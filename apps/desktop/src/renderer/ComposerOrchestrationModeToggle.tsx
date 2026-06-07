@@ -90,7 +90,7 @@ export function ComposerOrchestrationModeToggle({
           </span>
         ) : (
           <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            当前对话进行中，编排模式不可修改
+            当前对话进行中，编排策略不可修改
           </span>
         )}
       </span>,

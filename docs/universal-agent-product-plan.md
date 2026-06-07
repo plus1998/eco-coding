@@ -262,7 +262,13 @@ type WorkflowStep = {
 
 ## 阶段 0：概念重命名与边界校准
 
-状态：未开始。
+状态：已完成。
+
+完成记录：
+
+- 用户可见概念已从“角色路由 / 编排模式 / 子代理开关”收敛到“子代理编排 / 编排策略 / 子代理库”。
+- 当前阶段只调整产品概念边界和错误提示，不迁移底层 schema；旧 `AgentRole`、route profile 字段仍作为阶段 1 之前的兼容实现存在。
+- 验证：`bun test apps/desktop/test/orchestration-mode-ui.test.ts apps/desktop/test/thread-failure-message.test.ts` 通过；`bun run typecheck` 通过。
 
 目标：先把产品语言和代码新增路径的方向改对，避免继续扩展固定角色模型。
 
@@ -828,4 +834,3 @@ type WorkflowStep = {
 8. 加入 hybrid/fixed workflow engine。
 9. 建立 eval 和 commercial observability。
 10. 收敛旧固定 role 路径。
-

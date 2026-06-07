@@ -111,7 +111,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
 }): ThreadRuntimeConfig {
   const routeProfileId = input.routeProfileId?.trim() || getDefaultRouteProfileId(input.settings);
   if (!routeProfileId) {
-    throw new Error("至少添加一套角色路由配置。");
+    throw new Error("至少添加一套子代理编排配置。");
   }
   if (!getRoutesForProfile(input.settings, routeProfileId)) {
     throw new Error(`找不到路由配置：${routeProfileId}`);

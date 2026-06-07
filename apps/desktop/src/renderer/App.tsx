@@ -1200,7 +1200,7 @@ function App() {
     const messagePrompt =
       prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
     if (!composerRuntimeConfig) {
-      setError("请先配置角色路由方案。");
+      setError("请先配置子代理编排方案。");
       setIsStarting(false);
       return;
     }

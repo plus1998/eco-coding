@@ -9,11 +9,11 @@ const ROLE_LABELS: Record<SubagentRole, string> = {
 };
 
 const ROLE_HINTS: Record<SubagentRole, string> = {
-  explore: "只读浏览代码库，规划/问答阶段可调用",
-  architect: "拆分任务与架构建议",
-  coder: "实现代码（流水线必需）",
-  reviewer: "审查本次改动",
-  tester: "运行测试验证",
+  explore: "只读探索上下文，适合作为编排前置调查代理",
+  architect: "拆分任务与结构设计，适合复杂变更前的方案代理",
+  coder: "执行实现任务，默认编程预设中的必需代理",
+  reviewer: "审查本次产物，适合风险较高的交付前检查",
+  tester: "运行验证任务，适合交付前确认结果",
 };
 
 interface SubagentSettingsSectionProps {
@@ -53,14 +53,14 @@ export function SubagentSettingsSection({
                   <span className="models-route-role">{ROLE_LABELS[role]}</span>
                   <span className="models-route-role-id">{role}</span>
                   {locked ? (
-                    <span className="models-subagent-required-badge">流水线必需</span>
+                    <span className="models-subagent-required-badge">默认必需</span>
                   ) : null}
                 </div>
                 <p className="models-subagent-card-desc">{ROLE_HINTS[role]}</p>
               </div>
               <label
                 className="mcp-toggle mcp-toggle-lg"
-                title={locked ? "编码子代理不可关闭" : enabled ? "已启用" : "已关闭"}
+                title={locked ? "默认编程执行子代理不可停用" : enabled ? "已启用" : "已停用"}
               >
                 <input
                   type="checkbox"
