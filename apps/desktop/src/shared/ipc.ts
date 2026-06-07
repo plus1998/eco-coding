@@ -96,6 +96,13 @@ export type {
   SessionSyncTestConnectionRequest,
   SessionSyncTestConnectionResult,
 } from "./session-sync";
+export type {
+  ThreadRunEvent,
+  ThreadRunEventInput,
+  ThreadRunEventScope,
+  ThreadRunEventStreamState,
+  ThreadRunEventType,
+} from "./thread-run-events";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 

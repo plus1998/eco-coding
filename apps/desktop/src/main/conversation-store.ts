@@ -16,6 +16,8 @@ import type {
   ThreadApiErrorInfo,
   ThreadContextSnapshot,
   ThreadPendingPlan,
+  ThreadRunEvent,
+  ThreadRunEventInput,
   ThreadRuntimeConfig,
   ThreadStatus,
   ThreadSummary,
@@ -171,6 +173,25 @@ interface UsageLedgerEventRow {
   cache_creation_tokens: number;
   reported_cost_usd: number | null;
   attribution_json: string;
+  metadata_json: string | null;
+  observed_at: string;
+}
+
+interface ThreadRunEventRow {
+  id: string;
+  thread_id: string;
+  sequence: number;
+  event_type: string;
+  scope: string;
+  role: string | null;
+  agent_id: string | null;
+  parent_agent_id: string | null;
+  parent_tool_use_id: string | null;
+  run_attempt_id: string | null;
+  request_id: string | null;
+  stream_key: string | null;
+  stream_state: string;
+  message: string;
   metadata_json: string | null;
   observed_at: string;
 }
@@ -378,6 +399,32 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_usage_ledger_thread_observed
         ON thread_usage_ledger_events(thread_id, observed_at, id);
+
+      CREATE TABLE IF NOT EXISTS thread_run_events (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        role TEXT,
+        agent_id TEXT,
+        parent_agent_id TEXT,
+        parent_tool_use_id TEXT,
+        run_attempt_id TEXT,
+        request_id TEXT,
+        stream_key TEXT,
+        stream_state TEXT NOT NULL,
+        message TEXT NOT NULL,
+        metadata_json TEXT,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_sequence
+        ON thread_run_events(thread_id, sequence, id);
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_agent
+        ON thread_run_events(thread_id, agent_id, sequence);
     `);
     this.migrateSchema();
   }
@@ -534,6 +581,32 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_usage_ledger_thread_observed
         ON thread_usage_ledger_events(thread_id, observed_at, id);
+
+      CREATE TABLE IF NOT EXISTS thread_run_events (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        role TEXT,
+        agent_id TEXT,
+        parent_agent_id TEXT,
+        parent_tool_use_id TEXT,
+        run_attempt_id TEXT,
+        request_id TEXT,
+        stream_key TEXT,
+        stream_state TEXT NOT NULL,
+        message TEXT NOT NULL,
+        metadata_json TEXT,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_sequence
+        ON thread_run_events(thread_id, sequence, id);
+
+      CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_agent
+        ON thread_run_events(thread_id, agent_id, sequence);
     `);
   }
 
@@ -992,6 +1065,78 @@ export class ConversationStore {
     this.db.prepare(`DELETE FROM thread_usage_ledger_events WHERE thread_id = ?`).run(threadId);
     this.db.prepare(`DELETE FROM thread_agent_instances WHERE thread_id = ?`).run(threadId);
     this.db.prepare(`DELETE FROM thread_run_attempts WHERE thread_id = ?`).run(threadId);
+  }
+
+  appendThreadRunEvent(event: ThreadRunEventInput): ThreadRunEvent {
+    const existing = this.getThreadRunEvent(event.threadId, event.id);
+    if (existing) {
+      return existing;
+    }
+
+    const record: ThreadRunEvent = {
+      id: event.id,
+      threadId: event.threadId,
+      sequence: event.sequence ?? this.nextThreadRunEventSequence(event.threadId),
+      eventType: event.eventType,
+      scope: event.scope,
+      streamState: event.streamState,
+      message: event.message,
+      observedAt: event.observedAt,
+      ...(event.role?.trim() && { role: event.role.trim() }),
+      ...(event.agentId?.trim() && { agentId: event.agentId.trim() }),
+      ...(event.parentAgentId?.trim() && { parentAgentId: event.parentAgentId.trim() }),
+      ...(event.parentToolUseId?.trim() && { parentToolUseId: event.parentToolUseId.trim() }),
+      ...(event.runAttemptId?.trim() && { runAttemptId: event.runAttemptId.trim() }),
+      ...(event.requestId?.trim() && { requestId: event.requestId.trim() }),
+      ...(event.streamKey?.trim() && { streamKey: event.streamKey.trim() }),
+      ...(event.metadata && { metadata: event.metadata }),
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO thread_run_events (
+           id, thread_id, sequence, event_type, scope, role, agent_id,
+           parent_agent_id, parent_tool_use_id, run_attempt_id, request_id, stream_key,
+           stream_state, message, metadata_json, observed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        record.id,
+        record.threadId,
+        record.sequence,
+        record.eventType,
+        record.scope,
+        record.role ?? null,
+        record.agentId ?? null,
+        record.parentAgentId ?? null,
+        record.parentToolUseId ?? null,
+        record.runAttemptId ?? null,
+        record.requestId ?? null,
+        record.streamKey ?? null,
+        record.streamState,
+        record.message,
+        record.metadata ? JSON.stringify(record.metadata) : null,
+        record.observedAt,
+      );
+    return record;
+  }
+
+  listThreadRunEvents(threadId: string): ThreadRunEvent[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, thread_id, sequence, event_type, scope, role, agent_id,
+                parent_agent_id, parent_tool_use_id, run_attempt_id, request_id, stream_key,
+                stream_state, message, metadata_json, observed_at
+         FROM thread_run_events
+         WHERE thread_id = ?
+         ORDER BY sequence ASC, observed_at ASC, id ASC`,
+      )
+      .all(threadId) as Array<ThreadRunEventRow>;
+    return rows.map(rowToThreadRunEvent);
+  }
+
+  clearThreadRunEvents(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_run_events WHERE thread_id = ?`).run(threadId);
   }
 
   upsertSubagentSessionActive(input: {
@@ -1600,6 +1745,30 @@ export class ConversationStore {
       ...(apiError && { apiError }),
     };
   }
+
+  private getThreadRunEvent(threadId: string, eventId: string): ThreadRunEvent | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, thread_id, sequence, event_type, scope, role, agent_id,
+                parent_agent_id, parent_tool_use_id, run_attempt_id, request_id, stream_key,
+                stream_state, message, metadata_json, observed_at
+         FROM thread_run_events
+         WHERE thread_id = ? AND id = ?`,
+      )
+      .get(threadId, eventId) as ThreadRunEventRow | undefined;
+    return row ? rowToThreadRunEvent(row) : undefined;
+  }
+
+  private nextThreadRunEventSequence(threadId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
+         FROM thread_run_events
+         WHERE thread_id = ?`,
+      )
+      .get(threadId) as { next_sequence: number } | undefined;
+    return row?.next_sequence ?? 1;
+  }
 }
 
 function parseStoredApiError(raw: string | null | undefined): ThreadApiErrorInfo | undefined {
@@ -1776,6 +1945,28 @@ function rowToUsageLedgerEvent(row: UsageLedgerEventRow): UsageLedgerEvent {
     ...(row.sdk_message_id && { sdkMessageId: row.sdk_message_id }),
     ...(row.model_id && { modelId: row.model_id }),
     ...(row.reported_cost_usd !== null && { reportedCostUsd: row.reported_cost_usd }),
+    ...(metadata && { metadata }),
+  };
+}
+
+function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
+  const metadata = parseJsonRecord(row.metadata_json);
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    sequence: row.sequence,
+    eventType: row.event_type as ThreadRunEvent["eventType"],
+    scope: row.scope as ThreadRunEvent["scope"],
+    streamState: row.stream_state as ThreadRunEvent["streamState"],
+    message: row.message,
+    observedAt: row.observed_at,
+    ...(row.role && { role: row.role }),
+    ...(row.agent_id && { agentId: row.agent_id }),
+    ...(row.parent_agent_id && { parentAgentId: row.parent_agent_id }),
+    ...(row.parent_tool_use_id && { parentToolUseId: row.parent_tool_use_id }),
+    ...(row.run_attempt_id && { runAttemptId: row.run_attempt_id }),
+    ...(row.request_id && { requestId: row.request_id }),
+    ...(row.stream_key && { streamKey: row.stream_key }),
     ...(metadata && { metadata }),
   };
 }
