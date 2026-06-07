@@ -651,6 +651,8 @@ type WorkflowStep = {
 
 - Phase 7.1 盘点完成：现有 `UsageLedgerCoordinator`、billing projector、SubAgent metrics projection、context snapshot scheduler、thread-run projection 已经能提供按 `agentId`/role/model 的用量、成本、context 和 timeline 底座。
 - 现有运行观察已在 Phase 6 接入 runtime display map，但用量汇总入口仍分散在 billing/context/activity 三块，需要合并为 profile/agent 可解释摘要。
+- Phase 7.2 已完成：`UsageBreakdownPanel` 的按 Agent / 按模型用量明细接入运行时 Agent Profile 显示名，主 agent、子代理实例和模型归因都会显示用户配置的 agent 名称，并保留 `agentId` 前缀用于区分并发实例。
+- Phase 7.2 验证：`bun test apps/desktop/test/usage-breakdown-panel.test.ts`、`bun run typecheck`。
 - 固定编排 step 生命周期已经通过 `ecoWorkflow`/`ecoWorkflowStep` run event 写入 projection timeline；后续需要把 step 耗时、成本和失败状态产品化展示。
 - Profile 历史表现和审计导出还没有用户入口；底层有 run events、ledger events 和 projection diagnostics，可作为后续导出的数据源。
 

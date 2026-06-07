@@ -262,6 +262,7 @@ function BillingFloatingCard({
   plannerLabel,
   cacheCostSuffix,
   showBilling,
+  agentDisplayNames,
   onDismiss,
 }: {
   billing?: ThreadBillingSnapshot;
@@ -270,6 +271,7 @@ function BillingFloatingCard({
   plannerLabel: string;
   cacheCostSuffix: ReturnType<typeof formatCacheCostSuffix>;
   showBilling: boolean;
+  agentDisplayNames?: RuntimeAgentDisplayNames;
   onDismiss: () => void;
 }) {
   return (
@@ -337,7 +339,13 @@ function BillingFloatingCard({
         <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，①② 可能不完整。</p>
       ) : null}
 
-      {showBilling && billing ? <UsageBreakdownPanel billing={billing} variant="full" /> : null}
+      {showBilling && billing ? (
+        <UsageBreakdownPanel
+          billing={billing}
+          variant="full"
+          {...(agentDisplayNames && { agentDisplayNames })}
+        />
+      ) : null}
       {showBilling && billing ? <BillingSourceRows billing={billing} /> : null}
     </div>
   );
@@ -577,6 +585,7 @@ function ThreadInfoFloatStack({
                 plannerLabel={plannerLabel}
                 cacheCostSuffix={cacheCostSuffix}
                 showBilling={showBilling}
+                {...(agentDisplayNames && { agentDisplayNames })}
                 onDismiss={closePanel}
               />
             )}
