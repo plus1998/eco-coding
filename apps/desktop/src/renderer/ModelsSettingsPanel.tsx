@@ -8,6 +8,12 @@ import {
   createUserPresetProfileId,
   createUserPresetProfileName,
 } from "../shared/agent-orchestration";
+import {
+  createBuiltInPresetEvalScenarios,
+  validateBuiltInPresetEvalSuite,
+  type BuiltInPresetEvalScenario,
+  type PresetEvalValidationResult,
+} from "../shared/agent-preset-evals";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 import {
@@ -48,7 +54,13 @@ import { RoutePricingDisplay } from "./RoutePricingDisplay";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { WorkflowSettingsSection } from "./WorkflowSettingsSection";
 
-export type ModelsSettingsTab = "subagents" | "routes" | "providers" | "permissions" | "presets";
+export type ModelsSettingsTab =
+  | "subagents"
+  | "routes"
+  | "providers"
+  | "permissions"
+  | "presets"
+  | "evaluation";
 
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
   { id: "subagents", label: "Agent Library" },
@@ -56,6 +68,7 @@ const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
   { id: "providers", label: "模型路由" },
   { id: "permissions", label: "工具权限" },
   { id: "presets", label: "场景预设" },
+  { id: "evaluation", label: "效果评测" },
 ];
 
 interface ModelsSettingsPanelProps {
@@ -830,6 +843,11 @@ export function ModelsSettingsPanel({
     [settings],
   );
   const presetCatalog = useMemo(() => createBuiltInPresetCatalog(), []);
+  const presetEvalScenarios = useMemo(() => createBuiltInPresetEvalScenarios(), []);
+  const presetEvalResults = useMemo(
+    () => validateBuiltInPresetEvalSuite(presetEvalScenarios),
+    [presetEvalScenarios],
+  );
   const performanceByProfileKey = useMemo(() => {
     const map = new Map<string, AgentProfilePerformanceSnapshot>();
     for (const performance of profilePerformance) {
@@ -1161,6 +1179,22 @@ export function ModelsSettingsPanel({
             copyingPresetId={presetProfileBusyId}
             onCopyPreset={copyPresetToProfile}
           />
+        </section>
+      )}
+
+      {activeTab === "evaluation" && (
+        <section className="mcp-list-section models-evaluation-section">
+          <header className="models-section-header">
+            <div className="models-section-intro">
+              <h2 className="models-section-title">效果评测</h2>
+              <p className="models-section-desc">
+                内置 preset eval suite 会验证 profile 生成、workflow 引用、必需 agent、模型绑定和非 Coding
+                prompt 边界。
+              </p>
+            </div>
+          </header>
+
+          <PresetEvaluationOverview scenarios={presetEvalScenarios} results={presetEvalResults} />
         </section>
       )}
 
@@ -2276,6 +2310,81 @@ function formatPresetStrategyKind(kind: BuiltInPresetDefinition["strategies"]["d
     return "混合编排";
   }
   return "自主编排";
+}
+
+function PresetEvaluationOverview({
+  scenarios,
+  results,
+}: {
+  scenarios: readonly BuiltInPresetEvalScenario[];
+  results: readonly PresetEvalValidationResult[];
+}) {
+  const resultById = new Map(results.map((result) => [result.scenarioId, result]));
+  const presetIds = Array.from(new Set(scenarios.map((scenario) => scenario.presetId)));
+  const failedCount = results.filter((result) => !result.ok).length;
+  return (
+    <div className="models-evaluation-layout">
+      <div className="models-evaluation-summary">
+        <span className={failedCount === 0 ? "models-provider-badge on" : "models-provider-badge"}>
+          {failedCount === 0 ? "全部通过" : `${failedCount} 个失败`}
+        </span>
+        <span>{scenarios.length} 个 eval case</span>
+        <span>{presetIds.length} 个 preset</span>
+      </div>
+      <div className="models-evaluation-grid">
+        {presetIds.map((presetId) => {
+          const presetScenarios = scenarios.filter((scenario) => scenario.presetId === presetId);
+          const presetResults = presetScenarios.map((scenario) => resultById.get(scenario.id));
+          const failedResults = presetResults.filter((result) => result && !result.ok);
+          return (
+            <article key={presetId} className="models-evaluation-panel">
+              <div className="models-preset-panel-head">
+                <div className="models-preset-title-block">
+                  <span className="models-preset-name">{formatAgentDomainLabel(presetId)}</span>
+                  <span className="models-preset-description">{presetScenarios.length} 个配置级 eval</span>
+                </div>
+                <span
+                  className={
+                    failedResults.length === 0 ? "models-provider-badge on" : "models-provider-badge"
+                  }
+                >
+                  {failedResults.length === 0 ? "通过" : `${failedResults.length} 失败`}
+                </span>
+              </div>
+              <ul className="models-evaluation-case-list">
+                {presetScenarios.map((scenario) => {
+                  const result = resultById.get(scenario.id);
+                  return (
+                    <li key={scenario.id} className={result?.ok ? "is-pass" : "is-fail"}>
+                      <div className="models-evaluation-case-head">
+                        <span>{scenario.evalTitle}</span>
+                        <span>{result?.ok ? "PASS" : "FAIL"}</span>
+                      </div>
+                      <p>{scenario.userPrompt}</p>
+                      <div className="models-preset-template-list">
+                        {scenario.requiredAgentKeys.map((agentKey) => (
+                          <span key={agentKey} className="models-preset-template">
+                            {agentKey}
+                          </span>
+                        ))}
+                      </div>
+                      {result && result.errors.length > 0 ? (
+                        <ul className="models-evaluation-error-list">
+                          {result.errors.map((error) => (
+                            <li key={error}>{error}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function formatModelPreview(modelId: string): string {

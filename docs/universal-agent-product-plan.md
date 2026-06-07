@@ -774,7 +774,7 @@ type WorkflowStep = {
 
 ## 阶段 9：评测与质量体系
 
-状态：未开始。
+状态：进行中。
 
 目标：防止产品变成“看起来能用，但不可控、不稳定”。
 
@@ -789,6 +789,11 @@ type WorkflowStep = {
 - 固定编排完成率 eval。
 - 成本回归 eval。
 - 长上下文稳定性 eval。
+
+已完成：
+
+- Phase 9.1 已完成：Agent Builder 新增“效果评测”页，读取内置 preset eval suite，按 preset 展示配置级 eval 总数、通过/失败状态、case prompt、必需 agent 和失败原因。
+- Phase 9.1 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts`、`bun run typecheck`、`bun run --cwd apps/desktop build`。
 
 发布前测试要求：
 
