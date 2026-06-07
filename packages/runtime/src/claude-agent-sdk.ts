@@ -287,7 +287,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             : {}),
         },
         input.prompt,
-        { isResume, availability },
+        { isResume, availability, includePlanOnResume: planning.planUserEdited === true },
       );
     yield* this.runSingleSession(input, {
       prompt,
@@ -399,6 +399,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               userPrompt: planning.userPrompt,
               analysis: planning.analysis,
               plan: planning.plan,
+              ...(planning.planUserEdited ? { planUserEdited: true } : {}),
               followUp: input.prompt,
             })
           : input.prompt;
@@ -477,7 +478,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ? buildExecutionPromptWithFollowUp(
           { ...planning, approvedPlanFile },
           input.prompt,
-          { isResume: true, availability },
+          { isResume: true, availability, includePlanOnResume: false },
         )
       : input.prompt;
     yield* this.runSingleSession(input, {

@@ -7,7 +7,10 @@ import {
   planningPhaseSystemAppend,
 } from "../src/prompts/planning.js";
 import { formatMandatoryEcoSubagentRule } from "../src/prompts/subagent-pipeline.js";
-import { buildAutonomousOrchestratorAppend } from "../src/prompts/autonomous.js";
+import {
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
+} from "../src/prompts/autonomous.js";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability.js";
 
 test("inlined Codex plan template matches upstream structure", () => {
@@ -88,4 +91,25 @@ test("autonomous orchestrator separates AskUserQuestion from finalize_plan", () 
   expect(autonomous).toContain("finalize_plan");
   expect(autonomous).toContain("Skip finalize_plan");
   expect(autonomous).not.toContain("call finalize_plan when the user should approve before large changes");
+});
+
+test("autonomous plan continuation references approved plan unless edited", () => {
+  const prompt = buildAutonomousPlanContinuationPrompt({
+    userPrompt: "Build feature",
+    analysis: "Need backend changes",
+    plan: "Long approved plan",
+    followUp: "开始执行",
+  });
+  expect(prompt).toContain("approved plan already submitted");
+  expect(prompt).not.toContain("Long approved plan");
+  expect(prompt).toContain("Latest user message:");
+
+  const edited = buildAutonomousPlanContinuationPrompt({
+    userPrompt: "Build feature",
+    analysis: "Need backend changes",
+    plan: "Edited approved plan",
+    planUserEdited: true,
+  });
+  expect(edited).toContain("Edited approved plan");
+  expect(edited).toContain("user edited the plan");
 });

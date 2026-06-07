@@ -65,26 +65,43 @@ export function buildExecuteResumePrompt(planning: {
   /** Repo-relative path, e.g. `.eco/approved-plans/thr_x.md` */
   approvedPlanFile?: string;
   resumableSubagents?: readonly { role: string; agentId: string }[];
-}): string {
+}, options?: { includePlanText?: boolean }): string {
+  const includePlanText = options?.includePlanText === true;
   const lines = [
     "Proceed with phase 2 execution.",
-    "The approved plan below is authoritative. Do not ask the user to paste the plan again.",
-    "",
-    "User request:",
-    planning.userPrompt.trim() || "(not captured)",
-    "",
-    "Planning analysis:",
-    planning.analysis.trim() || "(no analysis captured)",
-    "",
-    "Approved plan (follow this):",
-    planning.plan.trim() || "(no plan captured)",
   ];
 
-  if (planning.planUserEdited) {
+  if (includePlanText) {
+    lines.push(
+      "The approved plan below is authoritative. Do not ask the user to paste the plan again.",
+      "",
+      "User request:",
+      planning.userPrompt.trim() || "(not captured)",
+      "",
+      "Planning analysis:",
+      planning.analysis.trim() || "(no analysis captured)",
+      "",
+      "Approved plan (follow this):",
+      planning.plan.trim() || "(no plan captured)",
+    );
+  } else {
+    lines.push(
+      "Use the approved plan already submitted in this SDK session. Do not ask the user to paste the plan again.",
+    );
+  }
+
+  if (planning.planUserEdited && includePlanText) {
     lines.push(
       "",
       "<system-reminder>",
       "The user edited this plan in Eco before approval. Treat the approved plan text above as authoritative over any earlier planner draft in the conversation.",
+      "</system-reminder>",
+    );
+  } else if (planning.planUserEdited) {
+    lines.push(
+      "",
+      "<system-reminder>",
+      "The user edited this plan in Eco before approval. Treat the approved/on-disk plan as authoritative over any earlier planner draft in the conversation.",
       "</system-reminder>",
     );
   }
@@ -110,7 +127,7 @@ export function buildExecutionPromptWithFollowUp(
     resumableSubagents?: readonly { role: string; agentId: string }[];
   },
   followUp: string,
-  options: { isResume: boolean; availability?: SubagentAvailability },
+  options: { isResume: boolean; availability?: SubagentAvailability; includePlanOnResume?: boolean },
 ): string {
   if (options.isResume) {
     const base = buildExecuteResumePrompt({
@@ -122,7 +139,7 @@ export function buildExecutionPromptWithFollowUp(
       ...(planning.resumableSubagents?.length
         ? { resumableSubagents: planning.resumableSubagents }
         : {}),
-    });
+    }, { includePlanText: options.includePlanOnResume === true });
     const trimmed = followUp.trim();
     return trimmed && trimmed !== planning.userPrompt.trim()
       ? `${base}\n\nUser follow-up:\n${trimmed}`

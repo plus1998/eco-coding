@@ -313,6 +313,7 @@ test("builds phased orchestration prompts", () => {
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
+  expect(executePhaseSystemAppend).toContain("Do not restate the full approved plan");
   expect(executePhaseSystemAppend).toContain("Architect (conditional)");
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
@@ -941,7 +942,8 @@ test("buildExecutionPromptWithFollowUp appends User follow-up on resume", () => 
   );
   expect(prompt).toContain("User follow-up:");
   expect(prompt).toContain("also add unit tests");
-  expect(prompt).toContain("Do the thing");
+  expect(prompt).not.toContain("Do the thing");
+  expect(prompt).toContain("approved plan already submitted");
 });
 
 test("buildExecutionPromptWithFollowUp omits duplicate follow-up matching original task", () => {
@@ -953,7 +955,7 @@ test("buildExecutionPromptWithFollowUp omits duplicate follow-up matching origin
   expect(prompt).not.toContain("User follow-up:");
 });
 
-test("buildExecuteResumePrompt inlines approved plan when resuming", () => {
+test("buildExecuteResumePrompt references approved plan by default when resuming", () => {
   const prompt = buildExecuteResumePrompt({
     userPrompt: "Add feature X",
     analysis: "Needs tests",
@@ -961,16 +963,30 @@ test("buildExecuteResumePrompt inlines approved plan when resuming", () => {
     approvedPlanFile: ".eco/approved-plans/thr_1.md",
   });
   expect(prompt).toContain("phase 2 execution");
-  expect(prompt).toContain("Do the thing");
-  expect(prompt).toContain("Add feature X");
+  expect(prompt).toContain("approved plan already submitted");
+  expect(prompt).not.toContain("Do the thing");
+  expect(prompt).not.toContain("Add feature X");
   expect(prompt).toContain(".eco/approved-plans/thr_1.md");
   expect(prompt).not.toContain("from our conversation above");
+});
+
+test("buildExecuteResumePrompt can inline edited approved plan once", () => {
+  const prompt = buildExecuteResumePrompt({
+    userPrompt: "Add feature X",
+    analysis: "Needs tests",
+    plan: "Edited plan",
+    approvedPlanFile: ".eco/approved-plans/thr_1.md",
+    planUserEdited: true,
+  }, { includePlanText: true });
+  expect(prompt).toContain("Edited plan");
+  expect(prompt).toContain("Add feature X");
+  expect(prompt).toContain("user edited this plan");
   expect(buildExecuteResumePrompt({
     userPrompt: "x",
     analysis: "y",
     plan: "Edited",
     planUserEdited: true,
-  })).toContain("user edited this plan");
+  })).toContain("approved/on-disk plan");
 });
 
 test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route models", async () => {

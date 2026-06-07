@@ -99,6 +99,8 @@ export function buildExecutePhaseSystemAppend(
     buildExecuteBuildSwitchAppend(availability),
     "",
     executeCoreGoalAppend,
+    "Final response: keep it concise. State what changed, verification result, and blockers only.",
+    "Do not restate the full approved plan, full Coder Tasks list, long diffs, or tool logs in the final response.",
     "",
     formatAvailableSubagentsLine(availability),
     "",
