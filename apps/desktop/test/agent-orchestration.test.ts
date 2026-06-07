@@ -3,6 +3,7 @@ import {
   buildCodingOrchestrationProfileFromRouteProfile,
   CODING_AGENT_TEMPLATE_IDS,
   createBuiltInAgentTemplates,
+  createBuiltInPresetCatalog,
   DATA_OPS_AGENT_TEMPLATE_IDS,
   PRODUCT_AGENT_TEMPLATE_IDS,
   RESEARCH_AGENT_TEMPLATE_IDS,
@@ -50,7 +51,52 @@ test("built-in agent registry includes non-coding presets", () => {
   expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.pmAnalyst);
   expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.specWriter);
   expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.dataAnalyst);
+  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.reportWriter);
   expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.incidentTriage);
+  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.logAnalyst);
+  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.runbookExecutor);
+});
+
+test("built-in preset catalog defines commercial scenario metadata", () => {
+  const templatesById = new Set(createBuiltInAgentTemplates().map((template) => template.id));
+  const presets = createBuiltInPresetCatalog();
+  expect(presets.map((preset) => preset.id)).toEqual([
+    "coding",
+    "research",
+    "writing",
+    "product",
+    "data",
+    "ops",
+  ]);
+  for (const preset of presets) {
+    expect(preset.mainAgentPrompt.trim().length).toBeGreaterThan(40);
+    expect(preset.mainAgentTools.allowed).toContain("Agent");
+    expect(preset.defaultAgents.length).toBeGreaterThanOrEqual(3);
+    expect(preset.examples).toHaveLength(3);
+    expect(preset.evals).toHaveLength(3);
+    expect(preset.strategies.autonomous.kind).toBe("autonomous");
+    expect(preset.strategies.hybrid.recommendedSteps.length).toBeGreaterThan(0);
+    expect(preset.strategies.fixed.steps.length).toBeGreaterThan(0);
+    for (const agent of preset.defaultAgents) {
+      expect(templatesById.has(agent.templateId)).toBe(true);
+    }
+    for (const evalCase of preset.evals) {
+      expect(evalCase.successCriteria.length).toBeGreaterThanOrEqual(3);
+      expect(evalCase.requiredAgentKeys.length).toBeGreaterThan(0);
+    }
+  }
+});
+
+test("non-coding preset prompts avoid coding workflow pollution", () => {
+  const nonCodingPrompts = createBuiltInPresetCatalog()
+    .filter((preset) => preset.id !== "coding")
+    .map((preset) => preset.mainAgentPrompt.toLowerCase());
+  for (const prompt of nonCodingPrompts) {
+    expect(prompt).not.toContain("software engineering");
+    expect(prompt).not.toContain("repository");
+    expect(prompt).not.toContain("code review");
+    expect(prompt).not.toContain("diff");
+  }
 });
 
 test("route profile migrates to a coding orchestration profile", () => {

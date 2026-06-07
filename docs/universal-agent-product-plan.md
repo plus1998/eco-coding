@@ -677,7 +677,7 @@ type WorkflowStep = {
 
 ## 阶段 8：预设场景打磨
 
-状态：未开始。
+状态：进行中。
 
 目标：不是只支持自定义，而是内置场景真的可用。
 
@@ -754,6 +754,13 @@ type WorkflowStep = {
 - 自主/混合/固定编排建议。
 - 示例任务。
 - Evals。
+
+已完成：
+
+- Phase 8.1 已完成：新增结构化内置 preset catalog，覆盖 Coding、Research、Writing、Product、Data、Ops 六个商用场景；每个 preset 均包含 main agent prompt、默认子代理集合、主 agent 工具权限、模型建议、自主/混合/固定编排建议、3 个示例任务和 3 个 eval case。
+- Phase 8.1 已补齐 Data/Ops 缺失内置模板：Data Report Writer、Ops Log Analyst、Ops Runbook Executor，确保 Phase 8 默认 agents 全部有真实 template 可引用。
+- Agent Builder 的“场景预设”页已从 domain 计数升级为 preset 规格展示，显示默认策略、主 agent prompt 摘要、默认子代理、示例任务、eval 覆盖和模型建议。
+- Phase 8.1 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
 
 验收标准：
 

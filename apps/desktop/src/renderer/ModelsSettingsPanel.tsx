@@ -1,13 +1,14 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
 import { Download, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
+import { type BuiltInPresetDefinition, createBuiltInPresetCatalog } from "../shared/agent-orchestration";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
 import {
   AGENT_ROLES,
   type AgentProfilePerformanceSnapshot,
-  type AgentTemplate,
   type AgentRole,
+  type AgentTemplate,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type ProviderConfigInput,
@@ -28,10 +29,10 @@ import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import {
+  type AgentProfileSummary,
   buildAgentProfileSummary,
   formatAgentDomainLabel,
   listSelectableAgentProfileSummaries,
-  type AgentProfileSummary,
 } from "./agent-profile-summary";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
@@ -766,6 +767,7 @@ export function ModelsSettingsPanel({
     () => settings.orchestrationProfiles.map((profile) => buildAgentProfileSummary(settings, profile)),
     [settings],
   );
+  const presetCatalog = useMemo(() => createBuiltInPresetCatalog(), []);
   const performanceByProfileKey = useMemo(() => {
     const map = new Map<string, AgentProfilePerformanceSnapshot>();
     for (const performance of profilePerformance) {
@@ -1082,7 +1084,11 @@ export function ModelsSettingsPanel({
             </div>
           </header>
 
-          <PresetOverview templates={settings.agentTemplates} profiles={allProfileSummaries} />
+          <PresetOverview
+            presets={presetCatalog}
+            templates={settings.agentTemplates}
+            profiles={allProfileSummaries}
+          />
         </section>
       )}
 
@@ -2081,28 +2087,30 @@ function PermissionAgentRow({
 }
 
 function PresetOverview({
+  presets,
   templates,
   profiles,
 }: {
+  presets: readonly BuiltInPresetDefinition[];
   templates: readonly AgentTemplate[];
   profiles: readonly AgentProfileSummary[];
 }) {
-  const domains = Array.from(
-    new Set([
-      ...templates.map((template) => template.domain),
-      ...profiles.map((summary) => summary.profile.preset),
-    ]),
-  );
+  const templateById = new Map(templates.map((template) => [template.id, template]));
   return (
     <div className="models-preset-grid">
-      {domains.map((domain) => {
-        const domainTemplates = templates.filter((template) => template.domain === domain);
-        const domainProfiles = profiles.filter((summary) => summary.profile.preset === domain);
-        const builtInCount = domainTemplates.filter((template) => template.builtIn).length;
+      {presets.map((preset) => {
+        const domainTemplates = templates.filter((template) => template.domain === preset.id);
+        const domainProfiles = profiles.filter((summary) => summary.profile.preset === preset.id);
+        const missingDefaultAgents = preset.defaultAgents.filter(
+          (agent) => !templateById.has(agent.templateId),
+        );
         return (
-          <article key={domain} className="models-preset-panel">
+          <article key={preset.id} className="models-preset-panel">
             <div className="models-preset-panel-head">
-              <span className="models-preset-name">{formatAgentDomainLabel(domain)}</span>
+              <div className="models-preset-title-block">
+                <span className="models-preset-name">{formatAgentDomainLabel(preset.id)}</span>
+                <span className="models-preset-description">{preset.description}</span>
+              </div>
               <span
                 className={
                   domainProfiles.some((profile) => profile.selectionId)
@@ -2114,25 +2122,71 @@ function PresetOverview({
               </span>
             </div>
             <div className="models-preset-stats">
+              <span>{preset.defaultAgents.length} 个默认子代理</span>
               <span>{domainTemplates.length} 个模板</span>
-              <span>{builtInCount} 个内置</span>
               <span>{domainProfiles.length} 个 profile</span>
+              <span>{preset.evals.length} 个 eval</span>
+              <span>默认 {formatPresetStrategyKind(preset.strategies.defaultKind)}</span>
             </div>
-            <div className="models-preset-template-list">
-              {domainTemplates.slice(0, 4).map((template) => (
-                <span key={template.id} className="models-preset-template">
-                  {template.name}
-                </span>
-              ))}
-              {domainTemplates.length > 4 ? (
-                <span className="models-preset-template is-extra">+{domainTemplates.length - 4}</span>
-              ) : null}
+            <p className="models-preset-main-prompt">{preset.mainAgentPrompt}</p>
+            <div className="models-preset-section">
+              <span className="models-preset-section-label">默认子代理</span>
+              <div className="models-preset-template-list">
+                {preset.defaultAgents.map((agent) => {
+                  const template = templateById.get(agent.templateId);
+                  return (
+                    <span
+                      key={agent.agentKey}
+                      className={template ? "models-preset-template" : "models-preset-template is-missing"}
+                    >
+                      {template?.name ?? agent.displayName}
+                    </span>
+                  );
+                })}
+                {missingDefaultAgents.length > 0 ? (
+                  <span className="models-preset-template is-missing">
+                    缺失 {missingDefaultAgents.length}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="models-preset-section">
+              <span className="models-preset-section-label">示例任务</span>
+              <ul className="models-preset-task-list">
+                {preset.examples.slice(0, 3).map((example) => (
+                  <li key={example.id}>{example.prompt}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="models-preset-section">
+              <span className="models-preset-section-label">评测覆盖</span>
+              <div className="models-preset-template-list">
+                {preset.evals.map((evalCase) => (
+                  <span key={evalCase.id} className="models-preset-template">
+                    {evalCase.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="models-preset-section">
+              <span className="models-preset-section-label">模型建议</span>
+              <p className="models-preset-model-suggestion">{preset.modelSuggestion.main}</p>
             </div>
           </article>
         );
       })}
     </div>
   );
+}
+
+function formatPresetStrategyKind(kind: BuiltInPresetDefinition["strategies"]["defaultKind"]): string {
+  if (kind === "fixed") {
+    return "固定编排";
+  }
+  if (kind === "hybrid") {
+    return "混合编排";
+  }
+  return "自主编排";
 }
 
 function formatModelPreview(modelId: string): string {

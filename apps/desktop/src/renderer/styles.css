@@ -7076,6 +7076,16 @@ button:not(:disabled) {
 
 .models-preset-panel-head {
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.models-preset-title-block,
+.models-preset-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .models-preset-name {
@@ -7084,9 +7094,41 @@ button:not(:disabled) {
   font-weight: 600;
 }
 
+.models-preset-description,
+.models-preset-main-prompt,
+.models-preset-model-suggestion,
+.models-preset-task-list {
+  margin: 0;
+  color: #a4a4a4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.models-preset-main-prompt {
+  color: #c2c2c2;
+}
+
+.models-preset-section-label {
+  color: #737373;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .models-preset-stats {
   color: #858585;
   font-size: 12px;
+}
+
+.models-preset-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 16px;
+}
+
+.models-preset-task-list li {
+  padding-left: 2px;
 }
 
 .models-preset-template {
@@ -7100,6 +7142,12 @@ button:not(:disabled) {
 
 .models-preset-template.is-extra {
   color: #8a8a8a;
+}
+
+.models-preset-template.is-missing {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
 }
 
 .models-subagent-defaults-head {
