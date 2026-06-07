@@ -65,7 +65,7 @@ export function buildThreadRunProjectionViewModel(
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
     .map((agent) => {
-      const displayTimeline = buildProjectionDisplayTimelineItems(agent.timeline, requestSpansById);
+      const displayTimeline = filterProjectionTimelineForDetailFeed(agent.timeline, requestSpansById);
       const displayAgent: ThreadRunProjectionAgent = { ...agent, timeline: displayTimeline };
       const statusText = resolveProjectionAgentStatusText(displayAgent);
       return {
@@ -136,6 +136,15 @@ function filterMainTimelineForFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
+  const displayTimeline = filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
+  const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item));
+  return filterCompactionTimelineForFeed(requestFiltered);
+}
+
+function filterProjectionTimelineForDetailFeed(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = buildProjectionDisplayTimelineItems(timeline, requestSpansById);
   const requestsWithStreamRows = new Set(
     displayTimeline
@@ -150,10 +159,7 @@ function filterMainTimelineForFeed(
       .filter((key): key is string => Boolean(key)),
   );
 
-  const requestFiltered = displayTimeline.filter((item) => {
-    if (isMainTimelineNoiseItem(item)) {
-      return false;
-    }
+  return displayTimeline.filter((item) => {
     if (isProjectionRequestCompletionItem(item)) {
       return false;
     }
@@ -171,7 +177,6 @@ function filterMainTimelineForFeed(
     const ownerKey = projectionOwnerKey(item);
     return !ownerKey || !ownersWithStreamRows.has(ownerKey);
   });
-  return filterCompactionTimelineForFeed(requestFiltered);
 }
 
 function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {

@@ -111,7 +111,7 @@ export function buildThreadRunProjection(
     });
   }
 
-  const requestSpans = buildRequestSpans(events, input.status, diagnostics);
+  const requestSpans = buildRequestSpans(events, input.status, diagnostics, input.agents);
   const mainTimeline = timeline.filter((item) => item.scope === "main" || item.scope === "both");
 
   return {
@@ -295,6 +295,7 @@ function buildRequestSpans(
   events: readonly ThreadRunEvent[],
   threadStatus: string,
   diagnostics: ThreadRunProjectionDiagnostic[],
+  agents: readonly AgentInstanceRecord[] = [],
 ): ThreadRunProjectionRequestSpan[] {
   const spans = new Map<string, MutableRequestSpan>();
   const seenStreamingKeys = new Set<string>();
@@ -308,6 +309,8 @@ function buildRequestSpans(
     spans.set(requestId, span);
     applyEventToRequestSpan(span, event, diagnostics, seenStreamingKeys);
   }
+
+  closeRequestSpansForTerminalAgents(spans, agents);
 
   const terminalThread = ["completed", "failed", "blocked", "idle", "awaiting_plan"].includes(threadStatus);
   const terminalAt = events[events.length - 1]?.observedAt;
@@ -334,6 +337,32 @@ function buildRequestSpans(
     });
   }
   return output.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
+function closeRequestSpansForTerminalAgents(
+  spans: ReadonlyMap<string, MutableRequestSpan>,
+  agents: readonly AgentInstanceRecord[],
+): void {
+  for (const agent of agents) {
+    if (agent.status === "active" || agent.status === "launching") {
+      continue;
+    }
+    for (const span of spans.values()) {
+      if (span.ownerAgentId !== agent.agentId || !isOpenRequestSpan(span)) {
+        continue;
+      }
+      if (agent.status === "abandoned") {
+        span.status = "cancelled";
+      } else {
+        span.status = "completed";
+      }
+      span.endedAt = span.endedAt ?? agent.endedAt ?? agent.updatedAt;
+    }
+  }
+}
+
+function isOpenRequestSpan(span: MutableRequestSpan): boolean {
+  return span.status === "waiting_first_token" || span.status === "streaming";
 }
 
 function closeRequestSpanForTerminalThread(

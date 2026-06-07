@@ -373,6 +373,55 @@ test("buildThreadRunProjectionViewModel keeps pre-speech current action on the a
   }
 });
 
+test("buildThreadRunProjectionViewModel removes completed agent request placeholders from cards", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_coder",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+          ownerAgentId: "coder_done",
+          role: "coder",
+        },
+      ],
+      agents: [
+        agent({
+          agentId: "coder_done",
+          role: "coder",
+          status: "stopped",
+          endedAt: "2026-01-01T00:00:05.000Z",
+          timeline: [
+            item({
+              id: "request-start",
+              eventType: "request.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_done",
+              requestId: "req_coder",
+              at: "2026-01-01T00:00:01.000Z",
+              sequence: 1,
+            }),
+            item({
+              id: "tool",
+              eventType: "tool.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_done",
+              text: "Tool: Bash · git diff",
+              at: "2026-01-01T00:00:03.000Z",
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.subagentCards[0]?.timelineIds).toEqual(["tool"]);
+});
+
 test("buildThreadRunProjectionViewModel ignores empty streaming agent placeholders", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

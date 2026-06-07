@@ -485,3 +485,49 @@ test("buildThreadRunProjection diagnoses request spans left open after terminal 
   expect(projection.requestSpans[0]?.endedAt).toBe("2026-01-01T00:00:01.000Z");
   expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(true);
 });
+
+test("buildThreadRunProjection closes open request spans for stopped agents", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [
+      agent({
+        agentId: "coder_done",
+        status: "stopped",
+        endedAt: "2026-01-01T00:00:05.000Z",
+        updatedAt: "2026-01-01T00:00:05.000Z",
+      }),
+    ],
+    events: [
+      event({
+        id: "request-start",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "agent",
+        role: "coder",
+        agentId: "coder_done",
+        requestId: "req_coder",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "tool",
+        sequence: 2,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "coder",
+        agentId: "coder_done",
+        message: "Tool: Bash · git diff",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:08.000Z"),
+  });
+
+  expect(projection.requestSpans[0]).toMatchObject({
+    requestId: "req_coder",
+    status: "completed",
+    ownerAgentId: "coder_done",
+    endedAt: "2026-01-01T00:00:05.000Z",
+  });
+});
