@@ -859,6 +859,8 @@ type WorkflowStep = {
 - Phase 10.8 行为边界：Composer 内联开关仍只控制 legacy Coding `subagentEnabled`；动态 Agent 的启停由 Agent Profile 配置负责，当前阶段只保证非 Coding profile 不再显示固定编程角色摘要。
 - Phase 10.9 已完成：Composer 发送前 Agent Profile ready 检查抽为纯 helper，并只校验主 Agent 与 enabled 子 Agent 的模型/provider；禁用 Agent 的缺失模型不再阻塞通用 Profile 运行。
 - Phase 10.9 行为边界：Coding preset 的完整六角色 route ready 校验保持不变，确保默认编程体验仍要求完整模型配置。
+- Phase 10.10 已完成：OTel activity role 推断从固定 Coding role 集合扩展为运行期 Agent role，`query_source`、`agent.name`、`subagent_type` 中的动态 `agentKey` / `eco_*` key 会被归一到动态 Agent，而不是回落到 planner。
+- Phase 10.10 行为边界：`system/thinking/tool/user/main/assistant` 等非 Agent role 仍不会被当成 Agent；非法 role 字符串继续回落到 planner。
 
 Phase 10.1 验证：
 
@@ -903,6 +905,11 @@ Phase 10.8 验证：
 Phase 10.9 验证：
 
 - `bun test apps/desktop/test/agent-profile-readiness.test.ts`
+- `bun run typecheck`
+
+Phase 10.10 验证：
+
+- `bun test packages/runtime/test/otel-env.test.ts`
 - `bun run typecheck`
 
 验收标准：

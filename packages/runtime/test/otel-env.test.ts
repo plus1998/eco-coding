@@ -79,6 +79,80 @@ test("parseOtelLogsPayload maps api_error events with structured metadata", () =
   expect(lines[0]?.message).toContain("API error · 502 ·");
 });
 
+test("parseOtelLogsPayload preserves dynamic agent roles from otel attributes", () => {
+  const { lines, usage } = parseOtelLogsPayload({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t-dynamic" } }],
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "query_source", value: { stringValue: "researcher" } },
+                  { key: "tool_name", value: { stringValue: "WebFetch" } },
+                  { key: "success", value: { stringValue: "true" } },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "agent.name", value: { stringValue: "eco_source_verifier" } },
+                  { key: "tool_name", value: { stringValue: "Read" } },
+                  { key: "success", value: { stringValue: "true" } },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "api_error" } },
+                  { key: "subagent_type", value: { stringValue: "eco_fact_checker" } },
+                  { key: "error", value: { stringValue: "rate limited" } },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "api_request" } },
+                  { key: "query_source", value: { stringValue: "data_analyst" } },
+                  { key: "input_tokens", value: { intValue: "10" } },
+                  { key: "output_tokens", value: { intValue: "5" } },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "query_source", value: { stringValue: "system" } },
+                  { key: "tool_name", value: { stringValue: "Read" } },
+                  { key: "success", value: { stringValue: "true" } },
+                ],
+              },
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "query_source", value: { stringValue: "bad role" } },
+                  { key: "tool_name", value: { stringValue: "Read" } },
+                  { key: "success", value: { stringValue: "true" } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(lines.map((line) => line.role)).toEqual([
+    "researcher",
+    "source_verifier",
+    "fact_checker",
+    "planner",
+    "planner",
+  ]);
+  expect(usage[0]?.role).toBe("data_analyst");
+});
+
 test("parseOtelLogsPayload maps tool_result and api_request usage", () => {
   const { lines, usage } = parseOtelLogsPayload({
     resourceLogs: [

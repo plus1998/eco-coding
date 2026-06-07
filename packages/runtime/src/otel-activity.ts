@@ -8,19 +8,12 @@ import {
   parseOtelApiErrorAttribute,
   type ThreadApiErrorInfo,
 } from "./api-error.js";
+import type { RuntimeAgentRole } from "../../shared/src";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
 
 export type { ThreadApiErrorInfo };
 
-export type OtelActivityRole =
-  | "planner"
-  | "explore"
-  | "architect"
-  | "coder"
-  | "reviewer"
-  | "tester"
-  | "system"
-  | "thinking"
-  | "tool";
+export type OtelActivityRole = RuntimeAgentRole | "system" | "thinking" | "tool";
 
 export interface OtelActivityLine {
   threadId: string;
@@ -59,7 +52,14 @@ interface OtlpAnyValue {
   boolValue?: boolean;
 }
 
-const AGENT_ROLES = new Set(["planner", "explore", "architect", "coder", "reviewer", "tester"]);
+const NON_AGENT_OTEL_ROLES = new Set([
+  "assistant",
+  "main",
+  "system",
+  "thinking",
+  "tool",
+  "user",
+]);
 
 export function parseOtelTracesPayload(
   payload: unknown,
@@ -339,19 +339,43 @@ function formatToolDetailFromLog(attrs?: OtlpKeyValue[]): string | undefined {
 }
 
 function inferRoleFromOtelAttributes(attrs?: OtlpKeyValue[]): OtelActivityRole {
-  const querySource = readAttributeString(attrs, "query_source");
-  if (querySource && AGENT_ROLES.has(querySource)) {
-    return querySource as OtelActivityRole;
+  const querySource = normalizeOtelAgentRole(readAttributeString(attrs, "query_source"));
+  if (querySource) {
+    return querySource;
   }
-  const agentName = readAttributeString(attrs, "agent.name");
-  if (agentName && AGENT_ROLES.has(agentName)) {
-    return agentName as OtelActivityRole;
+  const agentName = normalizeOtelAgentRole(readAttributeString(attrs, "agent.name"));
+  if (agentName) {
+    return agentName;
   }
-  const subagent = readAttributeString(attrs, "subagent_type");
-  if (subagent && AGENT_ROLES.has(subagent)) {
-    return subagent as OtelActivityRole;
+  const subagent = normalizeOtelAgentRole(readAttributeString(attrs, "subagent_type"));
+  if (subagent) {
+    return subagent;
   }
   return "planner";
+}
+
+function normalizeOtelAgentRole(value: string | undefined): RuntimeAgentRole | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const sdkRole = normalizeSdkSubagentType(trimmed);
+  if (sdkRole && !isNonAgentOtelRole(sdkRole)) {
+    return sdkRole;
+  }
+  const candidate = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  const normalized = candidate.trim().toLowerCase();
+  if (!normalized || isNonAgentOtelRole(normalized)) {
+    return undefined;
+  }
+  if (!/^[a-z][a-z0-9_-]*$/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function isNonAgentOtelRole(role: string): boolean {
+  return NON_AGENT_OTEL_ROLES.has(role.trim().toLowerCase());
 }
 
 function formatSubagentLabel(role: string): string {
