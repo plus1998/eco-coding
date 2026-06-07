@@ -2026,8 +2026,6 @@ function App() {
                   onToggle={(mode) => void toggleComposerOrchestrationMode(mode)}
                 />
               ) : null}
-            </div>
-            <div className="composer-footer-row composer-footer-agents-row">
               <ComposerAgentModels
                 labels={agentModelLabels}
                 subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}

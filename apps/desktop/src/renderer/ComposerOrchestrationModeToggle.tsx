@@ -1,10 +1,11 @@
-import { useCallback, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { OrchestrationModeSetting } from "../shared/ipc";
 import {
   orchestrationModeUi,
   toggleOrchestrationMode,
 } from "../shared/orchestration-mode-ui";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 
 interface ComposerOrchestrationModeToggleProps {
   orchestrationMode: OrchestrationModeSetting;
@@ -21,7 +22,9 @@ export function ComposerOrchestrationModeToggle({
 }: ComposerOrchestrationModeToggleProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const [hovered, setHovered] = useState(false);
-  const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
+  const [tooltipStyle, setTooltipStyle] = useState<CSSProperties>(() => ({
+    visibility: "hidden",
+  }));
 
   const isManual = orchestrationMode === "manual";
   const clickable = canEdit && !saving;
@@ -41,11 +44,9 @@ export function ComposerOrchestrationModeToggle({
     if (!el) {
       return;
     }
-    const rect = el.getBoundingClientRect();
-    setTooltipPos({
-      top: rect.bottom + 8,
-      left: rect.left + rect.width / 2,
-    });
+    setTooltipStyle(
+      composerFloatingStyleForAnchor(el, { width: 280, minHeight: 112, prefer: "above" }),
+    );
   }, []);
 
   const showTooltip = useCallback(() => {
@@ -57,18 +58,26 @@ export function ComposerOrchestrationModeToggle({
     setHovered(false);
   }, []);
 
+  useEffect(() => {
+    if (!hovered) {
+      return;
+    }
+    updateTooltipPosition();
+    window.addEventListener("resize", updateTooltipPosition);
+    window.addEventListener("scroll", updateTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateTooltipPosition);
+      window.removeEventListener("scroll", updateTooltipPosition, true);
+    };
+  }, [hovered, updateTooltipPosition]);
+
   const tooltip =
     hovered &&
     createPortal(
       <span
         className="composer-meta-tooltip"
         role="tooltip"
-        style={{
-          position: "fixed",
-          top: tooltipPos.top,
-          left: tooltipPos.left,
-          transform: "translateX(-50%)",
-        }}
+        style={tooltipStyle}
       >
         <span className="composer-meta-tooltip-line">
           <strong>{current.title}</strong>
