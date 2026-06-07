@@ -1,10 +1,8 @@
 import { mergeStreamText, type AgentEvent, type OtelActivityLine } from "@eco/runtime";
 import {
   formatAgentEventDisplay,
-  formatAgentEventLine,
   isEcoStreamFinalize,
   isEcoStreamPlaceholder,
-  isUpstreamStatusActivityMessage,
 } from "@eco/runtime/sdk";
 import type { ThreadRunToolMetadata } from "../shared/ipc";
 import { activityStreamKey } from "./activity-agent-id.js";
@@ -138,16 +136,16 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "agent.started") {
-      const statusMessage = formatAgentEventLine(event);
-      if (!isUpstreamStatusActivityMessage(statusMessage)) {
+      const status = resolveSdkAgentStatusActivity(event.payload);
+      if (!status) {
         return;
       }
       const display = formatAgentEventDisplay(event);
-      if (!display?.message) {
+      if (!display) {
         return;
       }
       this.flushPending(threadId, emit);
-      emit(threadId, resolveSdkStatusLiveType(display.message), display.message, String(display.role), false, activityAgentId);
+      emit(threadId, status.type, status.message, String(display.role), false, activityAgentId);
       return;
     }
 
@@ -205,7 +203,7 @@ export class SdkStreamActivityBridge {
       return;
     }
 
-    const emitExtras = resolveSdkActivityToolMetadata(event, message);
+    const emitExtras = resolveSdkActivityToolMetadata(event);
 
     this.flushPending(threadId, emit);
     if (stream) {
@@ -266,24 +264,44 @@ export class SdkStreamActivityBridge {
   }
 }
 
-function resolveSdkActivityToolMetadata(
-  event: AgentEventLike,
-  message: string,
-): ThreadRunToolMetadata | undefined {
+function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMetadata | undefined {
   if (event.type === "tool.started") {
-    return resolveSdkToolUseMetadata(event.payload, message) ?? resolveSdkToolProgressMetadata(event.payload);
+    return resolveSdkToolUseMetadata(event.payload) ?? resolveSdkToolProgressMetadata(event.payload);
   }
   if (event.type === "todo.updated") {
-    return resolveSdkTaskProgressToolMetadata(event.payload, message);
+    return resolveSdkTaskProgressToolMetadata(event.payload);
   }
   return undefined;
 }
 
-function resolveSdkStatusLiveType(message: string): string {
-  return /^Requesting model/i.test(message.trim()) ? "request.started" : "agent.started";
+function resolveSdkAgentStatusActivity(payload: unknown): { type: string; message: string } | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "system") {
+    return undefined;
+  }
+  if (record.subtype === "status") {
+    if (record.status === "requesting") {
+      return { type: "request.started", message: "Requesting model…" };
+    }
+    if (record.status === "compacting") {
+      return { type: "agent.started", message: "Compacting context…" };
+    }
+  }
+  if (record.subtype === "compact_boundary") {
+    return { type: "agent.started", message: "Compacting context…" };
+  }
+  if (record.subtype === "api_retry") {
+    const attempt = typeof record.attempt === "number" ? record.attempt : "?";
+    const maxRetries = typeof record.max_retries === "number" ? record.max_retries : "?";
+    return { type: "request.retry_scheduled", message: `API retry ${attempt}/${maxRetries}…` };
+  }
+  return undefined;
 }
 
-function resolveSdkToolUseMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
+function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
@@ -292,7 +310,7 @@ function resolveSdkToolUseMetadata(payload: unknown, message: string): ThreadRun
     return undefined;
   }
   const name = record.tool_name.trim();
-  const detail = resolveSdkToolDisplayDetail(name, record.input) ?? parseToolDisplayDetail(message);
+  const detail = resolveSdkToolDisplayDetail(name, record.input);
   const toolUseId = readString(record.tool_use_id);
   return {
     name,
@@ -322,7 +340,7 @@ function resolveSdkToolProgressMetadata(payload: unknown): ThreadRunToolMetadata
   };
 }
 
-function resolveSdkTaskProgressToolMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
+function resolveSdkTaskProgressToolMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
@@ -334,7 +352,7 @@ function resolveSdkTaskProgressToolMetadata(payload: unknown, message: string): 
   if (!name) {
     return undefined;
   }
-  const detail = readString(record.description) ?? parseToolDisplayDetail(message);
+  const detail = readString(record.description);
   return {
     name,
     ...(detail && { detail }),
@@ -346,26 +364,43 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     return undefined;
   }
   const record = input as Record<string, unknown>;
-  if (toolName === "Agent") {
-    return normalizeSubagentToolDisplayLabel(
-      readString(record.subagent_type) ?? readString(record.agent_type),
-    );
+  if (toolName === "AskUserQuestion") {
+    const questions = Array.isArray(record.questions) ? record.questions : undefined;
+    const first = questions?.[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      const question = readString((first as Record<string, unknown>).question);
+      if (question) {
+        const short = question.length > 48 ? `${question.slice(0, 45)}…` : question;
+        return questions.length > 1 ? `澄清 ${questions.length} 个问题 · ${short}` : short;
+      }
+    }
+    return questions && questions.length > 1 ? `澄清 ${questions.length} 个问题` : "澄清问题";
   }
+  const skillName = resolveSdkSkillDisplayName(toolName, record);
+  if (skillName) {
+    return `${skillName} 技能`;
+  }
+  if (toolName === "Agent") {
+    const label = normalizeSubagentToolDisplayLabel(readString(record.subagent_type) ?? readString(record.agent_type));
+    if (!label) {
+      return undefined;
+    }
+    const taskPrompt = readString(record.prompt);
+    if (!taskPrompt) {
+      return label;
+    }
+    const summary = taskPrompt.length > 60 ? `${taskPrompt.slice(0, 57)}…` : taskPrompt;
+    return `${label} · ${summary}`;
+  }
+  const filePath = readString(record.file_path) ?? readString(record.path);
+  const command = readString(record.full_command) ?? readString(record.bash_command) ?? readString(record.command);
   return (
-    readString(record.full_command) ??
-    readString(record.bash_command) ??
-    readString(record.command) ??
-    readString(record.file_path) ??
-    readString(record.path) ??
+    (filePath ? pathBasename(filePath) : undefined) ??
+    (command ? truncateText(command, 80) : undefined) ??
     readString(record.pattern) ??
     readString(record.query) ??
     readString(record.url)
   );
-}
-
-function parseToolDisplayDetail(message: string): string | undefined {
-  const match = message.trim().match(/^Tool:\s*.+?\s*·\s*(.+)$/);
-  return readString(match?.[1]);
 }
 
 function normalizeSubagentToolDisplayLabel(value: string | undefined): string | undefined {
@@ -382,6 +417,34 @@ function normalizeSubagentToolDisplayLabel(value: string | undefined): string | 
     tester: "测试",
   };
   return roleLabels[normalized] ?? normalized;
+}
+
+function resolveSdkSkillDisplayName(toolName: string, record: Record<string, unknown>): string | undefined {
+  if (toolName === "Skill") {
+    return readString(record.skill_name) ?? readString(record.name);
+  }
+  const candidate =
+    readString(record.skill_name) ??
+    readString(record.skill) ??
+    readString(record.name) ??
+    readString(record.display_name);
+  if (!candidate) {
+    return undefined;
+  }
+  if (/skill/i.test(toolName) || /skill/i.test(candidate)) {
+    return candidate.replace(/\s*技能\s*$/u, "").trim();
+  }
+  return undefined;
+}
+
+function pathBasename(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || filePath;
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}…` : value;
 }
 
 interface ParsedOtelToolLine {
@@ -472,20 +535,9 @@ function resolveSdkToolDetailKey(toolName: string, input: unknown): string | und
   }
   const record = input as Record<string, unknown>;
   if (toolName === "Agent") {
-    return normalizeToolDetailKey(
-      readString(record.subagent_type) ?? readString(record.agent_type),
-    );
+    return normalizeToolDetailKey(readString(record.subagent_type) ?? readString(record.agent_type));
   }
-  return normalizeToolDetailKey(
-    readString(record.full_command) ??
-      readString(record.bash_command) ??
-      readString(record.command) ??
-      readString(record.file_path) ??
-      readString(record.path) ??
-      readString(record.pattern) ??
-      readString(record.query) ??
-      readString(record.url),
-  );
+  return normalizeToolDetailKey(resolveSdkToolDisplayDetail(toolName, record));
 }
 
 function normalizeToolDetailKey(value: string | undefined): string | undefined {

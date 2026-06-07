@@ -112,6 +112,9 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "request.started") {
     return "request.started";
   }
+  if (input.liveType === "request.retry_scheduled") {
+    return "request.retry_scheduled";
+  }
   if (input.liveType === "agent.started") {
     return "agent.started";
   }
@@ -122,7 +125,7 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     return input.stream ? "message.delta" : "message.final";
   }
   if (input.liveType === "todo.updated") {
-    if (/^Tool:/i.test(input.message)) {
+    if (input.tool || /^Tool:/i.test(input.message)) {
       return "tool.started";
     }
     return "thread.status";
@@ -133,6 +136,12 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
   if (input.liveType === "otel.activity") {
     if (/^Requesting model/i.test(input.message)) {
       return "request.started";
+    }
+    if (input.tool?.status === "failed") {
+      return "tool.failed";
+    }
+    if (input.tool?.status === "completed") {
+      return "tool.completed";
     }
     if (/^Tool failed:/i.test(input.message)) {
       return "tool.failed";
@@ -204,5 +213,10 @@ function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunT
     ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
     ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
     ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
+    ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
   };
+}
+
+function isThreadRunToolStatus(value: unknown): value is NonNullable<ThreadRunToolMetadata["status"]> {
+  return value === "started" || value === "completed" || value === "failed";
 }

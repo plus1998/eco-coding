@@ -950,6 +950,34 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   });
 });
 
+test("projectionItemToDetailBlock treats structured todo metadata as tool action", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "todo-webfetch",
+      eventType: "tool.started",
+      scope: "agent",
+      role: "explore",
+      agentId: "agent_weather",
+      text: "https://weather.example/guangzhou",
+      metadata: {
+        liveType: "todo.updated",
+        tool: {
+          name: "WebFetch",
+          detail: "https://weather.example/guangzhou",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "action",
+    icon: "agent",
+    label: "WebFetch · https://weather.example/guangzhou",
+    subagent: "explore",
+    agentId: "agent_weather",
+  });
+});
+
 test("isProjectionRequestActive follows request span status", () => {
   expect(
     isProjectionRequestActive({

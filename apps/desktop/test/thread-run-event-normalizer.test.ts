@@ -106,6 +106,27 @@ test("buildThreadRunEventFromLiveEvent maps SDK request status to request span",
   });
 });
 
+test("buildThreadRunEventFromLiveEvent maps SDK retry status to request retry", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "retry_1",
+    liveType: "request.retry_scheduled",
+    role: "planner",
+    stream: false,
+    message: "API retry 2/5…",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    id: "tre:retry_1",
+    eventType: "request.retry_scheduled",
+    scope: "main",
+    requestId: "req:thr_1:retry_1",
+    streamState: "none",
+    metadata: { liveType: "request.retry_scheduled" },
+  });
+});
+
 test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messages", () => {
   const toolEvent = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",
@@ -131,6 +152,20 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
     message: "Task completed",
     observedAt: "2026-01-01T00:00:01.000Z",
   });
+  const structuredToolEvent = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "todo_structured_tool",
+    liveType: "todo.updated",
+    role: "explore",
+    agentId: "agent_explore_a",
+    stream: false,
+    message: "https://weather.example",
+    tool: {
+      name: "WebFetch",
+      detail: "https://weather.example",
+    },
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
 
   expect(toolEvent).toMatchObject({
     eventType: "tool.started",
@@ -150,6 +185,18 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
     streamState: "none",
     metadata: { liveType: "todo.updated" },
   });
+  expect(structuredToolEvent).toMatchObject({
+    eventType: "tool.started",
+    scope: "agent",
+    streamState: "none",
+    metadata: {
+      liveType: "todo.updated",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example",
+      },
+    },
+  });
 });
 
 test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata", () => {
@@ -166,6 +213,7 @@ test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata",
       detail: "https://weather.example/guangzhou",
       toolUseId: "toolu_fetch_1",
       durationMs: 8300,
+      status: "completed",
     },
     observedAt: "2026-01-01T00:00:00.000Z",
   });
@@ -181,6 +229,43 @@ test("buildThreadRunEventFromLiveEvent preserves structured OTel tool metadata",
         detail: "https://weather.example/guangzhou",
         toolUseId: "toolu_fetch_1",
         durationMs: 8300,
+        status: "completed",
+      },
+    },
+  });
+});
+
+test("buildThreadRunEventFromLiveEvent maps structured OTel tool failure without text parsing", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "otel_tool_failed",
+    liveType: "otel.activity",
+    role: "explore",
+    agentId: "agent_explore_a",
+    stream: false,
+    message: "WebFetch timeout",
+    tool: {
+      name: "WebFetch",
+      detail: "https://weather.example/guangzhou",
+      toolUseId: "toolu_fetch_1",
+      durationMs: 1200,
+      status: "failed",
+    },
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "tool.failed",
+    scope: "agent",
+    streamState: "none",
+    metadata: {
+      liveType: "otel.activity",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example/guangzhou",
+        toolUseId: "toolu_fetch_1",
+        durationMs: 1200,
+        status: "failed",
       },
     },
   });

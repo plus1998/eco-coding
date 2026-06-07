@@ -613,7 +613,7 @@ function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): bool
 }
 
 function isProjectionTodoToolActionItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return isProjectionTodoStatusItem(item) && /^Tool:/iu.test(item.text.trim());
+  return isProjectionTodoStatusItem(item) && (Boolean(readProjectionToolMetadata(item)) || /^Tool:/iu.test(item.text.trim()));
 }
 
 function readProjectionApiError(
@@ -650,7 +650,12 @@ function readProjectionToolMetadata(item: ThreadRunProjectionTimelineItem): Thre
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
     ...(typeof record.toolUseId === "string" && record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
     ...(typeof record.durationMs === "number" && Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
+    ...(isProjectionToolStatus(record.status) && { status: record.status }),
   };
+}
+
+function isProjectionToolStatus(value: unknown): value is NonNullable<ThreadRunToolMetadata["status"]> {
+  return value === "started" || value === "completed" || value === "failed";
 }
 
 function isProjectionLifecycleText(text: string): boolean {

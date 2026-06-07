@@ -123,6 +123,7 @@ test("parseOtelLogsPayload maps tool_result and api_request usage", () => {
   expect(lines[0]?.toolDetail).toBe("npm test");
   expect(lines[0]?.toolUseId).toBe("toolu_bash");
   expect(lines[0]?.durationMs).toBe(800);
+  expect(lines[0]?.toolStatus).toBe("completed");
   expect(usage[0]?.inputTokens).toBe(100);
   expect(usage[0]?.outputTokens).toBe(50);
   expect(usage[0]?.costUsd).toBe(0.002);
@@ -161,6 +162,41 @@ test("parseOtelLogsPayload normalizes eco subagent tool details", () => {
   expect(lines[0]?.toolName).toBe("Agent");
   expect(lines[0]?.toolDetail).toBe("探索");
   expect(lines[0]?.durationMs).toBe(29600);
+  expect(lines[0]?.toolStatus).toBe("completed");
+});
+
+test("parseOtelLogsPayload maps failed tool_result status", () => {
+  const { lines } = parseOtelLogsPayload({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t4" } }],
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "tool_name", value: { stringValue: "WebFetch" } },
+                  { key: "tool_use_id", value: { stringValue: "toolu_fetch" } },
+                  { key: "success", value: { stringValue: "false" } },
+                  { key: "duration_ms", value: { intValue: "1200" } },
+                  { key: "error", value: { stringValue: "timeout" } },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(lines[0]?.message).toBe("Tool failed: WebFetch · timeout");
+  expect(lines[0]?.toolName).toBe("WebFetch");
+  expect(lines[0]?.toolUseId).toBe("toolu_fetch");
+  expect(lines[0]?.durationMs).toBe(1200);
+  expect(lines[0]?.toolStatus).toBe("failed");
 });
 
 test("buildSdkProcessEnv merges builtin otel env", () => {

@@ -39,6 +39,7 @@ export interface ThreadRunToolMetadata {
   detail?: string;
   toolUseId?: string;
   durationMs?: number;
+  status?: "started" | "completed" | "failed";
 }
 
 export interface ThreadRunEvent {

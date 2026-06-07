@@ -117,6 +117,49 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("emits structured SDK tool metadata without parsing display text", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    tool?: { name: string; detail?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Skill",
+        input: { skill_name: "pdf" },
+      },
+    },
+    (_threadId, type, message, role, _stream, _agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        role,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "tool.started",
+      message: "Tool: Skill · pdf 技能",
+      role: "tool",
+      tool: {
+        name: "Skill",
+        detail: "pdf 技能",
+      },
+    },
+  ]);
+});
+
 test("emits structured SDK tool metadata for tool progress activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{
@@ -235,6 +278,28 @@ test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", ()
   expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: Agent · eco_explore (29.6s)")).toBe(true);
 });
 
+test("suppresses OTel Agent elapsed summaries when SDK metadata includes prompt detail", () => {
+  const bridge = new SdkStreamActivityBridge();
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Agent",
+        input: {
+          subagent_type: "eco_explore",
+          prompt: "查询广州今天的天气并返回来源",
+        },
+      },
+    },
+    () => {},
+  );
+
+  expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: Agent · 探索 (29.6s)")).toBe(true);
+});
+
 test("keeps parallel subagent narrative streams isolated by agentId", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; role: string; agentId?: string }> = [];
@@ -292,6 +357,23 @@ test("emits Requesting model status as request started activity", () => {
     },
   );
   expect(emitted).toEqual([{ type: "request.started", message: "Requesting model…", role: "planner" }]);
+});
+
+test("emits SDK api retry status as request retry activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; role: string }> = [];
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "agent.started",
+      role: "planner",
+      payload: { type: "system", subtype: "api_retry", attempt: 2, max_retries: 5 },
+    },
+    (_threadId, type, message, role) => {
+      emitted.push({ type, message, role });
+    },
+  );
+  expect(emitted).toEqual([{ type: "request.retry_scheduled", message: "API retry 2/5…", role: "planner" }]);
 });
 
 test("emits finalize text when only an empty placeholder preceded it", () => {

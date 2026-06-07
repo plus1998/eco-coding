@@ -3482,6 +3482,7 @@ function emitOtelActivity(line: OtelActivityLine): void {
         ...(line.toolDetail && { detail: line.toolDetail }),
         ...(line.toolUseId && { toolUseId: line.toolUseId }),
         ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
+        ...(line.toolStatus && { status: line.toolStatus }),
       },
     }),
   });
@@ -4416,7 +4417,7 @@ function emitSettingsUpdated(): void {
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
 
 function emitUpstreamModelRequestActivity(threadId: string, role: AgentRole): void {
-  emitThreadEvent(threadId, "otel.activity", "Requesting model…", role, false);
+  emitThreadEvent(threadId, "request.started", "Requesting model…", role, false);
 }
 
 function emitUpstreamConnectionErrorActivity(

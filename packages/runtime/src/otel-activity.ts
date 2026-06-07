@@ -31,6 +31,7 @@ export interface OtelActivityLine {
   toolDetail?: string;
   toolUseId?: string;
   durationMs?: number;
+  toolStatus?: "completed" | "failed";
   /** Set when OTLP event.name is api_error (or llm_request failed). */
   apiError?: ThreadApiErrorInfo;
 }
@@ -220,6 +221,7 @@ function logRecordToActivity(
           ...(detail && { toolDetail: detail }),
           ...(toolUseId && { toolUseId }),
           ...(durationMs !== undefined && { durationMs }),
+          toolStatus: "failed",
         },
       };
     }
@@ -232,6 +234,7 @@ function logRecordToActivity(
         ...(detail && { toolDetail: detail }),
         ...(toolUseId && { toolUseId }),
         ...(durationMs !== undefined && { durationMs }),
+        toolStatus: "completed",
       },
     };
   }
