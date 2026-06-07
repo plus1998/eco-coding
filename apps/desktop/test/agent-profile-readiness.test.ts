@@ -1,0 +1,73 @@
+import { expect, test } from "bun:test";
+import { areCodingRoutesReady, isAgentProfileReady } from "../src/renderer/agent-profile-readiness";
+import type { ModelSettingsSnapshot, OrchestrationProfile, ToolPolicy } from "../src/shared/ipc";
+
+const tools: ToolPolicy = { allowed: [], disallowed: [] };
+
+const provider: ModelSettingsSnapshot["providers"][number] = {
+  id: "p1",
+  name: "Provider",
+  baseUrl: "https://api.example.test",
+  requestPath: "",
+  apiCompat: "anthropic",
+  defaultModel: "main-model",
+  enabled: true,
+  hasApiKey: true,
+  apiKeyPreview: "sk-...",
+  createdAt: "2026-06-07T00:00:00.000Z",
+  updatedAt: "2026-06-07T00:00:00.000Z",
+};
+
+function profile(agentEnabled: boolean): OrchestrationProfile {
+  return {
+    id: "custom",
+    name: "Custom",
+    preset: "custom",
+    mainAgent: {
+      agentKey: "main",
+      name: "Main",
+      domain: "custom",
+      systemPromptPreset: "custom",
+      prompt: "Lead.",
+      modelRef: { providerId: "p1", modelId: "main-model" },
+      tools,
+      skills: [],
+    },
+    agents: [
+      {
+        agentKey: "draft",
+        templateId: "draft",
+        modelRef: { providerId: "missing", modelId: "draft-model" },
+        tools,
+        mcpServers: [],
+        skills: [],
+        enabled: agentEnabled,
+      },
+    ],
+    strategy: { kind: "autonomous" },
+    version: 1,
+    updatedAt: "2026-06-07T00:00:00.000Z",
+    source: "user",
+  };
+}
+
+test("isAgentProfileReady ignores disabled agent model refs", () => {
+  const providers = new Map([[provider.id, provider]]);
+
+  expect(isAgentProfileReady(profile(false), providers)).toBe(true);
+  expect(isAgentProfileReady(profile(true), providers)).toBe(false);
+});
+
+test("areCodingRoutesReady still requires all fixed coding routes", () => {
+  const providers = new Map([[provider.id, provider]]);
+
+  expect(
+    areCodingRoutesReady(
+      [
+        { role: "planner", providerId: "p1", modelId: "main-model" },
+        { role: "coder", providerId: "p1", modelId: "coder-model" },
+      ],
+      providers,
+    ),
+  ).toBe(false);
+});

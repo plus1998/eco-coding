@@ -28,7 +28,6 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  AGENT_ROLES,
   buildThreadRuntimeConfigFromDefaults,
   getDefaultAgentProfileId,
   getRoutesForProfile,
@@ -36,7 +35,6 @@ import {
   runtimeRoleRoutesFromAgentProfile,
   type AgentRole,
   type OrchestrationProfile,
-  type RuntimeRoleRouteConfig,
   type ThreadRuntimeConfig,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
@@ -132,6 +130,7 @@ import {
   sortProjectsByOrder,
   type ProjectReorderPosition,
 } from "./project-sidebar-order";
+import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = {
@@ -140,35 +139,6 @@ const emptySettings: ModelSettingsSnapshot = {
   agentTemplates: [],
   orchestrationProfiles: [],
 };
-
-function isModelRefReady(
-  modelRef: OrchestrationProfile["mainAgent"]["modelRef"],
-  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
-): boolean {
-  const provider = providersById.get(modelRef.providerId);
-  return Boolean(modelRef.modelId.trim() && provider?.enabled);
-}
-
-function isAgentProfileReady(
-  profile: OrchestrationProfile,
-  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
-): boolean {
-  return (
-    isModelRefReady(profile.mainAgent.modelRef, providersById) &&
-    profile.agents.every((agent) => isModelRefReady(agent.modelRef, providersById))
-  );
-}
-
-function areCodingRoutesReady(
-  routes: readonly RuntimeRoleRouteConfig[],
-  providersById: ReadonlyMap<string, ModelSettingsSnapshot["providers"][number]>,
-): boolean {
-  return AGENT_ROLES.every((role) => {
-    const route = routes.find((candidate) => candidate.role === role);
-    const provider = route ? providersById.get(route.providerId) : undefined;
-    return Boolean(route?.modelId.trim() && provider?.enabled);
-  });
-}
 
 function findOrchestrationProfileBySelectionId(
   settings: ModelSettingsSnapshot,
