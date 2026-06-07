@@ -446,7 +446,7 @@ type WorkflowStep = {
 
 ## 阶段 4：自主 / 混合 / 固定编排策略
 
-状态：进行中。
+状态：已完成。
 
 已完成子项：
 
@@ -613,6 +613,8 @@ type WorkflowStep = {
 - `bun test apps/desktop/test/runtime-agent-display.test.ts apps/desktop/test/thread-run-projection-view.test.ts`
 - `bun test apps/desktop/test/thread-run-projection-view.test.ts apps/desktop/test/activity-log.test.ts apps/desktop/test/activity-agent-id.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts`
 - `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+- `bun test --reporter dot`：1004 pass，21 skip，0 fail。
 
 运行中 UI：
 
