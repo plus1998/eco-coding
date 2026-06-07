@@ -5,6 +5,7 @@ import type {
   ThreadRunProjectionTimelineItem,
 } from "../src/shared/ipc";
 import {
+  buildProjectionDisplayTimelineItems,
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
   projectionItemToDetailBlock,
@@ -275,6 +276,70 @@ test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
 });
 
+test("buildThreadRunProjectionViewModel removes main feed status and usage noise", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "使用子代理查询天气",
+          metadata: { liveType: "thread.user_prompt" },
+          sequence: 1,
+        }),
+        item({
+          id: "agent-lifecycle",
+          eventType: "agent.started",
+          role: "planner",
+          text: "Requesting model…",
+          sequence: 2,
+        }),
+        item({
+          id: "usage",
+          eventType: "thread.status",
+          role: "planner",
+          text: "↑23k ↓404",
+          sequence: 3,
+        }),
+        item({
+          id: "status-updated",
+          eventType: "thread.status",
+          role: "system",
+          text: "状态已更新",
+          sequence: 4,
+        }),
+        item({
+          id: "router-ready",
+          eventType: "thread.status",
+          role: "system",
+          text: "Local model router ready: http://127.0.0.1:24643",
+          sequence: 5,
+        }),
+        item({
+          id: "worktree-merge",
+          eventType: "message.final",
+          role: "system",
+          text: "__eco_worktree_merge__\n{\"fileCount\":1}",
+          sequence: 6,
+        }),
+        item({
+          id: "substantive",
+          eventType: "message.final",
+          role: "planner",
+          text: "天气查询完成。",
+          sequence: 7,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:prompt",
+    "main:substantive",
+  ]);
+});
+
 test("buildThreadRunProjectionViewModel keeps pre-speech current action on the agent card", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -336,7 +401,7 @@ test("buildThreadRunProjectionViewModel ignores empty streaming agent placeholde
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
 });
 
-test("buildThreadRunProjectionViewModel hides request placeholder once the same request is streaming", () => {
+test("buildThreadRunProjectionViewModel hides empty streaming placeholder without losing request state", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       timeline: [
@@ -361,7 +426,271 @@ test("buildThreadRunProjectionViewModel hides request placeholder once the same 
     }),
   );
 
-  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:thinking-placeholder"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:request-start"]);
+});
+
+test("buildThreadRunProjectionViewModel collapses superseded stream deltas after final output", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "stream:thinking",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-placeholder",
+          eventType: "thinking.delta",
+          role: "thinking",
+          text: "",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-delta",
+          eventType: "thinking.delta",
+          role: "thinking",
+          text: "先查天气来源",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "thinking-final",
+          eventType: "thinking.final",
+          role: "thinking",
+          text: "先查天气来源",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:thinking-final"]);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "thinking",
+      streaming: false,
+      text: "先查天气来源",
+    });
+  }
+});
+
+test("buildThreadRunProjectionViewModel settles terminal deltas when final event is missing", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "stream:planner",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "planner-delta",
+          eventType: "message.delta",
+          role: "planner",
+          text: "天气查询完成。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(entry.item.eventType).toBe("message.final");
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "narrative",
+      streaming: false,
+      text: "天气查询完成。",
+    });
+  }
+});
+
+test("buildThreadRunProjectionViewModel hides completed request lifecycle placeholders", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_done",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:02.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "request-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_done",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "request-done",
+          eventType: "request.completed",
+          role: "planner",
+          requestId: "req_done",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toEqual([]);
+});
+
+test("buildThreadRunProjectionViewModel hides request placeholders once owner output appears", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_orphan_started",
+          status: "waiting_first_token",
+          startedAt: "2026-01-01T00:00:01.000Z",
+        },
+        {
+          requestId: "stream:planner",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.500Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "request-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_orphan_started",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "planner-delta",
+          eventType: "message.delta",
+          role: "planner",
+          text: "我会让子代理查询天气。",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-delta"]);
+});
+
+test("buildThreadRunProjectionViewModel collapses agent card stream rows without losing final echo", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "stream:coder_agent_00000001",
+          ownerAgentId: "coder_agent_00000001",
+          role: "coder",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:02.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          status: "stopped",
+          timeline: [
+            item({
+              id: "agent-placeholder",
+              eventType: "message.delta",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "",
+              at: "2026-01-01T00:00:01.000Z",
+              sequence: 1,
+            }),
+            item({
+              id: "agent-final",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "广州今天有阵雨。",
+              at: "2026-01-01T00:00:03.000Z",
+              sequence: 3,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.subagentCards[0]?.timelineIds).toEqual(["agent-final"]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "agent-card:coder_agent_00000001",
+    "agent:coder_agent_00000001:agent-final",
+  ]);
+  const echo = view.mainFeedEntries[1];
+  expect(echo?.kind).toBe("agent-echo");
+  if (echo?.kind === "agent-echo") {
+    expect(projectionItemToDetailBlock(echo.item)).toMatchObject({
+      kind: "narrative",
+      streaming: false,
+      text: "广州今天有阵雨。",
+    });
+  }
+});
+
+test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta per stream", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "delta-1",
+        eventType: "message.delta",
+        role: "planner",
+        text: "A",
+        at: "2026-01-01T00:00:01.000Z",
+        sequence: 1,
+      }),
+      item({
+        id: "delta-2",
+        eventType: "message.delta",
+        role: "planner",
+        text: "AB",
+        at: "2026-01-01T00:00:02.000Z",
+        sequence: 2,
+      }),
+    ],
+    new Map([
+      [
+        "stream:planner",
+        {
+          requestId: "stream:planner",
+          status: "streaming",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          firstTokenAt: "2026-01-01T00:00:01.000Z",
+        },
+      ],
+    ]),
+  );
+
+  expect(rows.map((row) => row.id)).toEqual(["delta-2"]);
+  expect(rows[0]?.eventType).toBe("message.delta");
 });
 
 test("buildThreadRunProjectionViewModel collapses superseded context compaction started states", () => {

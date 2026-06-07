@@ -56,19 +56,26 @@ export function buildThreadRunProjectionViewModel(
 ): ThreadRunProjectionViewModel {
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
+  const requestSpansById = new Map(projection.requestSpans.map((span) => [span.requestId, span]));
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
     .map((agent) => {
-      const statusText = resolveProjectionAgentStatusText(agent);
+      const displayTimeline = buildProjectionDisplayTimelineItems(agent.timeline, requestSpansById);
+      const displayAgent: ThreadRunProjectionAgent = { ...agent, timeline: displayTimeline };
+      const statusText = resolveProjectionAgentStatusText(displayAgent);
       return {
         key: agent.agentId,
-        agent,
-        timelineIds: agent.timeline.map((item) => item.id),
+        agent: displayAgent,
+        timelineIds: displayTimeline.map((item) => item.id),
         running: agent.status === "active" || agent.status === "launching",
         ...(statusText && { statusText }),
       };
     });
-  const mainFeedEntries = buildProjectionMainFeedEntries(projection.timeline, subagentCards);
+  const mainFeedEntries = buildProjectionMainFeedEntries(
+    projection.timeline,
+    subagentCards,
+    requestSpansById,
+  );
   return {
     showThreadPrompt,
     mainFeedEntries,
@@ -82,8 +89,9 @@ export function buildThreadRunProjectionViewModel(
 function buildProjectionMainFeedEntries(
   mainTimeline: readonly ThreadRunProjectionTimelineItem[],
   subagentCards: readonly ThreadRunProjectionSubagentCard[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionMainFeedEntry[] {
-  const displayMainTimeline = filterMainTimelineForFeed(mainTimeline);
+  const displayMainTimeline = filterMainTimelineForFeed(mainTimeline, requestSpansById);
   const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => ({
     kind: "timeline",
     key: `main:${item.id}`,
@@ -121,24 +129,138 @@ function buildProjectionMainFeedEntries(
 
 function filterMainTimelineForFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
-  const requestsWithStreamRows = new Set<string>();
-  for (const item of timeline) {
-    const requestKey = projectionRequestKey(item);
-    if (!requestKey || !isStreamingRequestDisplayItem(item)) {
-      continue;
-    }
-    requestsWithStreamRows.add(requestKey);
-  }
+  const displayTimeline = buildProjectionDisplayTimelineItems(timeline, requestSpansById);
+  const requestsWithStreamRows = new Set(
+    displayTimeline
+      .filter(isStreamingRequestDisplayItem)
+      .map(projectionRequestKey)
+      .filter((key): key is string => Boolean(key)),
+  );
+  const ownersWithStreamRows = new Set(
+    displayTimeline
+      .filter(isStreamingRequestDisplayItem)
+      .map(projectionOwnerKey)
+      .filter((key): key is string => Boolean(key)),
+  );
 
-  const requestFiltered = timeline.filter((item) => {
+  const requestFiltered = displayTimeline.filter((item) => {
+    if (isMainTimelineNoiseItem(item)) {
+      return false;
+    }
+    if (isProjectionRequestCompletionItem(item)) {
+      return false;
+    }
     if (item.eventType !== "request.started") {
       return true;
     }
+    const requestSpan = projectionRequestSpan(item, requestSpansById);
+    if (requestSpan && !isProjectionRequestActive(requestSpan)) {
+      return false;
+    }
     const requestKey = projectionRequestKey(item);
-    return !requestKey || !requestsWithStreamRows.has(requestKey);
+    if (requestKey && requestsWithStreamRows.has(requestKey)) {
+      return false;
+    }
+    const ownerKey = projectionOwnerKey(item);
+    return !ownerKey || !ownersWithStreamRows.has(ownerKey);
   });
   return filterCompactionTimelineForFeed(requestFiltered);
+}
+
+function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (isProjectionUserPromptItem(item)) {
+    return false;
+  }
+  if (isProjectionInternalMessageText(item.text)) {
+    return true;
+  }
+  if (
+    item.eventType === "agent.started" ||
+    item.eventType === "agent.stopped" ||
+    item.eventType === "agent.abandoned" ||
+    item.eventType === "diagnostic"
+  ) {
+    return true;
+  }
+  if (item.eventType !== "thread.status") {
+    return false;
+  }
+  const text = item.text.trim();
+  return (
+    !text ||
+    text === "状态已更新" ||
+    isProjectionLifecycleText(text) ||
+    isProjectionUsageNoiseText(text)
+  );
+}
+
+function isProjectionUsageNoiseText(text: string): boolean {
+  return /^[↑↓⊙][↑↓⊙\d\s.,kKmM$%·+()-]*$/u.test(text);
+}
+
+function isProjectionInternalMessageText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.startsWith("__eco_worktree_merge__") ||
+    trimmed === "执行完成。" ||
+    trimmed === "执行完成，变更已写入项目目录。" ||
+    trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
+    /^正在启动 Claude Agent SDK/u.test(trimmed) ||
+    /^Working in project directory:/u.test(trimmed) ||
+    /^Local model router ready:/u.test(trimmed)
+  );
+}
+
+export function buildProjectionDisplayTimelineItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionTimelineItem[] {
+  const latestStreamDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of timeline) {
+    const streamKey = projectionStreamDisplayKey(item);
+    if (!streamKey) {
+      continue;
+    }
+    const current = latestStreamDisplayByKey.get(streamKey);
+    if (!current || compareTimelineItems(current, item) <= 0) {
+      latestStreamDisplayByKey.set(streamKey, item);
+    }
+  }
+
+  const displayItems: ThreadRunProjectionTimelineItem[] = [];
+  for (const item of timeline) {
+    const streamKey = projectionStreamDisplayKey(item);
+    if (streamKey && latestStreamDisplayByKey.get(streamKey)?.id !== item.id) {
+      continue;
+    }
+    const settled = settleTerminalStreamDisplayItem(item, requestSpansById);
+    if (settled) {
+      displayItems.push(settled);
+    }
+  }
+  return displayItems;
+}
+
+function settleTerminalStreamDisplayItem(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionTimelineItem | undefined {
+  if (item.eventType !== "message.delta" && item.eventType !== "thinking.delta") {
+    return item;
+  }
+  if (!item.text.trim()) {
+    return undefined;
+  }
+  const span = projectionRequestSpan(item, requestSpansById);
+  if (!span || isProjectionRequestActive(span)) {
+    return item;
+  }
+  return {
+    ...item,
+    eventType: item.eventType === "thinking.delta" ? "thinking.final" : "message.final",
+  };
 }
 
 function filterCompactionTimelineForFeed(
@@ -171,6 +293,13 @@ function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): b
   );
 }
 
+function isProjectionRequestCompletionItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return (
+    item.eventType === "request.completed" ||
+    item.eventType === "request.cancelled"
+  );
+}
+
 function projectionRequestKey(item: ThreadRunProjectionTimelineItem): string | undefined {
   if (item.requestId) {
     return `request:${item.requestId}`;
@@ -179,6 +308,63 @@ function projectionRequestKey(item: ThreadRunProjectionTimelineItem): string | u
     return `stream:${item.streamKey}`;
   }
   return undefined;
+}
+
+function projectionRequestSpan(
+  item: ThreadRunProjectionTimelineItem,
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionSnapshot["requestSpans"][number] | undefined {
+  const spanId = projectionRequestSpanId(item);
+  return spanId ? requestSpansById.get(spanId) : undefined;
+}
+
+function projectionRequestSpanId(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (item.requestId) {
+    return item.requestId;
+  }
+  if (item.streamKey) {
+    return `stream:${item.streamKey}`;
+  }
+  if (isStreamingRequestDisplayItem(item)) {
+    return `stream:${item.agentId ?? item.role ?? item.id}`;
+  }
+  return undefined;
+}
+
+function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (!isStreamingRequestDisplayItem(item)) {
+    return undefined;
+  }
+  const channel =
+    item.eventType === "thinking.delta" || item.eventType === "thinking.final"
+      ? "thinking"
+      : "message";
+  return `${channel}:${projectionRequestKey(item) ?? projectionOwnerKey(item) ?? item.id}`;
+}
+
+function projectionOwnerKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (item.agentId) {
+    return `agent:${item.agentId}`;
+  }
+  if (item.role) {
+    return `role:${item.role}`;
+  }
+  return item.scope ? `scope:${item.scope}` : undefined;
+}
+
+function compareTimelineItems(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): number {
+  const atDiff = left.at.localeCompare(right.at);
+  if (atDiff !== 0) {
+    return atDiff;
+  }
+  const sequenceDiff = left.sequence - right.sequence;
+  if (sequenceDiff !== 0) {
+    return sequenceDiff;
+  }
+  return left.id.localeCompare(right.id);
 }
 
 function compareMainFeedEntries(

@@ -7268,7 +7268,7 @@ button:not(:disabled) {
 
 .codex-main:not(.codex-main-landing) .activity-header h2 {
   color: #9a9a9a;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 500;
   line-height: 1.35;
 }
@@ -7289,7 +7289,7 @@ button:not(:disabled) {
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
-  gap: 28px;
+  gap: 24px;
   color: var(--codex-log-text);
 }
 
@@ -7298,7 +7298,7 @@ button:not(:disabled) {
   padding: 0 0 14px;
   border-bottom: 1px solid var(--codex-log-line);
   color: #9a9a9a;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 500;
 }
 
@@ -7333,16 +7333,22 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-narrative p {
   color: var(--codex-log-text);
   font-size: 16px;
-  font-weight: 500;
-  line-height: 1.68;
+  font-weight: 400;
+  line-height: 1.62;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .run-log-narrative-body,
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact .markdown-content,
 .codex-main:not(.codex-main-landing) .run-log-narrative.compact p {
   color: #d6d6d6;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content strong,
+.codex-main:not(.codex-main-landing) .markdown-content b {
+  color: #ffffff;
+  font-weight: 650;
 }
 
 .codex-main:not(.codex-main-landing) .markdown-content h1,
@@ -7351,6 +7357,23 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .markdown-content h4 {
   color: var(--codex-log-text);
   font-weight: 650;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content h1 {
+  font-size: 1.18em;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content h2 {
+  font-size: 1.1em;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content h3,
+.codex-main:not(.codex-main-landing) .markdown-content h4 {
+  font-size: 1.02em;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content li::marker {
+  color: var(--codex-log-muted);
 }
 
 .codex-main:not(.codex-main-landing) .markdown-content a {
@@ -7399,8 +7422,8 @@ button:not(:disabled) {
   border: 0;
   background: transparent;
   color: var(--codex-log-muted);
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 450;
   line-height: 1.55;
 }
 
@@ -7411,7 +7434,7 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {
   margin: 20px 0 22px;
   color: var(--codex-log-muted);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -7433,7 +7456,7 @@ button:not(:disabled) {
   border-radius: 0;
   background: transparent;
   color: #a0a0a0;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -7466,7 +7489,7 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-thinking-preview,
 .codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-label {
   color: var(--codex-log-muted);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -7478,7 +7501,7 @@ button:not(:disabled) {
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body p {
   color: #a8a8a8;
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -7513,15 +7536,15 @@ button:not(:disabled) {
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-role {
   color: #a6a6a6;
-  font-size: 18px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-model,
 .codex-main:not(.codex-main-landing) .subagent-run-title-sep,
 .codex-main:not(.codex-main-landing) .subagent-run-status {
   color: var(--codex-log-muted);
-  font-size: 17px;
+  font-size: 13px;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-status {
@@ -7559,7 +7582,7 @@ button:not(:disabled) {
 
 .codex-main:not(.codex-main-landing) .run-log-mission-summary {
   color: #e5e5e5;
-  font-size: 17px;
+  font-size: 14px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed,
@@ -7710,7 +7733,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
   .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
   .codex-main:not(.codex-main-landing) .run-log-narrative p {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   .codex-main:not(.codex-main-landing) .run-log-phase,
@@ -7723,7 +7746,7 @@ button:not(:disabled) {
   .codex-main:not(.codex-main-landing) .subagent-run-title-model,
   .codex-main:not(.codex-main-landing) .subagent-run-title-sep,
   .codex-main:not(.codex-main-landing) .subagent-run-status {
-    font-size: 16px;
+    font-size: 13px;
   }
 }
 

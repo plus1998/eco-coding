@@ -60,29 +60,19 @@ export function buildThreadRunProjection(
     attempts.find((attempt) => attempt.status === "running")?.attemptId ??
     attempts[attempts.length - 1]?.attemptId;
 
-  const timeline = events.map(eventToTimelineItem);
+  const timeline = events.map((event) => eventToTimelineItem(event));
   const diagnostics: ThreadRunProjectionDiagnostic[] = [];
   const agentsById = new Map<string, ThreadRunProjectionAgent>();
   const eventsByAgentId = new Map<string, ThreadRunProjectionTimelineItem[]>();
-  const activeAgentsByRole = buildActiveAgentsByRole(input.agents);
+  const agentsByRole = buildAgentsByRole(input.agents);
 
   for (const event of events) {
-    if ((event.scope === "agent" || event.scope === "both") && event.agentId) {
-      const item = eventToTimelineItem(event);
-      const rows = eventsByAgentId.get(event.agentId) ?? [];
+    const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByRole, diagnostics);
+    if ((event.scope === "agent" || event.scope === "both") && resolvedAgentId) {
+      const item = eventToTimelineItem(event, resolvedAgentId);
+      const rows = eventsByAgentId.get(resolvedAgentId) ?? [];
       rows.push(item);
-      eventsByAgentId.set(event.agentId, rows);
-    }
-    if ((event.scope === "agent" || event.scope === "both") && !event.agentId && event.role) {
-      const activeForRole = activeAgentsByRole.get(event.role) ?? [];
-      diagnostics.push({
-        code: activeForRole.length > 1 ? "ambiguous_subagent_role" : "missing_agent_id",
-        message:
-          activeForRole.length > 1
-            ? `Agent-scoped event for role ${event.role} has multiple active agents.`
-            : `Agent-scoped event for role ${event.role} is missing agentId.`,
-        eventId: event.id,
-      });
+      eventsByAgentId.set(resolvedAgentId, rows);
     }
   }
 
@@ -152,7 +142,10 @@ function mapAttempt(attempt: RunAttemptRecord): ThreadRunProjectionAttempt {
   };
 }
 
-function eventToTimelineItem(event: ThreadRunEvent): ThreadRunProjectionTimelineItem {
+function eventToTimelineItem(
+  event: ThreadRunEvent,
+  resolvedAgentId?: string,
+): ThreadRunProjectionTimelineItem {
   return {
     id: event.id,
     sequence: event.sequence,
@@ -161,19 +154,19 @@ function eventToTimelineItem(event: ThreadRunEvent): ThreadRunProjectionTimeline
     text: event.message,
     at: event.observedAt,
     ...(event.role && { role: event.role }),
-    ...(event.agentId && { agentId: event.agentId }),
+    ...(resolvedAgentId || event.agentId ? { agentId: resolvedAgentId ?? event.agentId } : {}),
     ...(event.requestId && { requestId: event.requestId }),
     ...(event.streamKey && { streamKey: event.streamKey }),
     ...(event.metadata && { metadata: event.metadata }),
   };
 }
 
-function buildActiveAgentsByRole(
+function buildAgentsByRole(
   agents: readonly AgentInstanceRecord[],
 ): Map<string, AgentInstanceRecord[]> {
   const map = new Map<string, AgentInstanceRecord[]>();
   for (const agent of agents) {
-    if (agent.status !== "active" || !subagentRoleSet.has(agent.role)) {
+    if (!subagentRoleSet.has(agent.role)) {
       continue;
     }
     const rows = map.get(agent.role) ?? [];
@@ -181,6 +174,55 @@ function buildActiveAgentsByRole(
     map.set(agent.role, rows);
   }
   return map;
+}
+
+function resolveProjectionEventAgentId(
+  event: ThreadRunEvent,
+  agentsByRole: ReadonlyMap<string, readonly AgentInstanceRecord[]>,
+  diagnostics: ThreadRunProjectionDiagnostic[],
+): string | undefined {
+  if (event.scope !== "agent" && event.scope !== "both") {
+    return event.agentId;
+  }
+  if (event.agentId) {
+    return event.agentId;
+  }
+  if (!event.role || !subagentRoleSet.has(event.role)) {
+    return undefined;
+  }
+
+  const candidates = (agentsByRole.get(event.role) ?? []).filter((agent) =>
+    agentInstanceContainsEvent(agent, event.observedAt),
+  );
+  if (candidates.length === 1) {
+    return candidates[0]?.agentId;
+  }
+
+  diagnostics.push({
+    code: candidates.length > 1 ? "ambiguous_subagent_role" : "missing_agent_id",
+    message:
+      candidates.length > 1
+        ? `Agent-scoped event for role ${event.role} has multiple matching agents.`
+        : `Agent-scoped event for role ${event.role} is missing agentId.`,
+    eventId: event.id,
+  });
+  return undefined;
+}
+
+function agentInstanceContainsEvent(agent: AgentInstanceRecord, observedAt: string): boolean {
+  const eventMs = Date.parse(observedAt);
+  const startMs = Date.parse(agent.startedAt);
+  const endMs = agent.endedAt ? Date.parse(agent.endedAt) : undefined;
+  if (!Number.isFinite(eventMs) || !Number.isFinite(startMs)) {
+    return agent.status === "active";
+  }
+  if (eventMs < startMs) {
+    return false;
+  }
+  if (endMs !== undefined && Number.isFinite(endMs) && eventMs > endMs) {
+    return false;
+  }
+  return true;
 }
 
 function buildUsageByAgentId(
@@ -268,6 +310,7 @@ function buildRequestSpans(
   }
 
   const terminalThread = ["completed", "failed", "blocked", "idle", "awaiting_plan"].includes(threadStatus);
+  const terminalAt = events[events.length - 1]?.observedAt;
   const output: ThreadRunProjectionRequestSpan[] = [];
   for (const span of spans.values()) {
     if (terminalThread && (span.status === "waiting_first_token" || span.status === "streaming")) {
@@ -276,6 +319,7 @@ function buildRequestSpans(
         message: `Request span ${span.requestId} is still open after terminal thread status ${threadStatus}.`,
         requestId: span.requestId,
       });
+      closeRequestSpanForTerminalThread(span, threadStatus, terminalAt);
     }
     output.push({
       requestId: span.requestId,
@@ -290,6 +334,22 @@ function buildRequestSpans(
     });
   }
   return output.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
+function closeRequestSpanForTerminalThread(
+  span: MutableRequestSpan,
+  threadStatus: string,
+  terminalAt: string | undefined,
+): void {
+  if (threadStatus === "failed" || threadStatus === "blocked") {
+    span.status = "failed";
+    span.error = span.error ?? `Thread ended with status ${threadStatus}.`;
+  } else if (threadStatus === "cancelled") {
+    span.status = "cancelled";
+  } else {
+    span.status = "completed";
+  }
+  span.endedAt = span.endedAt ?? terminalAt ?? span.startedAt;
 }
 
 function resolveProjectionRequestId(event: ThreadRunEvent): string | undefined {

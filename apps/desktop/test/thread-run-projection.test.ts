@@ -98,6 +98,45 @@ test("buildThreadRunProjection surfaces ambiguous role-only agent events as diag
   expect(projection.agents.every((row) => row.timeline.length === 0)).toBe(true);
 });
 
+test("buildThreadRunProjection resolves role-only agent events to the only matching agent window", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:06.000Z" }],
+    agents: [
+      agent({
+        agentId: "explore_a",
+        role: "explore",
+        status: "stopped",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        endedAt: "2026-01-01T00:00:05.000Z",
+      }),
+    ],
+    events: [
+      event({
+        id: "role-only",
+        sequence: 1,
+        eventType: "tool.started",
+        scope: "agent",
+        role: "explore",
+        message: "Tool: WebFetch · weather.com.cn",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.timeline).toEqual([]);
+  expect(projection.agents[0]?.timeline).toMatchObject([
+    {
+      id: "role-only",
+      role: "explore",
+      agentId: "explore_a",
+      text: "Tool: WebFetch · weather.com.cn",
+    },
+  ]);
+});
+
 test("buildThreadRunProjection separates main and agent timeline scopes", () => {
   const projection = buildThreadRunProjection({
     threadId: "thr_projection",
@@ -135,6 +174,32 @@ test("buildThreadRunProjection separates main and agent timeline scopes", () => 
 
   expect(projection.timeline.map((row) => row.id)).toEqual(["main", "both"]);
   expect(projection.agents[0]?.timeline.map((row) => row.id)).toEqual(["agent", "both"]);
+});
+
+test("buildThreadRunProjection does not treat array index as a main timeline agentId", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [
+      event({
+        id: "tool-main",
+        sequence: 9,
+        eventType: "tool.started",
+        scope: "main",
+        role: "planner",
+        message: "Tool: WebSearch",
+      }),
+    ],
+  });
+
+  expect(projection.timeline[0]).toMatchObject({
+    id: "tool-main",
+    role: "planner",
+    text: "Tool: WebSearch",
+  });
+  expect(projection.timeline[0]?.agentId).toBeUndefined();
 });
 
 test("buildThreadRunProjection derives request span timing from stream events", () => {
@@ -416,6 +481,7 @@ test("buildThreadRunProjection diagnoses request spans left open after terminal 
     ],
   });
 
-  expect(projection.requestSpans[0]?.status).toBe("waiting_first_token");
+  expect(projection.requestSpans[0]?.status).toBe("completed");
+  expect(projection.requestSpans[0]?.endedAt).toBe("2026-01-01T00:00:01.000Z");
   expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(true);
 });
