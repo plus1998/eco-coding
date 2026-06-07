@@ -861,6 +861,8 @@ type WorkflowStep = {
 - Phase 10.9 行为边界：Coding preset 的完整六角色 route ready 校验保持不变，确保默认编程体验仍要求完整模型配置。
 - Phase 10.10 已完成：OTel activity role 推断从固定 Coding role 集合扩展为运行期 Agent role，`query_source`、`agent.name`、`subagent_type` 中的动态 `agentKey` / `eco_*` key 会被归一到动态 Agent，而不是回落到 planner。
 - Phase 10.10 行为边界：`system/thinking/tool/user/main/assistant` 等非 Agent role 仍不会被当成 Agent；非法 role 字符串继续回落到 planner。
+- Phase 10.11 已完成：billing/context/metrics 的“子代理 role”判断从固定五个 Coding 子代理扩展为运行期 Agent role，动态 Agent 的 assistant fallback、proxy usage、上下文更新、metrics projection 和 billing reconciliation 不再因为 role 不是固定集合而跳过。
+- Phase 10.11 行为边界：`planner/system/thinking/tool/user/main/assistant` 等非子代理语义仍排除；legacy Coding 模型设置页和旧技能存储继续只覆盖固定 Coding role。
 
 Phase 10.1 验证：
 
@@ -910,6 +912,11 @@ Phase 10.9 验证：
 Phase 10.10 验证：
 
 - `bun test packages/runtime/test/otel-env.test.ts`
+- `bun run typecheck`
+
+Phase 10.11 验证：
+
+- `bun test apps/desktop/test/billing-orchestration.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/subagent-metrics-record-target.test.ts apps/desktop/test/proxy-usage-billing.test.ts`
 - `bun run typecheck`
 
 验收标准：

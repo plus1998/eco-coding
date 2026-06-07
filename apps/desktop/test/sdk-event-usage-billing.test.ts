@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { AgentRole } from "../src/shared/ipc";
+import type { RuntimeAgentRole } from "../src/shared/ipc";
 import { resolveSdkEventUsageBilling, type SdkUsageEventLike } from "../src/main/sdk-event-usage-billing";
 import type { SubagentUsageAttributionResolver } from "../src/main/subagent-usage-attribution";
 
@@ -22,7 +22,10 @@ function event(input: Partial<SdkUsageEventLike> = {}): SdkUsageEventLike {
 }
 
 function resolver(
-  input: { agentByRole?: Partial<Record<AgentRole, string>>; roleByAgent?: Record<string, AgentRole> } = {},
+  input: {
+    agentByRole?: Partial<Record<RuntimeAgentRole, string>>;
+    roleByAgent?: Record<string, RuntimeAgentRole>;
+  } = {},
 ): SubagentUsageAttributionResolver {
   return {
     resolveAgentId(_threadId, request) {
@@ -107,6 +110,40 @@ test("resolveSdkEventUsageBilling builds assistant subagent billing input", () =
       attempt: 2,
       batchIndex: 1,
     },
+  });
+});
+
+test("resolveSdkEventUsageBilling builds assistant billing input for dynamic subagents", () => {
+  const resolved = resolveSdkEventUsageBilling({
+    threadId: "thr_sdk",
+    event: event({
+      role: "planner",
+      payload: {
+        messageId: "msg_dynamic_1",
+        model: "haiku",
+        subagentAgentId: "agent_researcher_1",
+        usage: {
+          input_tokens: 80,
+          output_tokens: 12,
+        },
+      },
+    }),
+    resolver: resolver({
+      roleByAgent: { agent_researcher_1: "researcher" },
+    }),
+  });
+
+  expect(resolved.kind).toBe("assistant_subagent");
+  if (resolved.kind !== "assistant_subagent") {
+    throw new Error("expected assistant_subagent");
+  }
+  expect(resolved.billingRole).toBe("researcher");
+  expect(resolved.billingInput).toMatchObject({
+    role: "researcher",
+    agentId: "agent_researcher_1",
+    requestKey: "sdk-assistant:msg_dynamic_1",
+    inputTokens: 80,
+    outputTokens: 12,
   });
 });
 

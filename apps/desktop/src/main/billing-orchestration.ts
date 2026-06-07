@@ -2,12 +2,24 @@ import { estimateContextTokens, type ParsedUsage } from "@eco/runtime";
 import type { BillingUsageSource, RuntimeAgentRole, ThreadUsageSnapshot } from "../shared/ipc";
 import type { ContextMonitorSnapshot } from "./context-window-monitor";
 
-const SUBAGENT_BILLING_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
+const NON_SUBAGENT_BILLING_ROLES = new Set([
+  "assistant",
+  "main",
+  "planner",
+  "system",
+  "thinking",
+  "tool",
+  "user",
+]);
 
-export type SubagentBillingRole = (typeof SUBAGENT_BILLING_ROLES)[number];
+export type SubagentBillingRole = RuntimeAgentRole;
 
 export function isSubagentBillingRole(role: string): role is SubagentBillingRole {
-  return (SUBAGENT_BILLING_ROLES as readonly string[]).includes(role);
+  const normalized = role.trim().toLowerCase();
+  if (!normalized || NON_SUBAGENT_BILLING_ROLES.has(normalized)) {
+    return false;
+  }
+  return /^[a-z][a-z0-9_-]*$/.test(normalized);
 }
 
 export function sdkPayloadHasModelUsage(payload: unknown): boolean {

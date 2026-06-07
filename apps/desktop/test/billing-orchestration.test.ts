@@ -13,9 +13,14 @@ import {
 import type { ContextMonitorSnapshot } from "../src/main/context-window-monitor";
 import { buildUsageRequestKey, ThreadUsageAccumulator } from "../src/main/thread-usage-accumulator";
 
-test("isSubagentBillingRole excludes planner", () => {
+test("isSubagentBillingRole accepts dynamic runtime agents and excludes non-agent roles", () => {
   expect(isSubagentBillingRole("coder")).toBe(true);
+  expect(isSubagentBillingRole("researcher")).toBe(true);
+  expect(isSubagentBillingRole("source_verifier")).toBe(true);
   expect(isSubagentBillingRole("planner")).toBe(false);
+  expect(isSubagentBillingRole("system")).toBe(false);
+  expect(isSubagentBillingRole("tool")).toBe(false);
+  expect(isSubagentBillingRole("bad role")).toBe(false);
 });
 
 test("isSdkIncrementalStreamUsage detects message_delta style payloads", () => {
@@ -61,6 +66,14 @@ test("shouldBillAssistantSubagentUsage requires subagent role and no matching au
       ],
     }),
   ).toBe(false);
+  expect(
+    shouldBillAssistantSubagentUsage({
+      role: "researcher",
+      messageId: "msg_2",
+      agentId: "agent_researcher",
+      usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    }),
+  ).toBe(true);
   expect(
     shouldBillAssistantSubagentUsage({
       role: "planner",
@@ -132,6 +145,7 @@ test("shouldUpdateContextFromUsageSource accepts SDK and proxy subagent usage", 
   expect(shouldUpdateContextFromUsageSource("sdk")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("sdk", "planner")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy", "explore")).toBe(true);
+  expect(shouldUpdateContextFromUsageSource("proxy", "researcher")).toBe(true);
   expect(shouldUpdateContextFromUsageSource("proxy", "planner")).toBe(false);
   expect(shouldUpdateContextFromUsageSource("proxy")).toBe(false);
   expect(shouldUpdateContextFromUsageSource("otel")).toBe(false);
