@@ -809,6 +809,41 @@ test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta 
   expect(rows[0]?.eventType).toBe("message.delta");
 });
 
+test("buildProjectionDisplayTimelineItems collapses duplicate tool rows by toolUseId", () => {
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "tool-start",
+        eventType: "tool.started",
+        text: "Tool: mcp__eco_plan__finalize_plan",
+        sequence: 1,
+        metadata: {
+          tool: {
+            name: "mcp__eco_plan__finalize_plan",
+            toolUseId: "toolu_plan",
+          },
+        },
+      }),
+      item({
+        id: "tool-input-complete",
+        eventType: "tool.started",
+        text: "Tool: mcp__eco_plan__finalize_plan",
+        sequence: 2,
+        metadata: {
+          tool: {
+            name: "mcp__eco_plan__finalize_plan",
+            detail: "提交计划",
+            toolUseId: "toolu_plan",
+          },
+        },
+      }),
+    ],
+    new Map(),
+  );
+
+  expect(rows.map((row) => row.id)).toEqual(["tool-input-complete"]);
+});
+
 test("buildThreadRunProjectionViewModel collapses superseded context compaction started states", () => {
   const running = buildThreadRunProjectionViewModel(
     projection({
@@ -947,6 +982,53 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
     label: "WebFetch · https://weather.example/guangzhou (8.3s)",
     subagent: "explore",
     agentId: "agent_weather",
+  });
+});
+
+test("projectionItemToDetailBlock formats MCP tool metadata", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "plan-tool",
+      eventType: "tool.started",
+      scope: "main",
+      role: "planner",
+      text: "Tool: mcp__eco_plan__finalize_plan",
+      metadata: {
+        liveType: "tool.started",
+        tool: {
+          name: "mcp__eco_plan__finalize_plan",
+          toolUseId: "toolu_plan",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    label: "提交计划",
+  });
+
+  const wrapper = projectionItemToDetailBlock(
+    item({
+      id: "plan-wrapper",
+      eventType: "tool.completed",
+      scope: "main",
+      role: "planner",
+      text: "Tool: mcp_tool · mcp__eco_plan__finalize_plan (0.0s)",
+      metadata: {
+        liveType: "otel.activity",
+        tool: {
+          name: "mcp_tool",
+          detail: "mcp__eco_plan__finalize_plan",
+          durationMs: 0,
+        },
+      },
+    }),
+  );
+
+  expect(wrapper).toMatchObject({
+    kind: "action",
+    label: "提交计划 (0.0s)",
   });
 });
 

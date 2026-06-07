@@ -5,6 +5,10 @@ import type {
   ThreadRunToolMetadata,
 } from "../shared/ipc";
 import {
+  formatMcpToolDisplayName,
+  isMcpToolName,
+} from "../shared/activity-display";
+import {
   resolveSubagentRunDisplayTitle,
   type ActivityActionIcon,
   type ActivityDetailBlock,
@@ -240,14 +244,22 @@ export function buildProjectionDisplayTimelineItems(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): ThreadRunProjectionTimelineItem[] {
   const latestStreamDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  const latestToolDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   for (const item of timeline) {
     const streamKey = projectionStreamDisplayKey(item);
-    if (!streamKey) {
-      continue;
+    if (streamKey) {
+      const current = latestStreamDisplayByKey.get(streamKey);
+      if (!current || compareTimelineItems(current, item) <= 0) {
+        latestStreamDisplayByKey.set(streamKey, item);
+      }
     }
-    const current = latestStreamDisplayByKey.get(streamKey);
-    if (!current || compareTimelineItems(current, item) <= 0) {
-      latestStreamDisplayByKey.set(streamKey, item);
+
+    const toolKey = projectionToolDisplayKey(item);
+    if (toolKey) {
+      const current = latestToolDisplayByKey.get(toolKey);
+      if (!current || compareProjectionToolDisplayItems(current, item) <= 0) {
+        latestToolDisplayByKey.set(toolKey, item);
+      }
     }
   }
 
@@ -255,6 +267,10 @@ export function buildProjectionDisplayTimelineItems(
   for (const item of timeline) {
     const streamKey = projectionStreamDisplayKey(item);
     if (streamKey && latestStreamDisplayByKey.get(streamKey)?.id !== item.id) {
+      continue;
+    }
+    const toolKey = projectionToolDisplayKey(item);
+    if (toolKey && latestToolDisplayByKey.get(toolKey)?.id !== item.id) {
       continue;
     }
     const settled = settleTerminalStreamDisplayItem(item, requestSpansById);
@@ -365,6 +381,40 @@ function projectionStreamDisplayKey(item: ThreadRunProjectionTimelineItem): stri
       ? "thinking"
       : "message";
   return `${channel}:${projectionRequestKey(item) ?? projectionOwnerKey(item) ?? item.id}`;
+}
+
+function projectionToolDisplayKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+    return undefined;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (!metadataTool?.toolUseId) {
+    return undefined;
+  }
+  return `tool:${metadataTool.toolUseId}`;
+}
+
+function compareProjectionToolDisplayItems(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): number {
+  const richnessDiff = projectionToolDisplayRichness(left) - projectionToolDisplayRichness(right);
+  if (richnessDiff !== 0) {
+    return richnessDiff;
+  }
+  return compareTimelineItems(left, right);
+}
+
+function projectionToolDisplayRichness(item: ThreadRunProjectionTimelineItem): number {
+  const metadataTool = readProjectionToolMetadata(item);
+  if (!metadataTool) {
+    return 0;
+  }
+  return (
+    (metadataTool.detail ? 4 : 0) +
+    (metadataTool.durationMs !== undefined ? 2 : 0) +
+    (item.eventType === "tool.completed" ? 1 : 0)
+  );
 }
 
 function projectionOwnerKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -732,7 +782,12 @@ function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem)
   if (!text) {
     return item.eventType === "tool.completed" ? "工具完成" : "工具调用";
   }
-  return text.replace(/^Tool:\s*/iu, "").trim();
+  const label = text.replace(/^Tool:\s*/iu, "").trim();
+  const normalized = label.replace(/\s+\(\d+(?:\.\d+)?s\)$/iu, "").trim();
+  if (isMcpToolName(normalized)) {
+    return formatMcpToolDisplayName(normalized);
+  }
+  return label;
 }
 
 function resolveProjectionToolIconText(item: ThreadRunProjectionTimelineItem): string {
@@ -740,15 +795,25 @@ function resolveProjectionToolIconText(item: ThreadRunProjectionTimelineItem): s
   if (!metadataTool) {
     return item.text.trim();
   }
-  return `${metadataTool.name} ${metadataTool.detail ?? ""}`.trim();
+  return formatProjectionToolBaseLabel(metadataTool);
 }
 
 function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
-  const base = tool.detail ? `${tool.name} · ${tool.detail}` : tool.name;
+  const base = formatProjectionToolBaseLabel(tool);
   if (tool.durationMs === undefined) {
     return base;
   }
   return `${base} (${(tool.durationMs / 1000).toFixed(1)}s)`;
+}
+
+function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
+  if (tool.name === "mcp_tool" && tool.detail?.startsWith("mcp__")) {
+    return formatMcpToolDisplayName(tool.detail);
+  }
+  if (isMcpToolName(tool.name)) {
+    return formatMcpToolDisplayName(tool.name);
+  }
+  return tool.detail ? `${tool.name} · ${tool.detail}` : tool.name;
 }
 
 function resolveProjectionActionIcon(text: string): ActivityActionIcon {

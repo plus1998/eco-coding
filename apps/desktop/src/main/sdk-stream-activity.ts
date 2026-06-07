@@ -110,10 +110,10 @@ export class SdkStreamActivityBridge {
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
     const candidates = [...recent]
       .reverse()
-      .filter((item) => item.at >= cutoff && !item.matchedAt && item.toolName === parsed.toolName);
+      .filter((item) => item.at >= cutoff && !item.matchedAt);
     const sdkMatch =
       matchByToolUseId(candidates, parsed) ??
-      matchByDetailKey(candidates, parsed) ??
+      matchByToolNameAndDetail(candidates, parsed) ??
       matchSummaryOnly(candidates, parsed);
     if (!sdkMatch) {
       return false;
@@ -138,6 +138,9 @@ export class SdkStreamActivityBridge {
 
     if (event.type === "tool.started") {
       this.noteSdkToolActivity(threadId, event.payload, activityAgentId, String(event.role));
+      if (isSdkToolInputPlaceholder(event.payload)) {
+        return;
+      }
     }
 
     if (event.type === "agent.started") {
@@ -277,6 +280,18 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
     return resolveSdkTaskProgressToolMetadata(event.payload);
   }
   return undefined;
+}
+
+function isSdkToolInputPlaceholder(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "tool_use" || record.streaming !== true || record.input_complete === true) {
+    return false;
+  }
+  const input = record.input;
+  return !input || (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0);
 }
 
 function resolveSdkAgentStatusActivity(payload: unknown): { type: string; message: string } | undefined {
@@ -464,9 +479,10 @@ function parseOtelToolLine(
   line: string | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
 ): ParsedOtelToolLine | undefined {
   if (typeof line !== "string" && line.toolName?.trim()) {
-    const detailKey = normalizeToolDetailKey(line.toolDetail);
+    const promotedMcpToolName = promoteMcpWrapperToolName(line.toolName, line.toolDetail);
+    const detailKey = promotedMcpToolName ? undefined : normalizeToolDetailKey(line.toolDetail);
     return {
-      toolName: line.toolName.trim(),
+      toolName: promotedMcpToolName ?? line.toolName.trim(),
       ...(detailKey && { detailKey }),
       ...(line.toolUseId?.trim() && { toolUseId: line.toolUseId.trim() }),
       ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
@@ -484,12 +500,23 @@ function parseOtelToolLine(
   }
   const durationMs = parseDurationSuffixMs(message);
   const rawDetail = match?.[2]?.trim();
-  const detailKey = normalizeToolDetailKey(rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined);
+  const strippedDetail = rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined;
+  const promotedMcpToolName = promoteMcpWrapperToolName(toolName, strippedDetail);
+  const detailKey = promotedMcpToolName ? undefined : normalizeToolDetailKey(strippedDetail);
   return {
-    toolName,
+    toolName: promotedMcpToolName ?? toolName,
     ...(detailKey && { detailKey }),
     ...(durationMs !== undefined && { durationMs }),
   };
+}
+
+function promoteMcpWrapperToolName(toolName: string, detail: string | undefined): string | undefined {
+  const name = toolName.trim();
+  const toolDetail = detail?.trim();
+  if (name !== "mcp_tool" || !toolDetail?.startsWith("mcp__")) {
+    return undefined;
+  }
+  return toolDetail;
 }
 
 function stripOtelDurationSuffix(value: string): string {
@@ -515,14 +542,19 @@ function matchByToolUseId(
   return candidates.find((item) => item.toolUseId === parsed.toolUseId);
 }
 
-function matchByDetailKey(
+function matchByToolNameAndDetail(
   candidates: SdkToolActivityRecord[],
   parsed: ParsedOtelToolLine,
 ): SdkToolActivityRecord | undefined {
-  if (!parsed.detailKey) {
-    return undefined;
-  }
-  return candidates.find((item) => item.detailKey === parsed.detailKey);
+  return candidates.find((item) => {
+    if (item.toolName !== parsed.toolName) {
+      return false;
+    }
+    if (!parsed.detailKey) {
+      return true;
+    }
+    return item.detailKey === parsed.detailKey;
+  });
 }
 
 function matchSummaryOnly(
@@ -532,7 +564,7 @@ function matchSummaryOnly(
   if (parsed.detailKey) {
     return undefined;
   }
-  return candidates[0];
+  return candidates.find((item) => item.toolName === parsed.toolName);
 }
 
 function resolveSdkToolDetailKey(toolName: string, input: unknown): string | undefined {

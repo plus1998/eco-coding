@@ -84,6 +84,7 @@ export type EcoStreamPayload =
       tool_use_id?: string;
       input?: Record<string, unknown>;
       streaming?: boolean;
+      input_complete?: boolean;
       parent_tool_use_id?: string | null;
       subagent_type?: string;
       agent_type?: string;
@@ -333,6 +334,7 @@ export function mapStreamEventToEvents(
             ...(ctx.currentToolUseId && { tool_use_id: ctx.currentToolUseId }),
             ...(parsedInput && { input: parsedInput }),
             streaming: true,
+            input_complete: true,
             ...streamMeta,
           }),
         );

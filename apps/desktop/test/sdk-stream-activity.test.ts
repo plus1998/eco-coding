@@ -117,6 +117,89 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("defers streaming tool placeholder until input is complete", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: { name: string; detail?: string } },
+  ) => {
+    emitted.push({
+      message,
+      ...(extras?.tool && { tool: extras.tool }),
+    });
+  };
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "mcp__eco_plan__finalize_plan",
+        tool_use_id: "toolu_plan",
+        streaming: true,
+      },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "mcp__eco_plan__finalize_plan",
+        tool_use_id: "toolu_plan",
+        input: { analysis: "done", plan: "ship it" },
+        streaming: true,
+        input_complete: true,
+      },
+    },
+    emit,
+  );
+
+  expect(emitted).toHaveLength(1);
+  expect(emitted[0]?.message).toBe("Tool: mcp__eco_plan__finalize_plan");
+  expect(emitted[0]?.tool?.name).toBe("mcp__eco_plan__finalize_plan");
+});
+
+test("suppresses MCP OTel wrapper after concrete SDK MCP tool", () => {
+  const bridge = new SdkStreamActivityBridge();
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "mcp__eco_plan__finalize_plan",
+        tool_use_id: "toolu_plan",
+        input: { analysis: "done", plan: "ship it" },
+      },
+    },
+    () => {},
+  );
+
+  expect(
+    bridge.shouldSuppressOtelToolLine("thr_1", {
+      message: "Tool: mcp_tool · mcp__eco_plan__finalize_plan (0.0s)",
+      role: "planner",
+      toolName: "mcp_tool",
+      toolDetail: "mcp__eco_plan__finalize_plan",
+      toolUseId: "toolu_plan",
+      durationMs: 0,
+    }),
+  ).toBe(true);
+});
+
 test("emits structured SDK tool metadata without parsing display text", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

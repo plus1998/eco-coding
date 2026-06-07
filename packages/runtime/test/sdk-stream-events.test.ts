@@ -27,6 +27,52 @@ test("maps tool_use content_block_start to tool.started", () => {
   expect(payload.tool_name).toBe("Read");
   expect(payload.tool_use_id).toBe("toolu_abc");
   expect(payload.streaming).toBe(true);
+  expect(payload.input_complete).toBeUndefined();
+});
+
+test("marks tool_use content_block_stop input as complete", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "u1",
+      session_id: "sess",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "Read", id: "toolu_abc" },
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+  mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "u2",
+      session_id: "sess",
+      event: {
+        type: "content_block_delta",
+        delta: { type: "input_json_delta", partial_json: "{\"file_path\":\"/a.ts\"}" },
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+  const events = mapSdkMessageToEvents(
+    {
+      type: "stream_event",
+      uuid: "u3",
+      session_id: "sess",
+      event: { type: "content_block_stop" },
+    },
+    "thr_1",
+    ctx,
+  );
+  expect(events).toHaveLength(1);
+  const payload = events[0]?.payload as Record<string, unknown>;
+  expect(payload.tool_name).toBe("Read");
+  expect(payload.input_complete).toBe(true);
+  expect(payload.input).toEqual({ file_path: "/a.ts" });
 });
 
 test("maps eco subagent stream metadata to the role", () => {
