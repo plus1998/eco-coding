@@ -205,8 +205,7 @@ export class SdkStreamActivityBridge {
       return;
     }
 
-    const emitExtras =
-      event.type === "tool.started" ? resolveSdkToolMetadata(event.payload, message) : undefined;
+    const emitExtras = resolveSdkActivityToolMetadata(event, message);
 
     this.flushPending(threadId, emit);
     if (stream) {
@@ -267,7 +266,20 @@ export class SdkStreamActivityBridge {
   }
 }
 
-function resolveSdkToolMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
+function resolveSdkActivityToolMetadata(
+  event: AgentEventLike,
+  message: string,
+): ThreadRunToolMetadata | undefined {
+  if (event.type === "tool.started") {
+    return resolveSdkToolUseMetadata(event.payload, message);
+  }
+  if (event.type === "todo.updated") {
+    return resolveSdkTaskProgressToolMetadata(event.payload, message);
+  }
+  return undefined;
+}
+
+function resolveSdkToolUseMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
@@ -282,6 +294,25 @@ function resolveSdkToolMetadata(payload: unknown, message: string): ThreadRunToo
     name,
     ...(detail && { detail }),
     ...(toolUseId && { toolUseId }),
+  };
+}
+
+function resolveSdkTaskProgressToolMetadata(payload: unknown, message: string): ThreadRunToolMetadata | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.sdkKind !== "task_progress") {
+    return undefined;
+  }
+  const name = readString(record.last_tool_name);
+  if (!name) {
+    return undefined;
+  }
+  const detail = readString(record.description) ?? parseToolDisplayDetail(message);
+  return {
+    name,
+    ...(detail && { detail }),
   };
 }
 

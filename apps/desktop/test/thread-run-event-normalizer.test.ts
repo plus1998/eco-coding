@@ -94,6 +94,10 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
     agentId: "agent_explore_a",
     stream: false,
     message: "Tool: WebFetch · https://weather.example",
+    tool: {
+      name: "WebFetch",
+      detail: "https://weather.example",
+    },
     observedAt: "2026-01-01T00:00:00.000Z",
   });
   const statusEvent = buildThreadRunEventFromLiveEvent({
@@ -111,7 +115,13 @@ test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messa
     eventType: "tool.started",
     scope: "agent",
     streamState: "none",
-    metadata: { liveType: "todo.updated" },
+    metadata: {
+      liveType: "todo.updated",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example",
+      },
+    },
   });
   expect(statusEvent).toMatchObject({
     eventType: "thread.status",

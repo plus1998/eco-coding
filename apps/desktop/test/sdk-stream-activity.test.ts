@@ -117,6 +117,54 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("emits structured SDK tool metadata for task progress activity", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    role: string;
+    tool?: { name: string; detail?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "todo.updated",
+      role: "explore",
+      agentId: "agent_weather",
+      payload: {
+        sdkKind: "task_progress",
+        task_id: "task_weather",
+        subagent_type: "eco_explore",
+        last_tool_name: "WebFetch",
+        description: "https://weather.example/guangzhou",
+      },
+    },
+    (_threadId, type, message, role, _stream, _agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        role,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+    undefined,
+    { activityAgentId: "agent_weather" },
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "todo.updated",
+      message: "Tool: WebFetch · https://weather.example/guangzhou",
+      role: "explore",
+      tool: {
+        name: "WebFetch",
+        detail: "https://weather.example/guangzhou",
+      },
+    },
+  ]);
+});
+
 test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", () => {
   const bridge = new SdkStreamActivityBridge();
   bridge.handleEvent(
