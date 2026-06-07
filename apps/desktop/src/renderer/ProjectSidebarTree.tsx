@@ -194,9 +194,17 @@ export function ProjectSidebarTree({
     setDraggingPath(undefined);
   }
 
+  const treeClassNames = ["project-tree"];
+  if (fileDropActive) {
+    treeClassNames.push("project-tree-drop-target");
+  }
+  if (openMenuPath || openThreadMenuId) {
+    treeClassNames.push("project-tree-menu-open");
+  }
+
   return (
     <div
-      className={fileDropActive ? "project-tree project-tree-drop-target" : "project-tree"}
+      className={treeClassNames.join(" ")}
       onDragEnter={handleTreeDragEnter}
       onDragOver={handleTreeDragOver}
       onDragLeave={handleTreeDragLeave}
@@ -215,6 +223,13 @@ export function ProjectSidebarTree({
           rowClassNames.push("drop-after");
         }
         const isProjectActive = currentProjectPath === project.path && !activeThreadId;
+        const projectMainClassNames = ["project-group-main"];
+        if (isProjectActive) {
+          projectMainClassNames.push("active");
+        }
+        if (openMenuPath === project.path) {
+          projectMainClassNames.push("menu-open");
+        }
 
         return (
           <div key={project.path} className="project-group">
@@ -224,7 +239,7 @@ export function ProjectSidebarTree({
               onDrop={(event) => handleProjectRowDrop(event, project.path)}
             >
               <div
-                className={isProjectActive ? "project-group-main active" : "project-group-main"}
+                className={projectMainClassNames.join(" ")}
                 draggable
                 onDragStart={(event) => handleProjectDragStart(event, project.path)}
                 onDragEnd={handleProjectDragEnd}

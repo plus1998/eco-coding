@@ -211,7 +211,18 @@ button:not(:disabled) {
   background: #2a2a2a;
 }
 
+.project-tree-menu-open .project-group-main:hover {
+  background: transparent;
+}
+
 .project-group-main.active {
+  background: #333;
+}
+
+.project-group-main.menu-open,
+.project-tree-menu-open .project-group-main.menu-open:hover {
+  position: relative;
+  z-index: 120;
   background: #333;
 }
 
@@ -332,6 +343,11 @@ button:not(:disabled) {
     transform 0.12s ease;
 }
 
+.project-row-actions.menu-open,
+.thread-row-actions.menu-open {
+  z-index: 180;
+}
+
 .project-group-main:hover .project-row-actions,
 .project-group-main:focus-within .project-row-actions,
 .project-row-actions.menu-open {
@@ -376,13 +392,15 @@ button:not(:disabled) {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 80;
+  z-index: 240;
   min-width: 148px;
   padding: 6px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid #4a4a4a;
   border-radius: 12px;
-  background: rgba(36, 36, 36, 0.98);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+  background: #242424;
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.62),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
 }
 
 .project-menu-item {
@@ -428,6 +446,10 @@ button:not(:disabled) {
   background: #2a2a2a;
 }
 
+.project-tree-menu-open .chat-item-row:hover {
+  background: transparent;
+}
+
 .chat-item-row.active {
   background: #333;
 }
@@ -447,6 +469,10 @@ button:not(:disabled) {
 .chat-item-row:hover .chat-item,
 .chat-item-row.active .chat-item {
   color: #fff;
+}
+
+.project-tree-menu-open .chat-item-row:hover .chat-item {
+  color: #d4d4d4;
 }
 
 .thread-row-actions {
