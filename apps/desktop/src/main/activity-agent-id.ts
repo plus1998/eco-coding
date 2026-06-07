@@ -1,7 +1,5 @@
-import { isSubagentRole } from "@eco/runtime";
+import { isSubagentRole, type AgentEvent, type AgentRole } from "@eco/runtime";
 import { inferActivityRole } from "@eco/runtime/sdk";
-import type { AgentRole } from "@eco/shared";
-import type { AgentEvent } from "@eco/shared";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 
 type ActivityAgentEvent = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;

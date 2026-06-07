@@ -47,8 +47,9 @@ function applyBillingDisplaySourceRow(
 ): ThreadBillingSnapshot {
   const otelCostUsd = sourceRow.reportedCostUsd ?? billing.otelCostUsd;
   const usingPrimaryDisplay = displaySource === billing.primarySource;
+  const { ecoCostBreakdown, plannerCostBreakdown, ...billingBase } = billing;
   return {
-    ...billing,
+    ...billingBase,
     displaySource,
     totalTokens: sourceRow.totalTokens,
     ...computeThreadBillingTotals(
@@ -61,12 +62,9 @@ function applyBillingDisplaySourceRow(
     ...(sourceRow.byModel && { byModel: sourceRow.byModel }),
     ...(usingPrimaryDisplay
       ? {
-          ...(billing.ecoCostBreakdown && { ecoCostBreakdown: billing.ecoCostBreakdown }),
-          ...(billing.plannerCostBreakdown && { plannerCostBreakdown: billing.plannerCostBreakdown }),
+          ...(ecoCostBreakdown && { ecoCostBreakdown }),
+          ...(plannerCostBreakdown && { plannerCostBreakdown }),
         }
-      : {
-          ecoCostBreakdown: undefined,
-          plannerCostBreakdown: undefined,
-        }),
+      : {}),
   };
 }

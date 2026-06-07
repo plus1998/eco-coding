@@ -1,11 +1,11 @@
 /** Anthropic message.content block shape (minimal fields Eco needs). */
 export interface AnthropicContentBlockLike {
   type: string;
-  text?: string;
-  thinking?: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
+  text?: string | undefined;
+  thinking?: string | undefined;
+  id?: string | undefined;
+  name?: string | undefined;
+  input?: unknown | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

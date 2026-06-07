@@ -3,13 +3,13 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ModelsDevMapping, ModelsDevModelOption } from "../shared/ipc";
 
 interface ModelsDevModelSelectFieldProps {
-  value?: ModelsDevMapping;
+  value?: ModelsDevMapping | undefined;
   options: readonly ModelsDevModelOption[];
   loading?: boolean | undefined;
   disabled?: boolean | undefined;
   autoResolved?: boolean | undefined;
-  autoResolvedMapping?: ModelsDevMapping;
-  autoResolvedLabel?: string;
+  autoResolvedMapping?: ModelsDevMapping | undefined;
+  autoResolvedLabel?: string | undefined;
   onChange: (mapping: ModelsDevMapping | undefined) => void;
 }
 

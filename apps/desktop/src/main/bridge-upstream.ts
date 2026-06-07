@@ -61,7 +61,7 @@ import {
 } from "./upstream-log";
 
 export interface BridgeForwardRoute {
-  role: string;
+  role: AgentRole;
   provider: ProviderConfigSecret;
   modelId: string;
   apiCompat: UpstreamApiCompat;

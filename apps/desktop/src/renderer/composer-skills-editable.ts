@@ -69,7 +69,8 @@ function serializedLength(node: ChildNode): number {
   if (isSkillElement(node)) {
     return skillTokenLength(node);
   }
-  const children = [...node.childNodes];
+  const element = node as HTMLElement;
+  const children = [...element.childNodes];
   let length = 0;
   for (let index = 0; index < children.length; index += 1) {
     const child = children[index]!;

@@ -224,7 +224,11 @@ export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record
   );
 }
 
-export type { PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
+export type { AgentRole, PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
+export type {
+  SdkToolPermissionDecision,
+  SdkToolPermissionRequest,
+} from "./claude-agent-sdk";
 export * from "./eco-sdk-hooks";
 export {
   buildResumeAgentPrompt,

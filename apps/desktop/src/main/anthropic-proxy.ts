@@ -3,7 +3,12 @@ import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import type { AgentRole, PromptImageAttachment, ThinkingEffort } from "../shared/ipc";
-import { forwardMessagesViaBridge, type BridgeForwardRoute } from "./bridge-upstream";
+import {
+  forwardMessagesViaBridge,
+  type BridgeForwardContext,
+  type BridgeForwardRoute,
+  type BridgeUsageInfo,
+} from "./bridge-upstream";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import type { UpstreamModelOption } from "../shared/models";
@@ -173,14 +178,18 @@ export async function startAnthropicModelProxy(
         apiCompat: route.apiCompat,
         aliasModelId: route.aliasModelId,
       };
-      const bridgeCtx = {
+      const bridgeCtx: BridgeForwardContext = {
         route: bridgeRoute,
         body,
-        requestUrl: request.url,
-        requestedModel,
+        ...(request.url && { requestUrl: request.url }),
+        ...(requestedModel && { requestedModel }),
         ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
         ...(onUpstreamConnectionError && {
-          onUpstreamConnectionError: (info) => {
+          onUpstreamConnectionError: (info: {
+            role: AgentRole;
+            error: string;
+            statusCode?: number;
+          }) => {
             onUpstreamConnectionError({
               role: info.role,
               error: info.error,
@@ -188,28 +197,20 @@ export async function startAnthropicModelProxy(
             });
           },
         }),
-        onUsage: onUsage
-          ? async (info: {
-              role: AgentRole;
-              providerId: string;
-              providerName: string;
-              providerBaseUrl: string;
-              modelId: string;
-              requestedModel?: string;
-              requestId?: string;
-              usage: ParsedUsage;
-            }) =>
-              (await onUsage({
-                role: info.role,
-                providerId: info.providerId,
-                providerName: info.providerName,
-                providerBaseUrl: info.providerBaseUrl,
-                modelId: info.modelId,
-                ...(info.requestedModel && { requestedModel: info.requestedModel }),
-                ...(info.requestId && { requestId: info.requestId }),
-                usage: info.usage,
-              })) ?? null
-          : undefined,
+        ...(onUsage && {
+          onUsage: async (info: BridgeUsageInfo) => {
+            return (await onUsage({
+              role: info.role,
+              providerId: info.providerId,
+              providerName: info.providerName,
+              providerBaseUrl: info.providerBaseUrl,
+              modelId: info.modelId,
+              ...(info.requestedModel && { requestedModel: info.requestedModel }),
+              ...(info.requestId && { requestId: info.requestId }),
+              usage: info.usage,
+            })) ?? null;
+          },
+        }),
       };
 
       if (countTokensRequest) {
@@ -224,11 +225,11 @@ export async function startAnthropicModelProxy(
             apiCompat: bridgeRoute.apiCompat,
             modelId: bridgeRoute.modelId,
             aliasModelId: bridgeRoute.aliasModelId,
-            requestedModel,
-            requestUrl: request.url,
             upstreamUrl: "eco://local/count_tokens-stub",
             stream: false,
             converted: false,
+            ...(requestedModel && { requestedModel }),
+            ...(request.url && { requestUrl: request.url }),
           }),
           http: { status: 200, streaming: false },
           tokens: { input: inputTokens, output: 0, cacheRead: 0, cacheCreation: 0 },

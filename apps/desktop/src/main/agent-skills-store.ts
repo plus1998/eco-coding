@@ -13,7 +13,7 @@ interface AgentSkillsRow {
 }
 
 export function emptyAgentSkillAssignments(): AgentSkillAssignments {
-  return Object.fromEntries(AGENT_ROLES.map((role) => [role, []])) as AgentSkillAssignments;
+  return Object.fromEntries(AGENT_ROLES.map((role) => [role, []])) as unknown as AgentSkillAssignments;
 }
 
 export async function createAgentSkillsStore(dbPath: string): Promise<AgentSkillsStore> {
@@ -52,7 +52,7 @@ export class AgentSkillsStore {
   getAssignments(): AgentSkillAssignments {
     const rows = this.db
       .prepare(`SELECT role, skills_json FROM agent_skill_assignments`)
-      .all() as AgentSkillsRow[];
+      .all() as unknown as AgentSkillsRow[];
 
     const assignments = emptyAgentSkillAssignments();
     for (const row of rows) {

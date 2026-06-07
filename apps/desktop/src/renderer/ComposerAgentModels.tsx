@@ -88,7 +88,7 @@ export function ComposerAgentModels({
                 : `${title} · 点击开启`
               : title;
 
-        if (clickable) {
+        if (clickable && subagent) {
           return (
             <button
               key={role}

@@ -73,7 +73,7 @@ export function buildProviderDirectUpstreamHeaders(input: {
     clientHeaders: {},
     apiKey: input.apiKey,
     apiCompat: input.apiCompat,
-    upstreamUserAgent: input.upstreamUserAgent,
+    ...(input.upstreamUserAgent && { upstreamUserAgent: input.upstreamUserAgent }),
   });
   headers["content-type"] = "application/json";
   return headers;

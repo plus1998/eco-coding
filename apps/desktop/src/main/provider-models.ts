@@ -88,7 +88,7 @@ export async function listProviderUpstreamModels(
     resolved.baseUrl,
     resolved.apiKey,
     resolved.requestPath,
-    { providerId: request.providerId, routing },
+    { ...(request.providerId && { providerId: request.providerId }), routing },
     resolved.apiCompat,
     upstreamUserAgent,
   );
@@ -123,12 +123,12 @@ export async function testProviderConnection(
 
   const testResult = await postUpstreamCompatTest(
     {
-      providerId: request.providerId,
       baseUrl: resolved.baseUrl,
       requestPath: resolved.requestPath,
       apiCompat: resolved.apiCompat,
       apiKey: resolved.apiKey,
       modelId,
+      ...(request.providerId && { providerId: request.providerId }),
     },
     resolveRouteTestThinkingEffort(request.thinkingEffort),
     fetcher,
@@ -221,29 +221,37 @@ export async function testRoleRoutes(
 
   for (const group of groups.values()) {
     const labelRole = group.roles[0];
+    const testInput = {
+      providerId: group.provider.id,
+      baseUrl: group.provider.baseUrl,
+      requestPath: group.provider.requestPath,
+      apiCompat: group.apiCompat,
+      apiKey: group.provider.apiKey,
+      modelId: group.modelId,
+      ...(labelRole && { role: labelRole }),
+    };
     const testResult = await postUpstreamCompatTest(
-      {
-        providerId: group.provider.id,
-        baseUrl: group.provider.baseUrl,
-        requestPath: group.provider.requestPath,
-        apiCompat: group.apiCompat,
-        apiKey: group.provider.apiKey,
-        modelId: group.modelId,
-        role: labelRole,
-      },
+      testInput,
       group.thinkingEffort,
       fetcher,
       upstreamUserAgent,
     );
 
-    const shared: RoleRouteTestResult = {
-      role: labelRole ?? "",
-      modelId: group.modelId,
-      ok: testResult.ok,
-      ...(testResult.ok
-        ? { reply: testResult.reply, elapsedMs: testResult.elapsedMs }
-        : { error: testResult.error, elapsedMs: testResult.elapsedMs }),
-    };
+    const shared: RoleRouteTestResult = testResult.ok
+      ? {
+          role: labelRole ?? "",
+          modelId: group.modelId,
+          ok: testResult.ok,
+          reply: testResult.reply,
+          elapsedMs: testResult.elapsedMs,
+        }
+      : {
+          role: labelRole ?? "",
+          modelId: group.modelId,
+          ok: testResult.ok,
+          error: testResult.error,
+          ...(testResult.elapsedMs !== undefined && { elapsedMs: testResult.elapsedMs }),
+        };
 
     for (const role of group.roles) {
       resultsByRole.set(role, { ...shared, role });
@@ -1028,14 +1036,6 @@ function dedupeModels(models: UpstreamModelOption[]): UpstreamModelOption[] {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
-}
-
-function parseJsonForLog(raw: string): unknown {
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

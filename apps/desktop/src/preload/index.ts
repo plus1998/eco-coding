@@ -16,6 +16,7 @@ import {
   type ProviderConfigView,
   type RouteCapabilityHint,
   type RoutePricingHint,
+  type RouteProfileInput,
   type ModelsDevModelOption,
   type ModelsDevMapping,
   type RouteProfileView,

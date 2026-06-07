@@ -775,11 +775,12 @@ function App() {
       return undefined;
     }
     try {
+      const routeProfileId = composerRuntimeConfig?.routeProfileId ?? getDefaultRouteProfileId(settings);
       return buildThreadRuntimeConfigFromDefaults({
         settings,
         subagentDefaults: subagentSettings,
         workflowDefaults: workflowSettings,
-        routeProfileId: composerRuntimeConfig?.routeProfileId ?? getDefaultRouteProfileId(settings),
+        ...(routeProfileId && { routeProfileId }),
       });
     } catch {
       return undefined;
@@ -1941,9 +1942,9 @@ function App() {
           }}
           skillsByName={composerSkillsByName}
           onCursorChange={setComposerCursor}
-          onPaste={canPasteComposerImages ? handleComposerPaste : undefined}
           onKeyDown={handleComposerKeyDown}
           maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
+          {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
           placeholder={
             pendingClarification
               ? "请先在上方回答问题"
@@ -2257,13 +2258,13 @@ function App() {
       {showThreadInfo && activeThread ? (
         <ThreadInfoPanel
           threadId={activeThread.id}
-          workspace={projectWorkspace}
-          workspacePath={currentProjectPath}
-          gitBranch={projectWorkspace?.branch}
-          dirtyFileCount={projectWorkspace?.dirtyFileCount}
           todos={coderTodos}
           threadStatus={activeThread.status}
-          usageSummary={threadUsageSummary}
+          {...(projectWorkspace && { workspace: projectWorkspace })}
+          {...(currentProjectPath && { workspacePath: currentProjectPath })}
+          {...(projectWorkspace?.branch && { gitBranch: projectWorkspace.branch })}
+          {...(projectWorkspace?.dirtyFileCount !== undefined && { dirtyFileCount: projectWorkspace.dirtyFileCount })}
+          {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
           {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
         />
       ) : null}

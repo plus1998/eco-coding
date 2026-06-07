@@ -576,7 +576,7 @@ export function ModelsSettingsPanel({
     try {
       const result = await window.eco.testProviderConnection({
         baseUrl: target.baseUrl,
-        requestPath: target.requestPath,
+        ...(target.requestPath !== undefined && { requestPath: target.requestPath }),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         defaultModel: target.defaultModel,
         thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
@@ -1260,7 +1260,7 @@ function RouteProfileEditorModal({
                           onUpdateRoute(role, {
                             providerId: nextProviderId,
                             modelId: route?.modelId || provider?.defaultModel || "",
-                            apiCompat: provider?.apiCompat,
+                            ...(provider?.apiCompat && { apiCompat: provider.apiCompat }),
                           });
                           if (provider) {
                             onFetchModels(provider);
@@ -1615,14 +1615,14 @@ function RouteManualSpecFields({
     spec?.cacheReadPerM !== undefined ||
     spec?.cacheWritePerM !== undefined;
 
-  function patchManual(partial: Partial<RouteManualSpec>) {
-    const next: RouteManualSpec = { ...spec, ...partial };
+  function patchManual(partial: { [K in keyof RouteManualSpec]?: RouteManualSpec[K] | undefined }) {
+    const next: { [K in keyof RouteManualSpec]?: RouteManualSpec[K] | undefined } = { ...spec, ...partial };
     for (const key of Object.keys(next) as (keyof RouteManualSpec)[]) {
       if (next[key] === undefined) {
         delete next[key];
       }
     }
-    onChange(next);
+    onChange(next as RouteManualSpec);
   }
 
   function parseOptionalNumber(raw: string): number | undefined {

@@ -1,4 +1,5 @@
-import type { AgentRole, ContextMonitorSnapshot } from "../shared/ipc";
+import type { AgentRole } from "../shared/ipc";
+import type { ContextMonitorSnapshot } from "./context-window-monitor";
 
 /** Structured stderr diagnostics for context meter + subagent attribution (no raw prompts). */
 export function isEcoDiagLogEnabled(): boolean {

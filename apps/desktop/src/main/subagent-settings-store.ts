@@ -54,7 +54,7 @@ export class SubagentSettingsStore {
   get(): SubagentEnabledSettings {
     const rows = this.db
       .prepare(`SELECT role, enabled FROM subagent_enabled`)
-      .all() as SubagentEnabledRow[];
+      .all() as unknown as SubagentEnabledRow[];
 
     const partial: Partial<Record<SubagentRole, boolean>> = {};
     for (const row of rows) {

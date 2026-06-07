@@ -3,28 +3,28 @@
 export interface AnthropicRequest {
   model: string;
   max_tokens: number;
-  system?: unknown;
+  system?: unknown | undefined;
   messages: AnthropicMessage[];
-  tools?: AnthropicTool[];
-  stream?: boolean;
-  temperature?: number;
-  top_p?: number;
-  stop_sequences?: string[];
-  thinking?: AnthropicThinking;
+  tools?: AnthropicTool[] | undefined;
+  stream?: boolean | undefined;
+  temperature?: number | undefined;
+  top_p?: number | undefined;
+  stop_sequences?: string[] | undefined;
+  thinking?: AnthropicThinking | undefined;
   /** Top-level effort from Claude Agent SDK / local proxy injection. */
-  effort?: string;
-  tool_choice?: unknown;
-  metadata?: unknown;
-  output_config?: AnthropicOutputConfig;
+  effort?: string | undefined;
+  tool_choice?: unknown | undefined;
+  metadata?: unknown | undefined;
+  output_config?: AnthropicOutputConfig | undefined;
 }
 
 export interface AnthropicOutputConfig {
-  effort?: string;
+  effort?: string | undefined;
 }
 
 export interface AnthropicThinking {
   type: string;
-  budget_tokens?: number;
+  budget_tokens?: number | undefined;
 }
 
 export interface AnthropicMessage {
@@ -34,16 +34,16 @@ export interface AnthropicMessage {
 
 export interface AnthropicContentBlock {
   type: string;
-  cache_control?: AnthropicCacheControl;
-  text?: string;
-  thinking?: string;
-  source?: AnthropicImageSource;
-  id?: string;
-  name?: string;
-  input?: unknown;
-  tool_use_id?: string;
-  content?: unknown;
-  is_error?: boolean;
+  cache_control?: AnthropicCacheControl | undefined;
+  text?: string | undefined;
+  thinking?: string | undefined;
+  source?: AnthropicImageSource | undefined;
+  id?: string | undefined;
+  name?: string | undefined;
+  input?: unknown | undefined;
+  tool_use_id?: string | undefined;
+  content?: unknown | undefined;
+  is_error?: boolean | undefined;
 }
 
 export interface AnthropicImageSource {
@@ -54,17 +54,17 @@ export interface AnthropicImageSource {
 
 export interface AnthropicCacheControl {
   type: string;
-  ttl?: string;
+  ttl?: string | undefined;
 }
 
 export interface AnthropicTool {
-  type?: string;
+  type?: string | undefined;
   name: string;
-  description?: string;
-  input_schema?: unknown;
-  cache_control?: AnthropicCacheControl;
-  allowed_domains?: string[];
-  max_uses?: number;
+  description?: string | undefined;
+  input_schema?: unknown | undefined;
+  cache_control?: AnthropicCacheControl | undefined;
+  allowed_domains?: string[] | undefined;
+  max_uses?: number | undefined;
 }
 
 export interface AnthropicResponse {
@@ -74,7 +74,7 @@ export interface AnthropicResponse {
   content: AnthropicContentBlock[];
   model: string;
   stop_reason: string;
-  stop_sequence?: string | null;
+  stop_sequence?: string | null | undefined;
   usage: AnthropicUsage;
 }
 
@@ -87,94 +87,94 @@ export interface AnthropicUsage {
 
 export interface AnthropicStreamEvent {
   type: string;
-  message?: AnthropicResponse;
-  index?: number;
-  content_block?: AnthropicContentBlock;
-  delta?: AnthropicDelta;
-  usage?: AnthropicUsage;
+  message?: AnthropicResponse | undefined;
+  index?: number | undefined;
+  content_block?: AnthropicContentBlock | undefined;
+  delta?: AnthropicDelta | undefined;
+  usage?: AnthropicUsage | undefined;
 }
 
 export interface AnthropicDelta {
-  type?: string;
-  text?: string;
-  partial_json?: string;
-  thinking?: string;
-  signature?: string;
-  stop_reason?: string;
-  stop_sequence?: string | null;
+  type?: string | undefined;
+  text?: string | undefined;
+  partial_json?: string | undefined;
+  thinking?: string | undefined;
+  signature?: string | undefined;
+  stop_reason?: string | undefined;
+  stop_sequence?: string | null | undefined;
 }
 
 // OpenAI Responses API
 
 export interface ResponsesRequest {
   model: string;
-  instructions?: string;
+  instructions?: string | undefined;
   input: unknown;
-  max_output_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  stream?: boolean;
-  tools?: ResponsesTool[];
-  include?: string[];
-  store?: boolean;
-  parallel_tool_calls?: boolean;
-  reasoning?: ResponsesReasoning;
-  text?: ResponsesText;
-  tool_choice?: unknown;
-  service_tier?: string;
-  prompt_cache_key?: string;
-  previous_response_id?: string;
+  max_output_tokens?: number | undefined;
+  temperature?: number | undefined;
+  top_p?: number | undefined;
+  stream?: boolean | undefined;
+  tools?: ResponsesTool[] | undefined;
+  include?: string[] | undefined;
+  store?: boolean | undefined;
+  parallel_tool_calls?: boolean | undefined;
+  reasoning?: ResponsesReasoning | undefined;
+  text?: ResponsesText | undefined;
+  tool_choice?: unknown | undefined;
+  service_tier?: string | undefined;
+  prompt_cache_key?: string | undefined;
+  previous_response_id?: string | undefined;
 }
 
 export interface ResponsesReasoning {
   effort: string;
-  summary?: string;
+  summary?: string | undefined;
 }
 
 export interface ResponsesText {
-  verbosity?: string;
+  verbosity?: string | undefined;
 }
 
 export interface ResponsesInputItem {
-  type?: string;
-  role?: string;
-  content?: unknown;
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  id?: string;
-  output?: string;
+  type?: string | undefined;
+  role?: string | undefined;
+  content?: unknown | undefined;
+  call_id?: string | undefined;
+  name?: string | undefined;
+  arguments?: string | undefined;
+  id?: string | undefined;
+  output?: string | undefined;
 }
 
 export interface ResponsesContentPart {
   type: string;
-  text?: string;
-  image_url?: string;
+  text?: string | undefined;
+  image_url?: string | undefined;
 }
 
 export interface ResponsesWebSearchFilters {
-  allowed_domains?: string[];
-  blocked_domains?: string[];
+  allowed_domains?: string[] | undefined;
+  blocked_domains?: string[] | undefined;
 }
 
 export interface ResponsesTool {
   type: string;
-  name?: string;
-  description?: string;
-  parameters?: unknown;
-  strict?: boolean;
-  filters?: ResponsesWebSearchFilters;
+  name?: string | undefined;
+  description?: string | undefined;
+  parameters?: unknown | undefined;
+  strict?: boolean | undefined;
+  filters?: ResponsesWebSearchFilters | undefined;
 }
 
 export interface ResponsesResponse {
   id: string;
   object: string;
   model: string;
-  status?: string;
-  output?: ResponsesOutput[];
-  usage?: ResponsesUsage;
-  incomplete_details?: ResponsesIncompleteDetails;
-  error?: ResponsesError;
+  status?: string | undefined;
+  output?: ResponsesOutput[] | undefined;
+  usage?: ResponsesUsage | undefined;
+  incomplete_details?: ResponsesIncompleteDetails | undefined;
+  error?: ResponsesError | undefined;
 }
 
 export interface ResponsesError {
@@ -188,21 +188,21 @@ export interface ResponsesIncompleteDetails {
 
 export interface ResponsesOutput {
   type: string;
-  id?: string;
-  role?: string;
-  content?: ResponsesContentPart[];
-  status?: string;
-  encrypted_content?: string;
-  summary?: ResponsesSummary[];
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  action?: WebSearchAction;
+  id?: string | undefined;
+  role?: string | undefined;
+  content?: ResponsesContentPart[] | undefined;
+  status?: string | undefined;
+  encrypted_content?: string | undefined;
+  summary?: ResponsesSummary[] | undefined;
+  call_id?: string | undefined;
+  name?: string | undefined;
+  arguments?: string | undefined;
+  action?: WebSearchAction | undefined;
 }
 
 export interface WebSearchAction {
-  type?: string;
-  query?: string;
+  type?: string | undefined;
+  query?: string | undefined;
 }
 
 export interface ResponsesSummary {
@@ -214,40 +214,40 @@ export interface ResponsesUsage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
-  input_tokens_details?: ResponsesInputTokensDetails;
-  output_tokens_details?: ResponsesOutputTokensDetails;
+  input_tokens_details?: ResponsesInputTokensDetails | undefined;
+  output_tokens_details?: ResponsesOutputTokensDetails | undefined;
 }
 
 export interface ResponsesInputTokensDetails {
-  cached_tokens?: number;
-  audio_tokens?: number;
+  cached_tokens?: number | undefined;
+  audio_tokens?: number | undefined;
 }
 
 export interface ResponsesOutputTokensDetails {
-  reasoning_tokens?: number;
-  audio_tokens?: number;
-  accepted_prediction_tokens?: number;
-  rejected_prediction_tokens?: number;
+  reasoning_tokens?: number | undefined;
+  audio_tokens?: number | undefined;
+  accepted_prediction_tokens?: number | undefined;
+  rejected_prediction_tokens?: number | undefined;
 }
 
 export interface ResponsesStreamEvent {
   type: string;
-  response?: ResponsesResponse;
-  usage?: ResponsesUsage;
-  item?: ResponsesOutput;
-  output_index?: number;
-  content_index?: number;
-  delta?: string;
-  text?: string;
-  item_id?: string;
-  call_id?: string;
-  name?: string;
-  arguments?: string;
-  summary_index?: number;
-  part?: ResponsesContentPart;
-  code?: string;
-  param?: string;
-  sequence_number?: number;
+  response?: ResponsesResponse | undefined;
+  usage?: ResponsesUsage | undefined;
+  item?: ResponsesOutput | undefined;
+  output_index?: number | undefined;
+  content_index?: number | undefined;
+  delta?: string | undefined;
+  text?: string | undefined;
+  item_id?: string | undefined;
+  call_id?: string | undefined;
+  name?: string | undefined;
+  arguments?: string | undefined;
+  summary_index?: number | undefined;
+  part?: ResponsesContentPart | undefined;
+  code?: string | undefined;
+  param?: string | undefined;
+  sequence_number?: number | undefined;
 }
 
 // OpenAI Chat Completions API
@@ -255,71 +255,78 @@ export interface ResponsesStreamEvent {
 export interface ChatCompletionsRequest {
   model: string;
   messages: ChatMessage[];
-  instructions?: string;
-  max_tokens?: number;
-  max_completion_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  stream?: boolean;
-  stream_options?: ChatStreamOptions;
-  tools?: ChatTool[];
-  tool_choice?: unknown;
-  reasoning_effort?: string;
-  service_tier?: string;
-  stop?: unknown;
-  functions?: ChatFunction[];
-  function_call?: unknown;
+  instructions?: string | undefined;
+  max_tokens?: number | undefined;
+  max_completion_tokens?: number | undefined;
+  temperature?: number | undefined;
+  top_p?: number | undefined;
+  stream?: boolean | undefined;
+  stream_options?: ChatStreamOptions | undefined;
+  tools?: ChatTool[] | undefined;
+  tool_choice?: unknown | undefined;
+  reasoning_effort?: string | undefined;
+  service_tier?: string | undefined;
+  stop?: unknown | undefined;
+  functions?: ChatFunction[] | undefined;
+  function_call?: unknown | undefined;
 }
 
 export interface ChatStreamOptions {
-  include_usage?: boolean;
+  include_usage?: boolean | undefined;
 }
 
 export interface ChatMessage {
   role: string;
-  content?: unknown;
-  reasoning_content?: string;
-  reasoning?: string;
-  reasoning_details?: Array<{ type?: string; text?: string; format?: string; index?: number }>;
-  name?: string;
-  tool_calls?: ChatToolCall[];
-  tool_call_id?: string;
-  function_call?: ChatFunctionCall;
+  content?: unknown | undefined;
+  reasoning_content?: string | undefined;
+  reasoning?: string | undefined;
+  reasoning_details?: ChatReasoningDetail[] | undefined;
+  name?: string | undefined;
+  tool_calls?: ChatToolCall[] | undefined;
+  tool_call_id?: string | undefined;
+  function_call?: ChatFunctionCall | undefined;
+}
+
+export interface ChatReasoningDetail {
+  type?: string | undefined;
+  text?: string | undefined;
+  format?: string | undefined;
+  index?: number | undefined;
 }
 
 export interface ChatContentPart {
   type: string;
-  text?: string;
-  image_url?: ChatImageURL;
+  text?: string | undefined;
+  image_url?: ChatImageURL | undefined;
 }
 
 export interface ChatImageURL {
   url: string;
-  detail?: string;
+  detail?: string | undefined;
 }
 
 export interface ChatTool {
   type: string;
-  function?: ChatFunction;
+  function?: ChatFunction | undefined;
 }
 
 export interface ChatFunction {
   name: string;
-  description?: string;
-  parameters?: unknown;
-  strict?: boolean;
+  description?: string | undefined;
+  parameters?: unknown | undefined;
+  strict?: boolean | undefined;
 }
 
 export interface ChatToolCall {
-  index?: number;
-  id?: string;
-  type?: string;
+  index?: number | undefined;
+  id?: string | undefined;
+  type?: string | undefined;
   function: ChatFunctionCall;
 }
 
 export interface ChatFunctionCall {
   name: string;
-  arguments?: string;
+  arguments?: string | undefined;
 }
 
 export interface ChatCompletionsResponse {
@@ -328,9 +335,9 @@ export interface ChatCompletionsResponse {
   created: number;
   model: string;
   choices: ChatChoice[];
-  usage?: ChatUsage;
-  system_fingerprint?: string;
-  service_tier?: string;
+  usage?: ChatUsage | undefined;
+  system_fingerprint?: string | undefined;
+  service_tier?: string | undefined;
 }
 
 export interface ChatChoice {
@@ -343,16 +350,16 @@ export interface ChatUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  prompt_tokens_details?: ChatTokenDetails;
-  completion_tokens_details?: ChatTokenDetails;
+  prompt_tokens_details?: ChatTokenDetails | undefined;
+  completion_tokens_details?: ChatTokenDetails | undefined;
 }
 
 export interface ChatTokenDetails {
-  cached_tokens?: number;
-  audio_tokens?: number;
-  reasoning_tokens?: number;
-  accepted_prediction_tokens?: number;
-  rejected_prediction_tokens?: number;
+  cached_tokens?: number | undefined;
+  audio_tokens?: number | undefined;
+  reasoning_tokens?: number | undefined;
+  accepted_prediction_tokens?: number | undefined;
+  rejected_prediction_tokens?: number | undefined;
 }
 
 export interface ChatCompletionsChunk {
@@ -361,9 +368,9 @@ export interface ChatCompletionsChunk {
   created: number;
   model: string;
   choices: ChatChunkChoice[];
-  usage?: ChatUsage;
-  system_fingerprint?: string;
-  service_tier?: string;
+  usage?: ChatUsage | undefined;
+  system_fingerprint?: string | undefined;
+  service_tier?: string | undefined;
 }
 
 export interface ChatChunkChoice {
@@ -373,10 +380,10 @@ export interface ChatChunkChoice {
 }
 
 export interface ChatDelta {
-  role?: string;
-  content?: string;
-  reasoning_content?: string;
+  role?: string | undefined;
+  content?: string | undefined;
+  reasoning_content?: string | undefined;
   /** Some OpenAI-compatible providers (e.g. DeepSeek) use `reasoning` in stream deltas. */
-  reasoning?: string;
-  tool_calls?: ChatToolCall[];
+  reasoning?: string | undefined;
+  tool_calls?: ChatToolCall[] | undefined;
 }
