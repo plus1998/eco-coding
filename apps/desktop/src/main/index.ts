@@ -174,7 +174,7 @@ import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { ActiveRunRuntimeStateStore, type ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { logContextSnapshot } from "./context-snapshot-log";
-import { logEcoDiag, logEcoDiagThrottled, shortThreadId } from "./eco-diag-log";
+import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
@@ -3978,8 +3978,8 @@ function emitThreadEvent(
     displayMessage,
     role: String(role),
     stream,
-    extras,
-    persistedActivityLine,
+    ...(extras && { extras }),
+    ...(persistedActivityLine && { persistedActivityLine }),
   });
 
   const payload: ThreadLiveEvent = {
@@ -4089,7 +4089,7 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
   );
   const billing = ledgerBilling ?? (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
   const context = contextScheduler.getDisplaySnapshot(threadId);
-  return buildThreadRunProjection({
+  const projection = buildThreadRunProjection({
     threadId,
     status: thread.status,
     message: thread.message,
@@ -4100,6 +4100,31 @@ function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionS
     ...(context && { context }),
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
   });
+  logThreadRunProjectionDiagnostics(projection);
+  return projection;
+}
+
+function logThreadRunProjectionDiagnostics(projection: ThreadRunProjectionSnapshot): void {
+  for (const diagnostic of projection.diagnostics) {
+    const identity = diagnostic.eventId ?? diagnostic.agentId ?? diagnostic.requestId ?? "thread";
+    logEcoDiagThrottled(
+      `thread-run-projection:${projection.thread.threadId}:${diagnostic.code}:${identity}`,
+      "thread_run_projection.diagnostic",
+      {
+        threadId: shortThreadId(projection.thread.threadId),
+        code: diagnostic.code,
+        ...(diagnostic.eventId && { eventId: shortProjectionId(diagnostic.eventId) }),
+        ...(diagnostic.agentId && { agentId: shortAgentId(diagnostic.agentId) }),
+        ...(diagnostic.requestId && { requestId: shortProjectionId(diagnostic.requestId) }),
+        message: diagnostic.message,
+      },
+      5_000,
+    );
+  }
+}
+
+function shortProjectionId(id: string): string {
+  return id.length > 24 ? id.slice(-24) : id;
 }
 
 function scheduleThreadRunProjectionUpdated(threadId: string): void {

@@ -1131,7 +1131,7 @@ export class ConversationStore {
          WHERE thread_id = ?
          ORDER BY sequence ASC, observed_at ASC, id ASC`,
       )
-      .all(threadId) as Array<ThreadRunEventRow>;
+      .all(threadId) as unknown as ThreadRunEventRow[];
     return rows.map(rowToThreadRunEvent);
   }
 

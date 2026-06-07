@@ -6,6 +6,8 @@ export interface StreamRequestTiming {
   phase: StreamRequestTimingPhase;
   /** Elapsed ms while waiting for the first token (updates live). */
   waitingMs: number;
+  /** Backward-compatible live elapsed ms for compact labels. */
+  elapsedMs: number;
   /** Time to first token after waiting ends; undefined until recorded. */
   ttftMs?: number;
 }
@@ -18,7 +20,7 @@ export interface StreamRequestTiming {
 export function useStreamRequestTiming(active: boolean, hasContent: boolean): StreamRequestTiming {
   const [waitingMs, setWaitingMs] = useState(0);
   const [ttftMs, setTtftMs] = useState<number | undefined>();
-  const startedAtRef = useRef<number | undefined>();
+  const startedAtRef = useRef<number | undefined>(undefined);
   const recordedRef = useRef(false);
 
   useEffect(() => {
@@ -56,5 +58,5 @@ export function useStreamRequestTiming(active: boolean, hasContent: boolean): St
 
   const phase: StreamRequestTimingPhase = ttftMs !== undefined ? "done" : active ? "waiting" : "idle";
 
-  return { phase, waitingMs, ...(ttftMs !== undefined && { ttftMs }) };
+  return { phase, waitingMs, elapsedMs: waitingMs, ...(ttftMs !== undefined && { ttftMs }) };
 }

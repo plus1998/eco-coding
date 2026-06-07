@@ -1,3 +1,5 @@
+import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
+
 export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",

@@ -45,7 +45,7 @@ export function buildThreadRunEventFromLiveEvent(
   const scope = resolveThreadRunEventScope({
     eventType,
     role: input.role,
-    agentId: input.agentId,
+    ...(input.agentId && { agentId: input.agentId }),
   });
   const streamState = resolveThreadRunEventStreamState(input);
   const requestId = resolveRequestId({

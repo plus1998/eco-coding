@@ -16,6 +16,16 @@ const attempt: RunAttemptRecord = {
   startedAt: "2026-01-01T00:00:00.000Z",
 };
 
+const retryAttempt: RunAttemptRecord = {
+  threadId: "thr_projection",
+  attemptId: "attempt_2",
+  phase: "execution",
+  retryIndex: 1,
+  status: "cancelled",
+  startedAt: "2026-01-01T00:00:04.000Z",
+  endedAt: "2026-01-01T00:00:06.000Z",
+};
+
 function agent(input: Partial<AgentInstanceRecord> & { agentId: string }): AgentInstanceRecord {
   return {
     threadId: "thr_projection",
@@ -237,4 +247,175 @@ test("buildThreadRunProjection attaches usage and context by agentId", () => {
   expect(projection.agents[0]?.usage?.modelId).toBe("model-a");
   expect(projection.agents[0]?.usage?.inputTokens).toBe(10);
   expect(projection.agents[0]?.context?.occupancyPct).toBe(20);
+});
+
+test("buildThreadRunProjection keeps planner thinking and subagent narrative separate", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [agent({ agentId: "coder_a" })],
+    events: [
+      event({
+        id: "thinking",
+        sequence: 1,
+        eventType: "thinking.delta",
+        scope: "main",
+        role: "thinking",
+        message: "Planning",
+      }),
+      event({
+        id: "coder-message",
+        sequence: 2,
+        eventType: "message.delta",
+        scope: "agent",
+        role: "coder",
+        agentId: "coder_a",
+        message: "Editing src/App.tsx",
+      }),
+    ],
+  });
+
+  expect(projection.timeline.map((row) => row.id)).toEqual(["thinking"]);
+  expect(projection.agents[0]?.timeline.map((row) => row.id)).toEqual(["coder-message"]);
+});
+
+test("buildThreadRunProjection surfaces API failures to main feed and agent details", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "failed",
+    attempts: [{ ...attempt, status: "failed", endedAt: "2026-01-01T00:00:03.000Z" }],
+    agents: [agent({ agentId: "coder_a", status: "stopped", endedAt: "2026-01-01T00:00:03.000Z" })],
+    events: [
+      event({
+        id: "request",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "agent",
+        role: "coder",
+        agentId: "coder_a",
+        requestId: "req_1",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "api-error",
+        sequence: 2,
+        eventType: "api.error",
+        scope: "both",
+        role: "coder",
+        agentId: "coder_a",
+        requestId: "req_1",
+        message: "HTTP 502",
+        metadata: { apiError: { statusCode: 502, message: "Bad gateway" } },
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.timeline.map((row) => row.id)).toEqual(["api-error"]);
+  expect(projection.agents[0]?.timeline.map((row) => row.id)).toEqual(["request", "api-error"]);
+  expect(projection.requestSpans[0]).toMatchObject({
+    requestId: "req_1",
+    ownerAgentId: "coder_a",
+    status: "failed",
+    error: "Bad gateway",
+  });
+});
+
+test("buildThreadRunProjection tracks retry attempts and terminal request states", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "failed",
+    attempts: [
+      { ...attempt, status: "failed", endedAt: "2026-01-01T00:00:03.000Z" },
+      retryAttempt,
+    ],
+    agents: [agent({ agentId: "coder_a" })],
+    events: [
+      event({
+        id: "request-1-start",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_1",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      event({
+        id: "request-1-failed",
+        sequence: 2,
+        eventType: "request.failed",
+        scope: "main",
+        role: "planner",
+        requestId: "req_1",
+        message: "HTTP 529",
+        observedAt: "2026-01-01T00:00:02.000Z",
+      }),
+      event({
+        id: "retry",
+        sequence: 3,
+        eventType: "request.retry_scheduled",
+        scope: "main",
+        role: "planner",
+        message: "准备重试",
+        observedAt: "2026-01-01T00:00:03.000Z",
+      }),
+      event({
+        id: "request-2-start",
+        sequence: 4,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_2",
+        observedAt: "2026-01-01T00:00:04.000Z",
+      }),
+      event({
+        id: "request-2-cancelled",
+        sequence: 5,
+        eventType: "request.cancelled",
+        scope: "main",
+        role: "planner",
+        requestId: "req_2",
+        observedAt: "2026-01-01T00:00:05.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.thread.currentAttemptId).toBe("attempt_2");
+  expect(projection.requestSpans.map((span) => span.status)).toEqual(["failed", "cancelled"]);
+  expect(
+    projection.requestSpans.some(
+      (span) => span.status === "waiting_first_token" || span.status === "streaming",
+    ),
+  ).toBe(false);
+  expect(projection.timeline.map((row) => row.id)).toEqual([
+    "request-1-start",
+    "request-1-failed",
+    "retry",
+    "request-2-start",
+    "request-2-cancelled",
+  ]);
+});
+
+test("buildThreadRunProjection diagnoses request spans left open after terminal status", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:03.000Z" }],
+    agents: [],
+    events: [
+      event({
+        id: "request",
+        sequence: 1,
+        eventType: "request.started",
+        scope: "main",
+        role: "planner",
+        requestId: "req_open",
+        observedAt: "2026-01-01T00:00:01.000Z",
+      }),
+    ],
+  });
+
+  expect(projection.requestSpans[0]?.status).toBe("waiting_first_token");
+  expect(projection.diagnostics.some((row) => row.code === "request_span_left_open")).toBe(true);
 });

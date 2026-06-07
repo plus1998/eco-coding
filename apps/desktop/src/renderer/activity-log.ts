@@ -284,10 +284,10 @@ export function buildActivityLogBlocks(
         durationMs,
         segmentRunning,
         lines,
-        status: options.status,
-        activeSubagent,
-        activeMissionSummary,
         plannerRunIndex,
+        ...(options.status && { status: options.status }),
+        ...(activeSubagent && { activeSubagent }),
+        ...(activeMissionSummary && { activeMissionSummary }),
         ...(options.subagentTimingsByAgentId && {
           subagentTimingsByAgentId: options.subagentTimingsByAgentId,
         }),
@@ -379,7 +379,8 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
   const clearReconnectPhase = () => {
     for (let index = current.details.length - 1; index >= 0; index -= 1) {
-      if (current.details[index]?.kind === "phase" && current.details[index]?.reconnecting) {
+      const block = current.details[index];
+      if (block?.kind === "phase" && block.reconnecting) {
         current.details.splice(index, 1);
       }
     }
@@ -1329,10 +1330,11 @@ function pushWorkSessionsFromRuns(
         const extracted = extractSurfacedRequestFailureBlocks(item.children);
         surfacedBlocks.push(...extracted.surfaced);
         const remaining = extracted.remaining;
+        const statusLine = resolveSubagentRunStatusLine(remaining, item.role) ?? item.statusLine;
         return {
           ...item,
           children: remaining,
-          statusLine: resolveSubagentRunStatusLine(remaining, item.role) ?? item.statusLine,
+          ...(statusLine && { statusLine }),
         };
       });
       for (const surfaced of surfacedBlocks) {
@@ -1387,17 +1389,18 @@ function pushWorkSessionsFromRuns(
       const mergedChildren = [...existing.children, ...item.children];
       const mergedDuration = Math.max(existing.runDurationMs ?? 0, item.runDurationMs ?? 0);
       const agentId = item.agentId ?? existing.agentId;
+      const statusLine =
+        resolveSubagentRunStatusLine(mergedChildren, existing.role) ??
+        item.statusLine ??
+        existing.statusLine;
       pendingSubagentItems[existingIndex] = {
         ...existing,
         ...item,
         sessionKey: existing.sessionKey,
         running: existing.running || item.running,
         children: mergedChildren,
-        statusLine:
-          resolveSubagentRunStatusLine(mergedChildren, existing.role) ??
-          item.statusLine ??
-          existing.statusLine,
         ...(agentId && { agentId }),
+        ...(statusLine && { statusLine }),
         ...(mergedDuration > 0 && { runDurationMs: mergedDuration }),
       };
     };
@@ -1439,11 +1442,12 @@ function pushWorkSessionsFromRuns(
         continue;
       }
       const mergedChildren = [...entry.children, ...missionRun.blocks];
+      const statusLine = resolveSubagentRunStatusLine(mergedChildren, role) ?? entry.statusLine;
       pendingSubagentItems[index] = {
         ...entry,
         ...(missionRun.agentId && !entry.agentId && { agentId: missionRun.agentId }),
         children: mergedChildren,
-        statusLine: resolveSubagentRunStatusLine(mergedChildren, role) ?? entry.statusLine,
+        ...(statusLine && { statusLine }),
       };
       return true;
     }
@@ -2134,7 +2138,7 @@ export function resolveSubagentRunDurationMs(
     }
 
     if (tool.tool === "Agent") {
-      const startRole =
+      const startRole: string | undefined =
         tool.subagent ??
         missionFromAgentToolDetail(tool.detail)?.role ??
         (isSubagentRole(line.role) ? line.role : contextRole);
@@ -2349,12 +2353,14 @@ function parseProgressActionLine(message: string): ParsedToolAction | null {
 
   const normalized = normalizeActivityActionLabel(stripped);
   const readMatch = normalized.match(/^读取 · (.+)$/);
-  if (readMatch) {
-    return { tool: "Read", detail: readMatch[1], category: "read" };
+  const readDetail = readMatch?.[1]?.trim();
+  if (readDetail) {
+    return { tool: "Read", detail: readDetail, category: "read" };
   }
   const editMatch = normalized.match(/^编辑 · (.+)$/);
-  if (editMatch) {
-    return { tool: "Edit", detail: editMatch[1], category: "edit" };
+  const editDetail = editMatch?.[1]?.trim();
+  if (editDetail) {
+    return { tool: "Edit", detail: editDetail, category: "edit" };
   }
 
   return null;
