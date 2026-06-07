@@ -103,6 +103,21 @@ export type {
   ThreadRunEventStreamState,
   ThreadRunEventType,
 } from "./thread-run-events";
+export type {
+  ThreadRunProjectionAgent,
+  ThreadRunProjectionAgentKind,
+  ThreadRunProjectionAgentStatus,
+  ThreadRunProjectionAttempt,
+  ThreadRunProjectionAttemptStatus,
+  ThreadRunProjectionContext,
+  ThreadRunProjectionDiagnostic,
+  ThreadRunProjectionDiagnosticCode,
+  ThreadRunProjectionRequestSpan,
+  ThreadRunProjectionRequestStatus,
+  ThreadRunProjectionSnapshot,
+  ThreadRunProjectionTimelineItem,
+  ThreadRunProjectionUsage,
+} from "./thread-run-projection";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
