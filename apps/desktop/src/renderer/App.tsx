@@ -131,6 +131,7 @@ const emptySettings: ModelSettingsSnapshot = { providers: [], routeProfiles: [] 
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
+const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
 const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
@@ -171,6 +172,7 @@ function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
   const [collapsedProjectPaths, setCollapsedProjectPaths] = useState<Set<string>>(() => new Set());
   const [expandedProjectThreadPaths, setExpandedProjectThreadPaths] = useState<Set<string>>(() => new Set());
+  const [hiddenProjectPaths, setHiddenProjectPaths] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
@@ -561,6 +563,19 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem(hiddenProjectsStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setHiddenProjectPaths(new Set(parsed));
+      }
+    } catch {
+      window.localStorage.removeItem(hiddenProjectsStorageKey);
+    }
+  }, []);
+
   const mergedProjects = useMemo(() => {
     const merged = new Map<string, RecentProject>();
     for (const project of recentProjects) {
@@ -586,8 +601,8 @@ function App() {
         });
       }
     }
-    return [...merged.values()];
-  }, [recentProjects, threads, workspace]);
+    return [...merged.values()].filter((project) => !hiddenProjectPaths.has(project.path));
+  }, [hiddenProjectPaths, recentProjects, threads, workspace]);
 
   const projects = useMemo(
     () => sortProjectsByOrder(mergedProjects, projectOrder),
@@ -631,7 +646,15 @@ function App() {
     [collapsedProjectPaths, expandedProjectThreadPaths, projects, threadsByProject],
   );
 
-  const currentProjectPath = selectedProjectPath ?? workspace?.path ?? projects[0]?.path;
+  const currentProjectPath = useMemo(() => {
+    if (selectedProjectPath && projects.some((project) => project.path === selectedProjectPath)) {
+      return selectedProjectPath;
+    }
+    if (workspace && !hiddenProjectPaths.has(workspace.path)) {
+      return workspace.path;
+    }
+    return projects[0]?.path;
+  }, [hiddenProjectPaths, projects, selectedProjectPath, workspace]);
   const currentProjectName = currentProjectPath ? pathToName(currentProjectPath) : "项目";
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
@@ -1556,6 +1579,15 @@ function App() {
   }
 
   function registerImportedProject(path: string, name: string) {
+    setHiddenProjectPaths((current) => {
+      if (!current.has(path)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(path);
+      window.localStorage.setItem(hiddenProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
     setRecentProjects((current) => {
       const existing = current.find((item) => item.path === path);
       const next = existing
@@ -1569,6 +1601,56 @@ function App() {
       window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
       projectOrderInitializedRef.current = true;
       return next;
+    });
+  }
+
+  function pinProject(projectPath: string) {
+    setProjectOrder((current) => {
+      const next = prependProjectOrder(current, projectPath);
+      window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
+      projectOrderInitializedRef.current = true;
+      return next;
+    });
+  }
+
+  function removeProject(projectPath: string) {
+    setHiddenProjectPaths((current) => {
+      const next = new Set(current);
+      next.add(projectPath);
+      window.localStorage.setItem(hiddenProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    setRecentProjects((current) => {
+      const next = current.filter((project) => project.path !== projectPath);
+      window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
+      return next;
+    });
+    setProjectOrder((current) => {
+      const next = current.filter((path) => path !== projectPath);
+      window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
+      return next;
+    });
+    setCollapsedProjectPaths((current) => {
+      if (!current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectPath);
+      window.localStorage.setItem(collapsedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+    setExpandedProjectThreadPaths((current) => {
+      if (!current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectPath);
+      return next;
+    });
+    setSelectedProjectPath((current) => (current === projectPath ? undefined : current));
+    setSelectedThreadId((current) => {
+      const thread = current ? threads.find((item) => item.id === current) : undefined;
+      return thread?.workspacePath === projectPath ? undefined : current;
     });
   }
 
@@ -1961,6 +2043,8 @@ function App() {
             onExpandProjectThreads={expandProjectThreads}
             onReorderProjects={reorderProjects}
             onOpenProjectPath={handleOpenProjectFromDrop}
+            onPinProject={pinProject}
+            onRemoveProject={removeProject}
           />
         </div>
 

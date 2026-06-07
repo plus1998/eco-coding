@@ -1,5 +1,5 @@
-import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus } from "lucide-react";
-import { useRef, useState, type DragEvent } from "react";
+import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, MoreHorizontal, Pin, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
 import { formatRelativeTime } from "./relative-time";
@@ -16,14 +16,16 @@ export interface ProjectTreeItem {
 
 interface ProjectSidebarTreeProps {
   projectTree: ProjectTreeItem[];
-  currentProjectPath?: string;
-  activeThreadId?: string;
+  currentProjectPath: string | undefined;
+  activeThreadId: string | undefined;
   onSwitchProject: (path: string) => void;
   onSelectThread: (thread: ThreadSummary) => void;
   onToggleProjectCollapsed: (path: string) => void;
   onExpandProjectThreads: (path: string) => void;
   onReorderProjects: (draggedPath: string, targetPath: string, position: ProjectReorderPosition) => void;
   onOpenProjectPath: (path: string) => Promise<void>;
+  onPinProject: (path: string) => void;
+  onRemoveProject: (path: string) => void;
 }
 
 function isExternalFileDrag(event: DragEvent): boolean {
@@ -50,11 +52,38 @@ export function ProjectSidebarTree({
   onExpandProjectThreads,
   onReorderProjects,
   onOpenProjectPath,
+  onPinProject,
+  onRemoveProject,
 }: ProjectSidebarTreeProps) {
   const [fileDropActive, setFileDropActive] = useState(false);
   const [draggingPath, setDraggingPath] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
+  const [openMenuPath, setOpenMenuPath] = useState<string>();
   const dragCounterRef = useRef(0);
+
+  useEffect(() => {
+    if (!openMenuPath) {
+      return;
+    }
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".project-menu-wrap")) {
+        return;
+      }
+      setOpenMenuPath(undefined);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenuPath(undefined);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openMenuPath]);
 
   function clearFileDropState() {
     dragCounterRef.current = 0;
@@ -205,18 +234,68 @@ export function ProjectSidebarTree({
                   {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
                   <span>{project.name}</span>
                 </button>
-                <button
-                  type="button"
-                  className="project-new-chat"
-                  title={`在 ${project.name} 中新建对话`}
-                  aria-label={`在 ${project.name} 中新建对话`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSwitchProject(project.path);
-                  }}
+                <span
+                  className={
+                    openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
+                  }
                 >
-                  <MessageSquarePlus size={16} />
-                </button>
+                  <span className="project-menu-wrap">
+                    <button
+                      type="button"
+                      className="project-menu-trigger"
+                      title={`${project.name} 操作`}
+                      aria-label={`${project.name} 操作`}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuPath === project.path}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
+                      }}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {openMenuPath === project.path ? (
+                      <div className="project-menu" role="menu">
+                        <button
+                          type="button"
+                          className="project-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            onPinProject(project.path);
+                            setOpenMenuPath(undefined);
+                          }}
+                        >
+                          <Pin size={16} aria-hidden />
+                          <span>置顶</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="project-menu-item danger"
+                          role="menuitem"
+                          onClick={() => {
+                            onRemoveProject(project.path);
+                            setOpenMenuPath(undefined);
+                          }}
+                        >
+                          <Trash2 size={16} aria-hidden />
+                          <span>移除</span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    className="project-new-chat"
+                    title={`在 ${project.name} 中新建对话`}
+                    aria-label={`在 ${project.name} 中新建对话`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSwitchProject(project.path);
+                    }}
+                  >
+                    <MessageSquarePlus size={16} />
+                  </button>
+                </span>
               </div>
             </div>
             {!collapsed ? (
