@@ -23,6 +23,7 @@ export interface BuildThreadRunEventFromLiveInput {
   streamKey?: string;
   apiError?: ThreadApiErrorInfo;
   tool?: ThreadRunToolMetadata;
+  metadata?: Record<string, unknown>;
 }
 
 export interface BuildSubagentLifecycleRunEventInput {
@@ -200,6 +201,7 @@ function resolveRequestId(input: {
 function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record<string, unknown> {
   const tool = input.tool ? normalizeThreadRunToolMetadata(input.tool) : undefined;
   return {
+    ...(input.metadata ?? {}),
     liveType: input.liveType,
     ...(input.apiError && { apiError: input.apiError }),
     ...(tool && { tool }),

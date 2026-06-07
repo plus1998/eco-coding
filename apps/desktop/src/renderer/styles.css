@@ -2791,6 +2791,140 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
+.run-log-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  background: #222222;
+}
+
+.run-log-workflow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.run-log-workflow-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #f0f0f0;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-workflow-profile {
+  color: #a3a3a3;
+  font-weight: 600;
+}
+
+.run-log-workflow-status {
+  flex: 0 0 auto;
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.run-log-workflow-status.failed {
+  color: #fca5a5;
+}
+
+.run-log-workflow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-log-workflow-step {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.run-log-workflow-step-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.14);
+}
+
+.run-log-workflow-step.completed .run-log-workflow-step-dot {
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.14);
+}
+
+.run-log-workflow-step.failed .run-log-workflow-step-dot {
+  background: #f87171;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14);
+}
+
+.run-log-workflow-step-main {
+  min-width: 0;
+}
+
+.run-log-workflow-step-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-log-workflow-step-title,
+.run-log-workflow-step-agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-workflow-step-title {
+  color: #e5e5e5;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.run-log-workflow-step-agent {
+  color: #a3a3a3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.run-log-workflow-step-state {
+  flex: 0 0 auto;
+  color: #8a8a8a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.run-log-workflow-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 3px;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.run-log-workflow-step-reason {
+  margin: 4px 0 0;
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .run-log-context-compaction {
   display: grid;
   grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);

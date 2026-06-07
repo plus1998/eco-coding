@@ -3728,7 +3728,11 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
         role as AgentRole | "system" | "thinking" | "tool" | "user",
         stream,
         agentId || extras
-          ? { ...(agentId && { agentId }), ...(extras?.tool && { tool: extras.tool }) }
+          ? {
+              ...(agentId && { agentId }),
+              ...(extras?.tool && { tool: extras.tool }),
+              ...(extras?.metadata && { metadata: extras.metadata }),
+            }
           : undefined,
       );
     },
@@ -4278,6 +4282,7 @@ interface EmitThreadEventExtras {
   subagentSessions?: ThreadLiveEvent["subagentSessions"];
   apiError?: ThreadLiveEvent["apiError"];
   tool?: ThreadRunToolMetadata;
+  metadata?: Record<string, unknown>;
 }
 
 function emitThreadEvent(
@@ -4492,6 +4497,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     ...(input.persistedActivityLine && { streamKey: input.persistedActivityLine.id }),
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
     ...(input.extras?.tool && { tool: input.extras.tool }),
+    ...(input.extras?.metadata && { metadata: input.extras.metadata }),
   });
   if (!event) {
     return;

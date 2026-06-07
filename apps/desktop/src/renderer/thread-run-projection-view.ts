@@ -14,9 +14,40 @@ import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtim
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
+  workflowProfileName?: string;
+  workflowSteps: ThreadRunProjectionWorkflowStep[];
   mainFeedEntries: ThreadRunProjectionMainFeedEntry[];
   mainItemIds: string[];
   subagentCards: ThreadRunProjectionSubagentCard[];
+}
+
+export type ThreadRunProjectionWorkflowStepStatus = "running" | "completed" | "failed";
+
+export interface ThreadRunProjectionWorkflowStep {
+  key: string;
+  stepId: string;
+  agentKey: string;
+  agentLabel: string;
+  outputKey: string;
+  status: ThreadRunProjectionWorkflowStepStatus;
+  attempt: number;
+  batchIndex: number;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  reason?: string;
+  timelineIds: string[];
+  sequence: number;
+}
+
+interface ProjectionWorkflowStepMetadata {
+  id: string;
+  agentKey: string;
+  outputKey: string;
+  status: "started" | "completed" | "failed";
+  attempt: number;
+  batchIndex: number;
+  reason?: string;
 }
 
 export type ThreadRunProjectionMainFeedEntry =
@@ -61,6 +92,12 @@ export function buildThreadRunProjectionViewModel(
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
   const requestSpansById = new Map(projection.requestSpans.map((span) => [span.requestId, span]));
+  const workflowProfileName = resolveProjectionWorkflowProfileName(projection.timeline);
+  const workflowSteps = buildProjectionWorkflowSteps(
+    projection.timeline,
+    Date.parse(projection.thread.generatedAt),
+    options.agentDisplayNames,
+  );
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
     .map((agent) => {
@@ -83,6 +120,8 @@ export function buildThreadRunProjectionViewModel(
   );
   return {
     showThreadPrompt,
+    ...(workflowProfileName && { workflowProfileName }),
+    workflowSteps,
     mainFeedEntries,
     mainItemIds: mainFeedEntries.map((entry) =>
       entry.kind === "timeline" || entry.kind === "agent-echo" ? entry.item.id : entry.key,
@@ -131,6 +170,76 @@ function buildProjectionMainFeedEntries(
   }
 
   return entries.sort(compareMainFeedEntries);
+}
+
+function buildProjectionWorkflowSteps(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  nowMs: number,
+  agentDisplayNames?: RuntimeAgentDisplayNames | undefined,
+): ThreadRunProjectionWorkflowStep[] {
+  const stepsById = new Map<string, ThreadRunProjectionWorkflowStep>();
+  for (const item of [...timeline].sort(compareTimelineItems)) {
+    const metadata = readProjectionWorkflowStepMetadata(item);
+    if (!metadata) {
+      continue;
+    }
+    const existing = stepsById.get(metadata.id);
+    const startedAt =
+      metadata.status === "started"
+        ? item.at
+        : (existing?.startedAt ?? item.at);
+    const endedAt =
+      metadata.status === "completed" || metadata.status === "failed" ? item.at : existing?.endedAt;
+    const durationMs = computeWorkflowStepDurationMs(startedAt, endedAt, nowMs);
+    const agentLabel = resolveRuntimeAgentName(metadata.agentKey, agentDisplayNames) ?? metadata.agentKey;
+    stepsById.set(metadata.id, {
+      key: metadata.id,
+      stepId: metadata.id,
+      agentKey: metadata.agentKey,
+      agentLabel,
+      outputKey: metadata.outputKey,
+      status: metadata.status === "started" ? "running" : metadata.status,
+      attempt: Math.max(existing?.attempt ?? 0, metadata.attempt),
+      batchIndex: metadata.batchIndex,
+      ...(startedAt && { startedAt }),
+      ...(endedAt && { endedAt }),
+      ...(durationMs !== undefined && { durationMs }),
+      ...(metadata.reason && { reason: metadata.reason }),
+      timelineIds: [...(existing?.timelineIds ?? []), item.id],
+      sequence: existing?.sequence ?? item.sequence,
+    });
+  }
+  return [...stepsById.values()].sort(
+    (left, right) => left.batchIndex - right.batchIndex || left.sequence - right.sequence,
+  );
+}
+
+function computeWorkflowStepDurationMs(
+  startedAt: string | undefined,
+  endedAt: string | undefined,
+  nowMs: number,
+): number | undefined {
+  if (!startedAt) {
+    return undefined;
+  }
+  const startMs = Date.parse(startedAt);
+  const endMs = endedAt ? Date.parse(endedAt) : nowMs;
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return undefined;
+  }
+  return endMs - startMs;
+}
+
+function resolveProjectionWorkflowProfileName(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): string | undefined {
+  for (const item of timeline) {
+    const metadata = readProjectionWorkflowRunMetadata(item);
+    if (metadata?.profileName) {
+      return metadata.profileName;
+    }
+  }
+  return undefined;
 }
 
 function filterMainTimelineForFeed(
@@ -183,6 +292,9 @@ function filterProjectionTimelineForDetailFeed(
 function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {
   if (isProjectionUserPromptItem(item)) {
     return false;
+  }
+  if (readProjectionWorkflowStepMetadata(item)) {
+    return true;
   }
   if (isProjectionInternalMessageText(item.text)) {
     return true;
@@ -692,6 +804,59 @@ function readProjectionApiError(
     ...(typeof record.statusCode === "number" && { statusCode: record.statusCode }),
     ...(typeof record.code === "string" && record.code.trim() && { code: record.code.trim() }),
   };
+}
+
+function readProjectionWorkflowRunMetadata(
+  item: ThreadRunProjectionTimelineItem,
+): { profileName?: string; status?: string } | undefined {
+  const raw = item.metadata?.ecoWorkflow;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const profileName = typeof record.profileName === "string" ? record.profileName.trim() : "";
+  const status = typeof record.status === "string" ? record.status.trim() : "";
+  if (!profileName && !status) {
+    return undefined;
+  }
+  return {
+    ...(profileName && { profileName }),
+    ...(status && { status }),
+  };
+}
+
+function readProjectionWorkflowStepMetadata(
+  item: ThreadRunProjectionTimelineItem,
+): ProjectionWorkflowStepMetadata | undefined {
+  const raw = item.metadata?.ecoWorkflowStep;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const agentKey = typeof record.agentKey === "string" ? record.agentKey.trim() : "";
+  const outputKey = typeof record.outputKey === "string" ? record.outputKey.trim() : "";
+  const status = readProjectionWorkflowStepStatus(record.status);
+  if (!id || !agentKey || !outputKey || !status) {
+    return undefined;
+  }
+  const attempt = typeof record.attempt === "number" && Number.isFinite(record.attempt) ? record.attempt : 1;
+  const batchIndex =
+    typeof record.batchIndex === "number" && Number.isFinite(record.batchIndex) ? record.batchIndex : 0;
+  const reason = typeof record.reason === "string" ? record.reason.trim() : "";
+  return {
+    id,
+    agentKey,
+    outputKey,
+    status,
+    attempt,
+    batchIndex,
+    ...(reason && { reason }),
+  };
+}
+
+function readProjectionWorkflowStepStatus(value: unknown): "started" | "completed" | "failed" | undefined {
+  return value === "started" || value === "completed" || value === "failed" ? value : undefined;
 }
 
 function readProjectionToolMetadata(

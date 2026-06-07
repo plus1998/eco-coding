@@ -47,6 +47,7 @@ import {
   projectionItemToDetailBlock,
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionMainFeedEntry,
+  type ThreadRunProjectionWorkflowStep,
 } from "./thread-run-projection-view";
 import { isSubagentDisplayRole } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
@@ -239,6 +240,16 @@ function ProjectionActivityLogView({
     () =>
       [
         showThreadPrompt ? `prompt:${thread?.id ?? ""}:${thread?.prompt.length ?? 0}` : "",
+        ...viewModel.workflowSteps.map((step) =>
+          [
+            "workflow",
+            step.key,
+            step.status,
+            step.attempt,
+            step.durationMs ?? 0,
+            step.reason?.length ?? 0,
+          ].join(":"),
+        ),
         ...viewModel.mainFeedEntries.map((entry) => {
           if (entry.kind === "timeline" || entry.kind === "agent-echo") {
             return `${entry.key}:${entry.item.text.length}`;
@@ -267,6 +278,12 @@ function ProjectionActivityLogView({
       {showThreadPrompt && thread?.prompt ? (
         <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />
       ) : null}
+      {viewModel.workflowSteps.length > 0 ? (
+        <ProjectionWorkflowSummary
+          steps={viewModel.workflowSteps}
+          {...(viewModel.workflowProfileName && { profileName: viewModel.workflowProfileName })}
+        />
+      ) : null}
       {viewModel.mainFeedEntries.map((entry) => (
         <ProjectionMainFeedEntry
           key={entry.key}
@@ -285,6 +302,70 @@ function ProjectionActivityLogView({
       ))}
     </div>
   );
+}
+
+function ProjectionWorkflowSummary({
+  steps,
+  profileName,
+}: {
+  steps: ThreadRunProjectionWorkflowStep[];
+  profileName?: string;
+}) {
+  const completedCount = steps.filter((step) => step.status === "completed").length;
+  const failedCount = steps.filter((step) => step.status === "failed").length;
+  const runningCount = steps.filter((step) => step.status === "running").length;
+  const statusLabel =
+    failedCount > 0
+      ? `${failedCount} 个失败`
+      : runningCount > 0
+        ? `${runningCount} 个进行中`
+        : `${completedCount}/${steps.length} 完成`;
+
+  return (
+    <section className="run-log-workflow" aria-label="子代理编排">
+      <div className="run-log-workflow-head">
+        <span className="run-log-workflow-title">
+          子代理编排{profileName ? <span className="run-log-workflow-profile"> · {profileName}</span> : null}
+        </span>
+        <span className={failedCount > 0 ? "run-log-workflow-status failed" : "run-log-workflow-status"}>
+          {statusLabel}
+        </span>
+      </div>
+      <ol className="run-log-workflow-steps">
+        {steps.map((step) => (
+          <li key={step.key} className={`run-log-workflow-step ${step.status}`}>
+            <span className="run-log-workflow-step-dot" aria-hidden />
+            <div className="run-log-workflow-step-main">
+              <div className="run-log-workflow-step-title-row">
+                <span className="run-log-workflow-step-title">{step.stepId}</span>
+                <span className="run-log-workflow-step-agent">{step.agentLabel}</span>
+                <span className="run-log-workflow-step-state">
+                  {formatWorkflowStepStatus(step.status)}
+                </span>
+              </div>
+              <div className="run-log-workflow-step-meta">
+                <span>输出 {step.outputKey}</span>
+                <span>批次 {step.batchIndex + 1}</span>
+                <span>尝试 {step.attempt}</span>
+                {step.durationMs !== undefined ? <span>{formatDuration(step.durationMs)}</span> : null}
+              </div>
+              {step.reason ? <p className="run-log-workflow-step-reason">{step.reason}</p> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function formatWorkflowStepStatus(status: ThreadRunProjectionWorkflowStep["status"]): string {
+  if (status === "completed") {
+    return "完成";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  return "进行中";
 }
 
 function ProjectionMainFeedEntry({

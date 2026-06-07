@@ -653,7 +653,9 @@ type WorkflowStep = {
 - 现有运行观察已在 Phase 6 接入 runtime display map，但用量汇总入口仍分散在 billing/context/activity 三块，需要合并为 profile/agent 可解释摘要。
 - Phase 7.2 已完成：`UsageBreakdownPanel` 的按 Agent / 按模型用量明细接入运行时 Agent Profile 显示名，主 agent、子代理实例和模型归因都会显示用户配置的 agent 名称，并保留 `agentId` 前缀用于区分并发实例。
 - Phase 7.2 验证：`bun test apps/desktop/test/usage-breakdown-panel.test.ts`、`bun run typecheck`。
-- 固定编排 step 生命周期已经通过 `ecoWorkflow`/`ecoWorkflowStep` run event 写入 projection timeline；后续需要把 step 耗时、成本和失败状态产品化展示。
+- Phase 7.3 已完成：SDK workflow 生命周期事件会把 `ecoWorkflow`/`ecoWorkflowStep` 结构化 metadata 写入 run projection；`thread-run-projection-view` 聚合固定编排 step，展示 profile、agent、output key、批次、尝试次数、状态、耗时和失败原因；活动日志新增“子代理编排”摘要，并隐藏结构化 step 生命周期的重复时间线行。
+- Phase 7.3 验证：`bun test apps/desktop/test/sdk-stream-activity.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts apps/desktop/test/thread-run-projection-view.test.ts`、`bun run typecheck`。
+- 固定编排 step 生命周期、耗时和失败状态已经产品化展示；后续还需要把 token/cost 进一步归因到 workflow step。
 - Profile 历史表现和审计导出还没有用户入口；底层有 run events、ledger events 和 projection diagnostics，可作为后续导出的数据源。
 
 与既有计划关系：

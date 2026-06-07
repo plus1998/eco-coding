@@ -122,6 +122,87 @@ test("buildThreadRunProjectionViewModel surfaces fixed workflow lifecycle rows",
   }
 });
 
+test("buildThreadRunProjectionViewModel summarizes structured workflow steps", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_view",
+        status: "running",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "workflow-run-start",
+          eventType: "agent.started",
+          text: "固定编排开始：Research Profile",
+          role: "planner",
+          at: "2026-01-01T00:00:00.000Z",
+          metadata: {
+            ecoWorkflow: { profileName: "Research Profile", status: "started" },
+          },
+        }),
+        item({
+          id: "research-start",
+          eventType: "agent.started",
+          text: "固定编排步骤开始：research",
+          role: "planner",
+          at: "2026-01-01T00:00:01.000Z",
+          metadata: {
+            ecoWorkflowStep: {
+              id: "research",
+              agentKey: "researcher",
+              outputKey: "research_notes",
+              status: "started",
+              attempt: 1,
+              batchIndex: 0,
+            },
+          },
+        }),
+        item({
+          id: "research-completed",
+          sequence: 2,
+          eventType: "message.final",
+          text: "固定编排步骤完成：research",
+          role: "planner",
+          at: "2026-01-01T00:00:03.500Z",
+          metadata: {
+            ecoWorkflowStep: {
+              id: "research",
+              agentKey: "researcher",
+              outputKey: "research_notes",
+              status: "completed",
+              attempt: 1,
+              batchIndex: 0,
+            },
+          },
+        }),
+      ],
+    }),
+    undefined,
+    { agentDisplayNames: { researcher: "Research Lead" } },
+  );
+
+  expect(view.workflowProfileName).toBe("Research Profile");
+  expect(view.workflowSteps).toEqual([
+    {
+      key: "research",
+      stepId: "research",
+      agentKey: "researcher",
+      agentLabel: "Research Lead",
+      outputKey: "research_notes",
+      status: "completed",
+      attempt: 1,
+      batchIndex: 0,
+      startedAt: "2026-01-01T00:00:01.000Z",
+      endedAt: "2026-01-01T00:00:03.500Z",
+      durationMs: 2500,
+      timelineIds: ["research-start", "research-completed"],
+      sequence: 1,
+    },
+  ]);
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:workflow-run-start"]);
+});
+
 test("buildThreadRunProjectionViewModel echoes agent narrative in main feed while preserving agent card details", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

@@ -39,7 +39,7 @@ export type SdkActivityEmit = (
   role: string,
   stream: boolean,
   agentId?: string,
-  extras?: { tool?: ThreadRunToolMetadata },
+  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> },
 ) => void;
 
 export class SdkStreamActivityBridge {
@@ -146,7 +146,15 @@ export class SdkStreamActivityBridge {
           return;
         }
         this.flushPending(threadId, emit);
-        emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
+        emit(
+          threadId,
+          event.type,
+          display.message,
+          String(display.role),
+          false,
+          activityAgentId,
+          resolveEcoWorkflowLifecycleMetadata(event.payload),
+        );
         return;
       }
 
@@ -172,7 +180,15 @@ export class SdkStreamActivityBridge {
         return;
       }
       this.flushPending(threadId, emit);
-      emit(threadId, event.type, display.message, String(display.role), false, activityAgentId);
+      emit(
+        threadId,
+        event.type,
+        display.message,
+        String(display.role),
+        false,
+        activityAgentId,
+        resolveEcoWorkflowLifecycleMetadata(event.payload),
+      );
       return;
     }
 
@@ -319,6 +335,26 @@ function isEcoWorkflowLifecyclePayload(payload: unknown): boolean {
   }
   const record = payload as Record<string, unknown>;
   return Boolean(record.ecoWorkflow || record.ecoWorkflowStep);
+}
+
+function resolveEcoWorkflowLifecycleMetadata(
+  payload: unknown,
+): { metadata: Record<string, unknown> } | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  const metadata: Record<string, unknown> = {};
+  if (isRecord(payload.ecoWorkflow)) {
+    metadata.ecoWorkflow = payload.ecoWorkflow;
+  }
+  if (isRecord(payload.ecoWorkflowStep)) {
+    metadata.ecoWorkflowStep = payload.ecoWorkflowStep;
+  }
+  return Object.keys(metadata).length > 0 ? { metadata } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMetadata | undefined {
