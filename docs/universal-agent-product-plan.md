@@ -863,6 +863,8 @@ type WorkflowStep = {
 - Phase 10.10 行为边界：`system/thinking/tool/user/main/assistant` 等非 Agent role 仍不会被当成 Agent；非法 role 字符串继续回落到 planner。
 - Phase 10.11 已完成：billing/context/metrics 的“子代理 role”判断从固定五个 Coding 子代理扩展为运行期 Agent role，动态 Agent 的 assistant fallback、proxy usage、上下文更新、metrics projection 和 billing reconciliation 不再因为 role 不是固定集合而跳过。
 - Phase 10.11 行为边界：`planner/system/thinking/tool/user/main/assistant` 等非子代理语义仍排除；legacy Coding 模型设置页和旧技能存储继续只覆盖固定 Coding role。
+- Phase 10.12 已完成：模型设置页新增真正的 Agent Profile 编辑器，用户/项目 profile 可编辑名称、场景、主 Agent prompt/model/tools/skills、策略、自定义子 Agent、模板、模型、工具、MCP、skills、启停和固定/混合步骤顺序；派生/内置 profile 可复制为用户 profile 后编辑。
+- Phase 10.12 行为边界：legacy Route Profile 编辑入口保留为 Coding 模型路线配置；非 Coding profile 的模型测试仍通过 profile 运行路径和后续审计验证，不再强行映射到固定六角色路线。
 
 Phase 10.1 验证：
 
@@ -918,6 +920,12 @@ Phase 10.11 验证：
 
 - `bun test apps/desktop/test/billing-orchestration.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/subagent-metrics-record-target.test.ts apps/desktop/test/proxy-usage-billing.test.ts`
 - `bun run typecheck`
+
+Phase 10.12 验证：
+
+- `bun test apps/desktop/test/agent-profile-form.test.ts apps/desktop/test/agent-profile-summary.test.ts apps/desktop/test/agent-template-form.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
 
 验收标准：
 

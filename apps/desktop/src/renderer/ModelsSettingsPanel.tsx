@@ -1,5 +1,5 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
-import { Download, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Download, Pencil, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import {
   type BuiltInPresetDefinition,
@@ -24,6 +24,7 @@ import {
   type ModelRef,
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
+  type OrchestrationProfile,
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
@@ -40,6 +41,16 @@ import {
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { ApiCompatToggle } from "./ApiCompatToggle";
+import {
+  type AgentProfileAgentFormState,
+  type AgentProfileFormState,
+  agentProfileToForm,
+  buildOrchestrationProfileFromForm,
+  canEditStoredAgentProfile,
+  createBlankAgentProfileForm,
+  createCopiedAgentProfileForm,
+  createProfileAgentFormFromTemplate,
+} from "./agent-profile-form";
 import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import {
   type AgentProfileSummary,
@@ -135,6 +146,12 @@ export function ModelsSettingsPanel({
   const [routeProfileForm, setRouteProfileForm] = useState<RouteProfileInput>(() =>
     createBlankRouteProfileForm(),
   );
+  const [agentProfileModalOpen, setAgentProfileModalOpen] = useState(false);
+  const [agentProfileForm, setAgentProfileForm] = useState<AgentProfileFormState>(() =>
+    createBlankAgentProfileForm(),
+  );
+  const [editingAgentProfileId, setEditingAgentProfileId] = useState<string>();
+  const [agentProfileModalError, setAgentProfileModalError] = useState<string>();
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
@@ -495,6 +512,92 @@ export function ModelsSettingsPanel({
     setTestingRouteRole(null);
     setTestingRouteProfileId(null);
     setRouteProfileForm(createBlankRouteProfileForm(settings));
+  }
+
+  function profileFormOptions() {
+    return {
+      existingIds: settings.orchestrationProfiles.map((profile) => profile.id),
+      existingNames: settings.orchestrationProfiles.map((profile) => profile.name),
+      providers: settings.providers,
+      templates: settings.agentTemplates,
+    };
+  }
+
+  function openCreateAgentProfile() {
+    setPanelError(undefined);
+    setAgentProfileModalError(undefined);
+    setEditingAgentProfileId(undefined);
+    setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
+    setAgentProfileModalOpen(true);
+  }
+
+  function openEditAgentProfile(profile: OrchestrationProfile) {
+    setPanelError(undefined);
+    setAgentProfileModalError(undefined);
+    if (!canEditStoredAgentProfile(profile)) {
+      openCopyAgentProfile(profile);
+      return;
+    }
+    setEditingAgentProfileId(profile.id);
+    setAgentProfileForm(agentProfileToForm(profile));
+    setAgentProfileModalOpen(true);
+  }
+
+  function openCopyAgentProfile(profile: OrchestrationProfile) {
+    setPanelError(undefined);
+    setAgentProfileModalError(undefined);
+    setEditingAgentProfileId(undefined);
+    setAgentProfileForm(createCopiedAgentProfileForm(profile, profileFormOptions()));
+    setAgentProfileModalOpen(true);
+  }
+
+  function closeAgentProfileModal() {
+    setAgentProfileModalOpen(false);
+    setAgentProfileModalError(undefined);
+    setEditingAgentProfileId(undefined);
+    setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
+  }
+
+  async function saveAgentProfile() {
+    if (!window.eco?.saveOrchestrationProfile) {
+      return;
+    }
+    setAgentProfileModalError(undefined);
+    onSavingChange?.(true);
+    try {
+      const existing = editingAgentProfileId
+        ? settings.orchestrationProfiles.find((profile) => profile.id === editingAgentProfileId)
+        : undefined;
+      const profile = buildOrchestrationProfileFromForm(agentProfileForm, {
+        ...(existing && { existing }),
+        templates: settings.agentTemplates,
+      });
+      await window.eco.saveOrchestrationProfile(profile);
+      await refreshSettings();
+      closeAgentProfileModal();
+    } catch (caught) {
+      setAgentProfileModalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
+  }
+
+  async function deleteAgentProfile(profile: OrchestrationProfile) {
+    if (!window.eco?.deleteOrchestrationProfile || !canEditStoredAgentProfile(profile)) {
+      return;
+    }
+    if (!window.confirm(`确定删除 Agent Profile「${profile.name}」？`)) {
+      return;
+    }
+    onSavingChange?.(true);
+    try {
+      await window.eco.deleteOrchestrationProfile(profile.id);
+      await refreshSettings();
+    } catch (caught) {
+      setPanelError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      onSavingChange?.(false);
+    }
   }
 
   async function saveProvider() {
@@ -1064,6 +1167,15 @@ export function ModelsSettingsPanel({
                 type="button"
                 className="mcp-add-button"
                 disabled={busy}
+                onClick={openCreateAgentProfile}
+              >
+                <Plus size={16} />
+                添加 Agent Profile
+              </button>
+              <button
+                type="button"
+                className="models-section-button"
+                disabled={busy}
                 onClick={openCreateRouteProfile}
               >
                 <Plus size={16} />
@@ -1083,6 +1195,7 @@ export function ModelsSettingsPanel({
                 const routeProfile = settings.routeProfiles.find(
                   (profile) => profile.id === summary.selectionId,
                 );
+                const editableProfile = canEditStoredAgentProfile(summary.profile);
                 const performance =
                   performanceByProfileKey.get(summary.profile.id) ??
                   (summary.selectionId ? performanceByProfileKey.get(summary.selectionId) : undefined);
@@ -1114,19 +1227,46 @@ export function ModelsSettingsPanel({
                         />
                         测试
                       </button>
+                      {routeProfile ? (
+                        <button
+                          type="button"
+                          className="mcp-icon-button"
+                          onClick={() => openEditRouteProfile(routeProfile)}
+                          aria-label={`编辑 ${summary.name} 模型路线`}
+                          disabled={busy}
+                        >
+                          <Settings2 size={18} />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="mcp-icon-button"
-                        onClick={() => {
-                          if (routeProfile) {
-                            openEditRouteProfile(routeProfile);
-                          }
-                        }}
-                        aria-label={`编辑 ${summary.name}`}
-                        disabled={busy || !routeProfile}
+                        onClick={() => openCopyAgentProfile(summary.profile)}
+                        aria-label={`复制 ${summary.name}`}
+                        disabled={busy}
                       >
-                        <Settings2 size={18} />
+                        <Copy size={18} />
                       </button>
+                      <button
+                        type="button"
+                        className="mcp-icon-button"
+                        onClick={() => openEditAgentProfile(summary.profile)}
+                        aria-label={editableProfile ? `编辑 ${summary.name}` : `复制 ${summary.name}`}
+                        disabled={busy}
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      {editableProfile ? (
+                        <button
+                          type="button"
+                          className="mcp-icon-button danger"
+                          onClick={() => void deleteAgentProfile(summary.profile)}
+                          aria-label={`删除 ${summary.name}`}
+                          disabled={busy}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      ) : null}
                     </div>
                   </li>
                 );
@@ -1252,7 +1392,571 @@ export function ModelsSettingsPanel({
           onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
       )}
+
+      {agentProfileModalOpen && (
+        <AgentProfileEditorModal
+          form={agentProfileForm}
+          setForm={setAgentProfileForm}
+          providers={settings.providers}
+          templates={settings.agentTemplates}
+          modelsForProvider={modelsForProvider}
+          modelsErrorForProvider={modelsErrorForProvider}
+          loadingForProvider={loadingForProvider}
+          error={agentProfileModalError}
+          busy={busy}
+          editing={Boolean(editingAgentProfileId)}
+          onClose={closeAgentProfileModal}
+          onSave={() => void saveAgentProfile()}
+          onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
+        />
+      )}
     </>
+  );
+}
+
+function AgentProfileEditorModal({
+  form,
+  setForm,
+  providers,
+  templates,
+  modelsForProvider,
+  modelsErrorForProvider,
+  loadingForProvider,
+  error,
+  busy,
+  editing,
+  onClose,
+  onSave,
+  onFetchModels,
+}: {
+  form: AgentProfileFormState;
+  setForm: Dispatch<SetStateAction<AgentProfileFormState>>;
+  providers: ProviderConfigView[];
+  templates: AgentTemplate[];
+  modelsForProvider: (providerId: string) => UpstreamModelOption[];
+  modelsErrorForProvider: (providerId: string) => string | undefined;
+  loadingForProvider: (providerId: string) => boolean;
+  error?: string | undefined;
+  busy?: boolean | undefined;
+  editing: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onFetchModels: (provider: ProviderConfigView) => void;
+}) {
+  const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
+  const [newAgentTemplateId, setNewAgentTemplateId] = useState(templates[0]?.id ?? "");
+
+  useEffect(() => {
+    if (newAgentTemplateId && templates.some((template) => template.id === newAgentTemplateId)) {
+      return;
+    }
+    setNewAgentTemplateId(templates[0]?.id ?? "");
+  }, [newAgentTemplateId, templates]);
+
+  function patch(patch: Partial<AgentProfileFormState>) {
+    setForm((current) => ({ ...current, ...patch }));
+  }
+
+  function patchAgent(index: number, patch: Partial<AgentProfileAgentFormState>) {
+    setForm((current) => ({
+      ...current,
+      agents: current.agents.map((agent, agentIndex) =>
+        agentIndex === index ? { ...agent, ...patch } : agent,
+      ),
+    }));
+  }
+
+  function addAgent(templateId: string) {
+    const template = templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      return;
+    }
+    const provider =
+      providers.find((entry) => entry.id === template.defaultModelRef?.providerId) ??
+      selectPresetDefaultProvider(providers);
+    setForm((current) => ({
+      ...current,
+      agents: [
+        ...current.agents,
+        createProfileAgentFormFromTemplate(template, {
+          ...(provider && { provider }),
+          existingAgentKeys: current.agents.map((agent) => agent.agentKey),
+        }),
+      ],
+    }));
+  }
+
+  function removeAgent(index: number) {
+    setForm((current) => ({
+      ...current,
+      agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
+    }));
+  }
+
+  function moveAgent(index: number, direction: -1 | 1) {
+    setForm((current) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.agents.length) {
+        return current;
+      }
+      const agents = [...current.agents];
+      const [agent] = agents.splice(index, 1);
+      if (!agent) {
+        return current;
+      }
+      agents.splice(nextIndex, 0, agent);
+      return { ...current, agents };
+    });
+  }
+
+  function updateAgentTemplate(index: number, templateId: string) {
+    const template = templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      patchAgent(index, { templateId });
+      return;
+    }
+    patchAgent(index, {
+      templateId,
+      displayName: template.name,
+      allowedTools: template.defaultTools.allowed.join(", "),
+      disallowedTools: template.defaultTools.disallowed.join(", "),
+      mcpServers: template.mcpServers.join(", "),
+      skills: template.skills.join(", "),
+      providerId: template.defaultModelRef?.providerId ?? form.agents[index]?.providerId ?? "",
+      modelId: template.defaultModelRef?.modelId ?? form.agents[index]?.modelId ?? "",
+    });
+  }
+
+  return (
+    <div className="settings-modal-backdrop">
+      <button
+        type="button"
+        className="settings-modal-backdrop-close"
+        onClick={onClose}
+        aria-label="关闭"
+        disabled={busy}
+      />
+      <div
+        className="settings-modal settings-modal-agent-profile"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-profile-modal-title"
+      >
+        <header className="settings-modal-header">
+          <h2 id="agent-profile-modal-title" className="settings-modal-title">
+            {editing ? "编辑 Agent Profile" : "新建 Agent Profile"}
+          </h2>
+          <button type="button" className="mcp-icon-button" onClick={onClose} aria-label="关闭" disabled={busy}>
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="settings-modal-body mcp-editor-form models-agent-profile-form">
+          <section className="models-agent-profile-form-section">
+            <div className="models-agent-template-form-grid">
+              <label className="mcp-field">
+                <span className="mcp-field-label">Profile ID</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.id}
+                  disabled={busy || editing}
+                  onChange={(event) => patch({ id: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">名称</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.name}
+                  disabled={busy}
+                  onChange={(event) => patch({ name: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">场景</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.preset}
+                  disabled={busy}
+                  onChange={(event) => patch({ preset: event.target.value as AgentProfileFormState["preset"] })}
+                >
+                  {["coding", "research", "writing", "product", "data", "ops", "custom"].map((domain) => (
+                    <option key={domain} value={domain}>
+                      {formatAgentDomainLabel(domain as AgentProfileFormState["preset"])}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">来源</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.source}
+                  disabled={busy}
+                  onChange={(event) => patch({ source: event.target.value as AgentProfileFormState["source"] })}
+                >
+                  <option value="user">用户</option>
+                  <option value="project">项目</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="models-agent-profile-form-section">
+            <h3 className="models-route-profile-section-title">主 Agent</h3>
+            <div className="models-agent-template-form-grid">
+              <label className="mcp-field">
+                <span className="mcp-field-label">名称</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.mainName}
+                  disabled={busy}
+                  onChange={(event) => patch({ mainName: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">系统提示词</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.mainSystemPromptPreset}
+                  disabled={busy}
+                  onChange={(event) =>
+                    patch({
+                      mainSystemPromptPreset: event.target
+                        .value as AgentProfileFormState["mainSystemPromptPreset"],
+                    })
+                  }
+                >
+                  <option value="custom">自定义</option>
+                  <option value="claude_code">Claude Code 预设</option>
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">Provider</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.mainProviderId}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const provider = providers.find((entry) => entry.id === event.target.value);
+                    patch({
+                      mainProviderId: event.target.value,
+                      mainModelId: provider?.defaultModel || form.mainModelId,
+                    });
+                  }}
+                >
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">模型</span>
+                <ModelSelectField
+                  value={form.mainModelId}
+                  disabled={busy}
+                  models={modelsForProvider(form.mainProviderId)}
+                  loading={loadingForProvider(form.mainProviderId)}
+                  error={modelsErrorForProvider(form.mainProviderId)}
+                  onChange={(modelId) => patch({ mainModelId: modelId })}
+                  onRefresh={activeProvider ? () => onFetchModels(activeProvider) : undefined}
+                />
+              </label>
+            </div>
+            <label className="mcp-field">
+              <span className="mcp-field-label">主 Agent 提示词</span>
+              <textarea
+                className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
+                value={form.mainPrompt}
+                disabled={busy}
+                onChange={(event) => patch({ mainPrompt: event.target.value })}
+              />
+            </label>
+            <div className="models-agent-template-form-grid">
+              <label className="mcp-field">
+                <span className="mcp-field-label">允许工具</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.mainAllowedTools}
+                  disabled={busy}
+                  onChange={(event) => patch({ mainAllowedTools: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">禁用工具</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.mainDisallowedTools}
+                  disabled={busy}
+                  onChange={(event) => patch({ mainDisallowedTools: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">Skills</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.mainSkills}
+                  disabled={busy}
+                  onChange={(event) => patch({ mainSkills: event.target.value })}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="models-agent-profile-form-section">
+            <h3 className="models-route-profile-section-title">编排</h3>
+            <div className="models-agent-template-form-grid">
+              <label className="mcp-field">
+                <span className="mcp-field-label">策略</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.strategyKind}
+                  disabled={busy}
+                  onChange={(event) =>
+                    patch({ strategyKind: event.target.value as AgentProfileFormState["strategyKind"] })
+                  }
+                >
+                  <option value="autonomous">Agent 自主编排</option>
+                  <option value="hybrid">推荐步骤，可调整</option>
+                  <option value="fixed">固定步骤</option>
+                </select>
+              </label>
+              <label className="mcp-field models-toggle-field">
+                <span className="mcp-field-label">Planner 可调整步骤</span>
+                <label className="mcp-toggle" title={form.allowPlannerAdjustments ? "已启用" : "已禁用"}>
+                  <input
+                    type="checkbox"
+                    checked={form.allowPlannerAdjustments}
+                    disabled={busy || form.strategyKind !== "hybrid"}
+                    onChange={(event) => patch({ allowPlannerAdjustments: event.target.checked })}
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+            </div>
+            {form.strategyKind === "autonomous" ? (
+              <label className="mcp-field">
+                <span className="mcp-field-label">自主编排指令</span>
+                <textarea
+                  className="mcp-field-input mcp-field-textarea"
+                  value={form.guidancePrompt}
+                  disabled={busy}
+                  onChange={(event) => patch({ guidancePrompt: event.target.value })}
+                />
+              </label>
+            ) : null}
+          </section>
+
+          <section className="models-agent-profile-form-section">
+            <div className="models-route-profile-section-head">
+              <h3 className="models-route-profile-section-title">子 Agent</h3>
+              <div className="models-agent-profile-add-row">
+                <select
+                  className="mcp-field-input"
+                  disabled={busy || templates.length === 0}
+                  value={newAgentTemplateId}
+                  onChange={(event) => setNewAgentTemplateId(event.target.value)}
+                >
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="models-section-button"
+                  disabled={busy || !newAgentTemplateId}
+                  onClick={() => addAgent(newAgentTemplateId)}
+                >
+                  <Plus size={14} />
+                  添加
+                </button>
+              </div>
+            </div>
+
+            {form.agents.length === 0 ? (
+              <p className="mcp-list-empty">当前 profile 没有子 Agent。</p>
+            ) : (
+              <div className="models-agent-profile-agent-editor-list">
+                {form.agents.map((agent, index) => {
+                  const provider = providers.find((entry) => entry.id === agent.providerId);
+                  return (
+                    <article key={`${agent.agentKey}-${index}`} className="models-agent-profile-agent-editor">
+                      <div className="models-agent-profile-agent-editor-head">
+                        <label className="mcp-toggle" title={agent.enabled ? "已启用" : "已停用"}>
+                          <input
+                            type="checkbox"
+                            checked={agent.enabled}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { enabled: event.target.checked })}
+                          />
+                          <span className="mcp-toggle-track" aria-hidden />
+                        </label>
+                        <button
+                          type="button"
+                          className="mcp-icon-button"
+                          disabled={busy || index === 0}
+                          onClick={() => moveAgent(index, -1)}
+                          aria-label={`上移 ${agent.agentKey}`}
+                        >
+                          <ArrowUp size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="mcp-icon-button"
+                          disabled={busy || index === form.agents.length - 1}
+                          onClick={() => moveAgent(index, 1)}
+                          aria-label={`下移 ${agent.agentKey}`}
+                        >
+                          <ArrowDown size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="mcp-icon-button danger"
+                          disabled={busy}
+                          onClick={() => removeAgent(index)}
+                          aria-label={`移除 ${agent.agentKey}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="models-agent-template-form-grid">
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">Agent key</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.agentKey}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { agentKey: event.target.value })}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">显示名称</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.displayName}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { displayName: event.target.value })}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">模板</span>
+                          <select
+                            className="mcp-field-input"
+                            value={agent.templateId}
+                            disabled={busy}
+                            onChange={(event) => updateAgentTemplate(index, event.target.value)}
+                          >
+                            {templates.map((template) => (
+                              <option key={template.id} value={template.id}>
+                                {template.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">Provider</span>
+                          <select
+                            className="mcp-field-input"
+                            value={agent.providerId}
+                            disabled={busy}
+                            onChange={(event) => {
+                              const nextProvider = providers.find((entry) => entry.id === event.target.value);
+                              patchAgent(index, {
+                                providerId: event.target.value,
+                                modelId: nextProvider?.defaultModel || agent.modelId,
+                              });
+                            }}
+                          >
+                            {providers.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">模型</span>
+                          <ModelSelectField
+                            value={agent.modelId}
+                            disabled={busy}
+                            models={modelsForProvider(agent.providerId)}
+                            loading={loadingForProvider(agent.providerId)}
+                            error={modelsErrorForProvider(agent.providerId)}
+                            onChange={(modelId) => patchAgent(index, { modelId })}
+                            onRefresh={provider ? () => onFetchModels(provider) : undefined}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">MCP Servers</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.mcpServers}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { mcpServers: event.target.value })}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">允许工具</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.allowedTools}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { allowedTools: event.target.value })}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">禁用工具</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.disallowedTools}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { disallowedTools: event.target.value })}
+                          />
+                        </label>
+                        <label className="mcp-field">
+                          <span className="mcp-field-label">Skills</span>
+                          <input
+                            className="mcp-field-input"
+                            value={agent.skills}
+                            disabled={busy}
+                            onChange={(event) => patchAgent(index, { skills: event.target.value })}
+                          />
+                        </label>
+                      </div>
+                      <label className="mcp-field">
+                        <span className="mcp-field-label">实例提示词覆盖</span>
+                        <textarea
+                          className="mcp-field-input mcp-field-textarea"
+                          value={agent.promptOverride}
+                          disabled={busy}
+                          onChange={(event) => patchAgent(index, { promptOverride: event.target.value })}
+                        />
+                      </label>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {error && <p className="settings-form-error">{error}</p>}
+        </div>
+
+        <footer className="settings-modal-footer">
+          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
+            取消
+          </button>
+          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+            保存
+          </button>
+        </footer>
+      </div>
+    </div>
   );
 }
 

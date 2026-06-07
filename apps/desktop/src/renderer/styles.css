@@ -6681,6 +6681,11 @@ button:not(:disabled) {
   max-height: min(92vh, 900px);
 }
 
+.settings-modal-agent-profile {
+  width: min(960px, calc(100vw - 48px));
+  max-height: min(92vh, 920px);
+}
+
 .settings-modal-agent-version {
   width: min(680px, calc(100vw - 48px));
   max-height: min(88vh, 760px);
@@ -6721,6 +6726,53 @@ button:not(:disabled) {
 
 .models-agent-prompt-textarea {
   min-height: 180px;
+}
+
+.models-agent-profile-form {
+  max-width: none;
+}
+
+.models-agent-profile-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.models-agent-profile-form-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.models-agent-profile-add-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.models-agent-profile-agent-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.models-agent-profile-agent-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.models-agent-profile-agent-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .models-route-profile-section {
@@ -7648,7 +7700,8 @@ button:not(:disabled) {
 
 @media (max-width: 560px) {
   .models-route-profile-meta,
-  .models-agent-template-form-grid {
+  .models-agent-template-form-grid,
+  .models-agent-profile-add-row {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
