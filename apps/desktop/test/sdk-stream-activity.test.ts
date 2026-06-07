@@ -34,6 +34,38 @@ test("suppresses OTel duration summaries after detailed SDK subagent tool start"
   expect(bridge.shouldSuppressOtelToolLine("thr_1", "Tool: WebSearch (5.9s)")).toBe(true);
 });
 
+test("suppresses OTel tool summaries by structured tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "explore",
+      agentId: "agent_weather",
+      payload: {
+        type: "tool_use",
+        tool_name: "WebFetch",
+        tool_use_id: "toolu_fetch_1",
+        input: { url: "https://weather.example/guangzhou" },
+      },
+    },
+    () => {},
+    undefined,
+    { activityAgentId: "agent_weather" },
+  );
+
+  expect(
+    bridge.shouldSuppressOtelToolLine("thr_1", {
+      message: "Tool: WebFetch · https://weather.example/guangzhou (8.3s)",
+      role: "planner",
+      toolName: "WebFetch",
+      toolDetail: "https://weather.example/guangzhou",
+      toolUseId: "toolu_fetch_1",
+      durationMs: 8300,
+    }),
+  ).toBe(true);
+});
+
 test("suppresses OTel Agent elapsed summaries after SDK subagent delegation", () => {
   const bridge = new SdkStreamActivityBridge();
   bridge.handleEvent(

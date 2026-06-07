@@ -27,6 +27,10 @@ export interface OtelActivityLine {
   message: string;
   role: OtelActivityRole;
   stream?: boolean;
+  toolName?: string;
+  toolDetail?: string;
+  toolUseId?: string;
+  durationMs?: number;
   /** Set when OTLP event.name is api_error (or llm_request failed). */
   apiError?: ThreadApiErrorInfo;
 }
@@ -201,6 +205,7 @@ function logRecordToActivity(
     const success = readAttributeString(attrs, "success");
     const detail = formatToolDetailFromLog(attrs);
     const durationMs = readAttributeNumber(attrs, "duration_ms");
+    const toolUseId = readOtelToolUseId(attrs);
     const suffix = durationMs !== undefined ? ` (${(durationMs / 1000).toFixed(1)}s)` : "";
     if (success === "false") {
       const error = readAttributeString(attrs, "error") ?? readAttributeString(attrs, "error_type");
@@ -211,6 +216,10 @@ function logRecordToActivity(
           message: error
             ? `Tool failed: ${toolName} · ${error}`
             : `Tool failed: ${toolName}`,
+          toolName,
+          ...(detail && { toolDetail: detail }),
+          ...(toolUseId && { toolUseId }),
+          ...(durationMs !== undefined && { durationMs }),
         },
       };
     }
@@ -219,6 +228,10 @@ function logRecordToActivity(
         threadId,
         role,
         message: detail ? `Tool: ${toolName} · ${detail}${suffix}` : `Tool: ${toolName}${suffix}`,
+        toolName,
+        ...(detail && { toolDetail: detail }),
+        ...(toolUseId && { toolUseId }),
+        ...(durationMs !== undefined && { durationMs }),
       },
     };
   }
@@ -339,6 +352,7 @@ function inferRoleFromOtelAttributes(attrs?: OtlpKeyValue[]): OtelActivityRole {
 }
 
 function formatSubagentLabel(role: string): string {
+  const normalized = role.startsWith("eco_") ? role.slice(4) : role;
   const labels: Record<string, string> = {
     explore: "探索",
     architect: "架构",
@@ -346,7 +360,16 @@ function formatSubagentLabel(role: string): string {
     reviewer: "审查",
     tester: "测试",
   };
-  return labels[role] ?? role;
+  return labels[normalized] ?? normalized;
+}
+
+function readOtelToolUseId(attrs: OtlpKeyValue[] | undefined): string | undefined {
+  return (
+    readAttributeString(attrs, "tool_use_id") ??
+    readAttributeString(attrs, "tool.id") ??
+    readAttributeString(attrs, "tool_use.id") ??
+    readAttributeString(attrs, "tool.call_id")
+  );
 }
 
 function readAttributeString(attrs: OtlpKeyValue[] | undefined, key: string): string | undefined {

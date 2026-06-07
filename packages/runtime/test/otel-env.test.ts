@@ -93,6 +93,7 @@ test("parseOtelLogsPayload maps tool_result and api_request usage", () => {
                 attributes: [
                   { key: "event.name", value: { stringValue: "tool_result" } },
                   { key: "tool_name", value: { stringValue: "Bash" } },
+                  { key: "tool_use_id", value: { stringValue: "toolu_bash" } },
                   { key: "success", value: { stringValue: "true" } },
                   { key: "duration_ms", value: { intValue: "800" } },
                   {
@@ -118,9 +119,48 @@ test("parseOtelLogsPayload maps tool_result and api_request usage", () => {
   });
 
   expect(lines[0]?.message).toBe("Tool: Bash · npm test (0.8s)");
+  expect(lines[0]?.toolName).toBe("Bash");
+  expect(lines[0]?.toolDetail).toBe("npm test");
+  expect(lines[0]?.toolUseId).toBe("toolu_bash");
+  expect(lines[0]?.durationMs).toBe(800);
   expect(usage[0]?.inputTokens).toBe(100);
   expect(usage[0]?.outputTokens).toBe(50);
   expect(usage[0]?.costUsd).toBe(0.002);
+});
+
+test("parseOtelLogsPayload normalizes eco subagent tool details", () => {
+  const { lines } = parseOtelLogsPayload({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: "thread.id", value: { stringValue: "t3" } }],
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              {
+                attributes: [
+                  { key: "event.name", value: { stringValue: "tool_result" } },
+                  { key: "tool_name", value: { stringValue: "Agent" } },
+                  { key: "success", value: { stringValue: "true" } },
+                  { key: "duration_ms", value: { intValue: "29600" } },
+                  {
+                    key: "tool_parameters",
+                    value: { stringValue: '{"subagent_type":"eco_explore"}' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(lines[0]?.message).toBe("Tool: Agent · 探索 (29.6s)");
+  expect(lines[0]?.toolName).toBe("Agent");
+  expect(lines[0]?.toolDetail).toBe("探索");
+  expect(lines[0]?.durationMs).toBe(29600);
 });
 
 test("buildSdkProcessEnv merges builtin otel env", () => {

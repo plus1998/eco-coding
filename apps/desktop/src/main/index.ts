@@ -3465,7 +3465,7 @@ function emitOtelActivity(line: OtelActivityLine): void {
     emitContextCompactionStatus(line.threadId, { stage: "started", trigger: "auto" });
     return;
   }
-  if (sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
+  if (sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line)) {
     return;
   }
   const otelAgentId = resolveOtelActivityAgentId(line.threadId, line, {

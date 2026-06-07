@@ -1,4 +1,4 @@
-import { mergeStreamText, type AgentEvent } from "@eco/runtime";
+import { mergeStreamText, type AgentEvent, type OtelActivityLine } from "@eco/runtime";
 import {
   formatAgentEventDisplay,
   formatAgentEventLine,
@@ -13,8 +13,12 @@ type AgentEventLike = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
 export interface SdkToolActivityRecord {
   toolName: string;
   toolUseId?: string;
+  detailKey?: string;
+  role?: string;
+  agentId?: string;
   hadDetail: boolean;
   at: number;
+  matchedAt?: number;
 }
 
 const STREAM_THROTTLE_MS = 50;
@@ -60,7 +64,7 @@ export class SdkStreamActivityBridge {
     }
   }
 
-  noteSdkToolActivity(threadId: string, payload: unknown): void {
+  noteSdkToolActivity(threadId: string, payload: unknown, agentId?: string, role?: string): void {
     if (!payload || typeof payload !== "object") {
       return;
     }
@@ -69,6 +73,7 @@ export class SdkStreamActivityBridge {
       return;
     }
     const toolName = record.tool_name;
+    const detailKey = resolveSdkToolDetailKey(toolName, record.input);
     const detail =
       record.input !== undefined &&
       record.input !== null &&
@@ -76,6 +81,9 @@ export class SdkStreamActivityBridge {
     const entry: SdkToolActivityRecord = {
       toolName,
       ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
+      ...(detailKey && { detailKey }),
+      ...(role && { role }),
+      ...(agentId && { agentId }),
       hadDetail: Boolean(detail),
       at: Date.now(),
     };
@@ -88,25 +96,24 @@ export class SdkStreamActivityBridge {
     );
   }
 
-  shouldSuppressOtelToolLine(threadId: string, message: string): boolean {
-    const parsed = parseOtelToolLine(message);
+  shouldSuppressOtelToolLine(threadId: string, line: string | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">): boolean {
+    const parsed = parseOtelToolLine(line);
     if (!parsed) {
       return false;
     }
     const recent = this.recentSdkTools.get(threadId) ?? [];
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
-    const sdkMatch = [...recent]
+    const candidates = [...recent]
       .reverse()
-      .find((item) => item.at >= cutoff && item.toolName === parsed.toolName);
+      .filter((item) => item.at >= cutoff && !item.matchedAt && item.toolName === parsed.toolName);
+    const sdkMatch =
+      matchByToolUseId(candidates, parsed) ??
+      matchByDetailKey(candidates, parsed) ??
+      matchSummaryOnly(candidates, parsed);
     if (!sdkMatch) {
       return false;
     }
-    if (!parsed.detail) {
-      return true;
-    }
-    if (!sdkMatch.hadDetail) {
-      return false;
-    }
+    sdkMatch.matchedAt = Date.now();
     return true;
   }
 
@@ -125,7 +132,7 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "tool.started") {
-      this.noteSdkToolActivity(threadId, event.payload);
+      this.noteSdkToolActivity(threadId, event.payload, activityAgentId, String(event.role));
     }
 
     if (event.type === "agent.started") {
@@ -255,7 +262,26 @@ export class SdkStreamActivityBridge {
   }
 }
 
-function parseOtelToolLine(message: string): { toolName: string; detail?: string } | undefined {
+interface ParsedOtelToolLine {
+  toolName: string;
+  detailKey?: string;
+  toolUseId?: string;
+  durationMs?: number;
+}
+
+function parseOtelToolLine(
+  line: string | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
+): ParsedOtelToolLine | undefined {
+  if (typeof line !== "string" && line.toolName?.trim()) {
+    const detailKey = normalizeToolDetailKey(line.toolDetail);
+    return {
+      toolName: line.toolName.trim(),
+      ...(detailKey && { detailKey }),
+      ...(line.toolUseId?.trim() && { toolUseId: line.toolUseId.trim() }),
+      ...(line.durationMs !== undefined && { durationMs: line.durationMs }),
+    };
+  }
+  const message = typeof line === "string" ? line : line.message;
   const match = message.trim().match(/^Tool:\s*(.+?)(?:\s*·\s*(.+))?$/);
   const rawToolName = match?.[1]?.trim();
   if (!rawToolName) {
@@ -265,14 +291,97 @@ function parseOtelToolLine(message: string): { toolName: string; detail?: string
   if (!toolName) {
     return undefined;
   }
+  const durationMs = parseDurationSuffixMs(message);
   const rawDetail = match?.[2]?.trim();
-  const detail = rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined;
+  const detailKey = normalizeToolDetailKey(rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined);
   return {
     toolName,
-    ...(detail && { detail }),
+    ...(detailKey && { detailKey }),
+    ...(durationMs !== undefined && { durationMs }),
   };
 }
 
 function stripOtelDurationSuffix(value: string): string {
   return value.replace(/\s+\(\d+(?:\.\d+)?s\)$/i, "").trim();
+}
+
+function parseDurationSuffixMs(value: string): number | undefined {
+  const match = value.match(/\((\d+(?:\.\d+)?)s\)\s*$/i);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+}
+
+function matchByToolUseId(
+  candidates: SdkToolActivityRecord[],
+  parsed: ParsedOtelToolLine,
+): SdkToolActivityRecord | undefined {
+  if (!parsed.toolUseId) {
+    return undefined;
+  }
+  return candidates.find((item) => item.toolUseId === parsed.toolUseId);
+}
+
+function matchByDetailKey(
+  candidates: SdkToolActivityRecord[],
+  parsed: ParsedOtelToolLine,
+): SdkToolActivityRecord | undefined {
+  if (!parsed.detailKey) {
+    return undefined;
+  }
+  return candidates.find((item) => item.detailKey === parsed.detailKey);
+}
+
+function matchSummaryOnly(
+  candidates: SdkToolActivityRecord[],
+  parsed: ParsedOtelToolLine,
+): SdkToolActivityRecord | undefined {
+  if (parsed.detailKey) {
+    return undefined;
+  }
+  return candidates[0];
+}
+
+function resolveSdkToolDetailKey(toolName: string, input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  if (toolName === "Agent") {
+    return normalizeToolDetailKey(
+      readString(record.subagent_type) ?? readString(record.agent_type),
+    );
+  }
+  return normalizeToolDetailKey(
+    readString(record.full_command) ??
+      readString(record.bash_command) ??
+      readString(record.command) ??
+      readString(record.file_path) ??
+      readString(record.path) ??
+      readString(record.pattern) ??
+      readString(record.query) ??
+      readString(record.url),
+  );
+}
+
+function normalizeToolDetailKey(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  const roleLabels: Record<string, string> = {
+    explore: "探索",
+    architect: "架构",
+    coder: "编码",
+    reviewer: "审查",
+    tester: "测试",
+  };
+  return (roleLabels[normalized] ?? normalized).toLowerCase();
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
