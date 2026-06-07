@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildMainAgentSystemPrompt,
+  buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
   sdkAgentKeyForProfileAgent,
@@ -149,6 +150,24 @@ test("resolveMainAgentAllowedTools uses profile tools for universal profiles and
     "Read",
     "WebSearch",
   ]);
+});
+
+test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools", () => {
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+    agentKeys: ["eco_researcher"],
+    mainAllowedTools: ["AskUserQuestion"],
+  });
+
+  expect(policy.main).toEqual({
+    allowed: ["Agent", "Read", "WebSearch", "AskUserQuestion"],
+    disallowed: ["Write"],
+  });
+  expect(policy.agents).toEqual({
+    eco_researcher: {
+      allowed: ["Read", "WebSearch"],
+      disallowed: ["Bash"],
+    },
+  });
 });
 
 test("sdkAgentKeyForProfileAgent normalizes custom keys", () => {

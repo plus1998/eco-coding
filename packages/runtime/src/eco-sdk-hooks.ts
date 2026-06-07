@@ -35,6 +35,7 @@ import {
   type SubagentAvailability,
   type SubagentRole,
 } from "./subagent-availability";
+import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
@@ -85,6 +86,7 @@ export interface EcoHookContext {
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
   subagentAvailability?: SubagentAvailability;
   allowedAgentKeys?: string[];
+  toolPermissions?: EcoRuntimeToolPermissionPolicy;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -229,6 +231,102 @@ export function createDisabledSubagentPreToolHook(
       },
     };
   };
+}
+
+export function createToolPermissionPreToolHook(
+  policy?: EcoRuntimeToolPermissionPolicy,
+): HookCallback | undefined {
+  if (!policy) {
+    return undefined;
+  }
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    const actor = resolveToolPermissionActor(preInput);
+    const entry = resolveToolPermissionEntry(policy, actor);
+    if (!entry) {
+      return denyTool(preInput.tool_name, `No Eco tool policy is registered for agent ${actor}.`);
+    }
+    if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
+      return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`);
+    }
+    if (entry.allowed.length > 0 && !matchesAnyToolPattern(preInput.tool_name, entry.allowed)) {
+      return denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is not allowed for ${actor}.`);
+    }
+    return {};
+  };
+}
+
+function resolveToolPermissionActor(input: PreToolUseHookInput): "main" | string {
+  if (typeof input.agent_id === "string" && input.agent_id.trim()) {
+    return typeof input.agent_type === "string" && input.agent_type.trim()
+      ? input.agent_type.trim()
+      : input.agent_id.trim();
+  }
+  return "main";
+}
+
+function resolveToolPermissionEntry(
+  policy: EcoRuntimeToolPermissionPolicy,
+  actor: "main" | string,
+): EcoRuntimeToolPermissionEntry | undefined {
+  if (actor === "main") {
+    return policy.main;
+  }
+  const directEntry = policy.agents[actor];
+  if (directEntry) {
+    return directEntry;
+  }
+  if (!actor.startsWith("eco_")) {
+    const dynamicEntry = policy.agents[`eco_${actor}`];
+    if (dynamicEntry) {
+      return dynamicEntry;
+    }
+  }
+  const normalizedRole = normalizeSdkSubagentType(actor);
+  return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
+}
+
+function denyTool(toolName: string, reason: string): HookJSONOutput {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: reason || `Tool "${toolName}" is denied by Eco policy.`,
+    },
+  };
+}
+
+function matchesAnyToolPattern(toolName: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => matchesToolPattern(toolName, pattern));
+}
+
+function matchesToolPattern(toolName: string, pattern: string): boolean {
+  if (pattern === "*" || pattern === toolName) {
+    return true;
+  }
+  if (!pattern.includes("*")) {
+    return false;
+  }
+  const parts = pattern.split("*");
+  let offset = 0;
+  for (const [index, part] of parts.entries()) {
+    if (!part) {
+      continue;
+    }
+    const found = toolName.indexOf(part, offset);
+    if (found < 0) {
+      return false;
+    }
+    if (index === 0 && found !== 0) {
+      return false;
+    }
+    offset = found + part.length;
+  }
+  const last = parts[parts.length - 1] ?? "";
+  return !last || toolName.endsWith(last);
 }
 
 export function createReviewerScopePreToolHook(
@@ -468,6 +566,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createToolPermissionPreToolHook(ctx.toolPermissions));
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
     if (sessions.onAgentToolCapture) {

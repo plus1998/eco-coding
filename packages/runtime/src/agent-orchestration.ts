@@ -98,6 +98,16 @@ export interface EcoResolvedAgentDefinitionSet {
   agentKeys: string[];
 }
 
+export interface EcoRuntimeToolPermissionEntry {
+  allowed: string[];
+  disallowed: string[];
+}
+
+export interface EcoRuntimeToolPermissionPolicy {
+  main: EcoRuntimeToolPermissionEntry;
+  agents: Record<string, EcoRuntimeToolPermissionEntry>;
+}
+
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -118,6 +128,34 @@ export function createAgentDefinitionsFromProfile(
     agentKeys.push(sdkKey);
   }
   return { definitions, agentKeys };
+}
+
+export function buildToolPermissionPolicyFromProfile(
+  profile: EcoOrchestrationProfileConfig,
+  templates: readonly EcoAgentTemplateConfig[],
+  options: { agentKeys?: readonly string[]; mainAllowedTools?: readonly string[] } = {},
+): EcoRuntimeToolPermissionPolicy {
+  const explicitAgentKeys = options.agentKeys ? new Set(options.agentKeys) : undefined;
+  const templateById = new Map(templates.map((template) => [template.id, template]));
+  const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
+  for (const agent of profile.agents) {
+    if (!agent.enabled) {
+      continue;
+    }
+    const sdkKey = sdkAgentKeyForProfileAgent(agent.agentKey);
+    if (explicitAgentKeys && !explicitAgentKeys.has(sdkKey)) {
+      continue;
+    }
+    const template = templateById.get(agent.templateId);
+    if (!template) {
+      throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
+    }
+    agents[sdkKey] = resolveAgentToolPermission(agent, template);
+  }
+  return {
+    main: normalizeToolPermissionEntry(profile.mainAgent.tools, options.mainAllowedTools ?? []),
+    agents,
+  };
 }
 
 export function buildMainAgentRoster(
@@ -242,6 +280,34 @@ function buildSdkAgentDefinition(
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills.length > 0 ? { skills } : {}),
   };
+}
+
+function resolveAgentToolPermission(
+  agent: EcoAgentInstanceConfig,
+  template: EcoAgentTemplateConfig,
+): EcoRuntimeToolPermissionEntry {
+  const tools =
+    agent.tools.allowed.length > 0 || agent.tools.disallowed.length > 0 ? agent.tools : template.defaultTools;
+  return normalizeToolPermissionEntry(tools);
+}
+
+function normalizeToolPermissionEntry(
+  policy: EcoToolPolicy,
+  extraAllowed: readonly string[] = [],
+): EcoRuntimeToolPermissionEntry {
+  return {
+    allowed: uniqueToolPatterns([
+      ...policy.allowed,
+      ...extraAllowed,
+      ...(policy.mcp?.allowedTools ?? []),
+      ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
+    ]),
+    disallowed: uniqueToolPatterns(policy.disallowed),
+  };
+}
+
+function uniqueToolPatterns(patterns: readonly string[]): string[] {
+  return [...new Set(patterns.map((pattern) => pattern.trim()).filter(Boolean))];
 }
 
 function buildAgentDescription(agent: EcoAgentInstanceConfig, template: EcoAgentTemplateConfig): string {

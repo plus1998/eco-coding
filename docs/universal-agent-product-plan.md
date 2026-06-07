@@ -514,7 +514,7 @@ type WorkflowStep = {
 
 ## 阶段 5：工具权限与安全硬约束
 
-状态：未开始。
+状态：进行中。
 
 目标：商用级工具权限必须可配置、可解释、可审计、可强制执行。
 
@@ -529,6 +529,22 @@ type WorkflowStep = {
 - PreToolUse hook 按当前 agent 实例 enforce。
 - 权限拒绝事件进入 audit log。
 - UI 展示每个 agent 的实际权限。
+
+已完成：
+
+- 新增运行时 `EcoRuntimeToolPermissionPolicy`，从通用 orchestration profile 和 agent template 生成主 agent / 子代理权限表。
+- `allowedTools`、`disallowedTools`、MCP tool 白名单、MCP server 通配白名单统一归一为可执行的工具模式。
+- SDK `PreToolUse` hook 已按当前 main agent / 子代理强制执行权限，拒绝时返回明确 `permissionDecisionReason`。
+- 动态子代理支持 `eco_*` agent key 与未加前缀的运行时 agent type 回退，避免 SDK 事件命名差异导致误拒绝。
+- `ClaudeAgentSdkDriver` 已在动态 agent registry 下把工具权限传入 SDK hooks；固定 workflow step 通过 step agent key 继承对应子代理权限。
+- Coding 默认阶段工具会合并进入主 agent 权限，避免计划审批工具和阶段工具被通用权限层误拦截。
+
+已验证：
+
+- `bun run typecheck`
+- `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/claude-agent-sdk.test.ts`
+- `bun test`：990 pass，21 skip，0 fail。
+- `bun run --cwd apps/desktop build`
 
 主要代码落点：
 

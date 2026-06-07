@@ -11,6 +11,7 @@ import {
   createSubagentStopHook,
   createSubagentToolAttributionPreToolHook,
   createTaskToolPreToolHook,
+  createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
 } from "../src/eco-sdk-hooks";
 import type {
@@ -202,6 +203,114 @@ test("createNonEcoSubagentDenyPreToolHook allows dynamic Eco agent keys", async 
   );
 
   expect(result.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook enforces main and subagent tool policies", async () => {
+  const hook = createToolPermissionPreToolHook({
+    main: { allowed: ["Agent", "Read", "mcp__docs__*"], disallowed: ["Bash"] },
+    agents: {
+      eco_researcher: { allowed: ["WebSearch"], disallowed: ["Bash"] },
+    },
+  });
+  expect(hook).toBeDefined();
+
+  const mainRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: {},
+      tool_use_id: "tool_read",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_read",
+    { signal: new AbortController().signal },
+  );
+  expect(mainRead.hookSpecificOutput).toBeUndefined();
+
+  const mainBash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: {},
+      tool_use_id: "tool_bash",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_bash",
+    { signal: new AbortController().signal },
+  );
+  expect(mainBash.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain("disallowed");
+
+  const mcpTool = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "mcp__docs__search",
+      tool_input: {},
+      tool_use_id: "tool_mcp",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_mcp",
+    { signal: new AbortController().signal },
+  );
+  expect(mcpTool.hookSpecificOutput).toBeUndefined();
+
+  const subagentRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: {},
+      tool_use_id: "tool_sub_read",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_1",
+      agent_type: "eco_researcher",
+    } satisfies PreToolUseHookInput,
+    "tool_sub_read",
+    { signal: new AbortController().signal },
+  );
+  expect(subagentRead.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(subagentRead.hookSpecificOutput?.permissionDecisionReason).toContain("not allowed");
+
+  const subagentSearch = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "WebSearch",
+      tool_input: {},
+      tool_use_id: "tool_sub_search",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_1",
+      agent_type: "eco_researcher",
+    } satisfies PreToolUseHookInput,
+    "tool_sub_search",
+    { signal: new AbortController().signal },
+  );
+  expect(subagentSearch.hookSpecificOutput).toBeUndefined();
+
+  const unprefixedSubagentSearch = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "WebSearch",
+      tool_input: {},
+      tool_use_id: "tool_sub_search_unprefixed",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_2",
+      agent_type: "researcher",
+    } satisfies PreToolUseHookInput,
+    "tool_sub_search_unprefixed",
+    { signal: new AbortController().signal },
+  );
+  expect(unprefixedSubagentSearch.hookSpecificOutput).toBeUndefined();
 });
 
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {

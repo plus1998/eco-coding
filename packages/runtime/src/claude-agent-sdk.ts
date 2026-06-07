@@ -36,6 +36,7 @@ import { expandAssistantMessageContent } from "./anthropic-content-normalize.js"
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
 import {
   buildMainAgentSystemPrompt,
+  buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
   sdkAgentKeyForProfileAgent,
@@ -923,6 +924,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const mainAllowedTools = input.agentRegistry
       ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
       : phase.allowedTools;
+    const toolPermissions = input.agentRegistry
+      ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
+          ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
+          mainAllowedTools,
+        })
+      : undefined;
     const allowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
     const mainModel = input.agentRegistry?.profile.mainAgent.modelRef.modelId ?? plannerRoute.primary.modelId;
     const systemPrompt = input.agentRegistry
@@ -963,6 +970,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             hooks: buildEcoSdkHooks({
               ...this.options.hookContext,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
+              ...(toolPermissions ? { toolPermissions } : {}),
               subagentAvailability:
                 phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
             }),
