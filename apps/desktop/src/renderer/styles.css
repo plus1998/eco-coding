@@ -6950,6 +6950,486 @@ button:not(:disabled) {
   font-weight: 600;
 }
 
+/* —— Codex app inspired activity surface —— */
+.codex-main:not(.codex-main-landing) {
+  --codex-log-bg: #171717;
+  --codex-log-text: #f2f2f2;
+  --codex-log-muted: #8b8b8b;
+  --codex-log-faint: #6f6f6f;
+  --codex-log-line: #3a3a3a;
+  --codex-log-chip: #303030;
+  --codex-log-chip-text: #f1f1f1;
+  background: var(--codex-log-bg);
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing)::before {
+  background: var(--codex-log-bg);
+}
+
+.codex-main:not(.codex-main-landing) .codex-main-scroll {
+  padding: 0 48px;
+}
+
+.codex-main:not(.codex-main-landing) .activity-feed {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .activity-header {
+  margin: 0 0 32px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--codex-log-line);
+}
+
+.codex-main:not(.codex-main-landing) .activity-header h2 {
+  color: #9a9a9a;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.codex-main:not(.codex-main-landing) .activity-icon-button {
+  border-color: transparent;
+  background: transparent;
+  color: #8f8f8f;
+}
+
+.codex-main:not(.codex-main-landing) .activity-icon-button:hover:not(:disabled) {
+  background: #242424;
+  color: #d4d4d4;
+}
+
+.codex-main:not(.codex-main-landing) .activity-messages {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log {
+  gap: 28px;
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-progress,
+.codex-main:not(.codex-main-landing) .work-session-toggle {
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--codex-log-line);
+  color: #9a9a9a;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.codex-main:not(.codex-main-landing) .work-session {
+  margin: 0 0 26px;
+}
+
+.codex-main:not(.codex-main-landing) .work-session-toggle:hover:not(:disabled),
+.codex-main:not(.codex-main-landing) .run-log-progress:hover {
+  color: #d4d4d4;
+}
+
+.codex-main:not(.codex-main-landing) .work-session-dot,
+.codex-main:not(.codex-main-landing) .run-log-progress-dot {
+  width: 0;
+  height: 0;
+}
+
+.codex-main:not(.codex-main-landing) .work-session-mission {
+  color: var(--codex-log-muted);
+  font-size: 15px;
+}
+
+.codex-main:not(.codex-main-landing) .work-session-details,
+.codex-main:not(.codex-main-landing) .work-session-preview,
+.codex-main:not(.codex-main-landing) .work-session-details-compact-scroll {
+  border-left-color: #3a3a3a;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
+.codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
+.codex-main:not(.codex-main-landing) .run-log-narrative p {
+  color: var(--codex-log-text);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.72;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-narrative.compact .run-log-narrative-body,
+.codex-main:not(.codex-main-landing) .run-log-narrative.compact .markdown-content,
+.codex-main:not(.codex-main-landing) .run-log-narrative.compact p {
+  color: #d6d6d6;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content h1,
+.codex-main:not(.codex-main-landing) .markdown-content h2,
+.codex-main:not(.codex-main-landing) .markdown-content h3,
+.codex-main:not(.codex-main-landing) .markdown-content h4 {
+  color: var(--codex-log-text);
+  font-weight: 650;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content a {
+  color: #8ab4f8;
+  text-decoration-color: rgba(138, 180, 248, 0.45);
+}
+
+.codex-main:not(.codex-main-landing) .markdown-inline-code,
+.codex-main:not(.codex-main-landing) .run-log-code {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--codex-log-chip);
+  color: var(--codex-log-chip-text);
+  font-size: 0.92em;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-pre,
+.codex-main:not(.codex-main-landing) .run-log-reconnect-detail,
+.codex-main:not(.codex-main-landing) .run-log-mission-prompt {
+  border: 1px solid #363636;
+  background: #202020;
+  color: #e5e5e5;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content th,
+.codex-main:not(.codex-main-landing) .markdown-content td {
+  border-color: #333333;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content th {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content blockquote {
+  border-left-color: #3a3a3a;
+  color: #b0b0b0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-phase,
+.codex-main:not(.codex-main-landing) .run-log-action,
+.codex-main:not(.codex-main-landing) .run-log-agent-request,
+.codex-main:not(.codex-main-landing) .run-log-reconnect,
+.codex-main:not(.codex-main-landing) .work-session-inline-status {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--codex-log-muted);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action {
+  gap: 10px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action-icon,
+.codex-main:not(.codex-main-landing) .run-log-agent-request-icon,
+.codex-main:not(.codex-main-landing) .run-log-reconnect-icon {
+  color: #8a8a8a;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action-role,
+.codex-main:not(.codex-main-landing) .run-log-subagent-badge,
+.codex-main:not(.codex-main-landing) .run-log-subagent-chip,
+.codex-main:not(.codex-main-landing) .subagent-chip {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #a0a0a0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-agent-echo {
+  gap: 8px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-agent-echo-badge {
+  margin-bottom: -2px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-usage-badge,
+.codex-main:not(.codex-main-landing) .run-log-request-timing {
+  color: var(--codex-log-faint);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-header {
+  gap: 8px;
+  padding: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-label,
+.codex-main:not(.codex-main-landing) .run-log-thinking-preview,
+.codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-label {
+  color: var(--codex-log-muted);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-body {
+  margin-top: 10px;
+  padding: 0 0 0 18px;
+  border-left: 1px solid #3a3a3a;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-body p {
+  color: #a8a8a8;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking.streaming.empty .run-log-thinking-label::after {
+  background: #7a7a7a;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row {
+  gap: 10px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row-wrap.has-agent-id .subagent-run-row {
+  border-left: 0;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row:hover {
+  background: transparent;
+  color: #d4d4d4;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-icon,
+.codex-main:not(.codex-main-landing) .subagent-run-chevron,
+.codex-main:not(.codex-main-landing) .subagent-run-duration,
+.codex-main:not(.codex-main-landing) .subagent-run-agent-chip {
+  color: #858585;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-title-role {
+  color: #a6a6a6;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-title-model,
+.codex-main:not(.codex-main-landing) .subagent-run-title-sep,
+.codex-main:not(.codex-main-landing) .subagent-run-status {
+  color: var(--codex-log-muted);
+  font-size: 17px;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-status {
+  margin-top: 2px;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-loading {
+  background: #8a8a8a;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-instance-strip {
+  padding: 0;
+  background: transparent;
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .work-session-details-compact-title {
+  color: var(--codex-log-muted);
+  font-size: 14px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-mission {
+  margin: 0;
+  padding: 0 0 0 18px;
+  border: 0;
+  border-left: 1px solid #3a3a3a;
+  border-radius: 0;
+  background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-mission-role,
+.codex-main:not(.codex-main-landing) .run-log-mission-tag {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-mission-summary {
+  color: #e5e5e5;
+  font-size: 17px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-failed,
+.codex-main:not(.codex-main-landing) .run-log-api-error {
+  padding: 12px 14px;
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fca5a5;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-role,
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-label,
+.codex-main:not(.codex-main-landing) .run-log-api-error-role,
+.codex-main:not(.codex-main-landing) .run-log-api-error-label {
+  color: #fecaca;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-tool-failed-error,
+.codex-main:not(.codex-main-landing) .run-log-api-error-message {
+  color: #fda4af;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-body,
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-expand {
+  background: #242424;
+  color: #f0f0f0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-fade {
+  background: linear-gradient(to bottom, rgba(36, 36, 36, 0), #242424 72%);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-action {
+  color: #8a8a8a;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-action:hover {
+  background: #242424;
+  color: #d4d4d4;
+}
+
+.codex-main:not(.codex-main-landing) .clarification-answer-card,
+.codex-main:not(.codex-main-landing) .workspace-changes-card.codex-style {
+  border-color: #333333;
+  background: #202020;
+  box-shadow: none;
+}
+
+.codex-main:not(.codex-main-landing) .clarification-answer-title,
+.codex-main:not(.codex-main-landing) .workspace-changes-title {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .clarification-answer-row {
+  border-color: #303030;
+  background: #1b1b1b;
+}
+
+.codex-main:not(.codex-main-landing) .clarification-answer-question,
+.codex-main:not(.codex-main-landing) .workspace-changes-note {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .clarification-answer-answer,
+.codex-main:not(.codex-main-landing) .workspace-changes-file-path {
+  color: #e5e5e5;
+}
+
+.codex-main:not(.codex-main-landing) .workspace-changes-header {
+  border-bottom-color: #333333;
+}
+
+.codex-main:not(.codex-main-landing) .workspace-changes-link {
+  color: #a3a3a3;
+}
+
+.codex-main:not(.codex-main-landing) .workspace-changes-link:hover:not(:disabled) {
+  color: #f2f2f2;
+}
+
+.codex-main:not(.codex-main-landing) .workspace-changes-review {
+  border-color: #4a4a4a;
+  color: #f2f2f2;
+}
+
+.codex-main:not(.codex-main-landing) .workspace-changes-review:hover:not(:disabled) {
+  background: #262626;
+}
+
+.codex-main:not(.codex-main-landing) .codex-composer-wrap {
+  padding: 10px 48px 18px;
+  background: linear-gradient(to bottom, rgba(23, 23, 23, 0), #171717 24%);
+}
+
+.codex-main:not(.codex-main-landing) .codex-composer {
+  border-color: #383838;
+  background: #202020;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.codex-main:not(.codex-main-landing) .composer-skill-input-control {
+  color: #f2f2f2;
+}
+
+.codex-main:not(.codex-main-landing) .composer-skill-input-control:empty::before {
+  color: #777777;
+}
+
+.codex-main:not(.codex-main-landing) .composer-meta-pill,
+.codex-main:not(.codex-main-landing) .composer-agent-tag {
+  border-color: #343434;
+  background: #252525;
+  color: #a3a3a3;
+}
+
+.codex-main:not(.codex-main-landing) .composer-meta-pill.is-clickable:hover:not(:disabled),
+.codex-main:not(.codex-main-landing) .composer-agent-tag.is-clickable:hover:not(:disabled) {
+  border-color: #454545;
+  background: #2d2d2d;
+  color: #f2f2f2;
+}
+
+.codex-main:not(.codex-main-landing) .composer-agent-tag-role,
+.codex-main:not(.codex-main-landing) .composer-agent-tag-model,
+.codex-main:not(.codex-main-landing) .composer-agent-tag-sep,
+.codex-main:not(.codex-main-landing) .composer-route-pill-name {
+  color: inherit;
+}
+
+.codex-main:not(.codex-main-landing) .composer-hint {
+  color: #8a8a8a;
+}
+
+.codex-main:not(.codex-main-landing) .composer-error {
+  color: #fca5a5;
+}
+
+@media (max-width: 720px) {
+  .codex-main:not(.codex-main-landing) .codex-main-scroll {
+    padding: 0 22px;
+  }
+
+  .codex-main:not(.codex-main-landing) .codex-composer-wrap {
+    padding-right: 22px;
+    padding-left: 22px;
+  }
+
+  .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
+  .codex-main:not(.codex-main-landing) .run-log-narrative .markdown-content,
+  .codex-main:not(.codex-main-landing) .run-log-narrative p {
+    font-size: 18px;
+  }
+
+  .codex-main:not(.codex-main-landing) .run-log-phase,
+  .codex-main:not(.codex-main-landing) .run-log-action,
+  .codex-main:not(.codex-main-landing) .run-log-agent-request,
+  .codex-main:not(.codex-main-landing) .run-log-thinking-label,
+  .codex-main:not(.codex-main-landing) .run-log-thinking-preview,
+  .codex-main:not(.codex-main-landing) .subagent-run-title-role,
+  .codex-main:not(.codex-main-landing) .subagent-run-title-model,
+  .codex-main:not(.codex-main-landing) .subagent-run-title-sep,
+  .codex-main:not(.codex-main-landing) .subagent-run-status {
+    font-size: 16px;
+  }
+}
+
 @media (max-width: 900px) {
   .shell,
   .shell.shell-with-info {
