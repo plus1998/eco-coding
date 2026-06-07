@@ -63,6 +63,42 @@ test("buildThreadRunEventFromLiveEvent maps empty streaming chunks to placeholde
   expect(event?.streamState).toBe("placeholder");
 });
 
+test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messages", () => {
+  const toolEvent = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "todo_tool",
+    liveType: "todo.updated",
+    role: "explore",
+    agentId: "agent_explore_a",
+    stream: false,
+    message: "Tool: WebFetch · https://weather.example",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const statusEvent = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "todo_status",
+    liveType: "todo.updated",
+    role: "explore",
+    agentId: "agent_explore_a",
+    stream: false,
+    message: "Task completed",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+
+  expect(toolEvent).toMatchObject({
+    eventType: "tool.started",
+    scope: "agent",
+    streamState: "none",
+    metadata: { liveType: "todo.updated" },
+  });
+  expect(statusEvent).toMatchObject({
+    eventType: "thread.status",
+    scope: "agent",
+    streamState: "none",
+    metadata: { liveType: "todo.updated" },
+  });
+});
+
 test("buildSubagentLifecycleRunEvent includes parent and mission metadata", () => {
   const event = buildSubagentLifecycleRunEvent({
     threadId: "thr_1",

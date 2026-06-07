@@ -71,6 +71,44 @@ test("emits Requesting model status from agent.started events", () => {
   expect(emitted).toEqual([{ message: "Requesting model…", role: "planner" }]);
 });
 
+test("emits finalize text when only an empty placeholder preceded it", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; role: string; stream: boolean }> = [];
+
+  const emit = (_threadId: string, type: string, message: string, role: string, stream: boolean) => {
+    emitted.push({ type, message, role, stream });
+  };
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: { type: "eco_stream", blockKind: "text", streamPlaceholder: true },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        text: "广州今天中雨，25-31C。",
+        streamFinalize: true,
+      },
+    },
+    emit,
+  );
+
+  expect(emitted).toEqual([
+    { type: "message.delta", message: "", role: "planner", stream: true },
+    { type: "message.delta", message: "广州今天中雨，25-31C。", role: "planner", stream: false },
+  ]);
+});
+
 test("allows OTel tool line with detail when SDK only showed name", () => {
   const bridge = new SdkStreamActivityBridge();
   bridge.noteSdkToolActivity("thr_1", {

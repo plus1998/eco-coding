@@ -549,6 +549,15 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     }),
   ).toBe("Planning the patch…");
 
+  expect(
+    formatSdkPayloadMessage({
+      type: "eco_stream",
+      blockKind: "text",
+      text: "Final answer from assistant.",
+      streamFinalize: true,
+    }),
+  ).toBe("Final answer from assistant.");
+
   const toolDisplay = formatAgentEventDisplay({
     type: "tool.started",
     role: "coder",
@@ -606,6 +615,13 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
     "thr_1",
   );
   expect(assistantEvents.length).toBeGreaterThanOrEqual(1);
+  expect(
+    assistantEvents.some(
+      (event) =>
+        event.type === "message.delta" &&
+        formatAgentEventDisplay(event)?.message === "Already streamed elsewhere.",
+    ),
+  ).toBe(true);
   expect(assistantEvents.some((event) => event.type === "tool.started")).toBe(true);
 
   expect(

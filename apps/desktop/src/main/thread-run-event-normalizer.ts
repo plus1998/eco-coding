@@ -115,6 +115,12 @@ function resolveThreadRunEventType(input: BuildThreadRunEventFromLiveInput): Thr
     }
     return input.stream ? "message.delta" : "message.final";
   }
+  if (input.liveType === "todo.updated") {
+    if (/^Tool:/i.test(input.message)) {
+      return "tool.started";
+    }
+    return "thread.status";
+  }
   if (input.liveType === "thread.auto_retry" || input.liveType === "thread.retry") {
     return "request.retry_scheduled";
   }

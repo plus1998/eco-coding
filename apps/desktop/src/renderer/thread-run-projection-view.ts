@@ -285,6 +285,9 @@ function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem
 }
 
 function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (isProjectionTodoStatusItem(item)) {
+    return false;
+  }
   return (
     item.eventType === "message.delta" ||
     item.eventType === "message.final" ||
@@ -383,6 +386,9 @@ function compareMainFeedEntries(
 }
 
 function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (isProjectionTodoStatusItem(item)) {
+    return false;
+  }
   if (
     item.eventType !== "message.delta" &&
     item.eventType !== "message.final" &&
@@ -409,6 +415,16 @@ export function projectionItemToDetailBlock(
   item: ThreadRunProjectionTimelineItem,
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
+
+  if (isProjectionTodoToolActionItem(item)) {
+    return {
+      kind: "action",
+      icon: resolveProjectionActionIcon(text),
+      label: resolveProjectionToolActionLabel(item),
+      ...(item.role && { subagent: item.role }),
+      ...(item.agentId && { agentId: item.agentId }),
+    };
+  }
 
   if (item.eventType === "message.delta" || item.eventType === "message.final") {
     if (!text && item.eventType !== "message.delta") {
@@ -524,6 +540,9 @@ function findLatestAgentSpeechSummary(
     if (!text) {
       continue;
     }
+    if (isProjectionTodoStatusItem(item)) {
+      continue;
+    }
     if (item.eventType === "message.delta" || item.eventType === "message.final") {
       return text;
     }
@@ -545,7 +564,8 @@ function findLatestAgentToolAction(
     if (
       item.eventType === "tool.started" ||
       item.eventType === "tool.completed" ||
-      item.eventType === "tool.failed"
+      item.eventType === "tool.failed" ||
+      isProjectionTodoToolActionItem(item)
     ) {
       return item;
     }
@@ -564,6 +584,14 @@ function firstReadableLine(text: string): string {
 function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {
   const liveType = item.metadata?.liveType;
   return typeof liveType === "string" ? liveType : undefined;
+}
+
+function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return projectionLiveType(item) === "todo.updated";
+}
+
+function isProjectionTodoToolActionItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return isProjectionTodoStatusItem(item) && /^Tool:/iu.test(item.text.trim());
 }
 
 function readProjectionApiError(

@@ -172,10 +172,11 @@ export class SdkStreamActivityBridge {
     if (event.payload && isEcoStreamFinalize(event.payload)) {
       this.flushPending(threadId, emit);
       const last = this.lastStreamLine.get(streamKey);
+      const finalizedMessage = last?.message.trim() ? last.message : message;
       emit(
         threadId,
         event.type,
-        last?.message ?? message,
+        finalizedMessage,
         last?.role ?? role,
         false,
         last?.agentId ?? activityAgentId,

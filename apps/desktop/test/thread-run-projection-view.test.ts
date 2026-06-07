@@ -401,6 +401,40 @@ test("buildThreadRunProjectionViewModel ignores empty streaming agent placeholde
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
 });
 
+test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state not speech", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        agent({
+          agentId: "explore_agent_00000001",
+          role: "explore",
+          status: "stopped",
+          timeline: [
+            item({
+              id: "todo-webfetch",
+              eventType: "message.final",
+              scope: "agent",
+              role: "explore",
+              agentId: "explore_agent_00000001",
+              text: "Tool: WebFetch · https://weather.example",
+              metadata: { liveType: "todo.updated" },
+              sequence: 1,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
+  expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
+  expect(view.subagentCards[0]?.statusText).toBe("WebFetch · https://weather.example");
+  expect(projectionItemToDetailBlock(view.subagentCards[0]!.agent.timeline[0]!)).toMatchObject({
+    kind: "action",
+    label: "WebFetch · https://weather.example",
+  });
+});
+
 test("buildThreadRunProjectionViewModel hides empty streaming placeholder without losing request state", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

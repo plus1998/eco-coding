@@ -1934,7 +1934,7 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "eco_stream") {
-    if (payload.streamPlaceholder || payload.streamFinalize) {
+    if (payload.streamPlaceholder) {
       return null;
     }
     if (typeof payload.text === "string" && payload.text.length > 0) {
