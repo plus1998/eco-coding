@@ -865,6 +865,8 @@ type WorkflowStep = {
 - Phase 10.11 行为边界：`planner/system/thinking/tool/user/main/assistant` 等非子代理语义仍排除；legacy Coding 模型设置页和旧技能存储继续只覆盖固定 Coding role。
 - Phase 10.12 已完成：模型设置页新增真正的 Agent Profile 编辑器，用户/项目 profile 可编辑名称、场景、主 Agent prompt/model/tools/skills、策略、自定义子 Agent、模板、模型、工具、MCP、skills、启停和固定/混合步骤顺序；派生/内置 profile 可复制为用户 profile 后编辑。
 - Phase 10.12 行为边界：legacy Route Profile 编辑入口保留为 Coding 模型路线配置；非 Coding profile 的模型测试仍通过 profile 运行路径和后续审计验证，不再强行映射到固定六角色路线。
+- Phase 10.13 已完成：Agent Profile 列表的“测试”改为使用 profile 动态 runtime routes，覆盖主 Agent 与所有 enabled 子 Agent；非 route-backed / 非 Coding profile 也能直接验证 provider/model 可调用性。
+- Phase 10.13 行为边界：旧 Route Profile modal 内部的逐角色测试仍服务 Coding 模型路线；profile 级测试只验证上游连通性，不实际执行 prompt/工具权限审计。
 
 Phase 10.1 验证：
 
@@ -924,6 +926,12 @@ Phase 10.11 验证：
 Phase 10.12 验证：
 
 - `bun test apps/desktop/test/agent-profile-form.test.ts apps/desktop/test/agent-profile-summary.test.ts apps/desktop/test/agent-template-form.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.13 验证：
+
+- `bun test apps/desktop/test/thread-runtime-config.test.ts apps/desktop/test/agent-profile-summary.test.ts apps/desktop/test/agent-profile-form.test.ts`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 

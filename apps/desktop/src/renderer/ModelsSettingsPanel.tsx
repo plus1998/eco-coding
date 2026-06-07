@@ -39,6 +39,7 @@ import {
   type SubagentRole,
   type ThinkingEffort,
 } from "../shared/ipc";
+import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { ApiCompatToggle } from "./ApiCompatToggle";
 import {
@@ -801,6 +802,70 @@ export function ModelsSettingsPanel({
     }
   }
 
+  async function testAgentProfile(profile: OrchestrationProfile) {
+    if (!window.eco?.testRouteProfile) {
+      return;
+    }
+    const routes = runtimeRoleRoutesFromAgentProfile(profile);
+    const displayNames = new Map<string, string>([
+      ["planner", profile.mainAgent.name || "主 Agent"],
+      ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
+    ]);
+    setTestingRouteProfileId(profile.id);
+    setTestingRouteRole(null);
+    setRouteTestMessage(undefined);
+    setRouteTestResults({});
+
+    try {
+      const result = await window.eco.testRouteProfile({
+        routes: routes.map((route) => ({
+          role: route.role,
+          providerId: route.providerId,
+          modelId: route.modelId,
+          ...(route.apiCompat && { apiCompat: route.apiCompat }),
+          thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
+        })),
+      });
+
+      if (result.failed === 0) {
+        const uniqueModels = new Set(
+          routes
+            .filter((route) => route.providerId.trim() && route.modelId.trim())
+            .map((route) => `${route.providerId.trim()}:${route.modelId.trim()}:${route.apiCompat ?? ""}`),
+        );
+        const durations = result.results
+          .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
+          .filter(Boolean);
+        const durationHint = durations.length > 0 ? `，耗时 ${durations[0]}` : "";
+        const dedupeHint =
+          uniqueModels.size < result.passed
+            ? `（${uniqueModels.size} 组 Provider+模型，共 ${result.passed} 个 Agent）`
+            : "";
+        setRouteTestMessage({
+          kind: "success",
+          message: `Agent Profile「${profile.name}」全部 ${result.passed} 个 Agent 已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
+        });
+      } else {
+        const failedLabels = result.results
+          .filter((entry) => !entry.ok)
+          .map((entry) => `${displayNames.get(entry.role) ?? entry.role}：${entry.error ?? "失败"}`)
+          .join("；");
+        setRouteTestMessage({
+          kind: "error",
+          message: `Agent Profile「${profile.name}」${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
+        });
+      }
+    } catch (caught) {
+      setRouteTestMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setTestingRouteProfileId(null);
+      setTestingRouteRole(null);
+    }
+  }
+
   async function testProvider(target: ProviderConfigInput) {
     if (!window.eco?.testProviderConnection) {
       return;
@@ -1212,17 +1277,13 @@ export function ModelsSettingsPanel({
                       <button
                         type="button"
                         className="models-section-button"
-                        disabled={busy || testingRouteProfileId !== null || !routeProfile}
-                        onClick={() => {
-                          if (routeProfile) {
-                            void testRouteProfile(routeProfile.routes, routeProfile.id);
-                          }
-                        }}
+                        disabled={busy || testingRouteProfileId !== null}
+                        onClick={() => void testAgentProfile(summary.profile)}
                       >
                         <RefreshCw
                           size={14}
                           className={
-                            testingRouteProfileId === routeProfile?.id ? "model-refresh-spin" : undefined
+                            testingRouteProfileId === summary.profile.id ? "model-refresh-spin" : undefined
                           }
                         />
                         测试
