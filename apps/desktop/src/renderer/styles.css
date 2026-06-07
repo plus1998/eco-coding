@@ -200,9 +200,9 @@ button:not(:disabled) {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  padding: 2px 8px 2px 4px;
+  padding: 2px 6px 2px 4px;
   border-radius: 10px;
   cursor: grab;
 }
@@ -264,6 +264,26 @@ button:not(:disabled) {
   color: #d4d4d4;
 }
 
+.project-group-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.project-group-toggle svg {
+  flex: 0 0 auto;
+  color: #8a8a8a;
+}
+
 .project-group-header,
 .project-open,
 .chat-item {
@@ -288,9 +308,45 @@ button:not(:disabled) {
   font-weight: 500;
 }
 
+.project-group-main:hover .project-group-toggle,
+.project-group-main:hover .project-group-toggle svg,
+.project-group-main.active .project-group-toggle,
+.project-group-main.active .project-group-toggle svg,
 .project-group-main:hover .project-group-header,
 .project-group-main.active .project-group-header {
   color: #e8e8e8;
+}
+
+.project-new-chat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #a3a3a3;
+  opacity: 0;
+  transform: translateX(3px);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.project-group-main:hover .project-new-chat,
+.project-group-main:focus-within .project-new-chat {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.project-new-chat:hover,
+.project-new-chat:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f5f5;
 }
 
 .project-empty {
@@ -300,6 +356,7 @@ button:not(:disabled) {
   font-size: 12px;
 }
 
+.project-group-toggle span,
 .project-group-header span,
 .project-open span,
 .chat-item-title {
@@ -308,6 +365,7 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
+.project-group-toggle:hover,
 .project-group-header:hover {
   color: #fff;
 }
@@ -358,6 +416,12 @@ button:not(:disabled) {
 
 .chat-item.active .chat-item-time {
   color: #9a9a9a;
+}
+
+.chat-item-loading {
+  flex-shrink: 0;
+  color: #a3a3a3;
+  animation: eco-spin 0.8s linear infinite;
 }
 
 .project-expand {

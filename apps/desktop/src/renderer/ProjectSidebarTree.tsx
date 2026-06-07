@@ -1,4 +1,4 @@
-import { Folder, FolderOpen } from "lucide-react";
+import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
@@ -197,19 +197,25 @@ export function ProjectSidebarTree({
               >
                 <button
                   type="button"
-                  className="project-folder-toggle"
+                  className="project-group-toggle"
                   aria-expanded={!collapsed}
-                  aria-label={collapsed ? "展开项目" : "折叠项目"}
+                  aria-label={collapsed ? `展开项目 ${project.name}` : `折叠项目 ${project.name}`}
                   onClick={() => onToggleProjectCollapsed(project.path)}
                 >
                   {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
+                  <span>{project.name}</span>
                 </button>
                 <button
                   type="button"
-                  className="project-group-header"
-                  onClick={() => onSwitchProject(project.path)}
+                  className="project-new-chat"
+                  title={`在 ${project.name} 中新建对话`}
+                  aria-label={`在 ${project.name} 中新建对话`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSwitchProject(project.path);
+                  }}
                 >
-                  <span>{project.name}</span>
+                  <MessageSquarePlus size={16} />
                 </button>
               </div>
             </div>
@@ -227,9 +233,16 @@ export function ProjectSidebarTree({
                     >
                       <span className="chat-item-title">{thread.title}</span>
                       <span className="chat-item-meta">
-                        {thread.status === "running" ||
-                        thread.status === "failed" ||
-                        thread.status === "blocked" ? (
+                        {thread.status === "running" || thread.status === "queued" ? (
+                          <span
+                            className="chat-item-loading"
+                            title={thread.status}
+                            role="img"
+                            aria-label={thread.status}
+                          >
+                            <LoaderCircle size={14} aria-hidden />
+                          </span>
+                        ) : thread.status === "failed" || thread.status === "blocked" ? (
                           <span className={`status-dot ${thread.status}`} title={thread.status} />
                         ) : null}
                         <span className="chat-item-time">
