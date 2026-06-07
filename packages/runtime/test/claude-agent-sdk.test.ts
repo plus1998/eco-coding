@@ -16,6 +16,7 @@ import {
   createExecutionAgentDefinitions,
   createPlanningAgentDefinitions,
   createQuestionAgentDefinitions,
+  deleteClaudeAgentSdkSession,
   buildExecutePhaseSystemAppend,
   createPhaseBoundaryEvent,
   createPlanReadyEvent,
@@ -124,6 +125,36 @@ const routes: ResolvedModelRoute[] = [
     fallbacks: [],
   },
 ];
+
+async function* emptySdkQuery(): AsyncIterable<unknown> {}
+
+test("deleteClaudeAgentSdkSession delegates to SDK deleteSession", async () => {
+  const sessionStore = {
+    append: async () => undefined,
+    load: async () => null,
+    delete: async () => undefined,
+  };
+  const calls: Array<{ sessionId: string; options: unknown }> = [];
+
+  await deleteClaudeAgentSdkSession({
+    sessionId: " session_123 ",
+    dir: " /tmp/project ",
+    sessionStore,
+    loadSdk: async () => ({
+      query: () => emptySdkQuery(),
+      deleteSession: async (sessionId, options) => {
+        calls.push({ sessionId, options });
+      },
+    }),
+  });
+
+  expect(calls).toEqual([
+    {
+      sessionId: "session_123",
+      options: { dir: "/tmp/project", sessionStore },
+    },
+  ]);
+});
 
 test("buildSdkProcessEnv forces local router env over inherited Anthropic auth", () => {
   const previous = {

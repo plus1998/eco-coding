@@ -135,3 +135,38 @@ test.skipIf(!sqliteAvailable)("saves and lists compaction archives", async () =>
   expect(archives[0]?.sessionId).toBe("sess_1");
   expect(archives[0]?.payload.activityLineCount).toBe(2);
 });
+
+test.skipIf(!sqliteAvailable)("deleteThread removes thread-owned records", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-delete-thread-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_delete",
+    title: "Delete",
+    prompt: "hello",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+  store.saveThread(thread);
+  store.saveSdkSession(thread.id, "session_123", "/tmp/project");
+  store.appendActivityLine(thread.id, { role: "system", message: "hello" });
+  store.saveCompactionArchive(thread.id, { trigger: "auto", payload: { activityLineCount: 1 } });
+  store.appendThreadRunEvent({
+    id: "tre_delete",
+    threadId: thread.id,
+    eventType: "thread.status",
+    scope: "main",
+    streamState: "none",
+    message: "status",
+    observedAt: "2024-01-01T00:00:01.000Z",
+  });
+
+  expect(store.deleteThread(thread.id)).toBe(true);
+  expect(store.getThread(thread.id)).toBeUndefined();
+  expect(store.listActivityLines(thread.id)).toEqual([]);
+  expect(store.listCompactionArchives(thread.id)).toEqual([]);
+  expect(store.listThreadRunEvents(thread.id)).toEqual([]);
+  expect(store.deleteThread(thread.id)).toBe(false);
+});

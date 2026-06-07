@@ -90,8 +90,14 @@ type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) =>
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
-interface ClaudeAgentSdkModule {
+interface SdkSessionMutationOptions {
+  dir?: string;
+  sessionStore?: SessionStore;
+}
+
+export interface ClaudeAgentSdkModule {
   query: SdkQuery;
+  deleteSession?: (sessionId: string, options?: SdkSessionMutationOptions) => Promise<void>;
 }
 
 const networkAllowedTools = ["WebSearch", "WebFetch"] as const;
@@ -213,6 +219,35 @@ export interface SdkToolPermissionRequest {
 export type SdkToolPermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown> }
   | { behavior: "deny"; message: string; interrupt?: boolean };
+
+export async function deleteClaudeAgentSdkSession(input: {
+  sessionId: string;
+  dir?: string;
+  sessionStore?: SessionStore;
+  loadSdk?: () => Promise<ClaudeAgentSdkModule>;
+}): Promise<void> {
+  const sessionId = input.sessionId.trim();
+  if (!sessionId) {
+    return;
+  }
+
+  const sdk = input.loadSdk
+    ? await input.loadSdk()
+    : ((await import("@anthropic-ai/claude-agent-sdk")) as ClaudeAgentSdkModule);
+  if (typeof sdk.deleteSession !== "function") {
+    throw new Error("SDK deleteSession is not available. Update @anthropic-ai/claude-agent-sdk.");
+  }
+
+  const options: SdkSessionMutationOptions = {};
+  if (input.dir?.trim()) {
+    options.dir = input.dir.trim();
+  }
+  if (input.sessionStore) {
+    options.sessionStore = input.sessionStore;
+  }
+
+  await sdk.deleteSession(sessionId, Object.keys(options).length > 0 ? options : undefined);
+}
 
 interface FinalizePlanPayload {
   analysis: string;

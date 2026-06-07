@@ -26,6 +26,7 @@ interface ProjectSidebarTreeProps {
   onOpenProjectPath: (path: string) => Promise<void>;
   onPinProject: (path: string) => void;
   onRemoveProject: (path: string) => void;
+  onDeleteThread: (thread: ThreadSummary) => void;
 }
 
 function isExternalFileDrag(event: DragEvent): boolean {
@@ -54,27 +55,31 @@ export function ProjectSidebarTree({
   onOpenProjectPath,
   onPinProject,
   onRemoveProject,
+  onDeleteThread,
 }: ProjectSidebarTreeProps) {
   const [fileDropActive, setFileDropActive] = useState(false);
   const [draggingPath, setDraggingPath] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
   const [openMenuPath, setOpenMenuPath] = useState<string>();
+  const [openThreadMenuId, setOpenThreadMenuId] = useState<string>();
   const dragCounterRef = useRef(0);
 
   useEffect(() => {
-    if (!openMenuPath) {
+    if (!openMenuPath && !openThreadMenuId) {
       return;
     }
     const closeOnOutsideClick = (event: MouseEvent) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(".project-menu-wrap")) {
+      if (target instanceof Element && target.closest(".sidebar-menu-wrap")) {
         return;
       }
       setOpenMenuPath(undefined);
+      setOpenThreadMenuId(undefined);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpenMenuPath(undefined);
+        setOpenThreadMenuId(undefined);
       }
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
@@ -83,7 +88,7 @@ export function ProjectSidebarTree({
       document.removeEventListener("mousedown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [openMenuPath]);
+  }, [openMenuPath, openThreadMenuId]);
 
   function clearFileDropState() {
     dragCounterRef.current = 0;
@@ -239,7 +244,7 @@ export function ProjectSidebarTree({
                     openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
                   }
                 >
-                  <span className="project-menu-wrap">
+                  <span className="project-menu-wrap sidebar-menu-wrap">
                     <button
                       type="button"
                       className="project-menu-trigger"
@@ -302,33 +307,80 @@ export function ProjectSidebarTree({
               projectThreads.length > 0 ? (
                 <>
                   {visibleThreads.map((thread) => (
-                    <button
+                    <div
                       key={thread.id}
-                      type="button"
                       className={
-                        activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"
+                        activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"
                       }
-                      onClick={() => onSelectThread(thread)}
                     >
-                      <span className="chat-item-title">{thread.title}</span>
-                      <span className="chat-item-meta">
-                        {thread.status === "running" || thread.status === "queued" ? (
-                          <span
-                            className="chat-item-loading"
-                            title={thread.status}
-                            role="img"
-                            aria-label={thread.status}
-                          >
-                            <LoaderCircle size={14} aria-hidden />
+                      <button
+                        type="button"
+                        className={
+                          activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"
+                        }
+                        onClick={() => onSelectThread(thread)}
+                      >
+                        <span className="chat-item-title">{thread.title}</span>
+                        <span className="chat-item-meta">
+                          {thread.status === "running" || thread.status === "queued" ? (
+                            <span
+                              className="chat-item-loading"
+                              title={thread.status}
+                              role="img"
+                              aria-label={thread.status}
+                            >
+                              <LoaderCircle size={14} aria-hidden />
+                            </span>
+                          ) : thread.status === "failed" || thread.status === "blocked" ? (
+                            <span className={`status-dot ${thread.status}`} title={thread.status} />
+                          ) : null}
+                          <span className="chat-item-time">
+                            {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
                           </span>
-                        ) : thread.status === "failed" || thread.status === "blocked" ? (
-                          <span className={`status-dot ${thread.status}`} title={thread.status} />
-                        ) : null}
-                        <span className="chat-item-time">
-                          {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                        </span>
+                      </button>
+                      <span
+                        className={
+                          openThreadMenuId === thread.id
+                            ? "thread-row-actions menu-open"
+                            : "thread-row-actions"
+                        }
+                      >
+                        <span className="thread-menu-wrap sidebar-menu-wrap">
+                          <button
+                            type="button"
+                            className="thread-menu-trigger"
+                            title={`${thread.title} 操作`}
+                            aria-label={`${thread.title} 操作`}
+                            aria-haspopup="menu"
+                            aria-expanded={openThreadMenuId === thread.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenMenuPath(undefined);
+                              setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
+                            }}
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                          {openThreadMenuId === thread.id ? (
+                            <div className="project-menu thread-menu" role="menu">
+                              <button
+                                type="button"
+                                className="project-menu-item danger"
+                                role="menuitem"
+                                onClick={() => {
+                                  onDeleteThread(thread);
+                                  setOpenThreadMenuId(undefined);
+                                }}
+                              >
+                                <Trash2 size={16} aria-hidden />
+                                <span>删除对话</span>
+                              </button>
+                            </div>
+                          ) : null}
                         </span>
                       </span>
-                    </button>
+                    </div>
                   ))}
                   {hasMore ? (
                     <button

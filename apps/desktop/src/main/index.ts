@@ -14,7 +14,7 @@ import {
   type SessionCapturedPayload,
   type AgentEvent,
 } from "@eco/runtime";
-import { ClaudeAgentSdkDriver, type EcoHookContext } from "@eco/runtime/sdk";
+import { ClaudeAgentSdkDriver, deleteClaudeAgentSdkSession, type EcoHookContext } from "@eco/runtime/sdk";
 import { defaultSubagentAvailability, isSubagentRole, type SubagentRunPhase } from "@eco/runtime";
 import {
   createRedisSessionStore,
@@ -619,6 +619,26 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.threadList, async () => hydrateThreads(conversationStore.listThreads()));
+
+  ipcMain.handle(IPC_CHANNELS.threadDelete, async (_event, payload: unknown) => {
+    const threadId = typeof payload === "string" ? payload.trim() : "";
+    if (!threadId) {
+      throw new Error("Thread id is required.");
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return { ok: true as const };
+    }
+    if (thread.status === "running" || thread.status === "queued") {
+      throw new Error("请先停止当前运行后再删除对话。");
+    }
+
+    await deleteThreadSdkSession(threadId);
+    conversationStore.deleteThread(threadId);
+    clearThreadRuntimeMemory(threadId);
+    emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
+    return { ok: true as const };
+  });
 
   ipcMain.handle(IPC_CHANNELS.threadUpdateRuntimeConfig, async (_event, payload: unknown) => {
     if (
@@ -2841,6 +2861,45 @@ function createSdkDriver(
     otel: { endpoint, threadId },
     ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
   });
+}
+
+async function deleteThreadSdkSession(threadId: string): Promise<void> {
+  const session = conversationStore.getSdkSession(threadId);
+  if (!session?.sessionId) {
+    return;
+  }
+  try {
+    await deleteClaudeAgentSdkSession({
+      sessionId: session.sessionId,
+      dir: session.cwd,
+      ...(sdkSessionStore ? { sessionStore: sdkSessionStore } : {}),
+    });
+  } catch (error) {
+    if (isSdkSessionAlreadyMissing(error)) {
+      process.stderr.write(
+        `[eco] SDK session already missing while deleting ${threadId}: ${errorMessage(error)}\n`,
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+function isSdkSessionAlreadyMissing(error: unknown): boolean {
+  const detail = errorMessage(error);
+  return /\b(not found|no session|missing session|ENOENT)\b/i.test(detail);
+}
+
+function clearThreadRuntimeMemory(threadId: string): void {
+  activeRunBillingState.clearRun(threadId);
+  threadUsageAccumulator.clear(threadId);
+  contextScheduler.clearThread(threadId);
+  subagentMetricsRegistry.clearThread(threadId);
+  const timer = runProjectionEmitTimers.get(threadId);
+  if (timer) {
+    clearTimeout(timer);
+    runProjectionEmitTimers.delete(threadId);
+  }
 }
 
 async function rebuildSdkSessionStore(localDbPath: string): Promise<void> {

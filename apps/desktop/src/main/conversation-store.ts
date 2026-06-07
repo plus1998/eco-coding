@@ -196,6 +196,22 @@ interface ThreadRunEventRow {
   observed_at: string;
 }
 
+const threadOwnedTables = [
+  "thread_activity",
+  "thread_pending_plans",
+  "thread_coder_todos",
+  "thread_applied_diffs",
+  "thread_metrics_snapshots",
+  "thread_compaction_archives",
+  "thread_subagent_sessions",
+  "thread_subagent_metrics",
+  "thread_run_attempts",
+  "thread_agent_instances",
+  "thread_usage_ledger_events",
+  "thread_run_events",
+  "thread_file_checkpoints",
+] as const;
+
 export async function createConversationStore(dbPath: string): Promise<ConversationStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
@@ -804,6 +820,26 @@ export class ConversationStore {
         now,
         runtimeConfigJson,
       );
+  }
+
+  deleteThread(threadId: string): boolean {
+    const id = threadId.trim();
+    if (!id || !this.getThread(id)) {
+      return false;
+    }
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const table of threadOwnedTables) {
+        this.db.prepare(`DELETE FROM ${table} WHERE thread_id = ?`).run(id);
+      }
+      this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   updateThreadPrompt(threadId: string, prompt: string): void {

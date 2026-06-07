@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   threadRunProjectionGet: "thread:run-projection-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
+  threadDelete: "thread:delete",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",
@@ -346,6 +347,10 @@ export interface ThreadRetryRequest {
 
 export interface ThreadRetryResult {
   thread: ThreadSummary;
+}
+
+export interface ThreadDeleteResult {
+  ok: true;
 }
 
 export interface ThreadRollbackResult {

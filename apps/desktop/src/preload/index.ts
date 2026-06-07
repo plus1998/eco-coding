@@ -41,6 +41,7 @@ import {
   type ThreadSubagentMetricsSummary,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadDeleteResult,
   type ThreadRetryRequest,
   type ThreadRetryResult,
   type ThreadApprovePlanRequest,
@@ -232,6 +233,9 @@ const api = {
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);
+  },
+  deleteThread(threadId: string): Promise<ThreadDeleteResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, threadId);
   },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);

@@ -267,6 +267,11 @@ function App() {
         return;
       }
 
+      if (event.type === "thread.deleted") {
+        clearThreadClientState(event.threadId);
+        return;
+      }
+
       if (event.type === "thread.run_projection_updated" && event.projection) {
         setRunProjectionByThread((current) => ({
           ...current,
@@ -1686,6 +1691,38 @@ function App() {
     }
   }
 
+  function clearThreadClientState(threadId: string) {
+    setThreads((current) => current.filter((thread) => thread.id !== threadId));
+    setSelectedThreadId((current) => (current === threadId ? undefined : current));
+    setActivityByThread((current) => removeRecordKey(current, threadId));
+    setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
+    setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
+    setRunProjectionByThread((current) => removeRecordKey(current, threadId));
+    setUsageByThread((current) => removeRecordKey(current, threadId));
+    setBillingByThread((current) => removeRecordKey(current, threadId));
+    setContextByThread((current) => removeRecordKey(current, threadId));
+    setModelByThread((current) => removeRecordKey(current, threadId));
+    setTodosByThread((current) => removeRecordKey(current, threadId));
+    setPendingPlan((current) => (current?.threadId === threadId ? undefined : current));
+    setPendingClarification((current) => (current?.threadId === threadId ? undefined : current));
+  }
+
+  async function deleteThread(thread: ThreadSummary) {
+    if (!window.eco) {
+      return;
+    }
+    if (thread.status === "running" || thread.status === "queued") {
+      setError("请先停止当前运行后再删除对话。");
+      return;
+    }
+    try {
+      await window.eco.deleteThread(thread.id);
+      clearThreadClientState(thread.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   function expandProjectThreads(projectPath: string) {
     setExpandedProjectThreadPaths((current) => {
       if (current.has(projectPath)) {
@@ -2045,6 +2082,7 @@ function App() {
             onOpenProjectPath={handleOpenProjectFromDrop}
             onPinProject={pinProject}
             onRemoveProject={removeProject}
+            onDeleteThread={(thread) => void deleteThread(thread)}
           />
         </div>
 
@@ -2403,6 +2441,15 @@ function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function removeRecordKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) {
+    return record;
+  }
+  const next = { ...record };
+  delete next[key];
+  return next;
 }
 
 function pathToName(projectPath: string): string {

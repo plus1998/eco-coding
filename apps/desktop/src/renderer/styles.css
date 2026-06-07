@@ -340,12 +340,14 @@ button:not(:disabled) {
   pointer-events: auto;
 }
 
-.project-menu-wrap {
+.project-menu-wrap,
+.thread-menu-wrap {
   position: relative;
   display: inline-flex;
 }
 
 .project-menu-trigger,
+.thread-menu-trigger,
 .project-new-chat {
   display: inline-flex;
   flex: 0 0 auto;
@@ -362,6 +364,8 @@ button:not(:disabled) {
 
 .project-menu-trigger:hover,
 .project-menu-trigger:focus-visible,
+.thread-menu-trigger:hover,
+.thread-menu-trigger:focus-visible,
 .project-new-chat:hover,
 .project-new-chat:focus-visible {
   background: rgba(255, 255, 255, 0.08);
@@ -410,6 +414,67 @@ button:not(:disabled) {
 
 .project-menu-item.danger svg {
   color: #f87171;
+}
+
+.chat-item-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.chat-item-row:hover {
+  background: #2a2a2a;
+}
+
+.chat-item-row.active {
+  background: #333;
+}
+
+.chat-item-row .chat-item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  background: transparent;
+}
+
+.chat-item-row .chat-item:hover,
+.chat-item-row .chat-item.active {
+  background: transparent;
+}
+
+.chat-item-row:hover .chat-item,
+.chat-item-row.active .chat-item {
+  color: #fff;
+}
+
+.thread-row-actions {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  opacity: 0;
+  transform: translateX(3px);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.chat-item-row:hover .thread-row-actions,
+.chat-item-row:focus-within .thread-row-actions,
+.thread-row-actions.menu-open {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.thread-menu {
+  top: calc(100% + 4px);
+  right: 0;
 }
 
 .project-empty {
