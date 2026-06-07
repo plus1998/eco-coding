@@ -1,5 +1,5 @@
 import { Bot, ChevronDown, Copy, FileSearch, Pencil, RefreshCw, Reply, Search, Sparkles, Terminal } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
   ThreadActivityLine,
@@ -34,6 +34,7 @@ import {
   isProjectionUserPromptItem,
   projectionItemToDetailBlock,
   resolveProjectionAgentStatusText,
+  type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { isSubagentDisplayRole } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
@@ -217,21 +218,29 @@ function ProjectionActivityLogView({
       ),
     [projection, thread?.id, thread?.prompt],
   );
-  const subagentAgents = viewModel.subagentCards.map((card) => card.agent);
+  const [expandedAgentKeys, setExpandedAgentKeys] = useState<Record<string, boolean>>({});
   const showThreadPrompt = viewModel.showThreadPrompt;
   const layoutSignature = useMemo(
     () =>
       [
         showThreadPrompt ? `prompt:${thread?.id ?? ""}:${thread?.prompt.length ?? 0}` : "",
-        ...projection.timeline.map((item) => `${item.id}:${item.text.length}`),
-        ...projection.agents.map((agent) => {
-          const lastItem = agent.timeline.at(-1);
-          return `${agent.agentId}:${agent.status}:${agent.durationMs}:${lastItem?.id ?? ""}`;
+        ...viewModel.mainFeedEntries.map((entry) => {
+          if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+            return `${entry.key}:${entry.item.text.length}`;
+          }
+          const lastItem = entry.card.agent.timeline.at(-1);
+          return [
+            entry.key,
+            entry.card.agent.status,
+            entry.card.agent.durationMs,
+            entry.card.statusText?.length ?? 0,
+            lastItem?.id ?? "",
+          ].join(":");
         }),
       ]
         .filter(Boolean)
         .join("|"),
-    [projection.agents, projection.timeline, showThreadPrompt, thread?.id, thread?.prompt],
+    [showThreadPrompt, thread?.id, thread?.prompt, viewModel.mainFeedEntries],
   );
 
   useLayoutEffect(() => {
@@ -246,50 +255,127 @@ function ProjectionActivityLogView({
           {...(onRestorePrompt && { onRestorePrompt })}
         />
       ) : null}
-      {projection.timeline.map((item) => (
-        <ProjectionTimelineEntry
-          key={item.id}
-          item={item}
+      {viewModel.mainFeedEntries.map((entry) => (
+        <ProjectionMainFeedEntry
+          key={entry.key}
+          entry={entry}
           requestSpansById={requestSpansById}
+          expandedAgentKeys={expandedAgentKeys}
+          onToggleAgent={(agentId) => {
+            setExpandedAgentKeys((current) => ({
+              ...current,
+              [agentId]: !current[agentId],
+            }));
+          }}
           {...(onRestorePrompt && { onRestorePrompt })}
         />
       ))}
-      {subagentAgents.length > 0 ? (
-        <ProjectionSubagentRunGroup
-          agents={subagentAgents}
-          requestSpansById={requestSpansById}
-        />
-      ) : null}
     </div>
   );
 }
 
-function ProjectionSubagentRunGroup({
-  agents,
+function ProjectionMainFeedEntry({
+  entry,
+  requestSpansById,
+  expandedAgentKeys,
+  onToggleAgent,
+  onRestorePrompt,
+}: {
+  entry: ThreadRunProjectionMainFeedEntry;
+  requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  expandedAgentKeys: Record<string, boolean>;
+  onToggleAgent: (agentId: string) => void;
+  onRestorePrompt?: (prompt: string) => void;
+}) {
+  if (entry.kind === "timeline") {
+    return (
+      <ProjectionTimelineEntry
+        item={entry.item}
+        requestSpansById={requestSpansById}
+        {...(onRestorePrompt && { onRestorePrompt })}
+      />
+    );
+  }
+  if (entry.kind === "agent-card") {
+    return (
+      <ProjectionSubagentRunRow
+        agent={entry.card.agent}
+        requestSpansById={requestSpansById}
+        expanded={Boolean(expandedAgentKeys[entry.card.key])}
+        onToggle={() => onToggleAgent(entry.card.key)}
+      />
+    );
+  }
+  return (
+    <ProjectionAgentEchoEntry
+      entry={entry}
+      requestSpansById={requestSpansById}
+    />
+  );
+}
+
+function ProjectionAgentEchoEntry({
+  entry,
   requestSpansById,
 }: {
-  agents: ThreadRunProjectionAgent[];
+  entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
 }) {
-  const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
+  const block = projectionItemToDetailBlock(entry.item);
+  if (!block) {
+    return null;
+  }
+  const requestSpan = entry.item.requestId ? requestSpansById.get(entry.item.requestId) : undefined;
+  const requestActive = isProjectionRequestActive(requestSpan);
 
-  return (
-    <section className={`subagent-run-group${agents.length > 1 ? " parallel" : ""}`}>
-      {agents.map((agent) => (
-        <ProjectionSubagentRunRow
-          key={agent.agentId}
-          agent={agent}
-          requestSpansById={requestSpansById}
-          expanded={Boolean(expandedKeys[agent.agentId])}
-          onToggle={() => {
-            setExpandedKeys((current) => ({
-              ...current,
-              [agent.agentId]: !current[agent.agentId],
-            }));
-          }}
+  if (block.kind === "narrative") {
+    return (
+      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+        <RunLogNarrative
+          text={block.text}
+          {...(block.streaming !== undefined && { streaming: block.streaming })}
+          omitSubagentBadge
         />
-      ))}
-    </section>
+      </ProjectionAgentEchoShell>
+    );
+  }
+  if (block.kind === "thinking") {
+    return (
+      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+        <ThinkingBlock
+          text={block.text}
+          {...(block.streaming !== undefined && { streaming: block.streaming })}
+        />
+      </ProjectionAgentEchoShell>
+    );
+  }
+  return (
+    <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+      <DetailBlock
+        block={block}
+        requestActive={requestActive}
+        hideSubagentIdentity
+      />
+    </ProjectionAgentEchoShell>
+  );
+}
+
+function ProjectionAgentEchoShell({
+  label,
+  agentId,
+  children,
+}: {
+  label: string;
+  agentId: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="run-log-agent-echo" data-agent-id={agentId}>
+      <span className="run-log-subagent-badge run-log-agent-echo-badge" title={agentId}>
+        {label}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -1160,7 +1246,6 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
             {preview}
           </span>
         ) : null}
-        <RequestTimingBadge timing={timing} />
         {!streaming && hasBody ? (
           <ChevronDown
             size={14}
@@ -1564,6 +1649,7 @@ function RunLogNarrative({
   const hasBody = text.trim().length > 0;
   const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
   const showSubagentBadge = subagent && !omitSubagentBadge;
+  const showBody = hasBody || !streaming;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
   const worktreeMergeSummary = !streaming ? parseWorktreeMergeMessage(text) : null;
 
@@ -1594,10 +1680,12 @@ function RunLogNarrative({
       ) : streaming ? (
         <RequestTimingBadge timing={timing} />
       ) : null}
-      <div className="run-log-narrative-body">
-        <MarkdownContent text={text} />
-        {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
-      </div>
+      {showBody ? (
+        <div className="run-log-narrative-body">
+          <MarkdownContent text={text} />
+          {streaming && hasBody ? <span className="run-log-cursor" aria-hidden /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

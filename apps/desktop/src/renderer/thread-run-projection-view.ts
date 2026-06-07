@@ -11,9 +11,36 @@ import {
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
+  mainFeedEntries: ThreadRunProjectionMainFeedEntry[];
   mainItemIds: string[];
   subagentCards: ThreadRunProjectionSubagentCard[];
 }
+
+export type ThreadRunProjectionMainFeedEntry =
+  | {
+      kind: "timeline";
+      key: string;
+      item: ThreadRunProjectionTimelineItem;
+      at: string;
+      sequence: number;
+    }
+  | {
+      kind: "agent-echo";
+      key: string;
+      item: ThreadRunProjectionTimelineItem;
+      agent: ThreadRunProjectionAgent;
+      agentLabel: string;
+      shortAgentId: string;
+      at: string;
+      sequence: number;
+    }
+  | {
+      kind: "agent-card";
+      key: string;
+      card: ThreadRunProjectionSubagentCard;
+      at: string;
+      sequence: number;
+    };
 
 export interface ThreadRunProjectionSubagentCard {
   key: string;
@@ -29,22 +56,145 @@ export function buildThreadRunProjectionViewModel(
 ): ThreadRunProjectionViewModel {
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
+  const subagentCards = projection.agents
+    .filter((agent) => agent.kind === "subagent")
+    .map((agent) => {
+      const statusText = resolveProjectionAgentStatusText(agent);
+      return {
+        key: agent.agentId,
+        agent,
+        timelineIds: agent.timeline.map((item) => item.id),
+        running: agent.status === "active" || agent.status === "launching",
+        ...(statusText && { statusText }),
+      };
+    });
+  const mainFeedEntries = buildProjectionMainFeedEntries(projection.timeline, subagentCards);
   return {
     showThreadPrompt,
-    mainItemIds: projection.timeline.map((item) => item.id),
-    subagentCards: projection.agents
-      .filter((agent) => agent.kind === "subagent")
-      .map((agent) => {
-        const statusText = resolveProjectionAgentStatusText(agent);
-        return {
-          key: agent.agentId,
-          agent,
-          timelineIds: agent.timeline.map((item) => item.id),
-          running: agent.status === "active" || agent.status === "launching",
-          ...(statusText && { statusText }),
-        };
-      }),
+    mainFeedEntries,
+    mainItemIds: mainFeedEntries.map((entry) =>
+      entry.kind === "timeline" || entry.kind === "agent-echo" ? entry.item.id : entry.key,
+    ),
+    subagentCards,
   };
+}
+
+function buildProjectionMainFeedEntries(
+  mainTimeline: readonly ThreadRunProjectionTimelineItem[],
+  subagentCards: readonly ThreadRunProjectionSubagentCard[],
+): ThreadRunProjectionMainFeedEntry[] {
+  const displayMainTimeline = filterMainTimelineForFeed(mainTimeline);
+  const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => ({
+    kind: "timeline",
+    key: `main:${item.id}`,
+    item,
+    at: item.at,
+    sequence: item.sequence,
+  }));
+
+  for (const card of subagentCards) {
+    entries.push({
+      kind: "agent-card",
+      key: `agent-card:${card.agent.agentId}`,
+      card,
+      at: card.agent.startedAt,
+      sequence: card.agent.timeline[0]?.sequence ?? 0,
+    });
+
+    const echoItems = card.agent.timeline.filter(isAgentEchoTimelineItem);
+    for (const item of echoItems) {
+      entries.push({
+        kind: "agent-echo",
+        key: `agent:${card.agent.agentId}:${item.id}`,
+        item,
+        agent: card.agent,
+        agentLabel: formatProjectionAgentLabel(card.agent),
+        shortAgentId: shortProjectionAgentId(card.agent.agentId),
+        at: item.at,
+        sequence: item.sequence,
+      });
+    }
+  }
+
+  return entries.sort(compareMainFeedEntries);
+}
+
+function filterMainTimelineForFeed(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const requestsWithStreamRows = new Set<string>();
+  for (const item of timeline) {
+    const requestKey = projectionRequestKey(item);
+    if (!requestKey || !isStreamingRequestDisplayItem(item)) {
+      continue;
+    }
+    requestsWithStreamRows.add(requestKey);
+  }
+
+  return timeline.filter((item) => {
+    if (item.eventType !== "request.started") {
+      return true;
+    }
+    const requestKey = projectionRequestKey(item);
+    return !requestKey || !requestsWithStreamRows.has(requestKey);
+  });
+}
+
+function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return (
+    item.eventType === "message.delta" ||
+    item.eventType === "message.final" ||
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final"
+  );
+}
+
+function projectionRequestKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  if (item.requestId) {
+    return `request:${item.requestId}`;
+  }
+  if (item.streamKey) {
+    return `stream:${item.streamKey}`;
+  }
+  return undefined;
+}
+
+function compareMainFeedEntries(
+  left: ThreadRunProjectionMainFeedEntry,
+  right: ThreadRunProjectionMainFeedEntry,
+): number {
+  const atDiff = left.at.localeCompare(right.at);
+  if (atDiff !== 0) {
+    return atDiff;
+  }
+  const sequenceDiff = left.sequence - right.sequence;
+  if (sequenceDiff !== 0) {
+    return sequenceDiff;
+  }
+  return left.key.localeCompare(right.key);
+}
+
+function isAgentEchoTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (
+    item.eventType !== "message.delta" &&
+    item.eventType !== "message.final" &&
+    item.eventType !== "thinking.delta" &&
+    item.eventType !== "thinking.final"
+  ) {
+    return false;
+  }
+  return item.text.trim().length > 0;
+}
+
+export function formatProjectionAgentLabel(agent: Pick<ThreadRunProjectionAgent, "agentId" | "role">): string {
+  return `${resolveSubagentRunDisplayTitle(agent.role)} #${shortProjectionAgentId(agent.agentId)}`;
+}
+
+export function shortProjectionAgentId(agentId: string): string {
+  if (agentId.length <= 8) {
+    return agentId;
+  }
+  return agentId.slice(-8);
 }
 
 export function projectionItemToDetailBlock(
@@ -142,11 +292,65 @@ export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem
 export function resolveProjectionAgentStatusText(
   agent: ThreadRunProjectionAgent,
 ): string | undefined {
+  const speech = findLatestAgentSpeechSummary(agent.timeline);
+  if (speech) {
+    return speech;
+  }
   const latest = agent.latestActivity?.trim();
   if (!latest || isProjectionLifecycleText(latest) || latest === "状态已更新") {
-    return undefined;
+    const action = findLatestAgentToolAction(agent.timeline);
+    return action ? resolveProjectionToolActionLabel(action) : undefined;
   }
   return latest;
+}
+
+function findLatestAgentSpeechSummary(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): string | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (!item) {
+      continue;
+    }
+    const text = firstReadableLine(item.text);
+    if (!text) {
+      continue;
+    }
+    if (item.eventType === "message.delta" || item.eventType === "message.final") {
+      return text;
+    }
+    if (item.eventType === "thinking.delta" || item.eventType === "thinking.final") {
+      return `思考：${text}`;
+    }
+  }
+  return undefined;
+}
+
+function findLatestAgentToolAction(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (!item) {
+      continue;
+    }
+    if (
+      item.eventType === "tool.started" ||
+      item.eventType === "tool.completed" ||
+      item.eventType === "tool.failed"
+    ) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function firstReadableLine(text: string): string {
+  return text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.slice(0, 160) ?? "";
 }
 
 function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {

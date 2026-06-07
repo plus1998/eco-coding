@@ -87,6 +87,283 @@ test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   expect(view.subagentCards.map((card) => card.statusText)).toEqual(["Read API", "Edit UI"]);
 });
 
+test("buildThreadRunProjectionViewModel echoes agent narrative in main feed while preserving agent card details", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "main-thinking",
+          eventType: "thinking.final",
+          role: "thinking",
+          text: "先分析结构",
+          at: "2026-01-01T00:00:01.000Z",
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          timeline: [
+            item({
+              id: "coder-says",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "我在检查渲染路径。",
+              at: "2026-01-01T00:00:02.000Z",
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline", "agent-card", "agent-echo"]);
+  const echo = view.mainFeedEntries[2];
+  expect(echo?.kind).toBe("agent-echo");
+  if (echo?.kind === "agent-echo") {
+    expect(echo.item.id).toBe("coder-says");
+    expect(echo.agent.agentId).toBe("coder_agent_00000001");
+    expect(echo.shortAgentId).toBe("00000001");
+    expect(echo.agentLabel).toContain("#00000001");
+  }
+  const card = view.mainFeedEntries[1];
+  expect(card?.kind).toBe("agent-card");
+  if (card?.kind === "agent-card") {
+    expect(card.card.statusText).toBe("我在检查渲染路径。");
+  }
+  expect(view.subagentCards[0]?.timelineIds).toEqual(["coder-says"]);
+});
+
+test("buildThreadRunProjectionViewModel keeps concurrent same-role agent echoes distinct", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          timeline: [
+            item({
+              id: "coder-a-msg",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "我处理 API。",
+              at: "2026-01-01T00:00:01.000Z",
+              sequence: 1,
+            }),
+          ],
+        }),
+        agent({
+          agentId: "coder_agent_00000002",
+          role: "coder",
+          timeline: [
+            item({
+              id: "coder-b-msg",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000002",
+              text: "我处理 UI。",
+              at: "2026-01-01T00:00:02.000Z",
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  const echoes = view.mainFeedEntries.filter((entry) => entry.kind === "agent-echo");
+  expect(echoes.map((entry) => entry.agent.agentId)).toEqual([
+    "coder_agent_00000001",
+    "coder_agent_00000002",
+  ]);
+  expect(echoes.map((entry) => entry.shortAgentId)).toEqual(["00000001", "00000002"]);
+});
+
+test("buildThreadRunProjectionViewModel interleaves planner and agent speech by time", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "planner-first",
+          eventType: "thinking.final",
+          role: "thinking",
+          text: "先看代码。",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "planner-last",
+          eventType: "message.final",
+          role: "planner",
+          text: "我总结一下。",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          timeline: [
+            item({
+              id: "coder-middle",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "我找到问题了。",
+              at: "2026-01-01T00:00:02.000Z",
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:planner-first",
+    "agent-card:coder_agent_00000001",
+    "agent:coder_agent_00000001:coder-middle",
+    "main:planner-last",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [item({ id: "main", role: "planner", text: "Working" })],
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          timeline: [
+            item({
+              id: "agent-start",
+              eventType: "agent.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "Subagent coder started",
+              sequence: 1,
+            }),
+            item({
+              id: "request-start",
+              eventType: "request.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "Requesting model",
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:main",
+    "agent-card:coder_agent_00000001",
+  ]);
+  expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
+});
+
+test("buildThreadRunProjectionViewModel keeps pre-speech current action on the agent card", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          status: "active",
+          timeline: [
+            item({
+              id: "tool-read",
+              eventType: "tool.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "Tool: Read · ActivityLogView.tsx",
+              sequence: 1,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("agent-card");
+  if (entry?.kind === "agent-card") {
+    expect(entry.card.statusText).toBe("Read · ActivityLogView.tsx");
+    expect(entry.card.agent.agentId).toBe("coder_agent_00000001");
+  }
+});
+
+test("buildThreadRunProjectionViewModel ignores empty streaming agent placeholders", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          status: "active",
+          timeline: [
+            item({
+              id: "empty-delta",
+              eventType: "message.delta",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: "",
+              sequence: 1,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
+  expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
+});
+
+test("buildThreadRunProjectionViewModel hides request placeholder once the same request is streaming", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "request-start",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_planner",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-placeholder",
+          eventType: "thinking.delta",
+          role: "thinking",
+          requestId: "req_planner",
+          text: "",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:thinking-placeholder"]);
+});
+
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

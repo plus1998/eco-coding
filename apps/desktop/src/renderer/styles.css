@@ -875,6 +875,18 @@ button:not(:disabled) {
   margin-bottom: 8px;
 }
 
+.run-log-agent-echo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.run-log-agent-echo-badge {
+  align-self: flex-start;
+  margin-bottom: 0;
+}
+
 .status-chip {
   padding: 3px 10px;
   border-radius: 999px;
