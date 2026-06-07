@@ -78,6 +78,7 @@ import {
 } from "./composer-attachments";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
+import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   isReconnectActivityMessage,
   shouldClearReconnectActivity,
@@ -842,8 +843,12 @@ function App() {
     if (!activeThread) {
       return undefined;
     }
+    const rawBilling = billingByThread[activeThread.id];
+    const billing = rawBilling
+      ? enrichBillingDisplaySource(rawBilling, activeThread.status)
+      : undefined;
     return buildThreadUsageSummary({
-      ...(billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] }),
+      ...(billing && { billing }),
       ...(contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] }),
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });

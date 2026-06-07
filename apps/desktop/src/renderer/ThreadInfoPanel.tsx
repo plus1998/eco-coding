@@ -110,6 +110,9 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
             cacheCreationTokens: row.totalTokens.cacheCreation,
           });
           const isPrimary = billing.primarySource === row.source;
+          const isDisplay =
+            (billing.displaySource ?? billing.primarySource) === row.source &&
+            billing.displaySource !== billing.primarySource;
           return (
             <li
               key={row.source}
@@ -122,6 +125,7 @@ function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
                 <span className="thread-info-source-label">
                   {billingSourceLabels[row.source]}
                   {isPrimary ? <span className="thread-info-source-primary">主账</span> : null}
+                  {isDisplay ? <span className="thread-info-source-display">展示中</span> : null}
                 </span>
                 <span className="thread-info-source-cost">
                   {formatCostUsd(row.ecoCostUsd)}

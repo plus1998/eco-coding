@@ -586,8 +586,10 @@ export interface ThreadBillingSnapshot {
   plannerCostBreakdown?: TokenCostBreakdown;
   plannerModelLabel?: string;
   pricingResolved: boolean;
-  /** Primary source used for the headline Eco spend; SDK-first when present. */
+  /** Primary source used for settlement and validation; SDK-first when present. */
   primarySource?: BillingUsageSource;
+  /** Headline totals shown in UI; uses proxy while running, otherwise matches primarySource. */
+  displaySource?: BillingUsageSource;
   sourceBreakdown?: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>;
   byModel?: ThreadBillingModelSnapshot[];
   byRole?: Partial<

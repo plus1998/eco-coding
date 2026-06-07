@@ -4408,6 +4408,17 @@ button:not(:disabled) {
   line-height: 1.4;
 }
 
+.thread-info-source-display {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .thread-info-source-cost {
   flex-shrink: 0;
   color: #e5e5e5;

@@ -167,6 +167,7 @@ import {
   type BillingRuntimeEnvironment,
 } from "./billing-runtime-environment";
 import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
+import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { ActiveRunRuntimeStateStore, type ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -1023,7 +1024,14 @@ function registerIpcHandlers(): void {
       return {} satisfies ThreadUsageSnapshotResult;
     }
     const id = threadId.trim();
-    const billing = threadUsageAccumulator.getSnapshot(id);
+    const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(id);
+    const legacyBilling = threadUsageAccumulator.getSnapshot(id);
+    const billingBase = ledgerBilling
+      ? usageLedgerCoordinator.enrichBillingSnapshot(id, ledgerBilling)
+      : legacyBilling;
+    const billing = billingBase
+      ? enrichBillingDisplaySource(billingBase, conversationStore.getThread(id)?.status)
+      : undefined;
     const context = contextScheduler.getDisplaySnapshot(id);
     return {
       ...(billing && { billing }),
@@ -3490,7 +3498,13 @@ function usageBillingEffectsServices() {
 }
 
 function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): void {
-  emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, event.payload);
+  const threadStatus = conversationStore.getThread(event.threadId)?.status;
+  const billing = enrichBillingDisplaySource(event.payload.billing, threadStatus);
+  emitThreadEvent(event.threadId, "thread.usage_updated", event.badge, event.role, false, {
+    ...event.payload,
+    billing,
+    totalCostUsd: billing.otelCostUsd,
+  });
 }
 
 async function processUsageBilling(
