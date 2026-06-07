@@ -32,6 +32,8 @@ import {
   AGENT_ROLES,
   type AgentRole,
   type AgentTemplate,
+  type AgentTemplateExportRequest,
+  type AgentTemplateVersionRestoreRequest,
   buildThreadRuntimeConfigFromDefaults,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -83,6 +85,10 @@ import {
   type WorktreeStatusResult,
 } from "../shared/ipc";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import {
+  buildAgentTemplateArchive,
+  parseAgentTemplateArchive,
+} from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
   filterExplicitUserSkillNames,
@@ -516,6 +522,65 @@ function assertCanWriteOrchestrationProfileId(id: string): void {
   }
 }
 
+function prepareImportedAgentTemplate(
+  template: AgentTemplate,
+  existingIds: Set<string>,
+): AgentTemplate {
+  const now = new Date().toISOString();
+  const protectedId =
+    template.builtIn ||
+    template.source === "built_in" ||
+    (typeof template.id === "string" && template.id.trim().startsWith("builtin."));
+  if (protectedId) {
+    const domain = typeof template.domain === "string" ? template.domain : "custom";
+    const name =
+      typeof template.name === "string" && template.name.trim()
+        ? template.name.trim()
+        : "Imported Agent";
+    const id = createUniqueImportedTemplateId(`user.imported.${slugifyTemplateId(name) || "agent"}`, existingIds);
+    existingIds.add(id);
+    return {
+      ...template,
+      id,
+      name,
+      builtIn: false,
+      source: "user",
+      version: 1,
+      updatedAt: now,
+      domain,
+    };
+  }
+  const id = typeof template.id === "string" ? template.id.trim() : "";
+  if (id) {
+    existingIds.add(id);
+  }
+  return {
+    ...template,
+    id,
+    builtIn: false,
+    source: template.source === "project" ? "project" : "user",
+    updatedAt: now,
+  };
+}
+
+function createUniqueImportedTemplateId(baseId: string, existingIds: ReadonlySet<string>): string {
+  let candidate = baseId;
+  let suffix = 2;
+  while (existingIds.has(candidate)) {
+    candidate = `${baseId}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function slugifyTemplateId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
   return buildThreadRuntimeConfigFromDefaults({
     settings: getModelSettingsSnapshot(),
@@ -833,6 +898,103 @@ function registerIpcHandlers(): void {
     agentOrchestrationStore.deleteAgentTemplate(templateId);
     emitSettingsUpdated();
     return { ok: true as const };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateExport, async (_event, payload?: unknown) => {
+    const request =
+      payload && typeof payload === "object" ? (payload as AgentTemplateExportRequest) : {};
+    const requestedIds = Array.isArray(request.templateIds)
+      ? new Set(request.templateIds.map((id) => id.trim()).filter(Boolean))
+      : undefined;
+    const templates = getModelSettingsSnapshot().agentTemplates.filter((template) => {
+      if (requestedIds) {
+        return requestedIds.has(template.id);
+      }
+      return !template.builtIn && template.source !== "built_in" && template.source !== "derived";
+    });
+    if (templates.length === 0) {
+      throw new Error("没有可导出的子代理模板。");
+    }
+    const result = await dialog.showSaveDialog({
+      title: "导出子代理模板",
+      defaultPath: `eco-agent-templates-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: true as const, canceled: true, exported: 0 };
+    }
+    await fs.writeFile(
+      result.filePath,
+      JSON.stringify(buildAgentTemplateArchive(templates), null, 2),
+      "utf8",
+    );
+    return {
+      ok: true as const,
+      canceled: false,
+      exported: templates.length,
+      path: result.filePath,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateImport, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "导入子代理模板",
+      properties: ["openFile"],
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    const filePath = result.filePaths[0];
+    if (result.canceled || !filePath) {
+      return { ok: true as const, canceled: true, imported: 0, templates: [], errors: [] };
+    }
+    const content = await fs.readFile(filePath, "utf8");
+    const parsedTemplates = parseAgentTemplateArchive(content);
+    const existingIds = new Set(getModelSettingsSnapshot().agentTemplates.map((template) => template.id));
+    const imported: AgentTemplate[] = [];
+    const errors: string[] = [];
+    for (const [index, template] of parsedTemplates.entries()) {
+      try {
+        const prepared = prepareImportedAgentTemplate(template, existingIds);
+        imported.push(agentOrchestrationStore.saveAgentTemplate(prepared));
+      } catch (caught) {
+        errors.push(`模板 ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
+      }
+    }
+    if (imported.length > 0) {
+      emitSettingsUpdated();
+    }
+    return {
+      ok: true as const,
+      canceled: false,
+      imported: imported.length,
+      templates: imported,
+      errors,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateVersionsList, async (_event, templateId: unknown) => {
+    if (typeof templateId !== "string" || !templateId.trim()) {
+      throw new Error("子代理模板 id 不能为空。");
+    }
+    return agentOrchestrationStore.listAgentTemplateVersions(templateId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentTemplateVersionRestore, async (_event, payload: unknown) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof (payload as AgentTemplateVersionRestoreRequest).templateId !== "string" ||
+      typeof (payload as AgentTemplateVersionRestoreRequest).version !== "number"
+    ) {
+      throw new Error("子代理模板版本恢复请求无效。");
+    }
+    const request = payload as AgentTemplateVersionRestoreRequest;
+    assertCanWriteAgentTemplateId(request.templateId);
+    const restored = agentOrchestrationStore.restoreAgentTemplateVersion(
+      request.templateId,
+      request.version,
+    );
+    emitSettingsUpdated();
+    return restored;
   });
 
   ipcMain.handle(

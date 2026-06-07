@@ -352,6 +352,9 @@ type WorkflowStep = {
 - 子代理库 UI 已支持创建、复制、编辑和删除用户/项目模板；内置模板只允许复制为用户模板。
 - Prompt 编辑器已覆盖名称、领域、作用域、描述、使用时机、prompt、输出契约、默认模型、工具、MCP、skills 和委派开关。
 - 验证补充：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-template-form.test.ts apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-registry-settings.test.ts` 通过；`bun run --cwd apps/desktop build` 通过。
+- 导入/导出 JSON 已支持 schema archive、数组和单模板对象；导入内置模板会重写为用户副本，避免覆盖内置 registry。
+- 用户/项目模板保存会记录版本历史，UI 已支持查看历史和恢复旧版本；恢复会生成新的当前版本。
+- 验证补充：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-template-archive.test.ts apps/desktop/test/agent-template-form.test.ts apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/ipc.test.ts` 通过；`bun run --cwd apps/desktop build` 通过。
 
 目标：让用户可以创建、编辑、复制、导入、导出、版本化自己的子代理。
 

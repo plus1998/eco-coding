@@ -1,11 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
+import type { AgentTemplateVersionView } from "../shared/ipc";
 import type { AgentTemplate, OrchestrationProfile } from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
   id: string;
   value_json: string;
+}
+
+interface StoredTemplateVersionRow {
+  template_id: string;
+  version: number;
+  value_json: string;
+  saved_at: string;
 }
 
 export async function createAgentOrchestrationStore(dbPath: string): Promise<AgentOrchestrationStore> {
@@ -32,6 +40,14 @@ export class AgentOrchestrationStore {
         value_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS agent_template_versions (
+        template_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        value_json TEXT NOT NULL,
+        saved_at TEXT NOT NULL,
+        PRIMARY KEY (template_id, version)
+      );
     `);
   }
 
@@ -42,8 +58,15 @@ export class AgentOrchestrationStore {
       .map((row) => parseAgentTemplateRow(row as unknown as StoredConfigRow));
   }
 
+  getAgentTemplate(id: string): AgentTemplate | undefined {
+    const row = this.db
+      .prepare(`SELECT id, value_json FROM agent_templates WHERE id = ?`)
+      .get(id.trim()) as unknown as StoredConfigRow | undefined;
+    return row ? parseAgentTemplateRow(row) : undefined;
+  }
+
   saveAgentTemplate(template: AgentTemplate): AgentTemplate {
-    const normalized = normalizeStoredAgentTemplate(template);
+    const normalized = this.normalizeTemplateForSave(template);
     this.db
       .prepare(`
         INSERT INTO agent_templates (id, value_json, updated_at)
@@ -51,11 +74,45 @@ export class AgentOrchestrationStore {
         ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
       `)
       .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
+    this.recordAgentTemplateVersion(normalized);
     return normalized;
   }
 
   deleteAgentTemplate(id: string): void {
     this.db.prepare(`DELETE FROM agent_templates WHERE id = ?`).run(id.trim());
+    this.db.prepare(`DELETE FROM agent_template_versions WHERE template_id = ?`).run(id.trim());
+  }
+
+  listAgentTemplateVersions(templateId: string): AgentTemplateVersionView[] {
+    return this.db
+      .prepare(`
+        SELECT template_id, version, value_json, saved_at
+        FROM agent_template_versions
+        WHERE template_id = ?
+        ORDER BY version DESC
+      `)
+      .all(templateId.trim())
+      .map((row) => parseAgentTemplateVersionRow(row as unknown as StoredTemplateVersionRow));
+  }
+
+  restoreAgentTemplateVersion(templateId: string, version: number): AgentTemplate {
+    const row = this.db
+      .prepare(`
+        SELECT template_id, version, value_json, saved_at
+        FROM agent_template_versions
+        WHERE template_id = ? AND version = ?
+      `)
+      .get(templateId.trim(), version) as unknown as StoredTemplateVersionRow | undefined;
+    if (!row) {
+      throw new Error("找不到指定的子代理模板版本。");
+    }
+    const restored = parseAgentTemplateVersionRow(row).template;
+    const current = this.getAgentTemplate(templateId);
+    return this.saveAgentTemplate({
+      ...restored,
+      version: (current?.version ?? restored.version) + 1,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   listOrchestrationProfiles(): OrchestrationProfile[] {
@@ -79,6 +136,30 @@ export class AgentOrchestrationStore {
 
   deleteOrchestrationProfile(id: string): void {
     this.db.prepare(`DELETE FROM orchestration_profiles WHERE id = ?`).run(id.trim());
+  }
+
+  private normalizeTemplateForSave(template: AgentTemplate): AgentTemplate {
+    const normalized = normalizeStoredAgentTemplate(template);
+    const existing = this.getAgentTemplate(normalized.id);
+    if (!existing) {
+      return normalized;
+    }
+    return {
+      ...normalized,
+      version: Math.max(normalized.version, existing.version + 1),
+    };
+  }
+
+  private recordAgentTemplateVersion(template: AgentTemplate): void {
+    this.db
+      .prepare(`
+        INSERT INTO agent_template_versions (template_id, version, value_json, saved_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(template_id, version) DO UPDATE SET
+          value_json = excluded.value_json,
+          saved_at = excluded.saved_at
+      `)
+      .run(template.id, template.version, JSON.stringify(template), template.updatedAt);
   }
 }
 
@@ -143,6 +224,18 @@ function parseAgentTemplateRow(row: StoredConfigRow): AgentTemplate {
 function parseOrchestrationProfileRow(row: StoredConfigRow): OrchestrationProfile {
   const parsed = parseJsonObject(row.value_json);
   return normalizeStoredOrchestrationProfile(parsed as unknown as OrchestrationProfile);
+}
+
+function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTemplateVersionView {
+  const template = normalizeStoredAgentTemplate(
+    parseJsonObject(row.value_json) as unknown as AgentTemplate,
+  );
+  return {
+    templateId: row.template_id,
+    version: row.version,
+    savedAt: row.saved_at,
+    template,
+  };
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {

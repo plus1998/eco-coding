@@ -17,6 +17,10 @@ export const IPC_CHANNELS = {
   agentTemplateList: "agent-template:list",
   agentTemplateSave: "agent-template:save",
   agentTemplateDelete: "agent-template:delete",
+  agentTemplateExport: "agent-template:export",
+  agentTemplateImport: "agent-template:import",
+  agentTemplateVersionsList: "agent-template-versions:list",
+  agentTemplateVersionRestore: "agent-template-version:restore",
   orchestrationProfileList: "orchestration-profile:list",
   orchestrationProfileSave: "orchestration-profile:save",
   orchestrationProfileDelete: "orchestration-profile:delete",
@@ -284,6 +288,37 @@ export interface ModelSettingsSnapshot {
   routeProfiles: RouteProfileView[];
   agentTemplates: AgentTemplate[];
   orchestrationProfiles: OrchestrationProfile[];
+}
+
+export interface AgentTemplateExportRequest {
+  templateIds?: string[];
+}
+
+export interface AgentTemplateExportResult {
+  ok: true;
+  canceled: boolean;
+  exported: number;
+  path?: string;
+}
+
+export interface AgentTemplateImportResult {
+  ok: true;
+  canceled: boolean;
+  imported: number;
+  templates: AgentTemplate[];
+  errors: string[];
+}
+
+export interface AgentTemplateVersionView {
+  templateId: string;
+  version: number;
+  savedAt: string;
+  template: AgentTemplate;
+}
+
+export interface AgentTemplateVersionRestoreRequest {
+  templateId: string;
+  version: number;
 }
 
 export type ThreadStatus =

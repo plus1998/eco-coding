@@ -10,6 +10,10 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.agentTemplateList).toBe("agent-template:list");
   expect(IPC_CHANNELS.agentTemplateSave).toBe("agent-template:save");
   expect(IPC_CHANNELS.agentTemplateDelete).toBe("agent-template:delete");
+  expect(IPC_CHANNELS.agentTemplateExport).toBe("agent-template:export");
+  expect(IPC_CHANNELS.agentTemplateImport).toBe("agent-template:import");
+  expect(IPC_CHANNELS.agentTemplateVersionsList).toBe("agent-template-versions:list");
+  expect(IPC_CHANNELS.agentTemplateVersionRestore).toBe("agent-template-version:restore");
   expect(IPC_CHANNELS.orchestrationProfileList).toBe("orchestration-profile:list");
   expect(IPC_CHANNELS.orchestrationProfileSave).toBe("orchestration-profile:save");
   expect(IPC_CHANNELS.orchestrationProfileDelete).toBe("orchestration-profile:delete");

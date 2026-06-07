@@ -1,8 +1,9 @@
-import { Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Copy, Download, History, Pencil, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import type {
   AgentDomain,
   AgentTemplate,
+  AgentTemplateVersionView,
   ProviderConfigView,
   SubagentEnabledSettings,
   SubagentRole,
@@ -65,6 +66,12 @@ export function SubagentSettingsSection({
   const [editingTemplateId, setEditingTemplateId] = useState<string>();
   const [editorError, setEditorError] = useState<string>();
   const [registrySaving, setRegistrySaving] = useState(false);
+  const [registryMessage, setRegistryMessage] = useState<string>();
+  const [versionModal, setVersionModal] = useState<{
+    template: AgentTemplate;
+    versions: AgentTemplateVersionView[];
+    error?: string | undefined;
+  }>();
 
   const sortedTemplates = useMemo(
     () =>
@@ -95,18 +102,21 @@ export function SubagentSettingsSection({
   }
 
   function openCreateTemplate() {
+    setRegistryMessage(undefined);
     setEditorError(undefined);
     setEditingTemplateId(undefined);
     setEditorForm(createBlankAgentTemplateForm(providers, templates));
   }
 
   function openCopyTemplate(template: AgentTemplate) {
+    setRegistryMessage(undefined);
     setEditorError(undefined);
     setEditingTemplateId(undefined);
     setEditorForm(createCopiedAgentTemplateForm(template, templates, providers));
   }
 
   function openEditTemplate(template: AgentTemplate) {
+    setRegistryMessage(undefined);
     if (template.builtIn || template.source === "built_in" || template.source === "derived") {
       openCopyTemplate(template);
       return;
@@ -133,6 +143,7 @@ export function SubagentSettingsSection({
       const template = buildAgentTemplateFromForm(editorForm, { existing: editorTemplate });
       await window.eco.saveAgentTemplate(template);
       await onRegistryChange();
+      setRegistryMessage(`已保存 ${template.name}`);
       closeEditor();
     } catch (caught) {
       setEditorError(caught instanceof Error ? caught.message : String(caught));
@@ -154,10 +165,101 @@ export function SubagentSettingsSection({
     try {
       await window.eco.deleteAgentTemplate(template.id);
       await onRegistryChange();
+      setRegistryMessage(`已删除 ${template.name}`);
     } catch (caught) {
       setEditorError(caught instanceof Error ? caught.message : String(caught));
       setEditorForm(agentTemplateToForm(template, providers));
       setEditingTemplateId(template.id);
+    } finally {
+      setRegistrySaving(false);
+      onSavingChange?.(false);
+    }
+  }
+
+  async function exportTemplates(templateIds?: string[]) {
+    if (!window.eco) {
+      return;
+    }
+    setRegistryMessage(undefined);
+    setRegistrySaving(true);
+    onSavingChange?.(true);
+    try {
+      const result = await window.eco.exportAgentTemplates(
+        templateIds ? { templateIds } : undefined,
+      );
+      if (!result.canceled) {
+        setRegistryMessage(`已导出 ${result.exported} 个模板`);
+      }
+    } catch (caught) {
+      setRegistryMessage(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRegistrySaving(false);
+      onSavingChange?.(false);
+    }
+  }
+
+  async function importTemplates() {
+    if (!window.eco) {
+      return;
+    }
+    setRegistryMessage(undefined);
+    setRegistrySaving(true);
+    onSavingChange?.(true);
+    try {
+      const result = await window.eco.importAgentTemplates();
+      if (!result.canceled) {
+        await onRegistryChange();
+        setRegistryMessage(
+          result.errors.length > 0
+            ? `已导入 ${result.imported} 个模板，${result.errors.length} 个失败`
+            : `已导入 ${result.imported} 个模板`,
+        );
+      }
+    } catch (caught) {
+      setRegistryMessage(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRegistrySaving(false);
+      onSavingChange?.(false);
+    }
+  }
+
+  async function openVersionHistory(template: AgentTemplate) {
+    if (!window.eco) {
+      return;
+    }
+    setRegistryMessage(undefined);
+    setRegistrySaving(true);
+    try {
+      const versions = await window.eco.listAgentTemplateVersions(template.id);
+      setVersionModal({ template, versions });
+    } catch (caught) {
+      setVersionModal({
+        template,
+        versions: [],
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setRegistrySaving(false);
+    }
+  }
+
+  async function restoreVersion(templateId: string, version: number) {
+    if (!window.eco || !versionModal) {
+      return;
+    }
+    setRegistrySaving(true);
+    onSavingChange?.(true);
+    try {
+      const restored = await window.eco.restoreAgentTemplateVersion({ templateId, version });
+      await onRegistryChange();
+      const versions = await window.eco.listAgentTemplateVersions(templateId);
+      setVersionModal({ template: restored, versions });
+      setRegistryMessage(`已恢复 ${restored.name} v${version}`);
+    } catch (caught) {
+      setVersionModal({
+        ...versionModal,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
     } finally {
       setRegistrySaving(false);
       onSavingChange?.(false);
@@ -178,7 +280,27 @@ export function SubagentSettingsSection({
             <Plus size={16} />
             新建模板
           </button>
+          <button
+            type="button"
+            className="models-section-button"
+            disabled={registryBusy}
+            onClick={() => void importTemplates()}
+          >
+            <Upload size={14} />
+            导入 JSON
+          </button>
+          <button
+            type="button"
+            className="models-section-button"
+            disabled={registryBusy}
+            onClick={() => void exportTemplates()}
+          >
+            <Download size={14} />
+            导出 JSON
+          </button>
         </div>
+
+        {registryMessage ? <p className="models-agent-registry-message">{registryMessage}</p> : null}
 
         {providers.length === 0 ? (
           <p className="mcp-list-empty">尚未添加 Provider</p>
@@ -215,6 +337,24 @@ export function SubagentSettingsSection({
                       disabled={registryBusy || providers.length === 0}
                     >
                       <Copy size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => void exportTemplates([template.id])}
+                      aria-label={`导出 ${template.name}`}
+                      disabled={registryBusy}
+                    >
+                      <Download size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => void openVersionHistory(template)}
+                      aria-label={`查看 ${template.name} 版本历史`}
+                      disabled={registryBusy}
+                    >
+                      <History size={18} />
                     </button>
                     <button
                       type="button"
@@ -294,6 +434,17 @@ export function SubagentSettingsSection({
           editing={Boolean(editingTemplateId)}
           onClose={closeEditor}
           onSave={() => void saveTemplate()}
+        />
+      )}
+
+      {versionModal && (
+        <AgentTemplateVersionModal
+          template={versionModal.template}
+          versions={versionModal.versions}
+          error={versionModal.error}
+          busy={registryBusy}
+          onClose={() => setVersionModal(undefined)}
+          onRestore={(version) => void restoreVersion(versionModal.template.id, version)}
         />
       )}
     </>
@@ -558,6 +709,83 @@ function AgentTemplateEditorModal({
   );
 }
 
+function AgentTemplateVersionModal({
+  template,
+  versions,
+  error,
+  busy,
+  onClose,
+  onRestore,
+}: {
+  template: AgentTemplate;
+  versions: AgentTemplateVersionView[];
+  error?: string | undefined;
+  busy?: boolean | undefined;
+  onClose: () => void;
+  onRestore: (version: number) => void;
+}) {
+  return (
+    <div className="settings-modal-backdrop">
+      <button
+        type="button"
+        className="settings-modal-backdrop-close"
+        onClick={onClose}
+        aria-label="关闭"
+        disabled={busy}
+      />
+      <div
+        className="settings-modal settings-modal-agent-version"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-template-version-title"
+      >
+        <header className="settings-modal-header">
+          <h2 id="agent-template-version-title" className="settings-modal-title">
+            {template.name} 版本历史
+          </h2>
+          <button
+            type="button"
+            className="mcp-icon-button"
+            onClick={onClose}
+            aria-label="关闭"
+            disabled={busy}
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="settings-modal-body">
+          {versions.length === 0 ? (
+            <p className="mcp-list-empty">暂无版本记录</p>
+          ) : (
+            <ul className="models-agent-version-list">
+              {versions.map((entry, index) => (
+                <li key={`${entry.templateId}-${entry.version}`} className="models-agent-version-row">
+                  <div className="models-agent-version-main">
+                    <span className="models-route-role">v{entry.version}</span>
+                    {index === 0 ? <span className="models-agent-source-badge">当前</span> : null}
+                    <span className="models-route-role-id">{formatVersionTime(entry.savedAt)}</span>
+                    <p className="models-subagent-card-desc">{entry.template.prompt}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || index === 0}
+                    onClick={() => onRestore(entry.version)}
+                  >
+                    <RotateCcw size={14} />
+                    恢复
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <p className="settings-form-error">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatModelRef(template: AgentTemplate, providers: readonly ProviderConfigView[]): string {
   const modelRef = template.defaultModelRef;
   if (!modelRef) {
@@ -573,6 +801,14 @@ function formatTools(template: AgentTemplate): string {
     return "无默认工具";
   }
   return `${count} tools`;
+}
+
+function formatVersionTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }
 
 function sourceRank(template: AgentTemplate): number {

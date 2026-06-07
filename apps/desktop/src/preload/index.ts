@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   type AgentTemplate,
+  type AgentTemplateExportRequest,
+  type AgentTemplateExportResult,
+  type AgentTemplateImportResult,
+  type AgentTemplateVersionRestoreRequest,
+  type AgentTemplateVersionView,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -122,6 +127,20 @@ const api = {
   },
   deleteAgentTemplate(templateId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateDelete, templateId);
+  },
+  exportAgentTemplates(request?: AgentTemplateExportRequest): Promise<AgentTemplateExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateExport, request);
+  },
+  importAgentTemplates(): Promise<AgentTemplateImportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateImport);
+  },
+  listAgentTemplateVersions(templateId: string): Promise<AgentTemplateVersionView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionsList, templateId);
+  },
+  restoreAgentTemplateVersion(
+    request: AgentTemplateVersionRestoreRequest,
+  ): Promise<AgentTemplate> {
+    return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateVersionRestore, request);
   },
   listOrchestrationProfiles(): Promise<OrchestrationProfile[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileList);

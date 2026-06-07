@@ -6472,6 +6472,11 @@ button:not(:disabled) {
   max-height: min(92vh, 900px);
 }
 
+.settings-modal-agent-version {
+  width: min(680px, calc(100vw - 48px));
+  max-height: min(88vh, 760px);
+}
+
 .settings-modal-route-profile .settings-modal-header {
   padding-bottom: 16px;
   border-bottom: 1px solid #333;
@@ -6648,6 +6653,12 @@ button:not(:disabled) {
   font-size: 12px;
 }
 
+.models-agent-registry-message {
+  margin: 0;
+  font-size: 13px;
+  color: #a3a3a3;
+}
+
 .models-agent-domain-badge,
 .models-agent-source-badge {
   padding: 2px 7px;
@@ -6670,6 +6681,43 @@ button:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.models-agent-version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.models-agent-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1d1d1d;
+}
+
+.models-agent-version-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.models-agent-version-main > span {
+  margin-right: 8px;
+}
+
+.models-agent-version-main .models-subagent-card-desc {
+  margin-top: 8px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .models-subagent-list {

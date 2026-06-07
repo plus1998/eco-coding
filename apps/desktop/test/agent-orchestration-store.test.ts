@@ -115,13 +115,23 @@ test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates
   const store = await createAgentOrchestrationStore(path.join(dir, "eco-coding.sqlite"));
 
   store.saveAgentTemplate(customTemplate());
+  store.saveAgentTemplate({ ...customTemplate(), prompt: "Updated prompt.", version: 2 });
   store.saveOrchestrationProfile(customProfile());
 
-  expect(store.listAgentTemplates()).toMatchObject([{ id: "user.researcher", source: "user" }]);
+  expect(store.listAgentTemplates()).toMatchObject([
+    { id: "user.researcher", source: "user", version: 2 },
+  ]);
+  expect(store.listAgentTemplateVersions("user.researcher").map((entry) => entry.version)).toEqual([
+    2, 1,
+  ]);
+  const restored = store.restoreAgentTemplateVersion("user.researcher", 1);
+  expect(restored).toMatchObject({ id: "user.researcher", prompt: "Research the topic and cite sources." });
+  expect(restored.version).toBe(3);
   expect(store.listOrchestrationProfiles()).toMatchObject([{ id: "user.research", source: "user" }]);
 
   store.deleteAgentTemplate("user.researcher");
   store.deleteOrchestrationProfile("user.research");
   expect(store.listAgentTemplates()).toEqual([]);
+  expect(store.listAgentTemplateVersions("user.researcher")).toEqual([]);
   expect(store.listOrchestrationProfiles()).toEqual([]);
 });
