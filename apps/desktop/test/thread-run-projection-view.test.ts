@@ -628,6 +628,70 @@ test("buildThreadRunProjectionViewModel hides request placeholders once owner ou
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-delta"]);
 });
 
+test("buildThreadRunProjectionViewModel keeps final main agent text after empty placeholder sharing a streamKey", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "stream:act_weather",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:03.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "planner-placeholder",
+          eventType: "message.delta",
+          role: "planner",
+          text: "",
+          streamKey: "act_weather",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "planner-final",
+          eventType: "message.final",
+          role: "planner",
+          text: "子代理查询结果：广州今天中到大雨。",
+          streamKey: "act_weather",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:planner-final"]);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "narrative",
+      streaming: false,
+      text: "子代理查询结果：广州今天中到大雨。",
+    });
+  }
+});
+
+test("buildThreadRunProjectionViewModel hides planner OTel tool duration summaries from main feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "otel-websearch-duration",
+          eventType: "tool.started",
+          role: "planner",
+          text: "Tool: WebSearch (5.9s)",
+          metadata: { liveType: "otel.activity" },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toEqual([]);
+});
+
 test("buildThreadRunProjectionViewModel collapses agent card stream rows without losing final echo", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

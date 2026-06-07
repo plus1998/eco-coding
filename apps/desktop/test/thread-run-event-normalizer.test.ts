@@ -63,6 +63,28 @@ test("buildThreadRunEventFromLiveEvent maps empty streaming chunks to placeholde
   expect(event?.streamState).toBe("placeholder");
 });
 
+test("buildThreadRunEventFromLiveEvent keeps stable streamKey separate from unique event id", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_line:live_2",
+    liveType: "message.delta",
+    role: "planner",
+    stream: false,
+    message: "子代理查询结果：广州今天中到大雨。",
+    streamKey: "act_line",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+
+  expect(event).toMatchObject({
+    id: "tre:act_line:live_2",
+    eventType: "message.final",
+    scope: "main",
+    streamState: "finalized",
+    streamKey: "act_line",
+    message: "子代理查询结果：广州今天中到大雨。",
+  });
+});
+
 test("buildThreadRunEventFromLiveEvent keeps todo updates out of narrative messages", () => {
   const toolEvent = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

@@ -89,33 +89,25 @@ export class SdkStreamActivityBridge {
   }
 
   shouldSuppressOtelToolLine(threadId: string, message: string): boolean {
-    const match = message.match(/^Tool:\s*([^·]+)(?:\s*·\s*(.+))?/);
-    if (!match) {
-      return false;
-    }
-    const toolName = match[1]?.trim();
-    const detail = match[2]?.trim();
-    if (!toolName) {
+    const parsed = parseOtelToolLine(message);
+    if (!parsed) {
       return false;
     }
     const recent = this.recentSdkTools.get(threadId) ?? [];
     const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
     const sdkMatch = [...recent]
       .reverse()
-      .find((item) => item.at >= cutoff && item.toolName === toolName);
+      .find((item) => item.at >= cutoff && item.toolName === parsed.toolName);
     if (!sdkMatch) {
       return false;
     }
-    if (detail && !sdkMatch.hadDetail) {
+    if (!parsed.detail) {
+      return true;
+    }
+    if (!sdkMatch.hadDetail) {
       return false;
     }
-    if (!detail && !sdkMatch.hadDetail) {
-      return true;
-    }
-    if (detail && sdkMatch.hadDetail) {
-      return true;
-    }
-    return false;
+    return true;
   }
 
   handleEvent(
@@ -261,4 +253,26 @@ export class SdkStreamActivityBridge {
       emit(threadId, "message.delta", pending.message, pending.role, pending.stream, pending.agentId);
     }
   }
+}
+
+function parseOtelToolLine(message: string): { toolName: string; detail?: string } | undefined {
+  const match = message.trim().match(/^Tool:\s*(.+?)(?:\s*·\s*(.+))?$/);
+  const rawToolName = match?.[1]?.trim();
+  if (!rawToolName) {
+    return undefined;
+  }
+  const toolName = stripOtelDurationSuffix(rawToolName);
+  if (!toolName) {
+    return undefined;
+  }
+  const rawDetail = match?.[2]?.trim();
+  const detail = rawDetail ? stripOtelDurationSuffix(rawDetail) : undefined;
+  return {
+    toolName,
+    ...(detail && { detail }),
+  };
+}
+
+function stripOtelDurationSuffix(value: string): string {
+  return value.replace(/\s+\(\d+(?:\.\d+)?s\)$/i, "").trim();
 }

@@ -176,6 +176,9 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionInternalMessageText(item.text)) {
     return true;
   }
+  if (isProjectionOtelToolDurationSummary(item)) {
+    return true;
+  }
   if (
     item.eventType === "agent.started" ||
     item.eventType === "agent.stopped" ||
@@ -194,6 +197,13 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
     isProjectionLifecycleText(text) ||
     isProjectionUsageNoiseText(text)
   );
+}
+
+function isProjectionOtelToolDurationSummary(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "tool.started" || projectionLiveType(item) !== "otel.activity") {
+    return false;
+  }
+  return /^Tool:\s*[^·]+?\s+\(\d+(?:\.\d+)?s\)$/i.test(item.text.trim());
 }
 
 function isProjectionUsageNoiseText(text: string): boolean {

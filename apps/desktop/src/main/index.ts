@@ -3465,7 +3465,7 @@ function emitOtelActivity(line: OtelActivityLine): void {
     emitContextCompactionStatus(line.threadId, { stage: "started", trigger: "auto" });
     return;
   }
-  if (line.role === "tool" && sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
+  if (sdkStreamBridge.shouldSuppressOtelToolLine(line.threadId, line.message)) {
     return;
   }
   const otelAgentId = resolveOtelActivityAgentId(line.threadId, line, {
@@ -4185,9 +4185,8 @@ function recordThreadRunEventFromLiveEvent(input: {
   if (!conversationStore.getThread(input.threadId)) {
     return;
   }
-  const eventId =
-    input.persistedActivityLine?.id ??
-    `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const liveEventId = `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const eventId = input.persistedActivityLine ? `${input.persistedActivityLine.id}:${liveEventId}` : liveEventId;
   const runAttemptId = resolveCurrentRunAttemptId(input.threadId);
   const event = buildThreadRunEventFromLiveEvent({
     threadId: input.threadId,
@@ -4199,6 +4198,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     observedAt: new Date().toISOString(),
     ...(runAttemptId && { runAttemptId }),
     ...(input.extras?.agentId?.trim() && { agentId: input.extras.agentId.trim() }),
+    ...(input.persistedActivityLine && { streamKey: input.persistedActivityLine.id }),
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
   });
   if (!event) {

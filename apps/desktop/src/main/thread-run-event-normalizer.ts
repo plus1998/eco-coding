@@ -19,6 +19,7 @@ export interface BuildThreadRunEventFromLiveInput {
   observedAt: string;
   runAttemptId?: string;
   agentId?: string;
+  streamKey?: string;
   apiError?: ThreadApiErrorInfo;
 }
 
@@ -66,6 +67,7 @@ export function buildThreadRunEventFromLiveEvent(
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.agentId && { agentId: input.agentId }),
     ...(requestId && { requestId }),
+    ...(input.streamKey && { streamKey: input.streamKey }),
     ...(input.apiError && { metadata: { liveType: input.liveType, apiError: input.apiError } }),
     ...(!input.apiError && { metadata: { liveType: input.liveType } }),
   };
