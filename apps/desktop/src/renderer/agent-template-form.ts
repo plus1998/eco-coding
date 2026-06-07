@@ -36,6 +36,13 @@ export interface AgentTemplateFormState {
   source: EditableAgentSource;
 }
 
+export type AgentTemplatePermissionTone = "allow" | "deny" | "warn" | "neutral";
+
+export interface AgentTemplatePermissionChip {
+  label: string;
+  tone: AgentTemplatePermissionTone;
+}
+
 export function createBlankAgentTemplateForm(
   providers: readonly ProviderConfigView[],
   existingTemplates: readonly AgentTemplate[] = [],
@@ -182,6 +189,63 @@ export function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
+export function buildAgentTemplatePermissionChips(
+  template: Pick<AgentTemplate, "defaultTools" | "mcpServers">,
+): AgentTemplatePermissionChip[] {
+  const tools = template.defaultTools;
+  const allowed = new Set(tools.allowed);
+  const disallowed = new Set(tools.disallowed);
+  const bashEnabled = tools.bash?.enabled === true && allowed.has("Bash") && !disallowed.has("Bash");
+  const readScope =
+    tools.filesystem?.read ?? (hasAny(allowed, ["Read", "Glob", "Grep", "Bash"]) ? "workspace" : "none");
+  const writeScope =
+    tools.filesystem?.write ??
+    (hasAny(allowed, ["Write", "Edit", "MultiEdit", "NotebookEdit"]) ? "workspace" : "none");
+  const webSearch = tools.network?.webSearch ?? (allowed.has("WebSearch") && !disallowed.has("WebSearch"));
+  const webFetch = tools.network?.webFetch ?? (allowed.has("WebFetch") && !disallowed.has("WebFetch"));
+  const mcpServerCount = new Set([...(tools.mcp?.allowedServers ?? []), ...template.mcpServers]).size;
+  const mcpToolCount = tools.mcp?.allowedTools.length ?? 0;
+  const chips: AgentTemplatePermissionChip[] = [
+    {
+      label: bashEnabled ? `Bash ${formatBashApproval(tools.bash?.approval)}` : "Bash 禁用",
+      tone: bashEnabled ? (tools.bash?.approval === "never" ? "warn" : "allow") : "deny",
+    },
+    {
+      label: `读 ${formatReadScope(readScope)}`,
+      tone: readScope === "none" ? "deny" : "allow",
+    },
+    {
+      label: `写 ${formatWriteScope(writeScope)}`,
+      tone: writeScope === "none" ? "deny" : "allow",
+    },
+    {
+      label:
+        webSearch || webFetch
+          ? `网络 ${[webSearch ? "Search" : "", webFetch ? "Fetch" : ""].filter(Boolean).join("/")}`
+          : "网络关闭",
+      tone: webSearch || webFetch ? "allow" : "deny",
+    },
+    {
+      label:
+        mcpServerCount > 0 || mcpToolCount > 0
+          ? `MCP ${mcpServerCount} 个服务${mcpToolCount > 0 ? `/${mcpToolCount} 个工具` : ""}`
+          : "MCP 关闭",
+      tone: mcpServerCount > 0 || mcpToolCount > 0 ? "allow" : "neutral",
+    },
+  ];
+
+  if (tools.bash?.commandAllowlist?.length) {
+    chips.push({ label: `命令白名单 ${tools.bash.commandAllowlist.length}`, tone: "allow" });
+  }
+  if (tools.bash?.commandDenylist?.length) {
+    chips.push({ label: `命令黑名单 ${tools.bash.commandDenylist.length}`, tone: "deny" });
+  }
+  if (tools.disallowed.length > 0) {
+    chips.push({ label: `禁用 ${formatShortList(tools.disallowed)}`, tone: "deny" });
+  }
+  return chips;
+}
+
 function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
   const allowed = parseList(form.allowedTools);
   const disallowed = parseList(form.disallowedTools);
@@ -209,6 +273,39 @@ function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
     },
     network: { webSearch, webFetch },
   };
+}
+
+function hasAny(values: ReadonlySet<string>, candidates: readonly string[]): boolean {
+  return candidates.some((candidate) => values.has(candidate));
+}
+
+function formatBashApproval(value: NonNullable<ToolPolicy["bash"]>["approval"] | undefined): string {
+  if (value === "always") {
+    return "每次确认";
+  }
+  if (value === "never") {
+    return "免确认";
+  }
+  return "风险确认";
+}
+
+function formatReadScope(value: NonNullable<ToolPolicy["filesystem"]>["read"]): string {
+  if (value === "none") {
+    return "禁用";
+  }
+  if (value === "extra_dirs") {
+    return "工作区+扩展";
+  }
+  return "工作区";
+}
+
+function formatWriteScope(value: NonNullable<ToolPolicy["filesystem"]>["write"]): string {
+  return value === "workspace" ? "工作区" : "禁用";
+}
+
+function formatShortList(values: readonly string[]): string {
+  const visible = values.slice(0, 3).join("/");
+  return values.length > 3 ? `${visible}+${values.length - 3}` : visible;
 }
 
 function formatList(values: readonly string[]): string {

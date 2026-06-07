@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildAgentTemplatePermissionChips,
   buildAgentTemplateFromForm,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
@@ -109,6 +110,37 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template.defaultTools.mcp).toEqual({ allowedServers: ["docs"], allowedTools: ["search"] });
   expect(template.defaultTools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
+});
+
+test("buildAgentTemplatePermissionChips summarizes effective tool policy", () => {
+  const chips = buildAgentTemplatePermissionChips({
+    ...builtInTemplate,
+    defaultTools: {
+      allowed: ["Read", "Bash", "WebFetch"],
+      disallowed: ["Write", "Edit", "WebSearch"],
+      bash: {
+        enabled: true,
+        approval: "always",
+        commandAllowlist: ["bun test"],
+        commandDenylist: ["rm*"],
+      },
+      filesystem: { read: "workspace", write: "none" },
+      network: { webSearch: false, webFetch: true },
+      mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
+    },
+    mcpServers: ["docs"],
+  });
+
+  expect(chips).toEqual([
+    { label: "Bash 每次确认", tone: "allow" },
+    { label: "读 工作区", tone: "allow" },
+    { label: "写 禁用", tone: "deny" },
+    { label: "网络 Fetch", tone: "allow" },
+    { label: "MCP 1 个服务/1 个工具", tone: "allow" },
+    { label: "命令白名单 1", tone: "allow" },
+    { label: "命令黑名单 1", tone: "deny" },
+    { label: "禁用 Write/Edit/WebSearch", tone: "deny" },
+  ]);
 });
 
 test("template form rejects protected and malformed ids", () => {

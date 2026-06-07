@@ -6653,6 +6653,47 @@ button:not(:disabled) {
   font-size: 12px;
 }
 
+.models-agent-template-permissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.models-agent-permission-chip {
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.05);
+  color: #c7c7c7;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.models-agent-permission-chip.is-allow {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+}
+
+.models-agent-permission-chip.is-deny {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
+
+.models-agent-permission-chip.is-warn {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+}
+
+.models-agent-permission-chip.is-neutral {
+  color: #a3a3a3;
+}
+
 .models-agent-registry-message {
   margin: 0;
   font-size: 13px;

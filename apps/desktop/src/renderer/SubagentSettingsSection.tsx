@@ -14,6 +14,7 @@ import {
   AGENT_SOURCE_OPTIONS,
   type AgentTemplateFormState,
   agentTemplateToForm,
+  buildAgentTemplatePermissionChips,
   buildAgentTemplateFromForm,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
@@ -184,9 +185,7 @@ export function SubagentSettingsSection({
     setRegistrySaving(true);
     onSavingChange?.(true);
     try {
-      const result = await window.eco.exportAgentTemplates(
-        templateIds ? { templateIds } : undefined,
-      );
+      const result = await window.eco.exportAgentTemplates(templateIds ? { templateIds } : undefined);
       if (!result.canceled) {
         setRegistryMessage(`已导出 ${result.exported} 个模板`);
       }
@@ -311,6 +310,7 @@ export function SubagentSettingsSection({
             {sortedTemplates.map((template) => {
               const editable =
                 !template.builtIn && template.source !== "built_in" && template.source !== "derived";
+              const permissionChips = buildAgentTemplatePermissionChips(template);
               return (
                 <li key={template.id} className="models-agent-template-row">
                   <div className="models-agent-template-main">
@@ -326,6 +326,16 @@ export function SubagentSettingsSection({
                       <span>{formatTools(template)}</span>
                       {template.skills.length > 0 ? <span>{template.skills.length} skills</span> : null}
                       {template.mcpServers.length > 0 ? <span>{template.mcpServers.length} MCP</span> : null}
+                    </div>
+                    <div className="models-agent-template-permissions">
+                      {permissionChips.map((chip) => (
+                        <span
+                          key={`${template.id}:${chip.label}`}
+                          className={`models-agent-permission-chip is-${chip.tone}`}
+                        >
+                          {chip.label}
+                        </span>
+                      ))}
                     </div>
                   </div>
                   <div className="mcp-server-actions">

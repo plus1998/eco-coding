@@ -340,7 +340,7 @@ type WorkflowStep = {
 
 ## 阶段 2：Agent Registry 子代理库
 
-状态：进行中。
+状态：已完成。
 
 已完成子项：
 
@@ -544,12 +544,14 @@ type WorkflowStep = {
 - 网络策略已对 `WebSearch/WebFetch` 做硬约束，即使工具名在 allowlist 中，结构化 `network` 关闭时也会拒绝。
 - `ClaudeAgentSdkDriver` 已把当前线程 `workspacePath` 传入权限 hook，文件路径判断按线程工作区执行；runtime 权限逻辑不再把 Node-only workspace 模块拖入 renderer 构建图。
 - 权限拒绝已进入运行审计链：`PreToolUse` deny 会生成 runtime `tool.failed` 事件，包含 `tool_name`、`tool_use_id`、actor、agent id/type、cwd 和拒绝原因；desktop activity bridge 和 run event normalizer 已保留结构化 tool metadata。
+- 子代理模板列表已展示每个 agent 的实际权限摘要，包括 Bash 审批策略、文件读写范围、网络 Search/Fetch、MCP 白名单、命令白/黑名单和禁用工具。
 
 已验证：
 
 - `bun run typecheck`
 - `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/workspace/test/workspace.test.ts`
-- `bun test`：998 pass，21 skip，0 fail。
+- `bun test apps/desktop/test/agent-template-form.test.ts`
+- `bun test`：999 pass，21 skip，0 fail。
 - `bun run --cwd apps/desktop build`
 
 主要代码落点：
@@ -559,6 +561,8 @@ type WorkflowStep = {
 - `apps/desktop/src/main/mcp-store.ts`
 - `apps/desktop/src/shared/mcp.ts`
 - `apps/desktop/src/main/agent-lifecycle-service.ts`
+- `apps/desktop/src/renderer/agent-template-form.ts`
+- `apps/desktop/src/renderer/SubagentSettingsSection.tsx`
 
 验收标准：
 
