@@ -38,7 +38,15 @@ import {
   buildMainAgentSystemPrompt,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
+  sdkAgentKeyForProfileAgent,
+  type EcoWorkflowStep,
 } from "./agent-orchestration.js";
+import {
+  buildFixedWorkflowStepPrompt,
+  renderWorkflowStepPrompt,
+  resolveFixedWorkflowBatches,
+  type EcoWorkflowStepOutput,
+} from "./workflow-orchestration.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
@@ -145,6 +153,18 @@ const defaultSettingSources = ["user", "project"] as const;
 
 function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
+}
+
+function usesFixedUniversalWorkflow(input: AgentRuntimeRunInput): boolean {
+  return Boolean(
+    input.agentRegistry &&
+      input.agentRegistry.profile.preset !== "coding" &&
+      input.agentRegistry.profile.strategy.kind === "fixed",
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "autonomous"): string {
@@ -282,6 +302,24 @@ function buildUniversalPlanContinuationPrompt(input: {
   return lines.join("\n");
 }
 
+async function collectAgentEvents<T>(
+  iterable: AsyncGenerator<AgentEvent, T>,
+): Promise<{ events: AgentEvent[]; value?: T; error?: unknown }> {
+  const iterator = iterable[Symbol.asyncIterator]();
+  const events: AgentEvent[] = [];
+  try {
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) {
+        return { events, value: next.value };
+      }
+      events.push(next.value);
+    }
+  } catch (error) {
+    return { events, error };
+  }
+}
+
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
   const merged = new Set(base);
   for (const tool of session?.mcpAllowedTools ?? []) {
@@ -405,6 +443,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    if (usesFixedUniversalWorkflow(input)) {
+      yield* this.runFixedProfileWorkflow(input);
+      return;
+    }
+
     if (this.options.orchestration === "autonomous") {
       yield* this.runAutonomous(input);
       return;
@@ -713,6 +756,132 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
   }
 
+  private async *runFixedProfileWorkflow(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const profile = input.agentRegistry?.profile;
+    if (!profile || profile.strategy.kind !== "fixed") {
+      throw new Error("Fixed workflow requires an active fixed orchestration profile.");
+    }
+    if (!profile.mainAgent.tools.allowed.includes("Agent")) {
+      throw new Error("Fixed workflow profile main agent must allow the Agent tool.");
+    }
+
+    const batches = resolveFixedWorkflowBatches(profile.strategy);
+    const outputs: EcoWorkflowStepOutput[] = [];
+    yield createWorkflowRunEvent(input.threadId, profile.name, "started");
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+      const batch = batches[batchIndex] ?? [];
+      if (batch.length === 1 && batch[0]) {
+        const transcript = yield* this.runFixedWorkflowStepWithFailurePolicy(
+          input,
+          batch[0],
+          outputs,
+          batchIndex,
+        );
+        outputs.push({
+          stepId: batch[0].id,
+          outputKey: batch[0].outputKey,
+          content: transcript,
+        });
+        continue;
+      }
+
+      const results = await Promise.all(
+        batch.map((step) =>
+          collectAgentEvents(
+            this.runFixedWorkflowStepWithFailurePolicy(input, step, outputs, batchIndex),
+          ).then((result) => ({ step, result })),
+        ),
+      );
+
+      for (const { result } of results) {
+        for (const event of result.events) {
+          yield event;
+        }
+      }
+
+      const failed = results.find(({ result }) => result.error);
+      if (failed?.result.error) {
+        throw failed.result.error;
+      }
+
+      for (const { step, result } of results) {
+        outputs.push({
+          stepId: step.id,
+          outputKey: step.outputKey,
+          content: result.value ?? "",
+        });
+      }
+    }
+
+    yield createWorkflowRunEvent(input.threadId, profile.name, "completed");
+  }
+
+  private async *runFixedWorkflowStepWithFailurePolicy(
+    input: AgentRuntimeRunInput,
+    step: EcoWorkflowStep,
+    outputs: readonly EcoWorkflowStepOutput[],
+    batchIndex: number,
+  ): AsyncGenerator<AgentEvent, string> {
+    const maxAttempts = step.failurePolicy === "retry" ? 2 : 1;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return yield* this.runFixedWorkflowStepAttempt(input, step, outputs, {
+          attempt,
+          batchIndex,
+        });
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          continue;
+        }
+      }
+    }
+
+    if (step.failurePolicy === "skip") {
+      return "";
+    }
+    if (step.failurePolicy === "ask_user") {
+      throw new Error(`Workflow step ${step.id} failed and requires user input: ${errorMessage(lastError)}`);
+    }
+    throw lastError instanceof Error ? lastError : new Error(errorMessage(lastError));
+  }
+
+  private async *runFixedWorkflowStepAttempt(
+    input: AgentRuntimeRunInput,
+    step: EcoWorkflowStep,
+    outputs: readonly EcoWorkflowStepOutput[],
+    detail: { attempt: number; batchIndex: number },
+  ): AsyncGenerator<AgentEvent, string> {
+    const renderedInstructions = renderWorkflowStepPrompt(step, {
+      userPrompt: input.prompt,
+      outputs,
+    });
+    const sdkAgentKey = sdkAgentKeyForProfileAgent(step.agentKey);
+    yield createWorkflowStepEvent(input.threadId, step, "started", detail);
+    try {
+      const result = yield* this.runSingleSession(input, {
+        prompt: buildFixedWorkflowStepPrompt({ step, renderedInstructions }),
+        permissionMode: "default",
+        allowedTools: ["Agent"],
+        phaseAppend: [
+          buildUniversalPhaseAppend("execute"),
+          `Fixed workflow step ${step.id}: only Agent(${sdkAgentKey}) is available for this step.`,
+        ].join("\n"),
+        dynamicAgentKeys: [sdkAgentKey],
+      });
+      yield createWorkflowStepEvent(input.threadId, step, "completed", detail);
+      return result.transcript;
+    } catch (error) {
+      yield createWorkflowStepEvent(input.threadId, step, "failed", {
+        ...detail,
+        reason: errorMessage(error),
+      });
+      throw error;
+    }
+  }
+
   private async *runSingleSession(
     input: AgentRuntimeRunInput,
     phase: {
@@ -722,6 +891,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       phaseAppend: string;
       agents?: Record<string, unknown>;
       availability?: SubagentAvailability;
+      dynamicAgentKeys?: string[];
     },
   ): AsyncGenerator<AgentEvent, { transcript: string; finalizedPlan?: FinalizePlanPayload }> {
     const sdk = await this.loadSdk();
@@ -746,6 +916,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             dynamicAgents.definitions,
             phase.agents,
             input.agentRegistry.profile.preset,
+            phase.dynamicAgentKeys,
           )
         : undefined;
     const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
@@ -1132,7 +1303,12 @@ function filterDynamicDefinitionsForPhase(
   definitions: Record<string, unknown>,
   phaseDefinitions: Record<string, unknown> | undefined,
   preset: string,
+  explicitAgentKeys?: readonly string[],
 ): Record<string, unknown> {
+  if (explicitAgentKeys) {
+    const explicit = new Set(explicitAgentKeys);
+    return Object.fromEntries(Object.entries(definitions).filter(([key]) => explicit.has(key)));
+  }
   if (preset !== "coding" || !phaseDefinitions) {
     return definitions;
   }
@@ -1295,6 +1471,57 @@ export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, l
     role: "planner",
     type: "agent.started",
     payload: { ecoPhase: phase, label },
+  });
+}
+
+export function createWorkflowRunEvent(
+  threadId: string,
+  profileName: string,
+  status: "started" | "completed",
+): AgentEvent {
+  return createAgentEvent({
+    id: `${threadId}:eco-workflow-${status}-${crypto.randomUUID()}`,
+    threadId,
+    agentId: "eco-workflow",
+    role: "planner",
+    type: status === "started" ? "agent.started" : "agent.completed",
+    payload: {
+      ecoWorkflow: { profileName, status },
+      label: status === "started" ? `固定编排开始：${profileName}` : `固定编排完成：${profileName}`,
+    },
+  });
+}
+
+export function createWorkflowStepEvent(
+  threadId: string,
+  step: EcoWorkflowStep,
+  status: "started" | "completed" | "failed",
+  detail: { attempt: number; batchIndex: number; reason?: string },
+): AgentEvent {
+  return createAgentEvent({
+    id: `${threadId}:eco-workflow-step-${step.id}-${status}-${crypto.randomUUID()}`,
+    threadId,
+    agentId: `eco-workflow:${step.id}`,
+    role: "planner",
+    type:
+      status === "started" ? "agent.started" : status === "completed" ? "agent.completed" : "agent.failed",
+    payload: {
+      ecoWorkflowStep: {
+        id: step.id,
+        agentKey: step.agentKey,
+        outputKey: step.outputKey,
+        status,
+        attempt: detail.attempt,
+        batchIndex: detail.batchIndex,
+        ...(detail.reason ? { reason: detail.reason } : {}),
+      },
+      label:
+        status === "started"
+          ? `固定编排步骤开始：${step.id}`
+          : status === "completed"
+            ? `固定编排步骤完成：${step.id}`
+            : `固定编排步骤失败：${step.id}`,
+    },
   });
 }
 

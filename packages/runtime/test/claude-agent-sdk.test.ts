@@ -186,6 +186,72 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
   },
 };
 
+const fixedWorkflowAgentRegistry: EcoAgentRuntimeConfig = {
+  templates: [
+    ...universalAgentRegistry.templates,
+    {
+      id: "user.synthesizer",
+      name: "Synthesizer",
+      description: "Turns evidence into a concise answer.",
+      domain: "research",
+      prompt: "Synthesize evidence into a clear final answer.",
+      whenToUse: "Use after source discovery.",
+      outputContract: "Return final synthesis.",
+      defaultTools: universalToolPolicy(["Read"], ["Bash"]),
+      mcpServers: [],
+      skills: [],
+      allowDelegation: false,
+      builtIn: false,
+      source: "user",
+      version: 1,
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    },
+  ],
+  profile: {
+    ...universalAgentRegistry.profile,
+    id: "profile.fixed_research",
+    name: "Fixed Research Desk",
+    agents: [
+      ...universalAgentRegistry.profile.agents,
+      {
+        agentKey: "synthesizer",
+        templateId: "user.synthesizer",
+        displayName: "Research Synthesizer",
+        modelRef: { providerId: "anthropic", modelId: "synthesis-agent-model" },
+        tools: universalToolPolicy(["Read"], ["Bash"]),
+        mcpServers: [],
+        skills: [],
+        enabled: true,
+      },
+    ],
+    strategy: {
+      kind: "fixed",
+      steps: [
+        {
+          id: "research",
+          agentKey: "researcher",
+          promptTemplate: "Research {{userPrompt}}.",
+          dependsOn: [],
+          runMode: "sequential",
+          required: true,
+          outputKey: "research_notes",
+          failurePolicy: "stop",
+        },
+        {
+          id: "synthesis",
+          agentKey: "synthesizer",
+          promptTemplate: "Synthesize from {{step.research}}.",
+          dependsOn: ["research"],
+          runMode: "sequential",
+          required: true,
+          outputKey: "final_answer",
+          failurePolicy: "stop",
+        },
+      ],
+    },
+  },
+};
+
 test("deleteClaudeAgentSdkSession delegates to SDK deleteSession", async () => {
   const sessionStore = {
     append: async () => undefined,
@@ -1200,6 +1266,73 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(systemPrompt).toContain("Agent(eco_researcher)");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
+});
+
+test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", async () => {
+  const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        const callIndex = capturedQueries.length + 1;
+        capturedQueries.push({ prompt, options });
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: `sess-fixed-${callIndex}`,
+              uuid: `init-fixed-${callIndex}`,
+            };
+            yield {
+              type: "assistant",
+              uuid: `assistant-fixed-${callIndex}`,
+              session_id: `sess-fixed-${callIndex}`,
+              message: {
+                content: [{ type: "text", text: `step output ${callIndex}` }],
+              },
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: `sess-fixed-${callIndex}`,
+              uuid: `result-fixed-${callIndex}`,
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const events: Array<{ type: string; payload: unknown }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_fixed_universal",
+    prompt: "Explain the market landscape.",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+    agentRegistry: fixedWorkflowAgentRegistry,
+  })) {
+    events.push({ type: event.type, payload: event.payload });
+  }
+
+  expect(capturedQueries).toHaveLength(2);
+  expect(Object.keys((capturedQueries[0]?.options.agents ?? {}) as Record<string, unknown>)).toEqual([
+    "eco_researcher",
+  ]);
+  expect(Object.keys((capturedQueries[1]?.options.agents ?? {}) as Record<string, unknown>)).toEqual([
+    "eco_synthesizer",
+  ]);
+  expect(capturedQueries[0]?.prompt).toContain("Fixed workflow step: research.");
+  expect(capturedQueries[1]?.prompt).toContain("Fixed workflow step: synthesis.");
+  expect(capturedQueries[1]?.prompt).toContain("step output 1");
+
+  expect(events.some((event) => JSON.stringify(event.payload).includes("固定编排开始"))).toBe(true);
+  expect(events.some((event) => JSON.stringify(event.payload).includes('"id":"research"'))).toBe(true);
+  expect(events.some((event) => JSON.stringify(event.payload).includes('"status":"completed"'))).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

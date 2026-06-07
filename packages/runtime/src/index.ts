@@ -233,6 +233,7 @@ export type {
   SdkToolPermissionRequest,
 } from "./claude-agent-sdk";
 export * from "./eco-sdk-hooks";
+export * from "./workflow-orchestration";
 export {
   buildResumeAgentPrompt,
   createSubagentMissionCapturePreToolHook,
