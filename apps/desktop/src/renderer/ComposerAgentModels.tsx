@@ -62,10 +62,12 @@ function AgentRowContent({
   role,
   modelShort,
   status,
+  action,
 }: {
   role: AgentRole;
   modelShort: string;
   status: string;
+  action?: string | undefined;
 }) {
   return (
     <>
@@ -73,7 +75,10 @@ function AgentRowContent({
         <span className="composer-agent-row-role">{ROLE_LABELS[role]}</span>
         <span className="composer-agent-row-model">{modelShort}</span>
       </span>
-      <span className="composer-agent-row-status">{status}</span>
+      <span className={action ? "composer-agent-row-meta is-actionable" : "composer-agent-row-meta"}>
+        <span className="composer-agent-row-status">{status}</span>
+        {action ? <span className="composer-agent-row-action">{action}</span> : null}
+      </span>
     </>
   );
 }
@@ -228,7 +233,15 @@ export function ComposerAgentModels({
             const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
             const className = rowClassName({ subagent, enabled, clickable, locked, planner });
             const status = planner ? "主线" : locked ? "必需" : enabled ? "开启" : "关闭";
-            const content = <AgentRowContent role={role} modelShort={modelShort} status={status} />;
+            const action = clickable ? (enabled ? "点击关闭" : "点击开启") : undefined;
+            const content = (
+              <AgentRowContent
+                role={role}
+                modelShort={modelShort}
+                status={status}
+                action={action}
+              />
+            );
             const tip = planner
               ? title
               : locked

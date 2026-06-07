@@ -5319,7 +5319,7 @@ button:not(:disabled) {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: #9a9a9a;
@@ -5346,24 +5346,36 @@ button:not(:disabled) {
   color: #8a8a8a;
 }
 
-.composer-agent-row.is-disabled {
+.composer-agent-row.is-disabled:not(.is-clickable) {
   opacity: 0.42;
 }
 
 .composer-agent-row.is-clickable {
+  border-color: rgba(255, 255, 255, 0.04);
   cursor: pointer;
 }
 
 .composer-agent-row.is-clickable:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.11);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.composer-agent-row.is-clickable:focus-visible {
+  outline: none;
+  border-color: rgba(212, 212, 212, 0.34);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .composer-agent-row.is-clickable.is-active:hover:not(:disabled) {
   color: #f5f5f5;
 }
 
+.composer-agent-row.is-clickable.is-disabled {
+  color: #8a8a8a;
+}
+
 .composer-agent-row.is-clickable.is-disabled:hover:not(:disabled) {
-  opacity: 0.65;
+  color: #d4d4d4;
 }
 
 .composer-agent-row.is-clickable:disabled {
@@ -5395,9 +5407,41 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
+.composer-agent-row-meta {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 84px;
+}
+
 .composer-agent-row-status {
   color: #737373;
   font-size: 11px;
+}
+
+.composer-agent-row-meta.is-actionable .composer-agent-row-status {
+  color: #a3a3a3;
+}
+
+.composer-agent-row-action {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #bdbdbd;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.composer-agent-row.is-disabled .composer-agent-row-action {
+  color: #d4d4d4;
+}
+
+.composer-agent-row.is-clickable:hover:not(:disabled) .composer-agent-row-action,
+.composer-agent-row.is-clickable:focus-visible .composer-agent-row-action {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f2f2f2;
 }
 
 .composer-orchestration-wrap {
