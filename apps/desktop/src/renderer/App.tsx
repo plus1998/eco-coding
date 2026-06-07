@@ -93,10 +93,11 @@ import {
   shouldScrollMainActivityFeedForLine,
   stripActivityStatusNoise,
 } from "./activity-log";
-import { formatPlanExecutionSummary, formatRoleModelLabel, mergeStreamText } from "@eco/runtime";
+import { formatPlanExecutionSummary, mergeStreamText } from "@eco/runtime";
 import { ActivityLogView } from "./ActivityLogView";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
+import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
 import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
@@ -1022,18 +1023,22 @@ function App() {
   const canSwitchRouteProfile = canEditComposerConfig;
   const agentModelLabels = useMemo(
     () =>
-      AGENT_ROLES.map((role) => {
-        const route = activeRoutes.find((candidate) => candidate.role === role);
-        const configured = route?.modelId.trim() || undefined;
-        const live = threadModelByRole?.[role];
-        const modelId = pickDisplayModelId(live, configured);
-        return {
-          role,
-          modelId,
-          title: formatRoleModelLabel(role, modelId),
-        };
+      buildComposerAgentModelLabels({
+        routes: activeRoutes,
+        threadModelByRole,
+        profile:
+          selectedRuntimeProfile && composerRuntimeConfig?.agentProfileId?.trim()
+            ? selectedRuntimeProfile
+            : undefined,
+        templates: settings.agentTemplates,
       }),
-    [activeRoutes, threadModelByRole],
+    [
+      activeRoutes,
+      composerRuntimeConfig?.agentProfileId,
+      selectedRuntimeProfile,
+      settings.agentTemplates,
+      threadModelByRole,
+    ],
   );
   const activityModelByRole = useMemo(() => {
     const configured: Record<string, string> = {};

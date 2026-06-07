@@ -10,21 +10,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { SUBAGENT_ROLES, type AgentRole, type SubagentEnabledSettings, type SubagentRole } from "../shared/ipc";
+import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
-
-const ROLE_LABELS: Record<AgentRole, string> = {
-  planner: "主代理",
-  explore: "探索",
-  architect: "架构",
-  coder: "编码",
-  reviewer: "审查",
-  tester: "测试",
-};
-
-function isSubagentRole(role: AgentRole): role is SubagentRole {
-  return (SUBAGENT_ROLES as readonly string[]).includes(role);
-}
+import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 
 function rowClassName(options: {
   subagent: boolean;
@@ -51,7 +39,7 @@ function rowClassName(options: {
 }
 
 interface ComposerAgentModelsProps {
-  labels: Array<{ role: AgentRole; modelId?: string | undefined; title: string }>;
+  labels: ComposerAgentModelLabel[];
   subagentSettings: SubagentEnabledSettings | null;
   canEditSubagents: boolean;
   subagentSaving?: boolean | undefined;
@@ -59,12 +47,12 @@ interface ComposerAgentModelsProps {
 }
 
 function AgentRowContent({
-  role,
+  displayName,
   modelShort,
   status,
   action,
 }: {
-  role: AgentRole;
+  displayName: string;
   modelShort: string;
   status: string;
   action?: string | undefined;
@@ -72,7 +60,7 @@ function AgentRowContent({
   return (
     <>
       <span className="composer-agent-row-main">
-        <span className="composer-agent-row-role">{ROLE_LABELS[role]}</span>
+        <span className="composer-agent-row-role">{displayName}</span>
         <span className="composer-agent-row-model">{modelShort}</span>
       </span>
       <span className={action ? "composer-agent-row-meta is-actionable" : "composer-agent-row-meta"}>
@@ -97,9 +85,9 @@ export function ComposerAgentModels({
   const [pinned, setPinned] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
   const open = hovered || pinned;
-  const subagentLabels = labels.filter(({ role }) => isSubagentRole(role));
+  const subagentLabels = labels.filter((label) => !label.main);
   const enabledSubagents = subagentLabels.filter(
-    ({ role }) => !isSubagentRole(role) || !subagentSettings || subagentSettings[role],
+    ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;
   const totalSubagents = subagentLabels.length;
   const summary = totalSubagents > 0 ? `${enabledSubagents}/${totalSubagents}` : String(labels.length);
@@ -222,27 +210,26 @@ export function ComposerAgentModels({
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
-          {labels.map(({ role, modelId, title }) => {
-            const planner = role === "planner";
-            const subagent = isSubagentRole(role);
-            const enabled = subagent && subagentSettings ? subagentSettings[role] : true;
-            const locked = role === "coder";
+          {labels.map(({ role, displayName, modelId, title, main, subagentRole, required }) => {
+            const subagent = !main;
+            const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
+            const locked = Boolean(required);
             const clickable = Boolean(
-              canEditSubagents && subagent && subagentSettings && onToggleSubagent && !locked,
+              canEditSubagents && subagentRole && subagentSettings && onToggleSubagent && !locked,
             );
             const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
-            const className = rowClassName({ subagent, enabled, clickable, locked, planner });
-            const status = planner ? "主 Agent" : locked ? "必需" : enabled ? "启用" : "停用";
+            const className = rowClassName({ subagent, enabled, clickable, locked, planner: main });
+            const status = main ? "主 Agent" : locked ? "必需" : enabled ? "启用" : "停用";
             const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
             const content = (
               <AgentRowContent
-                role={role}
+                displayName={displayName}
                 modelShort={modelShort}
                 status={status}
                 action={action}
               />
             );
-            const tip = planner
+            const tip = main
               ? title
               : locked
                 ? "默认编程执行子代理不可停用"
@@ -252,7 +239,7 @@ export function ComposerAgentModels({
                     : `${title} · 点击启用`
                   : title;
 
-            if (clickable && subagent) {
+            if (clickable && subagentRole) {
               return (
                 <button
                   key={role}
@@ -261,7 +248,7 @@ export function ComposerAgentModels({
                   title={tip}
                   disabled={subagentSaving}
                   aria-pressed={enabled}
-                  onClick={() => onToggleSubagent?.(role, !enabled)}
+                  onClick={() => onToggleSubagent?.(subagentRole, !enabled)}
                 >
                   {content}
                 </button>

@@ -855,6 +855,8 @@ type WorkflowStep = {
 - Phase 10.6 行为边界：旧 Coding agent definition helpers 继续支持固定 role skills；动态 profile 子代理优先使用自身 template/profile skills，再叠加 session skills，不泄露子代理完整 prompt 到主 prompt。
 - Phase 10.7 已完成：新增 `RuntimeRoleRouteConfig`，运行期 routes、proxy routes、billing route、driver route 和 route fingerprint 全部可承载动态 agent key；显式 `agentProfileId` 会优先从 Agent Profile 生成 `planner + enabled agents` 路由，不再被 legacy `routeProfileId` 抢走。
 - Phase 10.7 行为边界：Route Profile 存储和模型设置页仍只保存固定 Coding role；动态 route 只用于 Agent Profile 运行路径、pricing/capability 探测、proxy/billing/context/session fingerprint。
+- Phase 10.8 已完成：Composer 顶部“编排”模型摘要改为运行期 Agent label 构建，显式 Agent Profile 会展示主 Agent 名称和 enabled 动态子 Agent 名称/model，legacy Coding route 继续显示六角色摘要和固定子代理开关。
+- Phase 10.8 行为边界：Composer 内联开关仍只控制 legacy Coding `subagentEnabled`；动态 Agent 的启停由 Agent Profile 配置负责，当前阶段只保证非 Coding profile 不再显示固定编程角色摘要。
 
 Phase 10.1 验证：
 
@@ -889,6 +891,11 @@ Phase 10.6 验证：
 Phase 10.7 验证：
 
 - `bun test apps/desktop/test/thread-runtime-config.test.ts apps/desktop/test/thread-runtime-routes.test.ts apps/desktop/test/route-fingerprint.test.ts apps/desktop/test/billing-resolver.test.ts apps/desktop/test/thread-plan-approval-runtime.test.ts`
+- `bun run typecheck`
+
+Phase 10.8 验证：
+
+- `bun test apps/desktop/test/composer-agent-model-labels.test.ts`
 - `bun run typecheck`
 
 验收标准：
