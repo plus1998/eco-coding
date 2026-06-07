@@ -34,6 +34,11 @@ import {
 import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import { buildEcoSdkHooks, type EcoHookContext } from "./eco-sdk-hooks.js";
+import {
+  buildMainAgentSystemPrompt,
+  createAgentDefinitionsFromProfile,
+  resolveMainAgentAllowedTools,
+} from "./agent-orchestration.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
@@ -129,9 +134,153 @@ const autonomousAllowedTools = [
   "AskUserQuestion",
   FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;
+const universalEcoBasePromptAppend = [
+  "You are running inside Eco, a configurable agent command center.",
+  "Follow the active Eco orchestration profile and delegate only to the listed Eco subagents.",
+  "Use tools only when they are allowed for the active role and materially help the user's task.",
+].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
 const defaultSettingSources = ["user", "project"] as const;
+
+function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
+  return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
+}
+
+function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "autonomous"): string {
+  const phaseLine =
+    phase === "answer"
+      ? "Current phase: answer the user directly."
+      : phase === "plan"
+        ? "Current phase: understand the request and produce a decision-ready plan when planning is required."
+        : phase === "execute"
+          ? "Current phase: carry out the approved or current task according to the active profile."
+          : "Current phase: decide whether to answer directly, ask a clarifying question, plan, or delegate.";
+  return [
+    "Eco universal orchestration.",
+    phaseLine,
+    "Use Agent(...) only with Eco agent keys shown in the active profile roster.",
+    "Do not use SDK built-in agents or the SDK Workflow tool.",
+  ].join("\n");
+}
+
+function buildUniversalQuestionPrompt(userPrompt: string): string {
+  return [
+    "User question:",
+    userPrompt.trim(),
+    "",
+    "Answer directly. Use available Eco subagents only when they improve the answer.",
+  ].join("\n");
+}
+
+function buildUniversalPlanningPrompt(userPrompt: string): string {
+  return [
+    "User request:",
+    userPrompt.trim(),
+    "",
+    "You are in Eco planning mode.",
+    "Use available Eco subagents when they improve the analysis.",
+    "If the next actions are clear and `mcp__eco_plan__finalize_plan` is available, call it with complete `analysis` and `plan` strings.",
+    "Do not execute the plan in this phase.",
+  ].join("\n");
+}
+
+function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
+  return [
+    "User follow-up (same Eco planning session):",
+    userPrompt.trim(),
+    "",
+    "Update the analysis and plan as needed.",
+    "If `mcp__eco_plan__finalize_plan` is available, submit a complete replacement plan rather than a delta.",
+  ].join("\n");
+}
+
+function buildUniversalExecutionPromptWithFollowUp(
+  planning: {
+    userPrompt: string;
+    analysis: string;
+    plan: string;
+    planUserEdited?: boolean;
+    approvedPlanFile?: string;
+    resumableSubagents?: readonly { role: string; agentId: string }[];
+  },
+  followUp: string,
+  options: { isResume: boolean; includePlanOnResume?: boolean },
+): string {
+  const includePlanText = !options.isResume || options.includePlanOnResume === true;
+  const lines = includePlanText
+    ? [
+        "Continue from the approved plan.",
+        "",
+        "Original user request:",
+        planning.userPrompt.trim() || "(not captured)",
+        "",
+        "Approved analysis:",
+        planning.analysis.trim() || "(no analysis captured)",
+        "",
+        "Approved plan:",
+        planning.plan.trim() || "(no plan captured)",
+      ]
+    : ["Continue with the approved plan already submitted in this Eco session."];
+
+  if (planning.planUserEdited) {
+    lines.push(
+      "",
+      "<system-reminder>",
+      "The user edited this plan in Eco before approval. Treat the approved plan as authoritative over earlier drafts.",
+      "</system-reminder>",
+    );
+  }
+
+  if (planning.approvedPlanFile?.trim()) {
+    lines.push("", `On-disk copy (workspace root): ${planning.approvedPlanFile.trim()}`);
+  }
+
+  const trimmed = followUp.trim();
+  if (trimmed && trimmed !== planning.userPrompt.trim()) {
+    lines.push("", "Latest user message:", trimmed);
+  }
+
+  lines.push("", "Use the active Eco orchestration profile and its listed subagents as needed.");
+  lines.push(formatResumableSubagentsAppend(planning.resumableSubagents ?? []));
+  return lines.join("\n");
+}
+
+function buildUniversalPlanContinuationPrompt(input: {
+  userPrompt: string;
+  analysis: string;
+  plan: string;
+  planUserEdited?: boolean;
+  followUp?: string;
+}): string {
+  const lines = [
+    "<system-reminder>",
+    "The user approved your submitted plan. Continue in the same Eco session using the active profile.",
+    "</system-reminder>",
+    "",
+    input.planUserEdited
+      ? "The user edited the plan in Eco before approval. Treat the approved plan below as authoritative."
+      : "Use the approved plan already submitted in this session.",
+  ];
+  if (input.planUserEdited) {
+    lines.push(
+      "",
+      "Original user request:",
+      input.userPrompt.trim(),
+      "",
+      "Approved analysis:",
+      input.analysis.trim() || "(none)",
+      "",
+      "Approved plan:",
+      input.plan.trim() || "(none)",
+    );
+  }
+  const followUp = input.followUp?.trim();
+  if (followUp && followUp !== input.userPrompt.trim()) {
+    lines.push("", "Latest user message:", followUp);
+  }
+  return lines.join("\n");
+}
 
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
   const merged = new Set(base);
@@ -154,9 +303,7 @@ export function resolveSdkSessionOptions(session?: EcoSdkSessionOptions): {
   };
 }
 
-export function resolveSubagentAvailabilityFromSession(
-  session?: EcoSdkSessionOptions,
-): SubagentAvailability {
+export function resolveSubagentAvailabilityFromSession(session?: EcoSdkSessionOptions): SubagentAvailability {
   return normalizeSubagentAvailability(session?.enabledSubagents);
 }
 
@@ -266,10 +413,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runPlanning(input);
   }
 
-  async *runExecution(
-    input: AgentRuntimeRunInput,
-    planning: EcoPlanningContext,
-  ): AsyncIterable<AgentEvent> {
+  async *runExecution(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
@@ -278,44 +423,51 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const resumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
     const prompt =
       input.executionPromptOverride ??
-      buildExecutionPromptWithFollowUp(
-        {
-          ...planning,
-          approvedPlanFile,
-          ...(input.resumableSubagents?.length
-            ? { resumableSubagents: input.resumableSubagents }
-            : {}),
-        },
-        input.prompt,
-        { isResume, availability, includePlanOnResume: planning.planUserEdited === true },
-      );
+      (universalProfile
+        ? buildUniversalExecutionPromptWithFollowUp(
+            {
+              ...planning,
+              approvedPlanFile,
+              ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
+            },
+            input.prompt,
+            { isResume, includePlanOnResume: planning.planUserEdited === true },
+          )
+        : buildExecutionPromptWithFollowUp(
+            {
+              ...planning,
+              approvedPlanFile,
+              ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
+            },
+            input.prompt,
+            { isResume, availability, includePlanOnResume: planning.planUserEdited === true },
+          ));
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
-      phaseAppend: `${buildExecutePhaseSystemAppend(availability)}${resumableAppend}`,
-      agents: createExecutionAgentDefinitions(
-        input.routes,
-        input.sdkSession?.agentSkills,
-        availability,
-      ),
+      phaseAppend: `${
+        universalProfile ? buildUniversalPhaseAppend("execute") : buildExecutePhaseSystemAppend(availability)
+      }${resumableAppend}`,
+      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
   }
 
   async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
     yield* this.runSingleSession(input, {
-      prompt: buildQuestionAnswerPrompt(input.prompt, availability),
+      prompt: universalProfile
+        ? buildUniversalQuestionPrompt(input.prompt)
+        : buildQuestionAnswerPrompt(input.prompt, availability),
       permissionMode: readOnlyPermissionMode,
       allowedTools: [...questionAllowedTools],
-      phaseAppend: buildQuestionAnswerSystemAppend(availability),
-      agents: createQuestionAgentDefinitions(
-        input.routes,
-        input.sdkSession?.agentSkills,
-        availability,
-      ),
+      phaseAppend: universalProfile
+        ? buildUniversalPhaseAppend("answer")
+        : buildQuestionAnswerSystemAppend(availability),
+      agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
   }
@@ -373,20 +525,21 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     mode: "planning" | "execution" | "question",
     planning?: EcoPlanningContext,
   ): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
     if (this.options.orchestration === "autonomous") {
       if (mode === "question") {
         const availability = defaultSubagentAvailability();
         yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
         yield* this.runSingleSession(input, {
-          prompt: buildQuestionAnswerPrompt(input.prompt, availability),
+          prompt: universalProfile
+            ? buildUniversalQuestionPrompt(input.prompt)
+            : buildQuestionAnswerPrompt(input.prompt, availability),
           permissionMode: readOnlyPermissionMode,
           allowedTools: [...questionAllowedTools],
-          phaseAppend: buildQuestionAnswerSystemAppend(availability),
-          agents: createQuestionAgentDefinitions(
-            input.routes,
-            input.sdkSession?.agentSkills,
-            availability,
-          ),
+          phaseAppend: universalProfile
+            ? buildUniversalPhaseAppend("answer")
+            : buildQuestionAnswerSystemAppend(availability),
+          agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
           availability,
         });
         return;
@@ -395,13 +548,21 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       const availability = defaultSubagentAvailability();
       const continuationPrompt =
         mode === "execution" && planning
-          ? buildAutonomousPlanContinuationPrompt({
-              userPrompt: planning.userPrompt,
-              analysis: planning.analysis,
-              plan: planning.plan,
-              ...(planning.planUserEdited ? { planUserEdited: true } : {}),
-              followUp: input.prompt,
-            })
+          ? universalProfile
+            ? buildUniversalPlanContinuationPrompt({
+                userPrompt: planning.userPrompt,
+                analysis: planning.analysis,
+                plan: planning.plan,
+                ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+                followUp: input.prompt,
+              })
+            : buildAutonomousPlanContinuationPrompt({
+                userPrompt: planning.userPrompt,
+                analysis: planning.analysis,
+                plan: planning.plan,
+                ...(planning.planUserEdited ? { planUserEdited: true } : {}),
+                followUp: input.prompt,
+              })
           : input.prompt;
       yield createPhaseBoundaryEvent(
         input.threadId,
@@ -412,11 +573,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         prompt: continuationPrompt,
         permissionMode: "acceptEdits",
         allowedTools: [...autonomousAllowedTools],
-        phaseAppend: buildAutonomousOrchestratorAppend(),
-        agents: createAutonomousAgentDefinitions(
-          input.routes,
-          input.sdkSession?.agentSkills,
-        ),
+        phaseAppend: universalProfile
+          ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
+          : buildAutonomousOrchestratorAppend(),
+        agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
         availability,
       });
       return;
@@ -427,15 +587,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
       const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
       const planningTranscript = yield* this.runSingleSession(input, {
-        prompt: buildPlanningContinuationPrompt(input.prompt, availability),
+        prompt: universalProfile
+          ? buildUniversalPlanningContinuationPrompt(input.prompt)
+          : buildPlanningContinuationPrompt(input.prompt, availability),
         permissionMode: readOnlyPermissionMode,
         allowedTools: [...planningAllowedTools],
-        phaseAppend: `${buildPlanningPhaseSystemAppend(availability)}${planningResumableAppend}`,
-        agents: createPlanningAgentDefinitions(
-          input.routes,
-          input.sdkSession?.agentSkills,
-          availability,
-        ),
+        phaseAppend: `${
+          universalProfile ? buildUniversalPhaseAppend("plan") : buildPlanningPhaseSystemAppend(availability)
+        }${planningResumableAppend}`,
+        agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
       if (input.signal.aborted) {
@@ -456,15 +616,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, {
-        prompt: buildQuestionAnswerPrompt(input.prompt, availability),
+        prompt: universalProfile
+          ? buildUniversalQuestionPrompt(input.prompt)
+          : buildQuestionAnswerPrompt(input.prompt, availability),
         permissionMode: "default",
         allowedTools: [...questionAllowedTools],
-        phaseAppend: buildQuestionAnswerSystemAppend(availability),
-        agents: createQuestionAgentDefinitions(
-          input.routes,
-          input.sdkSession?.agentSkills,
-          availability,
-        ),
+        phaseAppend: universalProfile
+          ? buildUniversalPhaseAppend("answer")
+          : buildQuestionAnswerSystemAppend(availability),
+        agents: createQuestionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
       return;
@@ -475,37 +635,40 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
     const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
     const executionPrompt = planning
-      ? buildExecutionPromptWithFollowUp(
-          { ...planning, approvedPlanFile },
-          input.prompt,
-          { isResume: true, availability, includePlanOnResume: false },
-        )
+      ? universalProfile
+        ? buildUniversalExecutionPromptWithFollowUp({ ...planning, approvedPlanFile }, input.prompt, {
+            isResume: true,
+            includePlanOnResume: false,
+          })
+        : buildExecutionPromptWithFollowUp({ ...planning, approvedPlanFile }, input.prompt, {
+            isResume: true,
+            availability,
+            includePlanOnResume: false,
+          })
       : input.prompt;
     yield* this.runSingleSession(input, {
       prompt: executionPrompt,
       permissionMode: "acceptEdits",
       allowedTools: [...defaultAllowedTools],
-      phaseAppend: buildExecutePhaseSystemAppend(availability),
-      agents: createExecutionAgentDefinitions(
-        input.routes,
-        input.sdkSession?.agentSkills,
-        availability,
-      ),
+      phaseAppend: universalProfile
+        ? buildUniversalPhaseAppend("execute")
+        : buildExecutePhaseSystemAppend(availability),
+      agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
   }
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
     const availability = defaultSubagentAvailability();
     const transcript = yield* this.runSingleSession(input, {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
-      phaseAppend: buildAutonomousOrchestratorAppend(),
-      agents: createAutonomousAgentDefinitions(
-        input.routes,
-        input.sdkSession?.agentSkills,
-      ),
+      phaseAppend: universalProfile
+        ? buildUniversalPhaseAppend("autonomous")
+        : buildAutonomousOrchestratorAppend(),
+      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
       availability,
     });
     if (input.signal.aborted) {
@@ -522,18 +685,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   }
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
     const planningTranscript = yield* this.runSingleSession(input, {
-      prompt: buildPlanningPhasePrompt(input.prompt, availability),
+      prompt: universalProfile
+        ? buildUniversalPlanningPrompt(input.prompt)
+        : buildPlanningPhasePrompt(input.prompt, availability),
       permissionMode: readOnlyPermissionMode,
       allowedTools: [...planningAllowedTools],
-      phaseAppend: buildPlanningPhaseSystemAppend(availability),
-      agents: createPlanningAgentDefinitions(
-        input.routes,
-        input.sdkSession?.agentSkills,
-        availability,
-      ),
+      phaseAppend: universalProfile
+        ? buildUniversalPhaseAppend("plan")
+        : buildPlanningPhaseSystemAppend(availability),
+      agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
     if (input.signal.aborted) {
@@ -566,9 +730,43 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       throw new Error("At least one model route is required to start Claude Agent SDK");
     }
 
-    const systemAppend = [ecoBasePromptAppend, phase.phaseAppend].filter(Boolean).join("\n\n");
+    const systemAppend = [
+      usesUniversalAgentProfile(input) ? universalEcoBasePromptAppend : ecoBasePromptAppend,
+      phase.phaseAppend,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const session = resolveSdkSessionOptions(input.sdkSession);
-    const allowedTools = mergeAllowedTools(phase.allowedTools, input.sdkSession);
+    const dynamicAgents = input.agentRegistry
+      ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates)
+      : undefined;
+    const dynamicDefinitions =
+      dynamicAgents && input.agentRegistry
+        ? filterDynamicDefinitionsForPhase(
+            dynamicAgents.definitions,
+            phase.agents,
+            input.agentRegistry.profile.preset,
+          )
+        : undefined;
+    const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
+    const mainAllowedTools = input.agentRegistry
+      ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
+      : phase.allowedTools;
+    const allowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
+    const mainModel = input.agentRegistry?.profile.mainAgent.modelRef.modelId ?? plannerRoute.primary.modelId;
+    const systemPrompt = input.agentRegistry
+      ? buildMainAgentSystemPrompt(
+          input.agentRegistry.profile,
+          input.agentRegistry.templates,
+          systemAppend,
+          this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {},
+        )
+      : {
+          type: "preset",
+          preset: "claude_code",
+          append: systemAppend,
+          ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
+        };
     let finalizedPlan: FinalizePlanPayload | undefined;
     const planningMcpServer = phase.allowedTools.includes(FINALIZE_PLAN_ALLOWED_TOOL)
       ? await createFinalizePlanMcpServer((submission) => {
@@ -580,27 +778,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const sessionCwd = input.workspacePath.trim() || input.worktreePath;
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
-      model: plannerRoute.primary.modelId,
+      model: mainModel,
       fallbackModel: plannerRoute.fallbacks[0]?.modelId,
       includePartialMessages: true,
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
       allowedTools,
-      systemPrompt: {
-        type: "preset",
-        preset: "claude_code",
-        append: systemAppend,
-        ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
-      },
+      systemPrompt,
       tools: { type: "preset", preset: "claude_code" },
       ...(this.options.hookContext
         ? {
             hooks: buildEcoSdkHooks({
               ...this.options.hookContext,
+              ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               subagentAvailability:
-                phase.availability ??
-                resolveSubagentAvailabilityFromSession(input.sdkSession),
+                phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
             }),
           }
         : {}),
@@ -608,9 +801,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
         ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
-        ...(this.options.otel
-          ? { otel: { ...this.options.otel, threadId: input.threadId } }
-          : {}),
+        ...(this.options.otel ? { otel: { ...this.options.otel, threadId: input.threadId } } : {}),
       }),
       settings: {},
     };
@@ -630,7 +821,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       };
     }
 
-    if (phase.agents) {
+    if (dynamicDefinitions) {
+      queryOptions.agents = dynamicDefinitions;
+    } else if (phase.agents) {
       queryOptions.agents = phase.agents;
     }
 
@@ -682,11 +875,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         typeof query.getContextUsage === "function"
       ) {
         contextUsageCollected = true;
-        pendingContextEvents = await this.collectContextUsageEvents(
-          query,
-          input.threadId,
-          activeSessionId,
-        );
+        pendingContextEvents = await this.collectContextUsageEvents(query, input.threadId, activeSessionId);
       }
 
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
@@ -939,6 +1128,18 @@ export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
   return resolved;
 }
 
+function filterDynamicDefinitionsForPhase(
+  definitions: Record<string, unknown>,
+  phaseDefinitions: Record<string, unknown> | undefined,
+  preset: string,
+): Record<string, unknown> {
+  if (preset !== "coding" || !phaseDefinitions) {
+    return definitions;
+  }
+  const allowedKeys = new Set(Object.keys(phaseDefinitions));
+  return Object.fromEntries(Object.entries(definitions).filter(([key]) => allowedKeys.has(key)));
+}
+
 export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
@@ -983,9 +1184,7 @@ export function applyEcoSdkSettings(
   const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
   const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
   const existingPermissions = isRecord(existing.permissions) ? existing.permissions : {};
-  const existingDeny = Array.isArray(existingPermissions.deny)
-    ? (existingPermissions.deny as string[])
-    : [];
+  const existingDeny = Array.isArray(existingPermissions.deny) ? (existingPermissions.deny as string[]) : [];
   const deny = [...new Set([...existingDeny, ...sdkBuiltinSubagentDenyRules()])];
   queryOptions.settings = {
     ...existing,
@@ -1038,10 +1237,7 @@ export function readSdkUserMessageCheckpointId(message: unknown): string | undef
   return typeof message.uuid === "string" && message.uuid.trim() ? message.uuid.trim() : undefined;
 }
 
-export function createFileCheckpointEvent(
-  threadId: string,
-  userMessageId: string,
-): AgentEvent {
+export function createFileCheckpointEvent(threadId: string, userMessageId: string): AgentEvent {
   return createAgentEvent({
     id: `file-checkpoint:${userMessageId}`,
     type: "file.checkpoint",
@@ -1063,11 +1259,7 @@ export function isSdkInitMessage(message: unknown): boolean {
   return isRecord(message) && message.type === "system" && message.subtype === "init";
 }
 
-export function createSessionCapturedEvent(
-  threadId: string,
-  sessionId: string,
-  cwd: string,
-): AgentEvent {
+export function createSessionCapturedEvent(threadId: string, sessionId: string, cwd: string): AgentEvent {
   return createAgentEvent({
     id: `${threadId}:session:${sessionId}`,
     threadId,
@@ -1112,8 +1304,7 @@ export function extractSdkRunFailure(payload: unknown): string | null {
   }
 
   const isTerminalResult =
-    payload.type === "result" ||
-    (payloadHasSdkResultShape(payload) && typeof payload.subtype === "string");
+    payload.type === "result" || (payloadHasSdkResultShape(payload) && typeof payload.subtype === "string");
 
   if (!isTerminalResult) {
     return null;
@@ -1138,7 +1329,9 @@ export function extractSdkRunFailure(payload: unknown): string | null {
 }
 
 function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
-  return "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload);
+  return (
+    "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload)
+  );
 }
 
 export function readSdkSlashCommands(message: unknown): string[] {
@@ -1423,10 +1616,7 @@ export function mapSdkMessageToEvents(
       subtype: message.subtype,
       ...(typeof message.result === "string" && { result: message.result }),
     };
-    const attributed = applySubagentUsageAttribution(
-      { role, sessionId, payload: resultPayload },
-      streamCtx,
-    );
+    const attributed = applySubagentUsageAttribution({ role, sessionId, payload: resultPayload }, streamCtx);
     return [
       createAgentEvent({
         id: `${uuid}:usage`,
@@ -1443,9 +1633,7 @@ export function mapSdkMessageToEvents(
     if (message.subtype === "thinking_tokens") {
       return [];
     }
-    if (
-      message.subtype === "task_progress"
-    ) {
+    if (message.subtype === "task_progress") {
       return mapTaskSystemMessageToEvents(message, threadId, sessionId, role, uuid);
     }
     if (
@@ -1564,11 +1752,7 @@ function mapAssistantMessageToEvents(
       );
       continue;
     }
-    if (
-      block.type === "thinking" &&
-      typeof block.thinking === "string" &&
-      block.thinking.trim()
-    ) {
+    if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
       events.push(
         createAgentEvent({
           id: `${uuid}:thinking:${index}`,
@@ -1735,7 +1919,10 @@ export function formatAgentEventDisplay(
   }
 
   const message = formatAgentEventLine(event);
-  if (!message && !(isRecord(event.payload) && event.payload.type === "eco_stream" && event.payload.streamFinalize)) {
+  if (
+    !message &&
+    !(isRecord(event.payload) && event.payload.type === "eco_stream" && event.payload.streamFinalize)
+  ) {
     return null;
   }
 
@@ -1749,9 +1936,7 @@ export function formatAgentEventDisplay(
   };
 }
 
-export function formatAgentEventLine(
-  event: Pick<AgentEvent, "type" | "payload" | "role">,
-): string | null {
+export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" | "role">): string | null {
   if (event.type === "usage.recorded" || event.type === "todo.updated") {
     if (event.type === "todo.updated" && isSdkTodoUpdatedPayload(event.payload)) {
       const sdkPayload = event.payload;
@@ -1787,7 +1972,11 @@ export function formatAgentEventLine(
     return "计划已生成，等待确认。";
   }
 
-  if (event.type === "tool.started" && isRecord(event.payload) && typeof event.payload.tool_name === "string") {
+  if (
+    event.type === "tool.started" &&
+    isRecord(event.payload) &&
+    typeof event.payload.tool_name === "string"
+  ) {
     return `Running tool: ${event.payload.tool_name}`;
   }
 
@@ -1798,9 +1987,7 @@ export function formatAgentEventLine(
   return null;
 }
 
-export function inferActivityRole(
-  event: Pick<AgentEvent, "type" | "payload" | "role">,
-): ActivityDisplayRole {
+export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "role">): ActivityDisplayRole {
   if (isThinkingPayload(event.payload)) {
     return "thinking";
   }
@@ -1892,7 +2079,11 @@ export function isThinkingPayload(payload: unknown): boolean {
 
   if (payload.type === "stream_event" && isRecord(payload.event)) {
     const event = payload.event;
-    if (event.type === "content_block_delta" && isRecord(event.delta) && event.delta.type === "thinking_delta") {
+    if (
+      event.type === "content_block_delta" &&
+      isRecord(event.delta) &&
+      event.delta.type === "thinking_delta"
+    ) {
       return true;
     }
   }
@@ -2031,7 +2222,9 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "auth_status" && Array.isArray(payload.output)) {
-    const lines = payload.output.filter((line): line is string => typeof line === "string" && line.trim().length > 0);
+    const lines = payload.output.filter(
+      (line): line is string => typeof line === "string" && line.trim().length > 0,
+    );
     return lines.length > 0 ? lines.join("\n") : null;
   }
 
@@ -2186,8 +2379,7 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
       undefined;
     if (subagent) {
       const label = formatSubagentLabel(subagent);
-      const taskPrompt =
-        typeof input.prompt === "string" && input.prompt.trim() ? input.prompt.trim() : "";
+      const taskPrompt = typeof input.prompt === "string" && input.prompt.trim() ? input.prompt.trim() : "";
       if (taskPrompt) {
         const summary = taskPrompt.length > 60 ? `${taskPrompt.slice(0, 57)}…` : taskPrompt;
         return `${label} · ${summary}`;

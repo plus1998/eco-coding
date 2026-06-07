@@ -60,11 +60,7 @@ export interface EcoSubagentSessionHooks {
   onStop(input: { agentId: string; agentType: string }): void;
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
-  onAgentToolCapture?: (input: {
-    role: SubagentRole;
-    prompt: string;
-    todoIdHint?: string;
-  }) => void;
+  onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
 }
 
 export interface EcoSubagentAttributionHooks {
@@ -88,6 +84,7 @@ export interface EcoHookContext {
   onPreCompact?: (input: EcoPreCompactHookInput) => Promise<void>;
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
   subagentAvailability?: SubagentAvailability;
+  allowedAgentKeys?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -171,7 +168,8 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
-export function createNonEcoSubagentDenyPreToolHook(): HookCallback {
+export function createNonEcoSubagentDenyPreToolHook(allowedAgentKeys: readonly string[] = []): HookCallback {
+  const allowed = new Set(allowedAgentKeys);
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") {
       return {};
@@ -188,11 +186,14 @@ export function createNonEcoSubagentDenyPreToolHook(): HookCallback {
     if (normalizeSdkSubagentType(rawType)) {
       return {};
     }
+    if (allowed.has(rawType)) {
+      return {};
+    }
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: `Subagent "${rawType}" is not an Eco agent. Use eco_* keys only (see Available Eco subagents in system prompt).`,
+        permissionDecisionReason: `Subagent "${rawType}" is not an Eco agent. Use listed Eco agent keys only (see Available Eco subagents in system prompt).`,
       },
     };
   };
@@ -278,10 +279,7 @@ export function createSubagentToolAttributionPreToolHook(
       return {};
     }
     const preInput = input as PreToolUseHookInput;
-    if (
-      typeof toolUseID === "string" &&
-      (preInput.tool_name === "Task" || preInput.tool_name === "Agent")
-    ) {
+    if (typeof toolUseID === "string" && (preInput.tool_name === "Task" || preInput.tool_name === "Agent")) {
       const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
       const role = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
       onTaskToolUse(toolUseID, role ? { role } : undefined);
@@ -331,12 +329,10 @@ export function createTaskCompletedHook(taskTracker: EcoTaskTrackerHooks): HookC
   };
 }
 
-export function createSubagentStartHook(
-  handlers: {
-    taskTracker?: EcoTaskTrackerHooks;
-    subagentSessions?: EcoSubagentSessionHooks;
-  },
-): HookCallback {
+export function createSubagentStartHook(handlers: {
+  taskTracker?: EcoTaskTrackerHooks;
+  subagentSessions?: EcoSubagentSessionHooks;
+}): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "SubagentStart") {
       return {};
@@ -353,12 +349,10 @@ export function createSubagentStartHook(
   };
 }
 
-export function createSubagentStopHook(
-  handlers: {
-    taskTracker?: EcoTaskTrackerHooks;
-    subagentSessions?: EcoSubagentSessionHooks;
-  },
-): HookCallback {
+export function createSubagentStopHook(handlers: {
+  taskTracker?: EcoTaskTrackerHooks;
+  subagentSessions?: EcoSubagentSessionHooks;
+}): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "SubagentStop") {
       return {};
@@ -394,9 +388,7 @@ export function createStopHook(ctx: EcoHookContext): HookCallback | undefined {
   };
 }
 
-export function createPreCompactHook(
-  onPreCompact: EcoHookContext["onPreCompact"],
-): HookCallback | undefined {
+export function createPreCompactHook(onPreCompact: EcoHookContext["onPreCompact"]): HookCallback | undefined {
   if (!onPreCompact) {
     return undefined;
   }
@@ -474,7 +466,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
-  pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(), "Agent|Task");
+  pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
   if (ctx.subagentSessions) {
     const sessions = ctx.subagentSessions;
@@ -499,7 +491,12 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     );
   }
   pushHook(hooks, "PreToolUse", createReviewerScopePreToolHook(ctx.resolveChangedFiles), "Agent|Task");
-  pushHook(hooks, "PreToolUse", createSubagentToolAttributionPreToolHook(ctx.subagentAttribution), "Agent|Task");
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createSubagentToolAttributionPreToolHook(ctx.subagentAttribution),
+    "Agent|Task",
+  );
 
   const subagentHandlers = {
     ...(ctx.taskTracker && { taskTracker: ctx.taskTracker }),
@@ -511,7 +508,12 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   }
 
   if (ctx.taskTracker) {
-    pushHook(hooks, "PreToolUse", createTaskToolPreToolHook(ctx.taskTracker), "TaskCreate|TaskUpdate|TodoWrite");
+    pushHook(
+      hooks,
+      "PreToolUse",
+      createTaskToolPreToolHook(ctx.taskTracker),
+      "TaskCreate|TaskUpdate|TodoWrite",
+    );
     pushHook(hooks, "TaskCreated", createTaskCreatedHook(ctx.taskTracker));
     pushHook(hooks, "TaskCompleted", createTaskCompletedHook(ctx.taskTracker));
     pushHook(hooks, "Stop", createStopHook(ctx));

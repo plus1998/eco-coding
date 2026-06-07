@@ -403,7 +403,17 @@ type WorkflowStep = {
 
 ## 阶段 3：Runtime 动态 AgentDefinition 注入
 
-状态：未开始。
+状态：已完成。
+
+已完成子项：
+
+- 新增 runtime 通用 agent 编排解析层，可从 `OrchestrationProfile + AgentTemplate[]` 生成 SDK `agents`、agent key roster、主 agent system prompt 和主 agent 工具 allowlist。
+- `AgentRuntimeRunInput` 与桌面 `buildSdkRunInput` 已支持 `agentRegistry`；问答、计划、执行、审批续跑、普通续聊和文件回滚入口都会解析当前线程 profile 并传入 runtime。
+- `ClaudeAgentSdkDriver` 已优先使用动态 profile：主 agent model 来自 profile，子代理 `AgentDefinition` 来自 profile agents，完整子代理 prompt 只进入对应子代理 definition。
+- Coding profile 仍保留 `claude_code` preset，并按当前 phase 过滤 `eco_explore / eco_architect / eco_coder / eco_reviewer / eco_tester`，避免默认编程行为退化。
+- 非 Coding profile 走通用 system prompt 和 phase prompt，不再套用“仓库探索、diff、测试、实现计划”等编程专属包装。
+- SDK hook 已支持动态 Eco agent key allowlist，`eco_researcher` 这类用户自定义 key 可被放行，未列入 roster 的 SDK 内置/陌生子代理仍会被拒绝。
+- 验证：`bun run typecheck` 通过；`bun test` 通过（980 pass / 21 skip / 0 fail）；`bun run --cwd apps/desktop build` 通过（保留既有 Vite chunk size warning）。
 
 目标：用当前 profile 动态生成 SDK `agents`，摆脱固定 `createExecutionAgentDefinitions` 路径。
 

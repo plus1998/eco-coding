@@ -186,6 +186,24 @@ test("createNonEcoSubagentDenyPreToolHook allows eco_* subagent keys", async () 
   expect(result.hookSpecificOutput).toBeUndefined();
 });
 
+test("createNonEcoSubagentDenyPreToolHook allows dynamic Eco agent keys", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook(["eco_researcher"]);
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "eco_researcher", prompt: "Research this market." },
+      tool_use_id: "tool_researcher",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_researcher",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toBeUndefined();
+});
+
 test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {
   const hook = createDisabledSubagentPreToolHook({
     explore: false,

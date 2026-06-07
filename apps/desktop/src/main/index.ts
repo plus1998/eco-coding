@@ -14,6 +14,7 @@ import {
   type AgentEvent,
   defaultSubagentAvailability,
   type EcoPlanningContext,
+  type EcoAgentRuntimeConfig,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
   isSubagentRole,
@@ -85,10 +86,7 @@ import {
   type WorktreeStatusResult,
 } from "../shared/ipc";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
-import {
-  buildAgentTemplateArchive,
-  parseAgentTemplateArchive,
-} from "../shared/agent-template-archive";
+import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
   filterExplicitUserSkillNames,
@@ -522,10 +520,7 @@ function assertCanWriteOrchestrationProfileId(id: string): void {
   }
 }
 
-function prepareImportedAgentTemplate(
-  template: AgentTemplate,
-  existingIds: Set<string>,
-): AgentTemplate {
+function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<string>): AgentTemplate {
   const now = new Date().toISOString();
   const protectedId =
     template.builtIn ||
@@ -534,10 +529,11 @@ function prepareImportedAgentTemplate(
   if (protectedId) {
     const domain = typeof template.domain === "string" ? template.domain : "custom";
     const name =
-      typeof template.name === "string" && template.name.trim()
-        ? template.name.trim()
-        : "Imported Agent";
-    const id = createUniqueImportedTemplateId(`user.imported.${slugifyTemplateId(name) || "agent"}`, existingIds);
+      typeof template.name === "string" && template.name.trim() ? template.name.trim() : "Imported Agent";
+    const id = createUniqueImportedTemplateId(
+      `user.imported.${slugifyTemplateId(name) || "agent"}`,
+      existingIds,
+    );
     existingIds.add(id);
     return {
       ...template,
@@ -651,6 +647,31 @@ function resolveRuntimeRoutesForThread(
   const providers = providerStore.listProvidersWithSecrets();
   const roleRoutes = resolveRoleRoutesForThread(threadId);
   return resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
+}
+
+function resolveAgentRuntimeConfigForThread(thread: ThreadSummary): EcoAgentRuntimeConfig | undefined {
+  const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
+  if (!runtimeConfig) {
+    return undefined;
+  }
+  const settings = getModelSettingsSnapshot();
+  const profile = settings.orchestrationProfiles.find(
+    (candidate) =>
+      candidate.id === runtimeConfig.routeProfileId ||
+      candidate.sourceRouteProfileId === runtimeConfig.routeProfileId,
+  );
+  if (!profile) {
+    return undefined;
+  }
+  return {
+    templates: settings.agentTemplates,
+    profile,
+  };
+}
+
+function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntimeConfig | undefined {
+  const thread = conversationStore.getThread(threadId);
+  return thread ? resolveAgentRuntimeConfigForThread(thread) : undefined;
 }
 
 function threadOrchestrationMode(threadId: string): "autonomous" | "manual" {
@@ -901,8 +922,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.agentTemplateExport, async (_event, payload?: unknown) => {
-    const request =
-      payload && typeof payload === "object" ? (payload as AgentTemplateExportRequest) : {};
+    const request = payload && typeof payload === "object" ? (payload as AgentTemplateExportRequest) : {};
     const requestedIds = Array.isArray(request.templateIds)
       ? new Set(request.templateIds.map((id) => id.trim()).filter(Boolean))
       : undefined;
@@ -989,10 +1009,7 @@ function registerIpcHandlers(): void {
     }
     const request = payload as AgentTemplateVersionRestoreRequest;
     assertCanWriteAgentTemplateId(request.templateId);
-    const restored = agentOrchestrationStore.restoreAgentTemplateVersion(
-      request.templateId,
-      request.version,
-    );
+    const restored = agentOrchestrationStore.restoreAgentTemplateVersion(request.templateId, request.version);
     emitSettingsUpdated();
     return restored;
   });
@@ -1812,6 +1829,7 @@ async function runQuestionThread(
                     routes,
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                     ...(effectiveResume ? { resume: effectiveResume } : {}),
                   }),
                 ),
@@ -1955,6 +1973,7 @@ async function runCodingThreadAutonomous(
                     routes,
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                     ...(effectiveResume ? { resume: effectiveResume } : {}),
                   }),
                 ),
@@ -2105,6 +2124,7 @@ async function runCodingThreadPlanning(
                     routes,
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                     ...(effectiveResume ? { resume: effectiveResume } : {}),
                   }),
                 ),
@@ -2242,6 +2262,7 @@ async function runCodingThreadAutonomousAfterApproval(
                   routes,
                   signal: controller.signal,
                   sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
+                  agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
                   resume,
                 }),
                 "execution",
@@ -2398,6 +2419,7 @@ async function runCodingThreadExecution(
                     routes: attemptRoutes,
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(threadId, runPrompt),
+                    agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
                     ...(resume ? { resume } : {}),
                     resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
                     ...(executionPromptOverride && { executionPromptOverride }),
@@ -2786,6 +2808,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
           routes: built,
           signal: AbortSignal.timeout(120_000),
           sdkSession: await buildSdkSessionOptions(threadId, ""),
+          agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
           resume,
         }),
         userMessageId,
@@ -3449,6 +3472,7 @@ async function runThreadContinuation(
                     routes,
                     signal: controller.signal,
                     sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                     resume: resumeOpts,
                   }),
                   mode,
@@ -3556,6 +3580,7 @@ async function runThreadContinuation(
                 routes,
                 signal: controller.signal,
                 sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                 resume,
                 resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
               });

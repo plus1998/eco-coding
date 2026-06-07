@@ -3,6 +3,7 @@ import type { EventStore, ThreadRecord } from "../../persistence/src";
 import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
 import type { SubagentRole } from "./subagent-availability.js";
+import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
 
 export interface ThreadStartRequest {
   threadId: string;
@@ -53,6 +54,8 @@ export interface AgentRuntimeRunInput {
   resumableSubagents?: readonly ResumableSubagentRef[];
   /** When set, used as the full model prompt instead of buildExecutionPromptWithFollowUp. */
   executionPromptOverride?: string;
+  /** Optional universal agent registry/profile used to generate SDK AgentDefinitions dynamically. */
+  agentRegistry?: EcoAgentRuntimeConfig;
 }
 
 export interface EcoPlanningContext {
@@ -240,6 +243,7 @@ export {
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
 export * from "./subagent-availability";
+export * from "./agent-orchestration";
 export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
 export {
   buildBuiltinOtelEnv,

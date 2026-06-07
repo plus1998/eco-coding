@@ -4,6 +4,7 @@ import type {
   EcoSdkSessionOptions,
   ResumableSubagentRef,
   SubagentRunPhase,
+  EcoAgentRuntimeConfig,
 } from "@eco/runtime";
 
 export type SdkRunMode = "planning" | "execution" | "question";
@@ -19,6 +20,7 @@ export interface BuildSdkRunInput {
   resume?: EcoSdkResumeOptions;
   resumableSubagents?: readonly ResumableSubagentRef[];
   executionPromptOverride?: string;
+  agentRegistry?: EcoAgentRuntimeConfig | undefined;
 }
 
 export function buildSdkRunInput(input: BuildSdkRunInput): AgentRuntimeRunInput {
@@ -33,6 +35,7 @@ export function buildSdkRunInput(input: BuildSdkRunInput): AgentRuntimeRunInput 
     ...(input.resume ? { resume: input.resume } : {}),
     ...(input.resumableSubagents ? { resumableSubagents: input.resumableSubagents } : {}),
     ...(input.executionPromptOverride ? { executionPromptOverride: input.executionPromptOverride } : {}),
+    ...(input.agentRegistry ? { agentRegistry: input.agentRegistry } : {}),
   };
 }
 

@@ -43,6 +43,7 @@ import {
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
 import { parseSubagentMissionMessage } from "../src/agent-mission";
+import type { EcoAgentRuntimeConfig, EcoToolPolicy } from "../src/agent-orchestration";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 const routes: ResolvedModelRoute[] = [
@@ -127,6 +128,63 @@ const routes: ResolvedModelRoute[] = [
 ];
 
 async function* emptySdkQuery(): AsyncIterable<unknown> {}
+
+function universalToolPolicy(allowed: string[], disallowed: string[] = []): EcoToolPolicy {
+  return { allowed, disallowed };
+}
+
+const universalAgentRegistry: EcoAgentRuntimeConfig = {
+  templates: [
+    {
+      id: "user.researcher",
+      name: "Researcher",
+      description: "Finds credible external evidence.",
+      domain: "research",
+      prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
+      whenToUse: "Use for market or factual research.",
+      outputContract: "Return findings, sources, and confidence.",
+      defaultTools: universalToolPolicy(["WebSearch", "WebFetch"], ["Write"]),
+      mcpServers: ["sources"],
+      skills: ["citation"],
+      allowDelegation: false,
+      builtIn: false,
+      source: "user",
+      version: 1,
+      updatedAt: "2026-06-07T00:00:00.000Z",
+    },
+  ],
+  profile: {
+    id: "profile.research",
+    name: "Research Desk",
+    preset: "research",
+    mainAgent: {
+      agentKey: "main",
+      name: "Research Coordinator",
+      domain: "research",
+      systemPromptPreset: "custom",
+      prompt: "Coordinate a research answer without assuming a coding task.",
+      modelRef: { providerId: "anthropic", modelId: "research-main-model" },
+      tools: universalToolPolicy(["Agent", "Read", "WebSearch"], ["Write"]),
+      skills: [],
+    },
+    agents: [
+      {
+        agentKey: "researcher",
+        templateId: "user.researcher",
+        displayName: "Evidence Researcher",
+        modelRef: { providerId: "anthropic", modelId: "research-agent-model" },
+        tools: universalToolPolicy(["WebSearch", "WebFetch"], ["Bash"]),
+        mcpServers: ["browser"],
+        skills: ["pdf"],
+        enabled: true,
+      },
+    ],
+    strategy: { kind: "autonomous", guidancePrompt: "Delegate when evidence quality improves." },
+    version: 1,
+    updatedAt: "2026-06-07T00:00:00.000Z",
+    source: "user",
+  },
+};
 
 test("deleteClaudeAgentSdkSession delegates to SDK deleteSession", async () => {
   const sessionStore = {
@@ -478,36 +536,30 @@ test("creates plan.ready event with transcript payload", () => {
 
 test("appends stream deltas into phase transcript", () => {
   let transcript = "";
-  transcript = appendToPhaseTranscript(
-    transcript,
-    {
-      id: "1",
-      threadId: "thr_1",
-      agentId: "a",
-      role: "planner",
-      type: "message.delta",
-      timestamp: "",
-      payload: {
-        type: "stream_event",
-        event: { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } },
-      },
+  transcript = appendToPhaseTranscript(transcript, {
+    id: "1",
+    threadId: "thr_1",
+    agentId: "a",
+    role: "planner",
+    type: "message.delta",
+    timestamp: "",
+    payload: {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } },
     },
-  );
-  transcript = appendToPhaseTranscript(
-    transcript,
-    {
-      id: "2",
-      threadId: "thr_1",
-      agentId: "a",
-      role: "planner",
-      type: "message.delta",
-      timestamp: "",
-      payload: {
-        type: "stream_event",
-        event: { type: "content_block_delta", delta: { type: "text_delta", text: "lo" } },
-      },
+  });
+  transcript = appendToPhaseTranscript(transcript, {
+    id: "2",
+    threadId: "thr_1",
+    agentId: "a",
+    role: "planner",
+    type: "message.delta",
+    timestamp: "",
+    payload: {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "lo" } },
     },
-  );
+  });
   expect(transcript).toBe("hello");
 });
 
@@ -915,9 +967,7 @@ test("applySessionStoreToQueryOptions disables file checkpointing", () => {
 
 test("readSdkUserMessageCheckpointId reads user message uuid", () => {
   expect(readSdkUserMessageCheckpointId({ type: "assistant" })).toBeUndefined();
-  expect(
-    readSdkUserMessageCheckpointId({ type: "user", uuid: "msg-checkpoint-1" }),
-  ).toBe("msg-checkpoint-1");
+  expect(readSdkUserMessageCheckpointId({ type: "user", uuid: "msg-checkpoint-1" })).toBe("msg-checkpoint-1");
 });
 
 test("createSessionCapturedEvent and init message helpers", () => {
@@ -971,22 +1021,27 @@ test("buildExecuteResumePrompt references approved plan by default when resuming
 });
 
 test("buildExecuteResumePrompt can inline edited approved plan once", () => {
-  const prompt = buildExecuteResumePrompt({
-    userPrompt: "Add feature X",
-    analysis: "Needs tests",
-    plan: "Edited plan",
-    approvedPlanFile: ".eco/approved-plans/thr_1.md",
-    planUserEdited: true,
-  }, { includePlanText: true });
+  const prompt = buildExecuteResumePrompt(
+    {
+      userPrompt: "Add feature X",
+      analysis: "Needs tests",
+      plan: "Edited plan",
+      approvedPlanFile: ".eco/approved-plans/thr_1.md",
+      planUserEdited: true,
+    },
+    { includePlanText: true },
+  );
   expect(prompt).toContain("Edited plan");
   expect(prompt).toContain("Add feature X");
   expect(prompt).toContain("user edited this plan");
-  expect(buildExecuteResumePrompt({
-    userPrompt: "x",
-    analysis: "y",
-    plan: "Edited",
-    planUserEdited: true,
-  })).toContain("approved/on-disk plan");
+  expect(
+    buildExecuteResumePrompt({
+      userPrompt: "x",
+      analysis: "y",
+      plan: "Edited",
+      planUserEdited: true,
+    }),
+  ).toContain("approved/on-disk plan");
 });
 
 test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route models", async () => {
@@ -1057,9 +1112,7 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
     ecoSubagentKeyForRole("explore"),
   ]);
   expect(planningAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
-  expect(planningAgents?.[ecoSubagentKeyForRole("architect")]?.model).toBe(
-    "claude-sonnet-architect",
-  );
+  expect(planningAgents?.[ecoSubagentKeyForRole("architect")]?.model).toBe("claude-sonnet-architect");
 
   const questionAgents = capturedOptions[1]?.agents as Record<string, { model?: string }> | undefined;
   expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
@@ -1074,11 +1127,79 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
     ecoSubagentKeyForRole("tester"),
   ]);
   expect(executionAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
-  expect(executionAgents?.[ecoSubagentKeyForRole("reviewer")]?.model).toBe(
-    "claude-sonnet-reviewer",
-  );
+  expect(executionAgents?.[ecoSubagentKeyForRole("reviewer")]?.model).toBe("claude-sonnet-reviewer");
   expect(executionAgents).not.toHaveProperty("Explore");
   expect(executionAgents).not.toHaveProperty("coder");
+});
+
+test("ClaudeAgentSdkDriver forwards universal agent registry without coding prompt wrappers", async () => {
+  const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        capturedQueries.push({ prompt, options });
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-universal",
+              uuid: "init-universal",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-universal",
+              uuid: "result-universal",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runQuestion({
+    threadId: "thr_universal",
+    prompt: "Summarize the 2026 market landscape.",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+    sdkSession: { mcpAllowedTools: ["mcp__browser__open"] },
+    agentRegistry: universalAgentRegistry,
+  })) {
+    // drain
+  }
+
+  const query = capturedQueries[0];
+  expect(query?.prompt).toContain("Summarize the 2026 market landscape.");
+  expect(query?.prompt).not.toContain("For a known file or symbol");
+  expect(query?.prompt).not.toContain("Do not create an implementation plan");
+
+  const options = query?.options ?? {};
+  expect(options.model).toBe("research-main-model");
+  expect(options.allowedTools).toEqual(["Agent", "Read", "WebSearch", "mcp__browser__open"]);
+
+  const agents = options.agents as Record<string, Record<string, unknown>>;
+  expect(Object.keys(agents)).toEqual(["eco_researcher"]);
+  expect(agents.eco_researcher).toMatchObject({
+    model: "research-agent-model",
+    tools: ["WebSearch", "WebFetch"],
+    disallowedTools: ["Bash"],
+    prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
+    mcpServers: ["sources", "browser"],
+    skills: ["citation", "pdf"],
+  });
+
+  const systemPrompt = options.systemPrompt as string;
+  expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
+  expect(systemPrompt).toContain("Eco universal orchestration.");
+  expect(systemPrompt).toContain("Agent(eco_researcher)");
+  expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
+  expect(systemPrompt).not.toContain("File edits apply directly");
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
@@ -1178,19 +1299,19 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
       query: ({ options }) => {
         capturedOptions.push(options);
         return {
-        async *[Symbol.asyncIterator]() {
-          yield {
-            type: "system",
-            subtype: "init",
-            session_id: "sess-plan",
-            uuid: "init-plan",
-          };
-          yield {
-            type: "result",
-            subtype: "success",
-            session_id: "sess-plan",
-            uuid: "result-plan",
-          };
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-plan",
+              uuid: "init-plan",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-plan",
+              uuid: "result-plan",
+            };
           },
           close: () => {},
         };
