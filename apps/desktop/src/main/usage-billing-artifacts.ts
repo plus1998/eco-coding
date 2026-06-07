@@ -6,12 +6,7 @@ import {
   type ParsedUsage,
   type RequestBillingDelta,
 } from "@eco/runtime";
-import type {
-  AgentRole,
-  BillingUsageSource,
-  ModelsDevMapping,
-  RouteManualSpec,
-} from "../shared/ipc";
+import type { AgentRole, BillingUsageSource, ModelsDevMapping, RouteManualSpec } from "../shared/ipc";
 import {
   buildPlannerModelLabel,
   resolvePublicModelId,
@@ -22,9 +17,7 @@ import {
 } from "./billing-resolver";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import { buildUsageRequestKey } from "./thread-usage-accumulator";
-import {
-  buildSingleUsageLedgerEvent,
-} from "./usage-ledger-adapters";
+import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
 import type { UsageLedgerEvent } from "./usage-ledger";
 
 export interface UsageBillingPricingRoute {
@@ -44,6 +37,14 @@ export interface UsageBillingContextUpdate {
   providerBaseUrl: string;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
+}
+
+export interface WorkflowStepUsageMetadata {
+  id: string;
+  agentKey: string;
+  outputKey: string;
+  attempt: number;
+  batchIndex: number;
 }
 
 export interface SingleUsageBillingArtifacts {
@@ -80,6 +81,7 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   sourceEventId?: string;
   providerRequestId?: string;
   otelDedupId?: string;
+  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export async function resolveSingleUsageBillingArtifacts(
@@ -108,13 +110,8 @@ export async function resolveSingleUsageBillingArtifacts(
     resolvePublicModelId(input.role, input.modelId, input.runtimeRoutes) ?? input.modelId;
   const billingRole = usageRoute?.role ?? input.role;
   const requestBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
-  const { savedUsd } = computeSavings(
-    requestBilling.plannerTokenCostUsd,
-    requestBilling.ecoCostUsd,
-  );
-  const ledgerAgentId =
-    input.agentId ??
-    (billingRole === "planner" ? input.plannerAgentId : undefined);
+  const { savedUsd } = computeSavings(requestBilling.plannerTokenCostUsd, requestBilling.ecoCostUsd);
+  const ledgerAgentId = input.agentId ?? (billingRole === "planner" ? input.plannerAgentId : undefined);
   const parsedUsage: ParsedUsage = {
     inputTokens: input.usage.inputTokens,
     outputTokens: input.usage.outputTokens,
@@ -167,6 +164,7 @@ export async function resolveSingleUsageBillingArtifacts(
       metadata: {
         path: "processUsageBilling",
         ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
+        ...(input.workflowStep && { ecoWorkflowStep: input.workflowStep }),
       },
     }),
     parsedUsage,
@@ -194,6 +192,7 @@ export interface ResolveSdkStreamPartialBillingArtifactsInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export async function resolveSdkStreamPartialBillingArtifacts(
@@ -208,12 +207,9 @@ export async function resolveSdkStreamPartialBillingArtifacts(
   const computedBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
   const resolvedModelId = usageRoute?.modelId ?? input.modelId;
   const ledgerAgentId =
-    input.subagentAgentId ??
-    (input.role === "planner" ? input.plannerAgentId : undefined);
+    input.subagentAgentId ?? (input.role === "planner" ? input.plannerAgentId : undefined);
   const requestKey = `sdk-stream:${input.eventId}`;
-  const contextUpdate = usageRoute
-    ? contextUpdateFromRoute(input.role, usageRoute)
-    : undefined;
+  const contextUpdate = usageRoute ? contextUpdateFromRoute(input.role, usageRoute) : undefined;
 
   return {
     ledgerEvent: buildSingleUsageLedgerEvent({
@@ -232,6 +228,7 @@ export async function resolveSdkStreamPartialBillingArtifacts(
       metadata: {
         path: "processSdkStreamPartialUsage",
         settlement: "partial",
+        ...(input.workflowStep && { ecoWorkflowStep: input.workflowStep }),
       },
     }),
     ...(resolvedModelId && { resolvedModelId }),
@@ -310,8 +307,7 @@ function resolveSingleUsageContextUpdate(input: {
   usageRoute?: ResolvedUsageRoute;
   plannerRoute?: RuntimeRoute;
 }): UsageBillingContextUpdate | undefined {
-  const monitorModelId =
-    input.usageRoute?.modelId ?? input.plannerRoute?.modelId ?? input.resolvedModelId;
+  const monitorModelId = input.usageRoute?.modelId ?? input.plannerRoute?.modelId ?? input.resolvedModelId;
   const monitorBaseUrl = input.usageRoute?.provider.baseUrl ?? input.plannerRoute?.provider.baseUrl;
   const monitorRoute = resolveUsageRoute(input.billingRole, input.resolvedModelId, input.runtimeRoutes);
   const modelId = monitorRoute?.modelId ?? monitorModelId;
@@ -328,10 +324,7 @@ function resolveSingleUsageContextUpdate(input: {
   };
 }
 
-function contextUpdateFromRoute(
-  role: AgentRole,
-  route: ResolvedUsageRoute,
-): UsageBillingContextUpdate {
+function contextUpdateFromRoute(role: AgentRole, route: ResolvedUsageRoute): UsageBillingContextUpdate {
   return {
     role,
     modelId: route.modelId,

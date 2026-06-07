@@ -2197,6 +2197,8 @@ function App() {
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
                   {...(runProjection && { projection: runProjection })}
+                  {...(activeThread &&
+                    billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
                   onRestorePrompt={restorePrompt}
                   onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}

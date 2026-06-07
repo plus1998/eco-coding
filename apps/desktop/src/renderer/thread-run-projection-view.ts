@@ -1,4 +1,5 @@
 import type {
+  ThreadBillingWorkflowStepSnapshot,
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -36,6 +37,12 @@ export interface ThreadRunProjectionWorkflowStep {
   endedAt?: string;
   durationMs?: number;
   reason?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  ecoCostUsd?: number;
+  modelIds?: string[];
   timelineIds: string[];
   sequence: number;
 }
@@ -87,7 +94,10 @@ export interface ThreadRunProjectionSubagentCard {
 export function buildThreadRunProjectionViewModel(
   projection: ThreadRunProjectionSnapshot,
   thread?: { id: string; prompt: string },
-  options: { agentDisplayNames?: RuntimeAgentDisplayNames | undefined } = {},
+  options: {
+    agentDisplayNames?: RuntimeAgentDisplayNames | undefined;
+    workflowBillingSteps?: readonly ThreadBillingWorkflowStepSnapshot[] | undefined;
+  } = {},
 ): ThreadRunProjectionViewModel {
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
@@ -97,6 +107,7 @@ export function buildThreadRunProjectionViewModel(
     projection.timeline,
     Date.parse(projection.thread.generatedAt),
     options.agentDisplayNames,
+    options.workflowBillingSteps,
   );
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
@@ -176,8 +187,10 @@ function buildProjectionWorkflowSteps(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   nowMs: number,
   agentDisplayNames?: RuntimeAgentDisplayNames | undefined,
+  workflowBillingSteps: readonly ThreadBillingWorkflowStepSnapshot[] = [],
 ): ThreadRunProjectionWorkflowStep[] {
   const stepsById = new Map<string, ThreadRunProjectionWorkflowStep>();
+  const billingByStepId = new Map(workflowBillingSteps.map((step) => [step.stepId, step]));
   for (const item of [...timeline].sort(compareTimelineItems)) {
     const metadata = readProjectionWorkflowStepMetadata(item);
     if (!metadata) {
@@ -192,6 +205,7 @@ function buildProjectionWorkflowSteps(
       metadata.status === "completed" || metadata.status === "failed" ? item.at : existing?.endedAt;
     const durationMs = computeWorkflowStepDurationMs(startedAt, endedAt, nowMs);
     const agentLabel = resolveRuntimeAgentName(metadata.agentKey, agentDisplayNames) ?? metadata.agentKey;
+    const billing = billingByStepId.get(metadata.id);
     stepsById.set(metadata.id, {
       key: metadata.id,
       stepId: metadata.id,
@@ -205,6 +219,14 @@ function buildProjectionWorkflowSteps(
       ...(endedAt && { endedAt }),
       ...(durationMs !== undefined && { durationMs }),
       ...(metadata.reason && { reason: metadata.reason }),
+      ...(billing && {
+        inputTokens: billing.inputTokens,
+        outputTokens: billing.outputTokens,
+        cacheReadTokens: billing.cacheReadTokens,
+        cacheCreationTokens: billing.cacheCreationTokens,
+        ecoCostUsd: billing.ecoCostUsd,
+        modelIds: billing.modelIds,
+      }),
       timelineIds: [...(existing?.timelineIds ?? []), item.id],
       sequence: existing?.sequence ?? item.sequence,
     });

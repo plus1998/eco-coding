@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentRole } from "../src/shared/ipc";
-import {
-  resolveSdkEventUsageBilling,
-  type SdkUsageEventLike,
-} from "../src/main/sdk-event-usage-billing";
+import { resolveSdkEventUsageBilling, type SdkUsageEventLike } from "../src/main/sdk-event-usage-billing";
 import type { SubagentUsageAttributionResolver } from "../src/main/subagent-usage-attribution";
 
 function event(input: Partial<SdkUsageEventLike> = {}): SdkUsageEventLike {
@@ -25,10 +22,7 @@ function event(input: Partial<SdkUsageEventLike> = {}): SdkUsageEventLike {
 }
 
 function resolver(
-  input: {
-    agentByRole?: Partial<Record<AgentRole, string>>;
-    roleByAgent?: Record<string, AgentRole>;
-  } = {},
+  input: { agentByRole?: Partial<Record<AgentRole, string>>; roleByAgent?: Record<string, AgentRole> } = {},
 ): SubagentUsageAttributionResolver {
   return {
     resolveAgentId(_threadId, request) {
@@ -63,6 +57,13 @@ test("resolveSdkEventUsageBilling builds assistant subagent billing input", () =
         model: "haiku",
         parent_tool_use_id: "toolu_parent",
         subagentAgentId: "agent_coder_1",
+        ecoWorkflowStepContext: {
+          id: "research",
+          agentKey: "researcher",
+          outputKey: "research_notes",
+          attempt: 2,
+          batchIndex: 1,
+        },
         usage: {
           input_tokens: 100,
           output_tokens: 20,
@@ -99,6 +100,13 @@ test("resolveSdkEventUsageBilling builds assistant subagent billing input", () =
     plannerAgentId: "planner_attempt_1",
     parentToolUseId: "toolu_parent",
     requestKey: "sdk-assistant:msg_1",
+    workflowStep: {
+      id: "research",
+      agentKey: "researcher",
+      outputKey: "research_notes",
+      attempt: 2,
+      batchIndex: 1,
+    },
   });
 });
 
@@ -144,6 +152,13 @@ test("resolveSdkEventUsageBilling builds stream partial input", () => {
       payload: {
         model: "haiku",
         parent_tool_use_id: "toolu_parent",
+        ecoWorkflowStepContext: {
+          id: "draft",
+          agentKey: "writer",
+          outputKey: "draft_copy",
+          attempt: 1,
+          batchIndex: 0,
+        },
         usage: {
           input_tokens: 40,
           output_tokens: 5,
@@ -189,6 +204,13 @@ test("resolveSdkEventUsageBilling builds stream partial input", () => {
       cacheReadTokens: 2,
       cacheCreationTokens: 1,
     },
+    workflowStep: {
+      id: "draft",
+      agentKey: "writer",
+      outputKey: "draft_copy",
+      attempt: 1,
+      batchIndex: 0,
+    },
   });
 });
 
@@ -206,6 +228,13 @@ test("resolveSdkEventUsageBilling builds sdk run input and miss diagnostic", () 
             cacheReadInputTokens: 3,
             cacheCreationInputTokens: 4,
           },
+        },
+        ecoWorkflowStepContext: {
+          id: "synthesis",
+          agentKey: "synthesizer",
+          outputKey: "final_answer",
+          attempt: 1,
+          batchIndex: 0,
         },
       },
     }),
@@ -230,5 +259,12 @@ test("resolveSdkEventUsageBilling builds sdk run input and miss diagnostic", () 
     runAttemptId: "attempt_1",
     plannerAgentId: "planner_attempt_1",
     parentToolUseId: "toolu_missing",
+    workflowStep: {
+      id: "synthesis",
+      agentKey: "synthesizer",
+      outputKey: "final_answer",
+      attempt: 1,
+      batchIndex: 0,
+    },
   });
 });

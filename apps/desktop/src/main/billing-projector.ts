@@ -4,6 +4,7 @@ import type {
   ThreadBillingModelSnapshot,
   ThreadBillingSnapshot,
   ThreadBillingSourceSnapshot,
+  ThreadBillingWorkflowStepSnapshot,
   ThreadSubagentBillingSnapshot,
 } from "../shared/ipc";
 import {
@@ -103,6 +104,7 @@ interface MutableSourceState {
   roleModelIds: Partial<Record<AgentRole, string>>;
   byRole: Partial<Record<AgentRole, ParsedUsage>>;
   byModel: Record<string, MutableModelState>;
+  byWorkflowStep: Record<string, MutableWorkflowStepState>;
   reportedCostUsd: number;
   pricingResolved: boolean;
   unresolvedCount: number;
@@ -115,6 +117,18 @@ interface MutableModelState {
   usage: ParsedUsage;
   ecoCostUsd: number;
   reportedCostUsd: number;
+}
+
+interface MutableWorkflowStepState {
+  stepId: string;
+  agentKey: string;
+  outputKey: string;
+  attempt: number;
+  batchIndex: number;
+  usage: ParsedUsage;
+  ecoCostUsd: number;
+  modelIds: Set<string>;
+  sequence: number;
 }
 
 interface MutableAgentState {
@@ -137,6 +151,14 @@ interface MutableRunAttemptState {
   ecoCostUsd: number;
   reportedCostUsd: number;
   pricingResolved: boolean;
+}
+
+interface WorkflowStepBillingMetadata {
+  id: string;
+  agentKey: string;
+  outputKey: string;
+  attempt: number;
+  batchIndex: number;
 }
 
 export function projectBillingFromUsageLedger(
@@ -263,6 +285,9 @@ function buildThreadBillingSnapshot(input: {
     ...(primary.byModel && { byModel: primary.byModel }),
     ...(primary.byRole && { byRole: primary.byRole }),
     ...(input.subagents.length > 0 && { subagents: input.subagents }),
+    ...(Object.keys(primaryState.byWorkflowStep).length > 0 && {
+      workflowSteps: buildWorkflowStepSnapshots(primaryState.byWorkflowStep),
+    }),
   };
 }
 
@@ -293,6 +318,16 @@ function addEventToSource(
   addRole(model.roles, event.role);
   model.usage = mergeUsageTotals(model.usage, usage);
   model.ecoCostUsd += billing.ecoCostUsd;
+  const workflowStep = readWorkflowStepBillingMetadata(event.metadata);
+  if (workflowStep) {
+    const stepState = getOrCreateWorkflowStep(state, workflowStep);
+    stepState.usage = mergeUsageTotals(stepState.usage, usage);
+    stepState.ecoCostUsd += billing.ecoCostUsd;
+    stepState.attempt = Math.max(stepState.attempt, workflowStep.attempt);
+    if (event.modelId) {
+      stepState.modelIds.add(event.modelId);
+    }
+  }
   if (event.reportedCostUsd !== undefined && Number.isFinite(event.reportedCostUsd)) {
     model.reportedCostUsd += event.reportedCostUsd;
   }
@@ -399,6 +434,27 @@ function buildModelSnapshot(byModel: Record<string, MutableModelState>): ThreadB
       const tokenDiff = modelSnapshotTotal(right) - modelSnapshotTotal(left);
       return tokenDiff !== 0 ? tokenDiff : left.modelId.localeCompare(right.modelId);
     });
+}
+
+function buildWorkflowStepSnapshots(
+  byWorkflowStep: Record<string, MutableWorkflowStepState>,
+): ThreadBillingWorkflowStepSnapshot[] {
+  return Object.values(byWorkflowStep)
+    .filter((entry) => usageTotal(entry.usage) > 0 || entry.ecoCostUsd > 0)
+    .sort((left, right) => left.batchIndex - right.batchIndex || left.sequence - right.sequence)
+    .map((entry) => ({
+      stepId: entry.stepId,
+      agentKey: entry.agentKey,
+      outputKey: entry.outputKey,
+      attempt: entry.attempt,
+      batchIndex: entry.batchIndex,
+      inputTokens: entry.usage.inputTokens,
+      outputTokens: entry.usage.outputTokens,
+      cacheReadTokens: entry.usage.cacheReadTokens,
+      cacheCreationTokens: entry.usage.cacheCreationTokens,
+      ecoCostUsd: entry.ecoCostUsd,
+      modelIds: [...entry.modelIds].sort(),
+    }));
 }
 
 function finalizeAgents(
@@ -619,6 +675,7 @@ function getOrCreateSource(
     roleModelIds: {},
     byRole: {},
     byModel: {},
+    byWorkflowStep: {},
     reportedCostUsd: 0,
     pricingResolved: true,
     unresolvedCount: 0,
@@ -641,6 +698,29 @@ function getOrCreateModel(state: MutableSourceState, modelId: string): MutableMo
     reportedCostUsd: 0,
   };
   state.byModel[modelId] = created;
+  return created;
+}
+
+function getOrCreateWorkflowStep(
+  state: MutableSourceState,
+  metadata: WorkflowStepBillingMetadata,
+): MutableWorkflowStepState {
+  const existing = state.byWorkflowStep[metadata.id];
+  if (existing) {
+    return existing;
+  }
+  const created: MutableWorkflowStepState = {
+    stepId: metadata.id,
+    agentKey: metadata.agentKey,
+    outputKey: metadata.outputKey,
+    attempt: metadata.attempt,
+    batchIndex: metadata.batchIndex,
+    usage: createEmptyUsage(),
+    ecoCostUsd: 0,
+    modelIds: new Set(),
+    sequence: Object.keys(state.byWorkflowStep).length,
+  };
+  state.byWorkflowStep[metadata.id] = created;
   return created;
 }
 
@@ -731,4 +811,32 @@ function readNumberMetadata(
 ): number | undefined {
   const value = metadata?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readWorkflowStepBillingMetadata(
+  metadata: Record<string, unknown> | undefined,
+): WorkflowStepBillingMetadata | undefined {
+  const raw = metadata?.ecoWorkflowStep;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const id = readStringMetadata(record, "id");
+  const agentKey = readStringMetadata(record, "agentKey");
+  const outputKey = readStringMetadata(record, "outputKey");
+  if (!id || !agentKey || !outputKey) {
+    return undefined;
+  }
+  return {
+    id,
+    agentKey,
+    outputKey,
+    attempt: readNumberMetadata(record, "attempt") ?? 1,
+    batchIndex: readNumberMetadata(record, "batchIndex") ?? 0,
+  };
+}
+
+function readStringMetadata(metadata: Record<string, unknown>, key: string): string | undefined {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

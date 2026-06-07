@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, type ParsedUsage } from "@eco/runtime";
-import {
-  projectBillingFromUsageLedger,
-} from "../src/main/billing-projector";
-import {
-  buildSdkUsageLedgerEvents,
-  buildSingleUsageLedgerEvent,
-} from "../src/main/usage-ledger-adapters";
+import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
+import { buildSdkUsageLedgerEvents, buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import type { AgentInstanceRecord } from "../src/main/usage-ledger";
 
 const sonnetRates = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
@@ -17,7 +12,12 @@ function billingFor(usage: ParsedUsage, actualRates = haikuRates) {
 }
 
 test("projectBillingFromUsageLedger builds SDK primary without duplicating request total cost", () => {
-  const sonnetUsage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const sonnetUsage = {
+    inputTokens: 10_000,
+    outputTokens: 1_000,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+  };
   const haikuUsage = { inputTokens: 20_000, outputTokens: 2_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const events = buildSdkUsageLedgerEvents({
     threadId: "thr_projector",
@@ -99,6 +99,47 @@ test("projectBillingFromUsageLedger projects agent subagent and run attempt tota
   expect(projection.snapshot?.subagents?.[0]?.modelId).toBe("haiku");
 });
 
+test("projectBillingFromUsageLedger attributes billing to workflow steps", () => {
+  const usage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 200, cacheCreationTokens: 50 };
+  const event = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "sdk",
+    sourceEventId: "sdk:workflow:research",
+    requestKey: "sdk:workflow:research",
+    usage,
+    computedBilling: billingFor(usage),
+    agentId: "agent_researcher",
+    modelId: "haiku",
+    metadata: {
+      ecoWorkflowStep: {
+        id: "research",
+        agentKey: "researcher",
+        outputKey: "research_notes",
+        attempt: 2,
+        batchIndex: 1,
+      },
+    },
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [event] });
+
+  expect(projection.snapshot?.workflowSteps).toHaveLength(1);
+  expect(projection.snapshot?.workflowSteps?.[0]).toMatchObject({
+    stepId: "research",
+    agentKey: "researcher",
+    outputKey: "research_notes",
+    attempt: 2,
+    batchIndex: 1,
+    inputTokens: 10_000,
+    outputTokens: 1_000,
+    cacheReadTokens: 200,
+    cacheCreationTokens: 50,
+    modelIds: ["haiku"],
+  });
+  expect(projection.snapshot?.workflowSteps?.[0]?.ecoCostUsd).toBeCloseTo(0.012066, 8);
+});
+
 test("projectBillingFromUsageLedger exposes unattributed unresolved usage", () => {
   const event = buildSingleUsageLedgerEvent({
     threadId: "thr_projector",
@@ -146,7 +187,12 @@ test("projectBillingFromUsageLedger keeps partial and context events out of bill
     sourceEventId: "sdk-stream:partial-1",
     usageKind: "request_partial",
     usage: { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    computedBilling: billingFor({ inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 }),
+    computedBilling: billingFor({
+      inputTokens: 10_000,
+      outputTokens: 1_000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    }),
     agentId: "agent_coder",
     modelId: "haiku",
   });

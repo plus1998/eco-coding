@@ -17,6 +17,7 @@ import {
   type SdkRunBillingModels,
   type UsageBillingContextUpdate,
   type UsageBillingPricingLookup,
+  type WorkflowStepUsageMetadata,
 } from "./usage-billing-artifacts";
 
 export interface ResolveSdkRunBillingResolutionInput {
@@ -32,6 +33,7 @@ export interface ResolveSdkRunBillingResolutionInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export interface SdkRunBillingResolution {
@@ -106,6 +108,7 @@ export function resolveSdkRunBillingResolutionFromModels(
     }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.workflowStep && { workflowStep: input.workflowStep }),
     ...(ledgerAgentId && { ledgerAgentId }),
     ...(resolvedSubagentId && { resolvedSubagentId }),
     ...(contextUpdate && { contextUpdate }),
@@ -148,11 +151,7 @@ function resolveSdkRunContextUpdate(input: {
   runtimeRoutes: readonly RuntimeRoute[];
   primaryModelId?: string;
 }): UsageBillingContextUpdate | undefined {
-  const usageRoute = resolveUsageRoute(
-    input.billingRole,
-    input.primaryModelId,
-    input.runtimeRoutes,
-  );
+  const usageRoute = resolveUsageRoute(input.billingRole, input.primaryModelId, input.runtimeRoutes);
   if (!usageRoute || !shouldUpdateContextFromUsageSource("sdk", input.billingRole)) {
     return undefined;
   }

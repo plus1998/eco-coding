@@ -1,8 +1,4 @@
-import {
-  parseSdkContextUsage,
-  parseSdkUsageBilling,
-  type ParsedUsage,
-} from "@eco/runtime";
+import { parseSdkContextUsage, parseSdkUsageBilling, type ParsedUsage } from "@eco/runtime";
 import type { AgentRole } from "../shared/ipc";
 import {
   buildAssistantUsageRequestKey,
@@ -25,6 +21,14 @@ export interface SdkUsageEventLike {
   payload: unknown;
 }
 
+export interface SdkWorkflowStepUsageMetadata {
+  id: string;
+  agentKey: string;
+  outputKey: string;
+  attempt: number;
+  batchIndex: number;
+}
+
 export interface SdkAssistantSubagentBillingInput {
   threadId: string;
   role: AgentRole;
@@ -40,6 +44,7 @@ export interface SdkAssistantSubagentBillingInput {
   plannerAgentId?: string;
   parentToolUseId?: string;
   requestKey: string;
+  workflowStep?: SdkWorkflowStepUsageMetadata;
 }
 
 export interface SdkStreamPartialUsageInput {
@@ -52,6 +57,7 @@ export interface SdkStreamPartialUsageInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  workflowStep?: SdkWorkflowStepUsageMetadata;
 }
 
 export interface SdkRunUsageBillingInput {
@@ -64,6 +70,7 @@ export interface SdkRunUsageBillingInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  workflowStep?: SdkWorkflowStepUsageMetadata;
 }
 
 export interface SdkUsageDiagnostic {
@@ -135,6 +142,7 @@ export function resolveSdkEventUsageBilling(
 
   const parentToolUseId = readStringProperty(event.payload, "parent_tool_use_id");
   const explicitSubagentId = readStringProperty(event.payload, "subagentAgentId");
+  const workflowStep = readWorkflowStepUsageMetadata(event.payload);
   const initialBillingRole = normalizeTelemetryBillingRole(event.role);
   const attribution = resolveSubagentUsageAttribution({
     threadId,
@@ -165,6 +173,7 @@ export function resolveSdkEventUsageBilling(
       ...(input.observedAuthoritativeUsage && {
         observedAuthoritativeUsage: input.observedAuthoritativeUsage,
       }),
+      ...(workflowStep && { workflowStep }),
       base,
     });
   }
@@ -192,6 +201,7 @@ export function resolveSdkEventUsageBilling(
         billingRole,
         ...(subagentAgentId && { subagentAgentId }),
         ...(parentToolUseId && { parentToolUseId }),
+        ...(workflowStep && { workflowStep }),
         ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
         ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       }),
@@ -223,6 +233,7 @@ export function resolveSdkEventUsageBilling(
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       ...(subagentAgentId && { subagentAgentId }),
       ...(parentToolUseId && { parentToolUseId }),
+      ...(workflowStep && { workflowStep }),
     },
   };
 }
@@ -237,6 +248,7 @@ function resolveAssistantSubagentBilling(input: {
   runAttemptId?: string;
   plannerAgentId?: string;
   observedAuthoritativeUsage?: readonly UsageBillingObservation[];
+  workflowStep?: SdkWorkflowStepUsageMetadata;
   base: SdkEventUsageResolvedBase;
 }): Extract<SdkEventUsageBillingResolution, { kind: "assistant_ignored" | "assistant_subagent" }> {
   const messageId = readStringProperty(input.eventPayload, "messageId");
@@ -281,6 +293,7 @@ function resolveAssistantSubagentBilling(input: {
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+      ...(input.workflowStep && { workflowStep: input.workflowStep }),
       requestKey: buildAssistantUsageRequestKey(messageId),
     },
   };
@@ -295,12 +308,12 @@ function buildStreamPartialInput(input: {
   parentToolUseId?: string;
   runAttemptId?: string;
   plannerAgentId?: string;
+  workflowStep?: SdkWorkflowStepUsageMetadata;
 }): SdkStreamPartialUsageInput {
   const modelId = readStringProperty(input.event.payload, "model") ?? input.bundle.models[0]?.modelId;
   const streamContextUsage =
     input.subagentAgentId && modelId
-      ? (parseSdkContextUsage(input.event.payload, { subagentModelId: modelId }) ??
-        input.bundle.contextUsage)
+      ? (parseSdkContextUsage(input.event.payload, { subagentModelId: modelId }) ?? input.bundle.contextUsage)
       : input.bundle.contextUsage;
   return {
     threadId: input.threadId,
@@ -312,6 +325,7 @@ function buildStreamPartialInput(input: {
     ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
     ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.workflowStep && { workflowStep: input.workflowStep }),
   };
 }
 
@@ -337,10 +351,7 @@ function buildUsageDiagnostic(input: {
   };
 }
 
-function shouldReportUsageMiss(input: {
-  billingRole: AgentRole;
-  subagentAgentId?: string;
-}): boolean {
+function shouldReportUsageMiss(input: { billingRole: AgentRole; subagentAgentId?: string }): boolean {
   return isSubagentBillingRole(input.billingRole) && !input.subagentAgentId;
 }
 
@@ -350,6 +361,34 @@ function readStringProperty(payload: unknown, key: string): string | undefined {
   }
   const value = payload[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function readWorkflowStepUsageMetadata(payload: unknown): SdkWorkflowStepUsageMetadata | undefined {
+  if (!isRecord(payload) || !isRecord(payload.ecoWorkflowStepContext)) {
+    return undefined;
+  }
+  const record = payload.ecoWorkflowStepContext;
+  const id = readNonEmptyString(record.id);
+  const agentKey = readNonEmptyString(record.agentKey);
+  const outputKey = readNonEmptyString(record.outputKey);
+  if (!id || !agentKey || !outputKey) {
+    return undefined;
+  }
+  return {
+    id,
+    agentKey,
+    outputKey,
+    attempt: readFiniteNumber(record.attempt) ?? 1,
+    batchIndex: readFiniteNumber(record.batchIndex) ?? 0,
+  };
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

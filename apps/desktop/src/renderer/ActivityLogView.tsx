@@ -14,6 +14,7 @@ import {
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
+  ThreadBillingSnapshot,
   ThreadActivityLine,
   ThreadContextSnapshot,
   ThreadRunProjectionAgent,
@@ -25,7 +26,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import { formatCostUsd, formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
@@ -83,6 +84,7 @@ interface ActivityLogViewProps {
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
+  billing?: ThreadBillingSnapshot;
   projection?: ThreadRunProjectionSnapshot;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   subagentTimings?: ThreadSubagentSessionTiming[];
@@ -97,6 +99,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
       <ProjectionActivityLogView
         projection={props.projection}
         {...(props.thread && { thread: props.thread })}
+        {...(props.billing && { billing: props.billing })}
         {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
         {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
         {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
@@ -211,12 +214,14 @@ function LegacyActivityLogView({
 function ProjectionActivityLogView({
   projection,
   thread,
+  billing,
   onRestorePrompt,
   onPlannerLayoutChange,
   agentDisplayNames,
 }: {
   projection: ThreadRunProjectionSnapshot;
   thread?: ThreadSummary;
+  billing?: ThreadBillingSnapshot;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   onRestorePrompt?: (prompt: string) => void;
   onPlannerLayoutChange?: () => void;
@@ -230,9 +235,12 @@ function ProjectionActivityLogView({
       buildThreadRunProjectionViewModel(
         projection,
         thread ? { id: thread.id, prompt: thread.prompt } : undefined,
-        { agentDisplayNames },
+        {
+          agentDisplayNames,
+          ...(billing?.workflowSteps && { workflowBillingSteps: billing.workflowSteps }),
+        },
       ),
-    [agentDisplayNames, projection, thread?.id, thread?.prompt],
+    [agentDisplayNames, billing?.workflowSteps, projection, thread?.id, thread?.prompt],
   );
   const [expandedAgentKeys, setExpandedAgentKeys] = useState<Record<string, boolean>>({});
   const showThreadPrompt = viewModel.showThreadPrompt;
@@ -332,27 +340,32 @@ function ProjectionWorkflowSummary({
         </span>
       </div>
       <ol className="run-log-workflow-steps">
-        {steps.map((step) => (
-          <li key={step.key} className={`run-log-workflow-step ${step.status}`}>
-            <span className="run-log-workflow-step-dot" aria-hidden />
-            <div className="run-log-workflow-step-main">
-              <div className="run-log-workflow-step-title-row">
-                <span className="run-log-workflow-step-title">{step.stepId}</span>
-                <span className="run-log-workflow-step-agent">{step.agentLabel}</span>
-                <span className="run-log-workflow-step-state">
-                  {formatWorkflowStepStatus(step.status)}
-                </span>
+        {steps.map((step) => {
+          const usageLabel = formatWorkflowStepUsage(step);
+          return (
+            <li key={step.key} className={`run-log-workflow-step ${step.status}`}>
+              <span className="run-log-workflow-step-dot" aria-hidden />
+              <div className="run-log-workflow-step-main">
+                <div className="run-log-workflow-step-title-row">
+                  <span className="run-log-workflow-step-title">{step.stepId}</span>
+                  <span className="run-log-workflow-step-agent">{step.agentLabel}</span>
+                  <span className="run-log-workflow-step-state">{formatWorkflowStepStatus(step.status)}</span>
+                </div>
+                <div className="run-log-workflow-step-meta">
+                  <span>输出 {step.outputKey}</span>
+                  <span>批次 {step.batchIndex + 1}</span>
+                  <span>尝试 {step.attempt}</span>
+                  {step.durationMs !== undefined ? <span>{formatDuration(step.durationMs)}</span> : null}
+                  {usageLabel ? <span>{usageLabel}</span> : null}
+                  {step.ecoCostUsd !== undefined && step.ecoCostUsd > 0 ? (
+                    <span>{formatCostUsd(step.ecoCostUsd)}</span>
+                  ) : null}
+                </div>
+                {step.reason ? <p className="run-log-workflow-step-reason">{step.reason}</p> : null}
               </div>
-              <div className="run-log-workflow-step-meta">
-                <span>输出 {step.outputKey}</span>
-                <span>批次 {step.batchIndex + 1}</span>
-                <span>尝试 {step.attempt}</span>
-                {step.durationMs !== undefined ? <span>{formatDuration(step.durationMs)}</span> : null}
-              </div>
-              {step.reason ? <p className="run-log-workflow-step-reason">{step.reason}</p> : null}
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
@@ -366,6 +379,23 @@ function formatWorkflowStepStatus(status: ThreadRunProjectionWorkflowStep["statu
     return "失败";
   }
   return "进行中";
+}
+
+function formatWorkflowStepUsage(step: ThreadRunProjectionWorkflowStep): string | undefined {
+  if (
+    step.inputTokens === undefined &&
+    step.outputTokens === undefined &&
+    step.cacheReadTokens === undefined &&
+    step.cacheCreationTokens === undefined
+  ) {
+    return undefined;
+  }
+  return formatUsageBadge({
+    inputTokens: step.inputTokens ?? 0,
+    outputTokens: step.outputTokens ?? 0,
+    cacheReadTokens: step.cacheReadTokens ?? 0,
+    cacheCreationTokens: step.cacheCreationTokens ?? 0,
+  });
 }
 
 function ProjectionMainFeedEntry({

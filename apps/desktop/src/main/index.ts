@@ -4094,6 +4094,13 @@ async function processSdkRunBilling(input: {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  workflowStep?: {
+    id: string;
+    agentKey: string;
+    outputKey: string;
+    attempt: number;
+    batchIndex: number;
+  };
 }): Promise<void> {
   const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
   const resolved = await resolveSdkRunBillingResolution({
@@ -4109,6 +4116,7 @@ async function processSdkRunBilling(input: {
     ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
     ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.workflowStep && { workflowStep: input.workflowStep }),
   });
 
   for (const observation of resolved.observations) {

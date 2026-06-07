@@ -654,6 +654,20 @@ export interface ThreadSubagentBillingSnapshot {
   modelId?: string;
 }
 
+export interface ThreadBillingWorkflowStepSnapshot {
+  stepId: string;
+  agentKey: string;
+  outputKey: string;
+  attempt: number;
+  batchIndex: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  ecoCostUsd: number;
+  modelIds: string[];
+}
+
 export interface ThreadBillingSnapshot {
   totalTokens: {
     input: number;
@@ -690,6 +704,7 @@ export interface ThreadBillingSnapshot {
     >
   >;
   subagents?: ThreadSubagentBillingSnapshot[];
+  workflowSteps?: ThreadBillingWorkflowStepSnapshot[];
 }
 
 export interface ThreadUsageSnapshotResult {

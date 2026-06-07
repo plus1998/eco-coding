@@ -325,6 +325,44 @@ async function collectAgentEvents<T>(
   }
 }
 
+async function* tagWorkflowStepEvents<T>(
+  iterable: AsyncGenerator<AgentEvent, T>,
+  step: EcoWorkflowStep,
+  detail: { attempt: number; batchIndex: number },
+): AsyncGenerator<AgentEvent, T> {
+  const iterator = iterable[Symbol.asyncIterator]();
+  while (true) {
+    const next = await iterator.next();
+    if (next.done) {
+      return next.value;
+    }
+    yield appendWorkflowStepContext(next.value, step, detail);
+  }
+}
+
+function appendWorkflowStepContext(
+  event: AgentEvent,
+  step: EcoWorkflowStep,
+  detail: { attempt: number; batchIndex: number },
+): AgentEvent {
+  if (!isRecord(event.payload)) {
+    return event;
+  }
+  return {
+    ...event,
+    payload: {
+      ...event.payload,
+      ecoWorkflowStepContext: {
+        id: step.id,
+        agentKey: step.agentKey,
+        outputKey: step.outputKey,
+        attempt: detail.attempt,
+        batchIndex: detail.batchIndex,
+      },
+    },
+  };
+}
+
 export function mergeAllowedTools(base: string[], session?: EcoSdkSessionOptions): string[] {
   const merged = new Set(base);
   for (const tool of session?.mcpAllowedTools ?? []) {
@@ -866,16 +904,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const sdkAgentKey = sdkAgentKeyForProfileAgent(step.agentKey);
     yield createWorkflowStepEvent(input.threadId, step, "started", detail);
     try {
-      const result = yield* this.runSingleSession(input, {
-        prompt: buildFixedWorkflowStepPrompt({ step, renderedInstructions }),
-        permissionMode: "default",
-        allowedTools: ["Agent"],
-        phaseAppend: [
-          buildUniversalPhaseAppend("execute"),
-          `Fixed workflow step ${step.id}: only Agent(${sdkAgentKey}) is available for this step.`,
-        ].join("\n"),
-        dynamicAgentKeys: [sdkAgentKey],
-      });
+      const result = yield* tagWorkflowStepEvents(
+        this.runSingleSession(input, {
+          prompt: buildFixedWorkflowStepPrompt({ step, renderedInstructions }),
+          permissionMode: "default",
+          allowedTools: ["Agent"],
+          phaseAppend: [
+            buildUniversalPhaseAppend("execute"),
+            `Fixed workflow step ${step.id}: only Agent(${sdkAgentKey}) is available for this step.`,
+          ].join("\n"),
+          dynamicAgentKeys: [sdkAgentKey],
+        }),
+        step,
+        detail,
+      );
       yield createWorkflowStepEvent(input.threadId, step, "completed", detail);
       return result.transcript;
     } catch (error) {

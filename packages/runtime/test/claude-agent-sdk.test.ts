@@ -1450,6 +1450,16 @@ test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", asy
   expect(events.some((event) => JSON.stringify(event.payload).includes("固定编排开始"))).toBe(true);
   expect(events.some((event) => JSON.stringify(event.payload).includes('"id":"research"'))).toBe(true);
   expect(events.some((event) => JSON.stringify(event.payload).includes('"status":"completed"'))).toBe(true);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "message.delta" &&
+        JSON.stringify(event.payload).includes('"ecoWorkflowStepContext"') &&
+        JSON.stringify(event.payload).includes('"id":"research"') &&
+        JSON.stringify(event.payload).includes('"agentKey":"researcher"') &&
+        JSON.stringify(event.payload).includes('"outputKey":"research_notes"'),
+    ),
+  ).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

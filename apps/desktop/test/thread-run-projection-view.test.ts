@@ -179,7 +179,24 @@ test("buildThreadRunProjectionViewModel summarizes structured workflow steps", (
       ],
     }),
     undefined,
-    { agentDisplayNames: { researcher: "Research Lead" } },
+    {
+      agentDisplayNames: { researcher: "Research Lead" },
+      workflowBillingSteps: [
+        {
+          stepId: "research",
+          agentKey: "researcher",
+          outputKey: "research_notes",
+          attempt: 1,
+          batchIndex: 0,
+          inputTokens: 1200,
+          outputTokens: 240,
+          cacheReadTokens: 30,
+          cacheCreationTokens: 12,
+          ecoCostUsd: 0.0042,
+          modelIds: ["research-agent-model"],
+        },
+      ],
+    },
   );
 
   expect(view.workflowProfileName).toBe("Research Profile");
@@ -196,6 +213,12 @@ test("buildThreadRunProjectionViewModel summarizes structured workflow steps", (
       startedAt: "2026-01-01T00:00:01.000Z",
       endedAt: "2026-01-01T00:00:03.500Z",
       durationMs: 2500,
+      inputTokens: 1200,
+      outputTokens: 240,
+      cacheReadTokens: 30,
+      cacheCreationTokens: 12,
+      ecoCostUsd: 0.0042,
+      modelIds: ["research-agent-model"],
       timelineIds: ["research-start", "research-completed"],
       sequence: 1,
     },

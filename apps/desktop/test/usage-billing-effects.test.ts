@@ -390,14 +390,29 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
       modelId: "haiku",
       providerBaseUrl: "https://api.example.test",
     },
+    workflowStep: {
+      id: "synthesis",
+      agentKey: "synthesizer",
+      outputKey: "final_answer",
+      attempt: 1,
+      batchIndex: 0,
+    },
   });
 
-  expect(ledger.listUsageEvents("thr_sdk_effects")).toHaveLength(1);
-  expect(ledger.listUsageEvents("thr_sdk_effects")[0]).toMatchObject({
+  const sdkLedgerEvents = ledger.listUsageEvents("thr_sdk_effects");
+  expect(sdkLedgerEvents).toHaveLength(1);
+  expect(sdkLedgerEvents[0]).toMatchObject({
     source: "sdk",
     usageKind: "request_final",
     runAttemptId: "attempt_1",
     agentId: "agent_coder",
+  });
+  expect(sdkLedgerEvents[0]?.metadata?.ecoWorkflowStep).toEqual({
+    id: "synthesis",
+    agentKey: "synthesizer",
+    outputKey: "final_answer",
+    attempt: 1,
+    batchIndex: 0,
   });
   expect(contextUpdates).toHaveLength(1);
   expect(contextObservationCalls).toHaveLength(1);
