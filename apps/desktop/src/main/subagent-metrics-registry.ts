@@ -1,6 +1,5 @@
 import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
-import type { AgentRole, RuntimeAgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import { resolveSubagentAgentId, type SubagentAgentResolveMissReason } from "./subagent-agent-resolver";
 import { SubagentLegacyUsageTracker } from "./subagent-legacy-usage";
 import {
@@ -47,10 +46,7 @@ export class SubagentMetricsRegistry {
     this.persistence = persistence ?? new SubagentMetricsStoreFacade(store);
   }
 
-  onSubagentStart(threadId: string, input: { agentId: string; role: AgentRole }): void {
-    if (!isSubagentBillingRole(input.role)) {
-      return;
-    }
+  onSubagentStart(threadId: string, input: { agentId: string; role: RuntimeAgentRole }): void {
     const state = this.getOrCreateThread(threadId);
     const now = Date.now();
     const start = state.metrics.start(input, now);
@@ -66,7 +62,7 @@ export class SubagentMetricsRegistry {
     });
   }
 
-  onSubagentStop(threadId: string, input: { agentId: string; role: AgentRole }): void {
+  onSubagentStop(threadId: string, input: { agentId: string; role: RuntimeAgentRole }): void {
     const state = this.threads.get(threadId);
     if (!state) {
       return;
@@ -84,9 +80,9 @@ export class SubagentMetricsRegistry {
     });
   }
 
-  noteTaskToolUse(threadId: string, toolUseId: string, role?: AgentRole): void {
+  noteTaskToolUse(threadId: string, toolUseId: string, role?: RuntimeAgentRole): void {
     const state = this.getOrCreateThread(threadId);
-    const pendingRole = role && isSubagentBillingRole(role) ? role : undefined;
+    const pendingRole = role?.trim() || undefined;
     const result = state.toolUses.note(toolUseId, pendingRole);
     this.diagnostics.logTaskTool({
       threadId,

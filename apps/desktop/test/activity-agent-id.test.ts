@@ -92,6 +92,26 @@ test("resolveActivityAgentId falls back to sole active subagent without parent",
   expect(agentId).toBe("agent_coder_solo");
 });
 
+test("resolveActivityAgentId falls back to sole active dynamic subagent", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  registry.onSubagentStart("thr_1", { agentId: "agent_researcher_solo", role: "researcher" });
+
+  const agentId = resolveActivityAgentId(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "researcher",
+      payload: {
+        type: "tool_use",
+        tool_name: "WebSearch",
+      },
+    },
+    { metricsRegistry: registry },
+  );
+
+  expect(agentId).toBe("agent_researcher_solo");
+});
+
 test("resolveActivityAgentId resolves parallel coders via parent tool use", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   registry.noteTaskToolUse("thr_1", "toolu_task_a");

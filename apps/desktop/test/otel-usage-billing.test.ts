@@ -22,8 +22,9 @@ test("normalizeTelemetryBillingRole maps non-agent telemetry roles to planner", 
   expect(normalizeTelemetryBillingRole("system")).toBe("planner");
   expect(normalizeTelemetryBillingRole("thinking")).toBe("planner");
   expect(normalizeTelemetryBillingRole("tool")).toBe("planner");
-  expect(normalizeTelemetryBillingRole("unknown")).toBe("planner");
   expect(normalizeTelemetryBillingRole("coder")).toBe("coder");
+  expect(normalizeTelemetryBillingRole("eco_researcher")).toBe("researcher");
+  expect(normalizeTelemetryBillingRole("researcher")).toBe("researcher");
 });
 
 test("resolveOtelUsageBilling builds request keys observations and billing input", () => {

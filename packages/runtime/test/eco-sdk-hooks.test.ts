@@ -147,6 +147,30 @@ test("createSubagentToolAttributionPreToolHook forwards tool use id with role", 
   expect(calls).toEqual([{ toolUseId: "tool_agent", role: "coder" }]);
 });
 
+test("createSubagentToolAttributionPreToolHook forwards dynamic Eco agent role", async () => {
+  const calls: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentToolAttributionPreToolHook({
+    onTaskToolUse(toolUseId, input) {
+      calls.push({ toolUseId, ...(input?.role && { role: input.role }) });
+    },
+  });
+
+  await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "eco_researcher", prompt: "Research." },
+      tool_use_id: "tool_researcher",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_researcher",
+    { signal: new AbortController().signal },
+  );
+
+  expect(calls).toEqual([{ toolUseId: "tool_researcher", role: "researcher" }]);
+});
+
 test("createNonEcoSubagentDenyPreToolHook denies Agent(general-purpose)", async () => {
   const hook = createNonEcoSubagentDenyPreToolHook();
   const result = await hook(
@@ -203,6 +227,28 @@ test("createNonEcoSubagentDenyPreToolHook allows dynamic Eco agent keys", async 
   );
 
   expect(result.hookSpecificOutput).toBeUndefined();
+});
+
+test("createNonEcoSubagentDenyPreToolHook denies unlisted dynamic Eco agent keys", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook(["eco_researcher"]);
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "eco_writer", prompt: "Write launch copy." },
+      tool_use_id: "tool_writer",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_writer",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("eco_writer");
 });
 
 test("createToolPermissionPreToolHook enforces main and subagent tool policies", async () => {
@@ -617,6 +663,59 @@ test("subagent lifecycle hooks normalize eco agent keys back to roles", async ()
 
   expect(starts).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
   expect(stops).toEqual([{ agentId: "agent_coder", agentType: "coder" }]);
+});
+
+test("subagent lifecycle hooks normalize dynamic Eco agent keys", async () => {
+  const starts: Array<{ agentId: string; agentType: string }> = [];
+  const stops: Array<{ agentId: string; agentType: string }> = [];
+  const startHook = createSubagentStartHook({
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_dynamic",
+      onStart(input) {
+        starts.push(input);
+      },
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+  });
+  const stopHook = createSubagentStopHook({
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_dynamic",
+      onStart() {},
+      onStop(input) {
+        stops.push(input);
+      },
+      resolveResume: () => undefined,
+    },
+  });
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_researcher",
+      agent_type: "eco_researcher",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  await stopHook(
+    {
+      hook_event_name: "SubagentStop",
+      agent_id: "agent_researcher",
+      agent_type: "eco_researcher",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStopHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(starts).toEqual([{ agentId: "agent_researcher", agentType: "researcher" }]);
+  expect(stops).toEqual([{ agentId: "agent_researcher", agentType: "researcher" }]);
 });
 
 test("buildEcoSdkHooks registers expected hook events", () => {

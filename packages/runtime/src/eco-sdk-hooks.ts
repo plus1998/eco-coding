@@ -28,12 +28,12 @@ export {
   normalizeSdkSubagentType,
   readAgentSubagentType,
 } from "./subagent-resume.js";
-import type { AgentRole } from "../../shared/src";
+import type { AgentRole, RuntimeAgentRole } from "../../shared/src";
 import {
   isSubagentEnabled,
+  isSubagentRole,
   normalizeSubagentAvailability,
   type SubagentAvailability,
-  type SubagentRole,
 } from "./subagent-availability";
 import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 
@@ -61,16 +61,16 @@ export interface EcoSubagentSessionHooks {
   onStop(input: { agentId: string; agentType: string }): void;
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
-  onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
+  onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
 }
 
 export interface EcoSubagentAttributionHooks {
   resolveAgentId?(input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     parentToolUseId?: string;
     sessionId: string;
   }): string | undefined;
-  onTaskToolUse?(toolUseId: string, input?: { role?: SubagentRole }): void;
+  onTaskToolUse?(toolUseId: string, input?: { role?: RuntimeAgentRole }): void;
 }
 
 export interface EcoHookContext {
@@ -205,10 +205,12 @@ export function createNonEcoSubagentDenyPreToolHook(allowedAgentKeys: readonly s
     if (!rawType) {
       return {};
     }
-    if (normalizeSdkSubagentType(rawType)) {
+    const normalizedType = normalizeSdkSubagentType(rawType);
+    if (normalizedType && isSubagentRole(normalizedType)) {
       return {};
     }
-    if (allowed.has(rawType)) {
+    const normalizedEcoKey = normalizedType ? `eco_${normalizedType}` : undefined;
+    if (allowed.has(rawType) || (normalizedEcoKey && allowed.has(normalizedEcoKey))) {
       return {};
     }
     return {
@@ -239,7 +241,7 @@ export function createDisabledSubagentPreToolHook(
     if (!subagentType) {
       return {};
     }
-    if (isSubagentEnabled(resolved, subagentType)) {
+    if (!isSubagentRole(subagentType) || isSubagentEnabled(resolved, subagentType)) {
       return {};
     }
     const deniedLabel = rawType ?? subagentType;

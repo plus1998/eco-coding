@@ -1,8 +1,8 @@
-import type { AgentRole } from "../shared/ipc";
+import type { RuntimeAgentRole } from "../shared/ipc";
 
 interface PendingToolUse {
   toolUseId: string;
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
 }
 
 export interface NoteSubagentToolUseResult {
@@ -23,7 +23,7 @@ export class SubagentToolUseIndex {
     return this.toolUseToAgentId.size;
   }
 
-  note(toolUseId: string, role?: AgentRole): NoteSubagentToolUseResult {
+  note(toolUseId: string, role?: RuntimeAgentRole): NoteSubagentToolUseResult {
     if (!this.toolUseToAgentId.has(toolUseId)) {
       const existing = this.pendingToolUses.find((pending) => pending.toolUseId === toolUseId);
       if (existing) {
@@ -49,7 +49,7 @@ export class SubagentToolUseIndex {
     this.removePending(toolUseId);
   }
 
-  linkNextPendingForRole(role: AgentRole, agentId: string): LinkPendingSubagentToolUseResult {
+  linkNextPendingForRole(role: RuntimeAgentRole, agentId: string): LinkPendingSubagentToolUseResult {
     const toolUseId = this.consumeForRole(role);
     if (toolUseId) {
       this.link(toolUseId, agentId);
@@ -64,7 +64,7 @@ export class SubagentToolUseIndex {
     return this.toolUseToAgentId.get(toolUseId);
   }
 
-  consumeForRole(role: AgentRole): string | undefined {
+  consumeForRole(role: RuntimeAgentRole): string | undefined {
     while (this.pendingToolUses.length > 0) {
       let index = this.pendingToolUses.findIndex(
         (pending) => pending.role === role && !this.toolUseToAgentId.has(pending.toolUseId),

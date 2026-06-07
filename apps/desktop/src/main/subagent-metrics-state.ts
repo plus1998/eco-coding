@@ -1,6 +1,5 @@
 import type { ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole, TokenCostBreakdown } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
 
 export type SubagentMetricsStatus = "active" | "stopped";
 
@@ -103,7 +102,7 @@ export class SubagentMetricsState {
   restore(entry: SubagentMetricsEntry): void {
     this.byAgentId.set(entry.agentId, entry);
     this.activeByRole.get(entry.role)?.delete(entry.agentId);
-    if (entry.status === "active" && isSubagentBillingRole(entry.role)) {
+    if (entry.status === "active") {
       const active = this.activeByRole.get(entry.role) ?? new Set();
       active.add(entry.agentId);
       this.activeByRole.set(entry.role, active);

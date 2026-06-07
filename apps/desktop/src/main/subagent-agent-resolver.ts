@@ -1,5 +1,4 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
 
 export type SubagentAgentResolveMissReason =
   | "no_thread_state"
@@ -33,7 +32,7 @@ export function resolveSubagentAgentId(
   if (input.linkedParentAgentId) {
     return { agentId: input.linkedParentAgentId };
   }
-  if (!isSubagentBillingRole(input.role)) {
+  if (!isResolvableAgentRole(input.role)) {
     return {};
   }
   if (!input.hasThreadState) {
@@ -62,4 +61,8 @@ export function resolveSubagentAgentId(
     missReason: input.parentToolUseId ? "parent_tool_use_unmapped" : "no_active_subagent",
     activeAgentIds,
   };
+}
+
+function isResolvableAgentRole(role: RuntimeAgentRole): boolean {
+  return !["assistant", "main", "planner", "system", "thinking", "tool", "user"].includes(role);
 }

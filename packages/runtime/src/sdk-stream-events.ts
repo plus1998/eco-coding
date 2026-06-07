@@ -1,6 +1,7 @@
 import {
   type AgentEvent,
   type AgentRole,
+  type RuntimeAgentRole,
   createAgentEvent,
 } from "../../shared/src";
 import { tryParseSerializedAnthropicContentBlocks } from "./anthropic-content-normalize.js";
@@ -16,10 +17,10 @@ export interface SdkStreamContext {
   currentToolName?: string;
   currentToolInputJson: string;
   parentToolUseId: string | null;
-  activeSubagentRole?: AgentRole;
+  activeSubagentRole?: RuntimeAgentRole;
   emittedToolUseIds: Set<string>;
   resolveSubagentAgentId?: (input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     parentToolUseId?: string;
     sessionId: string;
   }) => string | undefined;
@@ -41,7 +42,7 @@ export function createSdkStreamContext(options?: {
 /** Attach subagent agent_id to usage events when desktop attribution resolver is wired. */
 export function applySubagentUsageAttribution(
   input: {
-    role: AgentRole;
+    role: RuntimeAgentRole;
     sessionId: string;
     payload: Record<string, unknown>;
   },
@@ -142,7 +143,7 @@ function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, u
   }
 }
 
-function effectiveStreamRole(ctx: SdkStreamContext, fallback: AgentRole): AgentRole {
+function effectiveStreamRole(ctx: SdkStreamContext, fallback: RuntimeAgentRole): RuntimeAgentRole {
   return ctx.activeSubagentRole ?? fallback;
 }
 
@@ -150,7 +151,7 @@ export function mapStreamEventToEvents(
   message: Record<string, unknown>,
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
   ctx: SdkStreamContext,
 ): AgentEvent[] {
@@ -389,7 +390,7 @@ export function mapStreamEventToEvents(
 function createStreamDeltaEvent(
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
   payload: EcoStreamPayload & { type: "eco_stream" },
 ): AgentEvent {
@@ -406,7 +407,7 @@ function createStreamDeltaEvent(
 function createToolStartedEvent(
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
   payload: EcoStreamPayload & { type: "tool_use" },
 ): AgentEvent {

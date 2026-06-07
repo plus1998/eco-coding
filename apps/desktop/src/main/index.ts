@@ -18,6 +18,7 @@ import {
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
   isSubagentRole,
+  normalizeSdkSubagentType,
   type OtelActivityLine,
   type OtelUsageUpdate,
   type ParsedUsage,
@@ -3147,12 +3148,12 @@ function buildSdkHookContextExtras(
   const pendingLaunches: PendingSubagentLaunch[] = [];
   const peekPendingCoderTodoId = extras?.peekPendingCoderTodoId;
   const subagentAttribution = {
-    resolveAgentId: (input: { role: AgentRole; parentToolUseId?: string; sessionId: string }) =>
+    resolveAgentId: (input: { role: RuntimeAgentRole; parentToolUseId?: string; sessionId: string }) =>
       subagentMetricsRegistry.resolveAgentId(threadId, {
         role: input.role,
         ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       }),
-    onTaskToolUse: (toolUseId: string, input?: { role?: AgentRole }) => {
+    onTaskToolUse: (toolUseId: string, input?: { role?: RuntimeAgentRole }) => {
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, input?.role);
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, input?.role);
     },
@@ -3171,9 +3172,6 @@ function buildSdkHookContextExtras(
       return undefined;
     },
     onAgentToolCapture: (input) => {
-      if (!isSubagentRole(input.role)) {
-        return;
-      }
       const missionKey = normalizeSubagentMissionKey(input.prompt);
       const todoId = input.todoIdHint ?? (peekPendingCoderTodoId ? peekPendingCoderTodoId() : undefined);
       pendingLaunches.push({
@@ -3817,7 +3815,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
           : typeof event.payload.agent_type === "string"
             ? event.payload.agent_type
             : "";
-      const role = isSubagentRole(rawRole) ? rawRole : undefined;
+      const role = normalizeSdkSubagentType(rawRole);
       subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
       agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
     }

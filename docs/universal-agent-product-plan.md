@@ -849,6 +849,8 @@ type WorkflowStep = {
 - Phase 10.3 上下文主路径已支持自定义 role 汇总与动态实例：`ContextWindowMonitor` 会按固定 Coding role 优先、动态 role 字母序补充排序；带 `agentId` 的非 planner agent 会作为独立实例记录，清理子代理状态时统一保留 planner、清掉其他 agent。
 - Phase 10.4 已完成：usage ledger、usage ledger adapters、billing projector、thread usage accumulator、SDK/proxy billing attribution、active run billing state、subagent metrics projection/persistence 的运行期 role 字段改为 `RuntimeAgentRole`，动态 agent key 从事件生成、归因、账单投影到 metrics 持久化不会再被固定 Coding role 类型截断。
 - Phase 10.4 行为收敛：有 `agentId` 的动态子代理可进入 billing observations、legacy metrics fallback 和 subagent billing snapshot；metrics record target 不再因为 role 不是固定 Coding 子代理而丢弃 resolver 已确认的 agent。
+- Phase 10.5 已完成：SDK `eco_*` agent key、subagent resume/capture hook、stream activity、session hooks、Agent lifecycle service、Subagent metrics registry 和 OTel billing role 统一支持 `RuntimeAgentRole`，动态 Agent 可以启动、停止、恢复、归因父 tool_use、进入活动日志和生命周期事件。
+- Phase 10.5 保留边界：`planner/system/thinking/tool/user` 等非 Agent role 仍不会被 resolver 当成子代理实例；内置 Coding role 的 legacy `Explore`/`eco_coder` 等映射保持可用，自定义 Agent 通过 `eco_${agentKey}` 进入 runtime。
 
 Phase 10.1 验证：
 
@@ -868,6 +870,11 @@ Phase 10.3 验证：
 Phase 10.4 验证：
 
 - `bun test apps/desktop/test/thread-usage-accumulator.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/subagent-metrics-record-target.test.ts apps/desktop/test/sdk-run-billing-resolution.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/proxy-usage-billing.test.ts`
+- `bun run typecheck`
+
+Phase 10.5 验证：
+
+- `bun test packages/runtime/test/subagent-resume.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/sdk-stream-events.test.ts apps/desktop/test/activity-agent-id.test.ts apps/desktop/test/agent-lifecycle-service.test.ts apps/desktop/test/subagent-session-store.test.ts apps/desktop/test/subagent-metrics-registry.test.ts apps/desktop/test/subagent-agent-resolver.test.ts apps/desktop/test/otel-usage-billing.test.ts`
 - `bun run typecheck`
 
 验收标准：

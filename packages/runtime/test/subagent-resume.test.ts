@@ -14,6 +14,8 @@ test("normalizeSdkSubagentType maps Explore to explore", () => {
   expect(normalizeSdkSubagentType("explore")).toBe("explore");
   expect(normalizeSdkSubagentType(ecoSubagentKeyForRole("coder"))).toBe("coder");
   expect(normalizeSdkSubagentType("coder")).toBe("coder");
+  expect(normalizeSdkSubagentType("eco_researcher")).toBe("researcher");
+  expect(normalizeSdkSubagentType("researcher")).toBeUndefined();
   expect(normalizeSdkSubagentType("Plan")).toBeUndefined();
 });
 
@@ -31,6 +33,13 @@ test("normalizeAgentToolInputSubagentType rewrites legacy names to eco keys", ()
     role: "reviewer",
     changed: true,
     input: { subagent_type: ecoSubagentKeyForRole("reviewer"), prompt: "Review" },
+  });
+  expect(
+    normalizeAgentToolInputSubagentType({ agent_type: "eco_researcher", prompt: "Research" }),
+  ).toMatchObject({
+    role: "researcher",
+    changed: true,
+    input: { subagent_type: "eco_researcher", prompt: "Research" },
   });
 });
 
@@ -91,6 +100,28 @@ test("createSubagentResumePreToolHook rewrites Agent tool input", async () => {
   expect(result.hookSpecificOutput?.updatedInput?.subagent_type).toBe(
     ecoSubagentKeyForRole("reviewer"),
   );
+});
+
+test("createSubagentResumePreToolHook resolves dynamic Eco agent keys", async () => {
+  const hook = createSubagentResumePreToolHook("thr_1", "execution", (input) => {
+    expect(input.role).toBe("researcher");
+    return "research-agent-id";
+  });
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { agent_type: "eco_researcher", prompt: "Research pricing" },
+    } as never,
+    "tool_researcher",
+  );
+
+  expect(result.hookSpecificOutput?.updatedInput).toMatchObject({
+    prompt: "Resume agent research-agent-id and Research pricing",
+    subagent_type: "eco_researcher",
+  });
+  expect(result.hookSpecificOutput?.updatedInput).not.toHaveProperty("agent_type");
 });
 
 test("createSubagentResumePreToolHook skips fresh requests", async () => {

@@ -1,4 +1,4 @@
-import type { SubagentRole } from "@eco/runtime";
+import type { RuntimeAgentRole } from "../shared/ipc";
 
 export type SubagentRunPhase = "planning" | "execution" | "question";
 
@@ -6,7 +6,7 @@ export type SubagentSessionStatus = "active" | "stopped";
 
 export interface ThreadSubagentSessionRecord {
   threadId: string;
-  role: SubagentRole;
+  role: RuntimeAgentRole;
   agentId: string;
   phase: SubagentRunPhase;
   status: SubagentSessionStatus;

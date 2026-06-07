@@ -1,5 +1,5 @@
 import type { OtelUsageUpdate, ParsedUsage } from "@eco/runtime";
-import type { AgentRole, BillingUsageSource } from "../shared/ipc";
+import type { BillingUsageSource, RuntimeAgentRole } from "../shared/ipc";
 import {
   nextOtelRequestDedupId,
   type UsageBillingObservation,
@@ -11,7 +11,7 @@ export { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 
 export interface OtelUsageBillingInput {
   threadId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   source: BillingUsageSource;
   inputTokens: number;
   outputTokens: number;
@@ -37,7 +37,7 @@ export interface ResolveOtelUsageBillingInput {
 export interface OtelUsageBillingResolution {
   nextRequestSeq: number;
   dedupId: string;
-  billingRole: AgentRole;
+  billingRole: RuntimeAgentRole;
   hasTokens: boolean;
   usage: ParsedUsage;
   requestKey: string;

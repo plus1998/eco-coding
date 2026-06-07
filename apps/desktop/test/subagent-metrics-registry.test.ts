@@ -177,6 +177,22 @@ test("resolveAgentId matches queued parent tool_use ids by role when starts are 
   ).toBe("agent_explore_a");
 });
 
+test("resolveAgentId matches dynamic runtime roles", () => {
+  const registry = new SubagentMetricsRegistry(metricsStoreStub);
+  const threadId = "thr_dynamic_role_queue";
+
+  registry.noteTaskToolUse(threadId, "toolu_research", "researcher");
+  registry.onSubagentStart(threadId, { agentId: "agent_researcher", role: "researcher" });
+
+  expect(
+    registry.resolveAgentId(threadId, {
+      role: "researcher",
+      parentToolUseId: "toolu_research",
+    }),
+  ).toBe("agent_researcher");
+  expect(registry.roleForAgentId(threadId, "agent_researcher")).toBe("researcher");
+});
+
 test("recordContextObservation updates context without billing usage", () => {
   const registry = new SubagentMetricsRegistry(metricsStoreStub);
   const threadId = "thr_subagent_context_observation";

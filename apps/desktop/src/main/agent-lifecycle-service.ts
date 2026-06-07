@@ -1,5 +1,4 @@
-import type { AgentRole } from "../shared/ipc";
-import { isSubagentBillingRole } from "./billing-orchestration";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type {
   AgentInstanceRecord,
   RunAttemptPhase,
@@ -41,7 +40,7 @@ interface ThreadLifecycleState {
 
 interface PendingToolUse {
   toolUseId: string;
-  role?: AgentRole;
+  role?: RuntimeAgentRole;
 }
 
 export class AgentLifecycleService {
@@ -133,9 +132,9 @@ export class AgentLifecycleService {
     state.pendingToolUses = [];
   }
 
-  noteTaskToolUse(threadId: string, toolUseId: string, role?: AgentRole): void {
+  noteTaskToolUse(threadId: string, toolUseId: string, role?: RuntimeAgentRole): void {
     const state = this.getOrCreateThread(threadId);
-    const pendingRole = role && isSubagentBillingRole(role) ? role : undefined;
+    const pendingRole = role?.trim() || undefined;
     const existing = state.pendingToolUses.find((pending) => pending.toolUseId === toolUseId);
     if (existing) {
       if (!existing.role && pendingRole) {
@@ -152,13 +151,10 @@ export class AgentLifecycleService {
   startSubagent(input: {
     threadId: string;
     agentId: string;
-    role: AgentRole;
+    role: RuntimeAgentRole;
     missionKey?: string;
     todoId?: string;
   }): AgentInstanceRecord | undefined {
-    if (!isSubagentBillingRole(input.role)) {
-      return undefined;
-    }
     const state = this.getOrCreateThread(input.threadId);
     const now = this.now();
     const parentToolUseId = consumePendingToolUseId(state, input.role);
@@ -180,7 +176,7 @@ export class AgentLifecycleService {
     return record;
   }
 
-  stopSubagent(input: { threadId: string; agentId: string; role: AgentRole }): void {
+  stopSubagent(input: { threadId: string; agentId: string; role: RuntimeAgentRole }): void {
     const state = this.threads.get(input.threadId);
     const existing = state?.activeAgents.get(input.agentId);
     if (!state || !existing) {
@@ -296,7 +292,7 @@ export class AgentLifecycleService {
 
 function consumePendingToolUseId(
   state: ThreadLifecycleState,
-  role: AgentRole,
+  role: RuntimeAgentRole,
 ): string | undefined {
   const roleIndex = state.pendingToolUses.findIndex((pending) => pending.role === role);
   const index = roleIndex >= 0 ? roleIndex : state.pendingToolUses.findIndex((pending) => !pending.role);

@@ -1,5 +1,6 @@
 import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
-import { isSubagentRole, type SubagentRole } from "@eco/runtime";
+import { normalizeSdkSubagentType } from "@eco/runtime";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
@@ -7,7 +8,7 @@ import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentLifecycleRunEvent } from "./thread-run-event-normalizer.js";
 
 export interface PendingSubagentLaunch {
-  role: SubagentRole;
+  role: RuntimeAgentRole;
   missionKey?: string;
   todoId?: string;
 }
@@ -20,8 +21,8 @@ export function createSubagentSessionHooks(
     lifecycle?: AgentLifecycleService;
     metricsRegistry?: SubagentMetricsRegistry;
     todoIdHint?: () => string | undefined;
-    consumePendingLaunch?: (input: { role: SubagentRole }) => PendingSubagentLaunch | undefined;
-    onAgentToolCapture?: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void;
+    consumePendingLaunch?: (input: { role: RuntimeAgentRole }) => PendingSubagentLaunch | undefined;
+    onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
     onTimingChanged?: () => void;
   },
 ): EcoSubagentSessionHooks {
@@ -29,18 +30,19 @@ export function createSubagentSessionHooks(
     phase,
     threadId,
     onStart(input) {
-      if (!isSubagentRole(input.agentType)) {
+      const role = normalizeSdkSubagentType(input.agentType);
+      if (!role) {
         return;
       }
-      const pending = options?.consumePendingLaunch?.({ role: input.agentType });
+      const pending = options?.consumePendingLaunch?.({ role });
       const prompt = input.prompt?.trim() ?? "";
       const todoId = input.todoId ?? pending?.todoId ?? options?.todoIdHint?.();
       const missionKey =
         pending?.missionKey ??
-        (input.agentType === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined);
+        (role === "coder" && prompt ? normalizeSubagentMissionKey(prompt) : undefined);
       store.upsertSubagentSessionActive({
         threadId,
-        role: input.agentType,
+        role,
         agentId: input.agentId,
         phase,
         ...(todoId && { todoId }),
@@ -48,19 +50,19 @@ export function createSubagentSessionHooks(
       });
       options?.metricsRegistry?.onSubagentStart(threadId, {
         agentId: input.agentId,
-        role: input.agentType,
+        role,
       });
       const lifecycleRecord = options?.lifecycle?.startSubagent({
         threadId,
         agentId: input.agentId,
-        role: input.agentType,
+        role,
         ...(missionKey && { missionKey }),
         ...(todoId && { todoId }),
       });
       appendSubagentLifecycleEvent(store, {
         threadId,
         agentId: input.agentId,
-        role: input.agentType,
+        role,
         lifecycle: "started",
         ...(lifecycleRecord?.runAttemptId && { runAttemptId: lifecycleRecord.runAttemptId }),
         ...(lifecycleRecord?.parentAgentId && { parentAgentId: lifecycleRecord.parentAgentId }),
@@ -72,21 +74,22 @@ export function createSubagentSessionHooks(
     },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
-      if (isSubagentRole(input.agentType)) {
+      const role = normalizeSdkSubagentType(input.agentType);
+      if (role) {
         options?.metricsRegistry?.onSubagentStop(threadId, {
           agentId: input.agentId,
-          role: input.agentType,
+          role,
         });
         options?.lifecycle?.stopSubagent({
           threadId,
           agentId: input.agentId,
-          role: input.agentType,
+          role,
         });
         const runAttemptId = options?.lifecycle?.currentRunAttemptId(threadId);
         appendSubagentLifecycleEvent(store, {
           threadId,
           agentId: input.agentId,
-          role: input.agentType,
+          role,
           lifecycle: "stopped",
           ...(runAttemptId && { runAttemptId }),
         });
@@ -106,7 +109,7 @@ function appendSubagentLifecycleEvent(
   input: {
     threadId: string;
     agentId: string;
-    role: SubagentRole;
+    role: RuntimeAgentRole;
     lifecycle: "started" | "stopped" | "abandoned";
     runAttemptId?: string;
     parentAgentId?: string;

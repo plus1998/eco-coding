@@ -85,6 +85,29 @@ test("AgentLifecycleService links interleaved subagents by role-aware parent too
   expect(explore?.parentToolUseId).toBe("toolu_explore");
 });
 
+test("AgentLifecycleService records dynamic subagents by runtime role", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+  service.startRunAttempt({ threadId: "thr_dynamic_lifecycle", phase: "execution", retryIndex: 0 });
+
+  service.noteTaskToolUse("thr_dynamic_lifecycle", "toolu_research", "researcher");
+  service.startSubagent({
+    threadId: "thr_dynamic_lifecycle",
+    agentId: "agent_researcher",
+    role: "researcher",
+    missionKey: "market research",
+  });
+
+  const researcher = store.getAgent("thr_dynamic_lifecycle", "agent_researcher");
+  expect(researcher).toMatchObject({
+    role: "researcher",
+    kind: "subagent",
+    status: "active",
+    parentToolUseId: "toolu_research",
+    missionKey: "market research",
+  });
+});
+
 test("AgentLifecycleService finalizes active subagents as abandoned on failed run", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

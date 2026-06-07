@@ -1,11 +1,18 @@
-import { AGENT_ROLES, type AgentRole } from "../shared/ipc";
+import { AGENT_ROLES, type AgentRole, type RuntimeAgentRole } from "../shared/ipc";
 
-export function normalizeTelemetryBillingRole(role: string): AgentRole {
-  if (role === "system" || role === "thinking" || role === "tool") {
+const NON_AGENT_TELEMETRY_ROLES = new Set(["assistant", "main", "system", "thinking", "tool", "user"]);
+
+export function normalizeTelemetryBillingRole(role: string): RuntimeAgentRole {
+  const trimmed = role.trim();
+  if (!trimmed) {
     return "planner";
   }
-  if (AGENT_ROLES.includes(role as AgentRole)) {
-    return role as AgentRole;
+  const normalized = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  if (NON_AGENT_TELEMETRY_ROLES.has(normalized)) {
+    return "planner";
   }
-  return "planner";
+  if (AGENT_ROLES.includes(normalized as AgentRole)) {
+    return normalized as AgentRole;
+  }
+  return normalized;
 }

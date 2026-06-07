@@ -1,4 +1,5 @@
 import type { HookCallback, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import type { RuntimeAgentRole } from "../../shared/src";
 import {
   ecoSubagentKeyForRole,
   isSubagentRole,
@@ -7,27 +8,34 @@ import {
 } from "./subagent-availability.js";
 
 /** Map SDK subagent_type values to Eco subagent roles. */
-export function normalizeSdkSubagentType(type: string): SubagentRole | undefined {
-  if (type === "Explore") {
+export function normalizeSdkSubagentType(type: string): RuntimeAgentRole | undefined {
+  const trimmed = type.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed === "Explore") {
     return "explore";
   }
   for (const role of SUBAGENT_ROLES) {
-    if (type === ecoSubagentKeyForRole(role)) {
+    if (trimmed === ecoSubagentKeyForRole(role)) {
       return role;
     }
   }
-  return isSubagentRole(type) ? type : undefined;
+  if (isSubagentRole(trimmed)) {
+    return trimmed;
+  }
+  return normalizeDynamicEcoAgentRole(trimmed);
 }
 
 export function normalizeAgentToolInputSubagentType(
   input: Record<string, unknown>,
-): { input: Record<string, unknown>; role?: SubagentRole; changed: boolean } {
+): { input: Record<string, unknown>; role?: RuntimeAgentRole; changed: boolean } {
   const rawType = readAgentSubagentType(input);
   const role = rawType ? normalizeSdkSubagentType(rawType) : undefined;
   if (!role) {
     return { input, changed: false };
   }
-  const nextType = ecoSubagentKeyForRole(role);
+  const nextType = ecoAgentKeyForRuntimeRole(role);
   if (input.subagent_type === nextType && input.agent_type === undefined) {
     return { input, role, changed: false };
   }
@@ -78,14 +86,14 @@ export function buildResumeAgentPrompt(agentId: string, originalPrompt: string):
 
 export type SubagentResumeResolveInput = {
   threadId: string;
-  role: SubagentRole;
+  role: RuntimeAgentRole;
   phase: "planning" | "execution" | "question";
   prompt: string;
   todoIdHint?: string;
 };
 
 export function createSubagentMissionCapturePreToolHook(
-  onCapture: (input: { role: SubagentRole; prompt: string; todoIdHint?: string }) => void,
+  onCapture: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void,
 ): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") {
@@ -190,4 +198,28 @@ export function createSubagentResumePreToolHook(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeDynamicEcoAgentRole(type: string): RuntimeAgentRole | undefined {
+  if (!type.startsWith("eco_")) {
+    return undefined;
+  }
+  return sanitizeRuntimeAgentRole(type.slice(4));
+}
+
+function ecoAgentKeyForRuntimeRole(role: RuntimeAgentRole): string {
+  if (isSubagentRole(role)) {
+    return ecoSubagentKeyForRole(role);
+  }
+  const sanitized = sanitizeRuntimeAgentRole(role) ?? "agent";
+  return sanitized.startsWith("eco_") ? sanitized : `eco_${sanitized}`;
+}
+
+function sanitizeRuntimeAgentRole(value: string): RuntimeAgentRole | undefined {
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized || undefined;
 }

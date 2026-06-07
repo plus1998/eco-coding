@@ -1,5 +1,6 @@
-import { isSubagentRole, type AgentEvent, type AgentRole } from "@eco/runtime";
+import { normalizeSdkSubagentType, type AgentEvent } from "@eco/runtime";
 import { inferActivityRole } from "@eco/runtime/sdk";
+import type { RuntimeAgentRole } from "../shared/ipc";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 
 type ActivityAgentEvent = Pick<AgentEvent, "type" | "payload" | "role" | "agentId">;
@@ -19,8 +20,20 @@ function readParentToolUseId(payload: unknown): string | undefined {
   return undefined;
 }
 
-function readBillingRole(role: string): AgentRole | undefined {
-  return isSubagentRole(role) ? role : undefined;
+function readBillingRole(role: string): RuntimeAgentRole | undefined {
+  const normalized = normalizeSdkSubagentType(role);
+  if (normalized) {
+    return normalized;
+  }
+  const trimmed = role.trim();
+  if (!trimmed || isReservedActivityRole(trimmed)) {
+    return undefined;
+  }
+  return /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(trimmed) ? trimmed : undefined;
+}
+
+function isReservedActivityRole(role: string): boolean {
+  return ["assistant", "main", "planner", "system", "thinking", "tool", "user"].includes(role);
 }
 
 function readDistinctSubagentSessionId(

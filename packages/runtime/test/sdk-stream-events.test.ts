@@ -97,6 +97,62 @@ test("maps eco subagent stream metadata to the role", () => {
   expect(events[0]?.role).toBe("coder");
 });
 
+test("maps dynamic eco subagent stream metadata to the role", () => {
+  const ctx = createSdkStreamContext();
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_dynamic",
+      session_id: "sess",
+      subagent_type: "eco_researcher",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "WebSearch", id: "toolu_research" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_dynamic",
+    ctx,
+  );
+  expect(events[0]?.role).toBe("researcher");
+});
+
+test("attributes dynamic subagent stream usage through resolver", () => {
+  const calls: Array<{ role: string; parentToolUseId?: string; sessionId: string }> = [];
+  const ctx = createSdkStreamContext({
+    resolveSubagentAgentId(input) {
+      calls.push(input);
+      return "agent_researcher";
+    },
+  });
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_usage",
+      session_id: "sess",
+      subagent_type: "eco_researcher",
+      parent_tool_use_id: "toolu_parent",
+      event: {
+        type: "message_delta",
+        usage: { input_tokens: 100, output_tokens: 20 },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_usage",
+    ctx,
+  );
+
+  expect(calls).toEqual([
+    { role: "researcher", parentToolUseId: "toolu_parent", sessionId: "sess" },
+  ]);
+  expect(events[0]?.agentId).toBe("agent_researcher");
+  expect(events[0]?.role).toBe("researcher");
+});
+
 test("suppresses text_delta while inside tool block", () => {
   const ctx = createSdkStreamContext();
   mapStreamEventToEvents(

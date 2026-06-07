@@ -4,6 +4,7 @@ import {
   type AgentEventType,
   type AgentRole,
   type PlanReadyPayload,
+  type RuntimeAgentRole,
   createAgentEvent,
 } from "../../shared/src";
 import type {
@@ -1816,7 +1817,7 @@ function mapTaskSystemMessageToEvents(
   message: Record<string, unknown>,
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
 ): AgentEvent[] {
   const payload = buildSdkTodoUpdatedPayload(message);
@@ -1850,7 +1851,7 @@ function mapCompactBoundaryToEvents(
   message: Record<string, unknown>,
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
 ): AgentEvent[] {
   const compactMetadata = isRecord(message.compact_metadata) ? message.compact_metadata : undefined;
@@ -2024,7 +2025,7 @@ function mapAssistantMessageToEvents(
   message: Record<string, unknown>,
   threadId: string,
   sessionId: string,
-  role: AgentRole,
+  role: RuntimeAgentRole,
   uuid: string,
   streamCtx?: SdkStreamContext,
 ): AgentEvent[] {
@@ -2190,7 +2191,7 @@ function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): Reso
   return routes.find((route) => route.role === role);
 }
 
-function inferRole(message: Record<string, unknown>): AgentRole {
+function inferRole(message: Record<string, unknown>): RuntimeAgentRole {
   if (typeof message.subagent_type === "string") {
     const normalized = normalizeSdkSubagentType(message.subagent_type);
     if (normalized) {
@@ -2228,7 +2229,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export type ActivityDisplayRole = AgentRole | "system" | "thinking" | "tool";
+export type ActivityDisplayRole = RuntimeAgentRole | "system" | "thinking" | "tool";
 
 export interface AgentEventDisplay {
   message: string;
@@ -2353,7 +2354,7 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
           return role;
         }
       }
-      if (isSubagentRole(event.role) || (isAgentRole(event.role) && event.role !== "planner")) {
+      if (isRuntimeAgentActivityRole(event.role)) {
         return event.role;
       }
       return "tool";
@@ -2383,7 +2384,7 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
   }
 
   if (event.type === "tool.started" || event.type === "tool.completed") {
-    if (isSubagentRole(event.role)) {
+    if (isRuntimeAgentActivityRole(event.role)) {
       return event.role;
     }
     if (isRecord(event.payload) && event.payload.tool_name === "Agent" && isRecord(event.payload.input)) {
@@ -2406,6 +2407,10 @@ export function inferActivityRole(event: Pick<AgentEvent, "type" | "payload" | "
   }
 
   return event.role;
+}
+
+function isRuntimeAgentActivityRole(role: RuntimeAgentRole): boolean {
+  return role !== "planner" && role !== "system" && role !== "thinking" && role !== "tool" && role !== "user";
 }
 
 export function isThinkingPayload(payload: unknown): boolean {

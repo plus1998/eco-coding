@@ -12,6 +12,7 @@ import type {
   AgentRole,
   CoderTodoItem,
   CoderTodoStatus,
+  RuntimeAgentRole,
   ThreadActivityLine,
   ThreadApiErrorInfo,
   ThreadContextSnapshot,
@@ -39,7 +40,6 @@ import type {
   ThreadSubagentSessionRecord,
 } from "./subagent-session-types.js";
 import { isFreshSubagentRequest } from "@eco/runtime";
-import type { SubagentRole } from "@eco/runtime";
 import type {
   AgentInstanceRecord,
   AgentInstanceStatus,
@@ -120,7 +120,7 @@ export type SubagentMetricsStatus = "active" | "stopped";
 export interface ThreadSubagentMetricsRecord {
   threadId: string;
   agentId: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   status: SubagentMetricsStatus;
   inputTokens: number;
   outputTokens: number;
@@ -1196,7 +1196,7 @@ export class ConversationStore {
 
   upsertSubagentSessionActive(input: {
     threadId: string;
-    role: SubagentRole;
+    role: RuntimeAgentRole;
     agentId: string;
     phase: SubagentRunPhase;
     todoId?: string;
@@ -1266,7 +1266,7 @@ export class ConversationStore {
     threadId: string,
     input: {
       agentId: string;
-      role: AgentRole;
+      role: RuntimeAgentRole;
       status: SubagentMetricsStatus;
       inputTokens: number;
       outputTokens: number;
@@ -1355,7 +1355,7 @@ export class ConversationStore {
     return rows.map((row) => ({
       threadId: row.thread_id,
       agentId: row.agent_id,
-      role: row.role as AgentRole,
+      role: row.role as RuntimeAgentRole,
       status: row.status as SubagentMetricsStatus,
       inputTokens: row.input_tokens,
       outputTokens: row.output_tokens,
@@ -1405,7 +1405,7 @@ export class ConversationStore {
       const lastActiveAt = row.last_active_at ?? fallbackAt;
       return {
         threadId: row.thread_id,
-        role: row.role as SubagentRole,
+        role: row.role as RuntimeAgentRole,
         agentId: row.agent_id,
         phase: row.phase as SubagentRunPhase,
         status: row.status as SubagentSessionStatus,
@@ -1431,7 +1431,7 @@ export class ConversationStore {
 
   resolveResumeAgentId(input: {
     threadId: string;
-    role: SubagentRole;
+    role: RuntimeAgentRole;
     phase: SubagentRunPhase;
     prompt: string;
     todoIdHint?: string;
@@ -1961,7 +1961,7 @@ function rowToAgentInstance(row: {
   return {
     threadId: row.thread_id,
     agentId: row.agent_id,
-    role: row.role as AgentRole,
+    role: row.role as RuntimeAgentRole,
     kind: row.kind as AgentInstanceKind,
     status: row.status as AgentInstanceStatus,
     ...(row.run_attempt_id && { runAttemptId: row.run_attempt_id }),
@@ -1985,7 +1985,7 @@ function rowToUsageLedgerEvent(row: UsageLedgerEventRow): UsageLedgerEvent {
     source: row.source as UsageLedgerSource,
     sourceEventId: row.source_event_id,
     usageKind: row.usage_kind as UsageLedgerKind,
-    role: row.role as AgentRole,
+    role: row.role as RuntimeAgentRole,
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     cacheReadTokens: row.cache_read_tokens,

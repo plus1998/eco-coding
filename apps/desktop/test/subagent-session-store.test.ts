@@ -91,6 +91,38 @@ test("createSubagentSessionHooks consumes pending launch for matching role", () 
   });
 });
 
+test("createSubagentSessionHooks records dynamic Eco agent sessions", () => {
+  const saved: Array<Record<string, unknown>> = [];
+  const stopped: string[] = [];
+  const store = {
+    upsertSubagentSessionActive(input: Record<string, unknown>) {
+      saved.push(input);
+    },
+    markSubagentSessionStopped(_threadId: string, agentId: string) {
+      stopped.push(agentId);
+    },
+    resolveResumeAgentId() {
+      return undefined;
+    },
+  } as never;
+
+  const hooks = createSubagentSessionHooks(store, "thr_dynamic_session", "execution");
+  hooks.onStart({
+    agentId: "agent_researcher",
+    agentType: "eco_researcher",
+    prompt: "Research market",
+  });
+  hooks.onStop({ agentId: "agent_researcher", agentType: "eco_researcher" });
+
+  expect(saved[0]).toMatchObject({
+    threadId: "thr_dynamic_session",
+    role: "researcher",
+    agentId: "agent_researcher",
+    phase: "execution",
+  });
+  expect(stopped).toEqual(["agent_researcher"]);
+});
+
 test.skipIf(!sqliteAvailable)("conversation store persists and resolves reviewer resume", async () => {
   const dbPath = path.join(
     await fs.mkdtemp(path.join(os.tmpdir(), "eco-subagent-")),

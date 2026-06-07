@@ -1,4 +1,5 @@
 export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewer" | "tester";
+export type RuntimeAgentRole = string;
 
 export type ModelCapability =
   | "messages_api"
@@ -70,7 +71,7 @@ export interface AgentEvent<TPayload = unknown> {
   threadId: string;
   agentId: string;
   parentAgentId?: string;
-  role: AgentRole;
+  role: RuntimeAgentRole;
   type: AgentEventType;
   timestamp: string;
   payload: TPayload;
