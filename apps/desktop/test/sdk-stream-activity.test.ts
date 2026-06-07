@@ -160,6 +160,43 @@ test("emits structured SDK tool metadata without parsing display text", () => {
   ]);
 });
 
+test("emits Skill detail for alternate SDK skill input keys", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    message: string;
+    tool?: { name: string; detail?: string };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Skill",
+        input: { skill: "frontend-design" },
+      },
+    },
+    (_threadId, _type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({
+        message,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+  );
+
+  expect(emitted).toEqual([
+    {
+      message: "Tool: Skill · frontend-design 技能",
+      tool: {
+        name: "Skill",
+        detail: "frontend-design 技能",
+      },
+    },
+  ]);
+});
+
 test("emits structured SDK tool metadata for tool progress activity", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

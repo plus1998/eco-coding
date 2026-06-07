@@ -2204,6 +2204,16 @@ function replaceOverlappingToolAction(
   }
   const priorDetail = actionDetailFromLabel(prior.label);
   const nextDetail = actionDetailFromLabel(nextLabel) ?? tool.detail;
+  const priorGenericLabel = formatToolActionLabel({ tool: tool.tool, category: tool.category });
+  if (!priorDetail && nextDetail && prior.label === priorGenericLabel) {
+    return {
+      kind: "action",
+      icon: iconForToolCategory(tool.category),
+      label: nextLabel,
+      ...(subagent && { subagent }),
+      ...(prior.agentId && { agentId: prior.agentId }),
+    };
+  }
   if (!priorDetail || !nextDetail || priorDetail !== nextDetail) {
     return null;
   }
@@ -2215,6 +2225,7 @@ function replaceOverlappingToolAction(
       icon: iconForToolCategory(tool.category),
       label: nextLabel,
       ...(subagent && { subagent }),
+      ...(prior.agentId && { agentId: prior.agentId }),
     };
   }
   return null;

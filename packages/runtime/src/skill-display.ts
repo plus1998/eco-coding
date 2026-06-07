@@ -19,11 +19,19 @@ export function resolveSkillDisplayName(toolName: string, input: unknown): strin
   const record = input as Record<string, unknown>;
 
   if (toolName === "Skill") {
-    for (const key of ["skill", "name", "skill_name", "skillName"] as const) {
+    for (const key of ["skill", "name", "skill_name", "skillName", "skill_id", "skillId", "display_name"] as const) {
       const value = record[key];
       if (typeof value === "string" && value.trim()) {
         return value.trim();
       }
+    }
+    const filePath =
+      (typeof record.file_path === "string" && record.file_path) ||
+      (typeof record.path === "string" && record.path) ||
+      (typeof record.skill_path === "string" && record.skill_path) ||
+      undefined;
+    if (filePath) {
+      return skillNameFromPath(filePath);
     }
     return null;
   }

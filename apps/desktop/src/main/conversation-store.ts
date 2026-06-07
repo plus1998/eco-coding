@@ -18,6 +18,7 @@ import type {
   ThreadPendingPlan,
   ThreadRunEvent,
   ThreadRunEventInput,
+  ThreadRunToolMetadata,
   ThreadRuntimeConfig,
   ThreadStatus,
   ThreadSummary,
@@ -1106,7 +1107,25 @@ export class ConversationStore {
   appendThreadRunEvent(event: ThreadRunEventInput): ThreadRunEvent {
     const existing = this.getThreadRunEvent(event.threadId, event.id);
     if (existing) {
-      return existing;
+      const upgraded = mergeRicherThreadRunEvent(existing, event);
+      if (!upgraded) {
+        return existing;
+      }
+      this.db
+        .prepare(
+          `UPDATE thread_run_events
+              SET stream_state = ?, message = ?, metadata_json = ?, observed_at = ?
+            WHERE thread_id = ? AND id = ?`,
+        )
+        .run(
+          upgraded.streamState,
+          upgraded.message,
+          upgraded.metadata ? JSON.stringify(upgraded.metadata) : null,
+          upgraded.observedAt,
+          upgraded.threadId,
+          upgraded.id,
+        );
+      return upgraded;
     }
 
     const record: ThreadRunEvent = {
@@ -2005,6 +2024,164 @@ function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
     ...(row.stream_key && { streamKey: row.stream_key }),
     ...(metadata && { metadata }),
   };
+}
+
+function mergeRicherThreadRunEvent(
+  existing: ThreadRunEvent,
+  incoming: ThreadRunEventInput,
+): ThreadRunEvent | null {
+  if (!shouldUpgradeThreadRunEvent(existing, incoming)) {
+    return null;
+  }
+  const updated: ThreadRunEvent = {
+    ...existing,
+    streamState: incoming.streamState,
+    message: incoming.message,
+    observedAt: incoming.observedAt,
+  };
+  const metadata = mergeThreadRunEventMetadata(existing.metadata, incoming.metadata);
+  if (metadata) {
+    updated.metadata = metadata;
+  } else {
+    delete updated.metadata;
+  }
+  return updated;
+}
+
+function shouldUpgradeThreadRunEvent(
+  existing: ThreadRunEvent,
+  incoming: ThreadRunEventInput,
+): boolean {
+  if (existing.eventType !== incoming.eventType) {
+    return false;
+  }
+
+  const existingTool = readThreadRunToolMetadata(existing.metadata);
+  const incomingTool = readThreadRunToolMetadata(incoming.metadata);
+  if (isRicherThreadRunToolMetadata(existingTool, incomingTool)) {
+    return true;
+  }
+
+  const existingMessage = existing.message.trim();
+  const incomingMessage = incoming.message.trim();
+  if (
+    incomingMessage.length > existingMessage.length &&
+    isSameToolReference(existingTool, incomingTool)
+  ) {
+    return true;
+  }
+
+  return streamStateRank(incoming.streamState) > streamStateRank(existing.streamState);
+}
+
+function mergeThreadRunEventMetadata(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!existing && !incoming) {
+    return undefined;
+  }
+  const merged: Record<string, unknown> = {
+    ...(existing ?? {}),
+    ...(incoming ?? {}),
+  };
+  const tool = mergeThreadRunToolMetadata(
+    readThreadRunToolMetadata(existing),
+    readThreadRunToolMetadata(incoming),
+  );
+  if (tool) {
+    merged.tool = tool;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeThreadRunToolMetadata(
+  existing: ThreadRunToolMetadata | undefined,
+  incoming: ThreadRunToolMetadata | undefined,
+): ThreadRunToolMetadata | undefined {
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming || existing.name !== incoming.name) {
+    return existing;
+  }
+  return {
+    ...existing,
+    ...incoming,
+  };
+}
+
+function isRicherThreadRunToolMetadata(
+  existing: ThreadRunToolMetadata | undefined,
+  incoming: ThreadRunToolMetadata | undefined,
+): boolean {
+  if (!incoming) {
+    return false;
+  }
+  if (!existing) {
+    return Boolean(incoming.detail || incoming.toolUseId || incoming.durationMs !== undefined || incoming.status);
+  }
+  if (existing.name !== incoming.name) {
+    return false;
+  }
+  return Boolean(
+    (incoming.detail && incoming.detail !== existing.detail) ||
+      (incoming.toolUseId && incoming.toolUseId !== existing.toolUseId) ||
+      (incoming.durationMs !== undefined && incoming.durationMs !== existing.durationMs) ||
+      (incoming.status && incoming.status !== existing.status),
+  );
+}
+
+function readThreadRunToolMetadata(
+  metadata: Record<string, unknown> | undefined,
+): ThreadRunToolMetadata | undefined {
+  const raw = metadata?.tool;
+  if (!isJsonRecord(raw)) {
+    return undefined;
+  }
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!name) {
+    return undefined;
+  }
+  return {
+    name,
+    ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
+    ...(typeof raw.toolUseId === "string" && raw.toolUseId.trim() && { toolUseId: raw.toolUseId.trim() }),
+    ...(typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
+    ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
+  };
+}
+
+function isSameToolReference(
+  existing: ThreadRunToolMetadata | undefined,
+  incoming: ThreadRunToolMetadata | undefined,
+): boolean {
+  if (!existing || !incoming || existing.name !== incoming.name) {
+    return false;
+  }
+  return !existing.toolUseId || !incoming.toolUseId || existing.toolUseId === incoming.toolUseId;
+}
+
+function streamStateRank(state: ThreadRunEvent["streamState"]): number {
+  switch (state) {
+    case "placeholder":
+      return 1;
+    case "streaming":
+      return 2;
+    case "finalized":
+      return 3;
+    case "none":
+    default:
+      return 0;
+  }
+}
+
+function isThreadRunToolStatus(value: unknown): value is NonNullable<ThreadRunToolMetadata["status"]> {
+  return value === "started" || value === "completed" || value === "failed";
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseUsageAttributionJson(raw: string): UsageAttribution {

@@ -11,6 +11,8 @@ test("skillNameFromPath reads parent directory of SKILL.md", () => {
 test("resolveSkillDisplayName handles Skill tool input", () => {
   expect(resolveSkillDisplayName("Skill", { skill: "pdf" })).toBe("pdf");
   expect(resolveSkillDisplayName("Skill", { name: "docx" })).toBe("docx");
+  expect(resolveSkillDisplayName("Skill", { skillName: "frontend-design" })).toBe("frontend-design");
+  expect(resolveSkillDisplayName("Skill", { skill_path: "/home/.claude/skills/browser/SKILL.md" })).toBe("browser");
   expect(resolveSkillDisplayName("Read", { file_path: "/home/.claude/skills/lint/SKILL.md" })).toBe("lint");
 });
 

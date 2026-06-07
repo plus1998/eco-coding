@@ -1,4 +1,9 @@
-import { mergeStreamText, type AgentEvent, type OtelActivityLine } from "@eco/runtime";
+import {
+  mergeStreamText,
+  resolveSkillDisplayName,
+  type AgentEvent,
+  type OtelActivityLine,
+} from "@eco/runtime";
 import {
   formatAgentEventDisplay,
   isEcoStreamFinalize,
@@ -420,8 +425,9 @@ function normalizeSubagentToolDisplayLabel(value: string | undefined): string | 
 }
 
 function resolveSdkSkillDisplayName(toolName: string, record: Record<string, unknown>): string | undefined {
-  if (toolName === "Skill") {
-    return readString(record.skill_name) ?? readString(record.name);
+  const resolved = resolveSkillDisplayName(toolName, record);
+  if (resolved) {
+    return resolved;
   }
   const candidate =
     readString(record.skill_name) ??

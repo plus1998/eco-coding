@@ -76,6 +76,49 @@ test.skipIf(!sqliteAvailable)("conversation store persists thread run events in 
   expect(events[0]?.metadata?.source).toBe("sdk");
 });
 
+test.skipIf(!sqliteAvailable)("conversation store upgrades duplicate tool events with richer metadata", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-upgrade-"));
+  const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+  store.saveThread(makeThread());
+
+  const generic = store.appendThreadRunEvent(
+    makeEvent({
+      id: "tre_tool_1",
+      eventType: "tool.started",
+      scope: "main",
+      streamState: "streaming",
+      message: "Tool: Skill",
+      metadata: { tool: { name: "Skill", toolUseId: "toolu_skill" } },
+    }),
+  );
+  const detailed = store.appendThreadRunEvent(
+    makeEvent({
+      id: "tre_tool_1",
+      eventType: "tool.started",
+      scope: "main",
+      streamState: "streaming",
+      message: "Tool: Skill · frontend-design 技能",
+      metadata: {
+        tool: {
+          name: "Skill",
+          detail: "frontend-design 技能",
+          toolUseId: "toolu_skill",
+        },
+      },
+    }),
+  );
+
+  expect(detailed.sequence).toBe(generic.sequence);
+  expect(detailed.message).toBe("Tool: Skill · frontend-design 技能");
+
+  const events = store.listThreadRunEvents("thr_run_events");
+  expect(events).toHaveLength(1);
+  expect(events[0]?.message).toBe("Tool: Skill · frontend-design 技能");
+  expect((events[0]?.metadata?.tool as { detail?: string } | undefined)?.detail).toBe(
+    "frontend-design 技能",
+  );
+});
+
 test.skipIf(!sqliteAvailable)("conversation store tolerates malformed thread run event metadata", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-bad-json-"));
   const store = await createConversationStore(path.join(dir, "eco.sqlite"));
