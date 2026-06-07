@@ -397,6 +397,12 @@ test("creates native SDK subagent definitions", () => {
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({ skills: ["pdf"] });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
   expect(resolveAgentSkills("tester", agentSkills)).toEqual([]);
+  expect(resolveAgentSkills("researcher", { eco_researcher: ["workspace-research"] })).toEqual([
+    "workspace-research",
+  ]);
+  expect(resolveAgentSkills("eco_researcher", { researcher: ["raw-research"] })).toEqual([
+    "raw-research",
+  ]);
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {
@@ -1270,7 +1276,10 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     worktreePath: "/tmp/worktree",
     routes,
     signal: new AbortController().signal,
-    sdkSession: { mcpAllowedTools: ["mcp__browser__open"] },
+    sdkSession: {
+      mcpAllowedTools: ["mcp__browser__open"],
+      agentSkills: { researcher: ["workspace-research"] },
+    },
     agentRegistry: universalAgentRegistry,
   })) {
     // drain
@@ -1293,7 +1302,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     disallowedTools: ["Bash"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],
-    skills: ["citation", "pdf"],
+    skills: ["citation", "pdf", "workspace-research"],
   });
 
   const systemPrompt = options.systemPrompt as string;

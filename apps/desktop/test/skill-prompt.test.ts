@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildRuntimeAgentSkillAssignments,
   dedupeSkillsByName,
   filterExplicitUserSkillNames,
   listSdkReadyProjectSkills,
@@ -34,6 +35,38 @@ test("promptIncludesSkillName detects explicit tokens", () => {
 
 test("mergeSkillNames dedupes and sorts", () => {
   expect(mergeSkillNames(["b", "a"], ["a", "c"])).toEqual(["a", "b", "c"]);
+});
+
+test("buildRuntimeAgentSkillAssignments includes dynamic profile agent keys", () => {
+  expect(
+    buildRuntimeAgentSkillAssignments(["project", "main"], {
+      agents: [
+        {
+          agentKey: "research lead",
+          templateId: "template",
+          modelRef: { providerId: "p", modelId: "m" },
+          tools: { allowed: [], disallowed: [] },
+          mcpServers: [],
+          skills: [],
+          enabled: true,
+        },
+        {
+          agentKey: "disabled",
+          templateId: "template",
+          modelRef: { providerId: "p", modelId: "m" },
+          tools: { allowed: [], disallowed: [] },
+          mcpServers: [],
+          skills: [],
+          enabled: false,
+        },
+      ],
+    }),
+  ).toMatchObject({
+    planner: ["project", "main"],
+    coder: ["project", "main"],
+    "research lead": ["project", "main"],
+    eco_research_lead: ["project", "main"],
+  });
 });
 
 test("listSdkReadyProjectSkills dedupes by name and prefers claude layout", () => {

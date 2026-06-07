@@ -93,6 +93,7 @@ import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
+  buildRuntimeAgentSkillAssignments,
   filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
@@ -4254,6 +4255,10 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
   const mcp = mcpStore.buildSdkConfig();
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  const settings = getModelSettingsSnapshot();
+  const profile = hydrated?.runtimeConfig
+    ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
+    : undefined;
   const orchestrationMode =
     hydrated?.runtimeConfig?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
   const enabledSubagents =
@@ -4266,10 +4271,9 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
   const discovered = await listDiscoveredSkills(workspacePath);
   const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
-  const merged = mergeSkillNames(projectNames, explicitUser);
-  const agentSkills = Object.fromEntries(AGENT_ROLES.map((role) => [role, merged])) as Partial<
-    Record<AgentRole, string[]>
-  >;
+  const profileMainSkills = profile?.mainAgent.skills ?? [];
+  const merged = mergeSkillNames(projectNames, profileMainSkills, explicitUser);
+  const agentSkills = buildRuntimeAgentSkillAssignments(merged, profile);
   return {
     settingSources: ["user", "project"],
     ...(merged.length > 0 ? { skills: merged } : {}),

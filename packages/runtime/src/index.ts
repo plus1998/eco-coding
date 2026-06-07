@@ -1,6 +1,6 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
 import type { EventStore, ThreadRecord } from "../../persistence/src";
-import { type AgentEvent, type AgentRole, createAgentEvent } from "../../shared/src";
+import { type AgentEvent, type AgentRole, type RuntimeAgentRole, createAgentEvent } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
 import type { SubagentRole } from "./subagent-availability.js";
 import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
@@ -21,8 +21,8 @@ export interface EcoSdkSessionOptions {
   settingSources?: EcoSettingSource[];
   /** Main session (Planner) skill directories to preload */
   skills?: string[];
-  /** Per-role skill directories for subagent definitions */
-  agentSkills?: Partial<Record<AgentRole, string[]>>;
+  /** Per-agent skill directories for subagent definitions. Keys may be fixed roles, profile agentKeys, or SDK eco_* keys. */
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>;
   /** Subagent on/off; coder is always enabled after normalize. */
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
@@ -217,17 +217,17 @@ export class ThreadSupervisor {
   }
 }
 
-export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record<AgentRole, string> {
+export function buildRoleModelMap(routes: readonly ResolvedModelRoute[]): Record<RuntimeAgentRole, string> {
   return routes.reduce(
     (mapping, route) => {
       mapping[route.role] = route.primary.modelId;
       return mapping;
     },
-    {} as Record<AgentRole, string>,
+    {} as Record<RuntimeAgentRole, string>,
   );
 }
 
-export type { AgentRole, PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
+export type { AgentRole, RuntimeAgentRole, PlanReadyPayload, SessionCapturedPayload, AgentEvent } from "../../shared/src";
 export type {
   SdkToolPermissionDecision,
   SdkToolPermissionRequest,

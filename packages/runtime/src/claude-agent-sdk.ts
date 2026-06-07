@@ -390,11 +390,11 @@ export function resolveSubagentAvailabilityFromSession(session?: EcoSdkSessionOp
 }
 
 export function resolveAgentSkills(
-  role: AgentRole,
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  role: RuntimeAgentRole,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   sessionSkills?: string[],
 ): string[] {
-  const fromRole = agentSkills?.[role];
+  const fromRole = readAgentSkillAssignment(agentSkills, role);
   if (fromRole && fromRole.length > 0) {
     return [...fromRole];
   }
@@ -405,11 +405,37 @@ export function resolveAgentSkills(
 }
 
 function agentDefinitionSkills(
-  role: AgentRole,
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  role: RuntimeAgentRole,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
 ): Record<string, unknown> {
   const skills = resolveAgentSkills(role, agentSkills);
   return skills.length > 0 ? { skills } : {};
+}
+
+function readAgentSkillAssignment(
+  agentSkills: Partial<Record<RuntimeAgentRole, string[]>> | undefined,
+  role: RuntimeAgentRole,
+): string[] | undefined {
+  if (!agentSkills) {
+    return undefined;
+  }
+  for (const key of agentSkillLookupKeys(role)) {
+    const skills = agentSkills[key];
+    if (skills && skills.length > 0) {
+      return skills;
+    }
+  }
+  return undefined;
+}
+
+function agentSkillLookupKeys(role: RuntimeAgentRole): string[] {
+  const trimmed = role.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const unprefixed = trimmed.startsWith("eco_") ? trimmed.slice(4) : trimmed;
+  const prefixed = trimmed.startsWith("eco_") ? trimmed : `eco_${trimmed}`;
+  return [...new Set([trimmed, unprefixed, prefixed])];
 }
 
 export type EcoRunPhase = "analyze" | "plan" | "execute" | "answer";
@@ -956,7 +982,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       .join("\n\n");
     const session = resolveSdkSessionOptions(input.sdkSession);
     const dynamicAgents = input.agentRegistry
-      ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates)
+      ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
+          ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
+        })
       : undefined;
     const dynamicDefinitions =
       dynamicAgents && input.agentRegistry
@@ -1206,7 +1234,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 /** @deprecated Use createExecutionAgentDefinitions */
 export function createAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability?: SubagentAvailability,
 ): Record<string, unknown> {
   return createExecutionAgentDefinitions(routes, agentSkills, availability);
@@ -1214,7 +1242,7 @@ export function createAgentDefinitions(
 
 function createExploreAgentDefinition(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   return {
@@ -1228,7 +1256,7 @@ function createExploreAgentDefinition(
 
 export function createPlanningAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
@@ -1249,7 +1277,7 @@ export function createPlanningAgentDefinitions(
 
 export function createQuestionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const definitions = {
@@ -1264,7 +1292,7 @@ export { reviewerAgentPrompt };
 
 export function createExecutionAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
@@ -1320,7 +1348,7 @@ const autonomousReviewerDescription = [
 
 export function createAutonomousAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
-  agentSkills?: Partial<Record<AgentRole, string[]>>,
+  agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   const architectKey = ecoSubagentKeyForRole("architect");

@@ -103,6 +103,15 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   expect(definition.description).toContain("Use when: Need sourced findings or external context");
 });
 
+test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
+  const resolved = createAgentDefinitionsFromProfile(profile, [researchTemplate], {
+    agentSkills: { eco_researcher: ["workspace-research"] },
+  });
+
+  const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
+  expect(definition.skills).toEqual(["citation", "pdf", "workspace-research"]);
+});
+
 test("buildMainAgentSystemPrompt injects roster without leaking child prompts", () => {
   const prompt = buildMainAgentSystemPrompt(profile, [researchTemplate], "PHASE APPEND");
 

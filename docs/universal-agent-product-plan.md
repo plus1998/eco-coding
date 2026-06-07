@@ -851,6 +851,8 @@ type WorkflowStep = {
 - Phase 10.4 行为收敛：有 `agentId` 的动态子代理可进入 billing observations、legacy metrics fallback 和 subagent billing snapshot；metrics record target 不再因为 role 不是固定 Coding 子代理而丢弃 resolver 已确认的 agent。
 - Phase 10.5 已完成：SDK `eco_*` agent key、subagent resume/capture hook、stream activity、session hooks、Agent lifecycle service、Subagent metrics registry 和 OTel billing role 统一支持 `RuntimeAgentRole`，动态 Agent 可以启动、停止、恢复、归因父 tool_use、进入活动日志和生命周期事件。
 - Phase 10.5 保留边界：`planner/system/thinking/tool/user` 等非 Agent role 仍不会被 resolver 当成子代理实例；内置 Coding role 的 legacy `Explore`/`eco_coder` 等映射保持可用，自定义 Agent 通过 `eco_${agentKey}` 进入 runtime。
+- Phase 10.6 已完成：`EcoSdkSessionOptions.agentSkills` 收敛为运行期 agent key 映射，固定 Coding role、profile `agentKey` 和 SDK `eco_*` key 都可接收 session skills；Agent Profile 主 Agent skills 会合并进 SDK 主 session，动态子 Agent definitions 会合并 profile/template skills 与 session skills。
+- Phase 10.6 行为边界：旧 Coding agent definition helpers 继续支持固定 role skills；动态 profile 子代理优先使用自身 template/profile skills，再叠加 session skills，不泄露子代理完整 prompt 到主 prompt。
 
 Phase 10.1 验证：
 
@@ -875,6 +877,11 @@ Phase 10.4 验证：
 Phase 10.5 验证：
 
 - `bun test packages/runtime/test/subagent-resume.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/sdk-stream-events.test.ts apps/desktop/test/activity-agent-id.test.ts apps/desktop/test/agent-lifecycle-service.test.ts apps/desktop/test/subagent-session-store.test.ts apps/desktop/test/subagent-metrics-registry.test.ts apps/desktop/test/subagent-agent-resolver.test.ts apps/desktop/test/otel-usage-billing.test.ts`
+- `bun run typecheck`
+
+Phase 10.6 验证：
+
+- `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/runtime/test/runtime.test.ts apps/desktop/test/skill-prompt.test.ts`
 - `bun run typecheck`
 
 验收标准：

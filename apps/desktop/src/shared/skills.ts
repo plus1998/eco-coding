@@ -1,3 +1,5 @@
+import type { OrchestrationProfile } from "./agent-orchestration";
+
 export type SkillSource = "user" | "project";
 export type SkillLayout = "claude" | "agents";
 
@@ -118,6 +120,44 @@ export function mergeSkillNames(...lists: readonly (readonly string[])[]): strin
     }
   }
   return merged.sort((a, b) => a.localeCompare(b));
+}
+
+const LEGACY_AGENT_SKILL_ROLES = [
+  "planner",
+  "explore",
+  "architect",
+  "coder",
+  "reviewer",
+  "tester",
+] as const;
+
+export function buildRuntimeAgentSkillAssignments(
+  skills: readonly string[],
+  profile?: Pick<OrchestrationProfile, "agents">,
+): Partial<Record<string, string[]>> {
+  if (skills.length === 0) {
+    return {};
+  }
+  const cleanSkills = [...skills];
+  const assignments: Partial<Record<string, string[]>> = Object.fromEntries(
+    LEGACY_AGENT_SKILL_ROLES.map((role) => [role, [...cleanSkills]]),
+  );
+  for (const agent of profile?.agents ?? []) {
+    if (!agent.enabled) {
+      continue;
+    }
+    assignments[agent.agentKey] = [...cleanSkills];
+    assignments[sdkAgentKeyForSkillAssignment(agent.agentKey)] = [...cleanSkills];
+  }
+  return assignments;
+}
+
+function sdkAgentKeyForSkillAssignment(agentKey: string): string {
+  const sanitized = agentKey
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized.startsWith("eco_") ? sanitized : `eco_${sanitized || "agent"}`;
 }
 
 export function parseSkillFrontmatter(content: string): { name: string; description: string } {

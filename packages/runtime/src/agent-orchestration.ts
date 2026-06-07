@@ -128,6 +128,7 @@ export interface EcoRuntimeToolPermissionPolicy {
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
+  options: { agentSkills?: Partial<Record<string, string[]>> } = {},
 ): EcoResolvedAgentDefinitionSet {
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const definitions: Record<string, unknown> = {};
@@ -141,7 +142,7 @@ export function createAgentDefinitionsFromProfile(
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
     const sdkKey = sdkAgentKeyForProfileAgent(agent.agentKey);
-    definitions[sdkKey] = buildSdkAgentDefinition(agent, template);
+    definitions[sdkKey] = buildSdkAgentDefinition(agent, template, resolveProfileAgentSkills(agent.agentKey, sdkKey, options));
     agentKeys.push(sdkKey);
   }
   return { definitions, agentKeys };
@@ -282,11 +283,12 @@ export function sdkAgentKeyForProfileAgent(agentKey: string): string {
 function buildSdkAgentDefinition(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
+  extraSkills: readonly string[] = [],
 ): Record<string, unknown> {
   const tools = agent.tools.allowed.length > 0 ? agent.tools.allowed : template.defaultTools.allowed;
   const disallowedTools =
     agent.tools.disallowed.length > 0 ? agent.tools.disallowed : template.defaultTools.disallowed;
-  const skills = [...new Set([...template.skills, ...agent.skills])];
+  const skills = [...new Set([...template.skills, ...agent.skills, ...extraSkills])];
   const mcpServers = [...new Set([...template.mcpServers, ...agent.mcpServers])];
   return {
     description: buildAgentDescription(agent, template),
@@ -297,6 +299,24 @@ function buildSdkAgentDefinition(
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills.length > 0 ? { skills } : {}),
   };
+}
+
+function resolveProfileAgentSkills(
+  agentKey: string,
+  sdkKey: string,
+  options: { agentSkills?: Partial<Record<string, string[]>> },
+): string[] {
+  const assignments = options.agentSkills;
+  if (!assignments) {
+    return [];
+  }
+  for (const key of [agentKey, sdkKey]) {
+    const skills = assignments[key];
+    if (skills && skills.length > 0) {
+      return skills;
+    }
+  }
+  return [];
 }
 
 function resolveAgentToolPermission(
