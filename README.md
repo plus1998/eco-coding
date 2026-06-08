@@ -23,7 +23,14 @@ Optional: set `excludeDynamicSections: true` on `ClaudeAgentSdkDriver` if you ne
 
 ## Context compaction
 
-Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event; Eco updates the context meter from usage events and refreshes segment breakdown via SDK `getContextUsage()` on each agent `result` (including after `/compact`), not on a background timer.
+Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event.
+
+Context meter updates use two tracks (Claude Code / Agent SDK style):
+
+1. **During a turn** — `message_delta` stream usage (`stream_partial`) keeps the meter live; subagent sessions also refresh from proxy usage.
+2. **At each turn end** — SDK `getContextUsage()` (same data as `/context`) calibrates planner occupancy and segment breakdown once per agent `result`, including after `/compact`. SDK `result.usage` is billing-only and does not drive the meter.
+
+Eco does not poll `getContextUsage()` on a background timer.
 
 Two layers work together:
 

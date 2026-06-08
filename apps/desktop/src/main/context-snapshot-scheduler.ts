@@ -46,7 +46,7 @@ export interface ContextSnapshotSchedulerOptions {
 }
 
 export class ContextSnapshotScheduler {
-  /** Planner-only breakdown segments from SDK `getContextUsage()`. */
+  /** Planner-only breakdown segments from SDK `getContextUsage()` (once per turn `result`). */
   private readonly lastPlannerSegments = new Map<string, ThreadContextSnapshot["segments"]>();
   private readonly lastEmitted = new Map<string, ThreadContextSnapshot>();
 

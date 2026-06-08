@@ -1143,13 +1143,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         pendingContextEvents = await this.collectContextUsageEvents(query, input.threadId, activeSessionId);
       }
 
+      // Calibrate planner context from getContextUsage before result billing usage.
+      for (const contextEvent of pendingContextEvents) {
+        yield contextEvent;
+      }
+
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
-      }
-
-      for (const contextEvent of pendingContextEvents) {
-        yield contextEvent;
       }
 
       if (input.signal.aborted) {
@@ -1163,7 +1164,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     return { transcript: transcript.trim(), ...(finalizedPlan ? { finalizedPlan } : {}) };
   }
 
-  /** While the SDK query transport is still open (on each `result` message). */
+  /** Once per agent `result`, while the SDK query transport is still open. */
   private async collectContextUsageEvents(
     query: AsyncIterable<unknown> & { getContextUsage?: () => Promise<Record<string, unknown>> },
     threadId: string,

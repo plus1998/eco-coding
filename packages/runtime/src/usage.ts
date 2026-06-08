@@ -107,9 +107,30 @@ function hasBillableOrContextTokens(usage: ParsedUsage): boolean {
   );
 }
 
+function contextWindowOccupancy(usage: ParsedUsage): number {
+  return usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+}
+
+function maxModelContextUsage(
+  modelBillings: NonNullable<ReturnType<typeof parseSdkModelUsageBilling>>,
+): ParsedUsage | null {
+  let best: ParsedUsage | null = null;
+  let bestOccupancy = 0;
+  for (const entry of modelBillings) {
+    const occupancy = contextWindowOccupancy(entry.usage);
+    if (occupancy >= bestOccupancy) {
+      bestOccupancy = occupancy;
+      best = entry.usage;
+    }
+  }
+  return best;
+}
+
 /**
  * Session context fill for the context meter (not billing totals).
- * Uses top-level `usage` on SDK results; planner runs may pick max occupancy across modelUsage.
+ * Prefers top-level `usage` when it reflects current window fill; when `modelUsage`
+ * is also present, falls back to per-model occupancy if top-level cache reads look
+ * cumulative (billing totals) rather than current fill.
  */
 export function parseSdkContextUsage(
   payload: unknown,
@@ -132,7 +153,16 @@ export function parseSdkContextUsage(
     }
   }
 
-  if (topLevel && hasBillableOrContextTokens(topLevel)) {
+  const maxModelUsage = modelBillings?.length ? maxModelContextUsage(modelBillings) : null;
+  const topLevelBillable = topLevel && hasBillableOrContextTokens(topLevel);
+
+  if (topLevelBillable && maxModelUsage) {
+    const topLevelOccupancy = contextWindowOccupancy(topLevel);
+    const maxModelOccupancy = contextWindowOccupancy(maxModelUsage);
+    return topLevelOccupancy <= maxModelOccupancy ? topLevel : maxModelUsage;
+  }
+
+  if (topLevelBillable) {
     return topLevel;
   }
 
@@ -140,17 +170,7 @@ export function parseSdkContextUsage(
     return topLevel;
   }
 
-  let best: ParsedUsage | null = null;
-  let bestOccupancy = 0;
-  for (const entry of modelBillings) {
-    const occupancy =
-      entry.usage.inputTokens + entry.usage.cacheReadTokens + entry.usage.cacheCreationTokens;
-    if (occupancy >= bestOccupancy) {
-      bestOccupancy = occupancy;
-      best = entry.usage;
-    }
-  }
-  return best;
+  return maxModelUsage;
 }
 
 export function mergeModelUsages(usages: readonly ParsedUsage[]): ParsedUsage {

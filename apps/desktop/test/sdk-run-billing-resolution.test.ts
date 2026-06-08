@@ -137,19 +137,15 @@ test("resolveSdkRunBillingResolution builds subagent observations and effects in
     requestKey: "sdk-result:evt_1",
     billingRole: "coder",
     contextUsage: usage(),
-    updateContext: true,
+    updateContext: false,
     totalCostUsd: 0.05,
     plannerModelLabel: "Claude Sonnet · Test Provider",
     runAttemptId: "attempt_1",
     parentToolUseId: "toolu_parent",
     ledgerAgentId: "agent_coder_1",
     resolvedSubagentId: "agent_coder_1",
-    contextUpdate: {
-      role: "coder",
-      modelId: "haiku",
-      providerBaseUrl: "https://api.example.test",
-    },
   });
+  expect(resolved.effectsInput.contextUpdate).toBeUndefined();
 });
 
 test("resolveSdkRunBillingResolution attributes planner-only rows to planner agent", async () => {
@@ -177,11 +173,7 @@ test("resolveSdkRunBillingResolution attributes planner-only rows to planner age
     role: "planner",
     billingRole: "planner",
     ledgerAgentId: "planner_attempt_1",
-    updateContext: true,
-    contextUpdate: {
-      role: "planner",
-      modelId: "sonnet",
-      providerBaseUrl: "https://api.example.test",
-    },
+    updateContext: false,
   });
+  expect(resolved.effectsInput.contextUpdate).toBeUndefined();
 });

@@ -1,10 +1,7 @@
 import { parseSdkContextUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import {
-  shouldUpdateContextFromUsageSource,
-  type UsageBillingObservation,
-} from "./billing-orchestration";
-import { resolveUsageRoute, type RuntimeRoute } from "./billing-resolver";
+import { type UsageBillingObservation } from "./billing-orchestration";
+import type { RuntimeRoute } from "./billing-resolver";
 import {
   resolveSdkRunBillingAttribution,
   type SdkRunBillingAttributionResolver,
@@ -14,7 +11,6 @@ import type { ApplySdkRunBillingEffectsInput } from "./usage-billing-effects";
 import {
   resolveSdkRunBillingModels,
   type SdkRunBillingModels,
-  type UsageBillingContextUpdate,
   type UsageBillingPricingLookup,
   type WorkflowStepUsageMetadata,
 } from "./usage-billing-artifacts";
@@ -41,7 +37,6 @@ export interface SdkRunBillingResolution {
   contextUsage: ApplySdkRunBillingEffectsInput["contextUsage"];
   observations: UsageBillingObservation[];
   effectsInput: ApplySdkRunBillingEffectsInput;
-  contextUpdate?: UsageBillingContextUpdate;
   resolvedSubagentId?: string;
   ledgerAgentId?: string;
 }
@@ -88,11 +83,8 @@ export function resolveSdkRunBillingResolutionFromModels(
       ? (parseSdkContextUsage(input.usagePayload, { subagentModelId: primaryModel.modelId }) ??
         input.bundle.contextUsage)
       : input.bundle.contextUsage;
-  const contextUpdate = resolveSdkRunContextUpdate({
-    billingRole,
-    runtimeRoutes: input.runtimeRoutes,
-    ...(primaryModel?.modelId && { primaryModelId: primaryModel.modelId }),
-  });
+  // SDK result.usage is cumulative billing — not current window fill. During a turn,
+  // stream_partial keeps the meter live; getContextUsage() calibrates once per result.
   const effectsInput: ApplySdkRunBillingEffectsInput = {
     threadId: input.threadId,
     role: input.role,
@@ -100,7 +92,7 @@ export function resolveSdkRunBillingResolutionFromModels(
     models,
     billingRole,
     contextUsage,
-    updateContext: Boolean(contextUpdate),
+    updateContext: false,
     ...(input.bundle.totalCostUsd !== undefined && { totalCostUsd: input.bundle.totalCostUsd }),
     ...(input.billingModels.plannerModelLabel && {
       plannerModelLabel: input.billingModels.plannerModelLabel,
@@ -110,7 +102,6 @@ export function resolveSdkRunBillingResolutionFromModels(
     ...(input.workflowStep && { workflowStep: input.workflowStep }),
     ...(ledgerAgentId && { ledgerAgentId }),
     ...(resolvedSubagentId && { resolvedSubagentId }),
-    ...(contextUpdate && { contextUpdate }),
   };
 
   return {
@@ -119,7 +110,6 @@ export function resolveSdkRunBillingResolutionFromModels(
     contextUsage,
     observations,
     effectsInput,
-    ...(contextUpdate && { contextUpdate }),
     ...(resolvedSubagentId && { resolvedSubagentId }),
     ...(ledgerAgentId && { ledgerAgentId }),
   };
@@ -143,21 +133,4 @@ function buildSdkRunUsageObservations(input: {
     requestKey: input.requestKey,
     ...(model.modelId && { modelId: model.modelId }),
   }));
-}
-
-function resolveSdkRunContextUpdate(input: {
-  billingRole: RuntimeAgentRole;
-  runtimeRoutes: readonly RuntimeRoute[];
-  primaryModelId?: string;
-}): UsageBillingContextUpdate | undefined {
-  const usageRoute = resolveUsageRoute(input.billingRole, input.primaryModelId, input.runtimeRoutes);
-  if (!usageRoute || !shouldUpdateContextFromUsageSource("sdk", input.billingRole)) {
-    return undefined;
-  }
-  return {
-    role: input.billingRole,
-    modelId: usageRoute.modelId,
-    providerBaseUrl: usageRoute.provider.baseUrl,
-    ...(usageRoute.modelsDevMapping && { modelsDevMapping: usageRoute.modelsDevMapping }),
-  };
 }

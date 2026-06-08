@@ -78,6 +78,27 @@ test("parseSdkContextUsage uses session usage not sum of modelUsage", () => {
   expect(usage?.cacheReadTokens).toBe(120_000);
 });
 
+test("parseSdkContextUsage rejects inflated cumulative cache_read on SDK result", () => {
+  const usage = parseSdkContextUsage({
+    usage: {
+      input_tokens: 64_935,
+      output_tokens: 5_000,
+      cache_read_input_tokens: 1_056_768,
+      cache_creation_input_tokens: 0,
+    },
+    modelUsage: {
+      "claude-sonnet-4-6": {
+        inputTokens: 64_935,
+        outputTokens: 5_000,
+        cacheReadInputTokens: 4_497,
+        cacheCreationInputTokens: 0,
+      },
+    },
+  });
+  expect((usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0)).toBe(69_432);
+  expect(usage?.cacheReadTokens).toBe(4_497);
+});
+
 test("parseSdkContextUsage picks subagent model entry instead of max occupancy", () => {
   const usage = parseSdkContextUsage(
     {
