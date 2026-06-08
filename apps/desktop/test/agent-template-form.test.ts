@@ -1,25 +1,12 @@
 import { expect, test } from "bun:test";
 import {
-  buildAgentTemplatePermissionChips,
   buildAgentTemplateFromForm,
+  buildAgentTemplatePermissionChips,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
   createUniqueTemplateId,
 } from "../src/renderer/agent-template-form";
-import type { AgentTemplate, ProviderConfigView } from "../src/shared/ipc";
-
-const provider: ProviderConfigView = {
-  id: "provider_1",
-  name: "Provider One",
-  baseUrl: "https://example.test",
-  requestPath: "",
-  apiCompat: "anthropic",
-  defaultModel: "model-default",
-  enabled: true,
-  hasApiKey: true,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-};
+import type { AgentTemplate } from "../src/shared/ipc";
 
 const builtInTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
@@ -39,19 +26,15 @@ const builtInTemplate: AgentTemplate = {
 };
 
 test("copied built-in template becomes a user template form with unique id", () => {
-  const form = createCopiedAgentTemplateForm(
+  const form = createCopiedAgentTemplateForm(builtInTemplate, [
     builtInTemplate,
-    [
-      builtInTemplate,
-      {
-        ...builtInTemplate,
-        id: "user.research.researcher",
-        builtIn: false,
-        source: "user",
-      },
-    ],
-    [provider],
-  );
+    {
+      ...builtInTemplate,
+      id: "user.research.researcher",
+      builtIn: false,
+      source: "user",
+    },
+  ]);
 
   expect(form.id).toBe("user.research.researcher_2");
   expect(form.name).toBe("Researcher Copy");
@@ -59,17 +42,14 @@ test("copied built-in template becomes a user template form with unique id", () 
 });
 
 test("blank template form avoids existing default ids", () => {
-  const form = createBlankAgentTemplateForm(
-    [provider],
-    [
-      {
-        ...builtInTemplate,
-        id: "user.custom.agent",
-        builtIn: false,
-        source: "user",
-      },
-    ],
-  );
+  const form = createBlankAgentTemplateForm([
+    {
+      ...builtInTemplate,
+      id: "user.custom.agent",
+      builtIn: false,
+      source: "user",
+    },
+  ]);
 
   expect(form.id).toBe("user.custom.agent_2");
 });
@@ -86,8 +66,6 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
       outputContract: "Return sources.",
       allowedTools: "Read, WebSearch, Bash",
       disallowedTools: "Write, Edit",
-      providerId: provider.id,
-      modelId: "model-research",
       mcpServers: "docs",
       mcpTools: "search",
       skills: "citations",
@@ -101,7 +79,6 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
     id: "user.research.custom",
     builtIn: false,
     source: "project",
-    defaultModelRef: { providerId: provider.id, modelId: "model-research" },
     mcpServers: ["docs"],
     skills: ["citations"],
     allowDelegation: true,
@@ -154,8 +131,6 @@ test("template form rejects protected and malformed ids", () => {
     outputContract: "",
     allowedTools: "",
     disallowedTools: "",
-    providerId: provider.id,
-    modelId: provider.defaultModel,
     mcpServers: "",
     mcpTools: "",
     skills: "",

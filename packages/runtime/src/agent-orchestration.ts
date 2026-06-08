@@ -8,6 +8,14 @@ export interface EcoModelRef {
   thinkingEffort?: string;
 }
 
+export type EcoModelRequirementCapability = "reasoning" | "coding" | "long_context" | "vision" | "tool_use";
+
+export interface EcoModelRequirements {
+  capabilities: EcoModelRequirementCapability[];
+  preferredLatency?: "fast" | "balanced" | "quality";
+  minContextTokens?: number;
+}
+
 export interface EcoToolPolicy {
   allowed: string[];
   disallowed: string[];
@@ -39,8 +47,8 @@ export interface EcoAgentTemplateConfig {
   prompt: string;
   whenToUse: string;
   outputContract?: string;
+  modelRequirements?: EcoModelRequirements;
   defaultTools: EcoToolPolicy;
-  defaultModelRef?: EcoModelRef;
   mcpServers: string[];
   skills: string[];
   allowDelegation: boolean;
@@ -142,7 +150,11 @@ export function createAgentDefinitionsFromProfile(
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
     const sdkKey = sdkAgentKeyForProfileAgent(agent.agentKey);
-    definitions[sdkKey] = buildSdkAgentDefinition(agent, template, resolveProfileAgentSkills(agent.agentKey, sdkKey, options));
+    definitions[sdkKey] = buildSdkAgentDefinition(
+      agent,
+      template,
+      resolveProfileAgentSkills(agent.agentKey, sdkKey, options),
+    );
     agentKeys.push(sdkKey);
   }
   return { definitions, agentKeys };
@@ -371,7 +383,10 @@ function resolveAgentToolPolicy(
     : template.defaultTools;
 }
 
-function allowedToolPatternsFromPolicy(policy: EcoToolPolicy, extraAllowed: readonly string[] = []): string[] {
+function allowedToolPatternsFromPolicy(
+  policy: EcoToolPolicy,
+  extraAllowed: readonly string[] = [],
+): string[] {
   return uniqueToolPatterns([
     ...policy.allowed,
     ...extraAllowed,

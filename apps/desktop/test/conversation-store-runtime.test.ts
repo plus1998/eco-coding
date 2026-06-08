@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createConversationStore } from "../src/main/conversation-store";
-import type { ModelSettingsSnapshot, SubagentEnabledSettings, ThreadSummary } from "../src/shared/ipc";
+import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
 
 const sqliteAvailable = await (async () => {
@@ -14,14 +14,6 @@ const sqliteAvailable = await (async () => {
     return false;
   }
 })();
-
-const subagentDefaults: SubagentEnabledSettings = {
-  explore: true,
-  architect: true,
-  coder: true,
-  reviewer: true,
-  tester: true,
-};
 
 const settings: ModelSettingsSnapshot = {
   providers: [],
@@ -50,7 +42,6 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
   const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
     settings,
-    subagentDefaults,
     workflowDefaults: { orchestrationMode: "manual" },
   });
 

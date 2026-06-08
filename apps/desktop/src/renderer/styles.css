@@ -5622,10 +5622,6 @@ button:not(:disabled) {
   cursor: wait;
 }
 
-.composer-agent-row.is-locked {
-  cursor: default;
-}
-
 .composer-agent-row-main {
   display: flex;
   min-width: 0;
@@ -6966,8 +6962,7 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
-.models-agent-library,
-.models-subagent-defaults {
+.models-agent-library {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -7401,12 +7396,6 @@ button:not(:disabled) {
   color: #fecaca;
 }
 
-.models-subagent-defaults-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .models-agent-version-list {
   list-style: none;
   margin: 0;
@@ -7516,18 +7505,6 @@ button:not(:disabled) {
 
 .models-subagent-card.is-inactive .models-subagent-card-desc {
   color: #525252;
-}
-
-.models-subagent-required-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #a3a3a3;
-}
-
-.models-route-card-subagent-off {
-  opacity: 0.55;
 }
 
 .models-route-list-modal {

@@ -4,10 +4,10 @@ import {
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
+  type EcoWorkflowStepOutput,
   renderWorkflowStepPrompt,
   resolveFixedWorkflowBatches,
   sdkAgentKeyForProfileAgent,
-  type EcoWorkflowStepOutput,
 } from "@eco/runtime";
 import type { AgentTemplate, ModelRef, OrchestrationProfile, WorkflowStep } from "./agent-orchestration";
 import {
@@ -24,7 +24,7 @@ export interface BuiltInPresetE2ETaskScenario {
   userPrompt: string;
   expectedOutcome: string;
   successCriteria: string[];
-  requiredAgentKeys: string[];
+  expectedAgentKeys: string[];
   profile: OrchestrationProfile;
 }
 
@@ -81,7 +81,7 @@ export function createBuiltInPresetE2ETaskScenarios(
         userPrompt: example.prompt,
         expectedOutcome: example.expectedOutcome,
         successCriteria: [...evalCase.successCriteria],
-        requiredAgentKeys: [...evalCase.requiredAgentKeys],
+        expectedAgentKeys: [...evalCase.expectedAgentKeys],
         profile: buildOrchestrationProfileFromPreset(preset, {
           id: `e2e.${preset.id}.${example.id}`,
           name: `${preset.name} E2E - ${example.title}`,
@@ -105,9 +105,9 @@ export function runPresetE2ETaskScenario(
   const runtimeAgentKeys: string[] = [];
   const steps: PresetE2ETaskStepResult[] = [];
 
-  for (const agentKey of scenario.requiredAgentKeys) {
+  for (const agentKey of scenario.expectedAgentKeys) {
     if (!enabledAgentKeys.has(agentKey)) {
-      errors.push(`Required E2E agent is not enabled: ${agentKey}`);
+      errors.push(`Expected E2E agent is not enabled: ${agentKey}`);
     }
   }
 
@@ -201,7 +201,8 @@ export function createBuiltInPresetE2ETaskSuiteReport(
 
 function runWorkflowSteps(scenario: BuiltInPresetE2ETaskScenario): PresetE2ETaskStepResult[] {
   if (scenario.profile.strategy.kind === "autonomous") {
-    const agentKey = scenario.requiredAgentKeys[0] ?? scenario.profile.agents.find((agent) => agent.enabled)?.agentKey;
+    const agentKey =
+      scenario.expectedAgentKeys[0] ?? scenario.profile.agents.find((agent) => agent.enabled)?.agentKey;
     if (!agentKey) {
       throw new Error("Autonomous E2E scenario has no enabled agent.");
     }
@@ -340,9 +341,9 @@ function validateFinalArtifact(
       errors.push(`Final artifact is missing success criterion: ${criterion}`);
     }
   }
-  for (const agentKey of scenario.requiredAgentKeys) {
+  for (const agentKey of scenario.expectedAgentKeys) {
     if (!steps.some((step) => step.agentKey === agentKey)) {
-      errors.push(`Required E2E agent did not produce a step output: ${agentKey}`);
+      errors.push(`Expected E2E agent did not produce a step output: ${agentKey}`);
     }
   }
   if (steps.length === 0) {
@@ -364,7 +365,10 @@ function collectStrategySteps(profile: OrchestrationProfile): WorkflowStep[] {
     return [];
   }
   if (profile.strategy.kind === "fixed") {
-    return [...profile.strategy.steps, ...(profile.strategy.finalAggregator ? [profile.strategy.finalAggregator] : [])];
+    return [
+      ...profile.strategy.steps,
+      ...(profile.strategy.finalAggregator ? [profile.strategy.finalAggregator] : []),
+    ];
   }
   return [...profile.strategy.recommendedSteps];
 }

@@ -1,5 +1,4 @@
 import { formatRoleModelLabel } from "@eco/runtime";
-import { AGENT_ROLES, SUBAGENT_ROLES } from "../shared/ipc";
 import type {
   AgentRole,
   ModelSettingsSnapshot,
@@ -8,6 +7,7 @@ import type {
   RuntimeRoleRouteConfig,
   SubagentRole,
 } from "../shared/ipc";
+import { AGENT_ROLES, SUBAGENT_ROLES } from "../shared/ipc";
 import { pickDisplayModelId } from "../shared/model-id";
 
 const LEGACY_ROLE_LABELS: Record<AgentRole, string> = {
@@ -26,7 +26,6 @@ export interface ComposerAgentModelLabel {
   title: string;
   main: boolean;
   subagentRole?: SubagentRole | undefined;
-  required?: boolean | undefined;
 }
 
 export function buildComposerAgentModelLabels(input: {
@@ -46,7 +45,6 @@ export function buildComposerAgentModelLabels(input: {
       liveModelId: input.threadModelByRole?.[role],
       main: role === "planner",
       subagentRole: isSubagentRole(role) ? role : undefined,
-      required: role === "coder",
     }),
   );
 }
@@ -66,7 +64,6 @@ function buildProfileAgentModelLabels(input: {
       liveModelId: input.threadModelByRole?.[route.role],
       main: route.role === "planner",
       subagentRole: isSubagentRole(route.role) ? route.role : undefined,
-      required: route.role === "coder",
     }),
   );
 }
@@ -78,7 +75,6 @@ function buildLabelForRoute(input: {
   liveModelId?: string | undefined;
   main: boolean;
   subagentRole?: SubagentRole | undefined;
-  required?: boolean | undefined;
 }): ComposerAgentModelLabel {
   const configured = input.configuredModelId?.trim() || undefined;
   const modelId = pickDisplayModelId(input.liveModelId, configured);
@@ -93,7 +89,6 @@ function buildLabelForRoute(input: {
         : input.displayName,
     main: input.main,
     ...(input.subagentRole && { subagentRole: input.subagentRole }),
-    ...(input.required && { required: true }),
   };
 }
 

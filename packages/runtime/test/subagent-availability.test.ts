@@ -6,7 +6,7 @@ import {
   SDK_EXPLORE_AGENT_KEY,
 } from "../src/subagent-availability";
 
-test("normalizeSubagentAvailability forces coder on", () => {
+test("normalizeSubagentAvailability respects disabled coder", () => {
   const availability = normalizeSubagentAvailability({
     explore: false,
     architect: false,
@@ -14,7 +14,7 @@ test("normalizeSubagentAvailability forces coder on", () => {
     reviewer: true,
     tester: true,
   });
-  expect(availability.coder).toBe(true);
+  expect(availability.coder).toBe(false);
   expect(availability.explore).toBe(false);
 });
 

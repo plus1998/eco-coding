@@ -53,9 +53,9 @@ test("buildComposerAgentModelLabels keeps legacy coding labels", () => {
   expect(labels.find((label) => label.role === "coder")).toMatchObject({
     displayName: "编码",
     subagentRole: "coder",
-    required: true,
     modelId: "coder-model",
   });
+  expect(labels.find((label) => label.role === "coder")).not.toHaveProperty("required");
 });
 
 test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", () => {

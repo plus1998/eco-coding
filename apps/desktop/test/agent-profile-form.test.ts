@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { AgentTemplate, OrchestrationProfile, ProviderConfigView } from "../src/shared/ipc";
 import {
   agentProfileToForm,
   buildOrchestrationProfileFromForm,
@@ -8,6 +7,7 @@ import {
   createProfileWorkflowStepFormFromAgent,
   createWorkflowStepFormsFromAgents,
 } from "../src/renderer/agent-profile-form";
+import type { AgentTemplate, OrchestrationProfile, ProviderConfigView } from "../src/shared/ipc";
 
 const provider: ProviderConfigView = {
   id: "provider_1",
@@ -35,7 +35,6 @@ const researcherTemplate: AgentTemplate = {
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
   },
-  defaultModelRef: { providerId: provider.id, modelId: "model-research" },
   mcpServers: ["docs"],
   skills: ["citations"],
   allowDelegation: false,
@@ -93,6 +92,14 @@ function profile(): OrchestrationProfile {
   };
 }
 
+function requireElement<T>(values: readonly T[], index: number, label: string): T {
+  const value = values[index];
+  if (!value) {
+    throw new Error(`${label} ${index} missing in test fixture.`);
+  }
+  return value;
+}
+
 test("createCopiedAgentProfileForm turns protected profiles into user-editable copies", () => {
   const form = createCopiedAgentProfileForm(profile(), {
     existingIds: ["user.research"],
@@ -116,9 +123,10 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
       existingAgentKeys: form.agents.map((agent) => agent.agentKey),
     }),
   );
-  form.agents[1]!.agentKey = "source_verifier";
-  form.agents[1]!.displayName = "Source Verifier";
-  form.agents[1]!.allowedTools = "Read, WebFetch";
+  const sourceVerifier = requireElement(form.agents, 1, "agent");
+  sourceVerifier.agentKey = "source_verifier";
+  sourceVerifier.displayName = "Source Verifier";
+  sourceVerifier.allowedTools = "Read, WebFetch";
   form.workflowSteps = createWorkflowStepFormsFromAgents(form.agents, form.workflowSteps);
 
   const built = buildOrchestrationProfileFromForm(form, {
@@ -131,7 +139,10 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
     id: "user.research",
     source: "project",
     updatedAt: "2026-06-08T00:00:00.000Z",
-    mainAgent: { modelRef: { providerId: provider.id, modelId: "model-main" }, skills: ["planning", "citations"] },
+    mainAgent: {
+      modelRef: { providerId: provider.id, modelId: "model-main" },
+      skills: ["planning", "citations"],
+    },
   });
   expect(built.agents.map((agent) => agent.agentKey)).toEqual(["researcher", "source_verifier"]);
   expect(built.agents[1]?.tools.allowed).toEqual(["Read", "WebFetch"]);
@@ -148,8 +159,9 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
 test("buildOrchestrationProfileFromForm preserves edited fixed workflow steps", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.research";
+  const firstStep = requireElement(form.workflowSteps, 0, "workflow step");
   form.workflowSteps[0] = {
-    ...form.workflowSteps[0]!,
+    ...firstStep,
     id: "collect_sources",
     promptTemplate: "Collect sources for {{userPrompt}} and return citations.",
     runMode: "parallel",
@@ -195,14 +207,15 @@ test("buildOrchestrationProfileFromForm saves structured tool policy fields", ()
   form.mainFilesystemWrite = "none";
   form.mainNetworkWebSearch = false;
   form.mainNetworkWebFetch = true;
-  form.agents[0]!.allowedTools = "Read, WebSearch, Bash";
-  form.agents[0]!.disallowedTools = "Write";
-  form.agents[0]!.mcpServers = "browser";
-  form.agents[0]!.mcpTools = "mcp__browser__open";
-  form.agents[0]!.bashApproval = "never";
-  form.agents[0]!.bashCommandDenylist = "curl *";
-  form.agents[0]!.filesystemWrite = "none";
-  form.agents[0]!.networkWebFetch = false;
+  const firstAgent = requireElement(form.agents, 0, "agent");
+  firstAgent.allowedTools = "Read, WebSearch, Bash";
+  firstAgent.disallowedTools = "Write";
+  firstAgent.mcpServers = "browser";
+  firstAgent.mcpTools = "mcp__browser__open";
+  firstAgent.bashApproval = "never";
+  firstAgent.bashCommandDenylist = "curl *";
+  firstAgent.filesystemWrite = "none";
+  firstAgent.networkWebFetch = false;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -234,8 +247,9 @@ test("createWorkflowStepFormsFromAgents reuses existing steps and chains new age
       existingAgentKeys: form.agents.map((agent) => agent.agentKey),
     }),
   );
-  form.agents[1]!.agentKey = "source_verifier";
-  form.agents[1]!.displayName = "Source Verifier";
+  const sourceVerifier = requireElement(form.agents, 1, "agent");
+  sourceVerifier.agentKey = "source_verifier";
+  sourceVerifier.displayName = "Source Verifier";
 
   const steps = createWorkflowStepFormsFromAgents(form.agents, form.workflowSteps);
 
@@ -268,13 +282,14 @@ test("createProfileWorkflowStepFormFromAgent creates unique workflow step defaul
 test("buildOrchestrationProfileFromForm rejects invalid workflow steps", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.bad.workflow";
-  form.workflowSteps[0] = { ...form.workflowSteps[0]!, dependsOn: "missing_step" };
+  const firstStep = requireElement(form.workflowSteps, 0, "workflow step");
+  form.workflowSteps[0] = { ...firstStep, dependsOn: "missing_step" };
 
   expect(() =>
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("依赖不存在");
 
-  form.workflowSteps[0] = { ...form.workflowSteps[0]!, dependsOn: "", agentKey: "disabled_agent" };
+  form.workflowSteps[0] = { ...firstStep, dependsOn: "", agentKey: "disabled_agent" };
   expect(() =>
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("未启用的 Agent");
@@ -283,14 +298,15 @@ test("buildOrchestrationProfileFromForm rejects invalid workflow steps", () => {
 test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent keys", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.bad";
-  form.agents[0]!.agentKey = "system";
+  const firstAgent = requireElement(form.agents, 0, "agent");
+  firstAgent.agentKey = "system";
 
   expect(() =>
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("系统保留名称");
 
-  form.agents[0]!.agentKey = "researcher";
-  form.agents.push({ ...form.agents[0]! });
+  firstAgent.agentKey = "researcher";
+  form.agents.push({ ...firstAgent });
   expect(() =>
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("Agent key 重复");

@@ -23,23 +23,25 @@ export function formatMandatoryEcoSubagentRule(): string {
 export function formatAvailableSubagentsLine(availability: SubagentAvailability): string {
   const enabled = listEnabledSubagents(availability);
   const names = enabled.map((role) => `${role}: ${ecoSubagentKeyForRole(role)}`).join(", ");
-  return [
-    `Available Eco subagents in this session: ${names}.`,
-    formatMandatoryEcoSubagentRule(),
-  ].join("\n");
+  return [`Available Eco subagents in this session: ${names}.`, formatMandatoryEcoSubagentRule()].join("\n");
 }
 
 export function formatExecutionSubagentNames(availability: SubagentAvailability): string {
   const roles = listEnabledSubagents(availability).filter((role) => role !== "explore");
-  return roles.length > 0 ? roles.map((role) => ecoSubagentKeyForRole(role)).join(", ") : ecoSubagentKeyForRole("coder");
+  return roles.length > 0
+    ? roles.map((role) => ecoSubagentKeyForRole(role)).join(", ")
+    : "none; execute directly without Agent delegation";
 }
 
 export function buildExecuteBuildSwitchAppend(availability: SubagentAvailability): string {
   const delegates = formatExecutionSubagentNames(availability);
+  const delegationRule = isSubagentEnabled(availability, "coder")
+    ? `You are now in EXECUTE phase: you may edit files, run shell commands, and delegate to subagents (${delegates}).`
+    : `You are now in EXECUTE phase: you may edit files and run shell commands. Coder is disabled, so implement directly unless another enabled subagent is materially useful (${delegates}).`;
   return [
     "<system-reminder>",
     "The implementation plan has been approved by the user.",
-    `You are now in EXECUTE phase: you may edit files, run shell commands, and delegate to subagents (${delegates}).`,
+    delegationRule,
     "Follow the approved plan and the execution pipeline. Do not restart planning from scratch unless blocked.",
     "</system-reminder>",
   ].join("\n");
@@ -47,28 +49,40 @@ export function buildExecuteBuildSwitchAppend(availability: SubagentAvailability
 
 function buildArchitectStep(availability: SubagentAvailability, step: number): string[] {
   if (!isSubagentEnabled(availability, "architect")) {
+    const taskHeading = isSubagentEnabled(availability, "coder")
+      ? "## Coder Tasks"
+      : "## Implementation Tasks";
     return [
-      `${step}. Coder Tasks (mandatory): Do NOT call ${agentCall("architect")}. You must publish "## Coder Tasks" yourself before spawning coders.`,
+      `${step}. Task decomposition: Do NOT call ${agentCall("architect")}. You must publish "${taskHeading}" yourself before implementation.`,
     ];
   }
+  const implementationTarget = isSubagentEnabled(availability, "coder")
+    ? "before coders"
+    : "before direct implementation";
   return [
     `${step}. Architect (conditional): Call ${agentCall("architect")} unless the approved plan is trivial — trivial means ALL: ${architectSkipCriteria}.`,
-    '   Wait for "## Coder Tasks". If skipping architect, you must still publish "## Coder Tasks" yourself before coders.',
+    `   Wait for task decomposition. If skipping architect, you must still publish implementation tasks yourself ${implementationTarget}.`,
   ];
 }
 
 function buildReviewerStep(availability: SubagentAvailability, step: number): string[] {
   if (!isSubagentEnabled(availability, "reviewer")) {
-    return [
-      "",
-      "Reviewer subagent is disabled — skip formal review; rely on coder verification output.",
-    ];
+    const verifier = isSubagentEnabled(availability, "coder")
+      ? "coder verification output"
+      : "your verification output";
+    return ["", `Reviewer subagent is disabled — skip formal review; rely on ${verifier}.`];
   }
+  const completionSource = isSubagentEnabled(availability, "coder")
+    ? "all coders finish"
+    : "direct implementation finishes";
+  const fixSource = isSubagentEnabled(availability, "coder")
+    ? "run coders once to address them"
+    : "fix them yourself once";
   return [
-    `${step}. Reviewer: After all coders finish, call ${agentCall("reviewer")} with approved plan + task list.`,
+    `${step}. Reviewer: After ${completionSource}, call ${agentCall("reviewer")} with approved plan + task list.`,
     "   Eco prepends this session's changed file list; do not diff against main/master.",
     "   Severity policy: only fix P0/P1 issues. Do NOT spend cycles implementing P2 suggestions.",
-    "   If the reviewer returns BLOCKERS (P0/P1 exist), convert ALL P0/P1 items into a single concrete fix batch and run coders once to address them.",
+    `   If the reviewer returns BLOCKERS (P0/P1 exist), convert ALL P0/P1 items into a single concrete fix batch and ${fixSource}.`,
     `   Then re-run ${agentCall("reviewer")} exactly once (Eco auto-Resumes the same reviewer session when possible — do not restart from scratch). If there are still P0/P1 issues after the second review, STOP and summarize remaining P0/P1 for the user (do not loop).`,
     "   Always summarize P2 items at the end as follow-ups; do not implement them unless the user explicitly asks.",
   ];
@@ -84,7 +98,9 @@ function buildTesterStep(availability: SubagentAvailability, step: number): stri
 function buildWhenNotToUseAgent(availability: SubagentAvailability): string[] {
   const lines = ["When NOT to use Agent:"];
   if (isSubagentEnabled(availability, "reviewer")) {
-    lines.push(`- Single known file for reviewer → still use ${agentCall("reviewer")} for pipeline consistency`);
+    lines.push(
+      `- Single known file for reviewer → still use ${agentCall("reviewer")} for pipeline consistency`,
+    );
   }
   lines.push("- Do not delegate exploration during execute unless blocked — execute the approved plan");
   return lines;
@@ -94,20 +110,21 @@ export function buildExecutePhaseSystemAppend(
   availability: SubagentAvailability = defaultSubagentAvailability(),
 ): string {
   let step = 0;
+  const taskListName = isSubagentEnabled(availability, "coder") ? "Coder Tasks" : "Implementation Tasks";
   const pipeline: string[] = [
     "Eco orchestration phase 2/2 — EXECUTE.",
     buildExecuteBuildSwitchAppend(availability),
     "",
     executeCoreGoalAppend,
     "Final response: keep it concise. State what changed, verification result, and blockers only.",
-    "Do not restate the full approved plan, full Coder Tasks list, long diffs, or tool logs in the final response.",
+    `Do not restate the full approved plan, full ${taskListName} list, long diffs, or tool logs in the final response.`,
     "",
     formatAvailableSubagentsLine(availability),
     "",
     "You are the orchestrator (Planner). Follow this pipeline strictly:",
     "",
     `${step}. Progress (mandatory): Use TaskCreate and TaskUpdate to drive the user-visible progress list.`,
-    "   - After you have a final ## Coder Tasks list, call TaskCreate for each short step (about 5–7 words each).",
+    `   - After you have a final ## ${taskListName} list, call TaskCreate for each short step (about 5–7 words each).`,
     "   - Use TaskUpdate to change status (pending | in_progress | completed) for one task at a time.",
     "   - Exactly ONE step must be in_progress until everything is done.",
     "   - Set in_progress BEFORE starting a step; set completed IMMEDIATELY after finishing (do not batch).",
@@ -118,17 +135,34 @@ export function buildExecutePhaseSystemAppend(
   pipeline.push(...buildArchitectStep(availability, step));
   pipeline.push("");
   step += 1;
-  pipeline.push(
-    `${step}. Task list: Parse "## Coder Tasks". Each item becomes one ${agentCall("coder")} delegation.`,
-    '   Print the final "## Coder Tasks" section with numbered tasks before spawning coders.',
-    "",
-  );
+  if (isSubagentEnabled(availability, "coder")) {
+    pipeline.push(
+      `${step}. Task list: Parse "## Coder Tasks". Each item becomes one ${agentCall("coder")} delegation.`,
+      '   Print the final "## Coder Tasks" section with numbered tasks before spawning coders.',
+      "",
+    );
+  } else {
+    pipeline.push(
+      `${step}. Task list: Parse "## Implementation Tasks" or the approved plan into direct work items.`,
+      '   Print "## Implementation Tasks" with numbered tasks before editing.',
+      `   Do NOT call ${agentCall("coder")} because coder is disabled for this run.`,
+      "",
+    );
+  }
   step += 1;
-  pipeline.push(
-    `${step}. Coders (parallel): Same parallel_group or no dependencies → multiple ${agentCall("coder")} calls in one turn.`,
-    "   Each delegation must state: scope, target files, how to verify (test/lint command), expected return format.",
-    "",
-  );
+  if (isSubagentEnabled(availability, "coder")) {
+    pipeline.push(
+      `${step}. Coders (parallel): Same parallel_group or no dependencies → multiple ${agentCall("coder")} calls in one turn.`,
+      "   Each delegation must state: scope, target files, how to verify (test/lint command), expected return format.",
+      "",
+    );
+  } else {
+    pipeline.push(
+      `${step}. Direct implementation: edit files and run verification yourself according to the task list.`,
+      "   Keep progress updated with TaskUpdate after each meaningful implementation step.",
+      "",
+    );
+  }
   if (isSubagentEnabled(availability, "reviewer")) {
     step += 1;
     pipeline.push(...buildReviewerStep(availability, step));
@@ -157,13 +191,15 @@ export function buildExecutePhaseSystemAppend(
 }
 
 export function summarizeExecutePipeline(availability: SubagentAvailability): string {
-  const parts = ["TaskCreate/TaskUpdate after Coder Tasks"];
-  if (isSubagentEnabled(availability, "architect")) {
-    parts.push("Architect (or skip per criteria)");
-  } else {
-    parts.push("self-authored Coder Tasks");
-  }
-  parts.push("parallel coders");
+  const coderEnabled = isSubagentEnabled(availability, "coder");
+  const taskListName = coderEnabled ? "Coder Tasks" : "Implementation Tasks";
+  const parts = [`TaskCreate/TaskUpdate after ${taskListName}`];
+  parts.push(
+    isSubagentEnabled(availability, "architect")
+      ? "Architect (or skip per criteria)"
+      : `self-authored ${taskListName}`,
+  );
+  parts.push(coderEnabled ? "parallel coders" : "direct implementation");
   if (isSubagentEnabled(availability, "reviewer")) {
     parts.push("reviewer");
   }
@@ -185,7 +221,7 @@ export function formatPlanExecutionSummary(availability: SubagentAvailability): 
     .filter((role) => role !== "explore")
     .map((role) => labels[role]);
   if (enabled.length === 0) {
-    return "将按你已启用的子代理执行（Coder 为必需）。";
+    return "当前未启用执行子代理，将由主 Agent 直接执行。";
   }
   return `确认后将按流程执行：${enabled.join(" → ")}（复杂需求可能先拆分任务）。`;
 }
@@ -229,9 +265,9 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "2. Required: submit decision-complete plan via `mcp__eco_plan__finalize_plan`.",
     "   - `analysis`: complete analysis summary string.",
     "   - `plan`: complete implementation plan string (Summary/Key Changes/Test Plan/Assumptions).",
-    "3. Do not ask \"should I proceed?\" — the user approves the submitted plan in Eco UI before execution phase 2/2.",
+    '3. Do not ask "should I proceed?" — the user approves the submitted plan in Eco UI before execution phase 2/2.',
     "",
-    "For `AskUserQuestion`, Eco always provides a custom text field; include an \"其他（自定义说明）\" option when presets may not fit.",
+    'For `AskUserQuestion`, Eco always provides a custom text field; include an "其他（自定义说明）" option when presets may not fit.',
     "",
     formatAvailableSubagentsLine(availability),
     "",

@@ -22,10 +22,10 @@ import {
   createUserPresetProfileName,
 } from "../shared/agent-orchestration";
 import {
-  createBuiltInPresetEvalScenarios,
-  validateBuiltInPresetEvalSuite,
   type BuiltInPresetEvalScenario,
+  createBuiltInPresetEvalScenarios,
   type PresetEvalValidationResult,
+  validateBuiltInPresetEvalSuite,
 } from "../shared/agent-preset-evals";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
@@ -48,14 +48,12 @@ import {
   type RoutePricingHint,
   type RouteProfileInput,
   type RouteProfileView,
-  SUBAGENT_ROLES,
-  type SubagentEnabledSettings,
-  type SubagentRole,
   type ThinkingEffort,
 } from "../shared/ipc";
-import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
+import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
 import { ApiCompatToggle } from "./ApiCompatToggle";
+import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import {
   type AgentProfileAgentFormState,
   type AgentProfileFormState,
@@ -69,7 +67,6 @@ import {
   createProfileWorkflowStepFormFromAgent,
   createWorkflowStepFormsFromAgents,
 } from "./agent-profile-form";
-import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage";
 import {
   type AgentProfileSummary,
   buildAgentProfileSummary,
@@ -94,7 +91,6 @@ export type ModelsSettingsTab =
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
   { id: "subagents", label: "Agent Library" },
   { id: "routes", label: "编排配置" },
-  { id: "providers", label: "模型路由" },
   { id: "permissions", label: "工具权限" },
   { id: "presets", label: "场景预设" },
   { id: "evaluation", label: "效果评测" },
@@ -102,16 +98,14 @@ const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
 
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
-  subagentSettings: SubagentEnabledSettings;
   workflowSettings: WorkflowSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
-  subagentSettingsSaving?: boolean | undefined;
   workflowSettingsSaving?: boolean | undefined;
   proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
+  mode?: "agentBuilder" | "providerSettings" | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
-  onSubagentSettingsChange: (settings: SubagentEnabledSettings) => void;
   onWorkflowSettingsChange: (settings: WorkflowSettingsSnapshot) => void;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
@@ -143,21 +137,21 @@ const THINKING_EFFORT_OPTIONS: Array<{ value: "" | ThinkingEffort; label: string
 
 export function ModelsSettingsPanel({
   settings,
-  subagentSettings,
   workflowSettings,
   proxyBridgeSettings,
-  subagentSettingsSaving,
   workflowSettingsSaving,
   proxyBridgeSettingsSaving,
   busy,
-  initialTab = "providers",
+  initialTab = "subagents",
+  mode = "agentBuilder",
   onSettingsChange,
-  onSubagentSettingsChange,
   onWorkflowSettingsChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(initialTab);
+  const resolvedInitialTab =
+    mode === "providerSettings" ? "providers" : initialTab === "providers" ? "subagents" : initialTab;
+  const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [routeProfileModalOpen, setRouteProfileModalOpen] = useState(false);
@@ -222,8 +216,8 @@ export function ModelsSettingsPanel({
   const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+    setActiveTab(resolvedInitialTab);
+  }, [resolvedInitialTab]);
 
   const modalProviderId = providerForm.id ?? "__draft__";
   const modalCache = modelsCache[modalProviderId];
@@ -346,7 +340,7 @@ export function ModelsSettingsPanel({
       if (!provider) {
         setPresetProfileMessage({
           kind: "error",
-          message: "请先在模型路由中配置至少一个启用且带默认模型的 provider。",
+          message: "请先在 Provider 设置中配置至少一个启用且带默认模型的 Provider。",
         });
         return;
       }
@@ -1200,27 +1194,40 @@ export function ModelsSettingsPanel({
       )}
 
       <header className="mcp-page-header">
-        <h1>Agent Builder</h1>
-        <p className="mcp-page-desc">
-          配置子代理库、编排配置、模型路线和工具权限。新对话在输入区选择 Agent
-          Profile；子代理与编排策略按对话独立保存。
-        </p>
+        {mode === "providerSettings" ? (
+          <>
+            <h1>Provider</h1>
+            <p className="mcp-page-desc">
+              管理上游模型服务、API Key、默认模型、代理桥和转发到上游 API 的 User-Agent。
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>Agent Builder</h1>
+            <p className="mcp-page-desc">
+              配置子代理库、编排配置和工具权限。新对话在输入区选择 Agent
+              Profile；子代理与编排策略按对话独立保存。
+            </p>
+          </>
+        )}
       </header>
 
-      <div className="models-settings-tabs" role="tablist" aria-label="模型设置分类">
-        {MODELS_TAB_ITEMS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {mode === "agentBuilder" ? (
+        <div className="models-settings-tabs" role="tablist" aria-label="模型设置分类">
+          {MODELS_TAB_ITEMS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
@@ -1237,19 +1244,14 @@ export function ModelsSettingsPanel({
                 <h2 className="models-section-title">子代理库</h2>
                 <p className="models-section-desc">
                   {workflowSettings.orchestrationMode === "manual"
-                    ? "固定编排下可停用部分子代理声明；停用后不会注册到 SDK。"
-                    : "自主编排下使用当前子代理声明集合，由主 Agent 按任务目标选用。"}
+                    ? "固定编排由当前 Agent Profile 的 workflow steps 和 agent roster 决定。"
+                    : "自主编排由当前 Agent Profile 的策略和 agent roster 决定。"}
                 </p>
               </div>
             </header>
             <SubagentSettingsSection
-              settings={subagentSettings}
               templates={settings.agentTemplates}
-              providers={settings.providers}
-              saving={subagentSettingsSaving}
-              toggleDisabled={busy || workflowSettings.orchestrationMode === "autonomous"}
               registryDisabled={busy}
-              onChange={onSubagentSettingsChange}
               onRegistryChange={refreshSettings}
               onSavingChange={onSavingChange}
             />
@@ -1265,6 +1267,14 @@ export function ModelsSettingsPanel({
             onSave={onProxyBridgeSettingsChange}
           />
           <section className="mcp-list-section">
+            <header className="models-section-header">
+              <div className="models-section-intro">
+                <h2 className="models-section-title">Provider</h2>
+                <p className="models-section-desc">
+                  管理上游模型服务、API Key、默认模型和 API 兼容模式。Agent Profile 里的模型绑定从这里选择。
+                </p>
+              </div>
+            </header>
             <div className="mcp-list-toolbar">
               <span className="mcp-list-toolbar-label">Provider</span>
               <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
@@ -1570,7 +1580,7 @@ export function ModelsSettingsPanel({
             <div className="models-section-intro">
               <h2 className="models-section-title">效果评测</h2>
               <p className="models-section-desc">
-                内置 preset eval suite 会验证 profile 生成、workflow 引用、必需 agent、模型绑定和非 Coding
+                内置 preset eval suite 会验证 profile 生成、workflow 引用、期望 agent、模型绑定和非 Coding
                 prompt 边界。
               </p>
             </div>
@@ -1618,7 +1628,6 @@ export function ModelsSettingsPanel({
           testingAll={testingRouteProfileId === (routeProfileForm.id ?? "__draft__") && !testingRouteRole}
           testingRole={testingRouteRole}
           routeTestResults={routeTestResults}
-          subagentSettings={subagentSettings}
           onClose={closeRouteProfileModal}
           onSave={() => void saveRouteProfile()}
           onDelete={() => void deleteRouteProfile()}
@@ -1841,7 +1850,9 @@ function AgentProfileEditorModal({
         : {}),
       ...(toolPatch.filesystemRead !== undefined ? { mainFilesystemRead: toolPatch.filesystemRead } : {}),
       ...(toolPatch.filesystemWrite !== undefined ? { mainFilesystemWrite: toolPatch.filesystemWrite } : {}),
-      ...(toolPatch.networkWebSearch !== undefined ? { mainNetworkWebSearch: toolPatch.networkWebSearch } : {}),
+      ...(toolPatch.networkWebSearch !== undefined
+        ? { mainNetworkWebSearch: toolPatch.networkWebSearch }
+        : {}),
       ...(toolPatch.networkWebFetch !== undefined ? { mainNetworkWebFetch: toolPatch.networkWebFetch } : {}),
     }));
   }
@@ -1951,9 +1962,7 @@ function AgentProfileEditorModal({
     if (!template) {
       return;
     }
-    const provider =
-      providers.find((entry) => entry.id === template.defaultModelRef?.providerId) ??
-      selectPresetDefaultProvider(providers);
+    const provider = selectPresetDefaultProvider(providers);
     setForm((current) => {
       const agents = [
         ...current.agents,
@@ -1984,7 +1993,9 @@ function AgentProfileEditorModal({
   function removeAgent(index: number) {
     setForm((current) => ({
       ...current,
-      workflowSteps: current.workflowSteps.filter((step) => step.agentKey !== current.agents[index]?.agentKey),
+      workflowSteps: current.workflowSteps.filter(
+        (step) => step.agentKey !== current.agents[index]?.agentKey,
+      ),
       agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
     }));
   }
@@ -2034,9 +2045,7 @@ function AgentProfileEditorModal({
         .filter((_, stepIndex) => stepIndex !== index)
         .map((step) => ({
           ...step,
-          dependsOn: current.workflowSteps[index]?.id.trim()
-            ? removeDependencyToken(step.dependsOn, current.workflowSteps[index]!.id.trim())
-            : step.dependsOn,
+          dependsOn: removeDeletedWorkflowDependency(step.dependsOn, current.workflowSteps[index]?.id),
         })),
     }));
   }
@@ -2091,8 +2100,6 @@ function AgentProfileEditorModal({
         (template.defaultTools.allowed.includes("WebFetch") &&
           !template.defaultTools.disallowed.includes("WebFetch")),
       skills: template.skills.join(", "),
-      providerId: template.defaultModelRef?.providerId ?? form.agents[index]?.providerId ?? "",
-      modelId: template.defaultModelRef?.modelId ?? form.agents[index]?.modelId ?? "",
     });
   }
 
@@ -2115,7 +2122,13 @@ function AgentProfileEditorModal({
           <h2 id="agent-profile-modal-title" className="settings-modal-title">
             {editing ? "编辑 Agent Profile" : "新建 Agent Profile"}
           </h2>
-          <button type="button" className="mcp-icon-button" onClick={onClose} aria-label="关闭" disabled={busy}>
+          <button
+            type="button"
+            className="mcp-icon-button"
+            onClick={onClose}
+            aria-label="关闭"
+            disabled={busy}
+          >
             <X size={18} />
           </button>
         </header>
@@ -2147,7 +2160,9 @@ function AgentProfileEditorModal({
                   className="mcp-field-input"
                   value={form.preset}
                   disabled={busy}
-                  onChange={(event) => patch({ preset: event.target.value as AgentProfileFormState["preset"] })}
+                  onChange={(event) =>
+                    patch({ preset: event.target.value as AgentProfileFormState["preset"] })
+                  }
                 >
                   {["coding", "research", "writing", "product", "data", "ops", "custom"].map((domain) => (
                     <option key={domain} value={domain}>
@@ -2162,7 +2177,9 @@ function AgentProfileEditorModal({
                   className="mcp-field-input"
                   value={form.source}
                   disabled={busy}
-                  onChange={(event) => patch({ source: event.target.value as AgentProfileFormState["source"] })}
+                  onChange={(event) =>
+                    patch({ source: event.target.value as AgentProfileFormState["source"] })
+                  }
                 >
                   <option value="user">用户</option>
                   <option value="project">项目</option>
@@ -2345,7 +2362,9 @@ function AgentProfileEditorModal({
                   <div className="models-agent-profile-step-editor-list">
                     {form.workflowSteps.map((step, index) => {
                       const enabledAgents = form.agents.filter((agent) => agent.enabled);
-                      const stepAgentEnabled = enabledAgents.some((agent) => agent.agentKey === step.agentKey);
+                      const stepAgentEnabled = enabledAgents.some(
+                        (agent) => agent.agentKey === step.agentKey,
+                      );
                       return (
                         <article key={`${step.id}-${index}`} className="models-agent-profile-step-editor">
                           <div className="models-agent-profile-step-editor-head">
@@ -2415,7 +2434,9 @@ function AgentProfileEditorModal({
                                 className="mcp-field-input"
                                 value={step.outputKey}
                                 disabled={busy}
-                                onChange={(event) => patchWorkflowStep(index, { outputKey: event.target.value })}
+                                onChange={(event) =>
+                                  patchWorkflowStep(index, { outputKey: event.target.value })
+                                }
                               />
                             </label>
                             <label className="mcp-field">
@@ -2424,7 +2445,9 @@ function AgentProfileEditorModal({
                                 className="mcp-field-input"
                                 value={step.dependsOn}
                                 disabled={busy}
-                                onChange={(event) => patchWorkflowStep(index, { dependsOn: event.target.value })}
+                                onChange={(event) =>
+                                  patchWorkflowStep(index, { dependsOn: event.target.value })
+                                }
                               />
                             </label>
                             <label className="mcp-field">
@@ -2435,7 +2458,8 @@ function AgentProfileEditorModal({
                                 disabled={busy}
                                 onChange={(event) =>
                                   patchWorkflowStep(index, {
-                                    runMode: event.target.value as AgentProfileWorkflowStepFormState["runMode"],
+                                    runMode: event.target
+                                      .value as AgentProfileWorkflowStepFormState["runMode"],
                                   })
                                 }
                               >
@@ -2451,9 +2475,8 @@ function AgentProfileEditorModal({
                                 disabled={busy}
                                 onChange={(event) =>
                                   patchWorkflowStep(index, {
-                                    failurePolicy:
-                                      event.target
-                                        .value as AgentProfileWorkflowStepFormState["failurePolicy"],
+                                    failurePolicy: event.target
+                                      .value as AgentProfileWorkflowStepFormState["failurePolicy"],
                                   })
                                 }
                               >
@@ -2755,7 +2778,9 @@ function AgentProfileToolPolicyFields({
             value={values.bashApproval}
             disabled={disabled}
             onChange={(event) =>
-              onChange({ bashApproval: event.target.value as AgentProfileToolPolicyFieldValues["bashApproval"] })
+              onChange({
+                bashApproval: event.target.value as AgentProfileToolPolicyFieldValues["bashApproval"],
+              })
             }
           >
             <option value="risky">风险确认</option>
@@ -2788,7 +2813,9 @@ function AgentProfileToolPolicyFields({
             value={values.filesystemRead}
             disabled={disabled}
             onChange={(event) =>
-              onChange({ filesystemRead: event.target.value as AgentProfileToolPolicyFieldValues["filesystemRead"] })
+              onChange({
+                filesystemRead: event.target.value as AgentProfileToolPolicyFieldValues["filesystemRead"],
+              })
             }
           >
             <option value="workspace">工作区</option>
@@ -2867,7 +2894,6 @@ function RouteProfileEditorModal({
   onTestRole,
   onUpdateRoute,
   onFetchModels,
-  subagentSettings,
 }: {
   form: RouteProfileInput;
   setForm: Dispatch<SetStateAction<RouteProfileInput>>;
@@ -2886,7 +2912,6 @@ function RouteProfileEditorModal({
   testingAll: boolean;
   testingRole: AgentRole | null;
   routeTestResults: Partial<Record<AgentRole, RoleRouteTestResult>>;
-  subagentSettings: SubagentEnabledSettings;
   onClose: () => void;
   onSave: () => void;
   onDelete: () => void;
@@ -2987,20 +3012,9 @@ function RouteProfileEditorModal({
                   const roleTesting = testingRole === role;
                   const routeTestBusy = testingAll || testingRole !== null;
                   const canTestRole = Boolean(providerId.trim() && route?.modelId.trim());
-                  const subagentOff =
-                    role !== "planner" &&
-                    SUBAGENT_ROLES.includes(role as SubagentRole) &&
-                    !subagentSettings[role as SubagentRole];
 
                   return (
-                    <li
-                      key={role}
-                      className={
-                        subagentOff
-                          ? "models-route-card models-route-card-modal models-route-card-subagent-off"
-                          : "models-route-card models-route-card-modal"
-                      }
-                    >
+                    <li key={role} className="models-route-card models-route-card-modal">
                       <div className="models-route-card-head">
                         <div className="models-route-card-identity">
                           <span className="models-route-card-title">
@@ -3022,9 +3036,6 @@ function RouteProfileEditorModal({
                               onChange={(apiCompat) => onUpdateRoute(role, { apiCompat })}
                             />
                           </span>
-                          {subagentOff ? (
-                            <span className="models-subagent-off-badge">子代理已关闭</span>
-                          ) : null}
                           {roleTest && (
                             <span
                               className={
@@ -3947,7 +3958,7 @@ function PresetEvaluationOverview({
                       </div>
                       <p>{scenario.userPrompt}</p>
                       <div className="models-preset-template-list">
-                        {scenario.requiredAgentKeys.map((agentKey) => (
+                        {scenario.expectedAgentKeys.map((agentKey) => (
                           <span key={agentKey} className="models-preset-template">
                             {agentKey}
                           </span>
@@ -4009,6 +4020,11 @@ function removeDependencyToken(raw: string, removedId: string): string {
   return dependencyTokens(raw)
     .filter((token) => token !== removedId)
     .join(", ");
+}
+
+function removeDeletedWorkflowDependency(raw: string, removedId: string | undefined): string {
+  const id = removedId?.trim();
+  return id ? removeDependencyToken(raw, id) : raw;
 }
 
 function dependencyTokens(raw: string): string[] {

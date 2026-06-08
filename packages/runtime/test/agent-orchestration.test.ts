@@ -3,11 +3,11 @@ import {
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
-  resolveMainAgentAllowedTools,
-  sdkAgentKeyForProfileAgent,
   type EcoAgentTemplateConfig,
   type EcoOrchestrationProfileConfig,
   type EcoToolPolicy,
+  resolveMainAgentAllowedTools,
+  sdkAgentKeyForProfileAgent,
 } from "../src/agent-orchestration";
 
 const updatedAt = "2026-06-07T00:00:00.000Z";
@@ -33,7 +33,6 @@ const researchTemplate: EcoAgentTemplateConfig = {
   whenToUse: "Need sourced findings or external context",
   outputContract: "Return findings, sources, confidence, and open questions.",
   defaultTools: toolPolicy(["WebSearch", "WebFetch"], ["Write"]),
-  defaultModelRef: modelRef("template-model"),
   mcpServers: ["sources"],
   skills: ["citation"],
   allowDelegation: false,
@@ -86,6 +85,14 @@ const profile: EcoOrchestrationProfileConfig = {
   updatedAt,
   source: "user",
 };
+
+function requireElement<T>(values: readonly T[], index: number, label: string): T {
+  const value = values[index];
+  if (!value) {
+    throw new Error(`${label} ${index} missing in test fixture.`);
+  }
+  return value;
+}
 
 test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", () => {
   const resolved = createAgentDefinitionsFromProfile(profile, [researchTemplate]);
@@ -191,6 +198,7 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
 });
 
 test("buildToolPermissionPolicyFromProfile preserves structured tool policies", () => {
+  const firstAgent = requireElement(profile.agents, 0, "agent");
   const structuredProfile: EcoOrchestrationProfileConfig = {
     ...profile,
     mainAgent: {
@@ -204,9 +212,9 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
     },
     agents: [
       {
-        ...profile.agents[0]!,
+        ...firstAgent,
         tools: {
-          ...profile.agents[0]!.tools,
+          ...firstAgent.tools,
           bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
           filesystem: { read: "workspace", write: "none" },
           network: { webSearch: true, webFetch: false },

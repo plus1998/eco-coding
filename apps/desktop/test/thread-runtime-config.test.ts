@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildOrchestrationProfileFromPreset,
   createBuiltInPresetCatalog,
 } from "../src/shared/agent-orchestration";
+import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildThreadRuntimeConfigFromDefaults,
   getDefaultAgentProfileId,
@@ -18,7 +18,7 @@ import {
   serializeThreadRuntimeConfig,
 } from "../src/shared/thread-runtime-config";
 
-const subagentDefaults: SubagentEnabledSettings = {
+const threadSubagentEnabled: SubagentEnabledSettings = {
   explore: true,
   architect: true,
   coder: true,
@@ -62,15 +62,22 @@ const settings: ModelSettingsSnapshot = {
   ],
 };
 
-const researchProfile = buildOrchestrationProfileFromPreset(
-  createBuiltInPresetCatalog().find((preset) => preset.id === "research")!,
-  {
-    id: "research-copy",
-    name: "研究副本",
-    modelRef: { providerId: "p1", modelId: "m-research" },
-    updatedAt: "2026-06-07T00:00:00.000Z",
-  },
-);
+const researchPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "research");
+if (!researchPreset) {
+  throw new Error("Missing built-in research preset.");
+}
+
+const researchProfile = buildOrchestrationProfileFromPreset(researchPreset, {
+  id: "research-copy",
+  name: "研究副本",
+  modelRef: { providerId: "p1", modelId: "m-research" },
+  updatedAt: "2026-06-07T00:00:00.000Z",
+});
+
+const researchAgent = researchProfile.agents[0];
+if (!researchAgent) {
+  throw new Error("Research preset must include at least one agent.");
+}
 
 const genericSettings: ModelSettingsSnapshot = {
   providers: [],
@@ -99,7 +106,6 @@ test("getDefaultAgentProfileId returns first orchestration profile", () => {
 test("buildThreadRuntimeConfigFromDefaults uses autonomous subagents all on", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
-    subagentDefaults: { ...subagentDefaults, reviewer: false },
     workflowDefaults: { orchestrationMode: "autonomous" },
     routeProfileId: "profile-b",
   });
@@ -109,20 +115,18 @@ test("buildThreadRuntimeConfigFromDefaults uses autonomous subagents all on", ()
   expect(isAutonomousThreadRuntime(config)).toBe(true);
 });
 
-test("buildThreadRuntimeConfigFromDefaults respects manual subagent toggles", () => {
+test("buildThreadRuntimeConfigFromDefaults uses default subagents in manual mode", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
-    subagentDefaults: { ...subagentDefaults, reviewer: false },
     workflowDefaults: { orchestrationMode: "manual" },
   });
   expect(config.orchestrationMode).toBe("manual");
-  expect(config.subagentEnabled.reviewer).toBe(false);
+  expect(config.subagentEnabled.reviewer).toBe(true);
 });
 
 test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile without routes", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: genericSettings,
-    subagentDefaults,
     workflowDefaults: { orchestrationMode: "autonomous" },
     agentProfileId: "research-copy",
   });
@@ -135,7 +139,6 @@ test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile wi
 test("buildThreadRuntimeConfigFromDefaults does not let default routes override selected Agent Profile", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: mixedSettings,
-    subagentDefaults,
     workflowDefaults: { orchestrationMode: "autonomous" },
     agentProfileId: "research-copy",
     routeProfileId: "profile-a",
@@ -155,13 +158,13 @@ test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => 
     },
     agents: [
       {
-        ...researchProfile.agents[0]!,
+        ...researchAgent,
         agentKey: "research lead",
         modelRef: { providerId: "agent-provider", modelId: "agent-model" },
         enabled: true,
       },
       {
-        ...researchProfile.agents[0]!,
+        ...researchAgent,
         agentKey: "disabled_agent",
         modelRef: { providerId: "disabled-provider", modelId: "disabled-model" },
         enabled: false,
@@ -178,7 +181,6 @@ test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => 
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,
-    subagentDefaults,
     workflowDefaults: { orchestrationMode: "manual" },
   });
   const json = serializeThreadRuntimeConfig(config);
@@ -190,14 +192,14 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
     parseThreadRuntimeConfigJson(
       JSON.stringify({
         agentProfileId: "research-copy",
-        subagentEnabled: subagentDefaults,
+        subagentEnabled: threadSubagentEnabled,
         orchestrationMode: "autonomous",
       }),
     ),
   ).toEqual({
     routeProfileId: "",
     agentProfileId: "research-copy",
-    subagentEnabled: subagentDefaults,
+    subagentEnabled: threadSubagentEnabled,
     orchestrationMode: "autonomous",
   });
 });
@@ -206,12 +208,12 @@ test("normalizeThreadRuntimeConfig migrates legacy planModeEnabled", () => {
   expect(
     normalizeThreadRuntimeConfig({
       routeProfileId: "profile-a",
-      subagentEnabled: subagentDefaults,
+      subagentEnabled: threadSubagentEnabled,
       planModeEnabled: true,
     } as never),
   ).toEqual({
     routeProfileId: "profile-a",
-    subagentEnabled: subagentDefaults,
+    subagentEnabled: threadSubagentEnabled,
     orchestrationMode: "manual",
   });
 });

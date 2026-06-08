@@ -180,7 +180,7 @@ type AgentTemplate = {
   whenToUse: string;
   outputContract?: string;
   defaultTools: ToolPolicy;
-  defaultModelRef?: ModelRef;
+  modelRequirements?: ModelRequirements;
   mcpServers?: McpServerRef[];
   skills?: string[];
   allowDelegation: boolean;
@@ -350,7 +350,7 @@ type WorkflowStep = {
 - 用户 store 与 IPC 保存路径会保护内置模板和派生编排配置，禁止直接覆盖保留 ID。
 - 验证：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/agent-registry-settings.test.ts apps/desktop/test/ipc.test.ts apps/desktop/test/provider-store.test.ts` 通过。
 - 子代理库 UI 已支持创建、复制、编辑和删除用户/项目模板；内置模板只允许复制为用户模板。
-- Prompt 编辑器已覆盖名称、领域、作用域、描述、使用时机、prompt、输出契约、默认模型、工具、MCP、skills 和委派开关。
+- Prompt 编辑器已覆盖名称、领域、作用域、描述、使用时机、prompt、输出契约、工具、MCP、skills 和委派开关；模板不再绑定供应商或具体模型。
 - 验证补充：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-template-form.test.ts apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-registry-settings.test.ts` 通过；`bun run --cwd apps/desktop build` 通过。
 - 导入/导出 JSON 已支持 schema archive、数组和单模板对象；导入内置模板会重写为用户副本，避免覆盖内置 registry。
 - 用户/项目模板保存会记录版本历史，UI 已支持查看历史和恢复旧版本；恢复会生成新的当前版本。
@@ -777,7 +777,7 @@ type WorkflowStep = {
 - Phase 8.1 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
 - Phase 8.2 已完成：新增 preset -> user orchestration profile builder，按当前默认 provider/model 生成完整可运行 profile；Agent Builder 的“场景预设”页支持一键“复制为 Profile”，保存后刷新设置并进入“编排配置”页。
 - Phase 8.2 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
-- Phase 8.3 已完成：新增内置 preset eval suite，把 catalog 中 18 个 eval case 展开为本地可验证场景，校验 profile 可生成、必需 agent 启用、workflow step 引用有效、模型绑定完整，并防止非 Coding main prompt 出现 coding-only 术语污染。
+- Phase 8.3 已完成：新增内置 preset eval suite，把 catalog 中 18 个 eval case 展开为本地可验证场景，校验 profile 可生成、期望 agent 启用、workflow step 引用有效、模型绑定完整，并防止非 Coding main prompt 出现 coding-only 术语污染。
 - Phase 8.3 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-orchestration.test.ts`。
 - Phase 8.4 已完成：新增内置 preset 离线 E2E task suite，把 Coding、Research、Writing、Product、Data、Ops 六个场景各自 3 个示例任务展开为 18 个端到端任务；每个任务都会走真实 profile 构建、main prompt roster、动态 AgentDefinition、工具权限 policy、fixed/hybrid workflow prompt 渲染、step 产物传递和最终 artifact 验收。
 - Phase 8.4 行为边界：离线 E2E 使用确定性模拟输出验证产品运行路径和验收结构，不调用真实模型；在线模型质量、资料新鲜度和人工验收仍属于发布流程的独立外层检查。
@@ -809,7 +809,7 @@ type WorkflowStep = {
 
 已完成：
 
-- Phase 9.1 已完成：Agent Builder 新增“效果评测”页，读取内置 preset eval suite，按 preset 展示配置级 eval 总数、通过/失败状态、case prompt、必需 agent 和失败原因。
+- Phase 9.1 已完成：Agent Builder 新增“效果评测”页，读取内置 preset eval suite，按 preset 展示配置级 eval 总数、通过/失败状态、case prompt、期望 agent 和失败原因。
 - Phase 9.1 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts`、`bun run typecheck`、`bun run --cwd apps/desktop build`。
 - Phase 9.2 已完成：根目录新增 `bun run test:agent-presets`，一条命令覆盖 preset catalog、本地 eval suite、runtime dynamic agent definition、workflow orchestration 和工具权限 hook。
 - Phase 9.2 验证：`bun run test:agent-presets`。

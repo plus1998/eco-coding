@@ -14,7 +14,7 @@ test("built-in preset eval suite expands every preset case", () => {
   for (const scenario of scenarios) {
     expect(scenario.profile.agents.length).toBeGreaterThanOrEqual(3);
     expect(scenario.successCriteria).toHaveLength(3);
-    expect(scenario.requiredAgentKeys.length).toBeGreaterThan(0);
+    expect(scenario.expectedAgentKeys.length).toBeGreaterThan(0);
   }
 });
 
@@ -24,7 +24,7 @@ test("built-in preset eval suite validates runnable profiles and prompt boundari
   expect(results.flatMap((result) => result.errors)).toEqual([]);
 });
 
-test("preset eval validation reports missing required agents", () => {
+test("preset eval validation reports missing expected agents", () => {
   const scenario = createBuiltInPresetEvalScenarios().find(
     (candidate) => candidate.id === "research.research-citation-support",
   );
@@ -40,5 +40,5 @@ test("preset eval validation reports missing required agents", () => {
   };
   const result = validateBuiltInPresetEvalScenario(broken);
   expect(result.ok).toBe(false);
-  expect(result.errors).toContain("Required agent is not enabled: source_verifier");
+  expect(result.errors).toContain("Expected agent is not enabled: source_verifier");
 });

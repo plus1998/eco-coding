@@ -21,6 +21,14 @@ export interface ModelRef {
   manualSpec?: RouteManualSpec;
 }
 
+export type ModelRequirementCapability = "reasoning" | "coding" | "long_context" | "vision" | "tool_use";
+
+export interface ModelRequirements {
+  capabilities: ModelRequirementCapability[];
+  preferredLatency?: "fast" | "balanced" | "quality";
+  minContextTokens?: number;
+}
+
 export interface ToolPolicy {
   allowed: string[];
   disallowed: string[];
@@ -52,8 +60,8 @@ export interface AgentTemplate {
   prompt: string;
   whenToUse: string;
   outputContract?: string;
+  modelRequirements?: ModelRequirements;
   defaultTools: ToolPolicy;
-  defaultModelRef?: ModelRef;
   mcpServers: string[];
   skills: string[];
   allowDelegation: boolean;
@@ -308,7 +316,7 @@ export interface BuiltInPresetEvalCase {
   title: string;
   prompt: string;
   successCriteria: string[];
-  requiredAgentKeys: string[];
+  expectedAgentKeys: string[];
 }
 
 export interface BuiltInPresetDefinition {
@@ -1606,14 +1614,14 @@ function evalCase(
   title: string,
   prompt: string,
   successCriteria: string[],
-  requiredAgentKeys: string[],
+  expectedAgentKeys: string[],
 ): BuiltInPresetEvalCase {
   return {
     id,
     title,
     prompt,
     successCriteria: [...successCriteria],
-    requiredAgentKeys: [...requiredAgentKeys],
+    expectedAgentKeys: [...expectedAgentKeys],
   };
 }
 

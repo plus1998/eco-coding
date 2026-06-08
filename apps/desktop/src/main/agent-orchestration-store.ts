@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { AgentTemplateVersionView, OrchestrationProfileVersionView } from "../shared/ipc";
 import type { AgentTemplate, OrchestrationProfile } from "../shared/agent-orchestration";
+import type { AgentTemplateVersionView, OrchestrationProfileVersionView } from "../shared/ipc";
 
 interface StoredConfigRow {
   id: string;
@@ -253,8 +253,10 @@ export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemp
     throw new Error("子代理模板提示词不能为空。");
   }
   const now = new Date().toISOString();
+  const templateWithoutLegacyModel = { ...(template as AgentTemplate & { defaultModelRef?: unknown }) };
+  delete templateWithoutLegacyModel.defaultModelRef;
   return {
-    ...template,
+    ...templateWithoutLegacyModel,
     id: template.id.trim(),
     name: template.name.trim(),
     description: template.description.trim(),
@@ -300,9 +302,7 @@ function parseOrchestrationProfileRow(row: StoredConfigRow): OrchestrationProfil
 }
 
 function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTemplateVersionView {
-  const template = normalizeStoredAgentTemplate(
-    parseJsonObject(row.value_json) as unknown as AgentTemplate,
-  );
+  const template = normalizeStoredAgentTemplate(parseJsonObject(row.value_json) as unknown as AgentTemplate);
   return {
     templateId: row.template_id,
     version: row.version,
@@ -311,9 +311,7 @@ function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTempl
   };
 }
 
-function parseOrchestrationProfileVersionRow(
-  row: StoredProfileVersionRow,
-): OrchestrationProfileVersionView {
+function parseOrchestrationProfileVersionRow(row: StoredProfileVersionRow): OrchestrationProfileVersionView {
   const profile = normalizeStoredOrchestrationProfile(
     parseJsonObject(row.value_json) as unknown as OrchestrationProfile,
   );

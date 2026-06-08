@@ -214,11 +214,6 @@ import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
-import {
-  createSubagentSettingsStore,
-  isSubagentEnabledSettings,
-  type SubagentSettingsStore,
-} from "./subagent-settings-store";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 import { classifyThreadIntent } from "./thread-intent";
@@ -329,7 +324,6 @@ let providerStore: ProviderStore;
 let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
-let subagentSettingsStore: SubagentSettingsStore;
 let workflowSettingsStore: WorkflowSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let sessionSyncStore: SessionSyncStore;
@@ -406,7 +400,6 @@ app.whenReady().then(async () => {
     logDiag: logEcoDiag,
     logDiagThrottled: logEcoDiagThrottled,
   });
-  subagentSettingsStore = await createSubagentSettingsStore(dbPath);
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
@@ -667,7 +660,6 @@ function slugifyTemplateId(value: string): string {
 function buildDefaultThreadRuntimeConfig(): ThreadRuntimeConfig {
   return buildThreadRuntimeConfigFromDefaults({
     settings: getModelSettingsSnapshot(),
-    subagentDefaults: subagentSettingsStore.get(),
     workflowDefaults: workflowSettingsStore.get(),
   });
 }
@@ -1409,15 +1401,6 @@ function registerIpcHandlers(): void {
       payload.baseDir ? { baseDir: payload.baseDir } : undefined,
     );
     return linkResult;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.subagentSettingsGet, async () => subagentSettingsStore.get());
-
-  ipcMain.handle(IPC_CHANNELS.subagentSettingsSave, async (_event, payload: unknown) => {
-    if (!isSubagentEnabledSettings(payload)) {
-      throw new Error("Invalid subagent settings.");
-    }
-    return subagentSettingsStore.save(payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
@@ -4432,7 +4415,7 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
   const enabledSubagents =
     orchestrationMode === "autonomous"
       ? defaultSubagentAvailability()
-      : (hydrated?.runtimeConfig?.subagentEnabled ?? subagentSettingsStore.get());
+      : (hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability());
   const workspacePath =
     thread?.workspacePath ??
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);

@@ -1,16 +1,11 @@
-import {
-  SUBAGENT_ROLES,
-  defaultSubagentAvailability,
-  normalizeSubagentAvailability,
-  type SubagentRole,
-} from "@eco/runtime";
+import { defaultSubagentAvailability, normalizeSubagentAvailability, SUBAGENT_ROLES } from "@eco/runtime";
 import type {
   ModelSettingsSnapshot,
   OrchestrationModeSetting,
   OrchestrationProfile,
+  RoleRouteConfig,
   RuntimeAgentRole,
   RuntimeRoleRouteConfig,
-  RoleRouteConfig,
   SubagentEnabledSettings,
   WorkflowSettingsSnapshot,
 } from "./ipc";
@@ -39,9 +34,7 @@ export function getRoutesForProfile(
   return settings.routeProfiles.find((profile) => profile.id === routeProfileId)?.routes;
 }
 
-export function runtimeRoleRoutesFromAgentProfile(
-  profile: OrchestrationProfile,
-): RuntimeRoleRouteConfig[] {
+export function runtimeRoleRoutesFromAgentProfile(profile: OrchestrationProfile): RuntimeRoleRouteConfig[] {
   const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
   routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
   for (const agent of profile.agents) {
@@ -86,8 +79,7 @@ export function resolveThreadAgentProfile(
     getAgentProfileById(settings, config.agentProfileId) ??
     settings.orchestrationProfiles.find(
       (profile) =>
-        profile.id === config.routeProfileId ||
-        profile.sourceRouteProfileId === config.routeProfileId,
+        profile.id === config.routeProfileId || profile.sourceRouteProfileId === config.routeProfileId,
     )
   );
 }
@@ -135,7 +127,9 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   return SUBAGENT_ROLES.every((role) => typeof subagents[role] === "boolean");
 }
 
-export function parseThreadRuntimeConfigJson(json: string | null | undefined): ThreadRuntimeConfig | undefined {
+export function parseThreadRuntimeConfigJson(
+  json: string | null | undefined,
+): ThreadRuntimeConfig | undefined {
   if (!json?.trim()) {
     return undefined;
   }
@@ -156,9 +150,7 @@ export function serializeThreadRuntimeConfig(config: ThreadRuntimeConfig): strin
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
   const record = config as ThreadRuntimeConfig & { planModeEnabled?: boolean };
-  const orchestrationMode = normalizeOrchestrationMode(
-    record.orchestrationMode ?? record.planModeEnabled,
-  );
+  const orchestrationMode = normalizeOrchestrationMode(record.orchestrationMode ?? record.planModeEnabled);
   const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
   return {
     routeProfileId,
@@ -170,7 +162,6 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
 
 export function buildThreadRuntimeConfigFromDefaults(input: {
   settings: ModelSettingsSnapshot;
-  subagentDefaults: SubagentEnabledSettings;
   workflowDefaults: WorkflowSettingsSnapshot;
   routeProfileId?: string;
   agentProfileId?: string;
@@ -181,8 +172,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     getAgentProfileById(input.settings, requestedAgentProfileId) ??
     input.settings.orchestrationProfiles.find(
       (profile) =>
-        profile.id === requestedRouteProfileId ||
-        profile.sourceRouteProfileId === requestedRouteProfileId,
+        profile.id === requestedRouteProfileId || profile.sourceRouteProfileId === requestedRouteProfileId,
     ) ??
     getAgentProfileById(input.settings, getDefaultAgentProfileId(input.settings));
   const routeProfileId = agentProfile
@@ -195,14 +185,10 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     throw new Error(`找不到路由配置：${routeProfileId}`);
   }
   const orchestrationMode = input.workflowDefaults.orchestrationMode;
-  const subagentEnabled =
-    orchestrationMode === "autonomous"
-      ? defaultSubagentAvailability()
-      : normalizeSubagentAvailability(input.subagentDefaults);
   return {
     routeProfileId: routeProfileId ?? agentProfile?.id ?? "",
     ...(agentProfile && { agentProfileId: agentProfile.id }),
-    subagentEnabled,
+    subagentEnabled: defaultSubagentAvailability(),
     orchestrationMode,
   };
 }

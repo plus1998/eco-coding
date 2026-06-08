@@ -25,7 +25,7 @@ export interface BuiltInPresetEvalScenario {
   evalTitle: string;
   userPrompt: string;
   successCriteria: string[];
-  requiredAgentKeys: string[];
+  expectedAgentKeys: string[];
   profile: OrchestrationProfile;
 }
 
@@ -79,7 +79,7 @@ export function createBuiltInPresetEvalScenarios(
       evalTitle: evalCase.title,
       userPrompt: evalCase.prompt,
       successCriteria: [...evalCase.successCriteria],
-      requiredAgentKeys: [...evalCase.requiredAgentKeys],
+      expectedAgentKeys: [...evalCase.expectedAgentKeys],
       profile: buildOrchestrationProfileFromPreset(preset, {
         id: `eval.${preset.id}.${evalCase.id}`,
         name: `${preset.name} Eval - ${evalCase.title}`,
@@ -99,9 +99,9 @@ export function validateBuiltInPresetEvalScenario(
   const enabledAgentKeys = new Set(
     scenario.profile.agents.filter((agent) => agent.enabled).map((agent) => agent.agentKey),
   );
-  for (const agentKey of scenario.requiredAgentKeys) {
+  for (const agentKey of scenario.expectedAgentKeys) {
     if (!enabledAgentKeys.has(agentKey)) {
-      errors.push(`Required agent is not enabled: ${agentKey}`);
+      errors.push(`Expected agent is not enabled: ${agentKey}`);
     }
   }
   for (const agentKey of collectStrategyAgentKeys(scenario.profile.strategy)) {
@@ -161,7 +161,9 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
     });
     promptText = stringifySystemPrompt(systemPrompt);
   } catch (caught) {
-    errors.push(`Main agent prompt cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+    errors.push(
+      `Main agent prompt cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`,
+    );
   }
 
   try {
@@ -192,7 +194,9 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
       );
     }
   } catch (caught) {
-    errors.push(`Runtime agent definitions cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+    errors.push(
+      `Runtime agent definitions cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`,
+    );
   }
 
   try {
@@ -208,7 +212,9 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
       }
     }
   } catch (caught) {
-    errors.push(`Runtime tool policy cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+    errors.push(
+      `Runtime tool policy cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`,
+    );
   }
 
   for (const template of templates) {
@@ -235,10 +241,15 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
         errors.push("Fixed workflow did not produce executable batches.");
       }
     } catch (caught) {
-      errors.push(`Fixed workflow cannot be resolved: ${caught instanceof Error ? caught.message : String(caught)}`);
+      errors.push(
+        `Fixed workflow cannot be resolved: ${caught instanceof Error ? caught.message : String(caught)}`,
+      );
     }
   }
-  if (scenario.profile.strategy.kind === "hybrid" && scenario.profile.strategy.recommendedSteps.length === 0) {
+  if (
+    scenario.profile.strategy.kind === "hybrid" &&
+    scenario.profile.strategy.recommendedSteps.length === 0
+  ) {
     errors.push("Hybrid workflow must define recommended steps.");
   }
 

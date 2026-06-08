@@ -1,9 +1,9 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
 import type { EventStore, ThreadRecord } from "../../persistence/src";
-import { type AgentEvent, type AgentRole, type RuntimeAgentRole, createAgentEvent } from "../../shared/src";
+import { type AgentEvent, type RuntimeAgentRole, createAgentEvent } from "../../shared/src";
 import type { WorktreePlan } from "../../workspace/src";
-import type { SubagentRole } from "./subagent-availability.js";
 import type { EcoAgentRuntimeConfig } from "./agent-orchestration.js";
+import type { SubagentRole } from "./subagent-availability.js";
 
 export interface ThreadStartRequest {
   threadId: string;
@@ -23,7 +23,7 @@ export interface EcoSdkSessionOptions {
   skills?: string[];
   /** Per-agent skill directories for subagent definitions. Keys may be fixed roles, profile agentKeys, or SDK eco_* keys. */
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>;
-  /** Subagent on/off; coder is always enabled after normalize. */
+  /** Subagent on/off. */
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;
   mcpAllowedTools?: string[];

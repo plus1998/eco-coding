@@ -1,4 +1,4 @@
-import type { AgentDomain, AgentTemplate, ProviderConfigView, ToolPolicy } from "../shared/ipc";
+import type { AgentDomain, AgentTemplate, ToolPolicy } from "../shared/ipc";
 
 export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
   { value: "coding", label: "Coding" },
@@ -27,8 +27,6 @@ export interface AgentTemplateFormState {
   outputContract: string;
   allowedTools: string;
   disallowedTools: string;
-  providerId: string;
-  modelId: string;
   mcpServers: string;
   mcpTools: string;
   skills: string;
@@ -44,10 +42,8 @@ export interface AgentTemplatePermissionChip {
 }
 
 export function createBlankAgentTemplateForm(
-  providers: readonly ProviderConfigView[],
   existingTemplates: readonly AgentTemplate[] = [],
 ): AgentTemplateFormState {
-  const defaultProvider = providers[0];
   return {
     id: createUniqueTemplateId(
       "user.custom.agent",
@@ -61,8 +57,6 @@ export function createBlankAgentTemplateForm(
     outputContract: "",
     allowedTools: "Read, WebSearch, WebFetch",
     disallowedTools: "Bash, Write, Edit",
-    providerId: defaultProvider?.id ?? "",
-    modelId: defaultProvider?.defaultModel ?? "",
     mcpServers: "",
     mcpTools: "",
     skills: "",
@@ -71,12 +65,7 @@ export function createBlankAgentTemplateForm(
   };
 }
 
-export function agentTemplateToForm(
-  template: AgentTemplate,
-  providers: readonly ProviderConfigView[],
-): AgentTemplateFormState {
-  const providerId = template.defaultModelRef?.providerId ?? providers[0]?.id ?? "";
-  const provider = providers.find((entry) => entry.id === providerId);
+export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormState {
   return {
     id: template.id,
     name: template.name,
@@ -87,8 +76,6 @@ export function agentTemplateToForm(
     outputContract: template.outputContract ?? "",
     allowedTools: formatList(template.defaultTools.allowed),
     disallowedTools: formatList(template.defaultTools.disallowed),
-    providerId,
-    modelId: template.defaultModelRef?.modelId ?? provider?.defaultModel ?? "",
     mcpServers: formatList(template.mcpServers),
     mcpTools: formatList(template.defaultTools.mcp?.allowedTools ?? []),
     skills: formatList(template.skills),
@@ -100,9 +87,8 @@ export function agentTemplateToForm(
 export function createCopiedAgentTemplateForm(
   template: AgentTemplate,
   existingTemplates: readonly AgentTemplate[],
-  providers: readonly ProviderConfigView[],
 ): AgentTemplateFormState {
-  const form = agentTemplateToForm(template, providers);
+  const form = agentTemplateToForm(template);
   const baseId = `user.${template.domain}.${slugifyTemplateId(template.name) || "agent"}`;
   return {
     ...form,
@@ -130,8 +116,6 @@ export function buildAgentTemplateFromForm(
   const description = requireTemplateField(form.description, "描述");
   const whenToUse = requireTemplateField(form.whenToUse, "使用时机");
   const prompt = requireTemplateField(form.prompt, "提示词");
-  const providerId = requireTemplateField(form.providerId, "默认模型 Provider");
-  const modelId = requireTemplateField(form.modelId, "默认模型");
   const mcpServers = parseList(form.mcpServers);
   const defaultTools = buildToolPolicyFromForm(form);
   return {
@@ -143,7 +127,6 @@ export function buildAgentTemplateFromForm(
     whenToUse,
     ...(form.outputContract.trim() ? { outputContract: form.outputContract.trim() } : {}),
     defaultTools,
-    defaultModelRef: { providerId, modelId },
     mcpServers,
     skills: parseList(form.skills),
     allowDelegation: form.allowDelegation,

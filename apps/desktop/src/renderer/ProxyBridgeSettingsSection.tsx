@@ -7,11 +7,7 @@ interface ProxyBridgeSettingsSectionProps {
   onSave: (settings: ProxyBridgeSettingsSnapshot) => void;
 }
 
-export function ProxyBridgeSettingsSection({
-  settings,
-  disabled,
-  onSave,
-}: ProxyBridgeSettingsSectionProps) {
+export function ProxyBridgeSettingsSection({ settings, disabled, onSave }: ProxyBridgeSettingsSectionProps) {
   const [draft, setDraft] = useState(settings.upstreamUserAgent ?? "");
 
   useEffect(() => {
@@ -34,7 +30,7 @@ export function ProxyBridgeSettingsSection({
     <section className="mcp-list-section models-proxy-bridge-section">
       <header className="models-section-header">
         <div className="models-section-intro">
-          <h2 className="models-section-title">代理桥</h2>
+          <h2 className="models-section-title">代理桥 / User-Agent</h2>
           <p className="models-section-desc">
             控制本地模型代理转发到上游 API 时使用的 User-Agent。留空时默认透传 Claude SDK
             的请求头；填写后所有代理桥上游请求将固定使用该值。

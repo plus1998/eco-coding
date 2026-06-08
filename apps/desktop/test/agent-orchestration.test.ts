@@ -85,7 +85,7 @@ test("built-in preset catalog defines commercial scenario metadata", () => {
     }
     for (const evalCase of preset.evals) {
       expect(evalCase.successCriteria.length).toBeGreaterThanOrEqual(3);
-      expect(evalCase.requiredAgentKeys.length).toBeGreaterThan(0);
+      expect(evalCase.expectedAgentKeys.length).toBeGreaterThan(0);
     }
   }
 });

@@ -1,38 +1,22 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
+import type { SessionStore } from "../../persistence/src/session-store.js";
 import {
   type AgentEvent,
   type AgentEventType,
   type AgentRole,
+  createAgentEvent,
   type PlanReadyPayload,
   type RuntimeAgentRole,
-  createAgentEvent,
 } from "../../shared/src";
-import type {
-  AgentRuntimeDriver,
-  AgentRuntimeRunInput,
-  EcoPlanningContext,
-  EcoSdkResumeOptions,
-  EcoSdkSessionOptions,
-} from "./index";
-import type { SessionStore } from "../../persistence/src/session-store.js";
-import {
-  createFinalizePlanMcpServer,
-  FINALIZE_PLAN_ALLOWED_TOOL,
-  FINALIZE_PLAN_MCP_SERVER_NAME,
-  isFinalizePlanSubmissionComplete,
-} from "./finalize-plan";
-import { resolveSkillDisplayName } from "./skill-display";
 import { formatSubagentMissionMessage } from "./agent-mission";
-import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
-import { mergeStreamText } from "./stream-text";
 import {
-  applySubagentUsageAttribution,
-  createSdkStreamContext,
-  mapStreamEventToEvents,
-  type SdkStreamContext,
-  slimStreamEventMessage,
-} from "./sdk-stream-events.js";
-import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
+  buildMainAgentSystemPrompt,
+  buildToolPermissionPolicyFromProfile,
+  createAgentDefinitionsFromProfile,
+  type EcoWorkflowStep,
+  resolveMainAgentAllowedTools,
+  sdkAgentKeyForProfileAgent,
+} from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
   buildEcoSdkHooks,
@@ -40,68 +24,85 @@ import {
   type EcoToolPermissionDecisionAudit,
 } from "./eco-sdk-hooks.js";
 import {
-  buildMainAgentSystemPrompt,
-  buildToolPermissionPolicyFromProfile,
-  createAgentDefinitionsFromProfile,
-  resolveMainAgentAllowedTools,
-  sdkAgentKeyForProfileAgent,
-  type EcoWorkflowStep,
-} from "./agent-orchestration.js";
+  createFinalizePlanMcpServer,
+  FINALIZE_PLAN_ALLOWED_TOOL,
+  FINALIZE_PLAN_MCP_SERVER_NAME,
+  isFinalizePlanSubmissionComplete,
+} from "./finalize-plan";
+import type {
+  AgentRuntimeDriver,
+  AgentRuntimeRunInput,
+  EcoPlanningContext,
+  EcoSdkResumeOptions,
+  EcoSdkSessionOptions,
+} from "./index";
+import { buildBuiltinOtelEnv, type EcoBuiltinOtelOptions } from "./otel-env";
+import {
+  applySubagentUsageAttribution,
+  createSdkStreamContext,
+  mapStreamEventToEvents,
+  type SdkStreamContext,
+  slimStreamEventMessage,
+} from "./sdk-stream-events.js";
+import { resolveSkillDisplayName } from "./skill-display";
+import { mergeStreamText } from "./stream-text";
+import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
 import {
   buildFixedWorkflowStepPrompt,
+  type EcoWorkflowStepOutput,
   renderWorkflowStepPrompt,
   resolveFixedWorkflowBatches,
-  type EcoWorkflowStepOutput,
 } from "./workflow-orchestration.js";
 
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
-import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
-import type { ThinkingEffort } from "./thinking-options.js";
+
+import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
 import {
-  ecoBasePromptAppend,
-  exploreAgentDescription,
-  exploreAgentPrompt,
-  planningPhaseSystemAppend,
-  buildPlanningPhaseSystemAppend,
-  buildPlanningPhasePrompt,
-  buildPlanningContinuationPrompt,
   buildAnalyzePhasePrompt,
-  buildPlanPhasePrompt,
-  executePhaseSystemAppend,
   buildAutonomousPlanContinuationPrompt,
-  buildExecutePhaseSystemAppend,
   buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
+  buildExecutePhaseSystemAppend,
   buildExecuteResumePrompt,
   buildExecutionPromptWithFollowUp,
-  questionAnswerSystemAppend,
-  buildQuestionAnswerSystemAppend,
+  buildPlanningContinuationPrompt,
+  buildPlanningPhasePrompt,
+  buildPlanningPhaseSystemAppend,
+  buildPlanPhasePrompt,
   buildQuestionAnswerPrompt,
-  reviewerAgentPrompt,
-  executionArchitectPrompt,
+  buildQuestionAnswerSystemAppend,
+  ecoBasePromptAppend,
+  executePhaseSystemAppend,
   executionArchitectDescription,
-  executionCoderPrompt,
+  executionArchitectPrompt,
   executionCoderDescription,
-  executionTesterPrompt,
+  executionCoderPrompt,
   executionTesterDescription,
-  planningArchitectPrompt,
+  executionTesterPrompt,
+  exploreAgentDescription,
+  exploreAgentPrompt,
   planningArchitectDescription,
+  planningArchitectPrompt,
+  planningPhaseSystemAppend,
+  questionAnswerSystemAppend,
+  reviewerAgentPrompt,
 } from "./prompts/index.js";
 import {
   defaultSubagentAvailability,
+  type EcoOrchestrationMode,
   ecoSubagentKeyForRole,
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
-  sdkBuiltinSubagentDenyRules,
   SUBAGENT_ROLES,
-  type EcoOrchestrationMode,
   type SubagentAvailability,
   type SubagentRole,
+  sdkBuiltinSubagentDenyRules,
 } from "./subagent-availability.js";
-import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
+import type { ThinkingEffort } from "./thinking-options.js";
+import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinking-options.js";
 
-export { SUBAGENT_ROLES, type SubagentRole, type EcoOrchestrationMode, isSubagentRole };
+export { type EcoOrchestrationMode, isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
@@ -828,7 +829,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   private async *runFixedProfileWorkflow(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const profile = input.agentRegistry?.profile;
-    if (!profile || profile.strategy.kind !== "fixed") {
+    if (profile?.strategy.kind !== "fixed") {
       throw new Error("Fixed workflow requires an active fixed orchestration profile.");
     }
     if (!profile.mainAgent.tools.allowed.includes("Agent")) {
@@ -903,9 +904,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         });
       } catch (error) {
         lastError = error;
-        if (attempt < maxAttempts) {
-          continue;
-        }
       }
     }
 
@@ -1334,11 +1332,7 @@ export function createExecutionAgentDefinitions(
     },
   };
 
-  const filtered = filterAgentDefinitions(definitions, availability);
-  if (!filtered[coderKey]) {
-    return { ...filtered, [coderKey]: definitions[coderKey] };
-  }
-  return filtered;
+  return filterAgentDefinitions(definitions, availability);
 }
 
 const autonomousReviewerDescription = [
@@ -1587,20 +1581,20 @@ function drainToolPermissionDecisionEvents(
 }
 
 export {
-  planningPhaseSystemAppend,
-  buildPlanningPhaseSystemAppend,
-  executePhaseSystemAppend,
-  buildExecutePhaseSystemAppend,
-  buildExecuteBuildSwitchAppend,
-  questionAnswerSystemAppend,
-  buildQuestionAnswerSystemAppend,
-  buildPlanningPhasePrompt,
   buildAnalyzePhasePrompt,
-  buildPlanPhasePrompt,
+  buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
+  buildExecutePhaseSystemAppend,
   buildExecuteResumePrompt,
   buildExecutionPromptWithFollowUp,
+  buildPlanningPhasePrompt,
+  buildPlanningPhaseSystemAppend,
+  buildPlanPhasePrompt,
   buildQuestionAnswerPrompt,
+  buildQuestionAnswerSystemAppend,
+  executePhaseSystemAppend,
+  planningPhaseSystemAppend,
+  questionAnswerSystemAppend,
 };
 
 export function createPhaseBoundaryEvent(threadId: string, phase: EcoRunPhase, label: string): AgentEvent {
@@ -2628,19 +2622,6 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   return null;
-}
-
-function formatUsagePayload(payload: unknown): string | null {
-  if (!isRecord(payload)) {
-    return "Usage recorded.";
-  }
-  if (typeof payload.totalCostUsd === "number") {
-    return `Usage recorded (cost $${payload.totalCostUsd.toFixed(4)}).`;
-  }
-  if (typeof payload.total_cost_usd === "number") {
-    return `Usage recorded (cost $${payload.total_cost_usd.toFixed(4)}).`;
-  }
-  return "Usage recorded.";
 }
 
 function extractBetaMessageText(message: Record<string, unknown>): string | null {

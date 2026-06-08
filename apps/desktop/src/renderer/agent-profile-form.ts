@@ -1,3 +1,4 @@
+import type { AgentConfigSource } from "../shared/agent-orchestration";
 import type {
   AgentDomain,
   AgentTemplate,
@@ -8,7 +9,6 @@ import type {
   ToolPolicy,
   WorkflowStep,
 } from "../shared/ipc";
-import type { AgentConfigSource } from "../shared/agent-orchestration";
 import { parseList } from "./agent-template-form";
 
 export interface AgentProfileAgentFormState {
@@ -105,7 +105,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainProviderId: provider?.id ?? "",
     mainModelId: provider?.defaultModel ?? "",
     mainSystemPromptPreset: "custom",
-    mainPrompt: "Coordinate the task and call specialized agents only when they materially improve the result.",
+    mainPrompt:
+      "Coordinate the task and call specialized agents only when they materially improve the result.",
     mainAllowedTools: "Agent, Read, Glob, Grep, WebSearch, WebFetch, AskUserQuestion",
     mainDisallowedTools: "",
     mainMcpServers: "",
@@ -183,8 +184,8 @@ export function createProfileAgentFormFromTemplate(
     agentKey: createUniqueAgentKey(defaultAgentKeyFromTemplate(template), options.existingAgentKeys ?? []),
     templateId: template.id,
     displayName: template.name,
-    providerId: template.defaultModelRef?.providerId ?? options.provider?.id ?? "",
-    modelId: template.defaultModelRef?.modelId ?? options.provider?.defaultModel ?? "",
+    providerId: options.provider?.id ?? "",
+    modelId: options.provider?.defaultModel ?? "",
     enabled: true,
     promptOverride: "",
     allowedTools: formatList(template.defaultTools.allowed),
@@ -261,7 +262,11 @@ export function buildOrchestrationProfileFromForm(
   if (!name) {
     throw new Error("Agent Profile 名称不能为空。");
   }
-  const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, options.existing?.mainAgent.modelRef);
+  const mainModelRef = buildModelRef(
+    form.mainProviderId,
+    form.mainModelId,
+    options.existing?.mainAgent.modelRef,
+  );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
   const existingAgentByKey = new Map(options.existing?.agents.map((agent) => [agent.agentKey, agent]));
   const agentKeys = new Set<string>();
@@ -280,7 +285,7 @@ export function buildOrchestrationProfileFromForm(
       agentKey,
       templateId: template.id,
       ...(agentForm.displayName.trim() ? { displayName: agentForm.displayName.trim() } : {}),
-      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef ?? template.defaultModelRef),
+      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef),
       tools: buildToolPolicyFromFormFields(
         existingAgent?.tools ?? template.defaultTools,
         agentForm.allowedTools,
@@ -338,7 +343,9 @@ export function buildOrchestrationProfileFromForm(
     version: Math.max(1, options.existing?.version ?? 1),
     updatedAt: options.nowIso ?? new Date().toISOString(),
     source: form.source,
-    ...(options.existing?.sourceRouteProfileId && { sourceRouteProfileId: options.existing.sourceRouteProfileId }),
+    ...(options.existing?.sourceRouteProfileId && {
+      sourceRouteProfileId: options.existing.sourceRouteProfileId,
+    }),
   };
 }
 
@@ -476,7 +483,9 @@ function emptyToolPolicy(): ToolPolicy {
   return { allowed: [], disallowed: [] };
 }
 
-function mainToolPolicyFormFields(policy: ToolPolicy): Pick<
+function mainToolPolicyFormFields(
+  policy: ToolPolicy,
+): Pick<
   AgentProfileFormState,
   | "mainMcpServers"
   | "mainMcpTools"
@@ -513,9 +522,7 @@ function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] 
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead:
       policy.filesystem?.read ??
-      (hasAllowedTool(allowed, disallowed, ["Read", "Glob", "Grep", "Bash"])
-        ? "workspace"
-        : "none"),
+      (hasAllowedTool(allowed, disallowed, ["Read", "Glob", "Grep", "Bash"]) ? "workspace" : "none"),
     filesystemWrite:
       policy.filesystem?.write ??
       (hasAllowedTool(allowed, disallowed, ["Write", "Edit", "MultiEdit", "NotebookEdit"])

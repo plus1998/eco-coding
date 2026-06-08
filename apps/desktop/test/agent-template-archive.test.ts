@@ -15,7 +15,6 @@ function template(): AgentTemplate {
     prompt: "Research.",
     whenToUse: "Use for research.",
     defaultTools: { allowed: ["WebSearch"], disallowed: [] },
-    defaultModelRef: { providerId: "p1", modelId: "m1" },
     mcpServers: [],
     skills: [],
     allowDelegation: false,

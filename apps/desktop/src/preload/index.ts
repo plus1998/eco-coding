@@ -45,7 +45,6 @@ import {
   type SessionSyncTestConnectionRequest,
   type SessionSyncTestConnectionResult,
   type SkillsListResult,
-  type SubagentEnabledSettings,
   type TestProviderConnectionRequest,
   type TestProviderConnectionResult,
   type TestRoleRoutesRequest,
@@ -203,12 +202,6 @@ const api = {
   },
   linkAgentsSkills(request: LinkAgentsSkillsRequest): Promise<LinkAgentsSkillsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsLinkAgents, request);
-  },
-  getSubagentSettings(): Promise<SubagentEnabledSettings> {
-    return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsGet);
-  },
-  saveSubagentSettings(settings: SubagentEnabledSettings): Promise<SubagentEnabledSettings> {
-    return ipcRenderer.invoke(IPC_CHANNELS.subagentSettingsSave, settings);
   },
   getWorkflowSettings(): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsGet);

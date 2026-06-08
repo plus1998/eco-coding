@@ -1,65 +1,31 @@
 import { Copy, Download, History, Pencil, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
-import type {
-  AgentDomain,
-  AgentTemplate,
-  AgentTemplateVersionView,
-  ProviderConfigView,
-  SubagentEnabledSettings,
-  SubagentRole,
-} from "../shared/ipc";
-import { SUBAGENT_ROLES } from "../shared/ipc";
+import type { AgentDomain, AgentTemplate, AgentTemplateVersionView } from "../shared/ipc";
 import {
   AGENT_DOMAIN_OPTIONS,
   AGENT_SOURCE_OPTIONS,
   type AgentTemplateFormState,
   agentTemplateToForm,
-  buildAgentTemplatePermissionChips,
   buildAgentTemplateFromForm,
+  buildAgentTemplatePermissionChips,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
   formatAgentDomain,
   formatAgentSource,
 } from "./agent-template-form";
 
-const ROLE_LABELS: Record<SubagentRole, string> = {
-  explore: "探索",
-  architect: "架构",
-  coder: "编码",
-  reviewer: "审查",
-  tester: "测试",
-};
-
-const ROLE_HINTS: Record<SubagentRole, string> = {
-  explore: "只读探索上下文，适合作为编排前置调查代理",
-  architect: "拆分任务与结构设计，适合复杂变更前的方案代理",
-  coder: "执行实现任务，默认编程预设中的必需代理",
-  reviewer: "审查本次产物，适合风险较高的交付前检查",
-  tester: "运行验证任务，适合交付前确认结果",
-};
-
 const DOMAIN_ORDER: AgentDomain[] = ["coding", "research", "writing", "product", "data", "ops", "custom"];
 
 interface SubagentSettingsSectionProps {
-  settings: SubagentEnabledSettings;
   templates: AgentTemplate[];
-  providers: ProviderConfigView[];
-  saving?: boolean | undefined;
-  toggleDisabled?: boolean | undefined;
   registryDisabled?: boolean | undefined;
-  onChange: (settings: SubagentEnabledSettings) => void;
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
 
 export function SubagentSettingsSection({
-  settings,
   templates,
-  providers,
-  saving,
-  toggleDisabled,
   registryDisabled,
-  onChange,
   onRegistryChange,
   onSavingChange,
 }: SubagentSettingsSectionProps) {
@@ -95,25 +61,18 @@ export function SubagentSettingsSection({
     : undefined;
   const registryBusy = registryDisabled || registrySaving;
 
-  function toggle(role: SubagentRole, enabled: boolean) {
-    if (role === "coder") {
-      return;
-    }
-    onChange({ ...settings, [role]: enabled });
-  }
-
   function openCreateTemplate() {
     setRegistryMessage(undefined);
     setEditorError(undefined);
     setEditingTemplateId(undefined);
-    setEditorForm(createBlankAgentTemplateForm(providers, templates));
+    setEditorForm(createBlankAgentTemplateForm(templates));
   }
 
   function openCopyTemplate(template: AgentTemplate) {
     setRegistryMessage(undefined);
     setEditorError(undefined);
     setEditingTemplateId(undefined);
-    setEditorForm(createCopiedAgentTemplateForm(template, templates, providers));
+    setEditorForm(createCopiedAgentTemplateForm(template, templates));
   }
 
   function openEditTemplate(template: AgentTemplate) {
@@ -124,7 +83,7 @@ export function SubagentSettingsSection({
     }
     setEditorError(undefined);
     setEditingTemplateId(template.id);
-    setEditorForm(agentTemplateToForm(template, providers));
+    setEditorForm(agentTemplateToForm(template));
   }
 
   function closeEditor() {
@@ -169,7 +128,7 @@ export function SubagentSettingsSection({
       setRegistryMessage(`已删除 ${template.name}`);
     } catch (caught) {
       setEditorError(caught instanceof Error ? caught.message : String(caught));
-      setEditorForm(agentTemplateToForm(template, providers));
+      setEditorForm(agentTemplateToForm(template));
       setEditingTemplateId(template.id);
     } finally {
       setRegistrySaving(false);
@@ -273,7 +232,7 @@ export function SubagentSettingsSection({
           <button
             type="button"
             className="mcp-add-button"
-            disabled={registryBusy || providers.length === 0}
+            disabled={registryBusy}
             onClick={openCreateTemplate}
           >
             <Plus size={16} />
@@ -301,9 +260,7 @@ export function SubagentSettingsSection({
 
         {registryMessage ? <p className="models-agent-registry-message">{registryMessage}</p> : null}
 
-        {providers.length === 0 ? (
-          <p className="mcp-list-empty">尚未添加 Provider</p>
-        ) : sortedTemplates.length === 0 ? (
+        {sortedTemplates.length === 0 ? (
           <p className="mcp-list-empty">尚未添加子代理模板</p>
         ) : (
           <ul className="models-agent-template-list">
@@ -322,7 +279,7 @@ export function SubagentSettingsSection({
                     </div>
                     <p className="models-subagent-card-desc">{template.description}</p>
                     <div className="models-agent-template-meta">
-                      <span>{formatModelRef(template, providers)}</span>
+                      <span>{formatModelBinding(template)}</span>
                       <span>{formatTools(template)}</span>
                       {template.skills.length > 0 ? <span>{template.skills.length} skills</span> : null}
                       {template.mcpServers.length > 0 ? <span>{template.mcpServers.length} MCP</span> : null}
@@ -344,7 +301,7 @@ export function SubagentSettingsSection({
                       className="mcp-icon-button"
                       onClick={() => openCopyTemplate(template)}
                       aria-label={`复制 ${template.name}`}
-                      disabled={registryBusy || providers.length === 0}
+                      disabled={registryBusy}
                     >
                       <Copy size={18} />
                     </button>
@@ -371,7 +328,7 @@ export function SubagentSettingsSection({
                       className="mcp-icon-button"
                       onClick={() => openEditTemplate(template)}
                       aria-label={editable ? `编辑 ${template.name}` : `复制 ${template.name}`}
-                      disabled={registryBusy || providers.length === 0}
+                      disabled={registryBusy}
                     >
                       <Pencil size={18} />
                     </button>
@@ -394,51 +351,10 @@ export function SubagentSettingsSection({
         )}
       </section>
 
-      <section className="models-subagent-defaults">
-        <header className="models-subagent-defaults-head">
-          <h3 className="models-route-profile-section-title">默认 Coding 启用状态</h3>
-        </header>
-        <ul className="models-subagent-list">
-          {SUBAGENT_ROLES.map((role) => {
-            const enabled = settings[role];
-            const locked = role === "coder";
-            return (
-              <li key={role}>
-                <div
-                  className={enabled ? "models-subagent-card is-active" : "models-subagent-card is-inactive"}
-                >
-                  <div className="models-subagent-card-body">
-                    <div className="models-subagent-card-title-row">
-                      <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                      <span className="models-route-role-id">{role}</span>
-                      {locked ? <span className="models-subagent-required-badge">默认必需</span> : null}
-                    </div>
-                    <p className="models-subagent-card-desc">{ROLE_HINTS[role]}</p>
-                  </div>
-                  <label
-                    className="mcp-toggle mcp-toggle-lg"
-                    title={locked ? "默认编程执行子代理不可停用" : enabled ? "已启用" : "已停用"}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      disabled={toggleDisabled || saving || locked}
-                      onChange={(event) => toggle(role, event.target.checked)}
-                    />
-                    <span className="mcp-toggle-track" aria-hidden />
-                  </label>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
       {editorForm && (
         <AgentTemplateEditorModal
           form={editorForm}
           setForm={setEditorForm}
-          providers={providers}
           error={editorError}
           busy={registryBusy}
           editing={Boolean(editingTemplateId)}
@@ -464,7 +380,6 @@ export function SubagentSettingsSection({
 function AgentTemplateEditorModal({
   form,
   setForm,
-  providers,
   error,
   busy,
   editing,
@@ -473,7 +388,6 @@ function AgentTemplateEditorModal({
 }: {
   form: AgentTemplateFormState;
   setForm: Dispatch<SetStateAction<AgentTemplateFormState | undefined>>;
-  providers: ProviderConfigView[];
   error?: string | undefined;
   busy?: boolean | undefined;
   editing: boolean;
@@ -609,39 +523,6 @@ function AgentTemplateEditorModal({
               onChange={(event) => patchForm({ outputContract: event.target.value })}
             />
           </label>
-
-          <div className="models-agent-template-form-grid">
-            <label className="mcp-field">
-              <span className="mcp-field-label">默认 Provider</span>
-              <select
-                className="mcp-field-input"
-                value={form.providerId}
-                disabled={busy}
-                onChange={(event) => {
-                  const provider = providers.find((entry) => entry.id === event.target.value);
-                  patchForm({
-                    providerId: event.target.value,
-                    modelId: provider?.defaultModel ?? form.modelId,
-                  });
-                }}
-              >
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mcp-field">
-              <span className="mcp-field-label">默认模型</span>
-              <input
-                className="mcp-field-input"
-                value={form.modelId}
-                disabled={busy}
-                onChange={(event) => patchForm({ modelId: event.target.value })}
-              />
-            </label>
-          </div>
 
           <div className="models-agent-template-form-grid">
             <label className="mcp-field">
@@ -796,13 +677,11 @@ function AgentTemplateVersionModal({
   );
 }
 
-function formatModelRef(template: AgentTemplate, providers: readonly ProviderConfigView[]): string {
-  const modelRef = template.defaultModelRef;
-  if (!modelRef) {
-    return "未配置默认模型";
+function formatModelBinding(template: AgentTemplate): string {
+  if (template.modelRequirements?.capabilities.length) {
+    return `模型要求：${template.modelRequirements.capabilities.join("/")}`;
   }
-  const provider = providers.find((entry) => entry.id === modelRef.providerId);
-  return `${provider?.name ?? modelRef.providerId} · ${modelRef.modelId}`;
+  return "模型由 Profile 绑定";
 }
 
 function formatTools(template: AgentTemplate): string {

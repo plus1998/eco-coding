@@ -11,14 +11,13 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 
 function rowClassName(options: {
   subagent: boolean;
   enabled: boolean;
   clickable: boolean;
-  locked: boolean;
   planner: boolean;
 }): string {
   const parts = ["composer-agent-row"];
@@ -28,11 +27,8 @@ function rowClassName(options: {
   }
   if (options.subagent) {
     parts.push(options.enabled ? "is-active" : "is-disabled");
-    if (options.clickable && !options.locked) {
+    if (options.clickable) {
       parts.push("is-clickable");
-    }
-    if (options.locked) {
-      parts.push("is-locked");
     }
   }
   return parts.join(" ");
@@ -161,7 +157,7 @@ export function ComposerAgentModels({
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
-  }, [labels.length, open, updatePanelPosition]);
+  }, [open, updatePanelPosition]);
 
   useEffect(() => {
     return () => clearCloseTimer();
@@ -210,16 +206,15 @@ export function ComposerAgentModels({
           <span>{summary}</span>
         </div>
         <div className="composer-agents-list">
-          {labels.map(({ role, displayName, modelId, title, main, subagentRole, required }) => {
+          {labels.map(({ role, displayName, modelId, title, main, subagentRole }) => {
             const subagent = !main;
             const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
-            const locked = Boolean(required);
             const clickable = Boolean(
-              canEditSubagents && subagentRole && subagentSettings && onToggleSubagent && !locked,
+              canEditSubagents && subagentRole && subagentSettings && onToggleSubagent,
             );
             const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
-            const className = rowClassName({ subagent, enabled, clickable, locked, planner: main });
-            const status = main ? "主 Agent" : locked ? "必需" : enabled ? "启用" : "停用";
+            const className = rowClassName({ subagent, enabled, clickable, planner: main });
+            const status = main ? "主 Agent" : enabled ? "启用" : "停用";
             const action = clickable ? (enabled ? "点击停用" : "点击启用") : undefined;
             const content = (
               <AgentRowContent
@@ -231,13 +226,11 @@ export function ComposerAgentModels({
             );
             const tip = main
               ? title
-              : locked
-                ? "默认编程执行子代理不可停用"
-                : clickable
-                  ? enabled
-                    ? `${title} · 点击停用`
-                    : `${title} · 点击启用`
-                  : title;
+              : clickable
+                ? enabled
+                  ? `${title} · 点击停用`
+                  : `${title} · 点击启用`
+                : title;
 
             if (clickable && subagentRole) {
               return (

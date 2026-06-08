@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { computeRequestBilling, type ModelCostRates, type ParsedUsage } from "@eco/runtime";
+import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
+import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 import {
   createBuiltInPresetE2ETaskScenarios,
   createBuiltInPresetE2ETaskSuiteReport,
   runPresetE2ETaskScenario,
 } from "../src/shared/agent-preset-e2e";
-import { projectBillingFromUsageLedger } from "../src/main/billing-projector";
-import { buildSingleUsageLedgerEvent } from "../src/main/usage-ledger-adapters";
 
 const launchGateRates: ModelCostRates = {
   input: 0.8,
@@ -27,7 +27,7 @@ test("built-in preset E2E scenarios cover three tasks for every preset", () => {
     counts.set(scenario.presetId, (counts.get(scenario.presetId) ?? 0) + 1);
     expect(scenario.expectedOutcome.trim().length).toBeGreaterThan(10);
     expect(scenario.successCriteria).toHaveLength(3);
-    expect(scenario.requiredAgentKeys.length).toBeGreaterThan(0);
+    expect(scenario.expectedAgentKeys.length).toBeGreaterThan(0);
   }
   expect([...counts.values()]).toEqual([3, 3, 3, 3, 3, 3]);
 });
@@ -53,7 +53,7 @@ test("built-in preset E2E suite runs runtime, workflow, permission, and artifact
   }
 });
 
-test("preset E2E gate rejects a task whose required agent is disabled", () => {
+test("preset E2E gate rejects a task whose expected agent is disabled", () => {
   const scenario = createBuiltInPresetE2ETaskScenarios().find(
     (candidate) => candidate.id === "ops.ops-runbook",
   );
@@ -73,8 +73,10 @@ test("preset E2E gate rejects a task whose required agent is disabled", () => {
   const result = runPresetE2ETaskScenario(broken);
 
   expect(result.ok).toBe(false);
-  expect(result.errors).toContain("Required E2E agent is not enabled: runbook_executor");
-  expect(result.errors).toContain("Workflow step references disabled or missing agent: runbook -> runbook_executor");
+  expect(result.errors).toContain("Expected E2E agent is not enabled: runbook_executor");
+  expect(result.errors).toContain(
+    "Workflow step references disabled or missing agent: runbook -> runbook_executor",
+  );
 });
 
 test("preset E2E workflow outputs can be attributed by billing projector", () => {

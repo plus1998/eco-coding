@@ -1,27 +1,31 @@
 import { expect, test } from "bun:test";
 import type { ResolvedModelRoute } from "../../model-router/src";
+import { parseSubagentMissionMessage } from "../src/agent-mission";
+import type { EcoAgentRuntimeConfig, EcoToolPolicy } from "../src/agent-orchestration";
 import {
+  appendToPhaseTranscript,
+  applyEcoSdkSettings,
   applyResumeToQueryOptions,
   applySessionStoreToQueryOptions,
-  readSdkUserMessageCheckpointId,
-  appendToPhaseTranscript,
   buildExecutePhasePrompt,
+  buildExecutePhaseSystemAppend,
   buildExecuteResumePrompt,
   buildExecutionPromptWithFollowUp,
   buildPlanningPhasePrompt,
   buildQuestionAnswerPrompt,
+  buildSdkProcessEnv,
   ClaudeAgentSdkDriver,
   createAgentDefinitions,
+  createAutonomousAgentDefinitions,
   createCanUseTool,
   createExecutionAgentDefinitions,
-  createPlanningAgentDefinitions,
-  createQuestionAgentDefinitions,
-  deleteClaudeAgentSdkSession,
-  buildExecutePhaseSystemAppend,
   createPhaseBoundaryEvent,
+  createPlanningAgentDefinitions,
   createPlanReadyEvent,
+  createQuestionAgentDefinitions,
   createSessionCapturedEvent,
   createToolPermissionDeniedEvent,
+  deleteClaudeAgentSdkSession,
   executePhaseSystemAppend,
   extractSdkRunFailure,
   formatAgentEventDisplay,
@@ -29,22 +33,18 @@ import {
   formatSdkPayloadMessage,
   getDefaultAllowedTools,
   inferActivityRole,
-  isSdkInitMessage,
   isCompactBoundarySdkMessage,
+  isSdkInitMessage,
   mapSdkMessageToEvents,
-  applyEcoSdkSettings,
-  buildSdkProcessEnv,
-  createAutonomousAgentDefinitions,
   mergeAllowedTools,
   planningPhaseSystemAppend,
   questionAnswerSystemAppend,
   readSdkSessionId,
+  readSdkUserMessageCheckpointId,
   resolveAgentSkills,
   resolveSdkSessionOptions,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
-import { parseSubagentMissionMessage } from "../src/agent-mission";
-import type { EcoAgentRuntimeConfig, EcoToolPolicy } from "../src/agent-orchestration";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 const routes: ResolvedModelRoute[] = [
@@ -403,9 +403,7 @@ test("creates native SDK subagent definitions", () => {
   expect(resolveAgentSkills("researcher", { eco_researcher: ["workspace-research"] })).toEqual([
     "workspace-research",
   ]);
-  expect(resolveAgentSkills("eco_researcher", { researcher: ["raw-research"] })).toEqual([
-    "raw-research",
-  ]);
+  expect(resolveAgentSkills("eco_researcher", { researcher: ["raw-research"] })).toEqual(["raw-research"]);
 });
 
 test("execution architect prompt requires Coder Tasks section", () => {
@@ -502,16 +500,16 @@ test("execution subagents include network tools except coder", () => {
   expect(coderTools).not.toContain("WebFetch");
 });
 
-test("createExecutionAgentDefinitions omits disabled roles but keeps coder", () => {
+test("createExecutionAgentDefinitions omits every disabled role", () => {
   const availability = {
     explore: true,
     architect: true,
-    coder: true,
+    coder: false,
     reviewer: false,
     tester: false,
   };
   const definitions = createExecutionAgentDefinitions(routes, undefined, availability);
-  expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
+  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("coder"));
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
 });
@@ -529,6 +527,22 @@ test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", ()
   expect(append).toContain("Reviewer subagent is disabled");
   expect(append).toContain("Tester subagent is disabled");
   expect(append).toContain("Coders (parallel)");
+});
+
+test("buildExecutePhaseSystemAppend executes directly when coder is disabled", () => {
+  const append = buildExecutePhaseSystemAppend({
+    explore: true,
+    architect: false,
+    coder: false,
+    reviewer: false,
+    tester: false,
+  });
+  expect(append).toContain("## Implementation Tasks");
+  expect(append).toContain("Direct implementation");
+  expect(append).toContain(`Do NOT call Agent(${ecoSubagentKeyForRole("coder")})`);
+  expect(append).not.toContain('Parse "## Coder Tasks"');
+  expect(append).not.toContain(`Each item becomes one Agent(${ecoSubagentKeyForRole("coder")}) delegation`);
+  expect(append).not.toContain("Coders (parallel)");
 });
 
 test("inferActivityRole maps Agent(Explore) to explore", () => {
@@ -1616,12 +1630,9 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
   expect(capturedOptions[0]?.allowedTools).toContain("mcp__eco_plan__finalize_plan");
   expect(capturedOptions[0]?.mcpServers).toBeDefined();
-  expect(
-    Object.prototype.hasOwnProperty.call(
-      (capturedOptions[0]?.mcpServers ?? {}) as Record<string, unknown>,
-      "eco_plan",
-    ),
-  ).toBe(true);
+  expect(Object.hasOwn((capturedOptions[0]?.mcpServers ?? {}) as Record<string, unknown>, "eco_plan")).toBe(
+    true,
+  );
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 

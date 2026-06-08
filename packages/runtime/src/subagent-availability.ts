@@ -78,7 +78,6 @@ export function normalizeSubagentAvailability(
       availability[role] = input[role];
     }
   }
-  availability.coder = true;
   return availability;
 }
 

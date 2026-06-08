@@ -1,3 +1,4 @@
+import { defaultSubagentAvailability, formatPlanExecutionSummary, mergeStreamText } from "@eco/runtime";
 import {
   Activity,
   AlertCircle,
@@ -7,10 +8,10 @@ import {
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
+  Plug,
   RefreshCw,
   RotateCcw,
   Settings2,
-  Plug,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -27,89 +28,44 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
+import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
+  type AgentRole,
   buildThreadRuntimeConfigFromDefaults,
+  type ClarificationRequest,
+  type CoderTodoItem,
   getDefaultAgentProfileId,
   getRoutesForProfile,
-  resolveThreadAgentProfile,
-  runtimeRoleRoutesFromAgentProfile,
-  type AgentRole,
-  type OrchestrationProfile,
-  type ThreadRuntimeConfig,
+  type LinkAgentsSkillsResult,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
-  type RouteCapabilityHint,
-  type LinkAgentsSkillsResult,
-  type SkillsListResult,
-  type SubagentEnabledSettings,
-  type SubagentRole,
+  type OrchestrationProfile,
   type ProxyBridgeSettingsSnapshot,
-  type WorkflowSettingsSnapshot,
-  type ClarificationRequest,
-  type CoderTodoItem,
+  type RouteCapabilityHint,
+  resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
+  type SkillsListResult,
+  type SubagentRole,
   type ThreadActivityLine,
-  type ThreadLiveEvent,
-  type ThreadRunProjectionSnapshot,
-  type ThreadSubagentSessionTiming,
-  type ThreadSubagentMetricsSummary,
-  type ThreadPendingPlan,
-  type ThreadStatus,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
+  type ThreadLiveEvent,
+  type ThreadPendingPlan,
+  type ThreadRunProjectionSnapshot,
+  type ThreadRuntimeConfig,
+  type ThreadStatus,
+  type ThreadSubagentMetricsSummary,
+  type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
-import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
-import {
-  extractPlanFailureMessage,
-  resolveRetryBannerDetail,
-  resolveRetryBannerHint,
-  retryBannerNoDetailHint,
-  resolveThreadMessageFromLiveEvent,
-  shouldUpdateThreadSummaryFromLiveEvent,
-} from "../shared/thread-failure-message";
-import {
-  COMPOSER_MAX_IMAGES,
-  type ComposerImageAttachment,
-  readImageFileAsAttachment,
-  toPromptImageAttachments,
-} from "./composer-attachments";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
-import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
-import { enrichBillingDisplaySource } from "../shared/billing-display-source";
-import {
-  isReconnectActivityMessage,
-  shouldClearReconnectActivity,
-} from "../shared/activity-display";
-import {
-  isActivityStatusNoise,
-  shouldScrollMainActivityFeedForLine,
-  stripActivityStatusNoise,
-} from "./activity-log";
-import { formatPlanExecutionSummary, mergeStreamText } from "@eco/runtime";
-import { ActivityLogView } from "./ActivityLogView";
-import { McpSettingsPanel } from "./McpSettingsPanel";
-import { ComposerAgentModels } from "./ComposerAgentModels";
-import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
-import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
-import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
-import { ComposerSkillsBar } from "./ComposerSkillsBar";
-import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
-import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
-import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
-import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
-import { buildComposerSavedProfile } from "./composer-profile-save";
-import {
-  applySlashSkillSelection,
-  buildSkillMap,
-  filterSkillsForSlash,
-  parseSlashQuery,
-} from "./composer-skills";
 import {
   dedupeSkillsByName,
   listSdkReadyProjectSkills,
@@ -117,21 +73,61 @@ import {
   promptIncludesSkillName,
   type SkillInfo,
 } from "../shared/skills";
-import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
-import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { isContinuableThreadStatus, isUsageNoiseMessage } from "../shared/thread-continuation";
+import {
+  extractPlanFailureMessage,
+  resolveRetryBannerDetail,
+  resolveRetryBannerHint,
+  resolveThreadMessageFromLiveEvent,
+  retryBannerNoDetailHint,
+  shouldUpdateThreadSummaryFromLiveEvent,
+} from "../shared/thread-failure-message";
+import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
+import { ActivityLogView } from "./ActivityLogView";
+import {
+  isActivityStatusNoise,
+  shouldScrollMainActivityFeedForLine,
+  stripActivityStatusNoise,
+} from "./activity-log";
+import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
+import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { ClarificationPanel } from "./ClarificationPanel";
+import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
+import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
+import { ComposerSkillsBar } from "./ComposerSkillsBar";
+import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
+import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
+import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
+import {
+  COMPOSER_MAX_IMAGES,
+  type ComposerImageAttachment,
+  readImageFileAsAttachment,
+  toPromptImageAttachments,
+} from "./composer-attachments";
+import { buildComposerSavedProfile } from "./composer-profile-save";
+import {
+  applySlashSkillSelection,
+  buildSkillMap,
+  filterSkillsForSlash,
+  parseSlashQuery,
+} from "./composer-skills";
+import { McpSettingsPanel } from "./McpSettingsPanel";
+import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
-import { ThreadInfoPanel } from "./ThreadInfoPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import {
   buildInitialProjectOrder,
+  type ProjectReorderPosition,
   prependProjectOrder,
   reorderProjectPaths,
   sortProjectsByOrder,
-  type ProjectReorderPosition,
 } from "./project-sidebar-order";
-import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
+import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
+import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
+import { ThreadInfoPanel } from "./ThreadInfoPanel";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = {
@@ -166,7 +162,8 @@ interface RecentProject {
 }
 
 const settingsSections = [
-  { id: "models", label: "模型与路由", icon: SlidersHorizontal },
+  { id: "providers", label: "Provider", icon: Settings2 },
+  { id: "models", label: "Agent Builder", icon: SlidersHorizontal },
   { id: "mcp", label: "MCP", icon: Plug },
   { id: "skills", label: "Skills", icon: Sparkles },
   { id: "sessionSync", label: "会话同步", icon: Database },
@@ -208,14 +205,12 @@ function App() {
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
-  const [subagentSettings, setSubagentSettings] = useState<SubagentEnabledSettings | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot | null>(null);
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
-  const [isSavingSubagentSettings, setIsSavingSubagentSettings] = useState(false);
   const [isSavingWorkflowSettings, setIsSavingWorkflowSettings] = useState(false);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
-  const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("providers");
+  const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
   const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
   const [composerCursor, setComposerCursor] = useState(0);
@@ -269,10 +264,9 @@ function App() {
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
-      window.eco.getSubagentSettings(),
       window.eco.getWorkflowSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, subagents, workflow, proxyBridge]) => {
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, workflow, proxyBridge]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -282,7 +276,6 @@ function App() {
       setSettings(modelSettings);
       setMcpSettings(mcp);
       setSessionSyncSettings(sessionSync);
-      setSubagentSettings(subagents);
       setWorkflowSettings(workflow);
       setProxyBridgeSettings(proxyBridge);
     });
@@ -547,9 +540,7 @@ function App() {
     const saved = window.localStorage.getItem(recentProjectsStorageKey);
     if (!saved) return;
     try {
-      const parsed = JSON.parse(saved) as Array<
-        RecentProject & { lastUsedAt?: string; importedAt?: string }
-      >;
+      const parsed = JSON.parse(saved) as Array<RecentProject & { lastUsedAt?: string; importedAt?: string }>;
       if (Array.isArray(parsed)) {
         setRecentProjects(
           parsed.map((project) => ({
@@ -766,10 +757,7 @@ function App() {
   }, [activeThread?.id]);
 
   const userSkills = useMemo(
-    () =>
-      dedupeSkillsByName(
-        (skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady),
-      ),
+    () => dedupeSkillsByName((skillsSnapshot?.userSkills ?? []).filter((skill) => skill.sdkReady)),
     [skillsSnapshot?.userSkills],
   );
   const projectSdkReadySkills = useMemo(
@@ -781,21 +769,14 @@ function App() {
     [userSkills, projectSdkReadySkills],
   );
   const projectAgentsOnly = useMemo(
-    () =>
-      (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
+    () => (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project"),
     [skillsSnapshot?.agentsOnlySkills],
   );
   const showProjectSkillsPanel =
     Boolean(currentProjectPath) &&
     (isLoadingSkills || projectSdkReadySkills.length > 0 || projectAgentsOnly.length > 0);
-  const composerSkillSlash = useMemo(
-    () => parseSlashQuery(prompt, composerCursor),
-    [prompt, composerCursor],
-  );
-  const referencedSkillNames = useMemo(
-    () => new Set(parseExplicitSkillNames(prompt)),
-    [prompt],
-  );
+  const composerSkillSlash = useMemo(() => parseSlashQuery(prompt, composerCursor), [prompt, composerCursor]);
+  const referencedSkillNames = useMemo(() => new Set(parseExplicitSkillNames(prompt)), [prompt]);
   const composerSkillMatches = useMemo(() => {
     if (!composerSkillSlash) {
       return [];
@@ -809,7 +790,7 @@ function App() {
   }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
   const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
-    if (!subagentSettings || !workflowSettings || settings.orchestrationProfiles.length === 0) {
+    if (!workflowSettings || settings.orchestrationProfiles.length === 0) {
       return undefined;
     }
     try {
@@ -820,7 +801,6 @@ function App() {
       const routeProfileId = composerRuntimeConfig?.routeProfileId;
       return buildThreadRuntimeConfigFromDefaults({
         settings,
-        subagentDefaults: subagentSettings,
         workflowDefaults: workflowSettings,
         ...(agentProfileId && { agentProfileId }),
         ...(routeProfileId && { routeProfileId }),
@@ -830,7 +810,6 @@ function App() {
     }
   }, [
     settings,
-    subagentSettings,
     workflowSettings,
     composerRuntimeConfig?.agentProfileId,
     composerRuntimeConfig?.routeProfileId,
@@ -851,17 +830,13 @@ function App() {
     buildComposerDefaultConfig,
     settings.orchestrationProfiles,
     settings.routeProfiles,
-    subagentSettings,
     workflowSettings,
   ]);
 
   const selectedRuntimeProfileId =
     composerRuntimeConfig?.agentProfileId ?? composerRuntimeConfig?.routeProfileId;
   const selectedRuntimeProfile = useMemo(
-    () =>
-      composerRuntimeConfig
-        ? resolveThreadAgentProfile(settings, composerRuntimeConfig)
-        : undefined,
+    () => (composerRuntimeConfig ? resolveThreadAgentProfile(settings, composerRuntimeConfig) : undefined),
     [settings, composerRuntimeConfig],
   );
   const activeRoutes = useMemo(() => {
@@ -907,7 +882,8 @@ function App() {
       !pendingClarification &&
       threadAcceptsInput,
   );
-  const showPlanApproval = activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
+  const showPlanApproval =
+    activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
@@ -916,10 +892,7 @@ function App() {
     : undefined;
   const retryBannerHint = retryBannerDetail ? resolveRetryBannerHint(retryBannerDetail) : undefined;
   const alternateRouteProfiles = useMemo(
-    () =>
-      settings.routeProfiles.filter(
-        (profile) => profile.id !== composerRuntimeConfig?.routeProfileId,
-      ),
+    () => settings.routeProfiles.filter((profile) => profile.id !== composerRuntimeConfig?.routeProfileId),
     [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
   );
   const [retryRouteProfileId, setRetryRouteProfileId] = useState<string>("");
@@ -964,9 +937,7 @@ function App() {
       return undefined;
     }
     const rawBilling = billingByThread[activeThread.id];
-    const billing = rawBilling
-      ? enrichBillingDisplaySource(rawBilling, activeThread.status)
-      : undefined;
+    const billing = rawBilling ? enrichBillingDisplaySource(rawBilling, activeThread.status) : undefined;
     return buildThreadUsageSummary({
       ...(billing && { billing }),
       ...(contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] }),
@@ -974,8 +945,7 @@ function App() {
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const selectedRouteProfile = useMemo(
-    () =>
-      settings.routeProfiles.find((profile) => profile.id === composerRuntimeConfig?.routeProfileId),
+    () => settings.routeProfiles.find((profile) => profile.id === composerRuntimeConfig?.routeProfileId),
     [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
   );
   const selectedAgentProfileSummary = useMemo(
@@ -989,9 +959,7 @@ function App() {
   );
   const canEditComposerConfig =
     !activeThread ||
-    (threadAcceptsInput &&
-      activeThread.status !== "running" &&
-      activeThread.status !== "queued");
+    (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
   const canSwitchRouteProfile = canEditComposerConfig;
   const agentModelLabels = useMemo(
     () =>
@@ -1061,8 +1029,7 @@ function App() {
     if (!container) {
       return;
     }
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (!force && distanceFromBottom > 120) {
       return;
     }
@@ -1260,8 +1227,7 @@ function App() {
     setIsStarting(true);
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
-    const messagePrompt =
-      prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+    const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
     if (!composerRuntimeConfig) {
       setError("请先配置子代理编排方案。");
       setIsStarting(false);
@@ -1286,7 +1252,10 @@ function App() {
           runtimeConfig: composerRuntimeConfig,
           ...(attachments && { attachments }),
         });
-        setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
+        setThreads((current) => [
+          result.thread,
+          ...current.filter((thread) => thread.id !== result.thread.id),
+        ]);
         setSelectedThreadId(result.thread.id);
         setPendingPlan(undefined);
         setTodosByThread((current) => ({
@@ -1482,8 +1451,7 @@ function App() {
   }
 
   async function linkUserAgentsSkills() {
-    const userAgents =
-      skillsSnapshot?.agentsOnlySkills.filter((skill) => skill.source === "user") ?? [];
+    const userAgents = skillsSnapshot?.agentsOnlySkills.filter((skill) => skill.source === "user") ?? [];
     const baseDir = userAgents[0]?.baseDir;
     if (!window.eco || !baseDir) {
       return;
@@ -1504,9 +1472,14 @@ function App() {
     }
   }
 
-  function openModelsSettings(tab: ModelsSettingsTab = "providers") {
+  function openModelsSettings(tab: ModelsSettingsTab = "subagents") {
     setModelsSettingsTab(tab);
     setSettingsSection("models");
+    setSettingsOpen(true);
+  }
+
+  function openProviderSettings() {
+    setSettingsSection("providers");
     setSettingsOpen(true);
   }
 
@@ -1541,7 +1514,7 @@ function App() {
       profile?.sourceRouteProfileId ??
       (settings.routeProfiles.some((routeProfile) => routeProfile.id === profileId)
         ? profileId
-        : profile?.id ?? profileId);
+        : (profile?.id ?? profileId));
     const next: ThreadRuntimeConfig = {
       ...composerRuntimeConfig,
       routeProfileId,
@@ -1591,7 +1564,7 @@ function App() {
   }
 
   async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
-    if (!composerRuntimeConfig || role === "coder") {
+    if (!composerRuntimeConfig) {
       return;
     }
     const next: ThreadRuntimeConfig = {
@@ -1634,20 +1607,6 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsSavingProxyBridgeSettings(false);
-    }
-  }
-
-  async function saveSubagentSettings(next: SubagentEnabledSettings) {
-    if (!window.eco) return;
-    setIsSavingSubagentSettings(true);
-    setError(undefined);
-    try {
-      const saved = await window.eco.saveSubagentSettings(next);
-      setSubagentSettings(saved);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingSubagentSettings(false);
     }
   }
 
@@ -1996,9 +1955,7 @@ function App() {
       if (event.key === "ArrowDown") {
         event.preventDefault();
         setComposerSkillActiveIndex((current) =>
-          composerSkillMatches.length === 0
-            ? 0
-            : (current + 1) % composerSkillMatches.length,
+          composerSkillMatches.length === 0 ? 0 : (current + 1) % composerSkillMatches.length,
         );
         return;
       }
@@ -2044,9 +2001,7 @@ function App() {
 
   const composer = (
     <div className="codex-composer-wrap">
-      {composerImageNotice && (
-        <p className="composer-image-notice">{composerImageNotice}</p>
-      )}
+      {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
       {composerAttachments.length > 0 && (
         <ul className="composer-attachments" aria-label="已粘贴的图片">
           {composerAttachments.map((attachment) => (
@@ -2146,7 +2101,7 @@ function App() {
               ) : null}
               <ComposerAgentModels
                 labels={agentModelLabels}
-                subagentSettings={composerRuntimeConfig?.subagentEnabled ?? subagentSettings}
+                subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
                 canEditSubagents={
                   canEditComposerConfig && composerRuntimeConfig?.orchestrationMode === "manual"
                 }
@@ -2186,8 +2141,8 @@ function App() {
         {!routesReady && (
           <p className="composer-hint">
             请先在
-            <button type="button" className="link-button" onClick={() => openModelsSettings("providers")}>
-              设置
+            <button type="button" className="link-button" onClick={openProviderSettings}>
+              Provider
             </button>
             中配置模型（API Key 可选）
           </p>
@@ -2235,11 +2190,7 @@ function App() {
           />
         </div>
 
-        <button
-          type="button"
-          className="sidebar-settings"
-          onClick={() => openModelsSettings("providers")}
-        >
+        <button type="button" className="sidebar-settings" onClick={openProviderSettings}>
           <Settings2 size={18} />
           设置
         </button>
@@ -2313,17 +2264,13 @@ function App() {
                   activeThread?.status === "blocked") ? (
                   <div className="thread-retry-banner" role="alert">
                     <div className="thread-retry-banner-body">
-                      <strong>
-                        {activeThread?.status === "blocked" ? "会话受阻" : "此次请求失败"}
-                      </strong>
+                      <strong>{activeThread?.status === "blocked" ? "会话受阻" : "此次请求失败"}</strong>
                       {retryBannerDetail ? (
                         <p>{retryBannerDetail}</p>
                       ) : (
                         <p className="thread-retry-banner-hint">{retryBannerNoDetailHint}</p>
                       )}
-                      {retryBannerHint ? (
-                        <p className="thread-retry-banner-hint">{retryBannerHint}</p>
-                      ) : null}
+                      {retryBannerHint ? <p className="thread-retry-banner-hint">{retryBannerHint}</p> : null}
                     </div>
                     <div className="thread-retry-banner-actions">
                       {alternateRouteProfiles.length > 0 ? (
@@ -2389,9 +2336,11 @@ function App() {
                   <PlanApprovalPanel
                     plan={pendingPlan}
                     busy={planActionBusy}
-                    {...(subagentSettings && {
-                      executionSummary: formatPlanExecutionSummary(subagentSettings),
-                    })}
+                    executionSummary={formatPlanExecutionSummary(
+                      activeThread?.runtimeConfig?.subagentEnabled ??
+                        composerRuntimeConfig?.subagentEnabled ??
+                        defaultSubagentAvailability(),
+                    )}
                     {...(planFailureMessage && { failureMessage: planFailureMessage })}
                     onApprove={approvePendingPlan}
                     onDismiss={dismissPendingPlan}
@@ -2414,7 +2363,9 @@ function App() {
           {...(projectWorkspace && { workspace: projectWorkspace })}
           {...(currentProjectPath && { workspacePath: currentProjectPath })}
           {...(projectWorkspace?.branch && { gitBranch: projectWorkspace.branch })}
-          {...(projectWorkspace?.dirtyFileCount !== undefined && { dirtyFileCount: projectWorkspace.dirtyFileCount })}
+          {...(projectWorkspace?.dirtyFileCount !== undefined && {
+            dirtyFileCount: projectWorkspace.dirtyFileCount,
+          })}
           {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
@@ -2447,7 +2398,9 @@ function App() {
                 <button
                   key={section.id}
                   type="button"
-                  className={settingsSection === section.id ? "settings-nav-item active" : "settings-nav-item"}
+                  className={
+                    settingsSection === section.id ? "settings-nav-item active" : "settings-nav-item"
+                  }
                   onClick={() => setSettingsSection(section.id)}
                 >
                   <Icon size={16} />
@@ -2487,21 +2440,38 @@ function App() {
               />
             )}
 
-            {settingsSection === "models" &&
-              (subagentSettings && workflowSettings && proxyBridgeSettings ? (
+            {settingsSection === "providers" &&
+              (workflowSettings && proxyBridgeSettings ? (
                 <ModelsSettingsPanel
                   settings={settings}
-                  subagentSettings={subagentSettings}
                   workflowSettings={workflowSettings}
                   proxyBridgeSettings={proxyBridgeSettings}
-                  subagentSettingsSaving={isSavingSubagentSettings}
                   workflowSettingsSaving={isSavingWorkflowSettings}
                   proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
-                  initialTab={modelsSettingsTab}
+                  mode="providerSettings"
                   busy={isSavingSettings}
                   onSettingsChange={setSettings}
                   onSavingChange={setIsSavingSettings}
-                  onSubagentSettingsChange={(next) => void saveSubagentSettings(next)}
+                  onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
+                  onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                />
+              ) : (
+                <p className="settings-empty-hint">正在加载 Provider 配置…</p>
+              ))}
+
+            {settingsSection === "models" &&
+              (workflowSettings && proxyBridgeSettings ? (
+                <ModelsSettingsPanel
+                  settings={settings}
+                  workflowSettings={workflowSettings}
+                  proxyBridgeSettings={proxyBridgeSettings}
+                  workflowSettingsSaving={isSavingWorkflowSettings}
+                  proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
+                  initialTab={modelsSettingsTab}
+                  mode="agentBuilder"
+                  busy={isSavingSettings}
+                  onSettingsChange={setSettings}
+                  onSavingChange={setIsSavingSettings}
                   onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
                   onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                 />

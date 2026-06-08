@@ -110,6 +110,15 @@ test("normalizers reject built-in and derived configs for user storage", () => {
   ).toThrow("内置或派生编排配置不可写入用户配置");
 });
 
+test("normalizer strips legacy template model binding", () => {
+  const normalized = normalizeStoredAgentTemplate({
+    ...customTemplate(),
+    defaultModelRef: { providerId: "p1", modelId: "m1" },
+  } as unknown as AgentTemplate);
+
+  expect("defaultModelRef" in normalized).toBe(false);
+});
+
 test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates and profiles", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-agent-orchestration-store-"));
   const store = await createAgentOrchestrationStore(path.join(dir, "eco-coding.sqlite"));
@@ -119,12 +128,8 @@ test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates
   store.saveOrchestrationProfile(customProfile());
   store.saveOrchestrationProfile({ ...customProfile(), name: "Research Updated", version: 2 });
 
-  expect(store.listAgentTemplates()).toMatchObject([
-    { id: "user.researcher", source: "user", version: 2 },
-  ]);
-  expect(store.listAgentTemplateVersions("user.researcher").map((entry) => entry.version)).toEqual([
-    2, 1,
-  ]);
+  expect(store.listAgentTemplates()).toMatchObject([{ id: "user.researcher", source: "user", version: 2 }]);
+  expect(store.listAgentTemplateVersions("user.researcher").map((entry) => entry.version)).toEqual([2, 1]);
   const restored = store.restoreAgentTemplateVersion("user.researcher", 1);
   expect(restored).toMatchObject({ id: "user.researcher", prompt: "Research the topic and cite sources." });
   expect(restored.version).toBe(3);
