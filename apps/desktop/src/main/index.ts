@@ -84,6 +84,11 @@ import {
   type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadFollowUpCancelRequest,
+  type ThreadFollowUpEnqueueRequest,
+  type ThreadFollowUpEscalateRequest,
+  type ThreadFollowUpMutationResult,
+  type ThreadPendingFollowUp,
   type ThreadLiveEvent,
   type ThreadModelUsageEntry,
   type ThreadPendingPlan,
@@ -1843,6 +1848,71 @@ function registerIpcHandlers(): void {
     } satisfies ThreadContinueResult;
   });
 
+  ipcMain.handle(IPC_CHANNELS.threadFollowUpEnqueue, async (_event, payload: unknown) => {
+    const request = parseThreadFollowUpEnqueueRequest(payload);
+    const thread = conversationStore.getThread(request.threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
+      throw new Error("Thread is not accepting queued follow-up messages.");
+    }
+    const followUp = conversationStore.enqueueThreadFollowUp({
+      threadId: thread.id,
+      prompt: request.prompt,
+      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+      ...(request.priority ? { priority: request.priority } : {}),
+      deliveryMode: request.priority === "escalated" ? "interrupt_resume" : "queued",
+    });
+    emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+    return buildThreadFollowUpMutationResult(followUp);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadFollowUpEscalate, async (_event, payload: unknown) => {
+    const request = parseThreadFollowUpEscalateRequest(payload);
+    const thread = conversationStore.getThread(request.threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
+      throw new Error("Thread is not accepting queued follow-up messages.");
+    }
+    const base =
+      request.followUpId
+        ? conversationStore.escalateThreadFollowUp(thread.id, request.followUpId)
+        : conversationStore.enqueueThreadFollowUp({
+            threadId: thread.id,
+            prompt: request.prompt ?? "",
+            ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+            priority: "escalated",
+            deliveryMode: "interrupt_resume",
+          });
+    if (!base) {
+      throw new Error("Pending follow-up was not found or cannot be escalated.");
+    }
+    const followUp = request.followUpId ? base : conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base;
+    emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "已请求立即处理后续消息。");
+    return buildThreadFollowUpMutationResult(followUp);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadFollowUpList, async (_event, threadId: unknown) => {
+    const id = typeof threadId === "string" ? threadId.trim() : "";
+    if (!id) {
+      return { followUps: [] };
+    }
+    return { followUps: conversationStore.listThreadFollowUps(id) };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadFollowUpCancel, async (_event, payload: unknown) => {
+    const request = parseThreadFollowUpCancelRequest(payload);
+    const followUp = conversationStore.cancelThreadFollowUp(request.threadId, request.followUpId);
+    if (!followUp) {
+      throw new Error("Pending follow-up was not found or cannot be cancelled.");
+    }
+    emitThreadFollowUpEvent(followUp, "thread.follow_up.cancelled", "已取消排队的后续消息。");
+    return buildThreadFollowUpMutationResult(followUp);
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, payload: unknown) => {
     const request = parseThreadRetryRequest(payload);
     return retryThread(request);
@@ -2853,6 +2923,120 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
     }
   }
   throw new Error("Thread id is required.");
+}
+
+function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqueueRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up payload.");
+  }
+  const threadId = readRequiredString(payload.threadId, "Thread id is required.");
+  const attachments = parsePromptImageAttachments(payload.attachments);
+  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  if (!prompt && attachments.length === 0) {
+    throw new Error("Follow-up message is required.");
+  }
+  const priority = payload.priority === "escalated" ? "escalated" : "normal";
+  return {
+    threadId,
+    prompt,
+    ...(attachments.length > 0 ? { attachments } : {}),
+    priority,
+  };
+}
+
+function parseThreadFollowUpEscalateRequest(payload: unknown): ThreadFollowUpEscalateRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up escalation payload.");
+  }
+  const threadId = readRequiredString(payload.threadId, "Thread id is required.");
+  const followUpId = readOptionalString(payload.followUpId);
+  const attachments = parsePromptImageAttachments(payload.attachments);
+  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  if (!followUpId && !prompt && attachments.length === 0) {
+    throw new Error("Follow-up id or message is required.");
+  }
+  return {
+    threadId,
+    ...(followUpId ? { followUpId } : {}),
+    ...(prompt ? { prompt } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
+function parseThreadFollowUpCancelRequest(payload: unknown): ThreadFollowUpCancelRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up cancel payload.");
+  }
+  return {
+    threadId: readRequiredString(payload.threadId, "Thread id is required."),
+    followUpId: readRequiredString(payload.followUpId, "Follow-up id is required."),
+  };
+}
+
+function readRequiredString(value: unknown, message: string): string {
+  const text = readOptionalString(value);
+  if (!text) {
+    throw new Error(message);
+  }
+  return text;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parsePromptImageAttachments(value: unknown): PromptImageAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const attachments: PromptImageAttachment[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      throw new Error("Invalid image attachment.");
+    }
+    if (!isPromptImageMediaType(entry.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    const data = readRequiredString(entry.data, "Image attachment data is required.");
+    attachments.push({ mediaType: entry.mediaType, data });
+  }
+  return attachments;
+}
+
+function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {
+  return (
+    value === "image/jpeg" ||
+    value === "image/png" ||
+    value === "image/gif" ||
+    value === "image/webp"
+  );
+}
+
+function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): boolean {
+  if (status === "running" || status === "queued" || status === "awaiting_plan") {
+    return true;
+  }
+  return Boolean(getPendingClarificationForThread(threadId) || getPendingBashApprovalForThread(threadId));
+}
+
+function buildThreadFollowUpMutationResult(
+  followUp: ThreadPendingFollowUp,
+): ThreadFollowUpMutationResult {
+  return {
+    followUp,
+    followUps: conversationStore.listThreadFollowUps(followUp.threadId),
+  };
+}
+
+function emitThreadFollowUpEvent(followUp: ThreadPendingFollowUp, type: string, message: string): void {
+  emitThreadEvent(followUp.threadId, type, message, "user", false, { followUp });
+}
+
+function formatFollowUpQueuedMessage(followUp: ThreadPendingFollowUp): string {
+  if (followUp.priority === "escalated") {
+    return "已记录后续消息，并标记为需要立即处理。";
+  }
+  return "已记录后续消息，将在当前步骤结束后处理。";
 }
 
 function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RuntimeRoleRouteConfig[]): void {
@@ -4698,6 +4882,7 @@ interface EmitThreadEventExtras {
   plan?: ThreadLiveEvent["plan"];
   clarification?: ThreadLiveEvent["clarification"];
   bashApproval?: ThreadLiveEvent["bashApproval"];
+  followUp?: ThreadLiveEvent["followUp"];
   todoList?: ThreadLiveEvent["todoList"];
   title?: ThreadLiveEvent["title"];
   usage?: ThreadUsageSnapshot;
@@ -4733,6 +4918,7 @@ function emitThreadEvent(
     !extras?.plan &&
     !extras?.clarification &&
     !extras?.bashApproval &&
+    !extras?.followUp &&
     !extras?.subagentSessions?.length &&
     !isThreadStatusEvent &&
     !isUsageEvent &&
@@ -4749,7 +4935,8 @@ function emitThreadEvent(
       type === "thread.auto_retry" ||
       type === "thread.retry" ||
       type === "thread.user_prompt" ||
-      type === "thread.api_error") &&
+      type === "thread.api_error" ||
+      type.startsWith("thread.follow_up.")) &&
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&
@@ -4800,6 +4987,9 @@ function emitThreadEvent(
   }
   if (extras?.bashApproval) {
     payload.bashApproval = extras.bashApproval;
+  }
+  if (extras?.followUp) {
+    payload.followUp = extras.followUp;
   }
   if (extras?.todoList) {
     payload.todoList = extras.todoList;

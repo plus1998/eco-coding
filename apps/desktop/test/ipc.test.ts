@@ -32,6 +32,10 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.agentAuditExport).toBe("agent-audit:export");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
   expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
+  expect(IPC_CHANNELS.threadFollowUpEnqueue).toBe("thread:follow-up-enqueue");
+  expect(IPC_CHANNELS.threadFollowUpEscalate).toBe("thread:follow-up-escalate");
+  expect(IPC_CHANNELS.threadFollowUpList).toBe("thread:follow-up-list");
+  expect(IPC_CHANNELS.threadFollowUpCancel).toBe("thread:follow-up-cancel");
   expect(IPC_CHANNELS.threadRetry).toBe("thread:retry");
   expect(IPC_CHANNELS.threadTodoList).toBe("thread:todo-list");
   expect(IPC_CHANNELS.clarificationGetPending).toBe("clarification:get-pending");
@@ -63,7 +67,7 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("workspace:open")).toBe(true);
   expect(isKnownIpcChannel("model-settings:get")).toBe(true);
   expect(isKnownIpcChannel("thread:start")).toBe(true);
-  expect(isKnownIpcChannel("thread:follow-up-enqueue")).toBe(false);
-  expect(isKnownIpcChannel("thread:follow-up-escalate")).toBe(false);
+  expect(isKnownIpcChannel("thread:follow-up-enqueue")).toBe(true);
+  expect(isKnownIpcChannel("thread:follow-up-escalate")).toBe(true);
   expect(isKnownIpcChannel("unknown")).toBe(false);
 });

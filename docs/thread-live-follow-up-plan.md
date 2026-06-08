@@ -346,13 +346,13 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 完成记录：
 
 - `isContinuableThreadStatus` 测试明确覆盖 `queued / running / awaiting_plan` 不可继续，`idle / completed / failed / blocked` 可继续。
-- IPC 测试明确记录当前没有 `thread:follow-up-enqueue` / `thread:follow-up-escalate` channel；后续 Phase 1 引入时必须更新这条基线。
+- Phase 0 提交时 IPC 测试记录过尚无 live follow-up channel；Phase 1 引入 channel 后已更新该基线。
 - Clarification bridge 测试覆盖 pending clarification 的 submit/cancel 生命周期。
 - Bash approval bridge 测试覆盖 pending approval 的 resolve/cancel 生命周期，作为后续 live follow-up 等待态分流的基线。
 
 ## 阶段 1：Pending Follow-up Store 与 IPC
 
-状态：Not Started
+状态：Completed
 
 目标：先让用户运行中留言不丢，但不改变当前 run。
 
@@ -369,6 +369,14 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - app 重启后 pending follow-up 仍可读取。
 - 取消 pending follow-up 后不会被 drain。
 - 多条 pending 按优先级和时间稳定排序。
+
+完成记录：
+
+- 新增 `ThreadPendingFollowUp` 及 enqueue/escalate/list/cancel IPC 类型和 channel。
+- `conversation-store` 新增 `thread_pending_followups` 表、thread-owned 清理、enqueue/list/get/status/cancel/escalate/事务式 claim API。
+- 主进程 IPC 只负责持久化和 live event，不启动 continuation，不自动 drain。
+- preload 暴露 follow-up enqueue/escalate/list/cancel 方法，renderer 后续阶段可直接接入。
+- store 单测覆盖排序、附件持久化、提升 supersede、取消、claim、deleteThread 清理。
 
 ## 阶段 2：Renderer 运行中发送 UX
 

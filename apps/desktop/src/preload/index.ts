@@ -57,6 +57,11 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadDeleteResult,
+  type ThreadFollowUpCancelRequest,
+  type ThreadFollowUpEnqueueRequest,
+  type ThreadFollowUpEscalateRequest,
+  type ThreadFollowUpListResult,
+  type ThreadFollowUpMutationResult,
   type ThreadPendingPlan,
   type ThreadRetryRequest,
   type ThreadRetryResult,
@@ -232,6 +237,18 @@ const api = {
   },
   continueThread(request: ThreadContinueRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadContinue, request);
+  },
+  enqueueThreadFollowUp(request: ThreadFollowUpEnqueueRequest): Promise<ThreadFollowUpMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpEnqueue, request);
+  },
+  escalateThreadFollowUp(request: ThreadFollowUpEscalateRequest): Promise<ThreadFollowUpMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpEscalate, request);
+  },
+  listThreadFollowUps(threadId: string): Promise<ThreadFollowUpListResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpList, threadId);
+  },
+  cancelThreadFollowUp(request: ThreadFollowUpCancelRequest): Promise<ThreadFollowUpMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpCancel, request);
   },
   retryThread(request: ThreadRetryRequest | string): Promise<ThreadRetryResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, request);

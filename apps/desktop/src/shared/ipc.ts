@@ -47,6 +47,10 @@ export const IPC_CHANNELS = {
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
   threadContinue: "thread:continue",
+  threadFollowUpEnqueue: "thread:follow-up-enqueue",
+  threadFollowUpEscalate: "thread:follow-up-escalate",
+  threadFollowUpList: "thread:follow-up-list",
+  threadFollowUpCancel: "thread:follow-up-cancel",
   threadRetry: "thread:retry",
   threadGetPendingPlan: "thread:get-pending-plan",
   threadGetUsageSnapshot: "thread:get-usage-snapshot",
@@ -440,6 +444,66 @@ export interface ThreadContinueRequest {
 
 export interface ThreadContinueResult {
   thread: ThreadSummary;
+}
+
+export type ThreadFollowUpStatus =
+  | "queued"
+  | "delivered"
+  | "applied"
+  | "superseded"
+  | "cancelled"
+  | "failed";
+
+export type ThreadFollowUpPriority = "normal" | "escalated";
+
+export type ThreadFollowUpDeliveryMode =
+  | "queued"
+  | "resume"
+  | "interrupt_resume"
+  | "streaming_push";
+
+export interface ThreadPendingFollowUp {
+  id: string;
+  threadId: string;
+  prompt: string;
+  attachments?: PromptImageAttachment[];
+  priority: ThreadFollowUpPriority;
+  status: ThreadFollowUpStatus;
+  deliveryMode: ThreadFollowUpDeliveryMode;
+  createdAt: string;
+  updatedAt: string;
+  deliveredAt?: string;
+  appliedAt?: string;
+  sourceRunAttemptId?: string;
+  targetRunAttemptId?: string;
+  error?: string;
+}
+
+export interface ThreadFollowUpEnqueueRequest {
+  threadId: string;
+  prompt: string;
+  attachments?: PromptImageAttachment[];
+  priority?: ThreadFollowUpPriority;
+}
+
+export interface ThreadFollowUpEscalateRequest {
+  threadId: string;
+  followUpId?: string;
+  prompt?: string;
+  attachments?: PromptImageAttachment[];
+}
+
+export interface ThreadFollowUpCancelRequest {
+  threadId: string;
+  followUpId: string;
+}
+
+export interface ThreadFollowUpListResult {
+  followUps: ThreadPendingFollowUp[];
+}
+
+export interface ThreadFollowUpMutationResult extends ThreadFollowUpListResult {
+  followUp: ThreadPendingFollowUp;
 }
 
 export interface ThreadRetryRequest {
@@ -947,6 +1011,7 @@ export interface ThreadLiveEvent {
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;
   bashApproval?: BashApprovalRequest;
+  followUp?: ThreadPendingFollowUp;
   todoList?: CoderTodoItem[];
   usage?: ThreadUsageSnapshot;
   modelId?: string;

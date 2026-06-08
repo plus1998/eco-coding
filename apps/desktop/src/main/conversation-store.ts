@@ -16,7 +16,12 @@ import type {
   ThreadActivityLine,
   ThreadApiErrorInfo,
   ThreadContextSnapshot,
+  ThreadFollowUpDeliveryMode,
+  ThreadFollowUpPriority,
+  ThreadFollowUpStatus,
+  ThreadPendingFollowUp,
   ThreadPendingPlan,
+  PromptImageAttachment,
   ThreadRunEvent,
   ThreadRunEventInput,
   ThreadRunToolMetadata,
@@ -208,8 +213,26 @@ interface ThreadRunEventRow {
   observed_at: string;
 }
 
+interface ThreadPendingFollowUpRow {
+  id: string;
+  thread_id: string;
+  prompt: string;
+  attachments_json: string | null;
+  priority: string;
+  status: string;
+  delivery_mode: string;
+  source_run_attempt_id: string | null;
+  target_run_attempt_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  delivered_at: string | null;
+  applied_at: string | null;
+}
+
 const threadOwnedTables = [
   "thread_activity",
+  "thread_pending_followups",
   "thread_pending_plans",
   "thread_coder_todos",
   "thread_applied_diffs",
@@ -276,6 +299,27 @@ export class ConversationStore {
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS thread_pending_followups (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        attachments_json TEXT,
+        priority TEXT NOT NULL,
+        status TEXT NOT NULL,
+        delivery_mode TEXT NOT NULL,
+        source_run_attempt_id TEXT,
+        target_run_attempt_id TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        delivered_at TEXT,
+        applied_at TEXT,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_pending_followups_thread_status
+        ON thread_pending_followups(thread_id, status, priority, created_at);
 
       CREATE TABLE IF NOT EXISTS thread_coder_todos (
         id TEXT PRIMARY KEY,
@@ -661,6 +705,29 @@ export class ConversationStore {
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
     `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_pending_followups (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        attachments_json TEXT,
+        priority TEXT NOT NULL,
+        status TEXT NOT NULL,
+        delivery_mode TEXT NOT NULL,
+        source_run_attempt_id TEXT,
+        target_run_attempt_id TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        delivered_at TEXT,
+        applied_at TEXT,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_thread_pending_followups_thread_status
+        ON thread_pending_followups(thread_id, status, priority, created_at);
+    `);
   }
 
   saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
@@ -877,6 +944,212 @@ export class ConversationStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  enqueueThreadFollowUp(input: {
+    threadId: string;
+    prompt: string;
+    attachments?: readonly PromptImageAttachment[];
+    priority?: ThreadFollowUpPriority;
+    deliveryMode?: ThreadFollowUpDeliveryMode;
+    sourceRunAttemptId?: string;
+  }): ThreadPendingFollowUp {
+    const now = new Date().toISOString();
+    const record: ThreadPendingFollowUp = {
+      id: `tfu_${crypto.randomUUID()}`,
+      threadId: input.threadId,
+      prompt: input.prompt,
+      priority: input.priority ?? "normal",
+      status: "queued",
+      deliveryMode: input.deliveryMode ?? "queued",
+      createdAt: now,
+      updatedAt: now,
+      ...(input.attachments && input.attachments.length > 0 ? { attachments: [...input.attachments] } : {}),
+      ...(input.sourceRunAttemptId?.trim() ? { sourceRunAttemptId: input.sourceRunAttemptId.trim() } : {}),
+    };
+    this.db
+      .prepare(
+        `INSERT INTO thread_pending_followups (
+           id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+           source_run_attempt_id, target_run_attempt_id, error,
+           created_at, updated_at, delivered_at, applied_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL)`,
+      )
+      .run(
+        record.id,
+        record.threadId,
+        record.prompt,
+        record.attachments ? JSON.stringify(record.attachments) : null,
+        record.priority,
+        record.status,
+        record.deliveryMode,
+        record.sourceRunAttemptId ?? null,
+        record.createdAt,
+        record.updatedAt,
+      );
+    this.db
+      .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
+      .run(now, input.threadId);
+    return record;
+  }
+
+  getThreadFollowUp(threadId: string, followUpId: string): ThreadPendingFollowUp | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+                source_run_attempt_id, target_run_attempt_id, error,
+                created_at, updated_at, delivered_at, applied_at
+         FROM thread_pending_followups
+         WHERE thread_id = ? AND id = ?`,
+      )
+      .get(threadId, followUpId) as ThreadPendingFollowUpRow | undefined;
+    return row ? rowToThreadPendingFollowUp(row) : undefined;
+  }
+
+  listThreadFollowUps(
+    threadId: string,
+    options?: { statuses?: readonly ThreadFollowUpStatus[] },
+  ): ThreadPendingFollowUp[] {
+    const statuses = options?.statuses?.filter(isThreadFollowUpStatus) ?? [];
+    const base = `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
+                         source_run_attempt_id, target_run_attempt_id, error,
+                         created_at, updated_at, delivered_at, applied_at
+                  FROM thread_pending_followups
+                  WHERE thread_id = ?`;
+    const where = statuses.length > 0 ? ` AND status IN (${statuses.map(() => "?").join(", ")})` : "";
+    const rows = this.db
+      .prepare(
+        `${base}${where}
+         ORDER BY CASE priority WHEN 'escalated' THEN 0 ELSE 1 END,
+                  created_at ASC,
+                  id ASC`,
+      )
+      .all(threadId, ...statuses) as unknown as ThreadPendingFollowUpRow[];
+    return rows.map(rowToThreadPendingFollowUp);
+  }
+
+  updateThreadFollowUpStatus(
+    threadId: string,
+    followUpId: string,
+    input: {
+      status: ThreadFollowUpStatus;
+      deliveryMode?: ThreadFollowUpDeliveryMode;
+      targetRunAttemptId?: string;
+      error?: string;
+    },
+  ): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing) {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    const deliveredAt = input.status === "delivered" ? now : existing.deliveredAt;
+    const appliedAt = input.status === "applied" ? now : existing.appliedAt;
+    this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET status = ?,
+             delivery_mode = COALESCE(?, delivery_mode),
+             target_run_attempt_id = COALESCE(?, target_run_attempt_id),
+             error = ?,
+             updated_at = ?,
+             delivered_at = ?,
+             applied_at = ?
+         WHERE thread_id = ? AND id = ?`,
+      )
+      .run(
+        input.status,
+        input.deliveryMode ?? null,
+        input.targetRunAttemptId ?? null,
+        input.error ?? null,
+        now,
+        deliveredAt ?? null,
+        appliedAt ?? null,
+        threadId,
+        followUpId,
+      );
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  cancelThreadFollowUp(threadId: string, followUpId: string): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing || existing.status !== "queued") {
+      return undefined;
+    }
+    return this.updateThreadFollowUpStatus(threadId, followUpId, { status: "cancelled" });
+  }
+
+  escalateThreadFollowUp(threadId: string, followUpId: string): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing || existing.status !== "queued") {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `UPDATE thread_pending_followups
+           SET status = 'superseded', updated_at = ?
+           WHERE thread_id = ?
+             AND id <> ?
+             AND status = 'queued'
+             AND priority = 'escalated'`,
+        )
+        .run(now, threadId, followUpId);
+      this.db
+        .prepare(
+          `UPDATE thread_pending_followups
+           SET priority = 'escalated',
+               delivery_mode = 'interrupt_resume',
+               updated_at = ?
+           WHERE thread_id = ? AND id = ?`,
+        )
+        .run(now, threadId, followUpId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  claimQueuedThreadFollowUps(
+    threadId: string,
+    input?: {
+      limit?: number;
+      deliveryMode?: ThreadFollowUpDeliveryMode;
+      targetRunAttemptId?: string;
+    },
+  ): ThreadPendingFollowUp[] {
+    const limit = Math.max(1, Math.min(input?.limit ?? 20, 50));
+    const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] }).slice(0, limit);
+    if (queued.length === 0) {
+      return [];
+    }
+    const now = new Date().toISOString();
+    const ids = queued.map((followUp) => followUp.id);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `UPDATE thread_pending_followups
+           SET status = 'delivered',
+               delivery_mode = ?,
+               target_run_attempt_id = COALESCE(?, target_run_attempt_id),
+               delivered_at = ?,
+               updated_at = ?
+           WHERE thread_id = ?
+             AND status = 'queued'
+             AND id IN (${ids.map(() => "?").join(", ")})`,
+        )
+        .run(input?.deliveryMode ?? "resume", input?.targetRunAttemptId ?? null, now, now, threadId, ...ids);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.listThreadFollowUps(threadId).filter((followUp) => ids.includes(followUp.id));
   }
 
   updateThreadPrompt(threadId: string, prompt: string): void {
@@ -1126,6 +1399,11 @@ export class ConversationStore {
         cutoffCreatedAt,
       );
       deleteChanges(`DELETE FROM thread_pending_plans WHERE thread_id = ?`, threadId);
+      deleteChanges(
+        `DELETE FROM thread_pending_followups WHERE thread_id = ? AND created_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
       deleteChanges(`DELETE FROM thread_coder_todos WHERE thread_id = ?`, threadId);
       deleteChanges(`DELETE FROM thread_metrics_snapshots WHERE thread_id = ?`, threadId);
       deleteChanges(
@@ -2512,6 +2790,85 @@ function parseEcoCostBreakdownJson(raw: string | null): TokenCostBreakdown {
   } catch {
     return empty;
   }
+}
+
+function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendingFollowUp {
+  const attachments = parsePromptImageAttachmentsJson(row.attachments_json);
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    prompt: row.prompt,
+    priority: isThreadFollowUpPriority(row.priority) ? row.priority : "normal",
+    status: isThreadFollowUpStatus(row.status) ? row.status : "failed",
+    deliveryMode: isThreadFollowUpDeliveryMode(row.delivery_mode) ? row.delivery_mode : "queued",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(row.delivered_at ? { deliveredAt: row.delivered_at } : {}),
+    ...(row.applied_at ? { appliedAt: row.applied_at } : {}),
+    ...(row.source_run_attempt_id ? { sourceRunAttemptId: row.source_run_attempt_id } : {}),
+    ...(row.target_run_attempt_id ? { targetRunAttemptId: row.target_run_attempt_id } : {}),
+    ...(row.error ? { error: row.error } : {}),
+  };
+}
+
+function parsePromptImageAttachmentsJson(raw: string | null): PromptImageAttachment[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(isPromptImageAttachment);
+  } catch {
+    return [];
+  }
+}
+
+function isPromptImageAttachment(value: unknown): value is PromptImageAttachment {
+  if (!isJsonRecord(value)) {
+    return false;
+  }
+  return (
+    isPromptImageMediaType(value.mediaType) &&
+    typeof value.data === "string" &&
+    value.data.trim().length > 0
+  );
+}
+
+function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {
+  return (
+    value === "image/jpeg" ||
+    value === "image/png" ||
+    value === "image/gif" ||
+    value === "image/webp"
+  );
+}
+
+function isThreadFollowUpStatus(value: unknown): value is ThreadFollowUpStatus {
+  return (
+    value === "queued" ||
+    value === "delivered" ||
+    value === "applied" ||
+    value === "superseded" ||
+    value === "cancelled" ||
+    value === "failed"
+  );
+}
+
+function isThreadFollowUpPriority(value: unknown): value is ThreadFollowUpPriority {
+  return value === "normal" || value === "escalated";
+}
+
+function isThreadFollowUpDeliveryMode(value: unknown): value is ThreadFollowUpDeliveryMode {
+  return (
+    value === "queued" ||
+    value === "resume" ||
+    value === "interrupt_resume" ||
+    value === "streaming_push"
+  );
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {
