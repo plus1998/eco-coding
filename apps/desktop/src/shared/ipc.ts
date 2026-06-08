@@ -54,6 +54,8 @@ export const IPC_CHANNELS = {
   clarificationGetPending: "clarification:get-pending",
   clarificationSubmit: "clarification:submit",
   clarificationDismiss: "clarification:dismiss",
+  bashApprovalGetPending: "bash-approval:get-pending",
+  bashApprovalResolve: "bash-approval:resolve",
   threadEventsSubscribe: "thread-events:subscribe",
   approvalResolve: "approval:resolve",
   modelProfilesList: "model-profiles:list",
@@ -558,6 +560,25 @@ export interface ClarificationSubmitPayload {
   selections: string[][];
 }
 
+export interface BashApprovalRequest {
+  toolUseId: string;
+  threadId: string;
+  command: string;
+  cwd: string;
+  reason: string;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  agentId?: string;
+  agentType?: string;
+  description?: string;
+}
+
+export type BashApprovalDecision = "approved" | "denied";
+
+export interface BashApprovalResolvePayload {
+  toolUseId: string;
+  decision: BashApprovalDecision;
+}
+
 export type ContextSegmentKey =
   | "systemPrompt"
   | "toolDefinitions"
@@ -922,6 +943,7 @@ export interface ThreadLiveEvent {
   activityLine?: ThreadActivityLine;
   plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
   clarification?: ClarificationRequest;
+  bashApproval?: BashApprovalRequest;
   todoList?: CoderTodoItem[];
   usage?: ThreadUsageSnapshot;
   modelId?: string;

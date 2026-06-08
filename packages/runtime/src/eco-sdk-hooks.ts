@@ -28,14 +28,15 @@ export {
   normalizeSdkSubagentType,
   readAgentSubagentType,
 } from "./subagent-resume.js";
-import type { AgentRole, RuntimeAgentRole } from "../../shared/src";
+
+import type { RuntimeAgentRole } from "../../shared/src";
+import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
   normalizeSubagentAvailability,
   type SubagentAvailability,
 } from "./subagent-availability";
-import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
@@ -87,6 +88,7 @@ export interface EcoHookContext {
   subagentAvailability?: SubagentAvailability;
   allowedAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
+  forceBashApproval?: boolean;
   workspacePath?: string;
   onToolPermissionDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
 }
@@ -259,6 +261,7 @@ export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
   options: {
     workspacePath?: string;
+    forceBashApproval?: boolean;
     onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
   } = {},
 ): HookCallback | undefined {
@@ -337,7 +340,7 @@ function resolveToolPermissionEntry(
 function evaluateStructuredToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string },
+  options: { workspacePath?: string; forceBashApproval?: boolean },
 ): HookJSONOutput | undefined {
   if (input.tool_name === "Bash") {
     return evaluateBashToolPolicy(input, entry, options);
@@ -352,7 +355,7 @@ function evaluateStructuredToolPolicy(
 function evaluateBashToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string },
+  options: { workspacePath?: string; forceBashApproval?: boolean },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
   if (!bash?.enabled) {
@@ -369,6 +372,9 @@ function evaluateBashToolPolicy(
     ) {
       return denyTool("Bash", "Bash command is outside this Eco agent command allowlist.");
     }
+  }
+  if (options.forceBashApproval) {
+    return askTool("Bash", "Bash requires user confirmation before execution.");
   }
   if (bash.approval === "always") {
     return askTool("Bash", "Bash requires approval for this Eco agent.");
@@ -925,6 +931,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     "PreToolUse",
     createToolPermissionPreToolHook(ctx.toolPermissions, {
       ...(ctx.workspacePath && { workspacePath: ctx.workspacePath }),
+      ...(ctx.forceBashApproval && { forceBashApproval: true }),
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );

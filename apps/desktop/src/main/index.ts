@@ -24,10 +24,18 @@ import {
   type ParsedUsage,
   type PlanReadyPayload,
   type SessionCapturedPayload,
+  type SdkToolPermissionDecision,
+  type SdkToolPermissionRequest,
   type SubagentRunPhase,
 } from "@eco/runtime";
 import { ClaudeAgentSdkDriver, deleteClaudeAgentSdkSession, type EcoHookContext } from "@eco/runtime/sdk";
-import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
+import {
+  type CommandRunner,
+  createSessionPlan,
+  evaluateShellCommandText,
+  GitWorktreeService,
+  type WorktreePlan,
+} from "@eco/workspace";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -37,6 +45,8 @@ import {
   type AgentTemplate,
   type AgentTemplateExportRequest,
   type AgentTemplateVersionRestoreRequest,
+  type BashApprovalRequest,
+  type BashApprovalResolvePayload,
   buildThreadRuntimeConfigFromDefaults,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -129,6 +139,13 @@ import { buildAgentAuditExportArchive } from "./agent-audit-export";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
+import {
+  cancelBashApprovalsForThread,
+  getPendingBashApprovalByToolUseId,
+  getPendingBashApprovalForThread,
+  registerPendingBashApproval,
+  resolvePendingBashApproval,
+} from "./bash-approval-bridge";
 import {
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
@@ -1597,6 +1614,27 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
+  ipcMain.handle(IPC_CHANNELS.bashApprovalGetPending, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return undefined;
+    }
+    return getPendingBashApprovalForThread(threadId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.bashApprovalResolve, async (_event, payload: unknown) => {
+    if (!isBashApprovalResolvePayload(payload)) {
+      throw new Error("Invalid Bash approval payload.");
+    }
+    if (!getPendingBashApprovalByToolUseId(payload.toolUseId)) {
+      throw new Error("No pending Bash approval for this tool use.");
+    }
+    const ok = resolvePendingBashApproval(payload.toolUseId, payload.decision);
+    if (!ok) {
+      throw new Error("Failed to resolve Bash approval.");
+    }
+    return { ok: true as const };
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadGetUsageSnapshot, async (_event, threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return {} satisfies ThreadUsageSnapshotResult;
@@ -1786,6 +1824,7 @@ function registerIpcHandlers(): void {
     if (activeRunRuntimeState.abortRun(threadId, "cancelled by user")) {
       updateThread(threadId, { status: "running", message: "正在停止…" });
       cancelClarificationsForThread(threadId, "cancelled by user");
+      cancelBashApprovalsForThread(threadId, "cancelled by user");
       return;
     }
     const thread = conversationStore.getThread(threadId);
@@ -2029,6 +2068,7 @@ function runThreadRequestWithAutoRetry(
 async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput): Promise<void> {
   await finalizeThreadRunCleanup(input, {
     cancelClarifications: cancelClarificationsForThread,
+    cancelBashApprovals: cancelBashApprovalsForThread,
     resetSdkStream: (threadId) => sdkStreamBridge.resetThread(threadId),
     flushUsageUpdates: (threadId) => usageLedgerCoordinator.flushUsageUpdates(threadId),
     finishActiveRun,
@@ -3389,6 +3429,7 @@ function createSdkDriver(
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
     },
+    toolPermissionHandler: createThreadToolPermissionHandler(threadId),
     onContextProbe: onContextProbe
       ? (phase, detail) => {
           onContextProbe(phase, detail);
@@ -4528,6 +4569,7 @@ function emitSubagentTimingUpdated(threadId: string): void {
 interface EmitThreadEventExtras {
   plan?: ThreadLiveEvent["plan"];
   clarification?: ThreadLiveEvent["clarification"];
+  bashApproval?: ThreadLiveEvent["bashApproval"];
   todoList?: ThreadLiveEvent["todoList"];
   title?: ThreadLiveEvent["title"];
   usage?: ThreadUsageSnapshot;
@@ -4562,6 +4604,7 @@ function emitThreadEvent(
     !allowEmptyStream &&
     !extras?.plan &&
     !extras?.clarification &&
+    !extras?.bashApproval &&
     !extras?.subagentSessions?.length &&
     !isThreadStatusEvent &&
     !isUsageEvent &&
@@ -4626,6 +4669,9 @@ function emitThreadEvent(
   }
   if (extras?.clarification) {
     payload.clarification = extras.clarification;
+  }
+  if (extras?.bashApproval) {
+    payload.bashApproval = extras.bashApproval;
   }
   if (extras?.todoList) {
     payload.todoList = extras.todoList;
@@ -4938,6 +4984,99 @@ function createThreadHookContext(threadId: string): EcoHookContext {
   };
 }
 
+function createThreadToolPermissionHandler(
+  threadId: string,
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  return async (request) => {
+    if (request.toolName !== "Bash") {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+
+    const command = readBashCommandInput(request.input);
+    if (!command) {
+      return {
+        behavior: "deny",
+        message: "Bash command is missing; Eco could not present it for approval.",
+        interrupt: false,
+      };
+    }
+
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return {
+        behavior: "deny",
+        message: "Thread was not found; Eco could not request Bash approval.",
+        interrupt: true,
+      };
+    }
+
+    const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
+    const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
+    const policy = evaluateShellCommandText({
+      command,
+      cwd,
+      workspacePath: thread.workspacePath,
+    });
+    if (policy.action === "deny") {
+      emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false);
+      return {
+        behavior: "deny",
+        message: policy.reason,
+        interrupt: false,
+      };
+    }
+
+    const description = readBashDescriptionInput(request.input);
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId: request.toolUseId,
+      threadId,
+      command,
+      cwd,
+      reason:
+        policy.action === "ask" ? policy.reason : "Eco requires user confirmation before running Bash.",
+      riskLevel: policy.riskLevel,
+      ...(request.agentId ? { agentId: request.agentId } : {}),
+      ...(request.agentType ? { agentType: request.agentType } : {}),
+      ...(description ? { description } : {}),
+    };
+
+    updateThread(threadId, { status: "running", message: "等待 Bash 执行确认…" });
+    emitThreadEvent(threadId, "bash_approval.requested", `等待确认 Bash：${command}`, "tool", false, {
+      bashApproval: approvalRequest,
+    });
+
+    const decision = await registerPendingBashApproval(threadId, approvalRequest);
+    if (decision === "approved") {
+      emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false);
+      updateThread(threadId, { status: "running", message: "Bash 已确认，继续执行…" });
+      return { behavior: "allow", updatedInput: request.input };
+    }
+
+    emitThreadEvent(threadId, "bash_approval.rejected", `已拒绝 Bash：${command}`, "tool", false);
+    updateThread(threadId, { status: "running", message: "Bash 已拒绝，等待 Agent 调整…" });
+    return {
+      behavior: "deny",
+      message: "User denied this Bash command.",
+      interrupt: false,
+    };
+  };
+}
+
+function readBashCommandInput(input: Record<string, unknown>): string | undefined {
+  for (const key of ["command", "bash_command", "full_command"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function readBashDescriptionInput(input: Record<string, unknown>): string | undefined {
+  const value = input.description;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function isClarificationSubmitPayload(value: unknown): value is ClarificationSubmitPayload {
   if (!value || typeof value !== "object") {
     return false;
@@ -4947,6 +5086,18 @@ function isClarificationSubmitPayload(value: unknown): value is ClarificationSub
     typeof payload.toolUseId === "string" &&
     payload.toolUseId.trim().length > 0 &&
     Array.isArray(payload.selections)
+  );
+}
+
+function isBashApprovalResolvePayload(value: unknown): value is BashApprovalResolvePayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as BashApprovalResolvePayload;
+  return (
+    typeof payload.toolUseId === "string" &&
+    payload.toolUseId.trim().length > 0 &&
+    (payload.decision === "approved" || payload.decision === "denied")
   );
 }
 

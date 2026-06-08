@@ -510,6 +510,40 @@ test("createToolPermissionPreToolHook asks for risky bash commands", async () =>
   expect(riskyBash.hookSpecificOutput?.permissionDecisionReason).toContain("Dependency changes");
 });
 
+test("createToolPermissionPreToolHook can force confirmation for safe bash commands", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Bash"],
+        disallowed: [],
+        bash: { enabled: true, approval: "never" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo", forceBashApproval: true },
+  );
+  expect(hook).toBeDefined();
+
+  const result = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "date" },
+      tool_use_id: "tool_bash_safe_confirm",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_bash_safe_confirm",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("user confirmation");
+});
+
 test("createToolPermissionPreToolHook reports denied permissions for audit", async () => {
   const decisions: Array<{ toolName: string; toolUseId: string; reason: string; actor: string }> = [];
   const hook = createToolPermissionPreToolHook(

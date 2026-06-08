@@ -43,6 +43,7 @@ import {
   readSdkUserMessageCheckpointId,
   resolveAgentSkills,
   resolveSdkSessionOptions,
+  stripBashAutoApprovedTools,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
@@ -396,6 +397,10 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
     skills: ["pdf"],
     mcpServers: {},
   });
+});
+
+test("removes Bash from SDK auto-approved tools when confirmation is enabled", () => {
+  expect(stripBashAutoApprovedTools(["Read", "Bash", "mcp__github__*"])).toEqual(["Read", "mcp__github__*"]);
 });
 
 test("creates native SDK subagent definitions", () => {
@@ -976,6 +981,9 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   const canUseTool = createCanUseTool(async (request) => {
     expect(request.toolName).toBe("Bash");
     expect(request.toolUseId).toBe("tool_1");
+    expect(request.agentId).toBe("agent_1");
+    expect(request.agentType).toBe("eco_coder");
+    expect(request.cwd).toBe("/tmp/workspace");
     return { behavior: "deny", message: "Approval required", interrupt: true };
   });
 
@@ -984,6 +992,9 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     { command: "rm -rf src" },
     {
       toolUseID: "tool_1",
+      agentID: "agent_1",
+      agentType: "eco_coder",
+      cwd: "/tmp/workspace",
       signal: new AbortController().signal,
     },
   );
@@ -1587,6 +1598,81 @@ test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {
 
   expect(capturedOptions[0]?.resume).toBe("sess-resume-test");
   expect(events).toContain("session.captured");
+});
+
+test("ClaudeAgentSdkDriver wires SDK Bash confirmation callback", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const handlerRequests: Array<{ toolName: string; toolUseId: string; cwd?: string }> = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    toolPermissionHandler: async (request) => {
+      handlerRequests.push({
+        toolName: request.toolName,
+        toolUseId: request.toolUseId,
+        ...(request.cwd ? { cwd: request.cwd } : {}),
+      });
+      return { behavior: "allow", updatedInput: request.input };
+    },
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            const canUseTool = options.canUseTool as
+              | ((
+                  toolName: string,
+                  input: Record<string, unknown>,
+                  options: Record<string, unknown>,
+                ) => Promise<unknown>)
+              | undefined;
+            await canUseTool?.(
+              "Bash",
+              { command: "date" },
+              { toolUseID: "tool_bash", cwd: "/tmp/workspace" },
+            );
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-bash-confirm",
+              uuid: "init-bash-confirm",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-bash-confirm",
+              uuid: "result-bash-confirm",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runExecution(
+    {
+      threadId: "thr_bash_confirm",
+      prompt: "Run checks",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    {
+      userPrompt: "Run checks",
+      analysis: "Need shell verification.",
+      plan: "Run the verification command.",
+    },
+  )) {
+    // drain
+  }
+
+  expect(typeof capturedOptions[0]?.canUseTool).toBe("function");
+  expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
+  const agents = capturedOptions[0]?.agents as Record<string, { tools?: string[] }> | undefined;
+  expect(agents?.[ecoSubagentKeyForRole("coder")]?.tools).toContain("Bash");
+  expect(handlerRequests).toEqual([{ toolName: "Bash", toolUseId: "tool_bash", cwd: "/tmp/workspace" }]);
 });
 
 test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", async () => {

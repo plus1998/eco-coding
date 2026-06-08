@@ -9,6 +9,8 @@ import {
   type AgentTemplateImportResult,
   type AgentTemplateVersionRestoreRequest,
   type AgentTemplateVersionView,
+  type BashApprovalRequest,
+  type BashApprovalResolvePayload,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -33,12 +35,11 @@ import {
   type ProviderConfigInput,
   type ProviderConfigView,
   type ProxyBridgeSettingsSnapshot,
-  type RoleRouteConfig,
-  type RuntimeRoleRouteConfig,
   type RouteCapabilityHint,
   type RoutePricingHint,
   type RouteProfileInput,
   type RouteProfileView,
+  type RuntimeRoleRouteConfig,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
   type SessionSyncSettingsView,
@@ -264,6 +265,12 @@ const api = {
   },
   dismissClarification(toolUseId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationDismiss, toolUseId);
+  },
+  getPendingBashApproval(threadId: string): Promise<BashApprovalRequest | undefined> {
+    return ipcRenderer.invoke(IPC_CHANNELS.bashApprovalGetPending, threadId);
+  },
+  resolveBashApproval(payload: BashApprovalResolvePayload): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.bashApprovalResolve, payload);
   },
   approvePlan(request: ThreadApprovePlanRequest): Promise<{ thread?: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadApprovePlan, request);

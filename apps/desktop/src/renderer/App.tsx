@@ -32,6 +32,7 @@ import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../sha
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  type BashApprovalRequest,
   type ClarificationRequest,
   type CoderTodoItem,
   getDefaultAgentProfileId,
@@ -89,6 +90,7 @@ import {
 } from "./activity-log";
 import { areCodingRoutesReady, isAgentProfileReady } from "./agent-profile-readiness";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
+import { BashApprovalPanel } from "./BashApprovalPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
@@ -224,6 +226,8 @@ function App() {
   const [pendingPlan, setPendingPlan] = useState<ThreadPendingPlan>();
   const [pendingClarification, setPendingClarification] = useState<ClarificationRequest>();
   const [clarificationBusy, setClarificationBusy] = useState(false);
+  const [pendingBashApproval, setPendingBashApproval] = useState<BashApprovalRequest>();
+  const [bashApprovalBusy, setBashApprovalBusy] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -345,6 +349,21 @@ function App() {
 
       if (event.type === "clarification.requested" && event.clarification) {
         setPendingClarification(event.clarification);
+      }
+
+      if (event.type === "bash_approval.requested" && event.bashApproval) {
+        setPendingBashApproval(event.bashApproval);
+      }
+      if (
+        event.type === "bash_approval.approved" ||
+        event.type === "bash_approval.rejected" ||
+        event.type === "bash_approval.denied" ||
+        event.type === "thread.completed" ||
+        event.type === "thread.failed" ||
+        event.type === "thread.idle" ||
+        event.type === "thread.stopped"
+      ) {
+        setPendingBashApproval((current) => (current?.threadId === event.threadId ? undefined : current));
       }
 
       if (event.type === "thread.usage_updated" && event.usage) {
@@ -497,6 +516,14 @@ function App() {
         }
         setPendingClarification(clarification);
       });
+      if (typeof window.eco.getPendingBashApproval === "function") {
+        void window.eco.getPendingBashApproval(selectedThreadId).then((approval) => {
+          if (cancelled) {
+            return;
+          }
+          setPendingBashApproval(approval);
+        });
+      }
       void window.eco.listThreadTodos(selectedThreadId).then((todos) => {
         if (cancelled) {
           return;
@@ -869,6 +896,8 @@ function App() {
       (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
     : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
+  const activeBashApproval =
+    activeThread && pendingBashApproval?.threadId === activeThread.id ? pendingBashApproval : undefined;
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
   const canPasteComposerImages = plannerSupportsImages;
@@ -880,13 +909,16 @@ function App() {
       !isStarting &&
       !planActionBusy &&
       !clarificationBusy &&
+      !bashApprovalBusy &&
       !pendingClarification &&
+      !activeBashApproval &&
       threadAcceptsInput,
   );
   const showPlanApproval =
     activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
+  const showBashApproval = Boolean(activeBashApproval);
   const planFailureMessage = activeThread ? extractPlanFailureMessage(activeThread.message) : undefined;
   const retryBannerDetail = activeThread
     ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
@@ -908,7 +940,9 @@ function App() {
       !isStarting &&
       !planActionBusy &&
       !clarificationBusy &&
+      !bashApprovalBusy &&
       !pendingClarification &&
+      !activeBashApproval &&
       !retryBusy &&
       (activeThread.status === "failed" ||
         activeThread.status === "blocked" ||
@@ -1349,6 +1383,23 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setClarificationBusy(false);
+    }
+  }
+
+  async function resolvePendingBashApproval(decision: "approved" | "denied") {
+    if (!pendingBashApproval || !window.eco) return;
+    setBashApprovalBusy(true);
+    setError(undefined);
+    try {
+      await window.eco.resolveBashApproval({
+        toolUseId: pendingBashApproval.toolUseId,
+        decision,
+      });
+      setPendingBashApproval(undefined);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBashApprovalBusy(false);
     }
   }
 
@@ -2324,6 +2375,14 @@ function App() {
                     busy={clarificationBusy}
                     onSubmit={submitClarificationAnswers}
                     onDismiss={() => void dismissPendingClarification()}
+                  />
+                ) : null}
+                {showBashApproval && pendingBashApproval ? (
+                  <BashApprovalPanel
+                    request={pendingBashApproval}
+                    busy={bashApprovalBusy}
+                    onApprove={() => void resolvePendingBashApproval("approved")}
+                    onDeny={() => void resolvePendingBashApproval("denied")}
                   />
                 ) : null}
                 {showPlanApproval && pendingPlan && (

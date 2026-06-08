@@ -479,6 +479,8 @@ export interface ClaudeAgentSdkDriverOptions {
   loadSdk?: () => Promise<ClaudeAgentSdkModule>;
   /** SDK callback hooks context (AskUserQuestion, reviewer scope, task tracking, notifications). */
   hookContext?: EcoHookContext;
+  /** SDK-native tool permission callback. Desktop uses this for blocking Bash confirmation. */
+  toolPermissionHandler?: (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision>;
   /** Mirror SDK session transcripts to external storage (mutually exclusive with file checkpointing). */
   sessionStore?: SessionStore;
   /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
@@ -490,6 +492,8 @@ export interface SdkToolPermissionRequest {
   input: Record<string, unknown>;
   toolUseId: string;
   agentId?: string;
+  agentType?: string;
+  cwd?: string;
   blockedPath?: string;
   decisionReason?: string;
   signal: AbortSignal;
@@ -1032,7 +1036,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       pendingToolPermissionDecisions.push(decision);
     };
     const shouldBuildHooks = Boolean(this.options.hookContext || dynamicAgentKeys || toolPermissions);
-    const allowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
+    const allowedTools = this.options.toolPermissionHandler
+      ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
+      : mergeAllowedTools(mainAllowedTools, input.sdkSession);
     const mainModel = input.agentRegistry?.profile.mainAgent.modelRef.modelId ?? plannerRoute.primary.modelId;
     const systemPrompt = input.agentRegistry
       ? buildMainAgentSystemPrompt(
@@ -1065,6 +1071,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
       allowedTools,
+      ...(this.options.toolPermissionHandler
+        ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }
+        : {}),
       systemPrompt,
       tools: { type: "preset", preset: "claude_code" },
       ...(shouldBuildHooks
@@ -1075,6 +1084,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
               ...(toolPermissions ? { onToolPermissionDecision } : {}),
+              ...(this.options.toolPermissionHandler ? { forceBashApproval: true } : {}),
               subagentAvailability:
                 phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
             }),
@@ -1454,6 +1464,10 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
 
 export function getDefaultAllowedTools(): string[] {
   return [...defaultAllowedTools];
+}
+
+export function stripBashAutoApprovedTools(tools: readonly string[]): string[] {
+  return tools.filter((tool) => tool.trim() !== "Bash");
 }
 
 /** SDK settings shared by every query(): disable Dynamic Workflows and route API credentials. */
@@ -2199,10 +2213,14 @@ export function createCanUseTool(
     const request: SdkToolPermissionRequest = {
       toolName,
       input,
-      toolUseId: typeof options.toolUseID === "string" ? options.toolUseID : crypto.randomUUID(),
+      toolUseId: readStringOption(options, ["toolUseID", "toolUseId", "tool_use_id"]) ?? crypto.randomUUID(),
       signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
     };
-    if (typeof options.agentID === "string") request.agentId = options.agentID;
+    const agentId = readStringOption(options, ["agentID", "agentId", "agent_id"]);
+    const agentType = readStringOption(options, ["agentType", "agent_type"]);
+    if (agentId) request.agentId = agentId;
+    if (agentType) request.agentType = agentType;
+    if (typeof options.cwd === "string") request.cwd = options.cwd;
     if (typeof options.blockedPath === "string") request.blockedPath = options.blockedPath;
     if (typeof options.decisionReason === "string") request.decisionReason = options.decisionReason;
 
@@ -2221,6 +2239,16 @@ export function createCanUseTool(
       interrupt: decision.interrupt,
     };
   };
+}
+
+function readStringOption(options: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = options[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): ResolvedModelRoute | undefined {

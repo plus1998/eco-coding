@@ -1,0 +1,40 @@
+import { expect, test } from "bun:test";
+import {
+  cancelBashApprovalsForThread,
+  getPendingBashApprovalByToolUseId,
+  getPendingBashApprovalForThread,
+  registerPendingBashApproval,
+  resolvePendingBashApproval,
+} from "../src/main/bash-approval-bridge";
+
+test("registers and resolves pending Bash approvals", async () => {
+  const pending = registerPendingBashApproval("thread_1", {
+    toolUseId: "tool_bash_1",
+    threadId: "thread_1",
+    command: "date",
+    cwd: "/repo",
+    reason: "Eco requires user confirmation before running Bash.",
+    riskLevel: "low",
+  });
+
+  expect(getPendingBashApprovalForThread("thread_1")?.command).toBe("date");
+  expect(getPendingBashApprovalByToolUseId("tool_bash_1")?.cwd).toBe("/repo");
+  expect(resolvePendingBashApproval("tool_bash_1", "approved")).toBe(true);
+  await expect(pending).resolves.toBe("approved");
+  expect(getPendingBashApprovalForThread("thread_1")).toBeUndefined();
+});
+
+test("cancels pending Bash approvals for a thread", async () => {
+  const pending = registerPendingBashApproval("thread_2", {
+    toolUseId: "tool_bash_2",
+    threadId: "thread_2",
+    command: "npm test",
+    cwd: "/repo",
+    reason: "Eco requires user confirmation before running Bash.",
+    riskLevel: "low",
+  });
+
+  cancelBashApprovalsForThread("thread_2", "cancelled by user");
+  await expect(pending).rejects.toThrow("cancelled by user");
+  expect(resolvePendingBashApproval("tool_bash_2", "denied")).toBe(false);
+});
