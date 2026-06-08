@@ -8,11 +8,13 @@ const defaultRendererDir = path.join(appDir, "dist", "renderer");
 
 const jsChecks = [
   { label: "Agent Builder shell", value: "Agent Builder" },
+  { label: "Agent Library tab", value: "Agent Library" },
   { label: "Agent Profile selector", value: "Agent Profile" },
-  { label: "Orchestration profiles tab", value: "编排配置" },
+  { label: "Agent Profile library selection", value: "从子代理库选择" },
+  { label: "Provider tab", value: "Provider" },
+  { label: "Proxy bridge tab", value: "代理桥" },
   { label: "Presets tab", value: "场景预设" },
   { label: "Evaluation tab", value: "效果评测" },
-  { label: "Workflow editor", value: "Workflow Steps" },
   { label: "Workflow run monitor", value: "子代理编排" },
 ];
 
@@ -89,13 +91,13 @@ function assertContainsAll(content, checks, label) {
   }
   const missing = checks.filter((check) => !content.includes(check.value));
   if (missing.length > 0) {
-    throw new Error(
-      `${label} is missing smoke markers: ${missing.map((check) => check.label).join(", ")}`,
-    );
+    throw new Error(`${label} is missing smoke markers: ${missing.map((check) => check.label).join(", ")}`);
   }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const report = runAgentUiSmoke();
-  console.log(`[agent-ui-smoke] ok ${report.assetCount} assets · js ${report.jsBytes} bytes · css ${report.cssBytes} bytes`);
+  console.log(
+    `[agent-ui-smoke] ok ${report.assetCount} assets · js ${report.jsBytes} bytes · css ${report.cssBytes} bytes`,
+  );
 }

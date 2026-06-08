@@ -31,7 +31,6 @@ import { createRoot } from "react-dom/client";
 import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
-  type AgentRole,
   buildThreadRuntimeConfigFromDefaults,
   type ClarificationRequest,
   type CoderTodoItem,
@@ -62,7 +61,6 @@ import {
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
-  type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
@@ -205,9 +203,7 @@ function App() {
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
-  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot | null>(null);
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
-  const [isSavingWorkflowSettings, setIsSavingWorkflowSettings] = useState(false);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
@@ -264,9 +260,8 @@ function App() {
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
-      window.eco.getWorkflowSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, workflow, proxyBridge]) => {
+    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, proxyBridge]) => {
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
@@ -276,7 +271,6 @@ function App() {
       setSettings(modelSettings);
       setMcpSettings(mcp);
       setSessionSyncSettings(sessionSync);
-      setWorkflowSettings(workflow);
       setProxyBridgeSettings(proxyBridge);
     });
 
@@ -789,31 +783,39 @@ function App() {
     setComposerSkillActiveIndex(Math.max(0, composerSkillMatches.length - 1));
   }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
-  const buildComposerDefaultConfig = useCallback((): ThreadRuntimeConfig | undefined => {
-    if (!workflowSettings || settings.orchestrationProfiles.length === 0) {
-      return undefined;
-    }
-    try {
-      const agentProfileId =
-        composerRuntimeConfig?.agentProfileId ??
-        composerRuntimeConfig?.routeProfileId ??
-        getDefaultAgentProfileId(settings);
-      const routeProfileId = composerRuntimeConfig?.routeProfileId;
-      return buildThreadRuntimeConfigFromDefaults({
-        settings,
-        workflowDefaults: workflowSettings,
-        ...(agentProfileId && { agentProfileId }),
-        ...(routeProfileId && { routeProfileId }),
-      });
-    } catch {
-      return undefined;
-    }
-  }, [
-    settings,
-    workflowSettings,
-    composerRuntimeConfig?.agentProfileId,
-    composerRuntimeConfig?.routeProfileId,
-  ]);
+  const buildComposerDefaultConfig = useCallback(
+    (modeOverride?: ThreadRuntimeConfig["orchestrationMode"]): ThreadRuntimeConfig | undefined => {
+      if (settings.orchestrationProfiles.length === 0) {
+        return undefined;
+      }
+      try {
+        const agentProfileId =
+          composerRuntimeConfig?.agentProfileId ??
+          composerRuntimeConfig?.routeProfileId ??
+          getDefaultAgentProfileId(settings);
+        const routeProfileId = composerRuntimeConfig?.routeProfileId;
+        const orchestrationMode = modeOverride ?? composerRuntimeConfig?.orchestrationMode ?? "autonomous";
+        return buildThreadRuntimeConfigFromDefaults({
+          settings,
+          workflowDefaults: { orchestrationMode },
+          ...(agentProfileId && { agentProfileId }),
+          ...(routeProfileId && { routeProfileId }),
+        });
+      } catch {
+        return undefined;
+      }
+    },
+    [
+      settings,
+      composerRuntimeConfig?.agentProfileId,
+      composerRuntimeConfig?.routeProfileId,
+      composerRuntimeConfig?.orchestrationMode,
+    ],
+  );
+
+  const resetComposerDefaultConfig = useCallback(() => {
+    setComposerRuntimeConfig(buildComposerDefaultConfig("autonomous") ?? null);
+  }, [buildComposerDefaultConfig]);
 
   useEffect(() => {
     if (activeThread?.runtimeConfig) {
@@ -830,7 +832,6 @@ function App() {
     buildComposerDefaultConfig,
     settings.orchestrationProfiles,
     settings.routeProfiles,
-    workflowSettings,
   ]);
 
   const selectedRuntimeProfileId =
@@ -1582,20 +1583,6 @@ function App() {
     await persistComposerRuntimeConfig(next);
   }
 
-  async function saveWorkflowSettings(next: WorkflowSettingsSnapshot) {
-    if (!window.eco) return;
-    setIsSavingWorkflowSettings(true);
-    setError(undefined);
-    try {
-      const saved = await window.eco.saveWorkflowSettings(next);
-      setWorkflowSettings(saved);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingWorkflowSettings(false);
-    }
-  }
-
   async function saveProxyBridgeSettings(next: ProxyBridgeSettingsSnapshot) {
     if (!window.eco) return;
     setIsSavingProxyBridgeSettings(true);
@@ -1666,6 +1653,7 @@ function App() {
       return next;
     });
     setSelectedThreadId(undefined);
+    resetComposerDefaultConfig();
     setActivityByThread({});
     setTodosByThread({});
   }
@@ -1762,6 +1750,7 @@ function App() {
       const thread = current ? threads.find((item) => item.id === current) : undefined;
       return thread?.workspacePath === projectPath ? undefined : current;
     });
+    resetComposerDefaultConfig();
   }
 
   function reorderProjects(draggedPath: string, targetPath: string, position: ProjectReorderPosition) {
@@ -1775,6 +1764,7 @@ function App() {
   function switchProject(nextPath: string) {
     setSelectedProjectPath(nextPath);
     setSelectedThreadId(undefined);
+    resetComposerDefaultConfig();
   }
 
   function selectThread(thread: ThreadSummary) {
@@ -1799,6 +1789,9 @@ function App() {
   function clearThreadClientState(threadId: string) {
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
     setSelectedThreadId((current) => (current === threadId ? undefined : current));
+    if (selectedThreadId === threadId) {
+      resetComposerDefaultConfig();
+    }
     setActivityByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
     setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
@@ -1855,6 +1848,7 @@ function App() {
   function startNewChat() {
     setComposerRoutePopoverOpen(false);
     setSelectedThreadId(undefined);
+    resetComposerDefaultConfig();
     setPrompt("");
     setComposerAttachments([]);
     setComposerImageNotice(undefined);
@@ -2441,18 +2435,15 @@ function App() {
             )}
 
             {settingsSection === "providers" &&
-              (workflowSettings && proxyBridgeSettings ? (
+              (proxyBridgeSettings ? (
                 <ModelsSettingsPanel
                   settings={settings}
-                  workflowSettings={workflowSettings}
                   proxyBridgeSettings={proxyBridgeSettings}
-                  workflowSettingsSaving={isSavingWorkflowSettings}
                   proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                   mode="providerSettings"
                   busy={isSavingSettings}
                   onSettingsChange={setSettings}
                   onSavingChange={setIsSavingSettings}
-                  onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
                   onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                 />
               ) : (
@@ -2460,19 +2451,16 @@ function App() {
               ))}
 
             {settingsSection === "models" &&
-              (workflowSettings && proxyBridgeSettings ? (
+              (proxyBridgeSettings ? (
                 <ModelsSettingsPanel
                   settings={settings}
-                  workflowSettings={workflowSettings}
                   proxyBridgeSettings={proxyBridgeSettings}
-                  workflowSettingsSaving={isSavingWorkflowSettings}
                   proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                   initialTab={modelsSettingsTab}
                   mode="agentBuilder"
                   busy={isSavingSettings}
                   onSettingsChange={setSettings}
                   onSavingChange={setIsSavingSettings}
-                  onWorkflowSettingsChange={(next) => void saveWorkflowSettings(next)}
                   onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                 />
               ) : (

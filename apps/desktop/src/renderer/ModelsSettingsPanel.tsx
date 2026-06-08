@@ -1,6 +1,5 @@
-import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
+import { formatCostUsd } from "@eco/runtime";
 import {
-  ArrowDown,
   ArrowUp,
   Copy,
   Download,
@@ -28,27 +27,16 @@ import {
   validateBuiltInPresetEvalSuite,
 } from "../shared/agent-preset-evals";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
-import type { ProxyBridgeSettingsSnapshot, WorkflowSettingsSnapshot } from "../shared/ipc";
-import {
-  AGENT_ROLES,
-  type AgentProfilePerformanceSnapshot,
-  type AgentRole,
-  type AgentTemplate,
-  type ModelRef,
-  type ModelSettingsSnapshot,
-  type ModelsDevModelOption,
-  type OrchestrationProfile,
-  type OrchestrationProfileVersionView,
-  type ProviderConfigInput,
-  type ProviderConfigView,
-  type RoleRouteConfig,
-  type RoleRouteTestResult,
-  type RouteCapabilityHint,
-  type RouteManualSpec,
-  type RoutePricingHint,
-  type RouteProfileInput,
-  type RouteProfileView,
-  type ThinkingEffort,
+import type {
+  AgentProfilePerformanceSnapshot,
+  AgentTemplate,
+  ModelRef,
+  ModelSettingsSnapshot,
+  OrchestrationProfile,
+  OrchestrationProfileVersionView,
+  ProviderConfigInput,
+  ProviderConfigView,
+  ProxyBridgeSettingsSnapshot,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
@@ -57,15 +45,12 @@ import { AppMessage, type AppMessageKind, formatDurationMs } from "./AppMessage"
 import {
   type AgentProfileAgentFormState,
   type AgentProfileFormState,
-  type AgentProfileWorkflowStepFormState,
   agentProfileToForm,
   buildOrchestrationProfileFromForm,
   canEditStoredAgentProfile,
   createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
-  createProfileWorkflowStepFormFromAgent,
-  createWorkflowStepFormsFromAgents,
 } from "./agent-profile-form";
 import {
   type AgentProfileSummary,
@@ -74,39 +59,38 @@ import {
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
 import { ModelSelectField } from "./ModelSelectField";
-import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
-import { RoutePricingDisplay } from "./RoutePricingDisplay";
+import { buildPresetTemplateImportPlan } from "./preset-import";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
-import { WorkflowSettingsSection } from "./WorkflowSettingsSection";
 
 export type ModelsSettingsTab =
   | "subagents"
   | "routes"
   | "providers"
-  | "permissions"
+  | "proxyBridge"
   | "presets"
   | "evaluation";
 
 const MODELS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
   { id: "subagents", label: "Agent Library" },
-  { id: "routes", label: "编排配置" },
-  { id: "permissions", label: "工具权限" },
+  { id: "routes", label: "Agent Profile" },
   { id: "presets", label: "场景预设" },
   { id: "evaluation", label: "效果评测" },
 ];
 
+const PROVIDER_SETTINGS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string }> = [
+  { id: "providers", label: "Provider" },
+  { id: "proxyBridge", label: "代理桥" },
+];
+
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
-  workflowSettings: WorkflowSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
-  workflowSettingsSaving?: boolean | undefined;
   proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
   mode?: "agentBuilder" | "providerSettings" | undefined;
   onSettingsChange: (settings: ModelSettingsSnapshot) => void;
-  onWorkflowSettingsChange: (settings: WorkflowSettingsSnapshot) => void;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
@@ -116,48 +100,28 @@ interface ModelsCacheEntry {
   error?: string | undefined;
 }
 
-const ROLE_LABELS: Record<AgentRole, string> = {
-  planner: "规划",
-  explore: "探索",
-  architect: "架构",
-  coder: "编码",
-  reviewer: "审查",
-  tester: "测试",
-};
-
-const THINKING_EFFORT_OPTIONS: Array<{ value: "" | ThinkingEffort; label: string }> = [
-  { value: "", label: "默认" },
-  { value: "off", label: "关闭" },
-  { value: "low", label: "low" },
-  { value: "medium", label: "medium" },
-  { value: "high", label: "high" },
-  { value: "xhigh", label: "xhigh" },
-  { value: "max", label: "max" },
-];
-
 export function ModelsSettingsPanel({
   settings,
-  workflowSettings,
   proxyBridgeSettings,
-  workflowSettingsSaving,
   proxyBridgeSettingsSaving,
   busy,
   initialTab = "subagents",
   mode = "agentBuilder",
   onSettingsChange,
-  onWorkflowSettingsChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
   const resolvedInitialTab =
-    mode === "providerSettings" ? "providers" : initialTab === "providers" ? "subagents" : initialTab;
+    mode === "providerSettings"
+      ? initialTab === "proxyBridge"
+        ? "proxyBridge"
+        : "providers"
+      : initialTab === "providers" || initialTab === "proxyBridge"
+        ? "subagents"
+        : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
-  const [routeProfileModalOpen, setRouteProfileModalOpen] = useState(false);
-  const [routeProfileForm, setRouteProfileForm] = useState<RouteProfileInput>(() =>
-    createBlankRouteProfileForm(),
-  );
   const [agentProfileModalOpen, setAgentProfileModalOpen] = useState(false);
   const [agentProfileForm, setAgentProfileForm] = useState<AgentProfileFormState>(() =>
     createBlankAgentProfileForm(),
@@ -173,25 +137,13 @@ export function ModelsSettingsPanel({
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
   const [modalError, setModalError] = useState<string>();
-  const [routeProfileModalError, setRouteProfileModalError] = useState<string>();
-  const [routePricing, setRoutePricing] = useState<Partial<Record<AgentRole, RoutePricingHint>>>({});
-  const [routeCapabilities, setRouteCapabilities] = useState<Partial<Record<AgentRole, RouteCapabilityHint>>>(
-    {},
-  );
-  const [pricingLoading, setPricingLoading] = useState(false);
-  const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
-  const [modelsDevLoading, setModelsDevLoading] = useState(false);
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
-  const [testingRouteProfileId, setTestingRouteProfileId] = useState<string | null>(null);
-  const [testingRouteRole, setTestingRouteRole] = useState<AgentRole | null>(null);
-  const [routeTestResults, setRouteTestResults] = useState<Partial<Record<AgentRole, RoleRouteTestResult>>>(
-    {},
-  );
+  const [testingAgentProfileId, setTestingAgentProfileId] = useState<string | null>(null);
   const [providerTestMessage, setProviderTestMessage] = useState<{
     kind: AppMessageKind;
     message: string;
   }>();
-  const [routeTestMessage, setRouteTestMessage] = useState<{
+  const [agentProfileTestMessage, setAgentProfileTestMessage] = useState<{
     kind: AppMessageKind;
     message: string;
   }>();
@@ -332,8 +284,8 @@ export function ModelsSettingsPanel({
 
   const copyPresetToProfile = useCallback(
     async (preset: BuiltInPresetDefinition) => {
-      if (!window.eco?.saveOrchestrationProfile) {
-        setPresetProfileMessage({ kind: "error", message: "编排配置保存接口不可用。" });
+      if (!window.eco?.saveAgentTemplate || !window.eco?.saveOrchestrationProfile) {
+        setPresetProfileMessage({ kind: "error", message: "场景预设导入接口不可用。" });
         return;
       }
       const provider = selectPresetDefaultProvider(settings.providers);
@@ -348,7 +300,12 @@ export function ModelsSettingsPanel({
       setPresetProfileMessage(undefined);
       onSavingChange?.(true);
       try {
-        const profile = buildOrchestrationProfileFromPreset(preset, {
+        const importPlan = buildPresetTemplateImportPlan(preset, settings.agentTemplates);
+        const savedTemplates: AgentTemplate[] = [];
+        for (const template of importPlan.templatesToSave) {
+          savedTemplates.push(await window.eco.saveAgentTemplate(template));
+        }
+        const profile = buildOrchestrationProfileFromPreset(importPlan.presetForProfile, {
           id: createUserPresetProfileId(
             preset.id,
             settings.orchestrationProfiles.map((profile) => profile.id),
@@ -358,14 +315,27 @@ export function ModelsSettingsPanel({
             settings.orchestrationProfiles.map((profile) => profile.name),
           ),
           modelRef: modelRefFromProvider(provider),
-          templates: settings.agentTemplates,
+          templates:
+            savedTemplates.length > 0
+              ? [
+                  ...settings.agentTemplates.filter(
+                    (template) => !savedTemplates.some((saved) => saved.id === template.id),
+                  ),
+                  ...savedTemplates,
+                ]
+              : importPlan.templatesForProfile,
         });
         await window.eco.saveOrchestrationProfile(profile);
         await refreshSettings();
         setActiveTab("routes");
+        const importedTemplateCount = savedTemplates.length;
+        const templateMessage =
+          importedTemplateCount > 0
+            ? `已导入 ${importedTemplateCount} 个子代理模板`
+            : "已复用现有子代理模板副本";
         setPresetProfileMessage({
           kind: "success",
-          message: `已创建 Agent Profile「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
+          message: `${templateMessage}并创建 Agent Profile「${profile.name}」，默认使用 ${provider.name} / ${provider.defaultModel}。`,
         });
       } catch (caught) {
         setPresetProfileMessage({
@@ -445,88 +415,7 @@ export function ModelsSettingsPanel({
       return;
     }
     void fetchModels(providerForm, { silent: true });
-  }, [providerModalOpen, providerForm, settings.providers, modelsCache, fetchModels]);
-
-  useEffect(() => {
-    if (!routeProfileModalOpen) {
-      return;
-    }
-    for (const route of routeProfileForm.routes) {
-      if (!route.providerId) {
-        continue;
-      }
-      const cached = modelsCache[route.providerId];
-      if (cached?.models.length || cached?.error) {
-        continue;
-      }
-      const provider = settings.providers.find((entry) => entry.id === route.providerId);
-      if (provider) {
-        void fetchModels(providerToForm(provider), { silent: true });
-      }
-    }
-  }, [routeProfileModalOpen, routeProfileForm.routes, settings.providers, modelsCache, fetchModels]);
-
-  const refreshRouteCapabilities = useCallback(async (routes?: RoleRouteConfig[]) => {
-    if (!window.eco?.getRouteCapabilities) {
-      return;
-    }
-    try {
-      const hints = await window.eco.getRouteCapabilities(routes);
-      setRouteCapabilities(
-        Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
-          Record<AgentRole, RouteCapabilityHint>
-        >,
-      );
-    } catch {
-      setRouteCapabilities({});
-    }
-  }, []);
-
-  const refreshModelsDevCatalog = useCallback(
-    async (routes?: RoleRouteConfig[]) => {
-      if (!window.eco?.getRoutePricing) {
-        return;
-      }
-      setPricingLoading(true);
-      setPanelError(undefined);
-      try {
-        if (window.eco.refreshPricingCatalog) {
-          await window.eco.refreshPricingCatalog();
-        }
-        const hints = await window.eco.getRoutePricing(routes);
-        setRoutePricing(
-          Object.fromEntries(hints.map((hint) => [hint.role, hint])) as Partial<
-            Record<AgentRole, RoutePricingHint>
-          >,
-        );
-        await refreshRouteCapabilities(routes);
-      } catch (caught) {
-        setPanelError(caught instanceof Error ? caught.message : String(caught));
-      } finally {
-        setPricingLoading(false);
-      }
-    },
-    [refreshRouteCapabilities],
-  );
-
-  useEffect(() => {
-    if (!routeProfileModalOpen || !window.eco?.listModelsDevModels) {
-      return;
-    }
-    setModelsDevLoading(true);
-    void window.eco
-      .listModelsDevModels()
-      .then((options) => setModelsDevOptions(options))
-      .catch(() => setModelsDevOptions([]))
-      .finally(() => setModelsDevLoading(false));
-  }, [routeProfileModalOpen]);
-
-  useEffect(() => {
-    if (!routeProfileModalOpen) {
-      return;
-    }
-    void refreshModelsDevCatalog(routeProfileForm.routes);
-  }, [routeProfileModalOpen, routeProfileForm.routes, settings.providers, refreshModelsDevCatalog]);
+  }, [providerModalOpen, providerForm, modelsCache, fetchModels]);
 
   const modelsForProvider = useCallback(
     (providerId: string): UpstreamModelOption[] => modelsCache[providerId]?.models ?? [],
@@ -565,34 +454,6 @@ export function ModelsSettingsPanel({
     setProviderModalOpen(false);
     setModalError(undefined);
     setProviderForm(providerToForm());
-  }
-
-  function openCreateRouteProfile() {
-    setPanelError(undefined);
-    setRouteProfileModalError(undefined);
-    setRouteTestResults({});
-    setRouteTestMessage(undefined);
-    setRouteProfileForm(createBlankRouteProfileForm(settings));
-    setRouteProfileModalOpen(true);
-  }
-
-  function openEditRouteProfile(profile: RouteProfileView) {
-    setPanelError(undefined);
-    setRouteProfileModalError(undefined);
-    setRouteTestResults({});
-    setRouteTestMessage(undefined);
-    setRouteProfileForm(routeProfileToForm(profile));
-    setRouteProfileModalOpen(true);
-  }
-
-  function closeRouteProfileModal() {
-    setRouteProfileModalOpen(false);
-    setRouteProfileModalError(undefined);
-    setRouteTestResults({});
-    setRouteTestMessage(undefined);
-    setTestingRouteRole(null);
-    setTestingRouteProfileId(null);
-    setRouteProfileForm(createBlankRouteProfileForm(settings));
   }
 
   function profileFormOptions() {
@@ -768,7 +629,7 @@ export function ModelsSettingsPanel({
     }
     const providerName = providerForm.name.trim() || "Provider";
     if (
-      !window.confirm(`确定删除 Provider「${providerName}」？引用它的子代理编排配置将改用到其他 Provider。`)
+      !window.confirm(`确定删除 Provider「${providerName}」？引用它的 Agent Profile 将改用其他 Provider。`)
     ) {
       return;
     }
@@ -808,130 +669,6 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function testSingleRoute(route: RoleRouteConfig, profileKey?: string) {
-    if (!window.eco?.testRouteProfile) {
-      return;
-    }
-    if (!route.providerId.trim() || !route.modelId.trim()) {
-      setRouteTestMessage({
-        kind: "error",
-        message: `请先为「${ROLE_LABELS[route.role]}」选择 Provider 与模型。`,
-      });
-      return;
-    }
-
-    const testKey = profileKey ?? routeProfileForm.id ?? "__draft__";
-    setTestingRouteProfileId(testKey);
-    setTestingRouteRole(route.role);
-    setRouteTestMessage(undefined);
-
-    try {
-      const result = await window.eco.testRouteProfile({
-        routes: [
-          {
-            role: route.role,
-            providerId: route.providerId,
-            modelId: route.modelId,
-            ...(route.apiCompat && { apiCompat: route.apiCompat }),
-            thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
-          },
-        ],
-      });
-      const entry = result.results[0];
-      if (entry) {
-        setRouteTestResults((current) => ({
-          ...current,
-          [route.role]: entry,
-        }));
-      }
-      if (entry?.ok) {
-        const duration = entry.elapsedMs !== undefined ? `，耗时 ${formatDurationMs(entry.elapsedMs)}` : "";
-        setRouteTestMessage({
-          kind: "success",
-          message: `「${ROLE_LABELS[route.role]}」测试通过${duration}`,
-        });
-      } else {
-        setRouteTestMessage({
-          kind: "error",
-          message: `「${ROLE_LABELS[route.role]}」测试失败：${entry?.error ?? "未知错误"}`,
-        });
-      }
-    } catch (caught) {
-      setRouteTestMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setTestingRouteRole(null);
-      setTestingRouteProfileId(null);
-    }
-  }
-
-  async function testRouteProfile(routes: RoleRouteConfig[], profileKey?: string) {
-    if (!window.eco?.testRouteProfile) {
-      return;
-    }
-    const testKey = profileKey ?? routeProfileForm.id ?? "__draft__";
-    setTestingRouteProfileId(testKey);
-    setTestingRouteRole(null);
-    setRouteTestMessage(undefined);
-    setRouteTestResults({});
-
-    try {
-      const result = await window.eco.testRouteProfile({
-        routes: routes.map((route) => ({
-          role: route.role,
-          providerId: route.providerId,
-          modelId: route.modelId,
-          ...(route.apiCompat && { apiCompat: route.apiCompat }),
-          thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
-        })),
-      });
-      setRouteTestResults(
-        Object.fromEntries(result.results.map((entry) => [entry.role as AgentRole, entry])) as Partial<
-          Record<AgentRole, RoleRouteTestResult>
-        >,
-      );
-
-      if (result.failed === 0) {
-        const uniqueModels = new Set(
-          routes
-            .filter((route) => route.providerId.trim() && route.modelId.trim())
-            .map((route) => `${route.providerId.trim()}:${route.modelId.trim()}:${route.apiCompat ?? ""}`),
-        );
-        const durations = result.results
-          .map((entry) => (entry.elapsedMs !== undefined ? formatDurationMs(entry.elapsedMs) : undefined))
-          .filter(Boolean);
-        const durationHint = durations.length > 0 ? `，耗时 ${durations[0]}` : "";
-        const dedupeHint =
-          uniqueModels.size < result.passed
-            ? `（${uniqueModels.size} 组 Provider+模型，共 ${result.passed} 个角色）`
-            : "";
-        setRouteTestMessage({
-          kind: "success",
-          message: `全部 ${result.passed} 个角色已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
-        });
-      } else {
-        const failedLabels = result.results
-          .filter((entry) => !entry.ok)
-          .map((entry) => `${ROLE_LABELS[entry.role as AgentRole] ?? entry.role}：${entry.error ?? "失败"}`)
-          .join("；");
-        setRouteTestMessage({
-          kind: "error",
-          message: `${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
-        });
-      }
-    } catch (caught) {
-      setRouteTestMessage({
-        kind: "error",
-        message: caught instanceof Error ? caught.message : String(caught),
-      });
-    } finally {
-      setTestingRouteProfileId(null);
-      setTestingRouteRole(null);
-    }
-  }
-
   async function testAgentProfile(profile: OrchestrationProfile) {
     if (!window.eco?.testRouteProfile) {
       return;
@@ -941,10 +678,8 @@ export function ModelsSettingsPanel({
       ["planner", profile.mainAgent.name || "主 Agent"],
       ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
     ]);
-    setTestingRouteProfileId(profile.id);
-    setTestingRouteRole(null);
-    setRouteTestMessage(undefined);
-    setRouteTestResults({});
+    setTestingAgentProfileId(profile.id);
+    setAgentProfileTestMessage(undefined);
 
     try {
       const result = await window.eco.testRouteProfile({
@@ -971,7 +706,7 @@ export function ModelsSettingsPanel({
           uniqueModels.size < result.passed
             ? `（${uniqueModels.size} 组 Provider+模型，共 ${result.passed} 个 Agent）`
             : "";
-        setRouteTestMessage({
+        setAgentProfileTestMessage({
           kind: "success",
           message: `Agent Profile「${profile.name}」全部 ${result.passed} 个 Agent 已通过 /v1/messages 测试${dedupeHint}${durationHint}`,
         });
@@ -980,19 +715,18 @@ export function ModelsSettingsPanel({
           .filter((entry) => !entry.ok)
           .map((entry) => `${displayNames.get(entry.role) ?? entry.role}：${entry.error ?? "失败"}`)
           .join("；");
-        setRouteTestMessage({
+        setAgentProfileTestMessage({
           kind: "error",
           message: `Agent Profile「${profile.name}」${result.passed}/${result.results.length} 通过。失败：${failedLabels}`,
         });
       }
     } catch (caught) {
-      setRouteTestMessage({
+      setAgentProfileTestMessage({
         kind: "error",
         message: caught instanceof Error ? caught.message : String(caught),
       });
     } finally {
-      setTestingRouteProfileId(null);
-      setTestingRouteRole(null);
+      setTestingAgentProfileId(null);
     }
   }
 
@@ -1037,103 +771,6 @@ export function ModelsSettingsPanel({
     }
   }
 
-  async function saveRouteProfile() {
-    if (!window.eco) {
-      return;
-    }
-    setRouteProfileModalError(undefined);
-    onSavingChange?.(true);
-    try {
-      await window.eco.saveRouteProfile(routeProfileForm);
-      await refreshSettings();
-      closeRouteProfileModal();
-    } catch (caught) {
-      setRouteProfileModalError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      onSavingChange?.(false);
-    }
-  }
-
-  async function deleteRouteProfile() {
-    if (!window.eco || !routeProfileForm.id) {
-      return;
-    }
-    if (settings.routeProfiles.length <= 1) {
-      setRouteProfileModalError("至少保留一套子代理编排配置。");
-      return;
-    }
-    const profileName = routeProfileForm.name.trim() || "路由配置";
-    if (!window.confirm(`确定删除路由配置「${profileName}」？`)) {
-      return;
-    }
-
-    setRouteProfileModalError(undefined);
-    onSavingChange?.(true);
-    try {
-      await window.eco.deleteRouteProfile(routeProfileForm.id);
-      await refreshSettings();
-      closeRouteProfileModal();
-    } catch (caught) {
-      setRouteProfileModalError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      onSavingChange?.(false);
-    }
-  }
-
-  function updateRouteInForm(
-    role: AgentRole,
-    patch: Partial<RoleRouteConfig>,
-    options?: {
-      clearThinkingEffort?: boolean;
-      clearModelsDevMapping?: boolean;
-      clearManualSpec?: boolean;
-    },
-  ) {
-    setRouteProfileForm((current) => {
-      const existingRoute = current.routes.find((route) => route.role === role);
-      const defaultProvider = settings.providers.find(
-        (entry) => entry.id === (patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id),
-      );
-      const nextRoute: RoleRouteConfig = {
-        role,
-        providerId: patch.providerId ?? existingRoute?.providerId ?? settings.providers[0]?.id ?? "",
-        modelId: patch.modelId ?? existingRoute?.modelId ?? settings.providers[0]?.defaultModel ?? "",
-      };
-      if (patch.apiCompat) {
-        nextRoute.apiCompat = patch.apiCompat;
-      } else if (existingRoute?.apiCompat) {
-        nextRoute.apiCompat = existingRoute.apiCompat;
-      } else if (defaultProvider) {
-        nextRoute.apiCompat = defaultProvider.apiCompat;
-      }
-      if (options?.clearThinkingEffort) {
-        // omit thinkingEffort
-      } else if (patch.thinkingEffort) {
-        nextRoute.thinkingEffort = patch.thinkingEffort;
-      } else if (existingRoute?.thinkingEffort) {
-        nextRoute.thinkingEffort = existingRoute.thinkingEffort;
-      }
-      if (options?.clearModelsDevMapping) {
-        // omit modelsDevMapping
-      } else if (patch.modelsDevMapping) {
-        nextRoute.modelsDevMapping = patch.modelsDevMapping;
-      } else if (existingRoute?.modelsDevMapping) {
-        nextRoute.modelsDevMapping = existingRoute.modelsDevMapping;
-      }
-      if (options?.clearManualSpec) {
-        // omit manualSpec
-      } else if (patch.manualSpec !== undefined) {
-        nextRoute.manualSpec = patch.manualSpec;
-      } else if (existingRoute?.manualSpec) {
-        nextRoute.manualSpec = existingRoute.manualSpec;
-      }
-      return {
-        ...current,
-        routes: [...current.routes.filter((route) => route.role !== role), nextRoute],
-      };
-    });
-  }
-
   const providerOptions = useMemo(() => settings.providers, [settings.providers]);
   const selectableProfileSummaries = useMemo(() => listSelectableAgentProfileSummaries(settings), [settings]);
   const allProfileSummaries = useMemo(
@@ -1164,11 +801,11 @@ export function ModelsSettingsPanel({
           onDismiss={() => setProviderTestMessage(undefined)}
         />
       )}
-      {routeTestMessage && (
+      {agentProfileTestMessage && (
         <AppMessage
-          kind={routeTestMessage.kind}
-          message={routeTestMessage.message}
-          onDismiss={() => setRouteTestMessage(undefined)}
+          kind={agentProfileTestMessage.kind}
+          message={agentProfileTestMessage.message}
+          onDismiss={() => setAgentProfileTestMessage(undefined)}
         />
       )}
       {presetProfileMessage && (
@@ -1197,55 +834,49 @@ export function ModelsSettingsPanel({
         {mode === "providerSettings" ? (
           <>
             <h1>Provider</h1>
-            <p className="mcp-page-desc">
-              管理上游模型服务、API Key、默认模型、代理桥和转发到上游 API 的 User-Agent。
-            </p>
+            <p className="mcp-page-desc">管理上游模型服务、API Key、默认模型和本地代理桥。</p>
           </>
         ) : (
           <>
             <h1>Agent Builder</h1>
             <p className="mcp-page-desc">
-              配置子代理库、编排配置和工具权限。新对话在输入区选择 Agent
-              Profile；子代理与编排策略按对话独立保存。
+              配置子代理库、Agent Profile、场景预设和效果评测。新对话在输入区选择 Agent
+              Profile；子代理启停与固定/自主模式按对话独立保存。
             </p>
           </>
         )}
       </header>
 
-      {mode === "agentBuilder" ? (
-        <div className="models-settings-tabs" role="tablist" aria-label="模型设置分类">
-          {MODELS_TAB_ITEMS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div
+        className="models-settings-tabs"
+        role="tablist"
+        aria-label={mode === "providerSettings" ? "Provider 设置分类" : "模型设置分类"}
+      >
+        {(mode === "providerSettings" ? PROVIDER_SETTINGS_TAB_ITEMS : MODELS_TAB_ITEMS).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
       {activeTab === "subagents" && (
         <div className="models-subagents-tab">
-          <WorkflowSettingsSection
-            settings={workflowSettings}
-            disabled={busy || workflowSettingsSaving}
-            onChange={onWorkflowSettingsChange}
-          />
           <section className="mcp-list-section models-subagent-section">
             <header className="models-section-header">
               <div className="models-section-intro">
                 <h2 className="models-section-title">子代理库</h2>
                 <p className="models-section-desc">
-                  {workflowSettings.orchestrationMode === "manual"
-                    ? "固定编排由当前 Agent Profile 的 workflow steps 和 agent roster 决定。"
-                    : "自主编排由当前 Agent Profile 的策略和 agent roster 决定。"}
+                  只维护子代理模板本身：提示词、默认工具、MCP、skills
+                  和默认使用边界。新对话默认自主编排，当前对话的固定/自主切换在 Composer 内完成。
                 </p>
               </div>
             </header>
@@ -1259,96 +890,97 @@ export function ModelsSettingsPanel({
         </div>
       )}
 
-      {activeTab === "providers" && (
-        <>
-          <ProxyBridgeSettingsSection
-            settings={proxyBridgeSettings}
-            disabled={busy || proxyBridgeSettingsSaving}
-            onSave={onProxyBridgeSettingsChange}
-          />
-          <section className="mcp-list-section">
-            <header className="models-section-header">
-              <div className="models-section-intro">
-                <h2 className="models-section-title">Provider</h2>
-                <p className="models-section-desc">
-                  管理上游模型服务、API Key、默认模型和 API 兼容模式。Agent Profile 里的模型绑定从这里选择。
-                </p>
-              </div>
-            </header>
-            <div className="mcp-list-toolbar">
-              <span className="mcp-list-toolbar-label">Provider</span>
-              <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
-                <Plus size={16} />
-                添加 Provider
-              </button>
-            </div>
+      {activeTab === "proxyBridge" && (
+        <ProxyBridgeSettingsSection
+          settings={proxyBridgeSettings}
+          disabled={busy || proxyBridgeSettingsSaving}
+          onSave={onProxyBridgeSettingsChange}
+        />
+      )}
 
-            {providerOptions.length === 0 ? (
-              <p className="mcp-list-empty">尚未添加 Provider</p>
-            ) : (
-              <ul className="mcp-server-list">
-                {providerOptions.map((provider) => {
-                  const testing = testingProviderKey === provider.id;
-                  return (
-                    <li key={provider.id} className="mcp-server-row models-provider-row">
-                      <div className="models-provider-row-main">
-                        <span className="mcp-server-name">{provider.name}</span>
-                        <small>
-                          {provider.defaultModel}
-                          {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
-                        </small>
-                      </div>
-                      <div className="mcp-server-actions">
-                        <span
-                          className={provider.enabled ? "models-provider-badge on" : "models-provider-badge"}
-                        >
-                          {provider.enabled ? "已启用" : "已禁用"}
-                        </span>
-                        <button
-                          type="button"
-                          className="models-section-button"
-                          disabled={busy || testing}
-                          onClick={() => void testProvider(providerToForm(provider))}
-                        >
-                          <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
-                          测试
-                        </button>
-                        <button
-                          type="button"
-                          className="mcp-icon-button"
-                          onClick={() => openEditProvider(provider)}
-                          aria-label={`配置 ${provider.name}`}
+      {activeTab === "providers" && (
+        <section className="mcp-list-section">
+          <header className="models-section-header">
+            <div className="models-section-intro">
+              <h2 className="models-section-title">Provider</h2>
+              <p className="models-section-desc">
+                管理上游模型服务、API Key、默认模型和 API 兼容模式。Agent Profile 里的模型绑定从这里选择。
+              </p>
+            </div>
+          </header>
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">Provider</span>
+            <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
+              <Plus size={16} />
+              添加 Provider
+            </button>
+          </div>
+
+          {providerOptions.length === 0 ? (
+            <p className="mcp-list-empty">尚未添加 Provider</p>
+          ) : (
+            <ul className="mcp-server-list">
+              {providerOptions.map((provider) => {
+                const testing = testingProviderKey === provider.id;
+                return (
+                  <li key={provider.id} className="mcp-server-row models-provider-row">
+                    <div className="models-provider-row-main">
+                      <span className="mcp-server-name">{provider.name}</span>
+                      <small>
+                        {provider.defaultModel}
+                        {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
+                      </small>
+                    </div>
+                    <div className="mcp-server-actions">
+                      <span
+                        className={provider.enabled ? "models-provider-badge on" : "models-provider-badge"}
+                      >
+                        {provider.enabled ? "已启用" : "已禁用"}
+                      </span>
+                      <button
+                        type="button"
+                        className="models-section-button"
+                        disabled={busy || testing}
+                        onClick={() => void testProvider(providerToForm(provider))}
+                      >
+                        <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
+                        测试
+                      </button>
+                      <button
+                        type="button"
+                        className="mcp-icon-button"
+                        onClick={() => openEditProvider(provider)}
+                        aria-label={`配置 ${provider.name}`}
+                        disabled={busy}
+                      >
+                        <Settings2 size={18} />
+                      </button>
+                      <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
+                        <input
+                          type="checkbox"
+                          checked={provider.enabled}
                           disabled={busy}
-                        >
-                          <Settings2 size={18} />
-                        </button>
-                        <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
-                          <input
-                            type="checkbox"
-                            checked={provider.enabled}
-                            disabled={busy}
-                            onChange={() => void toggleProvider(provider)}
-                          />
-                          <span className="mcp-toggle-track" aria-hidden />
-                        </label>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        </>
+                          onChange={() => void toggleProvider(provider)}
+                        />
+                        <span className="mcp-toggle-track" aria-hidden />
+                      </label>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       )}
 
       {activeTab === "routes" && (
         <section className="mcp-list-section models-routes-section">
           <header className="models-section-header">
             <div className="models-section-intro">
-              <h2 className="models-section-title">编排配置</h2>
+              <h2 className="models-section-title">Agent Profile</h2>
               <p className="models-section-desc">
-                每个对话在输入区选择一个 Agent Profile；运行时按 profile 注册主
-                agent、子代理、模型和工具权限。
+                每个对话在输入区选择一个 Agent Profile；Profile 配置主 agent，并从子代理库选择模板，为主 agent
+                与已选子代理绑定 Provider 和模型。
               </p>
               <p className="models-section-meta">
                 当前可运行 profile 仍通过兼容模型路线绑定 provider；可用「测试」验证每个 agent 模型能否调用
@@ -1408,15 +1040,6 @@ export function ModelsSettingsPanel({
                 <Plus size={16} />
                 添加 Agent Profile
               </button>
-              <button
-                type="button"
-                className="models-section-button"
-                disabled={busy}
-                onClick={openCreateRouteProfile}
-              >
-                <Plus size={16} />
-                添加 Coding Profile
-              </button>
             </div>
           </div>
           {profilePerformanceError ? (
@@ -1428,9 +1051,6 @@ export function ModelsSettingsPanel({
           ) : (
             <ul className="mcp-server-list">
               {selectableProfileSummaries.map((summary) => {
-                const routeProfile = settings.routeProfiles.find(
-                  (profile) => profile.id === summary.selectionId,
-                );
                 const editableProfile = canEditStoredAgentProfile(summary.profile);
                 const performance =
                   performanceByProfileKey.get(summary.profile.id) ??
@@ -1448,28 +1068,17 @@ export function ModelsSettingsPanel({
                       <button
                         type="button"
                         className="models-section-button"
-                        disabled={busy || testingRouteProfileId !== null}
+                        disabled={busy || testingAgentProfileId !== null}
                         onClick={() => void testAgentProfile(summary.profile)}
                       >
                         <RefreshCw
                           size={14}
                           className={
-                            testingRouteProfileId === summary.profile.id ? "model-refresh-spin" : undefined
+                            testingAgentProfileId === summary.profile.id ? "model-refresh-spin" : undefined
                           }
                         />
                         测试
                       </button>
-                      {routeProfile ? (
-                        <button
-                          type="button"
-                          className="mcp-icon-button"
-                          onClick={() => openEditRouteProfile(routeProfile)}
-                          aria-label={`编辑 ${summary.name} 模型路线`}
-                          disabled={busy}
-                        >
-                          <Settings2 size={18} />
-                        </button>
-                      ) : null}
                       <button
                         type="button"
                         className="mcp-icon-button"
@@ -1528,37 +1137,13 @@ export function ModelsSettingsPanel({
         </section>
       )}
 
-      {activeTab === "permissions" && (
-        <section className="mcp-list-section models-permissions-section">
-          <header className="models-section-header">
-            <div className="models-section-intro">
-              <h2 className="models-section-title">工具权限</h2>
-              <p className="models-section-desc">
-                每个 profile 的主 agent 和子代理都会在运行时生成硬权限策略；这里展示的是实际会注入 SDK hook
-                的权限摘要。
-              </p>
-            </div>
-          </header>
-
-          {allProfileSummaries.length === 0 ? (
-            <p className="mcp-list-empty">尚未添加 Agent Profile</p>
-          ) : (
-            <div className="models-permission-profile-list">
-              {allProfileSummaries.map((summary) => (
-                <AgentPermissionProfile key={summary.profile.id} summary={summary} />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
       {activeTab === "presets" && (
         <section className="mcp-list-section models-presets-section">
           <header className="models-section-header">
             <div className="models-section-intro">
               <h2 className="models-section-title">场景预设</h2>
               <p className="models-section-desc">
-                内置预设由 agent template 组成；可运行状态取决于是否已有绑定模型路线的 Agent Profile。
+                内置预设是系统建议方案；点击使用后会写入用户子代理模板副本，并创建可运行的 Agent Profile。
               </p>
             </div>
           </header>
@@ -1606,41 +1191,6 @@ export function ModelsSettingsPanel({
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
           onTest={() => void testProvider(providerForm)}
-        />
-      )}
-
-      {routeProfileModalOpen && (
-        <RouteProfileEditorModal
-          form={routeProfileForm}
-          setForm={setRouteProfileForm}
-          providers={settings.providers}
-          routePricing={routePricing}
-          routeCapabilities={routeCapabilities}
-          modelsDevOptions={modelsDevOptions}
-          modelsDevLoading={modelsDevLoading}
-          modelsForProvider={modelsForProvider}
-          modelsErrorForProvider={modelsErrorForProvider}
-          loadingForProvider={loadingForProvider}
-          error={routeProfileModalError}
-          busy={busy}
-          canDelete={settings.routeProfiles.length > 1}
-          pricingLoading={pricingLoading}
-          testingAll={testingRouteProfileId === (routeProfileForm.id ?? "__draft__") && !testingRouteRole}
-          testingRole={testingRouteRole}
-          routeTestResults={routeTestResults}
-          onClose={closeRouteProfileModal}
-          onSave={() => void saveRouteProfile()}
-          onDelete={() => void deleteRouteProfile()}
-          onRefreshModelsDev={() => void refreshModelsDevCatalog(routeProfileForm.routes)}
-          onTestAll={() => void testRouteProfile(routeProfileForm.routes, routeProfileForm.id ?? "__draft__")}
-          onTestRole={(role) => {
-            const route = routeProfileForm.routes.find((entry) => entry.role === role);
-            if (route) {
-              void testSingleRoute(route, routeProfileForm.id ?? "__draft__");
-            }
-          }}
-          onUpdateRoute={updateRouteInForm}
-          onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
       )}
 
@@ -1771,6 +1321,10 @@ interface AgentProfileToolPolicyFieldValues {
   networkWebFetch: boolean;
 }
 
+const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
+
+type AgentProfileSelectedNode = { kind: "main" } | { kind: "agent"; agentKey: string };
+
 function AgentProfileEditorModal({
   form,
   setForm,
@@ -1801,28 +1355,28 @@ function AgentProfileEditorModal({
   onFetchModels: (provider: ProviderConfigView) => void;
 }) {
   const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
-  const [newAgentTemplateId, setNewAgentTemplateId] = useState(templates[0]?.id ?? "");
+  const selectedTemplateIds = useMemo(
+    () => new Set(form.agents.map((agent) => agent.templateId)),
+    [form.agents],
+  );
+  const selectableTemplates = useMemo(
+    () => templates.filter((template) => !selectedTemplateIds.has(template.id)),
+    [selectedTemplateIds, templates],
+  );
+  const [selectedNode, setSelectedNode] = useState<AgentProfileSelectedNode | null>(null);
+  const selectedAgentIndex =
+    selectedNode?.kind === "agent"
+      ? form.agents.findIndex((agent) => agent.agentKey === selectedNode.agentKey)
+      : -1;
 
   useEffect(() => {
-    if (newAgentTemplateId && templates.some((template) => template.id === newAgentTemplateId)) {
-      return;
+    if (selectedNode?.kind === "agent" && selectedAgentIndex === -1) {
+      setSelectedNode(null);
     }
-    setNewAgentTemplateId(templates[0]?.id ?? "");
-  }, [newAgentTemplateId, templates]);
+  }, [selectedAgentIndex, selectedNode?.kind]);
 
   function patch(patch: Partial<AgentProfileFormState>) {
     setForm((current) => ({ ...current, ...patch }));
-  }
-
-  function patchStrategyKind(strategyKind: AgentProfileFormState["strategyKind"]) {
-    setForm((current) => ({
-      ...current,
-      strategyKind,
-      workflowSteps:
-        strategyKind !== "autonomous" && current.workflowSteps.length === 0
-          ? createWorkflowStepFormsFromAgents(current.agents, current.workflowSteps)
-          : current.workflowSteps,
-    }));
   }
 
   function patchAgent(index: number, patch: Partial<AgentProfileAgentFormState>) {
@@ -1857,109 +1411,9 @@ function AgentProfileEditorModal({
     }));
   }
 
-  function patchAgentToolPolicy(index: number, toolPatch: Partial<AgentProfileToolPolicyFieldValues>) {
-    patchAgent(index, {
-      ...(toolPatch.allowedTools !== undefined ? { allowedTools: toolPatch.allowedTools } : {}),
-      ...(toolPatch.disallowedTools !== undefined ? { disallowedTools: toolPatch.disallowedTools } : {}),
-      ...(toolPatch.mcpServers !== undefined ? { mcpServers: toolPatch.mcpServers } : {}),
-      ...(toolPatch.mcpTools !== undefined ? { mcpTools: toolPatch.mcpTools } : {}),
-      ...(toolPatch.bashApproval !== undefined ? { bashApproval: toolPatch.bashApproval } : {}),
-      ...(toolPatch.bashCommandAllowlist !== undefined
-        ? { bashCommandAllowlist: toolPatch.bashCommandAllowlist }
-        : {}),
-      ...(toolPatch.bashCommandDenylist !== undefined
-        ? { bashCommandDenylist: toolPatch.bashCommandDenylist }
-        : {}),
-      ...(toolPatch.filesystemRead !== undefined ? { filesystemRead: toolPatch.filesystemRead } : {}),
-      ...(toolPatch.filesystemWrite !== undefined ? { filesystemWrite: toolPatch.filesystemWrite } : {}),
-      ...(toolPatch.networkWebSearch !== undefined ? { networkWebSearch: toolPatch.networkWebSearch } : {}),
-      ...(toolPatch.networkWebFetch !== undefined ? { networkWebFetch: toolPatch.networkWebFetch } : {}),
-    });
-  }
-
-  function updateAgentKey(index: number, agentKey: string) {
-    setForm((current) => {
-      const previousKey = current.agents[index]?.agentKey;
-      return {
-        ...current,
-        agents: current.agents.map((agent, agentIndex) =>
-          agentIndex === index ? { ...agent, agentKey } : agent,
-        ),
-        workflowSteps: previousKey
-          ? current.workflowSteps.map((step) =>
-              step.agentKey === previousKey ? { ...step, agentKey } : step,
-            )
-          : current.workflowSteps,
-      };
-    });
-  }
-
-  function setAgentEnabled(index: number, enabled: boolean) {
-    setForm((current) => {
-      const agent = current.agents[index];
-      if (!agent) {
-        return current;
-      }
-      const agents = current.agents.map((entry, agentIndex) =>
-        agentIndex === index ? { ...entry, enabled } : entry,
-      );
-      if (!enabled) {
-        return {
-          ...current,
-          agents,
-          workflowSteps: current.workflowSteps.filter((step) => step.agentKey !== agent.agentKey),
-        };
-      }
-      const alreadyHasStep = current.workflowSteps.some((step) => step.agentKey === agent.agentKey);
-      if (current.strategyKind === "autonomous" || alreadyHasStep) {
-        return { ...current, agents };
-      }
-      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
-      return {
-        ...current,
-        agents,
-        workflowSteps: [
-          ...current.workflowSteps,
-          createProfileWorkflowStepFormFromAgent(agent, {
-            existingStepIds: current.workflowSteps.map((step) => step.id),
-            ...(previousStepId ? { previousStepId } : {}),
-          }),
-        ],
-      };
-    });
-  }
-
-  function patchWorkflowStep(index: number, patch: Partial<AgentProfileWorkflowStepFormState>) {
-    setForm((current) => ({
-      ...current,
-      workflowSteps: current.workflowSteps.map((step, stepIndex) =>
-        stepIndex === index ? { ...step, ...patch } : step,
-      ),
-    }));
-  }
-
-  function updateWorkflowStepId(index: number, id: string) {
-    setForm((current) => {
-      const previousId = current.workflowSteps[index]?.id.trim();
-      const nextId = id.trim();
-      return {
-        ...current,
-        workflowSteps: current.workflowSteps.map((step, stepIndex) => {
-          if (stepIndex === index) {
-            return { ...step, id };
-          }
-          if (!previousId || !nextId) {
-            return step;
-          }
-          return { ...step, dependsOn: replaceDependencyToken(step.dependsOn, previousId, nextId) };
-        }),
-      };
-    });
-  }
-
   function addAgent(templateId: string) {
     const template = templates.find((entry) => entry.id === templateId);
-    if (!template) {
+    if (!template || form.agents.some((agent) => agent.templateId === template.id)) {
       return;
     }
     const provider = selectPresetDefaultProvider(providers);
@@ -1971,23 +1425,21 @@ function AgentProfileEditorModal({
           existingAgentKeys: current.agents.map((agent) => agent.agentKey),
         }),
       ];
-      const addedAgent = agents[agents.length - 1];
-      if (!addedAgent || current.strategyKind === "autonomous") {
-        return { ...current, agents };
-      }
-      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
-      return {
-        ...current,
-        agents,
-        workflowSteps: [
-          ...current.workflowSteps,
-          createProfileWorkflowStepFormFromAgent(addedAgent, {
-            existingStepIds: current.workflowSteps.map((step) => step.id),
-            ...(previousStepId ? { previousStepId } : {}),
-          }),
-        ],
-      };
+      return { ...current, agents };
     });
+  }
+
+  function handleTemplateDragStart(event: React.DragEvent<HTMLElement>, templateId: string) {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(AGENT_TEMPLATE_DRAG_TYPE, templateId);
+  }
+
+  function handleCanvasDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const templateId = event.dataTransfer.getData(AGENT_TEMPLATE_DRAG_TYPE);
+    if (templateId) {
+      addAgent(templateId);
+    }
   }
 
   function removeAgent(index: number) {
@@ -1998,109 +1450,6 @@ function AgentProfileEditorModal({
       ),
       agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
     }));
-  }
-
-  function moveAgent(index: number, direction: -1 | 1) {
-    setForm((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.agents.length) {
-        return current;
-      }
-      const agents = [...current.agents];
-      const [agent] = agents.splice(index, 1);
-      if (!agent) {
-        return current;
-      }
-      agents.splice(nextIndex, 0, agent);
-      return { ...current, agents };
-    });
-  }
-
-  function addWorkflowStep(agentKey?: string) {
-    setForm((current) => {
-      const agent =
-        current.agents.find((entry) => entry.enabled && entry.agentKey === agentKey) ??
-        current.agents.find((entry) => entry.enabled);
-      if (!agent) {
-        return current;
-      }
-      const previousStepId = current.workflowSteps[current.workflowSteps.length - 1]?.id.trim();
-      return {
-        ...current,
-        workflowSteps: [
-          ...current.workflowSteps,
-          createProfileWorkflowStepFormFromAgent(agent, {
-            existingStepIds: current.workflowSteps.map((step) => step.id),
-            ...(previousStepId ? { previousStepId } : {}),
-          }),
-        ],
-      };
-    });
-  }
-
-  function removeWorkflowStep(index: number) {
-    setForm((current) => ({
-      ...current,
-      workflowSteps: current.workflowSteps
-        .filter((_, stepIndex) => stepIndex !== index)
-        .map((step) => ({
-          ...step,
-          dependsOn: removeDeletedWorkflowDependency(step.dependsOn, current.workflowSteps[index]?.id),
-        })),
-    }));
-  }
-
-  function moveWorkflowStep(index: number, direction: -1 | 1) {
-    setForm((current) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= current.workflowSteps.length) {
-        return current;
-      }
-      const workflowSteps = [...current.workflowSteps];
-      const [step] = workflowSteps.splice(index, 1);
-      if (!step) {
-        return current;
-      }
-      workflowSteps.splice(nextIndex, 0, step);
-      return { ...current, workflowSteps };
-    });
-  }
-
-  function rebuildWorkflowSteps() {
-    setForm((current) => ({
-      ...current,
-      workflowSteps: createWorkflowStepFormsFromAgents(current.agents, current.workflowSteps),
-    }));
-  }
-
-  function updateAgentTemplate(index: number, templateId: string) {
-    const template = templates.find((entry) => entry.id === templateId);
-    if (!template) {
-      patchAgent(index, { templateId });
-      return;
-    }
-    patchAgent(index, {
-      templateId,
-      displayName: template.name,
-      allowedTools: template.defaultTools.allowed.join(", "),
-      disallowedTools: template.defaultTools.disallowed.join(", "),
-      mcpServers: template.mcpServers.join(", "),
-      mcpTools: template.defaultTools.mcp?.allowedTools.join(", ") ?? "",
-      bashApproval: template.defaultTools.bash?.approval ?? "risky",
-      bashCommandAllowlist: template.defaultTools.bash?.commandAllowlist?.join(", ") ?? "",
-      bashCommandDenylist: template.defaultTools.bash?.commandDenylist?.join(", ") ?? "",
-      filesystemRead: template.defaultTools.filesystem?.read ?? "workspace",
-      filesystemWrite: template.defaultTools.filesystem?.write ?? "none",
-      networkWebSearch:
-        template.defaultTools.network?.webSearch ??
-        (template.defaultTools.allowed.includes("WebSearch") &&
-          !template.defaultTools.disallowed.includes("WebSearch")),
-      networkWebFetch:
-        template.defaultTools.network?.webFetch ??
-        (template.defaultTools.allowed.includes("WebFetch") &&
-          !template.defaultTools.disallowed.includes("WebFetch")),
-      skills: template.skills.join(", "),
-    });
   }
 
   return (
@@ -2135,61 +1484,31 @@ function AgentProfileEditorModal({
 
         <div className="settings-modal-body mcp-editor-form models-agent-profile-form">
           <section className="models-agent-profile-form-section">
-            <div className="models-agent-template-form-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">Profile ID</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.id}
-                  disabled={busy || editing}
-                  onChange={(event) => patch({ id: event.target.value })}
-                />
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">名称</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.name}
-                  disabled={busy}
-                  onChange={(event) => patch({ name: event.target.value })}
-                />
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">场景</span>
-                <select
-                  className="mcp-field-input"
-                  value={form.preset}
-                  disabled={busy}
-                  onChange={(event) =>
-                    patch({ preset: event.target.value as AgentProfileFormState["preset"] })
-                  }
-                >
-                  {["coding", "research", "writing", "product", "data", "ops", "custom"].map((domain) => (
-                    <option key={domain} value={domain}>
-                      {formatAgentDomainLabel(domain as AgentProfileFormState["preset"])}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">来源</span>
-                <select
-                  className="mcp-field-input"
-                  value={form.source}
-                  disabled={busy}
-                  onChange={(event) =>
-                    patch({ source: event.target.value as AgentProfileFormState["source"] })
-                  }
-                >
-                  <option value="user">用户</option>
-                  <option value="project">项目</option>
-                </select>
-              </label>
+            <div className="models-agent-profile-template-summary">
+              <div className="models-agent-profile-title-row">
+                <span className="models-route-role">{form.name}</span>
+                <span className="models-agent-domain-badge">{formatAgentDomainLabel(form.preset)}</span>
+                <span className="models-agent-source-badge">
+                  {form.source === "project" ? "项目" : "用户"}
+                </span>
+              </div>
+              <p className="models-subagent-card-desc">{form.id}</p>
             </div>
           </section>
 
           <section className="models-agent-profile-form-section">
             <h3 className="models-route-profile-section-title">主 Agent</h3>
+            <div className="models-agent-profile-template-summary">
+              <div className="models-agent-profile-title-row">
+                <span className="models-route-role">{form.mainName}</span>
+                <span className="models-agent-source-badge">
+                  {form.mainSystemPromptPreset === "claude_code" ? "Claude Code 预设" : "自定义预设"}
+                </span>
+              </div>
+              <p className="models-subagent-card-desc">
+                主 Agent 定义当前 Profile 的任务目标、编排边界和可用工具。
+              </p>
+            </div>
             <div className="models-agent-template-form-grid">
               <label className="mcp-field">
                 <span className="mcp-field-label">名称</span>
@@ -2238,7 +1557,7 @@ function AgentProfileEditorModal({
                   ))}
                 </select>
               </label>
-              <label className="mcp-field">
+              <div className="mcp-field">
                 <span className="mcp-field-label">模型</span>
                 <ModelSelectField
                   value={form.mainModelId}
@@ -2249,7 +1568,7 @@ function AgentProfileEditorModal({
                   onChange={(modelId) => patch({ mainModelId: modelId })}
                   onRefresh={activeProvider ? () => onFetchModels(activeProvider) : undefined}
                 />
-              </label>
+              </div>
             </div>
             <label className="mcp-field">
               <span className="mcp-field-label">主 Agent 提示词</span>
@@ -2289,250 +1608,17 @@ function AgentProfileEditorModal({
           </section>
 
           <section className="models-agent-profile-form-section">
-            <h3 className="models-route-profile-section-title">编排</h3>
-            <div className="models-agent-template-form-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">策略</span>
-                <select
-                  className="mcp-field-input"
-                  value={form.strategyKind}
-                  disabled={busy}
-                  onChange={(event) =>
-                    patchStrategyKind(event.target.value as AgentProfileFormState["strategyKind"])
-                  }
-                >
-                  <option value="autonomous">Agent 自主编排</option>
-                  <option value="hybrid">推荐步骤，可调整</option>
-                  <option value="fixed">固定步骤</option>
-                </select>
-              </label>
-              <label className="mcp-field models-toggle-field">
-                <span className="mcp-field-label">Planner 可调整步骤</span>
-                <label className="mcp-toggle" title={form.allowPlannerAdjustments ? "已启用" : "已禁用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.allowPlannerAdjustments}
-                    disabled={busy || form.strategyKind !== "hybrid"}
-                    onChange={(event) => patch({ allowPlannerAdjustments: event.target.checked })}
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
-              </label>
-            </div>
-            {form.strategyKind === "autonomous" ? (
-              <label className="mcp-field">
-                <span className="mcp-field-label">自主编排指令</span>
-                <textarea
-                  className="mcp-field-input mcp-field-textarea"
-                  value={form.guidancePrompt}
-                  disabled={busy}
-                  onChange={(event) => patch({ guidancePrompt: event.target.value })}
-                />
-              </label>
-            ) : null}
-            {form.strategyKind !== "autonomous" ? (
-              <div className="models-agent-profile-workflow-editor">
-                <div className="models-agent-profile-workflow-head">
-                  <h4 className="models-agent-profile-workflow-title">Workflow Steps</h4>
-                  <div className="models-agent-profile-workflow-actions">
-                    <button
-                      type="button"
-                      className="models-section-button"
-                      disabled={busy}
-                      onClick={rebuildWorkflowSteps}
-                    >
-                      <RefreshCw size={14} />
-                      同步
-                    </button>
-                    <button
-                      type="button"
-                      className="models-section-button"
-                      disabled={busy || !form.agents.some((agent) => agent.enabled)}
-                      onClick={() => addWorkflowStep()}
-                    >
-                      <Plus size={14} />
-                      步骤
-                    </button>
-                  </div>
-                </div>
-
-                {form.workflowSteps.length === 0 ? (
-                  <p className="mcp-list-empty">当前编排没有步骤。</p>
-                ) : (
-                  <div className="models-agent-profile-step-editor-list">
-                    {form.workflowSteps.map((step, index) => {
-                      const enabledAgents = form.agents.filter((agent) => agent.enabled);
-                      const stepAgentEnabled = enabledAgents.some(
-                        (agent) => agent.agentKey === step.agentKey,
-                      );
-                      return (
-                        <article key={`${step.id}-${index}`} className="models-agent-profile-step-editor">
-                          <div className="models-agent-profile-step-editor-head">
-                            <span className="models-agent-profile-step-index">{index + 1}</span>
-                            <button
-                              type="button"
-                              className="mcp-icon-button"
-                              disabled={busy || index === 0}
-                              onClick={() => moveWorkflowStep(index, -1)}
-                              aria-label={`上移 step ${step.id || index + 1}`}
-                            >
-                              <ArrowUp size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              className="mcp-icon-button"
-                              disabled={busy || index === form.workflowSteps.length - 1}
-                              onClick={() => moveWorkflowStep(index, 1)}
-                              aria-label={`下移 step ${step.id || index + 1}`}
-                            >
-                              <ArrowDown size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              className="mcp-icon-button danger"
-                              disabled={busy}
-                              onClick={() => removeWorkflowStep(index)}
-                              aria-label={`移除 step ${step.id || index + 1}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-
-                          <div className="models-agent-template-form-grid">
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">Step ID</span>
-                              <input
-                                className="mcp-field-input"
-                                value={step.id}
-                                disabled={busy}
-                                onChange={(event) => updateWorkflowStepId(index, event.target.value)}
-                              />
-                            </label>
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">Agent</span>
-                              <select
-                                className="mcp-field-input"
-                                value={step.agentKey}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  patchWorkflowStep(index, { agentKey: event.target.value })
-                                }
-                              >
-                                {!stepAgentEnabled ? (
-                                  <option value={step.agentKey}>{step.agentKey || "未选择"}</option>
-                                ) : null}
-                                {enabledAgents.map((agent) => (
-                                  <option key={agent.agentKey} value={agent.agentKey}>
-                                    {agent.displayName || agent.agentKey}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">输出 Key</span>
-                              <input
-                                className="mcp-field-input"
-                                value={step.outputKey}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  patchWorkflowStep(index, { outputKey: event.target.value })
-                                }
-                              />
-                            </label>
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">依赖 Step</span>
-                              <input
-                                className="mcp-field-input"
-                                value={step.dependsOn}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  patchWorkflowStep(index, { dependsOn: event.target.value })
-                                }
-                              />
-                            </label>
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">运行方式</span>
-                              <select
-                                className="mcp-field-input"
-                                value={step.runMode}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  patchWorkflowStep(index, {
-                                    runMode: event.target
-                                      .value as AgentProfileWorkflowStepFormState["runMode"],
-                                  })
-                                }
-                              >
-                                <option value="sequential">顺序</option>
-                                <option value="parallel">并行</option>
-                              </select>
-                            </label>
-                            <label className="mcp-field">
-                              <span className="mcp-field-label">失败策略</span>
-                              <select
-                                className="mcp-field-input"
-                                value={step.failurePolicy}
-                                disabled={busy}
-                                onChange={(event) =>
-                                  patchWorkflowStep(index, {
-                                    failurePolicy: event.target
-                                      .value as AgentProfileWorkflowStepFormState["failurePolicy"],
-                                  })
-                                }
-                              >
-                                <option value="stop">停止</option>
-                                <option value="retry">重试</option>
-                                <option value="skip">跳过</option>
-                                <option value="ask_user">询问用户</option>
-                              </select>
-                            </label>
-                            <label className="mcp-field models-toggle-field">
-                              <span className="mcp-field-label">必需步骤</span>
-                              <label className="mcp-toggle" title={step.required ? "必需" : "可选"}>
-                                <input
-                                  type="checkbox"
-                                  checked={step.required}
-                                  disabled={busy}
-                                  onChange={(event) =>
-                                    patchWorkflowStep(index, { required: event.target.checked })
-                                  }
-                                />
-                                <span className="mcp-toggle-track" aria-hidden />
-                              </label>
-                            </label>
-                          </div>
-
-                          <label className="mcp-field">
-                            <span className="mcp-field-label">Step Prompt</span>
-                            <textarea
-                              className="mcp-field-input mcp-field-textarea models-agent-profile-step-textarea"
-                              value={step.promptTemplate}
-                              disabled={busy}
-                              onChange={(event) =>
-                                patchWorkflowStep(index, { promptTemplate: event.target.value })
-                              }
-                            />
-                          </label>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </section>
-
-          <section className="models-agent-profile-form-section">
             <div className="models-route-profile-section-head">
-              <h3 className="models-route-profile-section-title">子 Agent</h3>
+              <h3 className="models-route-profile-section-title">从子代理库选择</h3>
               <div className="models-agent-profile-add-row">
                 <select
                   className="mcp-field-input"
-                  disabled={busy || templates.length === 0}
+                  disabled={busy || selectableTemplates.length === 0}
                   value={newAgentTemplateId}
                   onChange={(event) => setNewAgentTemplateId(event.target.value)}
                 >
-                  {templates.map((template) => (
+                  {selectableTemplates.length === 0 ? <option value="">没有可选子代理</option> : null}
+                  {selectableTemplates.map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.name}
                     </option>
@@ -2545,47 +1631,22 @@ function AgentProfileEditorModal({
                   onClick={() => addAgent(newAgentTemplateId)}
                 >
                   <Plus size={14} />
-                  添加
+                  选择
                 </button>
               </div>
             </div>
 
             {form.agents.length === 0 ? (
-              <p className="mcp-list-empty">当前 profile 没有子 Agent。</p>
+              <p className="mcp-list-empty">当前 Profile 尚未从子代理库选择子代理。</p>
             ) : (
               <div className="models-agent-profile-agent-editor-list">
                 {form.agents.map((agent, index) => {
                   const provider = providers.find((entry) => entry.id === agent.providerId);
+                  const template = templates.find((entry) => entry.id === agent.templateId);
                   return (
-                    <article key={`${agent.agentKey}-${index}`} className="models-agent-profile-agent-editor">
+                    <article key={agent.agentKey} className="models-agent-profile-agent-editor">
                       <div className="models-agent-profile-agent-editor-head">
-                        <label className="mcp-toggle" title={agent.enabled ? "已启用" : "已停用"}>
-                          <input
-                            type="checkbox"
-                            checked={agent.enabled}
-                            disabled={busy}
-                            onChange={(event) => setAgentEnabled(index, event.target.checked)}
-                          />
-                          <span className="mcp-toggle-track" aria-hidden />
-                        </label>
-                        <button
-                          type="button"
-                          className="mcp-icon-button"
-                          disabled={busy || index === 0}
-                          onClick={() => moveAgent(index, -1)}
-                          aria-label={`上移 ${agent.agentKey}`}
-                        >
-                          <ArrowUp size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          className="mcp-icon-button"
-                          disabled={busy || index === form.agents.length - 1}
-                          onClick={() => moveAgent(index, 1)}
-                          aria-label={`下移 ${agent.agentKey}`}
-                        >
-                          <ArrowDown size={16} />
-                        </button>
+                        <span className="models-agent-source-badge">来自子代理库</span>
                         <button
                           type="button"
                           className="mcp-icon-button danger"
@@ -2597,40 +1658,26 @@ function AgentProfileEditorModal({
                         </button>
                       </div>
 
+                      <div className="models-agent-profile-template-summary">
+                        <div className="models-agent-profile-title-row">
+                          <span className="models-route-role">
+                            {template?.name ?? (agent.displayName || agent.agentKey)}
+                          </span>
+                          {template ? (
+                            <span className="models-agent-domain-badge">
+                              {formatAgentDomainLabel(template.domain)}
+                            </span>
+                          ) : (
+                            <span className="models-agent-source-badge">模板缺失</span>
+                          )}
+                          <span className="models-route-role-id">{agent.agentKey}</span>
+                        </div>
+                        <p className="models-subagent-card-desc">
+                          {template?.description ?? `引用模板：${agent.templateId}`}
+                        </p>
+                      </div>
+
                       <div className="models-agent-template-form-grid">
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">Agent key</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.agentKey}
-                            disabled={busy}
-                            onChange={(event) => updateAgentKey(index, event.target.value)}
-                          />
-                        </label>
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">显示名称</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.displayName}
-                            disabled={busy}
-                            onChange={(event) => patchAgent(index, { displayName: event.target.value })}
-                          />
-                        </label>
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">模板</span>
-                          <select
-                            className="mcp-field-input"
-                            value={agent.templateId}
-                            disabled={busy}
-                            onChange={(event) => updateAgentTemplate(index, event.target.value)}
-                          >
-                            {templates.map((template) => (
-                              <option key={template.id} value={template.id}>
-                                {template.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
                         <label className="mcp-field">
                           <span className="mcp-field-label">Provider</span>
                           <select
@@ -2652,7 +1699,7 @@ function AgentProfileEditorModal({
                             ))}
                           </select>
                         </label>
-                        <label className="mcp-field">
+                        <div className="mcp-field">
                           <span className="mcp-field-label">模型</span>
                           <ModelSelectField
                             value={agent.modelId}
@@ -2663,43 +1710,8 @@ function AgentProfileEditorModal({
                             onChange={(modelId) => patchAgent(index, { modelId })}
                             onRefresh={provider ? () => onFetchModels(provider) : undefined}
                           />
-                        </label>
-                        <label className="mcp-field">
-                          <span className="mcp-field-label">Skills</span>
-                          <input
-                            className="mcp-field-input"
-                            value={agent.skills}
-                            disabled={busy}
-                            onChange={(event) => patchAgent(index, { skills: event.target.value })}
-                          />
-                        </label>
+                        </div>
                       </div>
-                      <AgentProfileToolPolicyFields
-                        disabled={busy}
-                        values={{
-                          allowedTools: agent.allowedTools,
-                          disallowedTools: agent.disallowedTools,
-                          mcpServers: agent.mcpServers,
-                          mcpTools: agent.mcpTools,
-                          bashApproval: agent.bashApproval,
-                          bashCommandAllowlist: agent.bashCommandAllowlist,
-                          bashCommandDenylist: agent.bashCommandDenylist,
-                          filesystemRead: agent.filesystemRead,
-                          filesystemWrite: agent.filesystemWrite,
-                          networkWebSearch: agent.networkWebSearch,
-                          networkWebFetch: agent.networkWebFetch,
-                        }}
-                        onChange={(toolPatch) => patchAgentToolPolicy(index, toolPatch)}
-                      />
-                      <label className="mcp-field">
-                        <span className="mcp-field-label">实例提示词覆盖</span>
-                        <textarea
-                          className="mcp-field-input mcp-field-textarea"
-                          value={agent.promptOverride}
-                          disabled={busy}
-                          onChange={(event) => patchAgent(index, { promptOverride: event.target.value })}
-                        />
-                      </label>
                     </article>
                   );
                 })}
@@ -2868,434 +1880,6 @@ function AgentProfileToolPolicyFields({
   );
 }
 
-function RouteProfileEditorModal({
-  form,
-  setForm,
-  providers,
-  routePricing,
-  routeCapabilities,
-  modelsDevOptions,
-  modelsDevLoading,
-  modelsForProvider,
-  modelsErrorForProvider,
-  loadingForProvider,
-  error,
-  busy,
-  canDelete,
-  pricingLoading,
-  testingAll,
-  testingRole,
-  routeTestResults,
-  onClose,
-  onSave,
-  onDelete,
-  onRefreshModelsDev,
-  onTestAll,
-  onTestRole,
-  onUpdateRoute,
-  onFetchModels,
-}: {
-  form: RouteProfileInput;
-  setForm: Dispatch<SetStateAction<RouteProfileInput>>;
-  providers: ProviderConfigView[];
-  routePricing: Partial<Record<AgentRole, RoutePricingHint>>;
-  routeCapabilities: Partial<Record<AgentRole, RouteCapabilityHint>>;
-  modelsDevOptions: ModelsDevModelOption[];
-  modelsDevLoading: boolean;
-  modelsForProvider: (providerId: string) => UpstreamModelOption[];
-  modelsErrorForProvider: (providerId: string) => string | undefined;
-  loadingForProvider: (providerId: string) => boolean;
-  error?: string | undefined;
-  busy?: boolean | undefined;
-  canDelete: boolean;
-  pricingLoading: boolean;
-  testingAll: boolean;
-  testingRole: AgentRole | null;
-  routeTestResults: Partial<Record<AgentRole, RoleRouteTestResult>>;
-  onClose: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-  onRefreshModelsDev: () => void;
-  onTestAll: () => void;
-  onTestRole: (role: AgentRole) => void;
-  onUpdateRoute: (
-    role: AgentRole,
-    patch: Partial<RoleRouteConfig>,
-    options?: {
-      clearThinkingEffort?: boolean;
-      clearModelsDevMapping?: boolean;
-      clearManualSpec?: boolean;
-    },
-  ) => void;
-  onFetchModels: (provider: ProviderConfigView) => void;
-}) {
-  const isEditing = Boolean(form.id);
-  const title = isEditing ? `编辑 ${form.name.trim() || "路由配置"}` : "新建路由配置";
-
-  return (
-    <div className="settings-modal-backdrop" onClick={onClose}>
-      <div
-        className="settings-modal settings-modal-route-profile"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="route-profile-modal-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="settings-modal-header">
-          <h2 id="route-profile-modal-title" className="settings-modal-title">
-            {title}
-          </h2>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label="关闭"
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="settings-modal-body">
-          <div className="models-route-profile-form">
-            <div className="models-route-profile-meta">
-              <label className="mcp-field">
-                <span className="mcp-field-label">配置名称</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.name}
-                  disabled={busy}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                />
-              </label>
-            </div>
-
-            <section className="models-route-profile-section">
-              <div className="models-route-profile-section-head">
-                <h3 className="models-route-profile-section-title">各角色模型</h3>
-                <div className="models-route-profile-section-actions">
-                  <button
-                    type="button"
-                    className="models-section-button"
-                    disabled={busy || testingAll || testingRole !== null}
-                    onClick={onTestAll}
-                  >
-                    <RefreshCw size={14} className={testingAll ? "model-refresh-spin" : undefined} />
-                    测试全部
-                  </button>
-                  <button
-                    type="button"
-                    className="models-section-button"
-                    disabled={busy || pricingLoading}
-                    onClick={onRefreshModelsDev}
-                  >
-                    刷新 models.dev
-                  </button>
-                </div>
-              </div>
-
-              <ul className="models-route-list models-route-list-modal">
-                {AGENT_ROLES.map((role) => {
-                  const route = form.routes.find((candidate) => candidate.role === role);
-                  const providerId = route?.providerId ?? providers[0]?.id ?? "";
-                  const routeModels = modelsForProvider(providerId);
-                  const routeLoading = loadingForProvider(providerId);
-                  const routeError = modelsErrorForProvider(providerId);
-                  const pricing = routePricing[role];
-                  const capability = routeCapabilities[role];
-                  const effortDisabled =
-                    capability?.capabilitiesResolved === true && capability.supportsReasoning === false;
-                  const needsManualSpec =
-                    Boolean(route?.modelId) &&
-                    (!pricing?.pricingResolved || !capability?.contextLimitResolved);
-                  const roleTest = routeTestResults[role];
-                  const roleTesting = testingRole === role;
-                  const routeTestBusy = testingAll || testingRole !== null;
-                  const canTestRole = Boolean(providerId.trim() && route?.modelId.trim());
-
-                  return (
-                    <li key={role} className="models-route-card models-route-card-modal">
-                      <div className="models-route-card-head">
-                        <div className="models-route-card-identity">
-                          <span className="models-route-card-title">
-                            <span className="models-route-role">{ROLE_LABELS[role]}</span>
-                            <span className="models-route-title-sep" aria-hidden>
-                              ·
-                            </span>
-                            <span className="models-route-role-id">{role}</span>
-                            <span className="models-route-title-sep" aria-hidden>
-                              ·
-                            </span>
-                            <ApiCompatToggle
-                              value={
-                                route?.apiCompat ??
-                                providers.find((entry) => entry.id === providerId)?.apiCompat ??
-                                "anthropic"
-                              }
-                              disabled={busy || !providerId}
-                              onChange={(apiCompat) => onUpdateRoute(role, { apiCompat })}
-                            />
-                          </span>
-                          {roleTest && (
-                            <span
-                              className={
-                                roleTest.ok ? "models-route-test-badge ok" : "models-route-test-badge err"
-                              }
-                              title={roleTest.ok ? roleTest.reply : roleTest.error}
-                            >
-                              {roleTest.ok
-                                ? `测试通过${roleTest.elapsedMs !== undefined ? ` · ${formatDurationMs(roleTest.elapsedMs)}` : ""}`
-                                : "测试失败"}
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className="models-section-button models-route-role-test-button"
-                            disabled={busy || routeTestBusy || !canTestRole}
-                            title={
-                              !canTestRole
-                                ? "请先选择 Provider 与模型"
-                                : roleTest?.ok
-                                  ? roleTest.reply
-                                  : roleTest?.error
-                            }
-                            onClick={() => onTestRole(role)}
-                          >
-                            <RefreshCw size={12} className={roleTesting ? "model-refresh-spin" : undefined} />
-                            测试
-                          </button>
-                        </div>
-                        <div className="models-route-card-meta">
-                          {pricing?.rates ? (
-                            <RoutePricingDisplay
-                              rates={pricing.rates}
-                              {...(pricing.pricingLabel && { title: pricing.pricingLabel })}
-                            />
-                          ) : pricing && !pricing.pricingResolved ? (
-                            <span className="models-route-pricing-badge models-route-pricing-badge-unresolved">
-                              未匹配参考单价
-                            </span>
-                          ) : null}
-                          <div className="models-route-capability-badges">
-                            {capability?.capabilitiesResolved ? (
-                              <>
-                                {capability.supportsImageInput && (
-                                  <span className="models-route-capability-badge" title="支持图片输入">
-                                    视觉
-                                  </span>
-                                )}
-                                {capability.supportsReasoning && (
-                                  <span className="models-route-capability-badge" title="支持思考链">
-                                    推理
-                                  </span>
-                                )}
-                              </>
-                            ) : !route?.modelsDevMapping ? (
-                              <span
-                                className="models-route-capability-badge models-route-capability-badge-unresolved"
-                                title="未匹配 models.dev"
-                              >
-                                能力 ?
-                              </span>
-                            ) : null}
-                            {route?.modelsDevMapping && (
-                              <span
-                                className="models-route-capability-badge"
-                                title={capability?.modelsDevLabel}
-                              >
-                                手动映射
-                              </span>
-                            )}
-                            {route?.modelId ? (
-                              capability?.contextLimitResolved && capability.contextTokens ? (
-                                <span
-                                  className="models-route-capability-badge"
-                                  title={
-                                    capability.maxOutputTokens
-                                      ? `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens · 单次最大输出 ${capability.maxOutputTokens.toLocaleString()} tokens`
-                                      : `上下文窗口 ${capability.contextTokens.toLocaleString()} tokens`
-                                  }
-                                >
-                                  上下文 {formatContextLimit(capability.contextTokens)}
-                                </span>
-                              ) : route?.manualSpec?.contextTokens ? (
-                                <span
-                                  className="models-route-capability-badge"
-                                  title={`手动填写上下文 ${route.manualSpec.contextTokens.toLocaleString()} tokens`}
-                                >
-                                  上下文 {formatContextLimit(route.manualSpec.contextTokens)}
-                                </span>
-                              ) : (
-                                <span
-                                  className="models-route-capability-badge models-route-capability-badge-unresolved"
-                                  title={`上下文上限未匹配 models.dev，按 ${DEFAULT_CONTEXT_LIMIT.toLocaleString()}（${formatContextLimit(DEFAULT_CONTEXT_LIMIT)}）估算`}
-                                >
-                                  上下文 ~{formatContextLimit(DEFAULT_CONTEXT_LIMIT)}
-                                </span>
-                              )
-                            ) : null}
-                            {route?.manualSpec?.inputPerM !== undefined &&
-                              route.manualSpec.outputPerM !== undefined && (
-                                <span className="models-route-capability-badge" title="手动填写参考单价">
-                                  手动单价
-                                </span>
-                              )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="models-route-card-fields">
-                        <label className="mcp-field models-route-field">
-                          <span className="mcp-field-label">Provider</span>
-                          <select
-                            className="mcp-field-input"
-                            value={providerId}
-                            disabled={busy}
-                            onChange={(event) => {
-                              const nextProviderId = event.target.value;
-                              const provider = providers.find((entry) => entry.id === nextProviderId);
-                              onUpdateRoute(role, {
-                                providerId: nextProviderId,
-                                modelId: route?.modelId || provider?.defaultModel || "",
-                                ...(provider?.apiCompat && { apiCompat: provider.apiCompat }),
-                              });
-                              if (provider) {
-                                onFetchModels(provider);
-                              }
-                            }}
-                          >
-                            {providers.map((provider) => (
-                              <option key={provider.id} value={provider.id}>
-                                {provider.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="mcp-field models-route-field">
-                          <span className="mcp-field-label">模型</span>
-                          <ModelSelectField
-                            value={route?.modelId ?? ""}
-                            models={routeModels}
-                            loading={routeLoading}
-                            error={routeError}
-                            disabled={busy || !providerId}
-                            onRefresh={() => {
-                              const provider = providers.find((entry) => entry.id === providerId);
-                              if (provider) {
-                                onFetchModels(provider);
-                              }
-                            }}
-                            onChange={(modelId) => onUpdateRoute(role, { modelId })}
-                          />
-                        </div>
-                        <label className="mcp-field models-route-field models-route-field-thinking">
-                          <span className="mcp-field-label">思考链</span>
-                          <select
-                            className="mcp-field-input"
-                            value={route?.thinkingEffort ?? ""}
-                            disabled={busy || effortDisabled}
-                            title={
-                              effortDisabled
-                                ? "该模型在 models.dev 中标记为不支持推理"
-                                : capability && !capability.capabilitiesResolved
-                                  ? "未匹配 models.dev，请自行确认"
-                                  : undefined
-                            }
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              if (value === "") {
-                                onUpdateRoute(role, {}, { clearThinkingEffort: true });
-                                return;
-                              }
-                              onUpdateRoute(role, { thinkingEffort: value as ThinkingEffort });
-                            }}
-                          >
-                            {THINKING_EFFORT_OPTIONS.map((option) => (
-                              <option key={option.value || "default"} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          {effortDisabled && (
-                            <span className="models-route-field-hint">该模型不支持推理</span>
-                          )}
-                          {capability && !capability.capabilitiesResolved && !route?.modelsDevMapping && (
-                            <span className="models-route-field-hint">未匹配 models.dev，请自行确认</span>
-                          )}
-                        </label>
-                        <div className="mcp-field models-route-field models-route-field-mapping">
-                          <span className="mcp-field-label">models.dev 映射</span>
-                          <ModelsDevModelSelectField
-                            value={route?.modelsDevMapping}
-                            options={modelsDevOptions}
-                            loading={modelsDevLoading || pricingLoading}
-                            disabled={busy}
-                            autoResolved={
-                              route?.modelsDevMapping
-                                ? true
-                                : capability?.capabilitiesResolved || pricing?.pricingResolved
-                            }
-                            autoResolvedMapping={capability?.resolvedModelsDevMapping}
-                            autoResolvedLabel={capability?.resolvedModelsDevLabel}
-                            onChange={(mapping) => {
-                              if (mapping) {
-                                onUpdateRoute(role, { modelsDevMapping: mapping });
-                                return;
-                              }
-                              onUpdateRoute(role, {}, { clearModelsDevMapping: true });
-                            }}
-                          />
-                        </div>
-                        {(needsManualSpec || route?.manualSpec) && (
-                          <RouteManualSpecFields
-                            spec={route?.manualSpec}
-                            disabled={busy}
-                            onChange={(manualSpec) => onUpdateRoute(role, { manualSpec })}
-                            onClear={() => onUpdateRoute(role, {}, { clearManualSpec: true })}
-                          />
-                        )}
-                        {roleTest && !roleTest.ok && roleTest.error && (
-                          <p className="models-route-test-error">{roleTest.error}</p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-
-            {error && <p className="settings-form-error">{error}</p>}
-          </div>
-        </div>
-
-        <footer className="settings-modal-footer settings-modal-footer-split">
-          {isEditing ? (
-            <button
-              type="button"
-              className="mcp-uninstall-button"
-              onClick={onDelete}
-              disabled={busy || !canDelete}
-              title={canDelete ? undefined : "至少保留一套子代理编排配置"}
-            >
-              <Trash2 size={16} />
-              删除
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="settings-modal-footer-actions">
-            <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-              取消
-            </button>
-            <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-              保存
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
 function ProviderEditorModal({
   form,
   setForm,
@@ -3331,14 +1915,15 @@ function ProviderEditorModal({
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
 
   return (
-    <div className="settings-modal-backdrop" onClick={onClose}>
-      <div
-        className="settings-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="provider-modal-title"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div className="settings-modal-backdrop">
+      <button
+        type="button"
+        className="settings-modal-backdrop-close"
+        onClick={onClose}
+        aria-label="关闭"
+        disabled={busy}
+      />
+      <div className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
         <header className="settings-modal-header">
           <h2 id="provider-modal-title" className="settings-modal-title">
             {title}
@@ -3497,127 +2082,6 @@ function ProviderEditorModal({
   );
 }
 
-function RouteManualSpecFields({
-  spec,
-  disabled,
-  onChange,
-  onClear,
-}: {
-  spec?: RouteManualSpec | undefined;
-  disabled?: boolean | undefined;
-  onChange: (spec: RouteManualSpec) => void;
-  onClear: () => void;
-}) {
-  const hasValues =
-    spec?.contextTokens !== undefined ||
-    spec?.inputPerM !== undefined ||
-    spec?.outputPerM !== undefined ||
-    spec?.cacheReadPerM !== undefined ||
-    spec?.cacheWritePerM !== undefined;
-
-  function patchManual(partial: { [K in keyof RouteManualSpec]?: RouteManualSpec[K] | undefined }) {
-    const next: { [K in keyof RouteManualSpec]?: RouteManualSpec[K] | undefined } = { ...spec, ...partial };
-    for (const key of Object.keys(next) as (keyof RouteManualSpec)[]) {
-      if (next[key] === undefined) {
-        delete next[key];
-      }
-    }
-    onChange(next as RouteManualSpec);
-  }
-
-  function parseOptionalNumber(raw: string): number | undefined {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-    const value = Number(trimmed);
-    return Number.isFinite(value) && value > 0 ? value : undefined;
-  }
-
-  return (
-    <div className="mcp-field models-route-field models-route-manual-spec">
-      <div className="model-field-head">
-        <span className="mcp-field-label">手动规格（models.dev 未匹配）</span>
-        {hasValues && (
-          <button type="button" className="model-inline-refresh" disabled={disabled} onClick={onClear}>
-            清除
-          </button>
-        )}
-      </div>
-      <p className="models-route-field-hint">
-        新模型未收录时可填写上下文 token 数与每百万 token 单价（USD），用于费用与上下文估算。
-      </p>
-      <div className="models-route-manual-spec-grid">
-        <label className="mcp-field models-route-manual-field">
-          <span className="mcp-field-label">上下文 tokens</span>
-          <input
-            className="mcp-field-input"
-            type="number"
-            min={1}
-            step={1}
-            disabled={disabled}
-            value={spec?.contextTokens ?? ""}
-            placeholder="如 200000"
-            onChange={(event) => patchManual({ contextTokens: parseOptionalNumber(event.target.value) })}
-          />
-        </label>
-        <label className="mcp-field models-route-manual-field">
-          <span className="mcp-field-label">输入 $/M</span>
-          <input
-            className="mcp-field-input"
-            type="number"
-            min={0}
-            step={0.01}
-            disabled={disabled}
-            value={spec?.inputPerM ?? ""}
-            placeholder="如 3"
-            onChange={(event) => patchManual({ inputPerM: parseOptionalNumber(event.target.value) })}
-          />
-        </label>
-        <label className="mcp-field models-route-manual-field">
-          <span className="mcp-field-label">输出 $/M</span>
-          <input
-            className="mcp-field-input"
-            type="number"
-            min={0}
-            step={0.01}
-            disabled={disabled}
-            value={spec?.outputPerM ?? ""}
-            placeholder="如 15"
-            onChange={(event) => patchManual({ outputPerM: parseOptionalNumber(event.target.value) })}
-          />
-        </label>
-        <label className="mcp-field models-route-manual-field">
-          <span className="mcp-field-label">缓存读 $/M</span>
-          <input
-            className="mcp-field-input"
-            type="number"
-            min={0}
-            step={0.01}
-            disabled={disabled}
-            value={spec?.cacheReadPerM ?? ""}
-            placeholder="可选"
-            onChange={(event) => patchManual({ cacheReadPerM: parseOptionalNumber(event.target.value) })}
-          />
-        </label>
-        <label className="mcp-field models-route-manual-field">
-          <span className="mcp-field-label">缓存写 $/M</span>
-          <input
-            className="mcp-field-input"
-            type="number"
-            min={0}
-            step={0.01}
-            disabled={disabled}
-            value={spec?.cacheWritePerM ?? ""}
-            placeholder="可选"
-            onChange={(event) => patchManual({ cacheWritePerM: parseOptionalNumber(event.target.value) })}
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
 function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary }) {
   const visibleAgents = summary.enabledAgents.slice(0, 5);
   const hiddenCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
@@ -3707,30 +2171,6 @@ function AgentProfilePerformanceStrip({
   );
 }
 
-function AgentPermissionProfile({ summary }: { summary: AgentProfileSummary }) {
-  return (
-    <article className="models-permission-profile">
-      <AgentProfileSummaryBlock summary={summary} />
-      <div className="models-permission-agent-list">
-        <PermissionAgentRow
-          name={summary.main.name}
-          modelLabel={summary.main.modelLabel}
-          chips={summary.main.permissionChips}
-        />
-        {summary.agents.map((agent) => (
-          <PermissionAgentRow
-            key={agent.agentKey}
-            name={agent.name}
-            modelLabel={agent.modelLabel}
-            chips={agent.permissionChips}
-            disabled={!agent.enabled}
-          />
-        ))}
-      </div>
-    </article>
-  );
-}
-
 function formatPerformanceSuccessRate(performance: AgentProfilePerformanceSnapshot): string {
   return performance.successRatePct === undefined ? "—" : `${performance.successRatePct.toFixed(1)}%`;
 }
@@ -3757,35 +2197,6 @@ function formatPerformanceDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(time);
-}
-
-function PermissionAgentRow({
-  name,
-  modelLabel,
-  chips,
-  disabled,
-}: {
-  name: string;
-  modelLabel: string;
-  chips: AgentProfileSummary["main"]["permissionChips"];
-  disabled?: boolean | undefined;
-}) {
-  return (
-    <div className={disabled ? "models-permission-agent-row is-disabled" : "models-permission-agent-row"}>
-      <div className="models-permission-agent-head">
-        <span className="models-route-role">{name}</span>
-        <span className="models-route-role-id">{formatModelPreview(modelLabel)}</span>
-        {disabled ? <span className="models-agent-source-badge">停用</span> : null}
-      </div>
-      <div className="models-agent-template-permissions">
-        {chips.map((chip) => (
-          <span key={`${name}:${chip.label}`} className={`models-agent-permission-chip is-${chip.tone}`}>
-            {chip.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function PresetOverview({
@@ -4010,30 +2421,6 @@ function formatAgentProfileVersionSummary(profile: OrchestrationProfile): string
   return `${profile.preset} · ${strategy} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
 }
 
-function replaceDependencyToken(raw: string, previousId: string, nextId: string): string {
-  return dependencyTokens(raw)
-    .map((token) => (token === previousId ? nextId : token))
-    .join(", ");
-}
-
-function removeDependencyToken(raw: string, removedId: string): string {
-  return dependencyTokens(raw)
-    .filter((token) => token !== removedId)
-    .join(", ");
-}
-
-function removeDeletedWorkflowDependency(raw: string, removedId: string | undefined): string {
-  const id = removedId?.trim();
-  return id ? removeDependencyToken(raw, id) : raw;
-}
-
-function dependencyTokens(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((token) => token.trim())
-    .filter(Boolean);
-}
-
 function selectPresetDefaultProvider(
   providers: readonly ProviderConfigView[],
 ): ProviderConfigView | undefined {
@@ -4065,25 +2452,4 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     form.id = provider.id;
   }
   return form;
-}
-
-function createBlankRouteProfileForm(settings?: ModelSettingsSnapshot): RouteProfileInput {
-  const defaultProvider = settings?.providers[0];
-  return {
-    name: "",
-    routes: AGENT_ROLES.map((role) => ({
-      role,
-      providerId: defaultProvider?.id ?? "",
-      modelId: defaultProvider?.defaultModel ?? "",
-      apiCompat: defaultProvider?.apiCompat ?? "anthropic",
-    })),
-  };
-}
-
-function routeProfileToForm(profile: RouteProfileView): RouteProfileInput {
-  return {
-    id: profile.id,
-    name: profile.name,
-    routes: profile.routes.map((route) => ({ ...route })),
-  };
 }

@@ -77,7 +77,6 @@ export interface EcoAgentInstanceConfig {
   tools: EcoToolPolicy;
   mcpServers: string[];
   skills: string[];
-  promptOverride?: string;
   enabled: boolean;
 }
 
@@ -312,7 +311,7 @@ function buildSdkAgentDefinition(
     description: buildAgentDescription(agent, template),
     ...(tools.length > 0 ? { tools } : {}),
     ...(disallowedTools.length > 0 ? { disallowedTools } : {}),
-    prompt: agent.promptOverride?.trim() || template.prompt,
+    prompt: template.prompt,
     model: requireModelId(agent.modelRef.modelId, agent.agentKey),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills.length > 0 ? { skills } : {}),

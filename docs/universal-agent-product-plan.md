@@ -197,7 +197,6 @@ type AgentInstanceConfig = {
   tools: ToolPolicy;
   mcpServers: McpServerRef[];
   skills?: string[];
-  promptOverride?: string;
   enabled: boolean;
 };
 
@@ -304,7 +303,7 @@ type WorkflowStep = {
 
 - 新增通用 `AgentTemplate`、`AgentInstanceConfig`、`MainAgentConfig`、`OrchestrationProfile`、`ToolPolicy` 与 workflow step 类型。
 - 新增内置 Coding agent template library，并提供从现有 route profile 生成默认 Coding orchestration profile 的迁移适配器。
-- `ModelSettingsSnapshot` 已暴露 `agentTemplates` 与 `orchestrationProfiles`，ProviderStore settings 会返回内置模板和由 route profiles 生成的新编排配置。
+- `ModelSettingsSnapshot` 已暴露 `agentTemplates` 与 `orchestrationProfiles`，ProviderStore settings 会返回内置模板和由 route profiles 生成的 Agent Profile 配置。
 - 验证：`bun test` 通过（961 pass / 20 skip / 0 fail）；`bun run typecheck` 通过；阶段目标文件 `bunx biome check ...` 通过。全仓 `bun run lint` 仍失败于既有 Biome 基线问题，本阶段未扩大处理范围。
 - 新增 `AgentOrchestrationStore`，支持用户/项目级 agent templates 与 orchestration profiles 的持久化、删除和读取；内置/派生配置禁止写入用户 store。
 - 默认 Coding profile builder 已支持 `subagentEnabled -> agents[].enabled`，并将 `manual/autonomous -> fixed/autonomous strategy`。
@@ -345,9 +344,9 @@ type WorkflowStep = {
 已完成子项：
 
 - 内置 agent template registry 已从 Coding 扩展到 Research、Writing、Product、Data/Ops 第一批模板。
-- 新增 Agent Registry IPC：子代理模板和编排配置均支持 list / save / delete。
-- `modelSettingsGet` 已合并内置模板、派生 Coding profile、用户模板和用户编排配置。
-- 用户 store 与 IPC 保存路径会保护内置模板和派生编排配置，禁止直接覆盖保留 ID。
+- 新增 Agent Registry IPC：子代理模板和 Agent Profile 配置均支持 list / save / delete。
+- `modelSettingsGet` 已合并内置模板、派生 Coding profile、用户模板和用户 Agent Profile 配置。
+- 用户 store 与 IPC 保存路径会保护内置模板和派生 Agent Profile 配置，禁止直接覆盖保留 ID。
 - 验证：`bun run typecheck` 通过；`bun test apps/desktop/test/agent-orchestration.test.ts apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/agent-registry-settings.test.ts apps/desktop/test/ipc.test.ts apps/desktop/test/provider-store.test.ts` 通过。
 - 子代理库 UI 已支持创建、复制、编辑和删除用户/项目模板；内置模板只允许复制为用户模板。
 - Prompt 编辑器已覆盖名称、领域、作用域、描述、使用时机、prompt、输出契约、工具、MCP、skills 和委派开关；模板不再绑定供应商或具体模型。
@@ -545,7 +544,7 @@ type WorkflowStep = {
 - `ClaudeAgentSdkDriver` 已把当前线程 `workspacePath` 传入权限 hook，文件路径判断按线程工作区执行；runtime 权限逻辑不再把 Node-only workspace 模块拖入 renderer 构建图。
 - 权限拒绝已进入运行审计链：`PreToolUse` deny 会生成 runtime `tool.failed` 事件，包含 `tool_name`、`tool_use_id`、actor、agent id/type、cwd 和拒绝原因；desktop activity bridge 和 run event normalizer 已保留结构化 tool metadata。
 - 子代理模板列表已展示每个 agent 的实际权限摘要，包括 Bash 审批策略、文件读写范围、网络 Search/Fetch、MCP 白名单、命令白/黑名单和禁用工具。
-- Phase 5 收尾已完成：Agent Profile 编辑器已经补齐主 agent / 子 agent 的结构化 ToolPolicy 配置；权限策略进入动态 SDK AgentDefinition、PreToolUse hook、固定 workflow step 和 Agent 审计导出；`test:agent-security` 红队 suite 覆盖主 agent、动态子 agent、未登记 agent、固定 step、Bash、文件、网络和 MCP 越权。
+- Phase 5 收尾已完成：运行时结构化 ToolPolicy 已进入动态 SDK AgentDefinition、PreToolUse hook、固定 workflow step 和 Agent 审计导出；当前 UI 边界为主 agent 在 Agent Profile 配置，子 agent 权限在子代理库模板配置。`test:agent-security` 红队 suite 覆盖主 agent、动态子 agent、未登记 agent、固定 step、Bash、文件、网络和 MCP 越权。
 - Phase 5 行为边界：MCP server 连接定义仍来自全局 MCP 设置；本阶段负责 profile/agent 对已存在 MCP 工具的可用范围和运行时硬约束。
 
 已验证：
@@ -585,9 +584,7 @@ type WorkflowStep = {
 页面结构：
 
 - Agent Library：子代理库。
-- Orchestration Profiles：编排配置。
-- Model Routing：模型选择。
-- Tool Permissions：工具权限。
+- Agent Profile：配置主 agent；从子代理库选择模板，并为主 agent 与子代理绑定 Provider / 模型。子代理 prompt、工具、MCP、skills 只能在子代理库维护。
 - Presets：场景预设。
 - Run Monitor：运行观察。
 - Evaluation：效果评测。
@@ -606,13 +603,13 @@ type WorkflowStep = {
 - Composer 入口已从“路由方案”升级为 “Agent Profile”，底层仍使用当前可运行的 `routeProfileId` 兼容线程运行链路。
 - 启动前 profile popover 已展示场景、编排策略、启用子代理数量、主 agent 模型、高风险工具和启用子代理模型预览。
 - 当前线程的手动子代理开关会参与 profile 摘要计算，用户看到的是本次实际启用的子代理。
-- 设置页已升级为 Agent Builder 结构，包含 Agent Library、编排配置、模型路由、工具权限和场景预设。
-- 编排配置列表已使用通用 Agent Profile 摘要展示场景、策略、主 agent、启用子代理和高风险工具，不再用固定 role 横排作为主要信息架构。
-- 工具权限页已按 profile 展示主 agent 与每个子代理的实际权限 chip；场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
+- 设置页已升级为 Agent Builder 结构，包含 Agent Library、Agent Profile、场景预设和效果评测；Provider 设置菜单拆为 `Provider` 和 `代理桥` 两个页签；设置内不再提供编排模式开关，当前对话固定/自主只在 Composer 切换。
+- Agent Profile 列表已使用通用 Agent Profile 摘要展示场景、策略、主 agent、启用子代理和高风险工具，不再用固定 role 横排作为主要信息架构。
+- 工具权限已从独立 Tab 移除；主 agent 权限在 Agent Profile 配置，子代理权限回到子代理库模板维护。场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
 - 运行观察 UI 已根据当前线程绑定的 Agent Profile 生成 runtime display map，projection agent card、agent echo badge 与 Context 子代理条目会优先显示用户配置的 agent/template 名称，并继续保留 `agentId` 实例标识。
-- Phase 6.1 已完成：Composer 的 Agent Profile popover 支持“保存当前为 Profile”，可把当前选择、子代理启停和编排模式固化为新的用户 Agent Profile；保存后刷新设置并切换到新 profile，route-backed 派生配置会去掉 legacy route 绑定。
-- Phase 6.2 已完成：Agent Builder 已形成商用品质闭环，覆盖子代理库、编排配置、模型路由、工具权限、场景预设和效果评测；用户/项目 Agent Profile 可编辑主 agent、子 agent、模型、prompt、工具、MCP、skills、固定/混合 workflow、导入导出和版本恢复。
-- Phase 6.3 已完成：生产构建 UI smoke 已覆盖 Agent Builder、Agent Profile、编排配置、场景预设、效果评测、Workflow Steps、运行 workflow 和计费诊断关键入口，防止核心页面在发布构建中缺失。
+- Phase 6.1 已完成：Composer 的 Agent Profile popover 支持“保存当前为 Profile”，保存的是 Composer 当前选择和运行态偏好；设置页不再提供子代理启停或编排步骤编辑，route-backed 派生配置会去掉 legacy route 绑定。
+- Phase 6.2 已完成：Agent Builder 已形成商用品质闭环，覆盖子代理库、Agent Profile、场景预设和效果评测；用户/项目 Agent Profile 可编辑主 agent、从子代理库选择子 agent、绑定 Provider / 模型、导入导出和版本恢复；子代理能力内容只在子代理库维护，编排模式只在 Composer 当前对话中切换。
+- Phase 6.3 已完成：生产构建 UI smoke 已覆盖 Agent Builder、Agent Library、Agent Profile、Provider、代理桥、场景预设、效果评测、运行 workflow 和计费诊断关键入口，防止核心页面在发布构建中缺失。
 
 已验证：
 
@@ -666,9 +663,9 @@ type WorkflowStep = {
 - Phase 7.3 验证：`bun test apps/desktop/test/sdk-stream-activity.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts apps/desktop/test/thread-run-projection-view.test.ts`、`bun run typecheck`。
 - Phase 7.4 已完成：固定 workflow step 的 SDK 事件会携带 `ecoWorkflowStepContext`，SDK usage billing 会把 step metadata 传入 assistant fallback、stream partial 和 final run 三条链路；usage ledger metadata 记录 `ecoWorkflowStep`，billing projector 聚合每个 step 的 token、cost 和 modelIds，活动日志的“子代理编排”摘要会显示每步 token/cost。
 - Phase 7.4 验证：`bun test packages/runtime/test/claude-agent-sdk.test.ts apps/desktop/test/sdk-event-usage-billing.test.ts apps/desktop/test/usage-billing-artifacts.test.ts apps/desktop/test/usage-billing-effects.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/thread-run-projection-view.test.ts`。
-- Phase 7.5 已完成：新增 Agent Profile 历史表现聚合，按 profile 汇总运行次数、成功率、平均耗时、token、成本、最近运行、模型和 workflow step 成本；Agent Builder 的“编排配置”列表展示每个 profile 的历史表现，并提供刷新入口。旧线程若没有 usage ledger，仍会进入运行次数统计，但不做旧格式 billing 兜底。
+- Phase 7.5 已完成：新增 Agent Profile 历史表现聚合，按 profile 汇总运行次数、成功率、平均耗时、token、成本、最近运行、模型和 workflow step 成本；Agent Builder 的 Agent Profile 列表展示每个 profile 的历史表现，并提供刷新入口。旧线程若没有 usage ledger，仍会进入运行次数统计，但不做旧格式 billing 兜底。
 - Phase 7.5 验证：`bun test apps/desktop/test/agent-profile-performance.test.ts apps/desktop/test/ipc.test.ts`。
-- Phase 7.6 已完成：新增 Agent 审计 JSON 导出，schema 为 `eco.agent-audit.v1`，包含 orchestration profiles、agent templates、profile performance、thread summary、billing、run projection、activity、run attempts、agent instances 和 usage ledger events；Agent Builder 的“编排配置”页提供导出入口。
+- Phase 7.6 已完成：新增 Agent 审计 JSON 导出，schema 为 `eco.agent-audit.v1`，包含 orchestration profiles、agent templates、profile performance、thread summary、billing、run projection、activity、run attempts、agent instances 和 usage ledger events；Agent Builder 的 Agent Profile 页提供导出入口。
 - Phase 7.6 验证：`bun test apps/desktop/test/agent-audit-export.test.ts apps/desktop/test/ipc.test.ts`。
 - Phase 7.7 已完成：ThreadBillingSnapshot 新增结构化 diagnostics，usage ledger projection/reconciliation 的 token drift、cost drift、未归因用量、未解析单价和子代理 metrics mismatch 会随计费快照返回；ThreadInfoPanel 的计费浮层展示这些诊断，用户不需要看后台日志才能发现成本/token 异常。
 - Phase 7.7 行为边界：诊断只解释当前快照和 ledger/legacy 校验结果，不改变计费结算来源选择；ledger drift 仍按既有策略回退 legacy 快照。
@@ -775,7 +772,7 @@ type WorkflowStep = {
 - Phase 8.1 已补齐 Data/Ops 缺失内置模板：Data Report Writer、Ops Log Analyst、Ops Runbook Executor，确保 Phase 8 默认 agents 全部有真实 template 可引用。
 - Agent Builder 的“场景预设”页已从 domain 计数升级为 preset 规格展示，显示默认策略、主 agent prompt 摘要、默认子代理、示例任务、eval 覆盖和模型建议。
 - Phase 8.1 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
-- Phase 8.2 已完成：新增 preset -> user orchestration profile builder，按当前默认 provider/model 生成完整可运行 profile；Agent Builder 的“场景预设”页支持一键“复制为 Profile”，保存后刷新设置并进入“编排配置”页。
+- Phase 8.2 已完成：新增 preset -> user template copies + user orchestration profile builder，按当前默认 provider/model 生成完整可运行 profile；Agent Builder 的“场景预设”页支持一键“使用”，保存用户子代理模板副本和 Agent Profile 后进入 Agent Profile 页。
 - Phase 8.2 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
 - Phase 8.3 已完成：新增内置 preset eval suite，把 catalog 中 18 个 eval case 展开为本地可验证场景，校验 profile 可生成、期望 agent 启用、workflow step 引用有效、模型绑定完整，并防止非 Coding main prompt 出现 coding-only 术语污染。
 - Phase 8.3 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-orchestration.test.ts`。
@@ -818,7 +815,7 @@ type WorkflowStep = {
 - Phase 9.4 已完成：新增 Agent 商业质量闸门，内置 preset eval 会进一步验证 runtime AgentDefinition 生成、主 agent roster 注入、子代理完整 prompt 不泄露、工具权限 policy 可生成、fixed/hybrid workflow 可解析，并用真实 billing projector 做 workflow step 成本归因回归；根目录新增 `bun run test:agent-commercial` 覆盖 preset、权限、workflow、计费、运行投影、profile readiness、导入导出和历史表现关键链路。
 - Phase 9.4 行为边界：该闸门是本地确定性发布前检查，不直接调用真实模型；端到端模型质量仍需要后续接入在线 eval runner 和人工验收任务。
 - Phase 9.4 验证：`bun run test:agent-commercial`。
-- Phase 9.5 已完成：新增 Agent UI smoke 脚本，`bun run test:agent-ui-smoke` 会先构建 desktop，再校验 renderer `index.html`、JS/CSS asset 存在且包含 Agent Builder、Agent Profile、编排配置、场景预设、效果评测、Workflow Steps、运行 workflow 和计费诊断等关键 UI 入口标记。
+- Phase 9.5 已完成：新增 Agent UI smoke 脚本，`bun run test:agent-ui-smoke` 会先构建 desktop，再校验 renderer `index.html`、JS/CSS asset 存在且包含 Agent Builder、Agent Library、Agent Profile、Provider、代理桥、场景预设、效果评测、运行 workflow 和计费诊断等关键 UI 入口标记。
 - Phase 9.5 行为边界：该 smoke 是生产构建产物检查，不替代真实浏览器点击流、Electron 窗口启动或在线模型端到端任务；后续仍需要接入完整 UI/E2E runner。
 - Phase 9.5 验证：`bun run test:agent-ui-smoke`。
 - Phase 9.6 已完成：新增 `bun run test:agent-e2e-offline`，并纳入 `test:agent-presets` 与 `test:agent-commercial`；发布前质量门现在覆盖 6 个内置 preset、18 个端到端任务、runtime prompt/AgentDefinition/tool policy/workflow/artifact 验收，以及 workflow step usage ledger 到 billing projector 的成本归因回归。
@@ -879,25 +876,25 @@ type WorkflowStep = {
 - Phase 10.4 行为收敛：有 `agentId` 的动态子代理可进入 billing observations、legacy metrics fallback 和 subagent billing snapshot；metrics record target 不再因为 role 不是固定 Coding 子代理而丢弃 resolver 已确认的 agent。
 - Phase 10.5 已完成：SDK `eco_*` agent key、subagent resume/capture hook、stream activity、session hooks、Agent lifecycle service、Subagent metrics registry 和 OTel billing role 统一支持 `RuntimeAgentRole`，动态 Agent 可以启动、停止、恢复、归因父 tool_use、进入活动日志和生命周期事件。
 - Phase 10.5 保留边界：`planner/system/thinking/tool/user` 等非 Agent role 仍不会被 resolver 当成子代理实例；内置 Coding role 的 legacy `Explore`/`eco_coder` 等映射保持可用，自定义 Agent 通过 `eco_${agentKey}` 进入 runtime。
-- Phase 10.6 已完成：`EcoSdkSessionOptions.agentSkills` 收敛为运行期 agent key 映射，固定 Coding role、profile `agentKey` 和 SDK `eco_*` key 都可接收 session skills；Agent Profile 主 Agent skills 会合并进 SDK 主 session，动态子 Agent definitions 会合并 profile/template skills 与 session skills。
-- Phase 10.6 行为边界：旧 Coding agent definition helpers 继续支持固定 role skills；动态 profile 子代理优先使用自身 template/profile skills，再叠加 session skills，不泄露子代理完整 prompt 到主 prompt。
+- Phase 10.6 已完成：`EcoSdkSessionOptions.agentSkills` 收敛为运行期 agent key 映射，固定 Coding role、profile `agentKey` 和 SDK `eco_*` key 都可接收 session skills；Agent Profile 主 Agent skills 会合并进 SDK 主 session，动态子 Agent definitions 会合并 template skills 与 session skills。
+- Phase 10.6 行为边界：旧 Coding agent definition helpers 继续支持固定 role skills；动态 profile 子代理优先使用自身 template skills，再叠加 session skills，不泄露子代理完整 prompt 到主 prompt。
 - Phase 10.7 已完成：新增 `RuntimeRoleRouteConfig`，运行期 routes、proxy routes、billing route、driver route 和 route fingerprint 全部可承载动态 agent key；显式 `agentProfileId` 会优先从 Agent Profile 生成 `planner + enabled agents` 路由，不再被 legacy `routeProfileId` 抢走。
 - Phase 10.7 行为边界：Route Profile 存储和模型设置页仍只保存固定 Coding role；动态 route 只用于 Agent Profile 运行路径、pricing/capability 探测、proxy/billing/context/session fingerprint。
 - Phase 10.8 已完成：Composer 顶部“编排”模型摘要改为运行期 Agent label 构建，显式 Agent Profile 会展示主 Agent 名称和 enabled 动态子 Agent 名称/model，legacy Coding route 继续显示六角色摘要和固定子代理开关。
-- Phase 10.8 行为边界：Composer 内联开关仍只控制 legacy Coding `subagentEnabled`；动态 Agent 的启停由 Agent Profile 配置负责，当前阶段只保证非 Coding profile 不再显示固定编程角色摘要。
+- Phase 10.8 行为边界：Composer 内联开关控制当前对话的子代理启停；Agent Profile 设置页不再编辑子代理启停，当前阶段只保证非 Coding profile 不再显示固定编程角色摘要。
 - Phase 10.9 已完成：Composer 发送前 Agent Profile ready 检查抽为纯 helper，并只校验主 Agent 与 enabled 子 Agent 的模型/provider；禁用 Agent 的缺失模型不再阻塞通用 Profile 运行。
 - Phase 10.9 行为边界：Coding preset 的完整六角色 route ready 校验保持不变，确保默认编程体验仍要求完整模型配置。
 - Phase 10.10 已完成：OTel activity role 推断从固定 Coding role 集合扩展为运行期 Agent role，`query_source`、`agent.name`、`subagent_type` 中的动态 `agentKey` / `eco_*` key 会被归一到动态 Agent，而不是回落到 planner。
 - Phase 10.10 行为边界：`system/thinking/tool/user/main/assistant` 等非 Agent role 仍不会被当成 Agent；非法 role 字符串继续回落到 planner。
 - Phase 10.11 已完成：billing/context/metrics 的“子代理 role”判断从固定五个 Coding 子代理扩展为运行期 Agent role，动态 Agent 的 assistant fallback、proxy usage、上下文更新、metrics projection 和 billing reconciliation 不再因为 role 不是固定集合而跳过。
 - Phase 10.11 行为边界：`planner/system/thinking/tool/user/main/assistant` 等非子代理语义仍排除；legacy Coding 模型设置页和旧技能存储继续只覆盖固定 Coding role。
-- Phase 10.12 已完成：模型设置页新增真正的 Agent Profile 编辑器，用户/项目 profile 可编辑名称、场景、主 Agent prompt/model/tools/skills、策略、自定义子 Agent、模板、模型、工具、MCP、skills、启停和固定/混合步骤顺序；派生/内置 profile 可复制为用户 profile 后编辑。
-- Phase 10.12 行为边界：legacy Route Profile 编辑入口保留为 Coding 模型路线配置；非 Coding profile 的模型测试仍通过 profile 运行路径和后续审计验证，不再强行映射到固定六角色路线。
+- Phase 10.12 已完成：模型设置页新增真正的 Agent Profile 编辑器，用户/项目 profile 可编辑主 Agent prompt/model/tools/skills、从子代理库选择子 Agent、为已选子 Agent 绑定 Provider / 模型；子代理 prompt/tools/MCP/skills、启停和固定/混合步骤顺序不在设置内编辑。
+- Phase 10.12 行为边界：legacy Route Profile 编辑入口已从 Agent Builder 移除；旧 route profile 存储仍作为派生 Coding preset 和历史线程兼容数据存在。
 - Phase 10.13 已完成：Agent Profile 列表的“测试”改为使用 profile 动态 runtime routes，覆盖主 Agent 与所有 enabled 子 Agent；非 route-backed / 非 Coding profile 也能直接验证 provider/model 可调用性。
-- Phase 10.13 行为边界：旧 Route Profile modal 内部的逐角色测试仍服务 Coding 模型路线；profile 级测试只验证上游连通性，不实际执行 prompt/工具权限审计。
-- Phase 10.14 已完成：Agent Profile 编辑器补齐 fixed/hybrid workflow step 编辑能力，用户可以配置 step id、Agent、依赖、运行方式、必需性、输出 key、失败策略和 step prompt；新增/停用/删除/改名子 Agent 会同步步骤引用，保存时校验重复 step、缺失依赖、循环依赖和未启用 Agent 引用。
+- Phase 10.13 行为边界：Agent Builder 只保留 profile 级模型连通性测试；该测试不实际执行 prompt/工具权限审计。
+- Phase 10.14 历史记录：fixed/hybrid workflow step 曾在 Agent Profile 编辑器中实现；当前产品边界已移除设置内步骤编辑，固定/自主模式只在 Composer 当前对话中切换。
 - Phase 10.14 行为边界：本阶段完成 Profile 配置与 UI 编辑，不扩大 fixed workflow engine 的执行语义；fixed/hybrid 的运行仍沿用既有 runtime workflow 解析与执行路径。
-- Phase 10.15 已完成：Agent Profile 编辑器补齐结构化 ToolPolicy 覆盖，主 Agent 与子 Agent 都可编辑 MCP servers/tools、Bash 审批、命令白/黑名单、文件读写范围和 WebSearch/WebFetch；保存后的策略进入 SDK allowedTools、动态子 Agent definitions 和 PreToolUse hook，MCP server 自动映射为 `mcp__server__*`。
+- Phase 10.15 已调整：Agent Profile 编辑器保留主 Agent 结构化 ToolPolicy；子 Agent 的 MCP servers/tools、Bash 审批、命令白/黑名单、文件读写范围和 WebSearch/WebFetch 回到子代理库模板维护。
 - Phase 10.15 行为边界：MCP server 的实际连接定义仍来自全局 MCP 设置，本阶段只控制 profile/agent 对已配置 MCP 工具的允许范围和运行时硬约束。
 - Phase 10.16 已完成：Agent Profile 支持 JSON 导入导出，archive schema 为 `eco.agentProfiles.v1`；主进程提供 profile export/import IPC，preload 暴露 renderer API，设置页可全量导入/导出或单个 Profile 导出；导入内置/派生/冲突 ID 时自动转为新的 user profile，导入后刷新 Agent Profile 列表。
 - Phase 10.16 行为边界：导入文件只接受当前 Agent Profile schema 的对象、数组或 `profiles` archive，不为历史 route profile 做额外迁移；Profile 内引用的 provider/model/template/MCP server 仍由当前环境配置决定。
@@ -905,7 +902,7 @@ type WorkflowStep = {
 - Phase 10.17 行为边界：版本历史只覆盖新 schema 的用户/项目 Agent Profile；内置/派生 Profile 仍通过“复制为用户 Profile”后进入可版本化路径，不为旧 route profile 单独创建历史快照。
 - Phase 10.18 已完成：Agent Profile 导出升级为 bundle，可携带 profile 引用的用户/项目 Agent Template；导入时先导入模板，遇到 ID 冲突或受保护模板会生成新 user template，并重写 profile 内 `templateId` 引用，跨机器迁移不再丢失自定义子 Agent 提示词。
 - Phase 10.18 行为边界：bundle 仍不包含 provider secrets、MCP server 连接定义或模型密钥；导入后这些运行环境依赖仍由目标机器当前配置提供。
-- Phase 10.19 已完成：Agent Profile 已成为新线程、继续运行、计划审批、上下文压缩、SDK driver、动态 route、计费、上下文、运行投影、审计和 Composer 展示的主路径；legacy Route Profile 仅作为 Coding preset 的模型路由编辑和旧体验代理字段保留。
+- Phase 10.19 已完成：Agent Profile 已成为新线程、继续运行、计划审批、上下文压缩、SDK driver、动态 route、计费、上下文、运行投影、审计和 Composer 展示的主路径；legacy Route Profile 仅作为 Coding preset 派生和旧体验代理字段保留，不再提供 Agent Builder 编辑入口。
 - Phase 10.19 行为边界：不为旧 route profile 或历史线程新增额外数据兜底；遇到兼容冲突时以 Agent Profile 新 schema 和当前运行配置为准。
 
 Phase 10.1 验证：

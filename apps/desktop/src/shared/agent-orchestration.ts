@@ -90,7 +90,6 @@ export interface AgentInstanceConfig {
   tools: ToolPolicy;
   mcpServers: string[];
   skills: string[];
-  promptOverride?: string;
   enabled: boolean;
 }
 

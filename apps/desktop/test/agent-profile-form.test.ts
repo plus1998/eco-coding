@@ -112,7 +112,7 @@ test("createCopiedAgentProfileForm turns protected profiles into user-editable c
   expect(form.agents[0]?.agentKey).toBe("researcher");
 });
 
-test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps from agent order", () => {
+test("buildOrchestrationProfileFromForm binds models and builds fixed steps from agent order", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.research";
   form.source = "project";
@@ -145,7 +145,7 @@ test("buildOrchestrationProfileFromForm preserves tools and builds fixed steps f
     },
   });
   expect(built.agents.map((agent) => agent.agentKey)).toEqual(["researcher", "source_verifier"]);
-  expect(built.agents[1]?.tools.allowed).toEqual(["Read", "WebFetch"]);
+  expect(built.agents[1]?.tools.allowed).toEqual(["Read", "WebSearch"]);
   expect(built.agents[1]?.tools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(built.strategy).toMatchObject({
     kind: "fixed",
@@ -193,7 +193,7 @@ test("buildOrchestrationProfileFromForm preserves edited fixed workflow steps", 
   });
 });
 
-test("buildOrchestrationProfileFromForm saves structured tool policy fields", () => {
+test("buildOrchestrationProfileFromForm saves main tools but uses source subagent policies", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.structured";
   form.mainAllowedTools = "Agent, Bash, WebFetch";
@@ -231,12 +231,13 @@ test("buildOrchestrationProfileFromForm saves structured tool policy fields", ()
     network: { webSearch: false, webFetch: true },
   });
   expect(built.agents[0]?.tools).toMatchObject({
-    allowed: ["Read", "WebSearch", "Bash"],
-    bash: { enabled: true, approval: "never", commandDenylist: ["curl *"] },
-    mcp: { allowedServers: ["browser"], allowedTools: ["mcp__browser__open"] },
+    allowed: ["Read", "WebSearch"],
+    disallowed: ["Bash"],
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
   });
+  expect(built.agents[0]?.mcpServers).toEqual(["docs"]);
+  expect(built.agents[0]?.skills).toEqual(["citations"]);
 });
 
 test("createWorkflowStepFormsFromAgents reuses existing steps and chains new agents", () => {

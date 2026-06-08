@@ -18,7 +18,6 @@ export interface AgentProfileAgentFormState {
   providerId: string;
   modelId: string;
   enabled: boolean;
-  promptOverride: string;
   allowedTools: string;
   disallowedTools: string;
   mcpServers: string;
@@ -154,7 +153,6 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       providerId: agent.modelRef.providerId,
       modelId: agent.modelRef.modelId,
       enabled: agent.enabled,
-      promptOverride: agent.promptOverride ?? "",
       allowedTools: formatList(agent.tools.allowed),
       disallowedTools: formatList(agent.tools.disallowed),
       ...toolPolicyFormFields(agent.tools, agent.mcpServers),
@@ -187,7 +185,6 @@ export function createProfileAgentFormFromTemplate(
     providerId: options.provider?.id ?? "",
     modelId: options.provider?.defaultModel ?? "",
     enabled: true,
-    promptOverride: "",
     allowedTools: formatList(template.defaultTools.allowed),
     disallowedTools: formatList(template.defaultTools.disallowed),
     ...toolPolicyFormFields(template.defaultTools, template.mcpServers),
@@ -281,33 +278,21 @@ export function buildOrchestrationProfileFromForm(
       throw new Error(`找不到 Agent 模板：${agentForm.templateId}`);
     }
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
+    const sourceTools = existingAgent?.tools ?? template.defaultTools;
+    const sourceMcpServers = existingAgent?.mcpServers ?? template.mcpServers;
+    const sourceSkills = existingAgent?.skills ?? template.skills;
     return {
       agentKey,
       templateId: template.id,
-      ...(agentForm.displayName.trim() ? { displayName: agentForm.displayName.trim() } : {}),
+      displayName: existingAgent?.displayName ?? template.name,
       modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef),
-      tools: buildToolPolicyFromFormFields(
-        existingAgent?.tools ?? template.defaultTools,
-        agentForm.allowedTools,
-        agentForm.disallowedTools,
-        {
-          mcpServers: agentForm.mcpServers,
-          mcpTools: agentForm.mcpTools,
-          bashApproval: agentForm.bashApproval,
-          bashCommandAllowlist: agentForm.bashCommandAllowlist,
-          bashCommandDenylist: agentForm.bashCommandDenylist,
-          filesystemRead: agentForm.filesystemRead,
-          filesystemWrite: agentForm.filesystemWrite,
-          networkWebSearch: agentForm.networkWebSearch,
-          networkWebFetch: agentForm.networkWebFetch,
-        },
-      ),
-      mcpServers: parseList(agentForm.mcpServers),
-      skills: parseList(agentForm.skills),
-      ...(agentForm.promptOverride.trim() ? { promptOverride: agentForm.promptOverride.trim() } : {}),
-      enabled: agentForm.enabled,
+      tools: cloneToolPolicy(sourceTools),
+      mcpServers: [...sourceMcpServers],
+      skills: [...sourceSkills],
+      enabled: true,
     };
   });
+  const sourceMainAgent = options.existing?.mainAgent;
 
   return {
     id,
@@ -321,7 +306,7 @@ export function buildOrchestrationProfileFromForm(
       prompt: form.mainPrompt.trim() || "Coordinate the task and produce the final answer.",
       modelRef: mainModelRef,
       tools: buildToolPolicyFromFormFields(
-        options.existing?.mainAgent.tools ?? emptyToolPolicy(),
+        sourceMainAgent?.tools ?? emptyToolPolicy(),
         form.mainAllowedTools,
         form.mainDisallowedTools,
         {
@@ -351,6 +336,10 @@ export function buildOrchestrationProfileFromForm(
 
 export function canEditStoredAgentProfile(profile: OrchestrationProfile): boolean {
   return profile.source === "user" || profile.source === "project";
+}
+
+function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
+  return structuredClone(policy) as ToolPolicy;
 }
 
 function buildStrategyFromForm(

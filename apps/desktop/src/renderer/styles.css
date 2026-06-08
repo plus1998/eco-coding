@@ -6798,6 +6798,15 @@ button:not(:disabled) {
   gap: 8px;
 }
 
+.models-agent-profile-template-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .models-agent-profile-tool-policy {
   display: flex;
   flex-direction: column;
