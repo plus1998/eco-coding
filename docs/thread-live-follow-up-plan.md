@@ -497,7 +497,7 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 
 ## 阶段 6：V2 SDK Streaming / Assistant Worker 调研与 Spike
 
-状态：Not Started
+状态：Completed
 
 目标：验证真实运行中注入的 SDK 路径，而不是继续用 queue 模拟。
 
@@ -515,9 +515,41 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - 明确哪些现有功能需要适配，哪些暂不支持。
 - 如果 SDK 能力不足，文档更新为暂缓，不做假实时。
 
+完成记录：
+
+- 新增 `docs/thread-live-follow-up-v2-spike.md`，记录官方 Codex App Server `turn/steer`、Codex Goal follow-up、Claude Agent SDK streaming input、sessions、user input、subagents、cost tracking、removed TypeScript V2 session API 的证据。
+- 选择 V2 路线：基于 Claude Agent SDK `query({ prompt: AsyncIterable<SDKUserMessage> })` 自建 Eco live input controller，并保存当前 `Query` handle；不采用已移除的 TypeScript V2 session API。
+- `runAssistantWorker.pushPrompt()` 只作为 SDK 官方 alpha remote-control 参考实现，不作为 Eco 默认主运行时；原因是它绑定 claude.ai bridge / `ConnectRemoteControlOptions`，会绕开 Eco 已有 IPC、permission、projection、billing 边界。
+- 新增 `apps/desktop/test/thread-live-follow-up-v2-sdk-surface.test.ts`，离线验证当前 `@anthropic-ai/claude-agent-sdk@0.3.168` 类型 surface 仍包含 streaming prompt、`interrupt()`、`streamInput()`、resume/sessionStore/hooks/MCP/systemPrompt/agents/usage result fields，以及 assistant worker alpha surface。
+- 当前环境没有 `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` / `CLAUDE_API_KEY`，因此没有实测 `interrupt()` 对真实 Bash、Subagent、approval pending、partial usage 的运行时副作用。这个缺口已显式列为 Phase 6.5，不能用文档或类型验证替代。
+
+## 阶段 6.5：Authenticated Live Interrupt Smoke
+
+状态：Blocked
+
+目标：带真实 Claude 凭据验证 Phase 7 不能靠类型推断的 runtime 行为。
+
+工作项：
+
+- 用 streaming input 启动一个只读/短 Bash 的真实 query，运行中 push 普通 follow-up，确认同一 query stream 可读取。
+- 工具执行中调用 `interrupt()`，记录 result subtype、usage、partial event、cleanup 顺序。
+- 用 `canUseTool` 人为挂起 Bash approval，调用 `interrupt()`，确认 callback signal / query 结束顺序。
+- 启动一个自定义 subagent，调用 `interrupt()`，确认 parent/subagent event 状态和 billing/projection 是否完整。
+- 把 smoke 结果补入 `docs/thread-live-follow-up-v2-spike.md`。
+
+验收标准：
+
+- 有可重复 smoke 命令或脚本，并记录所需凭据/成本风险。
+- 明确 `interrupt()` 哪些场景可靠，哪些场景必须回退 V1 abort + resume。
+- 未通过前 Phase 7 不允许默认使用 `streaming_push`。
+
+阻塞原因：
+
+- 当前环境没有可用 Claude 凭据，无法在本阶段执行真实 Agent 调用。
+
 ## 阶段 7：V2 Live Input Runtime
 
-状态：Not Started
+状态：Blocked（等待阶段 6.5）
 
 目标：让当前 run 真正接收运行中追加消息。
 
