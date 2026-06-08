@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { AgentTemplateVersionView } from "../shared/ipc";
+import type { AgentTemplateVersionView, OrchestrationProfileVersionView } from "../shared/ipc";
 import type { AgentTemplate, OrchestrationProfile } from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
@@ -11,6 +11,13 @@ interface StoredConfigRow {
 
 interface StoredTemplateVersionRow {
   template_id: string;
+  version: number;
+  value_json: string;
+  saved_at: string;
+}
+
+interface StoredProfileVersionRow {
+  profile_id: string;
   version: number;
   value_json: string;
   saved_at: string;
@@ -47,6 +54,14 @@ export class AgentOrchestrationStore {
         value_json TEXT NOT NULL,
         saved_at TEXT NOT NULL,
         PRIMARY KEY (template_id, version)
+      );
+
+      CREATE TABLE IF NOT EXISTS orchestration_profile_versions (
+        profile_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        value_json TEXT NOT NULL,
+        saved_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, version)
       );
     `);
   }
@@ -123,7 +138,7 @@ export class AgentOrchestrationStore {
   }
 
   saveOrchestrationProfile(profile: OrchestrationProfile): OrchestrationProfile {
-    const normalized = normalizeStoredOrchestrationProfile(profile);
+    const normalized = this.normalizeProfileForSave(profile);
     this.db
       .prepare(`
         INSERT INTO orchestration_profiles (id, value_json, updated_at)
@@ -131,11 +146,45 @@ export class AgentOrchestrationStore {
         ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
       `)
       .run(normalized.id, JSON.stringify(normalized), normalized.updatedAt);
+    this.recordOrchestrationProfileVersion(normalized);
     return normalized;
   }
 
   deleteOrchestrationProfile(id: string): void {
     this.db.prepare(`DELETE FROM orchestration_profiles WHERE id = ?`).run(id.trim());
+    this.db.prepare(`DELETE FROM orchestration_profile_versions WHERE profile_id = ?`).run(id.trim());
+  }
+
+  listOrchestrationProfileVersions(profileId: string): OrchestrationProfileVersionView[] {
+    return this.db
+      .prepare(`
+        SELECT profile_id, version, value_json, saved_at
+        FROM orchestration_profile_versions
+        WHERE profile_id = ?
+        ORDER BY version DESC
+      `)
+      .all(profileId.trim())
+      .map((row) => parseOrchestrationProfileVersionRow(row as unknown as StoredProfileVersionRow));
+  }
+
+  restoreOrchestrationProfileVersion(profileId: string, version: number): OrchestrationProfile {
+    const row = this.db
+      .prepare(`
+        SELECT profile_id, version, value_json, saved_at
+        FROM orchestration_profile_versions
+        WHERE profile_id = ? AND version = ?
+      `)
+      .get(profileId.trim(), version) as unknown as StoredProfileVersionRow | undefined;
+    if (!row) {
+      throw new Error("找不到指定的 Agent Profile 版本。");
+    }
+    const restored = parseOrchestrationProfileVersionRow(row).profile;
+    const current = this.listOrchestrationProfiles().find((profile) => profile.id === profileId.trim());
+    return this.saveOrchestrationProfile({
+      ...restored,
+      version: (current?.version ?? restored.version) + 1,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   private normalizeTemplateForSave(template: AgentTemplate): AgentTemplate {
@@ -160,6 +209,30 @@ export class AgentOrchestrationStore {
           saved_at = excluded.saved_at
       `)
       .run(template.id, template.version, JSON.stringify(template), template.updatedAt);
+  }
+
+  private normalizeProfileForSave(profile: OrchestrationProfile): OrchestrationProfile {
+    const normalized = normalizeStoredOrchestrationProfile(profile);
+    const existing = this.listOrchestrationProfiles().find((entry) => entry.id === normalized.id);
+    if (!existing) {
+      return normalized;
+    }
+    return {
+      ...normalized,
+      version: Math.max(normalized.version, existing.version + 1),
+    };
+  }
+
+  private recordOrchestrationProfileVersion(profile: OrchestrationProfile): void {
+    this.db
+      .prepare(`
+        INSERT INTO orchestration_profile_versions (profile_id, version, value_json, saved_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(profile_id, version) DO UPDATE SET
+          value_json = excluded.value_json,
+          saved_at = excluded.saved_at
+      `)
+      .run(profile.id, profile.version, JSON.stringify(profile), profile.updatedAt);
   }
 }
 
@@ -235,6 +308,20 @@ function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTempl
     version: row.version,
     savedAt: row.saved_at,
     template,
+  };
+}
+
+function parseOrchestrationProfileVersionRow(
+  row: StoredProfileVersionRow,
+): OrchestrationProfileVersionView {
+  const profile = normalizeStoredOrchestrationProfile(
+    parseJsonObject(row.value_json) as unknown as OrchestrationProfile,
+  );
+  return {
+    profileId: row.profile_id,
+    version: row.version,
+    savedAt: row.saved_at,
+    profile,
   };
 }
 

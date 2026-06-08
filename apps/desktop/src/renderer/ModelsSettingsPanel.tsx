@@ -1,5 +1,18 @@
 import { DEFAULT_CONTEXT_LIMIT, formatContextLimit, formatCostUsd } from "@eco/runtime";
-import { ArrowDown, ArrowUp, Copy, Download, Pencil, Plus, RefreshCw, Settings2, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  Download,
+  History,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Settings2,
+  Trash2,
+  X,
+} from "lucide-react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import {
   type BuiltInPresetDefinition,
@@ -25,6 +38,7 @@ import {
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type OrchestrationProfile,
+  type OrchestrationProfileVersionView,
   type ProviderConfigInput,
   type ProviderConfigView,
   type RoleRouteConfig,
@@ -154,6 +168,11 @@ export function ModelsSettingsPanel({
   const [agentProfileForm, setAgentProfileForm] = useState<AgentProfileFormState>(() =>
     createBlankAgentProfileForm(),
   );
+  const [agentProfileVersionModal, setAgentProfileVersionModal] = useState<{
+    profile: OrchestrationProfile;
+    versions: OrchestrationProfileVersionView[];
+    error?: string | undefined;
+  }>();
   const [editingAgentProfileId, setEditingAgentProfileId] = useState<string>();
   const [agentProfileModalError, setAgentProfileModalError] = useState<string>();
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
@@ -199,6 +218,7 @@ export function ModelsSettingsPanel({
   const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
   const [auditExportBusy, setAuditExportBusy] = useState(false);
   const [profileArchiveBusy, setProfileArchiveBusy] = useState(false);
+  const [agentProfileVersionBusy, setAgentProfileVersionBusy] = useState(false);
   const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -623,6 +643,56 @@ export function ModelsSettingsPanel({
     setAgentProfileModalError(undefined);
     setEditingAgentProfileId(undefined);
     setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
+  }
+
+  async function openAgentProfileVersions(profile: OrchestrationProfile) {
+    if (!window.eco?.listOrchestrationProfileVersions) {
+      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 版本接口不可用。" });
+      return;
+    }
+    setAgentProfileVersionBusy(true);
+    setProfileArchiveMessage(undefined);
+    try {
+      const versions = await window.eco.listOrchestrationProfileVersions(profile.id);
+      setAgentProfileVersionModal({ profile, versions });
+    } catch (caught) {
+      setProfileArchiveMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setAgentProfileVersionBusy(false);
+    }
+  }
+
+  async function restoreAgentProfileVersion(profileId: string, version: number) {
+    if (
+      !window.eco?.restoreOrchestrationProfileVersion ||
+      !window.eco?.listOrchestrationProfileVersions ||
+      !agentProfileVersionModal
+    ) {
+      return;
+    }
+    setAgentProfileVersionBusy(true);
+    onSavingChange?.(true);
+    try {
+      const restored = await window.eco.restoreOrchestrationProfileVersion({ profileId, version });
+      await refreshSettings();
+      const versions = await window.eco.listOrchestrationProfileVersions(profileId);
+      setAgentProfileVersionModal({ profile: restored, versions });
+      setProfileArchiveMessage({
+        kind: "success",
+        message: `已恢复 Agent Profile「${restored.name}」到 v${version}`,
+      });
+    } catch (caught) {
+      setAgentProfileVersionModal({
+        ...agentProfileVersionModal,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setAgentProfileVersionBusy(false);
+      onSavingChange?.(false);
+    }
   }
 
   async function saveAgentProfile() {
@@ -1420,6 +1490,17 @@ export function ModelsSettingsPanel({
                       {editableProfile ? (
                         <button
                           type="button"
+                          className="mcp-icon-button"
+                          onClick={() => void openAgentProfileVersions(summary.profile)}
+                          aria-label={`查看 ${summary.name} 版本历史`}
+                          disabled={busy || agentProfileVersionBusy}
+                        >
+                          <History size={18} />
+                        </button>
+                      ) : null}
+                      {editableProfile ? (
+                        <button
+                          type="button"
                           className="mcp-icon-button danger"
                           onClick={() => void deleteAgentProfile(summary.profile)}
                           aria-label={`删除 ${summary.name}`}
@@ -1571,7 +1652,99 @@ export function ModelsSettingsPanel({
           onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
       )}
+
+      {agentProfileVersionModal && (
+        <AgentProfileVersionModal
+          profile={agentProfileVersionModal.profile}
+          versions={agentProfileVersionModal.versions}
+          error={agentProfileVersionModal.error}
+          busy={busy || agentProfileVersionBusy}
+          onClose={() => setAgentProfileVersionModal(undefined)}
+          onRestore={(version) =>
+            void restoreAgentProfileVersion(agentProfileVersionModal.profile.id, version)
+          }
+        />
+      )}
     </>
+  );
+}
+
+function AgentProfileVersionModal({
+  profile,
+  versions,
+  error,
+  busy,
+  onClose,
+  onRestore,
+}: {
+  profile: OrchestrationProfile;
+  versions: OrchestrationProfileVersionView[];
+  error?: string | undefined;
+  busy?: boolean | undefined;
+  onClose: () => void;
+  onRestore: (version: number) => void;
+}) {
+  return (
+    <div className="settings-modal-backdrop">
+      <button
+        type="button"
+        className="settings-modal-backdrop-close"
+        onClick={onClose}
+        aria-label="关闭"
+        disabled={busy}
+      />
+      <div
+        className="settings-modal settings-modal-agent-version"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-profile-version-title"
+      >
+        <header className="settings-modal-header">
+          <h2 id="agent-profile-version-title" className="settings-modal-title">
+            {profile.name} 版本历史
+          </h2>
+          <button
+            type="button"
+            className="mcp-icon-button"
+            onClick={onClose}
+            aria-label="关闭"
+            disabled={busy}
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="settings-modal-body">
+          {versions.length === 0 ? (
+            <p className="mcp-list-empty">暂无版本记录</p>
+          ) : (
+            <ul className="models-agent-version-list">
+              {versions.map((entry, index) => (
+                <li key={`${entry.profileId}-${entry.version}`} className="models-agent-version-row">
+                  <div className="models-agent-version-main">
+                    <span className="models-route-role">v{entry.version}</span>
+                    {index === 0 ? <span className="models-agent-source-badge">当前</span> : null}
+                    <span className="models-route-role-id">{formatVersionTime(entry.savedAt)}</span>
+                    <p className="models-subagent-card-desc">
+                      {formatAgentProfileVersionSummary(entry.profile)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="models-section-button"
+                    disabled={busy || index === 0}
+                    onClick={() => onRestore(entry.version)}
+                  >
+                    <RotateCcw size={14} />
+                    恢复
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <p className="settings-form-error">{error}</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3805,6 +3978,25 @@ function formatModelPreview(modelId: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 10)}…${normalized.slice(-10)}`;
+}
+
+function formatVersionTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+function formatAgentProfileVersionSummary(profile: OrchestrationProfile): string {
+  const enabledAgents = profile.agents.filter((agent) => agent.enabled);
+  const strategy =
+    profile.strategy.kind === "autonomous"
+      ? "自主编排"
+      : profile.strategy.kind === "hybrid"
+        ? "混合编排"
+        : "固定编排";
+  return `${profile.preset} · ${strategy} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
 }
 
 function replaceDependencyToken(raw: string, previousId: string, nextId: string): string {

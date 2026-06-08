@@ -117,6 +117,7 @@ test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates
   store.saveAgentTemplate(customTemplate());
   store.saveAgentTemplate({ ...customTemplate(), prompt: "Updated prompt.", version: 2 });
   store.saveOrchestrationProfile(customProfile());
+  store.saveOrchestrationProfile({ ...customProfile(), name: "Research Updated", version: 2 });
 
   expect(store.listAgentTemplates()).toMatchObject([
     { id: "user.researcher", source: "user", version: 2 },
@@ -127,11 +128,20 @@ test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates
   const restored = store.restoreAgentTemplateVersion("user.researcher", 1);
   expect(restored).toMatchObject({ id: "user.researcher", prompt: "Research the topic and cite sources." });
   expect(restored.version).toBe(3);
-  expect(store.listOrchestrationProfiles()).toMatchObject([{ id: "user.research", source: "user" }]);
+  expect(store.listOrchestrationProfiles()).toMatchObject([
+    { id: "user.research", source: "user", version: 2, name: "Research Updated" },
+  ]);
+  expect(store.listOrchestrationProfileVersions("user.research").map((entry) => entry.version)).toEqual([
+    2, 1,
+  ]);
+  const restoredProfile = store.restoreOrchestrationProfileVersion("user.research", 1);
+  expect(restoredProfile).toMatchObject({ id: "user.research", name: "Research" });
+  expect(restoredProfile.version).toBe(3);
 
   store.deleteAgentTemplate("user.researcher");
   store.deleteOrchestrationProfile("user.research");
   expect(store.listAgentTemplates()).toEqual([]);
   expect(store.listAgentTemplateVersions("user.researcher")).toEqual([]);
   expect(store.listOrchestrationProfiles()).toEqual([]);
+  expect(store.listOrchestrationProfileVersions("user.research")).toEqual([]);
 });

@@ -50,6 +50,7 @@ import {
   normalizeThreadRuntimeConfig,
   type OrchestrationProfile,
   type OrchestrationProfileExportRequest,
+  type OrchestrationProfileVersionRestoreRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
   resolveThreadAgentProfile,
@@ -1268,6 +1269,33 @@ function registerIpcHandlers(): void {
       profiles: imported,
       errors,
     };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileVersionsList, async (_event, profileId: unknown) => {
+    if (typeof profileId !== "string" || !profileId.trim()) {
+      throw new Error("Agent Profile id 不能为空。");
+    }
+    assertCanWriteOrchestrationProfileId(profileId);
+    return agentOrchestrationStore.listOrchestrationProfileVersions(profileId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileVersionRestore, async (_event, payload: unknown) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof (payload as OrchestrationProfileVersionRestoreRequest).profileId !== "string" ||
+      typeof (payload as OrchestrationProfileVersionRestoreRequest).version !== "number"
+    ) {
+      throw new Error("Agent Profile 版本恢复请求无效。");
+    }
+    const request = payload as OrchestrationProfileVersionRestoreRequest;
+    assertCanWriteOrchestrationProfileId(request.profileId);
+    const restored = agentOrchestrationStore.restoreOrchestrationProfileVersion(
+      request.profileId,
+      request.version,
+    );
+    emitSettingsUpdated();
+    return restored;
   });
 
   ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {

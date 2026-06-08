@@ -28,6 +28,8 @@ import {
   type OrchestrationProfileExportRequest,
   type OrchestrationProfileExportResult,
   type OrchestrationProfileImportResult,
+  type OrchestrationProfileVersionRestoreRequest,
+  type OrchestrationProfileVersionView,
   type ProviderConfigInput,
   type ProviderConfigView,
   type ProxyBridgeSettingsSnapshot,
@@ -163,6 +165,14 @@ const api = {
   },
   importOrchestrationProfiles(): Promise<OrchestrationProfileImportResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileImport);
+  },
+  listOrchestrationProfileVersions(profileId: string): Promise<OrchestrationProfileVersionView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileVersionsList, profileId);
+  },
+  restoreOrchestrationProfileVersion(
+    request: OrchestrationProfileVersionRestoreRequest,
+  ): Promise<OrchestrationProfile> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileVersionRestore, request);
   },
   updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);

@@ -873,6 +873,8 @@ type WorkflowStep = {
 - Phase 10.15 行为边界：MCP server 的实际连接定义仍来自全局 MCP 设置，本阶段只控制 profile/agent 对已配置 MCP 工具的允许范围和运行时硬约束。
 - Phase 10.16 已完成：Agent Profile 支持 JSON 导入导出，archive schema 为 `eco.agentProfiles.v1`；主进程提供 profile export/import IPC，preload 暴露 renderer API，设置页可全量导入/导出或单个 Profile 导出；导入内置/派生/冲突 ID 时自动转为新的 user profile，导入后刷新 Agent Profile 列表。
 - Phase 10.16 行为边界：导入文件只接受当前 Agent Profile schema 的对象、数组或 `profiles` archive，不为历史 route profile 做额外迁移；Profile 内引用的 provider/model/template/MCP server 仍由当前环境配置决定。
+- Phase 10.17 已完成：Agent Profile 补齐版本历史和恢复能力；每次保存用户/项目 Profile 都记录版本快照，删除 Profile 时清理历史版本，主进程/preload/renderer 提供版本列表与恢复入口，Agent Builder 可从 Profile 行打开版本历史并恢复到旧版本。
+- Phase 10.17 行为边界：版本历史只覆盖新 schema 的用户/项目 Agent Profile；内置/派生 Profile 仍通过“复制为用户 Profile”后进入可版本化路径，不为旧 route profile 单独创建历史快照。
 
 Phase 10.1 验证：
 
@@ -956,6 +958,12 @@ Phase 10.15 验证：
 Phase 10.16 验证：
 
 - `bun test apps/desktop/test/agent-profile-archive.test.ts apps/desktop/test/ipc.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.17 验证：
+
+- `bun test apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/ipc.test.ts`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 
