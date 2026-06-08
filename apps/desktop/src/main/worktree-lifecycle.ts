@@ -101,6 +101,28 @@ export async function approvedPlanSnapshotExists(
   }
 }
 
+export async function deleteApprovedPlanSnapshotIfNewerThan(
+  workspacePath: string,
+  threadId: string,
+  cutoffIso: string,
+): Promise<boolean> {
+  const cutoffMs = Date.parse(cutoffIso);
+  if (!Number.isFinite(cutoffMs)) {
+    return false;
+  }
+  const filePath = approvedPlanFilePath(workspacePath, threadId);
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.mtimeMs < cutoffMs) {
+      return false;
+    }
+    await fs.unlink(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Git failed because the process cwd (worktree directory) no longer exists or is invalid. */
 export function isWorktreeGitCwdError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);

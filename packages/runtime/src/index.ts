@@ -32,6 +32,8 @@ export interface EcoSdkSessionOptions {
 export interface EcoSdkResumeOptions {
   /** Resume an existing SDK session by ID. */
   resumeSessionId?: string;
+  /** Resume transcript up to and including this SDK message UUID. */
+  resumeSessionAt?: string;
   /** Fork from resumeSessionId into a new session (explore alternatives). */
   forkSession?: boolean;
 }

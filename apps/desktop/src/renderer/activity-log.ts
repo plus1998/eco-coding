@@ -29,7 +29,12 @@ import {
   normalizeAgentDisplayRole,
   resolveSubagentRunDisplayTitle,
 } from "../shared/subagent-roles";
-import type { ThreadActivityLine, ThreadStatus, ThreadSubagentSessionTiming } from "../shared/ipc";
+import type {
+  ThreadActivityLine,
+  ThreadActivityRewindTarget,
+  ThreadStatus,
+  ThreadSubagentSessionTiming,
+} from "../shared/ipc";
 
 export { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
@@ -156,7 +161,7 @@ export interface SubagentRunItem {
 }
 
 export type ActivityLogBlock =
-  | { kind: "user-prompt"; text: string; lineId: string }
+  | { kind: "user-prompt"; text: string; lineId: string; rewindTarget?: ThreadActivityRewindTarget }
   | {
       kind: "work-session";
       durationMs: number;
@@ -249,7 +254,12 @@ export function buildActivityLogBlocks(
     for (const userLine of segment.userLines) {
       const text = userLine.message.trim();
       if (text) {
-        output.push({ kind: "user-prompt", text: userLine.message, lineId: userLine.id });
+        output.push({
+          kind: "user-prompt",
+          text: userLine.message,
+          lineId: userLine.id,
+          ...(userLine.rewindTarget && { rewindTarget: userLine.rewindTarget }),
+        });
       }
     }
 

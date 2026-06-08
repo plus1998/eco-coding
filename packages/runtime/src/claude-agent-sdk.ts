@@ -120,9 +120,23 @@ interface SdkSessionMutationOptions {
   sessionStore?: SessionStore;
 }
 
+interface SdkSessionReadOptions extends SdkSessionMutationOptions {
+  limit?: number;
+  offset?: number;
+  includeSystemMessages?: boolean;
+}
+
+interface SdkSessionMessage {
+  type?: string;
+  uuid?: string;
+  parentUuid?: string | null;
+  sessionId?: string;
+}
+
 export interface ClaudeAgentSdkModule {
   query: SdkQuery;
   deleteSession?: (sessionId: string, options?: SdkSessionMutationOptions) => Promise<void>;
+  getSessionMessages?: (sessionId: string, options?: SdkSessionReadOptions) => Promise<SdkSessionMessage[]>;
 }
 
 const networkAllowedTools = ["WebSearch", "WebFetch"] as const;
@@ -532,6 +546,50 @@ export async function deleteClaudeAgentSdkSession(input: {
   await sdk.deleteSession(sessionId, Object.keys(options).length > 0 ? options : undefined);
 }
 
+export async function resolveResumeSessionAtBeforeUserMessage(input: {
+  sessionId: string;
+  userMessageId: string;
+  dir?: string;
+  sessionStore?: SessionStore;
+  loadSdk?: () => Promise<ClaudeAgentSdkModule>;
+}): Promise<string | undefined> {
+  const sessionId = input.sessionId.trim();
+  const userMessageId = input.userMessageId.trim();
+  if (!sessionId || !userMessageId) {
+    throw new Error("SDK session id and user message id are required.");
+  }
+
+  const sdk = input.loadSdk
+    ? await input.loadSdk()
+    : ((await import("@anthropic-ai/claude-agent-sdk")) as ClaudeAgentSdkModule);
+  if (typeof sdk.getSessionMessages !== "function") {
+    throw new Error("SDK getSessionMessages is not available. Update @anthropic-ai/claude-agent-sdk.");
+  }
+
+  const options: SdkSessionReadOptions = { includeSystemMessages: false };
+  if (input.dir?.trim()) {
+    options.dir = input.dir.trim();
+  }
+  if (input.sessionStore) {
+    options.sessionStore = input.sessionStore;
+  }
+
+  const messages = await sdk.getSessionMessages(sessionId, options);
+  const targetIndex = messages.findIndex((message) => message.uuid === userMessageId && message.type === "user");
+  if (targetIndex < 0) {
+    throw new Error("找不到该节点对应的 SDK user message，无法安全回滚对话。");
+  }
+
+  for (let index = targetIndex - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate?.uuid && candidate.type === "assistant") {
+      return candidate.uuid;
+    }
+  }
+
+  return undefined;
+}
+
 interface FinalizePlanPayload {
   analysis: string;
   plan: string;
@@ -655,7 +713,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (typeof query.rewindFiles !== "function") {
         throw new Error("SDK rewindFiles is not available (enable file checkpointing and update the SDK).");
       }
-      await query.rewindFiles(userMessageId);
+      const result = await query.rewindFiles(userMessageId);
+      if (isRecord(result) && result.canRewind === false) {
+        const reason =
+          typeof result.reason === "string" && result.reason.trim()
+            ? result.reason.trim()
+            : "SDK reported that the checkpoint cannot be rewound.";
+        throw new Error(reason);
+      }
     } finally {
       query.close?.();
     }
@@ -1502,6 +1567,9 @@ export function applyResumeToQueryOptions(
 ): void {
   if (resume?.resumeSessionId) {
     queryOptions.resume = resume.resumeSessionId;
+  }
+  if (resume?.resumeSessionAt) {
+    queryOptions.resumeSessionAt = resume.resumeSessionAt;
   }
   if (resume?.forkSession) {
     queryOptions.forkSession = true;

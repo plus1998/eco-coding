@@ -3318,6 +3318,16 @@ button:not(:disabled) {
   color: #e5e5e5;
 }
 
+.run-log-user-prompt-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.run-log-user-prompt-action:disabled:hover {
+  background: transparent;
+  color: #737373;
+}
+
 .work-session {
   margin: 0 0 12px;
   width: 100%;
@@ -5456,6 +5466,48 @@ button:not(:disabled) {
   font-size: 12px;
   color: #fbbf24;
   line-height: 1.4;
+}
+
+.composer-rewind-banner {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  background: #27272a;
+  color: #e4e4e7;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.composer-rewind-banner span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-rewind-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+}
+
+.composer-rewind-clear:hover {
+  background: #3f3f46;
+  color: #ffffff;
 }
 
 .composer-attachments {
@@ -9487,6 +9539,11 @@ button:not(:disabled) {
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-action:hover {
   background: #242424;
   color: #d4d4d4;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-action:disabled:hover {
+  background: transparent;
+  color: #8a8a8a;
 }
 
 .codex-main:not(.codex-main-landing) .clarification-answer-card,

@@ -46,6 +46,16 @@ test("buildAgentPromptWithContext includes history for coding follow-up", () => 
   expect(prompt).toContain("corp.service.ts");
 });
 
+test("rewind continuation prompt uses trimmed history instead of future activity", () => {
+  const prompt = buildAgentPromptWithContext("原任务", "替换后的消息", [
+    { role: "user", message: "原任务" },
+    { role: "planner", message: "目标节点之前的回复" },
+  ]);
+  expect(prompt).toContain("替换后的消息");
+  expect(prompt).toContain("目标节点之前的回复");
+  expect(prompt).not.toContain("目标节点之后的旧回复");
+});
+
 test("legacy continuation uses full prompt injection without SDK session", () => {
   const prompt = buildAgentPromptWithContext("原任务", "继续", []);
   expect(prompt).toContain("原任务");

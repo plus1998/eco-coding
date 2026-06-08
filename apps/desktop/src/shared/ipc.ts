@@ -432,6 +432,8 @@ export interface ThreadContinueRequest {
   threadId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  /** Continue by replacing this prior user activity and pruning everything after it. */
+  rewindTarget?: ThreadActivityRewindTarget;
   /** Optional update before sending the next message. */
   runtimeConfig?: ThreadRuntimeConfigInput;
 }
@@ -495,6 +497,7 @@ export interface WorktreeApplyResult {
 
 export interface FileCheckpointRecord {
   userMessageId: string;
+  activityLineId?: string;
   createdAt: string;
 }
 
@@ -969,8 +972,15 @@ export interface ThreadActivityLine {
   role: string;
   message: string;
   stream?: boolean;
+  /** SDK-backed target that can be used to fork from this user message. */
+  rewindTarget?: ThreadActivityRewindTarget;
   /** Sub-agent instance id (SDK session_id / SubagentStart agent_id). */
   agentId?: string;
   /** Structured API failure from OTLP api_error event (not parsed from stream text). */
   apiError?: ThreadApiErrorInfo;
+}
+
+export interface ThreadActivityRewindTarget {
+  activityLineId: string;
+  userMessageId: string;
 }

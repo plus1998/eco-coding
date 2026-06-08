@@ -51,6 +51,7 @@ import {
   type SkillsListResult,
   type SubagentRole,
   type ThreadActivityLine,
+  type ThreadActivityRewindTarget,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
   type ThreadLiveEvent,
@@ -185,6 +186,10 @@ type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
 type ActivityLine = ThreadActivityLine;
 
+interface ComposerRewindTarget extends ThreadActivityRewindTarget {
+  threadId: string;
+}
+
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("models");
@@ -217,6 +222,7 @@ function App() {
   const [skillsLinking, setSkillsLinking] = useState(false);
   const [skillsLinkResult, setSkillsLinkResult] = useState<LinkAgentsSkillsResult>();
   const [prompt, setPrompt] = useState("");
+  const [composerRewindTarget, setComposerRewindTarget] = useState<ComposerRewindTarget>();
   const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
   const [plannerCapability, setPlannerCapability] = useState<RouteCapabilityHint>();
   const [composerImageNotice, setComposerImageNotice] = useState<string>();
@@ -715,6 +721,8 @@ function App() {
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
   );
+  const activeComposerRewindTarget =
+    activeThread && composerRewindTarget?.threadId === activeThread.id ? composerRewindTarget : undefined;
   useEffect(() => {
     if (!currentProjectPath || !window.eco) {
       setProjectWorkspace(undefined);
@@ -1246,8 +1254,75 @@ function App() {
     }
   }
 
-  function restorePrompt(text: string) {
+  async function refreshThreadState(threadId: string) {
+    if (!window.eco) {
+      return;
+    }
+    const [
+      lines,
+      projection,
+      subagentSessions,
+      subagentMetrics,
+      plan,
+      clarification,
+      bashApproval,
+      todos,
+      usageSnapshot,
+    ] = await Promise.all([
+      window.eco.listThreadActivity(threadId),
+      typeof window.eco.getThreadRunProjection === "function"
+        ? window.eco.getThreadRunProjection(threadId)
+        : Promise.resolve(undefined),
+      typeof window.eco.listSubagentSessions === "function"
+        ? window.eco.listSubagentSessions(threadId)
+        : Promise.resolve(undefined),
+      typeof window.eco.listSubagentMetrics === "function"
+        ? window.eco.listSubagentMetrics(threadId)
+        : Promise.resolve(undefined),
+      window.eco.getPendingPlan(threadId),
+      window.eco.getPendingClarification(threadId),
+      typeof window.eco.getPendingBashApproval === "function"
+        ? window.eco.getPendingBashApproval(threadId)
+        : Promise.resolve(undefined),
+      window.eco.listThreadTodos(threadId),
+      window.eco.getThreadUsageSnapshot(threadId),
+    ]);
+
+    setActivityByThread((current) => ({ ...current, [threadId]: lines }));
+    if (projection) {
+      setRunProjectionByThread((current) => ({ ...current, [threadId]: projection }));
+    } else {
+      setRunProjectionByThread((current) => removeRecordKey(current, threadId));
+    }
+    if (subagentSessions) {
+      setSubagentTimingsByThread((current) => ({ ...current, [threadId]: subagentSessions }));
+    }
+    if (subagentMetrics) {
+      setSubagentMetricsByThread((current) => ({ ...current, [threadId]: subagentMetrics }));
+    }
+    setPendingPlan(plan);
+    setPendingClarification(clarification);
+    setPendingBashApproval(bashApproval);
+    setTodosByThread((current) => ({ ...current, [threadId]: todos }));
+    if (usageSnapshot.billing) {
+      setBillingByThread((current) => ({ ...current, [threadId]: usageSnapshot.billing! }));
+    } else {
+      setBillingByThread((current) => removeRecordKey(current, threadId));
+    }
+    if (usageSnapshot.context) {
+      setContextByThread((current) => ({ ...current, [threadId]: usageSnapshot.context! }));
+    } else {
+      setContextByThread((current) => removeRecordKey(current, threadId));
+    }
+  }
+
+  function restorePrompt(text: string, rewindTarget?: ThreadActivityRewindTarget) {
     setPrompt(text);
+    if (activeThread && rewindTarget) {
+      setComposerRewindTarget({ ...rewindTarget, threadId: activeThread.id });
+    } else {
+      setComposerRewindTarget(undefined);
+    }
     window.requestAnimationFrame(() => {
       composerRef.current?.focus();
       composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1270,16 +1345,25 @@ function App() {
     }
     try {
       if (activeThread && isContinuableThreadStatus(activeThread.status)) {
+        const rewindTarget =
+          activeComposerRewindTarget
+            ? {
+                activityLineId: activeComposerRewindTarget.activityLineId,
+                userMessageId: activeComposerRewindTarget.userMessageId,
+              }
+            : undefined;
         const result = await window.eco.continueThread({
           threadId: activeThread.id,
           prompt: messagePrompt,
           runtimeConfig: composerRuntimeConfig,
+          ...(rewindTarget && { rewindTarget }),
           ...(attachments && { attachments }),
         });
         setThreads((current) =>
           current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
         );
         setPendingPlan(undefined);
+        await refreshThreadState(result.thread.id);
       } else {
         const result = await window.eco.startThread({
           workspacePath: currentProjectPath,
@@ -1305,6 +1389,7 @@ function App() {
         });
       }
       setPrompt("");
+      setComposerRewindTarget(undefined);
       setComposerAttachments([]);
       setComposerImageNotice(undefined);
     } catch (caught) {
@@ -1815,12 +1900,14 @@ function App() {
   function switchProject(nextPath: string) {
     setSelectedProjectPath(nextPath);
     setSelectedThreadId(undefined);
+    setComposerRewindTarget(undefined);
     resetComposerDefaultConfig();
   }
 
   function selectThread(thread: ThreadSummary) {
     setSelectedThreadId(thread.id);
     setSelectedProjectPath(thread.workspacePath);
+    setComposerRewindTarget(undefined);
     setCollapsedProjectPaths((current) => {
       if (!current.has(thread.workspacePath)) {
         return current;
@@ -1842,6 +1929,7 @@ function App() {
     setSelectedThreadId((current) => (current === threadId ? undefined : current));
     if (selectedThreadId === threadId) {
       resetComposerDefaultConfig();
+      setComposerRewindTarget(undefined);
     }
     setActivityByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
@@ -1901,6 +1989,7 @@ function App() {
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
     setPrompt("");
+    setComposerRewindTarget(undefined);
     setComposerAttachments([]);
     setComposerImageNotice(undefined);
     setError(undefined);
@@ -2047,6 +2136,21 @@ function App() {
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
+      {activeComposerRewindTarget ? (
+        <div className="composer-rewind-banner">
+          <RotateCcw size={14} aria-hidden />
+          <span>从所选节点分叉</span>
+          <button
+            type="button"
+            className="composer-rewind-clear"
+            onClick={() => setComposerRewindTarget(undefined)}
+            aria-label="取消回到节点"
+            title="取消"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ) : null}
       {composerAttachments.length > 0 && (
         <ul className="composer-attachments" aria-label="已粘贴的图片">
           {composerAttachments.map((attachment) => (

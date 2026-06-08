@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
   continueStatusMessage,
   resolveContinuePhase,
@@ -6,7 +9,12 @@ import {
   threadEnteredExecutionPhase,
   userRequestsPlanRevision,
 } from "../src/shared/thread-continuation";
-import { parseApprovedPlanDocument } from "../src/main/worktree-lifecycle";
+import {
+  approvedPlanSnapshotExists,
+  deleteApprovedPlanSnapshotIfNewerThan,
+  parseApprovedPlanDocument,
+  writeApprovedPlanSnapshot,
+} from "../src/main/worktree-lifecycle";
 
 test("userRequestsPlanRevision detects replan intent", () => {
   expect(userRequestsPlanRevision("继续")).toBe(false);
@@ -144,4 +152,22 @@ test("parseApprovedPlanDocument round-trips snapshot sections", () => {
   expect(parsed?.analysis).toBe("missing handler");
   expect(parsed?.plan).toContain("## Steps");
   expect(parsed?.planUserEdited).toBe(true);
+});
+
+test("deleteApprovedPlanSnapshotIfNewerThan removes only future snapshots", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-approved-plan-"));
+  await writeApprovedPlanSnapshot(dir, "thr_plan", {
+    userPrompt: "fix export",
+    analysis: "analysis",
+    plan: "plan",
+  });
+
+  expect(await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() + 60_000).toISOString())).toBe(
+    false,
+  );
+  expect(await approvedPlanSnapshotExists(dir, "thr_plan")).toBe(true);
+  expect(await deleteApprovedPlanSnapshotIfNewerThan(dir, "thr_plan", new Date(Date.now() - 60_000).toISOString())).toBe(
+    true,
+  );
+  expect(await approvedPlanSnapshotExists(dir, "thr_plan")).toBe(false);
 });

@@ -41,6 +41,7 @@ import {
   questionAnswerSystemAppend,
   readSdkSessionId,
   readSdkUserMessageCheckpointId,
+  resolveResumeSessionAtBeforeUserMessage,
   resolveAgentSkills,
   resolveSdkSessionOptions,
   stripBashAutoApprovedTools,
@@ -1123,9 +1124,52 @@ test("formatAgentEventLine renders todo.updated task progress for activity", () 
 
 test("applyResumeToQueryOptions sets resume and forkSession", () => {
   const options: Record<string, unknown> = {};
-  applyResumeToQueryOptions(options, { resumeSessionId: "sess-123", forkSession: true });
+  applyResumeToQueryOptions(options, {
+    resumeSessionId: "sess-123",
+    resumeSessionAt: "msg-prev",
+    forkSession: true,
+  });
   expect(options.resume).toBe("sess-123");
+  expect(options.resumeSessionAt).toBe("msg-prev");
   expect(options.forkSession).toBe(true);
+});
+
+test("resolveResumeSessionAtBeforeUserMessage returns assistant before target user", async () => {
+  const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
+    sessionId: "sess-123",
+    userMessageId: "user-2",
+    loadSdk: async () => ({
+      query: (() => {
+        throw new Error("not used");
+      }) as never,
+      getSessionMessages: async () => [
+        { type: "user", uuid: "user-1" },
+        { type: "assistant", uuid: "assistant-1" },
+        { type: "user", uuid: "user-2" },
+        { type: "assistant", uuid: "assistant-2" },
+      ],
+    }),
+  });
+
+  expect(resumeAt).toBe("assistant-1");
+});
+
+test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user message", async () => {
+  const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
+    sessionId: "sess-123",
+    userMessageId: "user-1",
+    loadSdk: async () => ({
+      query: (() => {
+        throw new Error("not used");
+      }) as never,
+      getSessionMessages: async () => [
+        { type: "user", uuid: "user-1" },
+        { type: "assistant", uuid: "assistant-1" },
+      ],
+    }),
+  });
+
+  expect(resumeAt).toBeUndefined();
 });
 
 test("applySessionStoreToQueryOptions disables file checkpointing", () => {

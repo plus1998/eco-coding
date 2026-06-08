@@ -70,6 +70,29 @@ test("only planner-side activity lines scroll the main feed", () => {
   ).toBe(false);
 });
 
+test("user prompt blocks carry SDK rewind targets when present", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      {
+        id: "u1",
+        role: "user",
+        message: "original",
+        rewindTarget: { activityLineId: "u1", userMessageId: "sdk-user-1" },
+      },
+      { id: "1", role: "planner", message: "done" },
+      { id: "u2", role: "user", message: "legacy" },
+    ],
+    { status: "completed" },
+  );
+
+  const prompts = blocks.filter(
+    (block): block is Extract<ActivityLogBlock, { kind: "user-prompt" }> =>
+      block.kind === "user-prompt",
+  );
+  expect(prompts[0]?.rewindTarget).toEqual({ activityLineId: "u1", userMessageId: "sdk-user-1" });
+  expect(prompts[1]?.rewindTarget).toBeUndefined();
+});
+
 test("groups narrative and compact tool summaries into collapsible work session", () => {
   const blocks = buildActivityLogBlocks(
     [

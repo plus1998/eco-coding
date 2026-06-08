@@ -16,6 +16,7 @@ import { computeSubagentSessionDurationMs } from "../shared/subagent-session-tim
 import type {
   ThreadBillingSnapshot,
   ThreadActivityLine,
+  ThreadActivityRewindTarget,
   ThreadContextSnapshot,
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
@@ -57,8 +58,26 @@ import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import { useStreamRequestTiming } from "./useStreamRequestTiming";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
+type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
+
 function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
   return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
+}
+
+function readRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const target = value as Partial<ThreadActivityRewindTarget>;
+  const activityLineId = typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
+  const userMessageId = typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
+  return activityLineId && userMessageId ? { activityLineId, userMessageId } : undefined;
+}
+
+function readProjectionRewindTarget(
+  item: ThreadRunProjectionTimelineItem,
+): ThreadActivityRewindTarget | undefined {
+  return readRewindTarget(item.metadata?.rewindTarget);
 }
 
 function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIdentity?: boolean): boolean {
@@ -80,7 +99,7 @@ function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIden
 interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
   thread?: ThreadSummary;
-  onRestorePrompt?: (prompt: string) => void;
+  onRestorePrompt?: RestorePromptHandler;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
@@ -225,7 +244,7 @@ function ProjectionActivityLogView({
   thread?: ThreadSummary;
   billing?: ThreadBillingSnapshot;
   agentDisplayNames?: RuntimeAgentDisplayNames;
-  onRestorePrompt?: (prompt: string) => void;
+  onRestorePrompt?: RestorePromptHandler;
   onPlannerLayoutChange?: () => void;
 }) {
   const requestSpansById = useMemo(
@@ -412,7 +431,7 @@ function ProjectionMainFeedEntry({
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expandedAgentKeys: Record<string, boolean>;
   onToggleAgent: (agentId: string) => void;
-  onRestorePrompt?: (prompt: string) => void;
+  onRestorePrompt?: RestorePromptHandler;
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   if (entry.kind === "timeline") {
@@ -635,14 +654,21 @@ function ProjectionTimelineEntry({
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
-  onRestorePrompt?: (prompt: string) => void;
+  onRestorePrompt?: RestorePromptHandler;
   compact?: boolean;
 }) {
   if (isProjectionUserPromptItem(item)) {
     if (compact) {
       return null;
     }
-    return <UserPromptBlock text={item.text} {...(onRestorePrompt && { onRestorePrompt })} />;
+    const rewindTarget = readProjectionRewindTarget(item);
+    return (
+      <UserPromptBlock
+        text={item.text}
+        {...(rewindTarget && { rewindTarget })}
+        {...(onRestorePrompt && { onRestorePrompt })}
+      />
+    );
   }
 
   const block = projectionItemToDetailBlock(item);
@@ -703,7 +729,7 @@ function RunLogBlock({
   threadStatus,
 }: {
   block: ActivityLogBlock;
-  onRestorePrompt?: (prompt: string) => void;
+  onRestorePrompt?: RestorePromptHandler;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
@@ -715,7 +741,13 @@ function RunLogBlock({
   threadStatus?: ThreadStatus;
 }) {
   if (block.kind === "user-prompt") {
-    return <UserPromptBlock text={block.text} {...(onRestorePrompt && { onRestorePrompt })} />;
+    return (
+      <UserPromptBlock
+        text={block.text}
+        {...(block.rewindTarget && { rewindTarget: block.rewindTarget })}
+        {...(onRestorePrompt && { onRestorePrompt })}
+      />
+    );
   }
   if (block.kind === "work-session") {
     return (
@@ -1381,10 +1413,12 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean 
 
 function UserPromptBlock({
   text,
+  rewindTarget,
   onRestorePrompt,
 }: {
   text: string;
-  onRestorePrompt?: (prompt: string) => void;
+  rewindTarget?: ThreadActivityRewindTarget;
+  onRestorePrompt?: RestorePromptHandler;
 }) {
   const bodyRef = useRef<HTMLPreElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -1441,9 +1475,14 @@ function UserPromptBlock({
           <button
             type="button"
             className="run-log-user-prompt-action"
-            onClick={() => onRestorePrompt(text)}
+            onClick={() => {
+              if (rewindTarget) {
+                onRestorePrompt(text, rewindTarget);
+              }
+            }}
+            disabled={!rewindTarget}
             aria-label="回到此节点"
-            title="填入输入框"
+            title={rewindTarget ? "回到此节点并重写" : "该节点缺少 SDK 检查点"}
           >
             <Reply size={14} />
           </button>

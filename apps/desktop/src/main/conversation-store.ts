@@ -75,7 +75,17 @@ export interface ThreadSdkSession {
 
 export interface FileCheckpointRecord {
   userMessageId: string;
+  activityLineId?: string;
   createdAt: string;
+}
+
+export interface ThreadActivityRewindSummary {
+  activityLineId: string;
+  userMessageId: string;
+  cutoffCreatedAt: string;
+  cutoffRunSequence: number;
+  removedActivityCount: number;
+  removedRunEventCount: number;
 }
 
 interface ActivityRow {
@@ -86,6 +96,7 @@ interface ActivityRow {
   stream: number;
   agent_id: string | null;
   api_error_json: string | null;
+  sdk_user_message_id: string | null;
   created_at: string;
 }
 
@@ -246,12 +257,16 @@ export class ConversationStore {
         role TEXT NOT NULL,
         message TEXT NOT NULL,
         stream INTEGER NOT NULL DEFAULT 0,
+        sdk_user_message_id TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
 
       CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_created
         ON thread_activity(thread_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_sdk_user_message
+        ON thread_activity(thread_id, sdk_user_message_id);
 
       CREATE TABLE IF NOT EXISTS thread_pending_plans (
         thread_id TEXT PRIMARY KEY,
@@ -470,6 +485,13 @@ export class ConversationStore {
     if (!activityNames.has("api_error_json")) {
       this.db.exec(`ALTER TABLE thread_activity ADD COLUMN api_error_json TEXT`);
     }
+    if (!activityNames.has("sdk_user_message_id")) {
+      this.db.exec(`ALTER TABLE thread_activity ADD COLUMN sdk_user_message_id TEXT`);
+    }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_sdk_user_message
+        ON thread_activity(thread_id, sdk_user_message_id);
+    `);
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS thread_subagent_metrics (
@@ -528,11 +550,19 @@ export class ConversationStore {
       CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
         thread_id TEXT NOT NULL,
         user_message_id TEXT NOT NULL,
+        activity_line_id TEXT,
         created_at TEXT NOT NULL,
         PRIMARY KEY (thread_id, user_message_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
     `);
+    const checkpointColumns = this.db
+      .prepare(`PRAGMA table_info(thread_file_checkpoints)`)
+      .all() as Array<{ name: string }>;
+    const checkpointNames = new Set(checkpointColumns.map((column) => column.name));
+    if (!checkpointNames.has("activity_line_id")) {
+      this.db.exec(`ALTER TABLE thread_file_checkpoints ADD COLUMN activity_line_id TEXT`);
+    }
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS thread_run_attempts (
@@ -624,6 +654,15 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_run_events_thread_agent
         ON thread_run_events(thread_id, agent_id, sequence);
+
+      CREATE TABLE IF NOT EXISTS thread_file_checkpoints (
+        thread_id TEXT NOT NULL,
+        user_message_id TEXT NOT NULL,
+        activity_line_id TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, user_message_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -896,33 +935,228 @@ export class ConversationStore {
     this.clearSubagentSessions(threadId);
   }
 
-  saveFileCheckpoint(threadId: string, userMessageId: string): void {
+  saveFileCheckpoint(threadId: string, userMessageId: string, activityLineId?: string): void {
     const id = userMessageId.trim();
     if (!id) {
       return;
     }
+    const lineId = activityLineId?.trim() || null;
     this.db
       .prepare(
-        `INSERT INTO thread_file_checkpoints (thread_id, user_message_id, created_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(thread_id, user_message_id) DO NOTHING`,
+        `INSERT INTO thread_file_checkpoints (thread_id, user_message_id, activity_line_id, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(thread_id, user_message_id) DO UPDATE SET
+           activity_line_id = COALESCE(excluded.activity_line_id, thread_file_checkpoints.activity_line_id)`,
       )
-      .run(threadId, id, new Date().toISOString());
+      .run(threadId, id, lineId, new Date().toISOString());
   }
 
   listFileCheckpoints(threadId: string): FileCheckpointRecord[] {
     const rows = this.db
       .prepare(
-        `SELECT user_message_id, created_at
+        `SELECT user_message_id, activity_line_id, created_at
          FROM thread_file_checkpoints
          WHERE thread_id = ?
          ORDER BY created_at ASC`,
       )
-      .all(threadId) as Array<{ user_message_id: string; created_at: string }>;
+      .all(threadId) as Array<{ user_message_id: string; activity_line_id: string | null; created_at: string }>;
     return rows.map((row) => ({
       userMessageId: row.user_message_id,
+      ...(row.activity_line_id && { activityLineId: row.activity_line_id }),
       createdAt: row.created_at,
     }));
+  }
+
+  bindLatestUserActivityToSdkMessage(threadId: string, userMessageId: string): ThreadActivityLine | undefined {
+    const id = userMessageId.trim();
+    if (!threadId.trim() || !id) {
+      return undefined;
+    }
+
+    const existing = this.db
+      .prepare(
+        `SELECT id, thread_id, role, message, stream, agent_id, api_error_json, sdk_user_message_id, created_at
+         FROM thread_activity
+         WHERE thread_id = ? AND sdk_user_message_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(threadId, id) as ActivityRow | undefined;
+    if (existing) {
+      this.saveFileCheckpoint(threadId, id, existing.id);
+      this.bindRunEventRewindTarget(threadId, existing.id, id);
+      return activityRowToThreadActivityLine(existing);
+    }
+
+    const row = this.db
+      .prepare(
+        `SELECT id, thread_id, role, message, stream, agent_id, api_error_json, sdk_user_message_id, created_at
+         FROM thread_activity
+         WHERE thread_id = ? AND role = 'user' AND sdk_user_message_id IS NULL
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(threadId) as ActivityRow | undefined;
+    if (!row) {
+      this.saveFileCheckpoint(threadId, id);
+      return undefined;
+    }
+
+    this.db
+      .prepare(`UPDATE thread_activity SET sdk_user_message_id = ? WHERE thread_id = ? AND id = ?`)
+      .run(id, threadId, row.id);
+    this.saveFileCheckpoint(threadId, id, row.id);
+    this.bindRunEventRewindTarget(threadId, row.id, id);
+    return activityRowToThreadActivityLine({ ...row, sdk_user_message_id: id });
+  }
+
+  getActivityRewindTarget(
+    threadId: string,
+    activityLineId: string,
+  ): ThreadActivityLine["rewindTarget"] | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, role, sdk_user_message_id
+         FROM thread_activity
+         WHERE thread_id = ? AND id = ?
+         LIMIT 1`,
+      )
+      .get(threadId, activityLineId) as
+      | { id: string; role: string; sdk_user_message_id: string | null }
+      | undefined;
+    const userMessageId = row?.sdk_user_message_id?.trim();
+    if (!row || row.role !== "user" || !userMessageId) {
+      return undefined;
+    }
+    return { activityLineId: row.id, userMessageId };
+  }
+
+  rewindThreadToActivityLine(threadId: string, activityLineId: string): ThreadActivityRewindSummary {
+    const target = this.db
+      .prepare(
+        `SELECT rowid AS row_id, id, thread_id, role, message, stream, agent_id, api_error_json,
+                sdk_user_message_id, created_at
+         FROM thread_activity
+         WHERE thread_id = ? AND id = ?
+         LIMIT 1`,
+      )
+      .get(threadId, activityLineId) as (ActivityRow & { row_id: number }) | undefined;
+    const userMessageId = target?.sdk_user_message_id?.trim();
+    if (!target || target.role !== "user" || !userMessageId) {
+      throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
+    }
+
+    const runBoundary = this.db
+      .prepare(
+        `SELECT sequence
+         FROM thread_run_events
+         WHERE thread_id = ? AND stream_key = ?
+         ORDER BY sequence ASC
+         LIMIT 1`,
+      )
+      .get(threadId, activityLineId) as { sequence: number } | undefined;
+    if (!runBoundary) {
+      throw new Error("该节点缺少运行事件索引，无法安全回滚。");
+    }
+
+    const cutoffCreatedAt = target.created_at;
+    const cutoffRunSequence = runBoundary.sequence;
+    const deleteChanges = (sql: string, ...args: (string | number | null)[]): number =>
+      ((this.db.prepare(sql).run(...args) as { changes?: number }).changes ?? 0);
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      deleteChanges(
+        `DELETE FROM thread_file_checkpoints
+         WHERE thread_id = ?
+           AND (
+             user_message_id = ?
+             OR activity_line_id IN (
+               SELECT id FROM thread_activity WHERE thread_id = ? AND rowid >= ?
+             )
+             OR (activity_line_id IS NULL AND created_at >= ?)
+           )`,
+        threadId,
+        userMessageId,
+        threadId,
+        target.row_id,
+        cutoffCreatedAt,
+      );
+      const removedRunEventCount = deleteChanges(
+        `DELETE FROM thread_run_events WHERE thread_id = ? AND sequence >= ?`,
+        threadId,
+        cutoffRunSequence,
+      );
+      const removedActivityCount = deleteChanges(
+        `DELETE FROM thread_activity WHERE thread_id = ? AND rowid >= ?`,
+        threadId,
+        target.row_id,
+      );
+      deleteChanges(
+        `DELETE FROM thread_usage_ledger_events WHERE thread_id = ? AND observed_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_run_attempts
+         WHERE thread_id = ? AND (started_at >= ? OR COALESCE(ended_at, started_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_agent_instances
+         WHERE thread_id = ?
+           AND (started_at >= ? OR updated_at >= ? OR COALESCE(ended_at, updated_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_subagent_sessions
+         WHERE thread_id = ?
+           AND (started_at >= ? OR last_active_at >= ? OR updated_at >= ? OR COALESCE(ended_at, updated_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_subagent_metrics WHERE thread_id = ? AND updated_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(`DELETE FROM thread_pending_plans WHERE thread_id = ?`, threadId);
+      deleteChanges(`DELETE FROM thread_coder_todos WHERE thread_id = ?`, threadId);
+      deleteChanges(`DELETE FROM thread_metrics_snapshots WHERE thread_id = ?`, threadId);
+      deleteChanges(
+        `DELETE FROM thread_compaction_archives WHERE thread_id = ? AND created_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_applied_diffs WHERE thread_id = ? AND applied_at >= ?`,
+        threadId,
+        cutoffCreatedAt,
+      );
+      this.db
+        .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
+        .run(new Date().toISOString(), threadId);
+      this.db.exec("COMMIT");
+      return {
+        activityLineId,
+        userMessageId,
+        cutoffCreatedAt,
+        cutoffRunSequence,
+        removedActivityCount,
+        removedRunEventCount,
+      };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   upsertRunAttempt(record: RunAttemptRecord): void {
@@ -1569,10 +1803,15 @@ export class ConversationStore {
       ...(line.agentId?.trim() && { agentId: line.agentId.trim() }),
       ...(line.apiError && { apiError: line.apiError }),
     };
+    const sdkUserMessageId = line.rewindTarget?.userMessageId?.trim();
+    if (sdkUserMessageId) {
+      record.rewindTarget = { activityLineId: record.id, userMessageId: sdkUserMessageId };
+    }
     this.db
       .prepare(
-        `INSERT INTO thread_activity (id, thread_id, role, message, stream, agent_id, api_error_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO thread_activity (
+           id, thread_id, role, message, stream, agent_id, api_error_json, sdk_user_message_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.id,
@@ -1582,6 +1821,7 @@ export class ConversationStore {
         line.stream ? 1 : 0,
         record.agentId ?? null,
         record.apiError ? JSON.stringify(record.apiError) : null,
+        sdkUserMessageId || null,
         new Date().toISOString(),
       );
 
@@ -1596,21 +1836,25 @@ export class ConversationStore {
   listActivityLines(threadId: string): ThreadActivityLine[] {
     const rows = this.db
       .prepare(
-        `SELECT id, role, message, stream, agent_id, api_error_json
+        `SELECT id, thread_id, role, message, stream, agent_id, api_error_json, sdk_user_message_id, created_at
          FROM thread_activity
          WHERE thread_id = ?
-         ORDER BY created_at ASC`,
+         ORDER BY created_at ASC, rowid ASC`,
       )
       .all(threadId) as unknown as ActivityRow[];
 
     const lines = rows.map((row) => {
       const { text, repaired } = repairActivityText(row.message);
       const apiError = parseStoredApiError(row.api_error_json);
+      const userMessageId = row.sdk_user_message_id?.trim();
       return {
         id: row.id,
         role: row.role,
         message: repaired ? text : row.message,
         stream: row.stream === 1,
+        ...(userMessageId && {
+          rewindTarget: { activityLineId: row.id, userMessageId },
+        }),
         ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
         ...(apiError && { apiError }),
       };
@@ -1775,13 +2019,40 @@ export class ConversationStore {
       .run(new Date().toISOString(), threadId);
   }
 
+  private bindRunEventRewindTarget(threadId: string, activityLineId: string, userMessageId: string): void {
+    const rows = this.db
+      .prepare(
+        `SELECT id, metadata_json
+         FROM thread_run_events
+         WHERE thread_id = ? AND stream_key = ?`,
+      )
+      .all(threadId, activityLineId) as Array<{ id: string; metadata_json: string | null }>;
+    if (rows.length === 0) {
+      return;
+    }
+
+    const update = this.db.prepare(
+      `UPDATE thread_run_events SET metadata_json = ? WHERE thread_id = ? AND id = ?`,
+    );
+    for (const row of rows) {
+      update.run(
+        JSON.stringify({
+          ...(parseJsonRecord(row.metadata_json) ?? {}),
+          rewindTarget: { activityLineId, userMessageId },
+        }),
+        threadId,
+        row.id,
+      );
+    }
+  }
+
   private getLastActivityLine(threadId: string): (ThreadActivityLine & { id: string }) | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, role, message, stream, agent_id, api_error_json
+        `SELECT id, thread_id, role, message, stream, agent_id, api_error_json, sdk_user_message_id, created_at
          FROM thread_activity
          WHERE thread_id = ?
-         ORDER BY created_at DESC
+         ORDER BY created_at DESC, rowid DESC
          LIMIT 1`,
       )
       .get(threadId) as ActivityRow | undefined;
@@ -1790,15 +2061,7 @@ export class ConversationStore {
       return undefined;
     }
 
-    const apiError = parseStoredApiError(row.api_error_json);
-    return {
-      id: row.id,
-      role: row.role,
-      message: row.message,
-      stream: row.stream === 1,
-      ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
-      ...(apiError && { apiError }),
-    };
+    return activityRowToThreadActivityLine(row);
   }
 
   private getThreadRunEvent(threadId: string, eventId: string): ThreadRunEvent | undefined {
@@ -1824,6 +2087,22 @@ export class ConversationStore {
       .get(threadId) as { next_sequence: number } | undefined;
     return row?.next_sequence ?? 1;
   }
+}
+
+function activityRowToThreadActivityLine(row: ActivityRow): ThreadActivityLine {
+  const apiError = parseStoredApiError(row.api_error_json);
+  const userMessageId = row.sdk_user_message_id?.trim();
+  return {
+    id: row.id,
+    role: row.role,
+    message: row.message,
+    stream: row.stream === 1,
+    ...(userMessageId && {
+      rewindTarget: { activityLineId: row.id, userMessageId },
+    }),
+    ...(row.agent_id?.trim() && { agentId: row.agent_id.trim() }),
+    ...(apiError && { apiError }),
+  };
 }
 
 function parseStoredApiError(raw: string | null | undefined): ThreadApiErrorInfo | undefined {

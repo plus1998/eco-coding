@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   createRedisSessionStore,
-  createSqliteSessionStore,
   type SessionStore,
   testRedisConnection,
 } from "@eco/persistence";
@@ -28,7 +27,12 @@ import {
   type SdkToolPermissionRequest,
   type SubagentRunPhase,
 } from "@eco/runtime";
-import { ClaudeAgentSdkDriver, deleteClaudeAgentSdkSession, type EcoHookContext } from "@eco/runtime/sdk";
+import {
+  ClaudeAgentSdkDriver,
+  deleteClaudeAgentSdkSession,
+  resolveResumeSessionAtBeforeUserMessage,
+  type EcoHookContext,
+} from "@eco/runtime/sdk";
 import {
   type CommandRunner,
   createSessionPlan,
@@ -74,6 +78,7 @@ import {
   type TestProviderConnectionRequest,
   type TestRoleRoutesRequest,
   type ThreadActivityLine,
+  type ThreadActivityRewindTarget,
   type ThreadAppliedDiffResult,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
@@ -300,6 +305,7 @@ import { prepareWorkspaceGit } from "./workspace-git-setup";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   approvedPlanSnapshotExists,
+  deleteApprovedPlanSnapshotIfNewerThan,
   isWorktreeGitCwdError,
   readApprovedPlanSnapshot,
   resolveWorktreePathHint,
@@ -481,11 +487,10 @@ app.whenReady().then(async () => {
     await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
   } catch (error) {
     process.stderr.write(
-      `[eco] SessionStore init failed (${errorMessage(error)}), using local SQLite fallback\n`,
+      `[eco] SessionStore init failed (${errorMessage(error)}), disabling SessionStore so file checkpointing remains available\n`,
     );
-    sdkSessionStore = await createSqliteSessionStore(
-      path.join(app.getPath("userData"), "eco-sessions.sqlite"),
-    );
+    sdkSessionStore = undefined;
+    closeSdkSessionStore = undefined;
   }
   await localOtelReceiver.start({
     onActivity: emitOtelActivity,
@@ -703,6 +708,22 @@ function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
     throw new Error("Invalid thread runtime configuration.");
   }
   return normalizeThreadRuntimeConfig(value);
+}
+
+function parseThreadActivityRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "object") {
+    throw new Error("Invalid rewind target.");
+  }
+  const target = value as Partial<ThreadActivityRewindTarget>;
+  const activityLineId = typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
+  const userMessageId = typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
+  if (!activityLineId || !userMessageId) {
+    throw new Error("Invalid rewind target.");
+  }
+  return { activityLineId, userMessageId };
 }
 
 function roleRoutesForThreadConfig(
@@ -1713,6 +1734,7 @@ function registerIpcHandlers(): void {
     if (thread.status === "running" || thread.status === "queued") {
       throw new Error("Wait for the current run to finish.");
     }
+    const rewindTarget = parseThreadActivityRewindTarget(payload.rewindTarget);
 
     const workspace = await ensureWorkspace(thread.workspacePath);
     const settings = getModelSettingsSnapshot();
@@ -1735,12 +1757,25 @@ function registerIpcHandlers(): void {
     }
     const runtime: RuntimeConfig = { routes: runtimeConfig.routes };
 
+    const rewindResume = rewindTarget
+      ? await prepareThreadRewindForContinue({
+          threadId: payload.threadId,
+          prompt,
+          workspace,
+          target: rewindTarget,
+        })
+      : undefined;
+    const effectiveThread = ensureThreadRuntimeConfig(
+      conversationStore.getThread(payload.threadId) ?? activeThread,
+    );
     const intent = classifyThreadIntent(prompt);
     const activityLines = conversationStore.listActivityLines(payload.threadId);
     const sdkSession = conversationStore.getSdkSession(payload.threadId);
-    const hasPriorActivity = threadHasResumableCheckpoint(thread, activityLines);
+    const hasPriorActivity = threadHasResumableCheckpoint(effectiveThread, activityLines);
     const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
-    const canResume = Boolean(sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path);
+    const canResume = Boolean(
+      rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
+    );
     const existingWorktreePlan = createSessionPlan(workspace.path, payload.threadId);
 
     const hasPendingPlan = Boolean(conversationStore.getPendingPlan(payload.threadId));
@@ -1767,14 +1802,14 @@ function registerIpcHandlers(): void {
       enteredExecutionPhase,
       hasCoderTodos,
       hasAppliedDiff,
-      threadStatus: thread.status,
+      threadStatus: effectiveThread.status,
       activityLines,
     });
 
     const agentPrompt =
       continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
         ? prompt
-        : buildAgentPromptWithContext(thread.prompt, prompt, activityLines);
+        : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
     const statusMessage = continueStatusMessage(continueAction, intent);
 
     updateThread(payload.threadId, {
@@ -1784,7 +1819,7 @@ function registerIpcHandlers(): void {
     recordUserPrompt(payload.threadId, prompt);
 
     const updated: ThreadSummary = {
-      ...thread,
+      ...effectiveThread,
       status: "running",
       message: statusMessage,
     };
@@ -1800,6 +1835,7 @@ function registerIpcHandlers(): void {
       ...(existingWorktreePlan ? { existingWorktreePlan } : {}),
       ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
       roleRoutes,
+      ...(rewindResume && { resumeOverride: rewindResume }),
     });
 
     return {
@@ -2639,6 +2675,7 @@ async function runCodingThreadExecution(
     routesOverride?: readonly RuntimeRoleRouteConfig[];
     followUp?: string;
     attachments?: PromptImageAttachment[];
+    resume?: EcoSdkResumeOptions;
   },
 ): Promise<void> {
   const pending = conversationStore.getPendingPlan(threadId);
@@ -2715,7 +2752,7 @@ async function runCodingThreadExecution(
                 throw new Error("Runtime driver does not support execution phase.");
               }
 
-              const resume = resolveResumeOptions(threadId, executionCwd);
+              const resume = options?.resume ?? resolveResumeOptions(threadId, executionCwd);
               if (resume) {
                 await ensureContextHeadroom(threadId, executionCwd, controller.signal, {
                   ignoreRunningGuard: true,
@@ -3481,7 +3518,90 @@ function clearThreadRuntimeMemory(threadId: string): void {
   }
 }
 
-async function rebuildSdkSessionStore(localDbPath: string): Promise<void> {
+async function prepareThreadRewindForContinue(input: {
+  threadId: string;
+  prompt: string;
+  workspace: WorkspaceInfo;
+  target: ThreadActivityRewindTarget;
+}): Promise<EcoSdkResumeOptions | undefined> {
+  const storedTarget = conversationStore.getActivityRewindTarget(
+    input.threadId,
+    input.target.activityLineId,
+  );
+  if (!storedTarget || storedTarget.userMessageId !== input.target.userMessageId) {
+    throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
+  }
+  if (sdkSessionStore) {
+    throw new Error("当前启用了 SessionStore/Redis 会话同步，SDK 文件检查点不可用，暂不支持回到节点。");
+  }
+
+  const session = conversationStore.getSdkSession(input.threadId);
+  if (!session?.sessionId) {
+    throw new Error("没有可恢复的 SDK 会话，无法回到该节点。");
+  }
+  const sessionCwd = normalizeSessionCwd(input.workspace.path, session.cwd);
+  if (!existsSync(sessionCwd)) {
+    throw new Error("SDK 会话工作目录不存在，无法回到该节点。");
+  }
+
+  const resumeSessionAt = await resolveResumeSessionAtBeforeUserMessage({
+    sessionId: session.sessionId,
+    userMessageId: storedTarget.userMessageId,
+    dir: sessionCwd,
+  });
+
+  await withThreadSdkDriver(input.threadId, async (driver, _signal, routes) => {
+    if (!driver.rewindSessionFiles) {
+      throw new Error("Runtime driver does not support file checkpoint rewind.");
+    }
+    await driver.rewindSessionFiles(
+      buildSdkRunInput({
+        threadId: input.threadId,
+        prompt: "",
+        workspacePath: input.workspace.path,
+        worktreePath: sessionCwd,
+        routes: [...routes],
+        signal: AbortSignal.timeout(120_000),
+        sdkSession: await buildSdkSessionOptions(input.threadId, ""),
+        agentRegistry: resolveAgentRuntimeConfigForThreadId(input.threadId),
+        resume: { resumeSessionId: session.sessionId },
+      }),
+      storedTarget.userMessageId,
+    );
+  });
+
+  const rewindSummary = conversationStore.rewindThreadToActivityLine(
+    input.threadId,
+    storedTarget.activityLineId,
+  );
+  await deleteApprovedPlanSnapshotIfNewerThan(
+    input.workspace.path,
+    input.threadId,
+    rewindSummary.cutoffCreatedAt,
+  );
+  const remainingActivity = conversationStore.listActivityLines(input.threadId);
+  if (!remainingActivity.some((line) => line.role === "user")) {
+    conversationStore.updateThreadPrompt(input.threadId, input.prompt);
+  }
+  if (!resumeSessionAt) {
+    conversationStore.clearSdkSession(input.threadId);
+  }
+  clearThreadRuntimeMemory(input.threadId);
+  emitTodoList(input.threadId, []);
+  emitSubagentTimingUpdated(input.threadId);
+  emitThreadRunProjectionUpdated(input.threadId);
+
+  if (!resumeSessionAt) {
+    return undefined;
+  }
+  return {
+    resumeSessionId: session.sessionId,
+    resumeSessionAt,
+    forkSession: true,
+  };
+}
+
+async function rebuildSdkSessionStore(_localDbPath: string): Promise<void> {
   if (closeSdkSessionStore) {
     await closeSdkSessionStore();
     closeSdkSessionStore = undefined;
@@ -3500,9 +3620,9 @@ async function rebuildSdkSessionStore(localDbPath: string): Promise<void> {
     return;
   }
 
-  sdkSessionStore = await createSqliteSessionStore(localDbPath);
+  sdkSessionStore = undefined;
   closeSdkSessionStore = undefined;
-  process.stderr.write(`[eco] SessionStore: local SQLite (${localDbPath})\n`);
+  process.stderr.write(`[eco] SessionStore: disabled (SDK file checkpointing enabled)\n`);
 }
 
 function isSessionCapturedPayload(payload: unknown): payload is SessionCapturedPayload {
@@ -3526,7 +3646,10 @@ function captureSdkSessionFromEvent(
       typeof payload === "object" &&
       typeof (payload as { userMessageId?: string }).userMessageId === "string"
     ) {
-      conversationStore.saveFileCheckpoint(threadId, (payload as { userMessageId: string }).userMessageId);
+      conversationStore.bindLatestUserActivityToSdkMessage(
+        threadId,
+        (payload as { userMessageId: string }).userMessageId,
+      );
     }
     return;
   }
@@ -3619,6 +3742,7 @@ async function dispatchThreadContinueAction(input: {
   existingWorktreePlan?: WorktreePlan;
   attachments?: PromptImageAttachment[];
   roleRoutes: readonly RuntimeRoleRouteConfig[];
+  resumeOverride?: EcoSdkResumeOptions;
 }): Promise<void> {
   const {
     threadId,
@@ -3631,6 +3755,7 @@ async function dispatchThreadContinueAction(input: {
     existingWorktreePlan,
     attachments,
     roleRoutes,
+    resumeOverride,
   } = input;
 
   if (action.kind === "resume_execution") {
@@ -3644,6 +3769,7 @@ async function dispatchThreadContinueAction(input: {
       routesOverride: roleRoutes,
       followUp: agentPrompt,
       ...(attachments?.length ? { attachments } : {}),
+      ...(resumeOverride && { resume: resumeOverride }),
     });
     return;
   }
@@ -3655,7 +3781,7 @@ async function dispatchThreadContinueAction(input: {
       runtimeConfig,
       agentPrompt,
       cwd !== workspace.path ? cwd : undefined,
-      action.resume ? resolveResumeOptions(threadId, cwd) : undefined,
+      action.resume ? (resumeOverride ?? resolveResumeOptions(threadId, cwd)) : undefined,
       attachments,
       roleRoutes,
     );
@@ -3676,7 +3802,7 @@ async function dispatchThreadContinueAction(input: {
           runtimeConfig,
           agentPrompt,
           existingWorktreePlan,
-          resolveResumeOptions(threadId, cwd),
+          resumeOverride ?? resolveResumeOptions(threadId, cwd),
           attachments,
           roleRoutes,
         );
@@ -3692,6 +3818,7 @@ async function dispatchThreadContinueAction(input: {
         attachments,
         roleRoutes,
         planningContext,
+        resumeOverride,
       );
     })();
     return;
@@ -3738,6 +3865,7 @@ async function runThreadContinuation(
   attachments?: PromptImageAttachment[],
   routesOverride?: readonly RuntimeRoleRouteConfig[],
   planningContext?: EcoPlanningContext,
+  resumeOverride?: EcoSdkResumeOptions,
 ): Promise<void> {
   if (threadOrchestrationMode(thread.id) === "autonomous" && mode !== "question") {
     const controller = new AbortController();
@@ -3753,7 +3881,7 @@ async function runThreadContinuation(
       worktreePlan = resolved.worktreePlan;
       cwd = resolved.cwd;
       activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
-      const resumeOpts = resolveResumeOptions(thread.id, cwd);
+      const resumeOpts = resumeOverride ?? resolveResumeOptions(thread.id, cwd);
       if (!resumeOpts) {
         markThreadInterrupted(thread.id, "无法恢复 SDK 会话，请重新发送完整需求。");
         return;
@@ -3852,7 +3980,7 @@ async function runThreadContinuation(
       activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
     }
 
-    const resumeOptsForContinuation = resolveResumeOptions(thread.id, cwd);
+    const resumeOptsForContinuation = resumeOverride ?? resolveResumeOptions(thread.id, cwd);
 
     const outcome = await runThreadRequestWithAutoRetry(
       thread.id,
@@ -4592,7 +4720,7 @@ function emitThreadEvent(
   role: RuntimeAgentRole | "system" | "thinking" | "tool" | "user" = "system",
   stream = false,
   extras?: EmitThreadEventExtras,
-): void {
+): ThreadActivityLine | undefined {
   const trimmed = message.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
@@ -4611,7 +4739,7 @@ function emitThreadEvent(
     !isContextEvent &&
     !isSubagentTimingEvent
   ) {
-    return;
+    return undefined;
   }
 
   const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
@@ -4704,6 +4832,7 @@ function emitThreadEvent(
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
   });
+  return persistedActivityLine;
 }
 
 function emitContextCompactionStatus(
@@ -4904,8 +5033,8 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   });
 }
 
-function recordUserPrompt(threadId: string, prompt: string): void {
-  emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
+function recordUserPrompt(threadId: string, prompt: string): ThreadActivityLine | undefined {
+  return emitThreadEvent(threadId, "thread.user_prompt", prompt, "user");
 }
 
 function archiveThreadContextBeforeCompaction(
