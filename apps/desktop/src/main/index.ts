@@ -133,6 +133,11 @@ import {
   threadEnteredExecutionPhase,
 } from "../shared/thread-continuation";
 import {
+  buildThreadFollowUpDrainPrompt,
+  collectThreadFollowUpAttachments,
+  shouldDrainThreadFollowUps,
+} from "../shared/thread-follow-up-drain";
+import {
   buildPlanExecutionFailureMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
@@ -1727,125 +1732,14 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.threadContinue, async (_event, payload: ThreadContinueRequest) => {
-    const prompt = payload.prompt.trim();
-    const hasAttachments = Boolean(payload.attachments?.length);
-    if (!prompt && !hasAttachments) {
-      throw new Error("Message is required.");
-    }
-    const thread = conversationStore.getThread(payload.threadId);
-    if (!thread) {
-      throw new Error("Thread was not found.");
-    }
-    if (thread.status === "running" || thread.status === "queued") {
-      throw new Error("Wait for the current run to finish.");
-    }
     const rewindTarget = parseThreadActivityRewindTarget(payload.rewindTarget);
-
-    const workspace = await ensureWorkspace(thread.workspacePath);
-    const settings = getModelSettingsSnapshot();
-    if (payload.runtimeConfig) {
-      const nextConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
-      roleRoutesForThreadConfig(settings, nextConfig);
-      conversationStore.saveThreadRuntimeConfig(payload.threadId, nextConfig);
-    }
-    const activeThread = ensureThreadRuntimeConfig(conversationStore.getThread(payload.threadId) ?? thread);
-    const activeRuntimeConfig = activeThread.runtimeConfig;
-    if (!activeRuntimeConfig) {
-      throw new Error("Thread runtime configuration is missing.");
-    }
-    const roleRoutes = roleRoutesForThreadConfig(settings, activeRuntimeConfig);
-    noteSdkSessionRouteChange(payload.threadId, roleRoutes);
-
-    const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, activeRuntimeConfig, roleRoutes);
-    if (!runtimeConfig.ok) {
-      throw new Error(runtimeConfig.reason);
-    }
-    const runtime: RuntimeConfig = { routes: runtimeConfig.routes };
-
-    const rewindResume = rewindTarget
-      ? await prepareThreadRewindForContinue({
-          threadId: payload.threadId,
-          prompt,
-          workspace,
-          target: rewindTarget,
-        })
-      : undefined;
-    const effectiveThread = ensureThreadRuntimeConfig(
-      conversationStore.getThread(payload.threadId) ?? activeThread,
-    );
-    const intent = classifyThreadIntent(prompt);
-    const activityLines = conversationStore.listActivityLines(payload.threadId);
-    const sdkSession = conversationStore.getSdkSession(payload.threadId);
-    const hasPriorActivity = threadHasResumableCheckpoint(effectiveThread, activityLines);
-    const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
-    const canResume = Boolean(
-      rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
-    );
-    const existingWorktreePlan = createSessionPlan(workspace.path, payload.threadId);
-
-    const hasPendingPlan = Boolean(conversationStore.getPendingPlan(payload.threadId));
-    const hasApprovedPlanOnDisk = await approvedPlanSnapshotExists(workspace.path, payload.threadId);
-    const hasCoderTodos = conversationStore.listCoderTodos(payload.threadId).length > 0;
-    const hasAppliedDiff = Boolean(conversationStore.getAppliedDiff(payload.threadId));
-    const enteredExecutionPhase = threadEnteredExecutionPhase({
-      threadStatus: thread.status,
-      hasPendingPlan,
-      hasApprovedPlanOnDisk,
-      enteredExecutionPhase: false,
-      hasCoderTodos,
-      hasAppliedDiff,
-      activityLines,
-    });
-
-    const continueAction = resolveThreadContinueAction({
-      intent,
-      followUp: prompt,
-      canResume,
-      usesManualOrchestration: threadUsesManualOrchestration(payload.threadId),
-      hasPendingPlan,
-      hasApprovedPlanOnDisk,
-      enteredExecutionPhase,
-      hasCoderTodos,
-      hasAppliedDiff,
-      threadStatus: effectiveThread.status,
-      activityLines,
-    });
-
-    const agentPrompt =
-      continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
-        ? prompt
-        : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
-    const statusMessage = continueStatusMessage(continueAction, intent);
-
-    updateThread(payload.threadId, {
-      status: "running",
-      message: statusMessage,
-    });
-    recordUserPrompt(payload.threadId, prompt);
-
-    const updated: ThreadSummary = {
-      ...effectiveThread,
-      status: "running",
-      message: statusMessage,
-    };
-
-    void dispatchThreadContinueAction({
+    return startThreadContinuation({
       threadId: payload.threadId,
-      action: continueAction,
-      updated,
-      workspace,
-      runtimeConfig: runtime,
-      agentPrompt,
-      cwd,
-      ...(existingWorktreePlan ? { existingWorktreePlan } : {}),
+      prompt: payload.prompt,
+      ...(payload.runtimeConfig ? { runtimeConfigInput: payload.runtimeConfig } : {}),
       ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
-      roleRoutes,
-      ...(rewindResume && { resumeOverride: rewindResume }),
+      ...(rewindTarget ? { rewindTarget } : {}),
     });
-
-    return {
-      thread: ensureThreadRuntimeConfig(conversationStore.getThread(payload.threadId) ?? updated),
-    } satisfies ThreadContinueResult;
   });
 
   ipcMain.handle(IPC_CHANNELS.threadFollowUpEnqueue, async (_event, payload: unknown) => {
@@ -2184,6 +2078,73 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
       updateThread(threadId, { status: "idle", message });
     },
   });
+  try {
+    await drainQueuedThreadFollowUpsAfterRun(input.threadId);
+  } catch (error) {
+    process.stderr.write(
+      `[eco] failed to drain queued follow-ups (${input.threadId}): ${errorMessage(error)}\n`,
+    );
+  }
+}
+
+async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<void> {
+  if (activeRunRuntimeState.hasRun(threadId)) {
+    return;
+  }
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || !shouldDrainThreadFollowUps(thread.status)) {
+    return;
+  }
+  const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
+    deliveryMode: "resume",
+  });
+  if (claimed.length === 0) {
+    return;
+  }
+
+  const prompt = buildThreadFollowUpDrainPrompt(claimed);
+  const attachments = collectThreadFollowUpAttachments(claimed);
+  try {
+    if (!prompt && attachments.length === 0) {
+      throw new Error("排队的后续消息缺少可发送内容。");
+    }
+    await startThreadContinuation({
+      threadId,
+      prompt,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      requireResumeForInterrupted: thread.status === "failed" || thread.status === "blocked",
+    });
+    for (const followUp of claimed) {
+      const applied =
+        conversationStore.updateThreadFollowUpStatus(threadId, followUp.id, { status: "applied" }) ??
+        followUp;
+      emitThreadEvent(threadId, "thread.follow_up.applied", "已开始处理排队的后续消息。", "system", false, {
+        followUp: applied,
+      });
+    }
+  } catch (error) {
+    const reason = errorMessage(error);
+    for (const followUp of claimed) {
+      const failed =
+        conversationStore.updateThreadFollowUpStatus(threadId, followUp.id, {
+          status: "failed",
+          error: reason,
+        }) ?? followUp;
+      emitThreadEvent(
+        threadId,
+        "thread.follow_up.failed",
+        `后续消息处理失败：${formatFollowUpDrainError(reason)}`,
+        "system",
+        false,
+        { followUp: failed },
+      );
+    }
+  }
+}
+
+function formatFollowUpDrainError(reason: string): string {
+  const formatted = formatUserFacingRequestError(reason);
+  return formatted.length > 180 ? `${formatted.slice(0, 177)}…` : formatted;
 }
 
 function applyMainThreadRunDecisionEffects(
@@ -2905,6 +2866,142 @@ async function runCodingThreadExecution(
       idleFallbackMessage: "执行已结束。",
     });
   }
+}
+
+interface StartThreadContinuationInput {
+  threadId: string;
+  prompt: string;
+  runtimeConfigInput?: ThreadRuntimeConfigInput;
+  attachments?: PromptImageAttachment[];
+  rewindTarget?: ThreadActivityRewindTarget;
+  requireResumeForInterrupted?: boolean;
+}
+
+async function startThreadContinuation(input: StartThreadContinuationInput): Promise<ThreadContinueResult> {
+  const prompt = input.prompt.trim();
+  const hasAttachments = Boolean(input.attachments?.length);
+  if (!prompt && !hasAttachments) {
+    throw new Error("Message is required.");
+  }
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("Wait for the current run to finish.");
+  }
+
+  const workspace = await ensureWorkspace(thread.workspacePath);
+  const settings = getModelSettingsSnapshot();
+  if (input.runtimeConfigInput) {
+    const nextConfig = parseThreadRuntimeConfigInput(input.runtimeConfigInput);
+    roleRoutesForThreadConfig(settings, nextConfig);
+    conversationStore.saveThreadRuntimeConfig(input.threadId, nextConfig);
+  }
+  const activeThread = ensureThreadRuntimeConfig(conversationStore.getThread(input.threadId) ?? thread);
+  const activeRuntimeConfig = activeThread.runtimeConfig;
+  if (!activeRuntimeConfig) {
+    throw new Error("Thread runtime configuration is missing.");
+  }
+  const roleRoutes = roleRoutesForThreadConfig(settings, activeRuntimeConfig);
+  noteSdkSessionRouteChange(input.threadId, roleRoutes);
+
+  const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, activeRuntimeConfig, roleRoutes);
+  if (!runtimeConfig.ok) {
+    throw new Error(runtimeConfig.reason);
+  }
+  const runtime: RuntimeConfig = { routes: runtimeConfig.routes };
+
+  const rewindResume = input.rewindTarget
+    ? await prepareThreadRewindForContinue({
+        threadId: input.threadId,
+        prompt,
+        workspace,
+        target: input.rewindTarget,
+      })
+    : undefined;
+  const effectiveThread = ensureThreadRuntimeConfig(
+    conversationStore.getThread(input.threadId) ?? activeThread,
+  );
+  const intent = classifyThreadIntent(prompt);
+  const activityLines = conversationStore.listActivityLines(input.threadId);
+  const sdkSession = conversationStore.getSdkSession(input.threadId);
+  const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
+  const canResume = Boolean(
+    rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
+  );
+  if (
+    input.requireResumeForInterrupted &&
+    (effectiveThread.status === "failed" || effectiveThread.status === "blocked") &&
+    !canResume
+  ) {
+    throw new Error("当前对话没有可恢复的 SDK 会话，无法自动处理排队的后续消息。");
+  }
+  const existingWorktreePlan = createSessionPlan(workspace.path, input.threadId);
+
+  const hasPendingPlan = Boolean(conversationStore.getPendingPlan(input.threadId));
+  const hasApprovedPlanOnDisk = await approvedPlanSnapshotExists(workspace.path, input.threadId);
+  const hasCoderTodos = conversationStore.listCoderTodos(input.threadId).length > 0;
+  const hasAppliedDiff = Boolean(conversationStore.getAppliedDiff(input.threadId));
+  const enteredExecutionPhase = threadEnteredExecutionPhase({
+    threadStatus: effectiveThread.status,
+    hasPendingPlan,
+    hasApprovedPlanOnDisk,
+    enteredExecutionPhase: false,
+    hasCoderTodos,
+    hasAppliedDiff,
+    activityLines,
+  });
+
+  const continueAction = resolveThreadContinueAction({
+    intent,
+    followUp: prompt,
+    canResume,
+    usesManualOrchestration: threadUsesManualOrchestration(input.threadId),
+    hasPendingPlan,
+    hasApprovedPlanOnDisk,
+    enteredExecutionPhase,
+    hasCoderTodos,
+    hasAppliedDiff,
+    threadStatus: effectiveThread.status,
+    activityLines,
+  });
+
+  const agentPrompt =
+    continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
+      ? prompt
+      : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
+  const statusMessage = continueStatusMessage(continueAction, intent);
+
+  updateThread(input.threadId, {
+    status: "running",
+    message: statusMessage,
+  });
+  recordUserPrompt(input.threadId, prompt);
+
+  const updated: ThreadSummary = {
+    ...effectiveThread,
+    status: "running",
+    message: statusMessage,
+  };
+
+  void dispatchThreadContinueAction({
+    threadId: input.threadId,
+    action: continueAction,
+    updated,
+    workspace,
+    runtimeConfig: runtime,
+    agentPrompt,
+    cwd,
+    existingWorktreePlan,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    roleRoutes,
+    ...(rewindResume && { resumeOverride: rewindResume }),
+  });
+
+  return {
+    thread: ensureThreadRuntimeConfig(conversationStore.getThread(input.threadId) ?? updated),
+  } satisfies ThreadContinueResult;
 }
 
 function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {

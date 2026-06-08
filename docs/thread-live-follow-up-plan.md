@@ -409,7 +409,7 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 
 ## 阶段 3：Safe Boundary Drain
 
-状态：Not Started
+状态：Completed
 
 目标：当前 run 到安全边界后自动处理 pending follow-up。
 
@@ -427,6 +427,15 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - awaiting_plan 下 follow-up 作为计划修改意见进入 planning continuation。
 - 不会出现两个 active run。
 - follow-up delivery 失败不丢消息。
+
+完成记录：
+
+- `finalizeMainThreadRunCleanup` 在 `finishActiveRun` 后触发 queued follow-up drain，因此不会和当前 active run 并发。
+- 手动继续和自动 drain 复用同一个 `startThreadContinuation` helper，继续使用 `resolveThreadContinueAction` / `dispatchThreadContinueAction`。
+- 多条已领取 follow-up 合并为一个 prompt，图片附件按顺序聚合后随 continuation 发送。
+- drain 会将 queued 标记为 delivered，成功启动续跑后标记 applied；启动失败时标记 failed 并保留原 follow-up、错误原因和 activity event。
+- `completed / failed / blocked / awaiting_plan` 会尝试 drain；`failed / blocked` 要求存在可恢复 SDK 会话，否则标记 failed。
+- 本阶段刻意不在 `idle` 自动 drain，避免用户主动停止后又自动继续。
 
 ## 阶段 4：V1 强制提升
 

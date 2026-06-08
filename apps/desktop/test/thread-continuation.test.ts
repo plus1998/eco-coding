@@ -5,6 +5,7 @@ import {
   buildThreadTurnPrompt,
   isContinuableThreadStatus,
   pickDisplayContextTokens,
+  resolveThreadContinueAction,
   shouldUseInterruptedWorktree,
 } from "../src/shared/thread-continuation";
 
@@ -63,6 +64,42 @@ test("legacy continuation uses full prompt injection without SDK session", () =>
   const prompt = buildAgentPromptWithContext("原任务", "继续", []);
   expect(prompt).toContain("原任务");
   expect(prompt).not.toContain("对话记录");
+});
+
+test("awaiting plan follow-up routes to plan revision without resume", () => {
+  expect(
+    resolveThreadContinueAction({
+      intent: "coding",
+      followUp: "把测试覆盖也加进计划",
+      canResume: false,
+      usesManualOrchestration: true,
+      hasPendingPlan: true,
+      hasApprovedPlanOnDisk: false,
+      enteredExecutionPhase: false,
+      hasCoderTodos: false,
+      hasAppliedDiff: false,
+      threadStatus: "awaiting_plan",
+      activityLines: [],
+    }),
+  ).toEqual({ kind: "revise_plan" });
+});
+
+test("interrupted execution follow-up resumes sdk when possible", () => {
+  expect(
+    resolveThreadContinueAction({
+      intent: "coding",
+      followUp: "继续，并补上失败用例",
+      canResume: true,
+      usesManualOrchestration: true,
+      hasPendingPlan: false,
+      hasApprovedPlanOnDisk: true,
+      enteredExecutionPhase: true,
+      hasCoderTodos: true,
+      hasAppliedDiff: false,
+      threadStatus: "blocked",
+      activityLines: [{ role: "system", message: "计划已进入执行阶段。" }],
+    }),
+  ).toEqual({ kind: "resume_execution" });
 });
 
 test("pickDisplayContextTokens prefers planner", () => {
