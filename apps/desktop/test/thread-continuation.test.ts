@@ -11,6 +11,9 @@ import {
 test("isContinuableThreadStatus", () => {
   expect(isContinuableThreadStatus("idle")).toBe(true);
   expect(isContinuableThreadStatus("completed")).toBe(true);
+  expect(isContinuableThreadStatus("failed")).toBe(true);
+  expect(isContinuableThreadStatus("blocked")).toBe(true);
+  expect(isContinuableThreadStatus("queued")).toBe(false);
   expect(isContinuableThreadStatus("running")).toBe(false);
   expect(isContinuableThreadStatus("awaiting_plan")).toBe(false);
 });

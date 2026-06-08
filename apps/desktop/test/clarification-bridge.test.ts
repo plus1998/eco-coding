@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
+  cancelClarificationsForThread,
   formatClarificationAnswersSummary,
+  getPendingClarificationByToolUseId,
+  getPendingClarificationForThread,
+  registerPendingClarification,
+  submitClarification,
 } from "../src/main/clarification-bridge";
 import type { ClarificationRequest } from "../src/shared/ipc";
 
@@ -77,4 +82,28 @@ test("formatClarificationAnswersSummary renders readable activity text", () => {
   expect(summary).toContain("澄清回答：");
   expect(summary).toContain("→ 自动启用");
   expect(summary).toContain("→ 已启用、备选");
+});
+
+test("pending clarification stays isolated until submitted or cancelled", async () => {
+  const pending = registerPendingClarification("thr_pending", "tool_pending", {
+    questions: request.questions,
+  });
+
+  expect(getPendingClarificationForThread("thr_pending")?.toolUseId).toBe("tool_pending");
+  expect(getPendingClarificationByToolUseId("tool_pending")?.threadId).toBe("thr_pending");
+  expect(submitClarification("tool_pending", { toolUseId: "tool_pending", selections: [["自动启用"], []] })).toBe(
+    true,
+  );
+  await expect(pending).resolves.toEqual({
+    toolUseId: "tool_pending",
+    selections: [["自动启用"], []],
+  });
+  expect(getPendingClarificationForThread("thr_pending")).toBeUndefined();
+
+  const cancelled = registerPendingClarification("thr_cancel", "tool_cancel", {
+    questions: request.questions,
+  });
+  cancelClarificationsForThread("thr_cancel", "cancelled by phase 0 baseline");
+  await expect(cancelled).rejects.toThrow("cancelled by phase 0 baseline");
+  expect(submitClarification("tool_cancel", { toolUseId: "tool_cancel", selections: [] })).toBe(false);
 });

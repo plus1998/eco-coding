@@ -63,5 +63,7 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("workspace:open")).toBe(true);
   expect(isKnownIpcChannel("model-settings:get")).toBe(true);
   expect(isKnownIpcChannel("thread:start")).toBe(true);
+  expect(isKnownIpcChannel("thread:follow-up-enqueue")).toBe(false);
+  expect(isKnownIpcChannel("thread:follow-up-escalate")).toBe(false);
   expect(isKnownIpcChannel("unknown")).toBe(false);
 });
