@@ -18,6 +18,7 @@
     "test:agent-presets": "bun test apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-orchestration.test.ts packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/workflow-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts",
     "test:agent-security": "bun test packages/runtime/test/agent-permission-redteam.test.ts packages/runtime/test/eco-sdk-hooks.test.ts",
     "test:agent-commercial": "bun test apps/desktop/test/agent-commercial-quality-gate.test.ts apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-profile-readiness.test.ts apps/desktop/test/agent-profile-archive.test.ts apps/desktop/test/agent-template-archive.test.ts apps/desktop/test/agent-profile-performance.test.ts apps/desktop/test/billing-diagnostics.test.ts apps/desktop/test/billing-projector.test.ts apps/desktop/test/usage-ledger-coordinator.test.ts apps/desktop/test/thread-run-projection-view.test.ts apps/desktop/test/usage-breakdown-panel.test.ts packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/workflow-orchestration.test.ts packages/runtime/test/agent-permission-redteam.test.ts packages/runtime/test/eco-sdk-hooks.test.ts",
+    "test:agent-ui-smoke": "bun run --cwd apps/desktop build && node apps/desktop/scripts/agent-ui-smoke.mjs",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write ."

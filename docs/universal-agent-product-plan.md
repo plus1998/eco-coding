@@ -806,6 +806,9 @@ type WorkflowStep = {
 - Phase 9.4 已完成：新增 Agent 商业质量闸门，内置 preset eval 会进一步验证 runtime AgentDefinition 生成、主 agent roster 注入、子代理完整 prompt 不泄露、工具权限 policy 可生成、fixed/hybrid workflow 可解析，并用真实 billing projector 做 workflow step 成本归因回归；根目录新增 `bun run test:agent-commercial` 覆盖 preset、权限、workflow、计费、运行投影、profile readiness、导入导出和历史表现关键链路。
 - Phase 9.4 行为边界：该闸门是本地确定性发布前检查，不直接调用真实模型；端到端模型质量仍需要后续接入在线 eval runner 和人工验收任务。
 - Phase 9.4 验证：`bun run test:agent-commercial`。
+- Phase 9.5 已完成：新增 Agent UI smoke 脚本，`bun run test:agent-ui-smoke` 会先构建 desktop，再校验 renderer `index.html`、JS/CSS asset 存在且包含 Agent Builder、Agent Profile、编排配置、场景预设、效果评测、Workflow Steps、运行 workflow 和计费诊断等关键 UI 入口标记。
+- Phase 9.5 行为边界：该 smoke 是生产构建产物检查，不替代真实浏览器点击流、Electron 窗口启动或在线模型端到端任务；后续仍需要接入完整 UI/E2E runner。
+- Phase 9.5 验证：`bun run test:agent-ui-smoke`。
 
 发布前测试要求：
 
