@@ -37,6 +37,16 @@ function mapSdkTaskStatus(status: string | undefined): CoderTodoStatus | undefin
   }
 }
 
+function readString(input: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
 function findTodoByTitle(todos: CoderTodoItem[], title: string): CoderTodoItem | undefined {
   const normalized = normalizeTaskTitle(title);
   if (!normalized) {
@@ -104,14 +114,12 @@ export function createSdkTaskTracker(
 
   const applyTaskCreateTool = (input: Record<string, unknown>) => {
     progressFromSdk = true;
-    const subject = typeof input.subject === "string" ? input.subject.trim() : "";
+    const subject = readString(input, "subject", "task_subject", "title", "content");
     if (!subject) {
       return;
     }
-    const activeForm =
-      typeof input.activeForm === "string" && input.activeForm.trim() ? input.activeForm.trim() : undefined;
-    const description =
-      typeof input.description === "string" && input.description.trim() ? input.description.trim() : subject;
+    const activeForm = readString(input, "activeForm", "active_form") || undefined;
+    const description = readString(input, "description", "task_description") || subject;
     const existing = findTodoByTitle(todos, subject);
     if (existing) {
       return;
@@ -134,23 +142,26 @@ export function createSdkTaskTracker(
 
   const applyTaskUpdateTool = (input: Record<string, unknown>) => {
     progressFromSdk = true;
-    const sdkTaskId = typeof input.taskId === "string" ? input.taskId : "";
+    const sdkTaskId = readString(input, "taskId", "task_id", "id");
     if (!sdkTaskId) {
       return;
     }
+    const subject = readString(input, "subject", "task_subject", "title", "content");
     let todoId = todoIdForSdkTask(sdkTaskId);
     if (!todoId) {
+      todoId = subject ? findTodoByTitle(todos, subject)?.id : undefined;
+    }
+    if (!todoId) {
       todoId = `${threadId}:sdk-task:${sdkTaskId}`;
+    }
+    if (todoIdForSdkTask(sdkTaskId) !== todoId) {
       linkSdkTask(sdkTaskId, todoId);
     }
 
     const now = new Date().toISOString();
     const status = mapSdkTaskStatus(typeof input.status === "string" ? input.status : undefined);
-    const subject = typeof input.subject === "string" ? input.subject.trim() : "";
-    const activeForm =
-      typeof input.activeForm === "string" && input.activeForm.trim() ? input.activeForm.trim() : undefined;
-    const description =
-      typeof input.description === "string" && input.description.trim() ? input.description.trim() : undefined;
+    const activeForm = readString(input, "activeForm", "active_form") || undefined;
+    const description = readString(input, "description", "task_description") || undefined;
 
     if (input.status === "deleted") {
       persist(todos.filter((todo) => todo.id !== todoId));

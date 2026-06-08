@@ -48,6 +48,31 @@ test("hook handlers apply TaskCreate and TaskUpdate", () => {
   expect(todos.some((todo) => todo.id.endsWith("task_2") && todo.status === "running")).toBe(true);
 });
 
+test("hook handlers accept SDK snake_case TaskCreate and TaskUpdate input", () => {
+  const { store, hooks } = createTracker();
+
+  hooks.onPreToolUse("TaskCreate", {
+    task_subject: "Wire progress list",
+    task_description: "Render SDK task progress",
+    active_form: "Wiring progress list",
+  });
+
+  hooks.onPreToolUse("TaskUpdate", {
+    task_id: "task_3",
+    task_subject: "Wire progress list",
+    status: "in_progress",
+    active_form: "Rendering progress list",
+  });
+
+  const todos = store.getTodos();
+  expect(todos).toHaveLength(1);
+  expect(todos[0]).toMatchObject({
+    title: "Wire progress list",
+    status: "running",
+    detail: "Rendering progress list",
+  });
+});
+
 test("hook handlers still support TodoWrite for compatibility", () => {
   const { store, hooks } = createTracker();
 
