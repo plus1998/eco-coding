@@ -169,6 +169,7 @@ export async function startAnthropicModelProxy(
 
       if (!countTokensRequest) {
         applyThinkingToMessagesBody(body, route.thinkingEffort);
+        normalizeThinkingEffortFields(body);
       }
 
       const bridgeRoute: BridgeForwardRoute = {
@@ -547,6 +548,20 @@ export function injectImagesIntoMessagesBody(
   }
 
   message.content = imageBlocks;
+}
+
+export function normalizeThinkingEffortFields(body: Record<string, unknown>): void {
+  const thinking = body.thinking;
+  if (!isRecord(thinking) || thinking.type !== "disabled") {
+    return;
+  }
+
+  delete body.reasoning_effort;
+  delete body.effort;
+  const outputConfig = body.output_config;
+  if (isRecord(outputConfig)) {
+    delete outputConfig.effort;
+  }
 }
 
 function normalizePendingImages(

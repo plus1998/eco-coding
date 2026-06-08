@@ -37,6 +37,45 @@ const settings: ModelSettingsSnapshot = {
   ],
 };
 
+test.skipIf(!sqliteAvailable)("migrates old activity table before sdk user message index", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-activity-migration-"));
+  const dbPath = path.join(dir, "eco-coding.sqlite");
+  const sqlite = await import("node:sqlite");
+  const db = new sqlite.DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE threads (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      workspace_path TEXT NOT NULL,
+      status TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE thread_activity (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      message TEXT NOT NULL,
+      stream INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+    );
+  `);
+  db.close();
+
+  await createConversationStore(dbPath);
+
+  const migrated = new sqlite.DatabaseSync(dbPath);
+  const columns = migrated.prepare(`PRAGMA table_info(thread_activity)`).all() as Array<{ name: string }>;
+  expect(columns.map((column) => column.name)).toContain("sdk_user_message_id");
+  const indexes = migrated.prepare(`PRAGMA index_list(thread_activity)`).all() as Array<{ name: string }>;
+  expect(indexes.map((index) => index.name)).toContain("idx_thread_activity_thread_sdk_user_message");
+  migrated.close();
+});
+
 test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-conversation-runtime-"));
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));

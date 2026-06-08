@@ -150,6 +150,15 @@ const defaultAllowedTools = [
   "Bash",
   ...networkAllowedTools,
 ] as const;
+const executionAllowedTools = [
+  "Agent",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  SDK_SKILL_TOOL_NAME,
+  ...SDK_TASK_PROGRESS_TOOL_NAMES,
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "Bash",
+] as const;
 const planningAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
@@ -167,11 +176,13 @@ const questionAllowedTools = [
   ...networkAllowedTools,
 ] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
+const executionReadOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES] as const;
 const readOnlySubagentBashTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   "Bash",
   ...networkAllowedTools,
 ] as const;
+const executionReadOnlySubagentBashTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, "Bash"] as const;
 const executionCoderTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
@@ -644,7 +655,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
-      allowedTools: [...defaultAllowedTools],
+      allowedTools: [...executionAllowedTools],
       phaseAppend: `${
         universalProfile ? buildUniversalPhaseAppend("execute") : buildExecutePhaseSystemAppend(availability)
       }${resumableAppend}`,
@@ -855,7 +866,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, {
       prompt: executionPrompt,
       permissionMode: "acceptEdits",
-      allowedTools: [...defaultAllowedTools],
+      allowedTools: [...executionAllowedTools],
       phaseAppend: universalProfile
         ? buildUniversalPhaseAppend("execute")
         : buildExecutePhaseSystemAppend(availability),
@@ -1397,10 +1408,9 @@ export function createExecutionAgentDefinitions(
   const testerKey = ecoSubagentKeyForRole("tester");
 
   const definitions = {
-    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
     [architectKey]: {
       description: executionArchitectDescription,
-      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
+      ...agentDefinitionToolFields("architect", executionReadOnlySubagentTools, agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
@@ -1412,13 +1422,13 @@ export function createExecutionAgentDefinitions(
     },
     [reviewerKey]: {
       description: autonomousReviewerDescription,
-      ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
+      ...agentDefinitionToolFields("reviewer", executionReadOnlySubagentBashTools, agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
     [testerKey]: {
       description: executionTesterDescription,
-      ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
+      ...agentDefinitionToolFields("tester", executionReadOnlySubagentBashTools, agentSkills),
       prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
     },

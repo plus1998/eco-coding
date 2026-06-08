@@ -8,6 +8,7 @@ import {
   extractUsageFromResponseBody,
   estimateInputTokensFromAnthropicBody,
   injectImagesIntoMessagesBody,
+  normalizeThinkingEffortFields,
   resolveProxyRoute,
 } from "../src/main/anthropic-proxy";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
@@ -205,6 +206,36 @@ test("injectImagesIntoMessagesBody prepends image blocks to last user message", 
   expect(Array.isArray(user.content)).toBe(true);
   expect(user.content[0]?.type).toBe("image");
   expect(user.content[1]?.type).toBe("text");
+});
+
+test("normalizeThinkingEffortFields removes reasoning effort when thinking is disabled", () => {
+  const body: Record<string, unknown> = {
+    thinking: { type: "disabled" },
+    reasoning_effort: "medium",
+    effort: "medium",
+    output_config: { effort: "medium", other: true },
+  };
+
+  normalizeThinkingEffortFields(body);
+
+  expect(body).toEqual({
+    thinking: { type: "disabled" },
+    output_config: { other: true },
+  });
+});
+
+test("normalizeThinkingEffortFields preserves effort when thinking is enabled", () => {
+  const body: Record<string, unknown> = {
+    thinking: { type: "adaptive" },
+    reasoning_effort: "medium",
+  };
+
+  normalizeThinkingEffortFields(body);
+
+  expect(body).toEqual({
+    thinking: { type: "adaptive" },
+    reasoning_effort: "medium",
+  });
 });
 
 test("extractUsageFromResponseBody reads non-streaming response usage", () => {

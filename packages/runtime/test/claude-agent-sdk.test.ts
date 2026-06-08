@@ -428,7 +428,7 @@ test("creates native SDK subagent definitions", () => {
   });
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     skills: ["pdf"],
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch", "Skill"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Skill"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
   expect((definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools).not.toContain(
@@ -481,7 +481,10 @@ test("builds phased orchestration prompts", () => {
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
   expect(executePhaseSystemAppend).toContain("Do not restate the full approved plan");
-  expect(executePhaseSystemAppend).toContain("Architect (conditional)");
+  expect(executePhaseSystemAppend).toContain("Architect (targeted)");
+  expect(executePhaseSystemAppend).toContain("Default: skip architect");
+  expect(executePhaseSystemAppend).toContain("Do not call architect for routine task listing");
+  expect(executePhaseSystemAppend).not.toContain(`explore: ${ecoSubagentKeyForRole("explore")}`);
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain(plan);
   expect(buildExecutePhasePrompt(userPrompt, analysis, plan)).toContain("system-reminder");
@@ -516,16 +519,17 @@ test("question explore subagent includes network tools", () => {
   expect(definitions).not.toHaveProperty("explore");
 });
 
-test("execution subagents include network tools except coder", () => {
+test("execution subagents avoid explore and network tools except writable coder", () => {
   const definitions = createExecutionAgentDefinitions(routes);
+  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("explore"));
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"],
   });
   expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"],
   });
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     tools: [
@@ -544,6 +548,15 @@ test("execution subagents include network tools except coder", () => {
   const coderTools = (definitions[ecoSubagentKeyForRole("coder")] as { tools: string[] }).tools;
   expect(coderTools).not.toContain("WebSearch");
   expect(coderTools).not.toContain("WebFetch");
+  const architectTools = (definitions[ecoSubagentKeyForRole("architect")] as { tools: string[] }).tools;
+  const reviewerTools = (definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools;
+  const testerTools = (definitions[ecoSubagentKeyForRole("tester")] as { tools: string[] }).tools;
+  expect(architectTools).not.toContain("WebSearch");
+  expect(architectTools).not.toContain("WebFetch");
+  expect(reviewerTools).not.toContain("WebSearch");
+  expect(reviewerTools).not.toContain("WebFetch");
+  expect(testerTools).not.toContain("WebSearch");
+  expect(testerTools).not.toContain("WebFetch");
 });
 
 test("createExecutionAgentDefinitions omits every disabled role", () => {
@@ -1338,11 +1351,15 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   expect(Object.keys(questionAgents ?? {})).toEqual([ecoSubagentKeyForRole("explore")]);
   expect(questionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
 
+  expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
+  expect(capturedOptions[1]?.allowedTools).toContain("WebSearch");
+  expect(capturedOptions[2]?.allowedTools).not.toContain("WebSearch");
+  expect(capturedOptions[2]?.allowedTools).not.toContain("WebFetch");
+
   const executionAgents = capturedOptions[2]?.agents as Record<string, { model?: string }> | undefined;
   expect(Object.keys(executionAgents ?? {}).sort()).toEqual([
     ecoSubagentKeyForRole("architect"),
     ecoSubagentKeyForRole("coder"),
-    ecoSubagentKeyForRole("explore"),
     ecoSubagentKeyForRole("reviewer"),
     ecoSubagentKeyForRole("tester"),
   ]);

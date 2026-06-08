@@ -6,7 +6,7 @@ import {
   listEnabledSubagents,
 } from "../subagent-availability.js";
 import { executeCoreGoalAppend } from "./eco-common.js";
-import { architectSkipCriteria } from "./execute.js";
+import { architectUseCriteria } from "./execute.js";
 
 function agentCall(role: SubagentRole): string {
   return `Agent(${ecoSubagentKeyForRole(role)})`;
@@ -31,6 +31,13 @@ export function formatExecutionSubagentNames(availability: SubagentAvailability)
   return roles.length > 0
     ? roles.map((role) => ecoSubagentKeyForRole(role)).join(", ")
     : "none; execute directly without Agent delegation";
+}
+
+function executionSubagentAvailability(availability: SubagentAvailability): SubagentAvailability {
+  return {
+    ...availability,
+    explore: false,
+  };
 }
 
 export function buildExecuteBuildSwitchAppend(availability: SubagentAvailability): string {
@@ -60,8 +67,8 @@ function buildArchitectStep(availability: SubagentAvailability, step: number): s
     ? "before coders"
     : "before direct implementation";
   return [
-    `${step}. Architect (conditional): Call ${agentCall("architect")} unless the approved plan is trivial — trivial means ALL: ${architectSkipCriteria}.`,
-    `   Wait for task decomposition. If skipping architect, you must still publish implementation tasks yourself ${implementationTarget}.`,
+    `${step}. Architect (targeted): Call ${agentCall("architect")} only when the approved plan truly needs architecture decomposition — use it if ANY apply: ${architectUseCriteria}.`,
+    `   Default: skip architect and publish implementation tasks yourself ${implementationTarget}. If you call architect, pass only the approved plan plus the specific boundary/decomposition question.`,
   ];
 }
 
@@ -103,6 +110,9 @@ function buildWhenNotToUseAgent(availability: SubagentAvailability): string[] {
     );
   }
   lines.push("- Do not delegate exploration during execute unless blocked — execute the approved plan");
+  if (isSubagentEnabled(availability, "architect")) {
+    lines.push("- Do not call architect for routine task listing or localized changes");
+  }
   return lines;
 }
 
@@ -119,7 +129,7 @@ export function buildExecutePhaseSystemAppend(
     "Final response: keep it concise. State what changed, verification result, and blockers only.",
     `Do not restate the full approved plan, full ${taskListName} list, long diffs, or tool logs in the final response.`,
     "",
-    formatAvailableSubagentsLine(availability),
+    formatAvailableSubagentsLine(executionSubagentAvailability(availability)),
     "",
     "You are the orchestrator (Planner). Follow this pipeline strictly:",
     "",
@@ -185,7 +195,7 @@ export function buildExecutePhaseSystemAppend(
     "Never ask a subagent to spawn another subagent. You alone coordinate the pipeline.",
     "Do not replan from scratch unless blocked; extend minimally if discoveries require it.",
     "",
-    "Subagent resume: When a prior explore/architect/coder/reviewer/tester run exists in this thread, call the same eco_* Agent key normally — Eco rewrites to Resume agent {id} unless your prompt asks for a fresh/restart pass.",
+    "Subagent resume: When a prior architect/coder/reviewer/tester run exists in this thread, call the same eco_* Agent key normally — Eco rewrites to Resume agent {id} unless your prompt asks for a fresh/restart pass.",
   );
   return pipeline.join("\n");
 }
@@ -196,7 +206,7 @@ export function summarizeExecutePipeline(availability: SubagentAvailability): st
   const parts = [`TaskCreate/TaskUpdate after ${taskListName}`];
   parts.push(
     isSubagentEnabled(availability, "architect")
-      ? "Architect (or skip per criteria)"
+      ? "targeted architect only when needed"
       : `self-authored ${taskListName}`,
   );
   parts.push(coderEnabled ? "parallel coders" : "direct implementation");

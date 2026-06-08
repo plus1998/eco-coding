@@ -11,12 +11,12 @@ export { buildExecuteBuildSwitchAppend, buildExecutePhaseSystemAppend };
 /** @deprecated Use buildExecuteBuildSwitchAppend(availability) */
 export const executeBuildSwitchAppend = buildExecuteBuildSwitchAppend(defaultSubagentAvailability());
 
-/** Skip architect only when ALL apply (otherwise architect is mandatory). */
-export const architectSkipCriteria = [
-  "Single focused change in one module or ≤3 files",
-  "No new public API surface or cross-package boundary changes",
-  "No schema/migration or config contract changes",
-  "No parallel workstreams that could conflict",
+/** Use architect only when one of these applies; otherwise the orchestrator decomposes work directly. */
+export const architectUseCriteria = [
+  "Cross-module or cross-package boundaries need a design decision",
+  "A new public API, schema, migration, or config contract must be introduced",
+  "The approved plan needs multiple independent coder workstreams with possible overlap/conflicts",
+  "A wrong module boundary would cause meaningful rework",
 ].join("; ");
 
 /** @deprecated Use buildExecutePhaseSystemAppend(availability) */

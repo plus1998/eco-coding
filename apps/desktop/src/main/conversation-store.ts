@@ -265,9 +265,6 @@ export class ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_created
         ON thread_activity(thread_id, created_at);
 
-      CREATE INDEX IF NOT EXISTS idx_thread_activity_thread_sdk_user_message
-        ON thread_activity(thread_id, sdk_user_message_id);
-
       CREATE TABLE IF NOT EXISTS thread_pending_plans (
         thread_id TEXT PRIMARY KEY,
         user_prompt TEXT NOT NULL,

@@ -16,12 +16,12 @@ import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } 
 import type {
   BillingUsageSource,
   CoderTodoItem,
-  ThreadBillingDiagnostic,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadStatus,
   WorkspaceInfo,
 } from "../shared/ipc";
+import { filterVisibleBillingDiagnostics } from "../shared/billing-diagnostics-visibility";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import {
   billingEmptyHint,
@@ -99,8 +99,11 @@ const billingSourceLabels: Record<BillingUsageSource, string> = {
   sdk: "SDK",
 };
 
-function visibleBillingDiagnostics(billing: ThreadBillingSnapshot): ThreadBillingDiagnostic[] {
-  const diagnostics = billing.diagnostics?.filter((diagnostic) => diagnostic.severity !== "info") ?? [];
+function visibleBillingDiagnostics(
+  billing: ThreadBillingSnapshot,
+  threadStatus?: ThreadStatus,
+): ReturnType<typeof filterVisibleBillingDiagnostics> {
+  const diagnostics = filterVisibleBillingDiagnostics(billing.diagnostics, threadStatus);
   if (diagnostics.length > 0) {
     return diagnostics;
   }
@@ -116,8 +119,14 @@ function visibleBillingDiagnostics(billing: ThreadBillingSnapshot): ThreadBillin
   return [];
 }
 
-function BillingDiagnostics({ billing }: { billing: ThreadBillingSnapshot }) {
-  const diagnostics = visibleBillingDiagnostics(billing);
+function BillingDiagnostics({
+  billing,
+  threadStatus,
+}: {
+  billing: ThreadBillingSnapshot;
+  threadStatus: ThreadStatus | undefined;
+}) {
+  const diagnostics = visibleBillingDiagnostics(billing, threadStatus);
   if (diagnostics.length === 0) {
     return null;
   }
@@ -375,7 +384,7 @@ function BillingFloatingCard({
         <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
       )}
 
-      {showBilling && billing ? <BillingDiagnostics billing={billing} /> : null}
+      {showBilling && billing ? <BillingDiagnostics billing={billing} threadStatus={threadStatus} /> : null}
 
       {showBilling && billing ? (
         <UsageBreakdownPanel

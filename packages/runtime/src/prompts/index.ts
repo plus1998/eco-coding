@@ -20,7 +20,7 @@ export {
   buildExecutionPromptWithFollowUp,
   buildExecutePhaseSystemAppend,
   buildExecuteBuildSwitchAppend,
-  architectSkipCriteria,
+  architectUseCriteria,
 } from "./execute.js";
 export {
   questionAnswerSystemAppend,
