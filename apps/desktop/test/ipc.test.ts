@@ -17,6 +17,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.orchestrationProfileList).toBe("orchestration-profile:list");
   expect(IPC_CHANNELS.orchestrationProfileSave).toBe("orchestration-profile:save");
   expect(IPC_CHANNELS.orchestrationProfileDelete).toBe("orchestration-profile:delete");
+  expect(IPC_CHANNELS.orchestrationProfileExport).toBe("orchestration-profile:export");
+  expect(IPC_CHANNELS.orchestrationProfileImport).toBe("orchestration-profile:import");
   expect(IPC_CHANNELS.threadStart).toBe("thread:start");
   expect(IPC_CHANNELS.threadUpdateRuntimeConfig).toBe("thread:update-runtime-config");
   expect(IPC_CHANNELS.threadCancel).toBe("thread:cancel");

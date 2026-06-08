@@ -25,6 +25,9 @@ import {
   type ModelSettingsSnapshot,
   type ModelsDevModelOption,
   type OrchestrationProfile,
+  type OrchestrationProfileExportRequest,
+  type OrchestrationProfileExportResult,
+  type OrchestrationProfileImportResult,
   type ProviderConfigInput,
   type ProviderConfigView,
   type ProxyBridgeSettingsSnapshot,
@@ -152,6 +155,14 @@ const api = {
   },
   deleteOrchestrationProfile(profileId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileDelete, profileId);
+  },
+  exportOrchestrationProfiles(
+    request?: OrchestrationProfileExportRequest,
+  ): Promise<OrchestrationProfileExportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileExport, request);
+  },
+  importOrchestrationProfiles(): Promise<OrchestrationProfileImportResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.orchestrationProfileImport);
   },
   updateThreadRuntimeConfig(request: ThreadUpdateRuntimeConfigRequest): Promise<{ thread: ThreadSummary }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUpdateRuntimeConfig, request);

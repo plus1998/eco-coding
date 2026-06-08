@@ -49,6 +49,7 @@ import {
   type ModelSettingsSnapshot,
   normalizeThreadRuntimeConfig,
   type OrchestrationProfile,
+  type OrchestrationProfileExportRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
   resolveThreadAgentProfile,
@@ -92,6 +93,7 @@ import {
   type WorktreeStatusResult,
 } from "../shared/ipc";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import { buildAgentProfileArchive, parseAgentProfileArchive } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
@@ -568,7 +570,50 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
   };
 }
 
+function prepareImportedOrchestrationProfile(
+  profile: OrchestrationProfile,
+  existingIds: Set<string>,
+): OrchestrationProfile {
+  const now = new Date().toISOString();
+  const rawId = typeof profile.id === "string" ? profile.id.trim() : "";
+  const protectedId =
+    profile.source === "built_in" ||
+    profile.source === "derived" ||
+    rawId.startsWith("builtin.") ||
+    rawId.startsWith("derived.");
+  const name =
+    typeof profile.name === "string" && profile.name.trim()
+      ? profile.name.trim()
+      : "Imported Agent Profile";
+  const id =
+    !rawId || protectedId || existingIds.has(rawId)
+      ? createUniqueImportedProfileId(
+          `user.imported.${slugifyTemplateId(name) || "profile"}`,
+          existingIds,
+        )
+      : rawId;
+  existingIds.add(id);
+  return {
+    ...profile,
+    id,
+    name,
+    source: profile.source === "project" && !protectedId ? "project" : "user",
+    version: Math.max(1, typeof profile.version === "number" ? profile.version : 1),
+    updatedAt: now,
+  };
+}
+
 function createUniqueImportedTemplateId(baseId: string, existingIds: ReadonlySet<string>): string {
+  let candidate = baseId;
+  let suffix = 2;
+  while (existingIds.has(candidate)) {
+    candidate = `${baseId}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function createUniqueImportedProfileId(baseId: string, existingIds: ReadonlySet<string>): string {
   let candidate = baseId;
   let suffix = 2;
   while (existingIds.has(candidate)) {
@@ -1152,6 +1197,77 @@ function registerIpcHandlers(): void {
     agentOrchestrationStore.deleteOrchestrationProfile(profileId);
     emitSettingsUpdated();
     return { ok: true as const };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileExport, async (_event, payload?: unknown) => {
+    const request =
+      payload && typeof payload === "object" ? (payload as OrchestrationProfileExportRequest) : {};
+    const requestedIds = Array.isArray(request.profileIds)
+      ? new Set(request.profileIds.map((id) => id.trim()).filter(Boolean))
+      : undefined;
+    const profiles = getModelSettingsSnapshot().orchestrationProfiles.filter((profile) => {
+      if (requestedIds) {
+        return requestedIds.has(profile.id);
+      }
+      return profile.source === "user" || profile.source === "project";
+    });
+    if (profiles.length === 0) {
+      throw new Error("没有可导出的 Agent Profile。");
+    }
+    const result = await dialog.showSaveDialog({
+      title: "导出 Agent Profile",
+      defaultPath: `eco-agent-profiles-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: true as const, canceled: true, exported: 0 };
+    }
+    await fs.writeFile(
+      result.filePath,
+      JSON.stringify(buildAgentProfileArchive(profiles), null, 2),
+      "utf8",
+    );
+    return {
+      ok: true as const,
+      canceled: false,
+      exported: profiles.length,
+      path: result.filePath,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.orchestrationProfileImport, async () => {
+    const result = await dialog.showOpenDialog({
+      title: "导入 Agent Profile",
+      properties: ["openFile"],
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    const filePath = result.filePaths[0];
+    if (result.canceled || !filePath) {
+      return { ok: true as const, canceled: true, imported: 0, profiles: [], errors: [] };
+    }
+    const content = await fs.readFile(filePath, "utf8");
+    const parsedProfiles = parseAgentProfileArchive(content);
+    const existingIds = new Set(getModelSettingsSnapshot().orchestrationProfiles.map((profile) => profile.id));
+    const imported: OrchestrationProfile[] = [];
+    const errors: string[] = [];
+    for (const [index, profile] of parsedProfiles.entries()) {
+      try {
+        const prepared = prepareImportedOrchestrationProfile(profile, existingIds);
+        imported.push(agentOrchestrationStore.saveOrchestrationProfile(prepared));
+      } catch (caught) {
+        errors.push(`Profile ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
+      }
+    }
+    if (imported.length > 0) {
+      emitSettingsUpdated();
+    }
+    return {
+      ok: true as const,
+      canceled: false,
+      imported: imported.length,
+      profiles: imported,
+      errors,
+    };
   });
 
   ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {

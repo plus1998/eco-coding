@@ -871,6 +871,8 @@ type WorkflowStep = {
 - Phase 10.14 行为边界：本阶段完成 Profile 配置与 UI 编辑，不扩大 fixed workflow engine 的执行语义；fixed/hybrid 的运行仍沿用既有 runtime workflow 解析与执行路径。
 - Phase 10.15 已完成：Agent Profile 编辑器补齐结构化 ToolPolicy 覆盖，主 Agent 与子 Agent 都可编辑 MCP servers/tools、Bash 审批、命令白/黑名单、文件读写范围和 WebSearch/WebFetch；保存后的策略进入 SDK allowedTools、动态子 Agent definitions 和 PreToolUse hook，MCP server 自动映射为 `mcp__server__*`。
 - Phase 10.15 行为边界：MCP server 的实际连接定义仍来自全局 MCP 设置，本阶段只控制 profile/agent 对已配置 MCP 工具的允许范围和运行时硬约束。
+- Phase 10.16 已完成：Agent Profile 支持 JSON 导入导出，archive schema 为 `eco.agentProfiles.v1`；主进程提供 profile export/import IPC，preload 暴露 renderer API，设置页可全量导入/导出或单个 Profile 导出；导入内置/派生/冲突 ID 时自动转为新的 user profile，导入后刷新 Agent Profile 列表。
+- Phase 10.16 行为边界：导入文件只接受当前 Agent Profile schema 的对象、数组或 `profiles` archive，不为历史 route profile 做额外迁移；Profile 内引用的 provider/model/template/MCP server 仍由当前环境配置决定。
 
 Phase 10.1 验证：
 
@@ -948,6 +950,12 @@ Phase 10.14 验证：
 Phase 10.15 验证：
 
 - `bun test apps/desktop/test/agent-profile-form.test.ts packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/runtime/test/eco-sdk-hooks.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.16 验证：
+
+- `bun test apps/desktop/test/agent-profile-archive.test.ts apps/desktop/test/ipc.test.ts`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 

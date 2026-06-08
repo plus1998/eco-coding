@@ -190,10 +190,15 @@ export function ModelsSettingsPanel({
     kind: AppMessageKind;
     message: string;
   }>();
+  const [profileArchiveMessage, setProfileArchiveMessage] = useState<{
+    kind: AppMessageKind;
+    message: string;
+  }>();
   const [profilePerformance, setProfilePerformance] = useState<AgentProfilePerformanceSnapshot[]>([]);
   const [profilePerformanceLoading, setProfilePerformanceLoading] = useState(false);
   const [profilePerformanceError, setProfilePerformanceError] = useState<string>();
   const [auditExportBusy, setAuditExportBusy] = useState(false);
+  const [profileArchiveBusy, setProfileArchiveBusy] = useState(false);
   const [presetProfileBusyId, setPresetProfileBusyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -252,6 +257,64 @@ export function ModelsSettingsPanel({
       setAuditExportBusy(false);
     }
   }, []);
+
+  const exportAgentProfiles = useCallback(async (profileIds?: string[]) => {
+    if (!window.eco?.exportOrchestrationProfiles) {
+      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 导出接口不可用。" });
+      return;
+    }
+    setProfileArchiveBusy(true);
+    setProfileArchiveMessage(undefined);
+    try {
+      const result = await window.eco.exportOrchestrationProfiles(profileIds ? { profileIds } : undefined);
+      if (result.canceled) {
+        return;
+      }
+      setProfileArchiveMessage({
+        kind: "success",
+        message: `已导出 ${result.exported} 个 Agent Profile${result.path ? `：${result.path}` : ""}`,
+      });
+    } catch (caught) {
+      setProfileArchiveMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setProfileArchiveBusy(false);
+    }
+  }, []);
+
+  const importAgentProfiles = useCallback(async () => {
+    if (!window.eco?.importOrchestrationProfiles) {
+      setProfileArchiveMessage({ kind: "error", message: "Agent Profile 导入接口不可用。" });
+      return;
+    }
+    setProfileArchiveBusy(true);
+    setProfileArchiveMessage(undefined);
+    onSavingChange?.(true);
+    try {
+      const result = await window.eco.importOrchestrationProfiles();
+      if (result.canceled) {
+        return;
+      }
+      await refreshSettings();
+      setProfileArchiveMessage({
+        kind: "success",
+        message:
+          result.errors.length > 0
+            ? `已导入 ${result.imported} 个 Agent Profile，${result.errors.length} 个失败`
+            : `已导入 ${result.imported} 个 Agent Profile`,
+      });
+    } catch (caught) {
+      setProfileArchiveMessage({
+        kind: "error",
+        message: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setProfileArchiveBusy(false);
+      onSavingChange?.(false);
+    }
+  }, [onSavingChange, refreshSettings]);
 
   const copyPresetToProfile = useCallback(
     async (preset: BuiltInPresetDefinition) => {
@@ -1058,6 +1121,13 @@ export function ModelsSettingsPanel({
           onDismiss={() => setAuditExportMessage(undefined)}
         />
       )}
+      {profileArchiveMessage && (
+        <AppMessage
+          kind={profileArchiveMessage.kind}
+          message={profileArchiveMessage.message}
+          onDismiss={() => setProfileArchiveMessage(undefined)}
+        />
+      )}
 
       <header className="mcp-page-header">
         <h1>Agent Builder</h1>
@@ -1233,6 +1303,24 @@ export function ModelsSettingsPanel({
               </button>
               <button
                 type="button"
+                className="models-section-button"
+                disabled={busy || profileArchiveBusy}
+                onClick={() => void importAgentProfiles()}
+              >
+                <ArrowUp size={14} />
+                导入 Profile
+              </button>
+              <button
+                type="button"
+                className="models-section-button"
+                disabled={busy || profileArchiveBusy}
+                onClick={() => void exportAgentProfiles()}
+              >
+                <Download size={14} />
+                导出 Profile
+              </button>
+              <button
+                type="button"
                 className="mcp-add-button"
                 disabled={busy}
                 onClick={openCreateAgentProfile}
@@ -1310,6 +1398,15 @@ export function ModelsSettingsPanel({
                         disabled={busy}
                       >
                         <Copy size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        className="mcp-icon-button"
+                        onClick={() => void exportAgentProfiles([summary.profile.id])}
+                        aria-label={`导出 ${summary.name}`}
+                        disabled={busy || profileArchiveBusy}
+                      >
+                        <Download size={18} />
                       </button>
                       <button
                         type="button"

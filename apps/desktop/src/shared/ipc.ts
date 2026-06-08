@@ -24,6 +24,8 @@ export const IPC_CHANNELS = {
   orchestrationProfileList: "orchestration-profile:list",
   orchestrationProfileSave: "orchestration-profile:save",
   orchestrationProfileDelete: "orchestration-profile:delete",
+  orchestrationProfileExport: "orchestration-profile:export",
+  orchestrationProfileImport: "orchestration-profile:import",
   threadStart: "thread:start",
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
@@ -316,6 +318,25 @@ export interface AgentTemplateImportResult {
   canceled: boolean;
   imported: number;
   templates: AgentTemplate[];
+  errors: string[];
+}
+
+export interface OrchestrationProfileExportRequest {
+  profileIds?: string[];
+}
+
+export interface OrchestrationProfileExportResult {
+  ok: true;
+  canceled: boolean;
+  exported: number;
+  path?: string;
+}
+
+export interface OrchestrationProfileImportResult {
+  ok: true;
+  canceled: boolean;
+  imported: number;
+  profiles: OrchestrationProfile[];
   errors: string[];
 }
 
