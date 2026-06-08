@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   History,
+  LinkIcon,
   Pencil,
   Plus,
   RefreshCw,
@@ -91,6 +92,8 @@ const PROVIDER_SETTINGS_TAB_ITEMS: Array<{ id: ModelsSettingsTab; label: string 
   { id: "proxyBridge", label: "代理桥" },
 ];
 
+type AgentProfileEditorMode = "create" | "edit" | "copy";
+
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
@@ -140,6 +143,7 @@ export function ModelsSettingsPanel({
     error?: string | undefined;
   }>();
   const [editingAgentProfileId, setEditingAgentProfileId] = useState<string>();
+  const [agentProfileEditorMode, setAgentProfileEditorMode] = useState<AgentProfileEditorMode>("create");
   const [agentProfileModalError, setAgentProfileModalError] = useState<string>();
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
@@ -477,6 +481,7 @@ export function ModelsSettingsPanel({
     setPanelError(undefined);
     setAgentProfileModalError(undefined);
     setEditingAgentProfileId(undefined);
+    setAgentProfileEditorMode("create");
     setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
     setAgentProfileModalOpen(true);
   }
@@ -489,6 +494,7 @@ export function ModelsSettingsPanel({
       return;
     }
     setEditingAgentProfileId(profile.id);
+    setAgentProfileEditorMode("edit");
     setAgentProfileForm(agentProfileToForm(profile));
     setAgentProfileModalOpen(true);
   }
@@ -497,6 +503,7 @@ export function ModelsSettingsPanel({
     setPanelError(undefined);
     setAgentProfileModalError(undefined);
     setEditingAgentProfileId(undefined);
+    setAgentProfileEditorMode("copy");
     setAgentProfileForm(createCopiedAgentProfileForm(profile, profileFormOptions()));
     setAgentProfileModalOpen(true);
   }
@@ -505,6 +512,7 @@ export function ModelsSettingsPanel({
     setAgentProfileModalOpen(false);
     setAgentProfileModalError(undefined);
     setEditingAgentProfileId(undefined);
+    setAgentProfileEditorMode("create");
     setAgentProfileForm(createBlankAgentProfileForm(profileFormOptions()));
   }
 
@@ -847,10 +855,7 @@ export function ModelsSettingsPanel({
         ) : (
           <>
             <h1>Agent Builder</h1>
-            <p className="mcp-page-desc">
-              配置子代理库、Agent Profile、场景预设和效果评测。新对话在输入区选择 Agent
-              Profile；子代理启停与固定/自主模式按对话独立保存。
-            </p>
+            <p className="mcp-page-desc">配置 Agent 编排资产与评测。</p>
           </>
         )}
       </header>
@@ -882,9 +887,7 @@ export function ModelsSettingsPanel({
             <header className="models-section-header">
               <div className="models-section-intro">
                 <h2 className="models-section-title">子代理库</h2>
-                <p className="models-section-desc">
-                  维护模板本身：提示词、默认工具、MCP、skills 和默认使用边界。
-                </p>
+                <p className="models-section-desc">维护可复用子代理模板。</p>
               </div>
             </header>
             <SubagentSettingsSection
@@ -958,6 +961,7 @@ export function ModelsSettingsPanel({
                         className="mcp-icon-button"
                         onClick={() => openEditProvider(provider)}
                         aria-label={`配置 ${provider.name}`}
+                        title={`配置 ${provider.name}`}
                         disabled={busy}
                       >
                         <Settings2 size={18} />
@@ -985,14 +989,7 @@ export function ModelsSettingsPanel({
           <header className="models-section-header">
             <div className="models-section-intro">
               <h2 className="models-section-title">Agent Profile</h2>
-              <p className="models-section-desc">
-                每个对话在输入区选择一个 Agent Profile；Profile 配置主 agent，并从子代理库选择模板，为主 agent
-                与已选子代理绑定 Provider 和模型。
-              </p>
-              <p className="models-section-meta">
-                当前可运行 profile 仍通过兼容模型路线绑定 provider；可用「测试」验证每个 agent 模型能否调用
-                /v1/messages。
-              </p>
+              <p className="models-section-desc">组合主 Agent 与子代理模型。</p>
             </div>
           </header>
 
@@ -1062,6 +1059,7 @@ export function ModelsSettingsPanel({
                 const performance =
                   performanceByProfileKey.get(summary.profile.id) ??
                   (summary.selectionId ? performanceByProfileKey.get(summary.selectionId) : undefined);
+                const testingProfile = testingAgentProfileId === summary.profile.id;
                 return (
                   <li key={summary.profile.id} className="mcp-server-row models-agent-profile-row">
                     <div className="models-agent-profile-stack">
@@ -1074,23 +1072,24 @@ export function ModelsSettingsPanel({
                     <div className="mcp-server-actions">
                       <button
                         type="button"
-                        className="models-section-button"
+                        className="mcp-icon-button"
                         disabled={busy || testingAgentProfileId !== null}
                         onClick={() => void testAgentProfile(summary.profile)}
+                        aria-label={`连通性测试：${summary.name}`}
+                        title={`连通性测试：${summary.name}`}
                       >
-                        <RefreshCw
-                          size={14}
-                          className={
-                            testingAgentProfileId === summary.profile.id ? "model-refresh-spin" : undefined
-                          }
-                        />
-                        测试
+                        {testingProfile ? (
+                          <RefreshCw size={18} className="model-refresh-spin" />
+                        ) : (
+                          <LinkIcon size={18} />
+                        )}
                       </button>
                       <button
                         type="button"
                         className="mcp-icon-button"
                         onClick={() => openCopyAgentProfile(summary.profile)}
                         aria-label={`复制 ${summary.name}`}
+                        title={`复制 ${summary.name}`}
                         disabled={busy}
                       >
                         <Copy size={18} />
@@ -1100,6 +1099,7 @@ export function ModelsSettingsPanel({
                         className="mcp-icon-button"
                         onClick={() => void exportAgentProfiles([summary.profile.id])}
                         aria-label={`导出 ${summary.name}`}
+                        title={`导出 ${summary.name}`}
                         disabled={busy || profileArchiveBusy}
                       >
                         <Download size={18} />
@@ -1109,6 +1109,7 @@ export function ModelsSettingsPanel({
                         className="mcp-icon-button"
                         onClick={() => openEditAgentProfile(summary.profile)}
                         aria-label={editableProfile ? `编辑 ${summary.name}` : `复制 ${summary.name}`}
+                        title={editableProfile ? `编辑 ${summary.name}` : `复制 ${summary.name}`}
                         disabled={busy}
                       >
                         <Pencil size={18} />
@@ -1119,6 +1120,7 @@ export function ModelsSettingsPanel({
                           className="mcp-icon-button"
                           onClick={() => void openAgentProfileVersions(summary.profile)}
                           aria-label={`查看 ${summary.name} 版本历史`}
+                          title={`查看 ${summary.name} 版本历史`}
                           disabled={busy || agentProfileVersionBusy}
                         >
                           <History size={18} />
@@ -1130,6 +1132,7 @@ export function ModelsSettingsPanel({
                           className="mcp-icon-button danger"
                           onClick={() => void deleteAgentProfile(summary.profile)}
                           aria-label={`删除 ${summary.name}`}
+                          title={`删除 ${summary.name}`}
                           disabled={busy}
                         >
                           <Trash2 size={18} />
@@ -1149,9 +1152,7 @@ export function ModelsSettingsPanel({
           <header className="models-section-header">
             <div className="models-section-intro">
               <h2 className="models-section-title">场景预设</h2>
-              <p className="models-section-desc">
-                内置预设是系统建议方案；点击使用后会写入用户子代理模板副本，并创建可运行的 Agent Profile。
-              </p>
+              <p className="models-section-desc">从内置场景快速生成 Profile。</p>
             </div>
           </header>
 
@@ -1171,10 +1172,7 @@ export function ModelsSettingsPanel({
           <header className="models-section-header">
             <div className="models-section-intro">
               <h2 className="models-section-title">效果评测</h2>
-              <p className="models-section-desc">
-                内置 preset eval suite 会验证 profile 生成、workflow 引用、期望 agent、模型绑定和非 Coding
-                prompt 边界。
-              </p>
+              <p className="models-section-desc">检查预设和 Profile 配置质量。</p>
             </div>
           </header>
 
@@ -1212,7 +1210,7 @@ export function ModelsSettingsPanel({
           loadingForProvider={loadingForProvider}
           error={agentProfileModalError}
           busy={busy}
-          editing={Boolean(editingAgentProfileId)}
+          mode={agentProfileEditorMode}
           onClose={closeAgentProfileModal}
           onSave={() => void saveAgentProfile()}
           onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
@@ -1257,6 +1255,7 @@ function AgentProfileVersionModal({
         className="settings-modal-backdrop-close"
         onClick={onClose}
         aria-label="关闭"
+        title="关闭"
         disabled={busy}
       />
       <div
@@ -1274,6 +1273,7 @@ function AgentProfileVersionModal({
             className="mcp-icon-button"
             onClick={onClose}
             aria-label="关闭"
+            title="关闭"
             disabled={busy}
           >
             <X size={18} />
@@ -1342,7 +1342,7 @@ function AgentProfileEditorModal({
   loadingForProvider,
   error,
   busy,
-  editing,
+  mode,
   onClose,
   onSave,
   onFetchModels,
@@ -1356,11 +1356,21 @@ function AgentProfileEditorModal({
   loadingForProvider: (providerId: string) => boolean;
   error?: string | undefined;
   busy?: boolean | undefined;
-  editing: boolean;
+  mode: AgentProfileEditorMode;
   onClose: () => void;
   onSave: () => void;
   onFetchModels: (provider: ProviderConfigView) => void;
 }) {
+  const modalTitle =
+    mode === "edit" ? "编辑 Agent Profile" : mode === "copy" ? "复制为 Agent Profile" : "新建 Agent Profile";
+  const modalBadge = mode === "edit" ? "编辑" : mode === "copy" ? "副本" : "新建";
+  const modalHint =
+    mode === "edit"
+      ? "修改当前 Profile 的名称、主 Agent 和子代理节点。"
+      : mode === "copy"
+        ? "基于现有 Profile 创建一份可编辑副本。"
+        : "创建新的 Profile，并选择需要的子代理节点。";
+  const saveLabel = mode === "edit" ? "保存修改" : mode === "copy" ? "创建副本" : "创建";
   const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
   const selectedTemplateIds = useMemo(
     () => new Set(form.agents.map((agent) => agent.templateId)),
@@ -1495,6 +1505,7 @@ function AgentProfileEditorModal({
         className="settings-modal-backdrop-close"
         onClick={onClose}
         aria-label="关闭"
+        title="关闭"
         disabled={busy}
       />
       <div
@@ -1504,14 +1515,21 @@ function AgentProfileEditorModal({
         aria-labelledby="agent-profile-modal-title"
       >
         <header className="settings-modal-header">
-          <h2 id="agent-profile-modal-title" className="settings-modal-title">
-            {editing ? "编辑 Agent Profile" : "新建 Agent Profile"}
-          </h2>
+          <div className="models-agent-profile-modal-heading">
+            <div className="models-agent-profile-modal-title-row">
+              <h2 id="agent-profile-modal-title" className="settings-modal-title">
+                {modalTitle}
+              </h2>
+              <span className="models-agent-source-badge">{modalBadge}</span>
+            </div>
+            <p>{modalHint}</p>
+          </div>
           <button
             type="button"
             className="mcp-icon-button"
             onClick={onClose}
             aria-label="关闭"
+            title="关闭"
             disabled={busy}
           >
             <X size={18} />
@@ -1528,15 +1546,6 @@ function AgentProfileEditorModal({
                   value={form.name}
                   disabled={busy}
                   onChange={(event) => patch({ name: event.target.value })}
-                />
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">Profile ID</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.id}
-                  disabled={busy}
-                  onChange={(event) => patch({ id: event.target.value })}
                 />
               </label>
               <div className="models-agent-profile-meta-badges">
@@ -1666,6 +1675,7 @@ function AgentProfileEditorModal({
                               disabled={busy}
                               onClick={() => removeAgent(index)}
                               aria-label={`移除 ${nodeTitle}`}
+                              title={`移除 ${nodeTitle}`}
                             >
                               <Trash2 size={16} />
                             </button>
@@ -1707,7 +1717,7 @@ function AgentProfileEditorModal({
             取消
           </button>
           <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-            保存
+            {saveLabel}
           </button>
         </footer>
       </div>
@@ -1766,6 +1776,7 @@ function AgentProfileNodeConfigModal({
         className="settings-modal-backdrop-close"
         onClick={onClose}
         aria-label="关闭节点配置"
+        title="关闭节点配置"
         disabled={busy}
       />
       <div
@@ -1783,6 +1794,7 @@ function AgentProfileNodeConfigModal({
             className="mcp-icon-button"
             onClick={onClose}
             aria-label="关闭"
+            title="关闭"
             disabled={busy}
           >
             <X size={18} />
@@ -2158,6 +2170,7 @@ function ProviderEditorModal({
         className="settings-modal-backdrop-close"
         onClick={onClose}
         aria-label="关闭"
+        title="关闭"
         disabled={busy}
       />
       <div className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
@@ -2170,6 +2183,7 @@ function ProviderEditorModal({
             className="mcp-icon-button"
             onClick={onClose}
             aria-label="关闭"
+            title="关闭"
             disabled={busy}
           >
             <X size={18} />
@@ -2460,84 +2474,76 @@ function PresetOverview({
         const missingDefaultAgents = preset.defaultAgents.filter(
           (agent) => !templateById.has(agent.templateId),
         );
+        const runnable = domainProfiles.some((profile) => profile.selectionId);
+        const primaryExample = preset.examples[0];
         return (
-          <article key={preset.id} className="models-preset-panel">
-            <div className="models-preset-panel-head">
+          <article
+            key={preset.id}
+            className={runnable ? "models-preset-panel is-ready" : "models-preset-panel"}
+          >
+            <div className="models-preset-card-top">
               <div className="models-preset-title-block">
                 <span className="models-preset-name">{formatAgentDomainLabel(preset.id)}</span>
                 <span className="models-preset-description">{preset.description}</span>
               </div>
-              <div className="models-preset-actions">
-                <span
-                  className={
-                    domainProfiles.some((profile) => profile.selectionId)
-                      ? "models-provider-badge on"
-                      : "models-provider-badge"
-                  }
-                >
-                  {domainProfiles.some((profile) => profile.selectionId) ? "可运行" : "模板可用"}
-                </span>
-                <button
-                  type="button"
-                  className="models-section-button"
-                  disabled={busy}
-                  onClick={() => onCopyPreset(preset)}
-                >
-                  <Plus size={14} />
-                  {copyingPresetId === preset.id ? "创建中" : "复制为 Profile"}
-                </button>
-              </div>
+              <span className={runnable ? "models-provider-badge on" : "models-provider-badge"}>
+                {runnable ? "可运行" : "模板可用"}
+              </span>
             </div>
-            <div className="models-preset-stats">
-              <span>{preset.defaultAgents.length} 个默认子代理</span>
-              <span>{domainTemplates.length} 个模板</span>
-              <span>{domainProfiles.length} 个 profile</span>
-              <span>{preset.evals.length} 个 eval</span>
+
+            <div className="models-preset-metrics">
+              <span>
+                <strong>{preset.defaultAgents.length}</strong>
+                子代理
+              </span>
+              <span>
+                <strong>{domainTemplates.length}</strong>
+                模板
+              </span>
+              <span>
+                <strong>{domainProfiles.length}</strong>
+                Profile
+              </span>
+              <span>
+                <strong>{preset.evals.length}</strong>
+                Eval
+              </span>
+            </div>
+
+            <div className="models-preset-agent-strip">
+              {preset.defaultAgents.map((agent) => {
+                const template = templateById.get(agent.templateId);
+                return (
+                  <span
+                    key={agent.agentKey}
+                    className={template ? "models-preset-template" : "models-preset-template is-missing"}
+                  >
+                    {template?.name ?? agent.displayName}
+                  </span>
+                );
+              })}
+              {missingDefaultAgents.length > 0 ? (
+                <span className="models-preset-template is-missing">缺失 {missingDefaultAgents.length}</span>
+              ) : null}
+            </div>
+
+            <div className="models-preset-focus">
               <span>默认 {formatPresetStrategyKind(preset.strategies.defaultKind)}</span>
+              <p>{primaryExample?.title ?? preset.modelSuggestion.main}</p>
             </div>
-            <p className="models-preset-main-prompt">{preset.mainAgentPrompt}</p>
-            <div className="models-preset-section">
-              <span className="models-preset-section-label">默认子代理</span>
-              <div className="models-preset-template-list">
-                {preset.defaultAgents.map((agent) => {
-                  const template = templateById.get(agent.templateId);
-                  return (
-                    <span
-                      key={agent.agentKey}
-                      className={template ? "models-preset-template" : "models-preset-template is-missing"}
-                    >
-                      {template?.name ?? agent.displayName}
-                    </span>
-                  );
-                })}
-                {missingDefaultAgents.length > 0 ? (
-                  <span className="models-preset-template is-missing">
-                    缺失 {missingDefaultAgents.length}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="models-preset-section">
-              <span className="models-preset-section-label">示例任务</span>
-              <ul className="models-preset-task-list">
-                {preset.examples.slice(0, 3).map((example) => (
-                  <li key={example.id}>{example.prompt}</li>
-                ))}
-              </ul>
-            </div>
-            <div className="models-preset-section">
-              <span className="models-preset-section-label">评测覆盖</span>
-              <div className="models-preset-template-list">
-                {preset.evals.map((evalCase) => (
-                  <span key={evalCase.id} className="models-preset-template">
-                    {evalCase.title}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="models-preset-section">
-              <span className="models-preset-section-label">模型建议</span>
-              <p className="models-preset-model-suggestion">{preset.modelSuggestion.main}</p>
+
+            <div className="models-preset-footer">
+              <span className="models-preset-model-suggestion">{preset.modelSuggestion.main}</span>
+              <button
+                type="button"
+                className="models-section-button"
+                disabled={busy}
+                onClick={() => onCopyPreset(preset)}
+                title={`从 ${formatAgentDomainLabel(preset.id)} 创建 Agent Profile`}
+              >
+                <Plus size={14} />
+                {copyingPresetId === preset.id ? "创建中" : "复制为 Profile"}
+              </button>
             </div>
           </article>
         );
