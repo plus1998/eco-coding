@@ -360,6 +360,20 @@ function App() {
       if (event.type === "bash_approval.requested" && event.bashApproval) {
         setPendingBashApproval(event.bashApproval);
       }
+      if (event.type.startsWith("bash_approval.")) {
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? {
+                  ...thread,
+                  message: event.message,
+                  status: event.type === "bash_approval.requested" ? "running" : thread.status,
+                  updatedAt: new Date().toISOString(),
+                }
+              : thread,
+          ),
+        );
+      }
       if (
         event.type === "bash_approval.approved" ||
         event.type === "bash_approval.rejected" ||

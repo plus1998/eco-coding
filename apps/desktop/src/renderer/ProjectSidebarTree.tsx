@@ -1,5 +1,13 @@
-import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, MoreHorizontal, Pin, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import {
+  Folder,
+  FolderOpen,
+  LoaderCircle,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Pin,
+  Trash2,
+} from "lucide-react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
 import { formatRelativeTime } from "./relative-time";
@@ -154,7 +162,7 @@ export function ProjectSidebarTree({
     }
   }
 
-  function handleProjectDragStart(event: DragEvent<HTMLDivElement>, projectPath: string) {
+  function handleProjectDragStart(event: DragEvent<HTMLElement>, projectPath: string) {
     event.dataTransfer.setData(PROJECT_DRAG_MIME, projectPath);
     event.dataTransfer.effectAllowed = "move";
     setDraggingPath(projectPath);
@@ -165,7 +173,7 @@ export function ProjectSidebarTree({
     setDropTarget(undefined);
   }
 
-  function handleProjectRowDragOver(event: DragEvent<HTMLDivElement>, projectPath: string) {
+  function handleProjectRowDragOver(event: DragEvent<HTMLElement>, projectPath: string) {
     if (!isInternalProjectDrag(event)) {
       return;
     }
@@ -176,7 +184,7 @@ export function ProjectSidebarTree({
     setDropTarget({ path: projectPath, position });
   }
 
-  function handleProjectRowDrop(event: DragEvent<HTMLDivElement>, projectPath: string) {
+  function handleProjectRowDrop(event: DragEvent<HTMLElement>, projectPath: string) {
     if (!isInternalProjectDrag(event)) {
       return;
     }
@@ -233,17 +241,16 @@ export function ProjectSidebarTree({
     }
 
     return (
-      <div key={project.path} className="project-group">
-        <div
-          className={rowClassNames.join(" ")}
-          onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
-          onDrop={(event) => handleProjectRowDrop(event, project.path)}
-        >
-          <div
+      <li key={project.path} className="project-group">
+        <div className={rowClassNames.join(" ")}>
+          <fieldset
+            aria-label={`${project.name} 拖拽排序区域`}
             className={projectMainClassNames.join(" ")}
             draggable
             onDragStart={(event) => handleProjectDragStart(event, project.path)}
             onDragEnd={handleProjectDragEnd}
+            onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
+            onDrop={(event) => handleProjectRowDrop(event, project.path)}
           >
             <button
               type="button"
@@ -317,84 +324,91 @@ export function ProjectSidebarTree({
                 <MessageSquarePlus size={16} />
               </button>
             </span>
-          </div>
+          </fieldset>
         </div>
         {!collapsed ? (
           projectThreads.length > 0 ? (
             <>
               {visibleThreads.map((thread) => {
                 const isThreadBusy = thread.status === "running" || thread.status === "queued";
+                const isThreadAwaitingApproval = isThreadWaitingForApproval(thread);
                 return (
-                <div
-                  key={thread.id}
-                  className={activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"}
-                >
-                  <button
-                    type="button"
-                    className={activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"}
-                    onClick={() => onSelectThread(thread)}
+                  <div
+                    key={thread.id}
+                    className={activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"}
                   >
-                    <span className="chat-item-title">{thread.title}</span>
-                    <span className="chat-item-meta">
-                      {isThreadBusy ? (
-                        <span
-                          className="chat-item-loading"
-                          title={thread.status}
-                          role="img"
-                          aria-label={thread.status}
-                        >
-                          <LoaderCircle size={14} className="spinning" aria-hidden />
-                        </span>
-                      ) : thread.status === "failed" || thread.status === "blocked" ? (
-                        <span className={`status-dot ${thread.status}`} title={thread.status} />
-                      ) : null}
-                      {!isThreadBusy ? (
-                        <span className="chat-item-time">
-                          {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                  <span
-                    className={
-                      openThreadMenuId === thread.id ? "thread-row-actions menu-open" : "thread-row-actions"
-                    }
-                  >
-                    <span className="thread-menu-wrap sidebar-menu-wrap">
-                      <button
-                        type="button"
-                        className="thread-menu-trigger"
-                        title={`${thread.title} 操作`}
-                        aria-label={`${thread.title} 操作`}
-                        aria-haspopup="menu"
-                        aria-expanded={openThreadMenuId === thread.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenMenuPath(undefined);
-                          setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
-                        }}
-                      >
-                        <MoreHorizontal size={16} />
-                      </button>
-                      {openThreadMenuId === thread.id ? (
-                        <div className="project-menu thread-menu" role="menu">
-                          <button
-                            type="button"
-                            className="project-menu-item danger"
-                            role="menuitem"
-                            onClick={() => {
-                              onDeleteThread(thread);
-                              setOpenThreadMenuId(undefined);
-                            }}
+                    <button
+                      type="button"
+                      className={
+                        activeThreadId === thread.id ? "chat-item nested active" : "chat-item nested"
+                      }
+                      onClick={() => onSelectThread(thread)}
+                    >
+                      <span className="chat-item-title">{thread.title}</span>
+                      <span className="chat-item-meta">
+                        {isThreadAwaitingApproval ? (
+                          <span className="chat-item-approval" title={thread.message || "等待批准"}>
+                            等待批准
+                          </span>
+                        ) : isThreadBusy ? (
+                          <span
+                            className="chat-item-loading"
+                            title={thread.status}
+                            role="img"
+                            aria-label={thread.status}
                           >
-                            <Trash2 size={16} aria-hidden />
-                            <span>删除对话</span>
-                          </button>
-                        </div>
-                      ) : null}
+                            <LoaderCircle size={14} className="spinning" aria-hidden />
+                          </span>
+                        ) : thread.status === "failed" || thread.status === "blocked" ? (
+                          <span className={`status-dot ${thread.status}`} title={thread.status} />
+                        ) : null}
+                        {!isThreadBusy && !isThreadAwaitingApproval ? (
+                          <span className="chat-item-time">
+                            {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                    <span
+                      className={
+                        openThreadMenuId === thread.id ? "thread-row-actions menu-open" : "thread-row-actions"
+                      }
+                    >
+                      <span className="thread-menu-wrap sidebar-menu-wrap">
+                        <button
+                          type="button"
+                          className="thread-menu-trigger"
+                          title={`${thread.title} 操作`}
+                          aria-label={`${thread.title} 操作`}
+                          aria-haspopup="menu"
+                          aria-expanded={openThreadMenuId === thread.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenMenuPath(undefined);
+                            setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
+                          }}
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
+                        {openThreadMenuId === thread.id ? (
+                          <div className="project-menu thread-menu" role="menu">
+                            <button
+                              type="button"
+                              className="project-menu-item danger"
+                              role="menuitem"
+                              onClick={() => {
+                                onDeleteThread(thread);
+                                setOpenThreadMenuId(undefined);
+                              }}
+                            >
+                              <Trash2 size={16} aria-hidden />
+                              <span>删除对话</span>
+                            </button>
+                          </div>
+                        ) : null}
+                      </span>
                     </span>
-                  </span>
-                </div>
+                  </div>
                 );
               })}
               {hasMore ? (
@@ -411,7 +425,7 @@ export function ProjectSidebarTree({
             <p className="project-empty">暂无对话</p>
           )
         ) : null}
-      </div>
+      </li>
     );
   }
 
@@ -423,7 +437,7 @@ export function ProjectSidebarTree({
       <section className="project-tree-section" aria-label={label}>
         <div className="project-tree-section-label">{label}</div>
         {items.length > 0 ? (
-          <div className="project-tree-section-list">{items.map(renderProjectItem)}</div>
+          <ul className="project-tree-section-list">{items.map(renderProjectItem)}</ul>
         ) : null}
       </section>
     );
@@ -431,15 +445,24 @@ export function ProjectSidebarTree({
 
   return (
     <div
+      aria-label="项目列表"
       className={treeClassNames.join(" ")}
       onDragEnter={handleTreeDragEnter}
       onDragOver={handleTreeDragOver}
       onDragLeave={handleTreeDragLeave}
       onDrop={handleTreeDrop}
+      role="tree"
     >
       {projectTree.length === 0 ? <p className="project-tree-empty-drop">将文件夹拖到此处打开项目</p> : null}
       {hasPinnedProjects ? renderProjectSection("置顶", pinnedProjectTree) : null}
       {projectTree.length > 0 ? renderProjectSection("项目", regularProjectTree) : null}
     </div>
   );
+}
+
+export function isThreadWaitingForApproval(thread: ThreadSummary): boolean {
+  if (thread.status !== "running") {
+    return false;
+  }
+  return /等待.*(批准|确认)|approval/i.test(thread.message);
 }
