@@ -663,6 +663,9 @@ type WorkflowStep = {
 - Phase 7.5 验证：`bun test apps/desktop/test/agent-profile-performance.test.ts apps/desktop/test/ipc.test.ts`。
 - Phase 7.6 已完成：新增 Agent 审计 JSON 导出，schema 为 `eco.agent-audit.v1`，包含 orchestration profiles、agent templates、profile performance、thread summary、billing、run projection、activity、run attempts、agent instances 和 usage ledger events；Agent Builder 的“编排配置”页提供导出入口。
 - Phase 7.6 验证：`bun test apps/desktop/test/agent-audit-export.test.ts apps/desktop/test/ipc.test.ts`。
+- Phase 7.7 已完成：ThreadBillingSnapshot 新增结构化 diagnostics，usage ledger projection/reconciliation 的 token drift、cost drift、未归因用量、未解析单价和子代理 metrics mismatch 会随计费快照返回；ThreadInfoPanel 的计费浮层展示这些诊断，用户不需要看后台日志才能发现成本/token 异常。
+- Phase 7.7 行为边界：诊断只解释当前快照和 ledger/legacy 校验结果，不改变计费结算来源选择；ledger drift 仍按既有策略回退 legacy 快照。
+- Phase 7.7 验证：`bun test apps/desktop/test/billing-diagnostics.test.ts apps/desktop/test/usage-ledger-coordinator.test.ts`。
 
 与既有计划关系：
 

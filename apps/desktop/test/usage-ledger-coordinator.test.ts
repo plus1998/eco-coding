@@ -321,6 +321,15 @@ test("UsageLedgerCoordinator keeps legacy billing snapshots when ledger projecti
   expect(selection.source).toBe("legacy");
   expect(selection.snapshot.totalTokens.input).toBe(3_000);
   expect(selection.ledgerSnapshot?.totalTokens.input).toBe(2_000);
+  expect(selection.snapshot.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "token_mismatch",
+        severity: "error",
+        field: "input",
+      }),
+    ]),
+  );
   expect(selection.reconciliation?.ok).toBe(false);
   expect(selection.reconciliation?.issues).toContainEqual(
     expect.objectContaining({

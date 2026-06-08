@@ -5,6 +5,7 @@ import {
   summarizeBillingProjectionReconciliation,
   type BillingProjectionReconciliationResult,
 } from "./billing-projector-reconciliation";
+import { withBillingDiagnostics } from "./billing-diagnostics";
 import { projectSubagentMetricsEntriesFromBillingProjection } from "./subagent-metrics-projection";
 import type { SubagentMetricsEntry } from "./subagent-metrics-registry";
 import type {
@@ -173,7 +174,7 @@ export class UsageLedgerCoordinator {
       ecoCostBreakdown: entry.ecoCostBreakdown,
       ...(entry.modelId && { modelId: entry.modelId }),
     }));
-    return subagents.length > 0 ? { ...billing, subagents } : billing;
+    return withBillingDiagnostics(subagents.length > 0 ? { ...billing, subagents } : billing);
   }
 
   resolveBillingSnapshot(
@@ -213,20 +214,29 @@ export class UsageLedgerCoordinator {
           },
           1000,
         );
+        const diagnosticLegacySnapshot = withBillingDiagnostics(legacySnapshot, {
+          projectionReconciliation: reconciliation,
+        });
+        const diagnosticLedgerSnapshot = withBillingDiagnostics(projection.snapshot, {
+          projectionReconciliation: reconciliation,
+        });
         return {
-          snapshot: legacySnapshot,
+          snapshot: diagnosticLegacySnapshot,
           source: "legacy",
-          legacySnapshot,
-          ledgerSnapshot: projection.snapshot,
+          legacySnapshot: diagnosticLegacySnapshot,
+          ledgerSnapshot: diagnosticLedgerSnapshot,
           reconciliation,
         };
       }
 
+      const diagnosticLedgerSnapshot = withBillingDiagnostics(projection.snapshot, {
+        projectionReconciliation: reconciliation,
+      });
       return {
-        snapshot: projection.snapshot,
+        snapshot: diagnosticLedgerSnapshot,
         source: "ledger",
         legacySnapshot,
-        ledgerSnapshot: projection.snapshot,
+        ledgerSnapshot: diagnosticLedgerSnapshot,
         reconciliation,
       };
     } catch (error) {
@@ -237,7 +247,8 @@ export class UsageLedgerCoordinator {
 
   projectBillingSnapshot(threadId: string, plannerModelLabel?: string): ThreadBillingSnapshot | undefined {
     try {
-      return this.projectBilling(threadId, plannerModelLabel)?.snapshot;
+      const snapshot = this.projectBilling(threadId, plannerModelLabel)?.snapshot;
+      return snapshot ? withBillingDiagnostics(snapshot) : undefined;
     } catch (error) {
       this.writeError(`[eco] usage ledger billing projection failed: ${errorMessage(error)}\n`);
       return undefined;

@@ -1,4 +1,4 @@
-import { DollarSign, Folder, GitBranch, HardDrive, ListTodo, Package, X } from "lucide-react";
+import { AlertTriangle, DollarSign, Folder, GitBranch, HardDrive, ListTodo, Package, X } from "lucide-react";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import {
   type CSSProperties,
@@ -16,6 +16,7 @@ import { formatCostUsd, formatSavingsLine, formatTokenCount, formatUsageBadge } 
 import type {
   BillingUsageSource,
   CoderTodoItem,
+  ThreadBillingDiagnostic,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadStatus,
@@ -97,6 +98,45 @@ const billingSourceLabels: Record<BillingUsageSource, string> = {
   otel: "OTel",
   sdk: "SDK",
 };
+
+function visibleBillingDiagnostics(billing: ThreadBillingSnapshot): ThreadBillingDiagnostic[] {
+  const diagnostics = billing.diagnostics?.filter((diagnostic) => diagnostic.severity !== "info") ?? [];
+  if (diagnostics.length > 0) {
+    return diagnostics;
+  }
+  if (!billing.pricingResolved) {
+    return [
+      {
+        type: "pricing_unresolved",
+        severity: "warning",
+        message: "部分模型未匹配 models.dev 单价，①② 可能不完整。",
+      },
+    ];
+  }
+  return [];
+}
+
+function BillingDiagnostics({ billing }: { billing: ThreadBillingSnapshot }) {
+  const diagnostics = visibleBillingDiagnostics(billing);
+  if (diagnostics.length === 0) {
+    return null;
+  }
+  const highestSeverity = diagnostics.some((diagnostic) => diagnostic.severity === "error")
+    ? "error"
+    : "warning";
+  return (
+    <div className={`thread-info-billing-diagnostics ${highestSeverity}`} role="status">
+      <AlertTriangle size={13} aria-hidden />
+      <ul>
+        {diagnostics.slice(0, 4).map((diagnostic, index) => (
+          <li key={`${diagnostic.type}-${diagnostic.field ?? ""}-${diagnostic.agentId ?? ""}-${index}`}>
+            {diagnostic.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   const sources = billing.sourceBreakdown;
@@ -335,9 +375,7 @@ function BillingFloatingCard({
         <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
       )}
 
-      {showBilling && billing && !billing.pricingResolved ? (
-        <p className="thread-info-billing-warning">部分模型未匹配 models.dev 单价，①② 可能不完整。</p>
-      ) : null}
+      {showBilling && billing ? <BillingDiagnostics billing={billing} /> : null}
 
       {showBilling && billing ? (
         <UsageBreakdownPanel

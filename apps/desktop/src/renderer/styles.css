@@ -4969,11 +4969,38 @@ button:not(:disabled) {
   color: #e5e5e5;
 }
 
-.thread-info-billing-warning {
+.thread-info-billing-warning,
+.thread-info-billing-diagnostics {
   margin: 10px 0 0;
   color: #fbbf24;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.thread-info-billing-diagnostics {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.thread-info-billing-diagnostics.error {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.thread-info-billing-diagnostics ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thread-info-billing-diagnostics li + li {
+  margin-top: 4px;
 }
 
 .models-section-header {

@@ -713,6 +713,29 @@ export interface ThreadBillingWorkflowStepSnapshot {
   modelIds: string[];
 }
 
+export type ThreadBillingDiagnosticSeverity = "info" | "warning" | "error";
+
+export type ThreadBillingDiagnosticType =
+  | "pricing_unresolved"
+  | "projection_missing"
+  | "primary_source_mismatch"
+  | "token_mismatch"
+  | "cost_mismatch"
+  | "subagent_metrics_mismatch"
+  | "unattributed_usage"
+  | "unresolved_usage";
+
+export interface ThreadBillingDiagnostic {
+  type: ThreadBillingDiagnosticType;
+  severity: ThreadBillingDiagnosticSeverity;
+  message: string;
+  source?: BillingUsageSource;
+  agentId?: string;
+  field?: string;
+  delta?: number;
+  count?: number;
+}
+
 export interface ThreadBillingSnapshot {
   totalTokens: {
     input: number;
@@ -750,6 +773,7 @@ export interface ThreadBillingSnapshot {
   >;
   subagents?: ThreadSubagentBillingSnapshot[];
   workflowSteps?: ThreadBillingWorkflowStepSnapshot[];
+  diagnostics?: ThreadBillingDiagnostic[];
 }
 
 export interface ThreadUsageSnapshotResult {
