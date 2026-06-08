@@ -10,7 +10,7 @@ const jsChecks = [
   { label: "Agent Builder shell", value: "Agent Builder" },
   { label: "Agent Library tab", value: "Agent Library" },
   { label: "Agent Profile selector", value: "Agent Profile" },
-  { label: "Agent Profile library selection", value: "从子代理库选择" },
+  { label: "Agent Profile visual canvas", value: "Agent Profile 画布" },
   { label: "Provider tab", value: "Provider" },
   { label: "Proxy bridge tab", value: "代理桥" },
   { label: "Presets tab", value: "场景预设" },

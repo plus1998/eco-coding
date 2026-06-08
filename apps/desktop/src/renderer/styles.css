@@ -6705,8 +6705,18 @@ button:not(:disabled) {
 }
 
 .settings-modal-agent-profile {
-  width: min(960px, calc(100vw - 48px));
+  width: min(1120px, calc(100vw - 48px));
   max-height: min(92vh, 920px);
+}
+
+.settings-modal-agent-node-config {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(88vh, 860px);
+}
+
+.settings-modal-node-config-backdrop {
+  z-index: 340;
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .settings-modal-agent-version {
@@ -6766,6 +6776,311 @@ button:not(:disabled) {
 .models-agent-profile-form-section:first-child {
   padding-top: 0;
   border-top: 0;
+}
+
+.models-agent-profile-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.models-agent-profile-meta-badges {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.models-agent-profile-visual-builder {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 520px;
+}
+
+.models-agent-profile-palette,
+.models-agent-profile-canvas {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #202020;
+}
+
+.models-agent-profile-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.models-agent-profile-builder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.models-agent-profile-builder-subtitle {
+  margin: 4px 0 0;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.models-agent-profile-palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.models-agent-profile-palette-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #373737;
+  border-radius: 8px;
+  background: #171717;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: grab;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.models-agent-profile-palette-card:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: #1f1f1f;
+  transform: translateY(-1px);
+}
+
+.models-agent-profile-palette-card:active:not(:disabled) {
+  cursor: grabbing;
+}
+
+.models-agent-profile-palette-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.models-agent-profile-palette-card-main,
+.models-agent-profile-palette-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.models-agent-profile-palette-title {
+  min-width: 0;
+  color: #f0f0f0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-agent-profile-palette-desc {
+  display: -webkit-box;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.models-agent-profile-palette-card-action {
+  justify-content: flex-start;
+  color: #86efac;
+  font-size: 12px;
+}
+
+.models-agent-profile-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px), #171717;
+  background-size: 24px 24px;
+}
+
+.models-agent-profile-canvas-stage {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) 32px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-height: 420px;
+}
+
+.models-agent-profile-node-rail {
+  position: relative;
+  align-self: stretch;
+  min-height: 160px;
+}
+
+.models-agent-profile-node-rail::before,
+.models-agent-profile-node-rail::after {
+  position: absolute;
+  content: "";
+  background: rgba(115, 115, 115, 0.55);
+}
+
+.models-agent-profile-node-rail::before {
+  top: 30px;
+  bottom: 30px;
+  left: 50%;
+  width: 1px;
+}
+
+.models-agent-profile-node-rail::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.models-agent-profile-node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.models-agent-profile-node-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.models-agent-profile-node {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  width: 100%;
+  min-height: 146px;
+  padding: 14px;
+  border: 1px solid #3b3b3b;
+  border-radius: 8px;
+  background: #232323;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.models-agent-profile-node:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: #292929;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.models-agent-profile-node:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.models-agent-profile-node-main {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: #1f2823;
+}
+
+.models-agent-profile-node-type,
+.models-agent-profile-node-key,
+.models-agent-profile-node-model,
+.models-agent-profile-node-footer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-agent-profile-node-type {
+  color: #a3a3a3;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.models-agent-profile-node-title {
+  color: #f5f5f5;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.models-agent-profile-node-key {
+  color: #737373;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.models-agent-profile-node-model {
+  margin-top: auto;
+  color: #c7c7c7;
+  font-size: 12px;
+}
+
+.models-agent-profile-node-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #93c5fd;
+  font-size: 12px;
+}
+
+.models-agent-profile-node-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(23, 23, 23, 0.82);
+}
+
+.models-agent-profile-empty-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  padding: 24px;
+  border: 1px dashed rgba(163, 163, 163, 0.32);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+  color: #c7c7c7;
+  text-align: center;
+}
+
+.models-agent-profile-empty-drop small {
+  color: #737373;
+  font-size: 12px;
+}
+
+.models-agent-profile-node-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .models-agent-profile-add-row {
@@ -7789,9 +8104,22 @@ button:not(:disabled) {
 @media (max-width: 560px) {
   .models-route-profile-meta,
   .models-agent-template-form-grid,
+  .models-agent-profile-meta-grid,
+  .models-agent-profile-visual-builder,
+  .models-agent-profile-canvas-stage,
   .models-agent-profile-add-row {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .models-agent-profile-meta-badges,
+  .models-agent-profile-builder-head {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .models-agent-profile-node-rail {
+    display: none;
   }
 
   .models-route-list-modal .models-route-card-fields {

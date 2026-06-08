@@ -606,6 +606,7 @@ type WorkflowStep = {
 - 设置页已升级为 Agent Builder 结构，包含 Agent Library、Agent Profile、场景预设和效果评测；Provider 设置菜单拆为 `Provider` 和 `代理桥` 两个页签；设置内不再提供编排模式开关，当前对话固定/自主只在 Composer 切换。
 - Agent Profile 列表已使用通用 Agent Profile 摘要展示场景、策略、主 agent、启用子代理和高风险工具，不再用固定 role 横排作为主要信息架构。
 - 工具权限已从独立 Tab 移除；主 agent 权限在 Agent Profile 配置，子代理权限回到子代理库模板维护。场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
+- Agent Profile 编辑器已升级为可视化节点画布：子代理库模板可拖入 Profile，主 agent 是固定配置节点，子 agent 节点点击后只配置 Provider / 模型。
 - 运行观察 UI 已根据当前线程绑定的 Agent Profile 生成 runtime display map，projection agent card、agent echo badge 与 Context 子代理条目会优先显示用户配置的 agent/template 名称，并继续保留 `agentId` 实例标识。
 - Phase 6.1 已完成：Composer 的 Agent Profile popover 支持“保存当前为 Profile”，保存的是 Composer 当前选择和运行态偏好；设置页不再提供子代理启停或编排步骤编辑，route-backed 派生配置会去掉 legacy route 绑定。
 - Phase 6.2 已完成：Agent Builder 已形成商用品质闭环，覆盖子代理库、Agent Profile、场景预设和效果评测；用户/项目 Agent Profile 可编辑主 agent、从子代理库选择子 agent、绑定 Provider / 模型、导入导出和版本恢复；子代理能力内容只在子代理库维护，编排模式只在 Composer 当前对话中切换。
@@ -904,6 +905,8 @@ type WorkflowStep = {
 - Phase 10.18 行为边界：bundle 仍不包含 provider secrets、MCP server 连接定义或模型密钥；导入后这些运行环境依赖仍由目标机器当前配置提供。
 - Phase 10.19 已完成：Agent Profile 已成为新线程、继续运行、计划审批、上下文压缩、SDK driver、动态 route、计费、上下文、运行投影、审计和 Composer 展示的主路径；legacy Route Profile 仅作为 Coding preset 派生和旧体验代理字段保留，不再提供 Agent Builder 编辑入口。
 - Phase 10.19 行为边界：不为旧 route profile 或历史线程新增额外数据兜底；遇到兼容冲突时以 Agent Profile 新 schema 和当前运行配置为准。
+- Phase 10.20 已完成：Agent Profile 新建/编辑窗口改为节点画布，左侧子代理库模板支持拖拽或点击加入，右侧以主 Agent 节点连接子代理节点；主 Agent 节点弹窗可配置 prompt、工具权限、skills 和模型，子代理节点弹窗只允许配置 Provider / 模型。
+- Phase 10.20 行为边界：可视化画布当前表达“Profile roster 装配”，不在设置页恢复 fixed/hybrid workflow step 编辑；固定/自主仍只在 Composer 当前对话中切换。
 
 Phase 10.1 验证：
 

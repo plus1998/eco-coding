@@ -409,6 +409,8 @@ type ThreadRuntimeConfig = {
 - 新对话、切换项目、激活 workspace、删除当前线程后都会把 Composer 默认 runtime 重置为自主编排，避免继承上一条线程的固定编排状态。
 - Agent Profile modal 的子 Agent 区域改为“从子代理库选择”，不再编辑 agent key、显示名称或模板本体；要换子代理必须移除后重新从库选择。
 - Agent Profile modal 保留主 Agent 配置；子代理行移除工具权限、MCP、skills、启停和排序编辑，只能绑定 Provider / 模型。
+- Agent Profile modal 改为可视化装配画布：左侧是可拖拽的子代理库模板，右侧固定主 Agent 节点和子代理节点；点击主节点打开完整主 Agent 配置，点击子代理节点只打开 Provider / 模型绑定弹窗。
+- Agent Profile modal 顶部补齐 Profile 名称和 ID 编辑，Profile 自身元信息留在 Profile 层，不进入子代理库模板。
 - `buildOrchestrationProfileFromForm` 只从 Profile 表单保存主 Agent 配置和模型绑定；子代理工具权限、MCP、skills 改为继承已有配置或子代理库模板，不再接受 Profile 表单覆盖。
 
 本批仍未触碰：
@@ -426,6 +428,11 @@ type ThreadRuntimeConfig = {
 - `bunx biome check --write apps/desktop/src/renderer/ModelsSettingsPanel.tsx apps/desktop/src/renderer/ProxyBridgeSettingsSection.tsx apps/desktop/scripts/agent-ui-smoke.mjs docs/universal-agent-remediation-plan.md docs/universal-agent-product-plan.md`
 - `bun run typecheck`
 - `bun run test:agent-ui-smoke`
+- 可视化节点编辑器追加验证：`bunx biome check --write apps/desktop/src/renderer/ModelsSettingsPanel.tsx apps/desktop/scripts/agent-ui-smoke.mjs docs/universal-agent-remediation-plan.md docs/universal-agent-product-plan.md`
+- 可视化节点编辑器追加验证：`bun run typecheck`
+- 可视化节点编辑器追加验证：`bun test apps/desktop/test/agent-profile-form.test.ts apps/desktop/test/preset-import.test.ts apps/desktop/test/agent-orchestration.test.ts packages/runtime/test/agent-orchestration.test.ts apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-preset-e2e.test.ts apps/desktop/test/orchestration-mode-ui.test.ts apps/desktop/test/thread-runtime-config.test.ts apps/desktop/test/composer-profile-save.test.ts`：50 pass，0 fail。
+- 可视化节点编辑器追加验证：`bun run test:agent-ui-smoke`
+- `bunx biome check apps/desktop/src/renderer/styles.css --max-diagnostics 20`：退出码 0；仍报告 47 个历史 warning，集中在既有 `noDescendingSpecificity` 和 `noImportantStyles`，本批不混入全 CSS 基线治理。
 
 本批未通过的历史检查：
 
