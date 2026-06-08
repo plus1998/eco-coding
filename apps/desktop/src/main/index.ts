@@ -94,7 +94,7 @@ import {
   type WorktreeStatusResult,
 } from "../shared/ipc";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
-import { buildAgentProfileArchive, parseAgentProfileArchive } from "../shared/agent-profile-archive";
+import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
@@ -601,6 +601,38 @@ function prepareImportedOrchestrationProfile(
     source: profile.source === "project" && !protectedId ? "project" : "user",
     version: Math.max(1, typeof profile.version === "number" ? profile.version : 1),
     updatedAt: now,
+  };
+}
+
+function collectExportableProfileTemplates(
+  profiles: readonly OrchestrationProfile[],
+  templates: readonly AgentTemplate[],
+): AgentTemplate[] {
+  const referencedTemplateIds = new Set(
+    profiles.flatMap((profile) => profile.agents.map((agent) => agent.templateId.trim()).filter(Boolean)),
+  );
+  return templates.filter(
+    (template) =>
+      referencedTemplateIds.has(template.id) &&
+      !template.builtIn &&
+      template.source !== "built_in" &&
+      template.source !== "derived",
+  );
+}
+
+function rewriteProfileTemplateIds(
+  profile: OrchestrationProfile,
+  templateIdMap: ReadonlyMap<string, string>,
+): OrchestrationProfile {
+  if (templateIdMap.size === 0) {
+    return profile;
+  }
+  return {
+    ...profile,
+    agents: profile.agents.map((agent) => ({
+      ...agent,
+      templateId: templateIdMap.get(agent.templateId) ?? agent.templateId,
+    })),
   };
 }
 
@@ -1206,7 +1238,8 @@ function registerIpcHandlers(): void {
     const requestedIds = Array.isArray(request.profileIds)
       ? new Set(request.profileIds.map((id) => id.trim()).filter(Boolean))
       : undefined;
-    const profiles = getModelSettingsSnapshot().orchestrationProfiles.filter((profile) => {
+    const settings = getModelSettingsSnapshot();
+    const profiles = settings.orchestrationProfiles.filter((profile) => {
       if (requestedIds) {
         return requestedIds.has(profile.id);
       }
@@ -1215,6 +1248,7 @@ function registerIpcHandlers(): void {
     if (profiles.length === 0) {
       throw new Error("没有可导出的 Agent Profile。");
     }
+    const templates = collectExportableProfileTemplates(profiles, settings.agentTemplates);
     const result = await dialog.showSaveDialog({
       title: "导出 Agent Profile",
       defaultPath: `eco-agent-profiles-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1225,7 +1259,7 @@ function registerIpcHandlers(): void {
     }
     await fs.writeFile(
       result.filePath,
-      JSON.stringify(buildAgentProfileArchive(profiles), null, 2),
+      JSON.stringify(buildAgentProfileArchive(profiles, undefined, { templates }), null, 2),
       "utf8",
     );
     return {
@@ -1247,19 +1281,34 @@ function registerIpcHandlers(): void {
       return { ok: true as const, canceled: true, imported: 0, profiles: [], errors: [] };
     }
     const content = await fs.readFile(filePath, "utf8");
-    const parsedProfiles = parseAgentProfileArchive(content);
-    const existingIds = new Set(getModelSettingsSnapshot().orchestrationProfiles.map((profile) => profile.id));
-    const imported: OrchestrationProfile[] = [];
+    const parsedBundle = parseAgentProfileArchiveBundle(content);
+    const settings = getModelSettingsSnapshot();
+    const existingTemplateIds = new Set(settings.agentTemplates.map((template) => template.id));
+    const templateIdMap = new Map<string, string>();
     const errors: string[] = [];
-    for (const [index, profile] of parsedProfiles.entries()) {
+    for (const [index, template] of parsedBundle.templates.entries()) {
       try {
-        const prepared = prepareImportedOrchestrationProfile(profile, existingIds);
+        const prepared = prepareImportedAgentTemplate(template, existingTemplateIds);
+        const saved = agentOrchestrationStore.saveAgentTemplate(prepared);
+        templateIdMap.set(template.id, saved.id);
+      } catch (caught) {
+        errors.push(`模板 ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
+      }
+    }
+    const existingIds = new Set(settings.orchestrationProfiles.map((profile) => profile.id));
+    const imported: OrchestrationProfile[] = [];
+    for (const [index, profile] of parsedBundle.profiles.entries()) {
+      try {
+        const prepared = prepareImportedOrchestrationProfile(
+          rewriteProfileTemplateIds(profile, templateIdMap),
+          existingIds,
+        );
         imported.push(agentOrchestrationStore.saveOrchestrationProfile(prepared));
       } catch (caught) {
         errors.push(`Profile ${index + 1}: ${caught instanceof Error ? caught.message : String(caught)}`);
       }
     }
-    if (imported.length > 0) {
+    if (imported.length > 0 || templateIdMap.size > 0) {
       emitSettingsUpdated();
     }
     return {

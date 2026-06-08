@@ -879,6 +879,8 @@ type WorkflowStep = {
 - Phase 10.16 行为边界：导入文件只接受当前 Agent Profile schema 的对象、数组或 `profiles` archive，不为历史 route profile 做额外迁移；Profile 内引用的 provider/model/template/MCP server 仍由当前环境配置决定。
 - Phase 10.17 已完成：Agent Profile 补齐版本历史和恢复能力；每次保存用户/项目 Profile 都记录版本快照，删除 Profile 时清理历史版本，主进程/preload/renderer 提供版本列表与恢复入口，Agent Builder 可从 Profile 行打开版本历史并恢复到旧版本。
 - Phase 10.17 行为边界：版本历史只覆盖新 schema 的用户/项目 Agent Profile；内置/派生 Profile 仍通过“复制为用户 Profile”后进入可版本化路径，不为旧 route profile 单独创建历史快照。
+- Phase 10.18 已完成：Agent Profile 导出升级为 bundle，可携带 profile 引用的用户/项目 Agent Template；导入时先导入模板，遇到 ID 冲突或受保护模板会生成新 user template，并重写 profile 内 `templateId` 引用，跨机器迁移不再丢失自定义子 Agent 提示词。
+- Phase 10.18 行为边界：bundle 仍不包含 provider secrets、MCP server 连接定义或模型密钥；导入后这些运行环境依赖仍由目标机器当前配置提供。
 
 Phase 10.1 验证：
 
@@ -968,6 +970,12 @@ Phase 10.16 验证：
 Phase 10.17 验证：
 
 - `bun test apps/desktop/test/agent-orchestration-store.test.ts apps/desktop/test/ipc.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.18 验证：
+
+- `bun test apps/desktop/test/agent-profile-archive.test.ts`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 

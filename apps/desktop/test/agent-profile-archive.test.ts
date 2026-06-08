@@ -3,8 +3,9 @@ import {
   AGENT_PROFILE_ARCHIVE_SCHEMA,
   buildAgentProfileArchive,
   parseAgentProfileArchive,
+  parseAgentProfileArchiveBundle,
 } from "../src/shared/agent-profile-archive";
-import type { OrchestrationProfile } from "../src/shared/ipc";
+import type { AgentTemplate, OrchestrationProfile } from "../src/shared/ipc";
 
 function profile(): OrchestrationProfile {
   return {
@@ -40,15 +41,45 @@ function profile(): OrchestrationProfile {
   };
 }
 
+function template(): AgentTemplate {
+  return {
+    id: "user.researcher",
+    name: "Researcher",
+    description: "Finds sources",
+    domain: "research",
+    prompt: "Find credible sources.",
+    whenToUse: "Use for source gathering.",
+    defaultTools: { allowed: ["WebSearch"], disallowed: [] },
+    mcpServers: [],
+    skills: [],
+    allowDelegation: false,
+    builtIn: false,
+    source: "user",
+    version: 1,
+    updatedAt: "2026-06-07T00:00:00.000Z",
+  };
+}
+
 test("agent profile archive round-trips schema and profiles", () => {
-  const archive = buildAgentProfileArchive([profile()], "2026-06-07T01:00:00.000Z");
+  const archive = buildAgentProfileArchive([profile()], "2026-06-07T01:00:00.000Z", {
+    templates: [template()],
+  });
   expect(archive.schema).toBe(AGENT_PROFILE_ARCHIVE_SCHEMA);
+  expect(archive.templates).toEqual([template()]);
   expect(parseAgentProfileArchive(JSON.stringify(archive))).toEqual([profile()]);
+  expect(parseAgentProfileArchiveBundle(JSON.stringify(archive))).toEqual({
+    profiles: [profile()],
+    templates: [template()],
+  });
 });
 
 test("agent profile archive parser accepts arrays and single profile objects", () => {
   expect(parseAgentProfileArchive(JSON.stringify([profile()]))).toEqual([profile()]);
   expect(parseAgentProfileArchive(JSON.stringify(profile()))).toEqual([profile()]);
+  expect(parseAgentProfileArchiveBundle(JSON.stringify([profile()]))).toEqual({
+    profiles: [profile()],
+    templates: [],
+  });
 });
 
 test("agent profile archive parser rejects unrelated JSON", () => {
