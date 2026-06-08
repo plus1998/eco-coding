@@ -42,7 +42,7 @@
 - 主 agent 可自主编排，也可按固定 workflow graph 执行。
 - 工具权限必须是硬约束，而不是只靠 prompt 约束。
 - 成本、上下文、事件、失败、产物和审计日志都能按 agent / step / model 归因。
-- 旧编程体验和历史线程必须兼容迁移。
+- 旧编程体验保持可用；历史数据只做新 schema 主路径迁移，不做额外历史兜底。
 
 ## 核心术语
 
@@ -514,7 +514,7 @@ type WorkflowStep = {
 
 ## 阶段 5：工具权限与安全硬约束
 
-状态：进行中。
+状态：已完成。
 
 目标：商用级工具权限必须可配置、可解释、可审计、可强制执行。
 
@@ -545,12 +545,16 @@ type WorkflowStep = {
 - `ClaudeAgentSdkDriver` 已把当前线程 `workspacePath` 传入权限 hook，文件路径判断按线程工作区执行；runtime 权限逻辑不再把 Node-only workspace 模块拖入 renderer 构建图。
 - 权限拒绝已进入运行审计链：`PreToolUse` deny 会生成 runtime `tool.failed` 事件，包含 `tool_name`、`tool_use_id`、actor、agent id/type、cwd 和拒绝原因；desktop activity bridge 和 run event normalizer 已保留结构化 tool metadata。
 - 子代理模板列表已展示每个 agent 的实际权限摘要，包括 Bash 审批策略、文件读写范围、网络 Search/Fetch、MCP 白名单、命令白/黑名单和禁用工具。
+- Phase 5 收尾已完成：Agent Profile 编辑器已经补齐主 agent / 子 agent 的结构化 ToolPolicy 配置；权限策略进入动态 SDK AgentDefinition、PreToolUse hook、固定 workflow step 和 Agent 审计导出；`test:agent-security` 红队 suite 覆盖主 agent、动态子 agent、未登记 agent、固定 step、Bash、文件、网络和 MCP 越权。
+- Phase 5 行为边界：MCP server 连接定义仍来自全局 MCP 设置；本阶段负责 profile/agent 对已存在 MCP 工具的可用范围和运行时硬约束。
 
 已验证：
 
 - `bun run typecheck`
 - `bun test packages/runtime/test/agent-orchestration.test.ts packages/runtime/test/eco-sdk-hooks.test.ts packages/runtime/test/claude-agent-sdk.test.ts packages/workspace/test/workspace.test.ts`
 - `bun test apps/desktop/test/agent-template-form.test.ts`
+- `bun run test:agent-security`
+- `bun run test:agent-commercial`
 - `bun test`：999 pass，21 skip，0 fail。
 - `bun run --cwd apps/desktop build`
 
@@ -574,7 +578,7 @@ type WorkflowStep = {
 
 ## 阶段 6：UI 产品化
 
-状态：进行中。
+状态：已完成。
 
 目标：把设置体验从开发者配置页升级为可商用的 agent builder。
 
@@ -607,6 +611,8 @@ type WorkflowStep = {
 - 工具权限页已按 profile 展示主 agent 与每个子代理的实际权限 chip；场景预设页按 domain 汇总内置模板、profile 数量和可运行状态。
 - 运行观察 UI 已根据当前线程绑定的 Agent Profile 生成 runtime display map，projection agent card、agent echo badge 与 Context 子代理条目会优先显示用户配置的 agent/template 名称，并继续保留 `agentId` 实例标识。
 - Phase 6.1 已完成：Composer 的 Agent Profile popover 支持“保存当前为 Profile”，可把当前选择、子代理启停和编排模式固化为新的用户 Agent Profile；保存后刷新设置并切换到新 profile，route-backed 派生配置会去掉 legacy route 绑定。
+- Phase 6.2 已完成：Agent Builder 已形成商用品质闭环，覆盖子代理库、编排配置、模型路由、工具权限、场景预设和效果评测；用户/项目 Agent Profile 可编辑主 agent、子 agent、模型、prompt、工具、MCP、skills、固定/混合 workflow、导入导出和版本恢复。
+- Phase 6.3 已完成：生产构建 UI smoke 已覆盖 Agent Builder、Agent Profile、编排配置、场景预设、效果评测、Workflow Steps、运行 workflow 和计费诊断关键入口，防止核心页面在发布构建中缺失。
 
 已验证：
 
@@ -614,6 +620,7 @@ type WorkflowStep = {
 - `bun test apps/desktop/test/runtime-agent-display.test.ts apps/desktop/test/thread-run-projection-view.test.ts`
 - `bun test apps/desktop/test/thread-run-projection-view.test.ts apps/desktop/test/activity-log.test.ts apps/desktop/test/activity-agent-id.test.ts apps/desktop/test/thread-run-event-normalizer.test.ts`
 - `bun test apps/desktop/test/composer-profile-save.test.ts`
+- `bun run test:agent-ui-smoke`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 - `bun test --reporter dot`：1004 pass，21 skip，0 fail。
@@ -634,7 +641,7 @@ type WorkflowStep = {
 
 ## 阶段 7：计费、上下文与可观测
 
-状态：进行中。
+状态：已完成。
 
 目标：每次运行的钱、上下文、失败和产物都能按 agent / step / model 归因。
 
@@ -666,6 +673,8 @@ type WorkflowStep = {
 - Phase 7.7 已完成：ThreadBillingSnapshot 新增结构化 diagnostics，usage ledger projection/reconciliation 的 token drift、cost drift、未归因用量、未解析单价和子代理 metrics mismatch 会随计费快照返回；ThreadInfoPanel 的计费浮层展示这些诊断，用户不需要看后台日志才能发现成本/token 异常。
 - Phase 7.7 行为边界：诊断只解释当前快照和 ledger/legacy 校验结果，不改变计费结算来源选择；ledger drift 仍按既有策略回退 legacy 快照。
 - Phase 7.7 验证：`bun test apps/desktop/test/billing-diagnostics.test.ts apps/desktop/test/usage-ledger-coordinator.test.ts`。
+- Phase 7 收尾已完成：运行投影、Usage Ledger、billing projector、context summary、profile performance、审计导出和 UI 计费诊断都已支持动态 agent key / agentId / workflow step；子代理并发、固定编排、非 Coding agent 和成本漂移均有可观察输出或测试覆盖。
+- Phase 7 收尾验证：`bun run test:agent-commercial`、`bun run test:agent-e2e-offline`。
 
 与既有计划关系：
 
@@ -834,7 +843,7 @@ type WorkflowStep = {
 
 ## 阶段 10：迁移与兼容收敛
 
-状态：进行中。
+状态：已完成。
 
 目标：让 Agent Profile 成为新线程主路径，旧 `routeProfile` 只保留为 Coding preset 的路由代理字段。按当前产品决策，不为历史数据做额外兜底；遇到兼容冲突时优先收敛到新 schema。
 
@@ -896,6 +905,8 @@ type WorkflowStep = {
 - Phase 10.17 行为边界：版本历史只覆盖新 schema 的用户/项目 Agent Profile；内置/派生 Profile 仍通过“复制为用户 Profile”后进入可版本化路径，不为旧 route profile 单独创建历史快照。
 - Phase 10.18 已完成：Agent Profile 导出升级为 bundle，可携带 profile 引用的用户/项目 Agent Template；导入时先导入模板，遇到 ID 冲突或受保护模板会生成新 user template，并重写 profile 内 `templateId` 引用，跨机器迁移不再丢失自定义子 Agent 提示词。
 - Phase 10.18 行为边界：bundle 仍不包含 provider secrets、MCP server 连接定义或模型密钥；导入后这些运行环境依赖仍由目标机器当前配置提供。
+- Phase 10.19 已完成：Agent Profile 已成为新线程、继续运行、计划审批、上下文压缩、SDK driver、动态 route、计费、上下文、运行投影、审计和 Composer 展示的主路径；legacy Route Profile 仅作为 Coding preset 的模型路由编辑和旧体验代理字段保留。
+- Phase 10.19 行为边界：不为旧 route profile 或历史线程新增额外数据兜底；遇到兼容冲突时以 Agent Profile 新 schema 和当前运行配置为准。
 
 Phase 10.1 验证：
 
@@ -991,6 +1002,12 @@ Phase 10.17 验证：
 Phase 10.18 验证：
 
 - `bun test apps/desktop/test/agent-profile-archive.test.ts`
+- `bun run typecheck`
+- `bun run --cwd apps/desktop build`
+
+Phase 10.19 验证：
+
+- `bun run test:agent-commercial`
 - `bun run typecheck`
 - `bun run --cwd apps/desktop build`
 
