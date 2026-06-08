@@ -1,12 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+  buildAgentTemplateCapabilityOptions,
   buildAgentTemplateFromForm,
   buildAgentTemplatePermissionChips,
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
   createUniqueTemplateId,
+  toggleAgentTemplateListValue,
+  toggleAgentTemplateToolSelection,
 } from "../src/renderer/agent-template-form";
-import type { AgentTemplate } from "../src/shared/ipc";
+import type { AgentTemplate, McpServerConfigView, SkillsListResult } from "../src/shared/ipc";
 
 const builtInTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
@@ -89,6 +92,119 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
 });
 
+test("buildAgentTemplateCapabilityOptions merges presets, current values, MCP config, and SDK-ready skills", () => {
+  const mcpServers: McpServerConfigView[] = [
+    mcpServer({ name: "docs", enabled: true, allowedTools: "" }),
+    mcpServer({ name: "disabled", enabled: false, allowedTools: "mcp__disabled__search" }),
+  ];
+  const skillsSnapshot: SkillsListResult = {
+    workspacePath: "/repo",
+    userSkills: [
+      {
+        name: "citation",
+        description: "Cite sources.",
+        source: "user",
+        directory: "/home/.claude/skills/citation",
+        skillFilePath: "/home/.claude/skills/citation/SKILL.md",
+        layout: "claude",
+        sdkReady: true,
+        baseDir: "/home",
+      },
+    ],
+    projectSkills: [
+      {
+        name: "project-skill",
+        description: "Project skill.",
+        source: "project",
+        directory: "/repo/.claude/skills/project-skill",
+        skillFilePath: "/repo/.claude/skills/project-skill/SKILL.md",
+        layout: "claude",
+        sdkReady: true,
+        baseDir: "/repo",
+      },
+    ],
+    agentsOnlySkills: [
+      {
+        name: "unlinked",
+        description: "Needs link.",
+        source: "user",
+        directory: "/home/.agents/skills/unlinked",
+        skillFilePath: "/home/.agents/skills/unlinked/SKILL.md",
+        layout: "agents",
+        sdkReady: false,
+        baseDir: "/home",
+      },
+    ],
+    scannedAt: "2026-06-07T00:00:00.000Z",
+  };
+
+  const options = buildAgentTemplateCapabilityOptions({
+    templates: [builtInTemplate],
+    form: {
+      allowedTools: "UnknownTool, Read",
+      disallowedTools: "Bash",
+      mcpServers: "disabled, missing",
+      mcpTools: "mcp__missing__tool",
+      skills: "unlinked, ghost",
+    },
+    mcpServers,
+    skillsSnapshot,
+  });
+
+  expect(options.tools.map((option) => option.value)).toContain("WebSearch");
+  expect(options.tools.find((option) => option.value === "Skill")).toMatchObject({
+    sourceLabel: "Claude",
+  });
+  expect(options.tools.find((option) => option.value === "UnknownTool")).toMatchObject({
+    sourceLabel: "当前",
+  });
+  expect(options.mcpServers.map((option) => option.value)).toEqual(["docs", "disabled", "missing"]);
+  expect(options.mcpServers.find((option) => option.value === "disabled")).toMatchObject({
+    sourceLabel: "未启用",
+  });
+  expect(options.mcpTools.map((option) => option.value)).toEqual(["mcp__docs__*", "mcp__missing__tool"]);
+  expect(options.skills.find((option) => option.value === "citation")).toMatchObject({
+    sourceLabel: "Claude",
+  });
+  expect(options.skills.find((option) => option.value === "project-skill")).toMatchObject({
+    sourceLabel: "项目",
+  });
+  expect(options.skills.find((option) => option.value === "unlinked")).toMatchObject({
+    sourceLabel: "当前未链接",
+  });
+  expect(options.skills.find((option) => option.value === "ghost")).toMatchObject({
+    sourceLabel: "未发现",
+  });
+});
+
+test("template list toggles preserve unknown values and tool toggles are mutually exclusive", () => {
+  expect(toggleAgentTemplateListValue("docs, missing", "docs", false)).toBe("missing");
+  expect(toggleAgentTemplateListValue("docs", "mcp__docs__*", true)).toBe("docs, mcp__docs__*");
+
+  expect(
+    toggleAgentTemplateToolSelection(
+      { allowedTools: "Read, CustomTool", disallowedTools: "Bash, Write" },
+      "allowedTools",
+      "Bash",
+      true,
+    ),
+  ).toEqual({
+    allowedTools: "Read, CustomTool, Bash",
+    disallowedTools: "Write",
+  });
+  expect(
+    toggleAgentTemplateToolSelection(
+      { allowedTools: "Read, Bash", disallowedTools: "Write" },
+      "disallowedTools",
+      "Read",
+      true,
+    ),
+  ).toEqual({
+    allowedTools: "Bash",
+    disallowedTools: "Write, Read",
+  });
+});
+
 test("buildAgentTemplatePermissionChips summarizes effective tool policy", () => {
   const chips = buildAgentTemplatePermissionChips({
     ...builtInTemplate,
@@ -147,3 +263,19 @@ test("createUniqueTemplateId increments suffixes", () => {
     "user.custom.agent_3",
   );
 });
+
+function mcpServer(input: { name: string; enabled: boolean; allowedTools: string }): McpServerConfigView {
+  return {
+    id: `mcp_${input.name}`,
+    name: input.name,
+    transport: "stdio",
+    enabled: input.enabled,
+    command: "node",
+    argsJson: "[]",
+    envJson: "{}",
+    headersJson: "{}",
+    allowedTools: input.allowedTools,
+    createdAt: "2026-06-07T00:00:00.000Z",
+    updatedAt: "2026-06-07T00:00:00.000Z",
+  };
+}

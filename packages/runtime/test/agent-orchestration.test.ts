@@ -103,8 +103,8 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
   expect(definition).toMatchObject({
     model: "research-model",
-    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*"],
-    disallowedTools: ["Bash"],
+    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    disallowedTools: ["Bash", "Agent", "Task"],
     prompt: researchTemplate.prompt,
     mcpServers: ["sources", "browser"],
     skills: ["citation", "pdf"],
@@ -163,6 +163,7 @@ test("resolveMainAgentAllowedTools uses profile tools for universal profiles and
     "Agent",
     "Read",
     "WebSearch",
+    "Skill",
     "mcp__sources__quote",
     "mcp__browser__*",
   ]);
@@ -174,6 +175,7 @@ test("resolveMainAgentAllowedTools uses profile tools for universal profiles and
     "WebSearch",
     "Bash",
     "Write",
+    "Skill",
     "mcp__sources__quote",
     "mcp__browser__*",
   ]);
@@ -186,13 +188,21 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
   });
 
   expect(policy.main).toEqual({
-    allowed: ["Agent", "Read", "WebSearch", "AskUserQuestion", "mcp__sources__quote", "mcp__browser__*"],
+    allowed: [
+      "Agent",
+      "Read",
+      "WebSearch",
+      "AskUserQuestion",
+      "Skill",
+      "mcp__sources__quote",
+      "mcp__browser__*",
+    ],
     disallowed: ["Write"],
   });
   expect(policy.agents).toEqual({
     eco_researcher: {
-      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*"],
-      disallowed: ["Bash"],
+      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill"],
+      disallowed: ["Bash", "Agent", "Task"],
     },
   });
 });
@@ -234,6 +244,54 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
     bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
+  });
+});
+
+test("subagent delegation tools require allowDelegation", () => {
+  const firstAgent = requireElement(profile.agents, 0, "agent");
+  const delegatingProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    agents: [
+      {
+        ...firstAgent,
+        tools: toolPolicy(["Read", "Agent", "Task"], []),
+      },
+    ],
+  };
+  const blockedTemplate: EcoAgentTemplateConfig = {
+    ...researchTemplate,
+    defaultTools: toolPolicy(["Read", "Agent", "Task"], []),
+    allowDelegation: false,
+  };
+
+  const blockedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [blockedTemplate]);
+  const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
+  expect(blockedDefinition.tools).toEqual(["Read", "mcp__sources__*", "mcp__browser__*", "Skill"]);
+  expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task"]);
+
+  const blockedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [blockedTemplate]);
+  expect(blockedPolicy.agents.eco_researcher).toEqual({
+    allowed: ["Read", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    disallowed: ["Agent", "Task"],
+  });
+
+  const allowedTemplate: EcoAgentTemplateConfig = { ...blockedTemplate, allowDelegation: true };
+  const allowedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [allowedTemplate]);
+  const allowedDefinition = allowedDefinitions.definitions.eco_researcher as Record<string, unknown>;
+  expect(allowedDefinition.tools).toEqual([
+    "Read",
+    "Agent",
+    "Task",
+    "mcp__sources__*",
+    "mcp__browser__*",
+    "Skill",
+  ]);
+  expect(allowedDefinition).not.toHaveProperty("disallowedTools");
+
+  const allowedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [allowedTemplate]);
+  expect(allowedPolicy.agents.eco_researcher).toEqual({
+    allowed: ["Read", "Agent", "Task", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    disallowed: [],
   });
 });
 

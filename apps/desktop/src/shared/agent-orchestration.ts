@@ -241,7 +241,7 @@ const CODER_TOOLS: ToolPolicy = {
 };
 
 const MAIN_CODING_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
   disallowed: [],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "workspace" },
@@ -249,28 +249,28 @@ const MAIN_CODING_TOOLS: ToolPolicy = {
 };
 
 const MAIN_RESEARCH_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "WebSearch", "WebFetch"],
   disallowed: ["Write", "Edit", "Bash"],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_WRITING_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: ["Agent", "Skill", "Read", "Write", "Edit", "WebSearch", "WebFetch"],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_PRODUCT_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch"],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_DATA_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Glob", "Grep", "Bash"],
+  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Bash"],
   disallowed: ["Write", "Edit"],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
@@ -278,7 +278,7 @@ const MAIN_DATA_TOOLS: ToolPolicy = {
 };
 
 const MAIN_OPS_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
   disallowed: ["Write", "Edit"],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },

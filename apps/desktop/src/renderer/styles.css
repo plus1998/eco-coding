@@ -6879,6 +6879,9 @@ button:not(:disabled) {
 }
 
 .models-agent-token-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 26px;
   padding: 3px 8px;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -6890,9 +6893,35 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
-.models-agent-token-option:hover:not(:disabled) {
+.models-agent-token-option:hover:not(.is-disabled) {
   border-color: rgba(255, 255, 255, 0.18);
   color: #e5e5e5;
+}
+
+.models-agent-token-option input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: #22c55e;
+}
+
+.models-agent-token-option.is-disabled {
+  opacity: 0.54;
+  cursor: not-allowed;
+}
+
+.models-agent-token-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.models-agent-token-source {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #858585;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .models-agent-token-option.active {

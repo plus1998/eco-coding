@@ -39,6 +39,7 @@ import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compa
 import type {
   AgentProfilePerformanceSnapshot,
   AgentTemplate,
+  McpServerConfigView,
   ModelRef,
   ModelSettingsSnapshot,
   OrchestrationProfile,
@@ -46,6 +47,7 @@ import type {
   ProviderConfigInput,
   ProviderConfigView,
   ProxyBridgeSettingsSnapshot,
+  SkillsListResult,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
@@ -67,6 +69,13 @@ import {
   formatAgentDomainLabel,
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
+import {
+  type AgentTemplateCapabilityOption,
+  buildAgentTemplateCapabilityOptions,
+  parseList,
+  toggleAgentTemplateListValue,
+  toggleAgentTemplateToolSelection,
+} from "./agent-template-form";
 import { ModelSelectField } from "./ModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import { buildPresetTemplateImportPlan } from "./preset-import";
@@ -97,6 +106,8 @@ type AgentProfileEditorMode = "create" | "edit" | "copy";
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
+  mcpServers?: McpServerConfigView[] | undefined;
+  skillsSnapshot?: SkillsListResult | undefined;
   proxyBridgeSettingsSaving?: boolean | undefined;
   busy?: boolean | undefined;
   initialTab?: ModelsSettingsTab | undefined;
@@ -114,6 +125,8 @@ interface ModelsCacheEntry {
 export function ModelsSettingsPanel({
   settings,
   proxyBridgeSettings,
+  mcpServers = [],
+  skillsSnapshot,
   proxyBridgeSettingsSaving,
   busy,
   initialTab = "subagents",
@@ -892,6 +905,8 @@ export function ModelsSettingsPanel({
             </header>
             <SubagentSettingsSection
               templates={settings.agentTemplates}
+              mcpServers={mcpServers}
+              skillsSnapshot={skillsSnapshot}
               registryDisabled={busy}
               onRegistryChange={refreshSettings}
               onSavingChange={onSavingChange}
@@ -1205,6 +1220,8 @@ export function ModelsSettingsPanel({
           setForm={setAgentProfileForm}
           providers={settings.providers}
           templates={settings.agentTemplates}
+          mcpServers={mcpServers}
+          skillsSnapshot={skillsSnapshot}
           modelsForProvider={modelsForProvider}
           modelsErrorForProvider={modelsErrorForProvider}
           loadingForProvider={loadingForProvider}
@@ -1337,6 +1354,8 @@ function AgentProfileEditorModal({
   setForm,
   providers,
   templates,
+  mcpServers,
+  skillsSnapshot,
   modelsForProvider,
   modelsErrorForProvider,
   loadingForProvider,
@@ -1351,6 +1370,8 @@ function AgentProfileEditorModal({
   setForm: Dispatch<SetStateAction<AgentProfileFormState>>;
   providers: ProviderConfigView[];
   templates: AgentTemplate[];
+  mcpServers: McpServerConfigView[];
+  skillsSnapshot?: SkillsListResult | undefined;
   modelsForProvider: (providerId: string) => UpstreamModelOption[];
   modelsErrorForProvider: (providerId: string) => string | undefined;
   loadingForProvider: (providerId: string) => boolean;
@@ -1699,6 +1720,9 @@ function AgentProfileEditorModal({
             agent={selectedAgent}
             agentIndex={selectedAgentIndex}
             template={selectedAgentTemplate}
+            templates={templates}
+            mcpServers={mcpServers}
+            skillsSnapshot={skillsSnapshot}
             providers={providers}
             modelsForProvider={modelsForProvider}
             modelsErrorForProvider={modelsErrorForProvider}
@@ -1731,6 +1755,9 @@ function AgentProfileNodeConfigModal({
   agent,
   agentIndex,
   template,
+  templates,
+  mcpServers,
+  skillsSnapshot,
   providers,
   modelsForProvider,
   modelsErrorForProvider,
@@ -1747,6 +1774,9 @@ function AgentProfileNodeConfigModal({
   agent?: AgentProfileAgentFormState | undefined;
   agentIndex: number;
   template?: AgentTemplate | undefined;
+  templates: AgentTemplate[];
+  mcpServers: McpServerConfigView[];
+  skillsSnapshot?: SkillsListResult | undefined;
   providers: ProviderConfigView[];
   modelsForProvider: (providerId: string) => UpstreamModelOption[];
   modelsErrorForProvider: (providerId: string) => string | undefined;
@@ -1764,6 +1794,32 @@ function AgentProfileNodeConfigModal({
   const nodeTitle = isMainNode
     ? "主 Agent 配置"
     : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
+  const mainCapabilityForm = useMemo(
+    () => ({
+      allowedTools: form.mainAllowedTools,
+      disallowedTools: form.mainDisallowedTools,
+      mcpServers: form.mainMcpServers,
+      mcpTools: form.mainMcpTools,
+      skills: form.mainSkills,
+    }),
+    [
+      form.mainAllowedTools,
+      form.mainDisallowedTools,
+      form.mainMcpServers,
+      form.mainMcpTools,
+      form.mainSkills,
+    ],
+  );
+  const mainCapabilityOptions = useMemo(
+    () =>
+      buildAgentTemplateCapabilityOptions({
+        templates,
+        form: mainCapabilityForm,
+        mcpServers,
+        skillsSnapshot,
+      }),
+    [templates, mainCapabilityForm, mcpServers, skillsSnapshot],
+  );
 
   if (!isMainNode && (!agent || agentIndex < 0)) {
     return null;
@@ -1889,6 +1945,7 @@ function AgentProfileNodeConfigModal({
               </label>
               <AgentProfileToolPolicyFields
                 disabled={busy}
+                capabilityOptions={mainCapabilityOptions}
                 values={{
                   allowedTools: form.mainAllowedTools,
                   disallowedTools: form.mainDisallowedTools,
@@ -1904,15 +1961,18 @@ function AgentProfileNodeConfigModal({
                 }}
                 onChange={onPatchMainToolPolicy}
               />
-              <label className="mcp-field">
-                <span className="mcp-field-label">Skills</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.mainSkills}
-                  disabled={busy}
-                  onChange={(event) => onPatchProfile({ mainSkills: event.target.value })}
-                />
-              </label>
+              <AgentProfileSelectableTokenGroup
+                label="Skills"
+                options={mainCapabilityOptions.skills}
+                selectedValues={parseList(form.mainSkills)}
+                disabled={busy}
+                emptyText="没有 SDK 可加载 Skills。"
+                onToggle={(value, checked) =>
+                  onPatchProfile({
+                    mainSkills: toggleAgentTemplateListValue(form.mainSkills, value, checked),
+                  })
+                }
+              />
             </>
           ) : (
             <>
@@ -1987,51 +2047,80 @@ function AgentProfileNodeConfigModal({
 function AgentProfileToolPolicyFields({
   values,
   disabled,
+  capabilityOptions,
   onChange,
 }: {
   values: AgentProfileToolPolicyFieldValues;
   disabled?: boolean | undefined;
+  capabilityOptions: {
+    tools: AgentTemplateCapabilityOption[];
+    mcpServers: AgentTemplateCapabilityOption[];
+    mcpTools: AgentTemplateCapabilityOption[];
+  };
   onChange: (patch: Partial<AgentProfileToolPolicyFieldValues>) => void;
 }) {
   return (
     <div className="models-agent-profile-tool-policy">
       <div className="models-agent-template-form-grid">
-        <label className="mcp-field">
-          <span className="mcp-field-label">允许工具</span>
-          <input
-            className="mcp-field-input"
-            value={values.allowedTools}
-            disabled={disabled}
-            onChange={(event) => onChange({ allowedTools: event.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">禁用工具</span>
-          <input
-            className="mcp-field-input"
-            value={values.disallowedTools}
-            disabled={disabled}
-            onChange={(event) => onChange({ disallowedTools: event.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">MCP Servers</span>
-          <input
-            className="mcp-field-input"
-            value={values.mcpServers}
-            disabled={disabled}
-            onChange={(event) => onChange({ mcpServers: event.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">MCP Tools</span>
-          <input
-            className="mcp-field-input"
-            value={values.mcpTools}
-            disabled={disabled}
-            onChange={(event) => onChange({ mcpTools: event.target.value })}
-          />
-        </label>
+        <AgentProfileSelectableTokenGroup
+          label="允许工具"
+          options={capabilityOptions.tools}
+          selectedValues={parseList(values.allowedTools)}
+          disabled={disabled}
+          onToggle={(value, checked) =>
+            onChange(
+              toggleAgentTemplateToolSelection(
+                {
+                  allowedTools: values.allowedTools,
+                  disallowedTools: values.disallowedTools,
+                },
+                "allowedTools",
+                value,
+                checked,
+              ),
+            )
+          }
+        />
+        <AgentProfileSelectableTokenGroup
+          label="禁用工具"
+          tone="danger"
+          options={capabilityOptions.tools}
+          selectedValues={parseList(values.disallowedTools)}
+          disabled={disabled}
+          onToggle={(value, checked) =>
+            onChange(
+              toggleAgentTemplateToolSelection(
+                {
+                  allowedTools: values.allowedTools,
+                  disallowedTools: values.disallowedTools,
+                },
+                "disallowedTools",
+                value,
+                checked,
+              ),
+            )
+          }
+        />
+        <AgentProfileSelectableTokenGroup
+          label="MCP Servers"
+          options={capabilityOptions.mcpServers}
+          selectedValues={parseList(values.mcpServers)}
+          disabled={disabled}
+          emptyText="没有可选 MCP Server。"
+          onToggle={(value, checked) =>
+            onChange({ mcpServers: toggleAgentTemplateListValue(values.mcpServers, value, checked) })
+          }
+        />
+        <AgentProfileSelectableTokenGroup
+          label="MCP Tools"
+          options={capabilityOptions.mcpTools}
+          selectedValues={parseList(values.mcpTools)}
+          disabled={disabled}
+          emptyText="没有 MCP 工具模式。"
+          onToggle={(value, checked) =>
+            onChange({ mcpTools: toggleAgentTemplateListValue(values.mcpTools, value, checked) })
+          }
+        />
         <label className="mcp-field">
           <span className="mcp-field-label">Bash 审批</span>
           <select
@@ -2126,6 +2215,64 @@ function AgentProfileToolPolicyFields({
         </label>
       </div>
     </div>
+  );
+}
+
+function AgentProfileSelectableTokenGroup({
+  label,
+  options,
+  selectedValues,
+  disabled,
+  tone,
+  emptyText = "暂无可选项。",
+  onToggle,
+}: {
+  label: string;
+  options: AgentTemplateCapabilityOption[];
+  selectedValues: string[];
+  disabled?: boolean | undefined;
+  tone?: "danger" | undefined;
+  emptyText?: string | undefined;
+  onToggle: (value: string, checked: boolean) => void;
+}) {
+  const selected = new Set(selectedValues);
+  return (
+    <section className="models-agent-token-group">
+      <div className="models-agent-token-group-head">
+        <span>{label}</span>
+        <small>{selectedValues.length} 已选</small>
+      </div>
+      {options.length === 0 ? (
+        <p className="models-agent-token-empty">{emptyText}</p>
+      ) : (
+        <div className="models-agent-token-options">
+          {options.map((option) => {
+            const active = selected.has(option.value);
+            const optionDisabled = disabled || (option.disabled && !active);
+            const className = [
+              "models-agent-token-option",
+              active ? "active" : "",
+              tone === "danger" ? "danger" : "",
+              optionDisabled ? "is-disabled" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <label key={option.value} className={className} title={option.description ?? option.label}>
+                <input
+                  type="checkbox"
+                  checked={active}
+                  disabled={optionDisabled}
+                  onChange={(event) => onToggle(option.value, event.target.checked)}
+                />
+                <span className="models-agent-token-name">{option.label}</span>
+                <span className="models-agent-token-source">{option.sourceLabel}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

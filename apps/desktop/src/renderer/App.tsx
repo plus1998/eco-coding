@@ -2455,6 +2455,8 @@ function App() {
                 <ModelsSettingsPanel
                   settings={settings}
                   proxyBridgeSettings={proxyBridgeSettings}
+                  mcpServers={mcpSettings.servers}
+                  skillsSnapshot={skillsSnapshot}
                   proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                   initialTab={modelsSettingsTab}
                   mode="agentBuilder"

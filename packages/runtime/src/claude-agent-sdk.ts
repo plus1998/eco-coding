@@ -15,6 +15,7 @@ import {
   createAgentDefinitionsFromProfile,
   type EcoWorkflowStep,
   resolveMainAgentAllowedTools,
+  SDK_SKILL_TOOL_NAME,
   sdkAgentKeyForProfileAgent,
 } from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
@@ -123,6 +124,7 @@ export interface ClaudeAgentSdkModule {
 const networkAllowedTools = ["WebSearch", "WebFetch"] as const;
 const defaultAllowedTools = [
   "Agent",
+  SDK_SKILL_TOOL_NAME,
   "Read",
   "Glob",
   "Grep",
@@ -133,6 +135,7 @@ const defaultAllowedTools = [
 ] as const;
 const planningAllowedTools = [
   "Agent",
+  SDK_SKILL_TOOL_NAME,
   "Read",
   "Glob",
   "Grep",
@@ -140,7 +143,14 @@ const planningAllowedTools = [
   "AskUserQuestion",
   FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;
-const questionAllowedTools = ["Agent", "Read", "Glob", "Grep", ...networkAllowedTools] as const;
+const questionAllowedTools = [
+  "Agent",
+  SDK_SKILL_TOOL_NAME,
+  "Read",
+  "Glob",
+  "Grep",
+  ...networkAllowedTools,
+] as const;
 const readOnlySubagentTools = ["Read", "Glob", "Grep", ...networkAllowedTools] as const;
 const readOnlySubagentBashTools = ["Read", "Glob", "Grep", "Bash", ...networkAllowedTools] as const;
 const executionCoderTools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"] as const;
@@ -405,12 +415,16 @@ export function resolveAgentSkills(
   return [];
 }
 
-function agentDefinitionSkills(
+function agentDefinitionToolFields(
   role: RuntimeAgentRole,
+  tools: readonly string[],
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
 ): Record<string, unknown> {
   const skills = resolveAgentSkills(role, agentSkills);
-  return skills.length > 0 ? { skills } : {};
+  return {
+    tools: skills.length > 0 ? [...tools, SDK_SKILL_TOOL_NAME] : [...tools],
+    ...(skills.length > 0 ? { skills } : {}),
+  };
 }
 
 function readAgentSkillAssignment(
@@ -1246,8 +1260,7 @@ function createExploreAgentDefinition(
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   return {
     description: exploreAgentDescription,
-    tools: [...readOnlySubagentTools],
-    ...agentDefinitionSkills("explore", agentSkills),
+    ...agentDefinitionToolFields("explore", readOnlySubagentTools, agentSkills),
     prompt: exploreAgentPrompt,
     model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
   };
@@ -1264,8 +1277,7 @@ export function createPlanningAgentDefinitions(
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
     [architectKey]: {
       description: planningArchitectDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("architect", agentSkills),
+      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
       prompt: planningArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
@@ -1304,29 +1316,25 @@ export function createExecutionAgentDefinitions(
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
     [architectKey]: {
       description: executionArchitectDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("architect", agentSkills),
+      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
     [coderKey]: {
       description: executionCoderDescription,
-      tools: [...executionCoderTools],
-      ...agentDefinitionSkills("coder", agentSkills),
+      ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
     [reviewerKey]: {
       description: autonomousReviewerDescription,
-      tools: [...readOnlySubagentBashTools],
-      ...agentDefinitionSkills("reviewer", agentSkills),
+      ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
     [testerKey]: {
       description: executionTesterDescription,
-      tools: [...readOnlySubagentBashTools],
-      ...agentDefinitionSkills("tester", agentSkills),
+      ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
       prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
     },
@@ -1354,29 +1362,25 @@ export function createAutonomousAgentDefinitions(
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
     [architectKey]: {
       description: executionArchitectDescription,
-      tools: [...readOnlySubagentTools],
-      ...agentDefinitionSkills("architect", agentSkills),
+      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
     },
     [coderKey]: {
       description: executionCoderDescription,
-      tools: [...executionCoderTools],
-      ...agentDefinitionSkills("coder", agentSkills),
+      ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
     },
     [reviewerKey]: {
       description: autonomousReviewerDescription,
-      tools: [...readOnlySubagentBashTools],
-      ...agentDefinitionSkills("reviewer", agentSkills),
+      ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
     },
     [testerKey]: {
       description: executionTesterDescription,
-      tools: [...readOnlySubagentBashTools],
-      ...agentDefinitionSkills("tester", agentSkills),
+      ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
       prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
     },

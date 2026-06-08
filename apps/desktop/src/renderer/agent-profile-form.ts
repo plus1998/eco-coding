@@ -106,7 +106,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSystemPromptPreset: "custom",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
-    mainAllowedTools: "Agent, Read, Glob, Grep, WebSearch, WebFetch, AskUserQuestion",
+    mainAllowedTools: "Agent, Skill, Read, Glob, Grep, WebSearch, WebFetch, AskUserQuestion",
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",

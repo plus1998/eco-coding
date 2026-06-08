@@ -1,4 +1,12 @@
-import type { AgentDomain, AgentTemplate, ToolPolicy } from "../shared/ipc";
+import type {
+  AgentDomain,
+  AgentTemplate,
+  McpServerConfigView,
+  SkillsListResult,
+  ToolPolicy,
+} from "../shared/ipc";
+import { parseAllowedToolPatterns, sanitizeMcpServerName } from "../shared/mcp";
+import { dedupeSkillsByName, type SkillInfo } from "../shared/skills";
 
 export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
   { value: "coding", label: "Coding" },
@@ -32,6 +40,21 @@ export interface AgentTemplateFormState {
   skills: string;
   allowDelegation: boolean;
   source: EditableAgentSource;
+}
+
+export interface AgentTemplateCapabilityOption {
+  value: string;
+  label: string;
+  description?: string;
+  sourceLabel: string;
+  disabled?: boolean;
+}
+
+export interface AgentTemplateCapabilityOptions {
+  tools: AgentTemplateCapabilityOption[];
+  mcpServers: AgentTemplateCapabilityOption[];
+  mcpTools: AgentTemplateCapabilityOption[];
+  skills: AgentTemplateCapabilityOption[];
 }
 
 export type AgentTemplatePermissionTone = "allow" | "deny" | "warn" | "neutral";
@@ -172,6 +195,63 @@ export function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
+export function toggleAgentTemplateListValue(raw: string, value: string, checked: boolean): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return formatList(parseList(raw));
+  }
+  const values = parseList(raw).filter((entry) => entry !== trimmed);
+  if (checked) {
+    values.push(trimmed);
+  }
+  return formatList(uniqueValues(values));
+}
+
+export function toggleAgentTemplateToolSelection(
+  form: Pick<AgentTemplateFormState, "allowedTools" | "disallowedTools">,
+  target: "allowedTools" | "disallowedTools",
+  value: string,
+  checked: boolean,
+): Pick<AgentTemplateFormState, "allowedTools" | "disallowedTools"> {
+  const tool = value.trim();
+  if (!tool) {
+    return {
+      allowedTools: formatList(parseList(form.allowedTools)),
+      disallowedTools: formatList(parseList(form.disallowedTools)),
+    };
+  }
+  const allowed = parseList(form.allowedTools).filter((entry) => entry !== tool);
+  const disallowed = parseList(form.disallowedTools).filter((entry) => entry !== tool);
+  if (target === "allowedTools" && checked) {
+    allowed.push(tool);
+  }
+  if (target === "disallowedTools" && checked) {
+    disallowed.push(tool);
+  }
+  return {
+    allowedTools: formatList(uniqueValues(allowed)),
+    disallowedTools: formatList(uniqueValues(disallowed)),
+  };
+}
+
+export function buildAgentTemplateCapabilityOptions(input: {
+  templates: readonly AgentTemplate[];
+  form?: Pick<
+    AgentTemplateFormState,
+    "allowedTools" | "disallowedTools" | "mcpServers" | "mcpTools" | "skills"
+  >;
+  mcpServers?: readonly McpServerConfigView[];
+  skillsSnapshot?: SkillsListResult | undefined;
+}): AgentTemplateCapabilityOptions {
+  const form = input.form;
+  return {
+    tools: buildToolOptions(input.templates, form),
+    mcpServers: buildMcpServerOptions(input.mcpServers ?? [], form),
+    mcpTools: buildMcpToolOptions(input.templates, input.mcpServers ?? [], form),
+    skills: buildSkillOptions(input.skillsSnapshot, form),
+  };
+}
+
 export function buildAgentTemplatePermissionChips(
   template: Pick<AgentTemplate, "defaultTools" | "mcpServers">,
 ): AgentTemplatePermissionChip[] {
@@ -227,6 +307,251 @@ export function buildAgentTemplatePermissionChips(
     chips.push({ label: `禁用 ${formatShortList(tools.disallowed)}`, tone: "deny" });
   }
   return chips;
+}
+
+const COMMON_CLAUDE_TOOL_OPTIONS: AgentTemplateCapabilityOption[] = [
+  {
+    value: "Agent",
+    label: "Agent",
+    description: "调用 Eco 子代理。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "Task",
+    label: "Task",
+    description: "旧式子任务委派工具。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "Skill",
+    label: "Skill",
+    description: "加载已配置的 Claude Skill。",
+    sourceLabel: "Claude",
+  },
+  { value: "Read", label: "Read", description: "读取文件。", sourceLabel: "Claude" },
+  { value: "Glob", label: "Glob", description: "按模式查找文件。", sourceLabel: "Claude" },
+  { value: "Grep", label: "Grep", description: "搜索文本。", sourceLabel: "Claude" },
+  { value: "LS", label: "LS", description: "列出目录。", sourceLabel: "Claude" },
+  { value: "Bash", label: "Bash", description: "运行命令。", sourceLabel: "Claude" },
+  { value: "Write", label: "Write", description: "写入新文件。", sourceLabel: "Claude" },
+  { value: "Edit", label: "Edit", description: "编辑文件。", sourceLabel: "Claude" },
+  { value: "MultiEdit", label: "MultiEdit", description: "批量编辑文件。", sourceLabel: "Claude" },
+  {
+    value: "NotebookRead",
+    label: "NotebookRead",
+    description: "读取 notebook。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "NotebookEdit",
+    label: "NotebookEdit",
+    description: "编辑 notebook。",
+    sourceLabel: "Claude",
+  },
+  { value: "WebSearch", label: "WebSearch", description: "网页搜索。", sourceLabel: "Claude" },
+  { value: "WebFetch", label: "WebFetch", description: "抓取网页。", sourceLabel: "Claude" },
+  { value: "TodoWrite", label: "TodoWrite", description: "维护任务列表。", sourceLabel: "Claude" },
+  {
+    value: "AskUserQuestion",
+    label: "AskUserQuestion",
+    description: "请求用户选择或补充信息。",
+    sourceLabel: "Eco",
+  },
+];
+
+function buildToolOptions(
+  templates: readonly AgentTemplate[],
+  form: Pick<AgentTemplateFormState, "allowedTools" | "disallowedTools"> | undefined,
+): AgentTemplateCapabilityOption[] {
+  const common = new Map(COMMON_CLAUDE_TOOL_OPTIONS.map((option) => [option.value, option]));
+  const templateTools = new Set<string>();
+  for (const template of templates) {
+    for (const tool of [...template.defaultTools.allowed, ...template.defaultTools.disallowed]) {
+      if (tool.trim()) {
+        templateTools.add(tool.trim());
+      }
+    }
+  }
+  const currentTools = new Set([
+    ...parseList(form?.allowedTools ?? ""),
+    ...parseList(form?.disallowedTools ?? ""),
+  ]);
+  const values = uniqueValues([
+    ...COMMON_CLAUDE_TOOL_OPTIONS.map((option) => option.value),
+    ...templateTools,
+    ...currentTools,
+  ]);
+  return values.map((value) => {
+    const commonOption = common.get(value);
+    if (commonOption) {
+      return commonOption;
+    }
+    if (templateTools.has(value)) {
+      return {
+        value,
+        label: value,
+        sourceLabel: "预设",
+        description: "来自内置或现有子代理模板。",
+      };
+    }
+    return {
+      value,
+      label: value,
+      sourceLabel: "当前",
+      description: "当前配置中的自定义工具名。",
+    };
+  });
+}
+
+function buildMcpServerOptions(
+  servers: readonly McpServerConfigView[],
+  form: Pick<AgentTemplateFormState, "mcpServers"> | undefined,
+): AgentTemplateCapabilityOption[] {
+  const current = new Set(parseList(form?.mcpServers ?? ""));
+  const configuredByKey = new Map<string, McpServerConfigView>();
+  for (const server of servers) {
+    configuredByKey.set(sanitizeMcpServerName(server.name), server);
+  }
+  const enabledValues = servers
+    .filter((server) => server.enabled)
+    .map((server) => sanitizeMcpServerName(server.name));
+  const values = uniqueValues([...enabledValues, ...current]);
+  return values.map((value) => {
+    const server = configuredByKey.get(value);
+    if (server?.enabled) {
+      return {
+        value,
+        label: server.name,
+        sourceLabel: "已启用",
+        description: formatMcpServerDescription(server),
+      };
+    }
+    if (server) {
+      return {
+        value,
+        label: server.name,
+        sourceLabel: "未启用",
+        description: "当前配置中保留的 MCP 服务器，但该服务器未启用。",
+      };
+    }
+    return {
+      value,
+      label: value,
+      sourceLabel: "未配置",
+      description: "当前模板保留的 MCP 服务器名，未在全局 MCP 设置中找到。",
+    };
+  });
+}
+
+function buildMcpToolOptions(
+  templates: readonly AgentTemplate[],
+  servers: readonly McpServerConfigView[],
+  form: Pick<AgentTemplateFormState, "mcpTools"> | undefined,
+): AgentTemplateCapabilityOption[] {
+  const templateTools = new Set(
+    templates.flatMap((template) => template.defaultTools.mcp?.allowedTools ?? []).filter(Boolean),
+  );
+  const currentTools = new Set(parseList(form?.mcpTools ?? ""));
+  const configuredOptions: AgentTemplateCapabilityOption[] = servers
+    .filter((server) => server.enabled)
+    .flatMap((server) =>
+      parseAllowedToolPatterns(server.allowedTools, server.name).map((value) => ({
+        value,
+        label: value,
+        sourceLabel: server.name,
+        description: server.allowedTools.trim()
+          ? "来自该 MCP 服务器的工具 allowlist。"
+          : "该 MCP 服务器未声明具体工具，按服务器级 wildcard 授权。",
+      })),
+    );
+  const configuredByValue = new Map(configuredOptions.map((option) => [option.value, option]));
+  const values = uniqueValues([
+    ...configuredOptions.map((option) => option.value),
+    ...templateTools,
+    ...currentTools,
+  ]);
+  return values.map((value) => {
+    const configured = configuredByValue.get(value);
+    if (configured) {
+      return configured;
+    }
+    if (templateTools.has(value)) {
+      return {
+        value,
+        label: value,
+        sourceLabel: "预设",
+        description: "来自内置或现有子代理模板。",
+      };
+    }
+    return {
+      value,
+      label: value,
+      sourceLabel: "当前",
+      description: "当前模板保留的 MCP 工具模式，未在已启用 MCP 服务器 allowlist 中找到。",
+    };
+  });
+}
+
+function buildSkillOptions(
+  snapshot: SkillsListResult | undefined,
+  form: Pick<AgentTemplateFormState, "skills"> | undefined,
+): AgentTemplateCapabilityOption[] {
+  const currentSkills = new Set(parseList(form?.skills ?? ""));
+  const sdkReadySkills = dedupeSkillsByName(
+    [...(snapshot?.userSkills ?? []), ...(snapshot?.projectSkills ?? [])].filter((skill) => skill.sdkReady),
+  );
+  const agentsOnlySkills = dedupeSkillsByName(snapshot?.agentsOnlySkills ?? []);
+  const readyByName = new Map(sdkReadySkills.map((skill) => [skill.name, skill]));
+  const agentsOnlyByName = new Map(agentsOnlySkills.map((skill) => [skill.name, skill]));
+  const values = uniqueValues([
+    ...sdkReadySkills.map((skill) => skill.name),
+    ...agentsOnlySkills.map((skill) => skill.name),
+    ...currentSkills,
+  ]);
+  return values.map((value) => {
+    const ready = readyByName.get(value);
+    if (ready) {
+      return skillOption(value, ready, ready.source === "project" ? "项目" : "Claude", false);
+    }
+    const agentsOnly = agentsOnlyByName.get(value);
+    if (agentsOnly) {
+      return skillOption(
+        value,
+        agentsOnly,
+        currentSkills.has(value) ? "当前未链接" : "未链接",
+        !currentSkills.has(value),
+      );
+    }
+    return {
+      value,
+      label: value,
+      sourceLabel: "未发现",
+      description: "当前模板保留的 Skill 名称，未在已扫描的 SDK 可加载 Skills 中找到。",
+      disabled: false,
+    };
+  });
+}
+
+function skillOption(
+  value: string,
+  skill: SkillInfo,
+  sourceLabel: string,
+  disabled: boolean,
+): AgentTemplateCapabilityOption {
+  return {
+    value,
+    label: skill.name,
+    sourceLabel,
+    description: skill.description,
+    ...(disabled ? { disabled: true } : {}),
+  };
+}
+
+function formatMcpServerDescription(server: McpServerConfigView): string {
+  if (server.allowedTools.trim()) {
+    return "使用该服务器配置中声明的工具 allowlist。";
+  }
+  return "该服务器未声明具体工具，运行时只能按服务器级 wildcard 授权。";
 }
 
 function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
@@ -309,4 +634,18 @@ function slugifyTemplateId(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }

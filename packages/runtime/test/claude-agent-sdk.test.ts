@@ -362,6 +362,7 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
 test("includes network tools in default allowed tools", () => {
   const allowedTools = getDefaultAllowedTools();
   expect(allowedTools).toContain("Agent");
+  expect(allowedTools).toContain("Skill");
   expect(allowedTools).toContain("WebSearch");
   expect(allowedTools).toContain("WebFetch");
 });
@@ -395,10 +396,17 @@ test("creates native SDK subagent definitions", () => {
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     description: expect.stringContaining("focused coding"),
     skills: ["docx"],
+    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"],
     model: "qwen-coder-anthropic",
   });
-  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({ skills: ["pdf"] });
+  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
+    skills: ["pdf"],
+    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill"],
+  });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
+  expect((definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools).not.toContain(
+    "Skill",
+  );
   expect(resolveAgentSkills("tester", agentSkills)).toEqual([]);
   expect(resolveAgentSkills("researcher", { eco_researcher: ["workspace-research"] })).toEqual([
     "workspace-research",
@@ -1313,6 +1321,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     "Agent",
     "Read",
     "WebSearch",
+    "Skill",
     "mcp__sources__quote",
     "mcp__browser__*",
     "mcp__browser__open",
@@ -1322,8 +1331,8 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(Object.keys(agents)).toEqual(["eco_researcher"]);
   expect(agents.eco_researcher).toMatchObject({
     model: "research-agent-model",
-    tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*"],
-    disallowedTools: ["Bash"],
+    tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    disallowedTools: ["Bash", "Agent", "Task"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],
     skills: ["citation", "pdf", "workspace-research"],

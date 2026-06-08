@@ -132,6 +132,8 @@ export interface EcoRuntimeToolPermissionPolicy {
   agents: Record<string, EcoRuntimeToolPermissionEntry>;
 }
 
+export const SDK_SKILL_TOOL_NAME = "Skill";
+
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -182,7 +184,10 @@ export function buildToolPermissionPolicyFromProfile(
     agents[sdkKey] = resolveAgentToolPermission(agent, template);
   }
   return {
-    main: normalizeToolPermissionEntry(profile.mainAgent.tools, options.mainAllowedTools ?? []),
+    main: normalizeToolPermissionEntry(profile.mainAgent.tools, [
+      ...(options.mainAllowedTools ?? []),
+      SDK_SKILL_TOOL_NAME,
+    ]),
     agents,
   };
 }
@@ -277,7 +282,7 @@ export function resolveMainAgentAllowedTools(
     profile.preset === "coding"
       ? [...phaseAllowedTools, ...profile.mainAgent.tools.allowed]
       : profile.mainAgent.tools.allowed;
-  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, tools);
+  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, [...tools, SDK_SKILL_TOOL_NAME]);
 }
 
 export function sdkAgentKeyForProfileAgent(agentKey: string): string {
@@ -296,17 +301,19 @@ function buildSdkAgentDefinition(
   template: EcoAgentTemplateConfig,
   extraSkills: readonly string[] = [],
 ): Record<string, unknown> {
-  const toolPolicy = resolveAgentToolPolicy(agent, template);
+  const toolPolicy = applyDelegationToolPolicy(
+    resolveAgentToolPolicy(agent, template),
+    template.allowDelegation,
+  );
   const mcpServers = [
     ...new Set([...template.mcpServers, ...agent.mcpServers, ...(toolPolicy.mcp?.allowedServers ?? [])]),
   ];
-  const tools = allowedToolPatternsFromPolicy(
-    toolPolicy,
-    mcpServers.map((server) => `mcp__${server}__*`),
-  );
-  const disallowedTools =
-    agent.tools.disallowed.length > 0 ? agent.tools.disallowed : template.defaultTools.disallowed;
   const skills = [...new Set([...template.skills, ...agent.skills, ...extraSkills])];
+  const tools = allowedToolPatternsFromPolicy(toolPolicy, [
+    ...mcpServers.map((server) => `mcp__${server}__*`),
+    ...(skills.length > 0 ? [SDK_SKILL_TOOL_NAME] : []),
+  ]);
+  const disallowedTools = toolPolicy.disallowed;
   return {
     description: buildAgentDescription(agent, template),
     ...(tools.length > 0 ? { tools } : {}),
@@ -340,14 +347,14 @@ function resolveAgentToolPermission(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
 ): EcoRuntimeToolPermissionEntry {
-  const tools = resolveAgentToolPolicy(agent, template);
+  const tools = applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation);
   const mcpServers = [
     ...new Set([...template.mcpServers, ...agent.mcpServers, ...(tools.mcp?.allowedServers ?? [])]),
   ];
-  return normalizeToolPermissionEntry(
-    tools,
-    mcpServers.map((server) => `mcp__${server}__*`),
-  );
+  return normalizeToolPermissionEntry(tools, [
+    ...mcpServers.map((server) => `mcp__${server}__*`),
+    SDK_SKILL_TOOL_NAME,
+  ]);
 }
 
 function normalizeToolPermissionEntry(
@@ -382,6 +389,17 @@ function resolveAgentToolPolicy(
     : template.defaultTools;
 }
 
+function applyDelegationToolPolicy(policy: EcoToolPolicy, allowDelegation: boolean): EcoToolPolicy {
+  if (allowDelegation) {
+    return policy;
+  }
+  return {
+    ...policy,
+    allowed: policy.allowed.filter((tool) => !isDelegationToolPattern(tool)),
+    disallowed: uniqueToolPatterns([...policy.disallowed, "Agent", "Task"]),
+  };
+}
+
 function allowedToolPatternsFromPolicy(
   policy: EcoToolPolicy,
   extraAllowed: readonly string[] = [],
@@ -396,6 +414,13 @@ function allowedToolPatternsFromPolicy(
 
 function uniqueToolPatterns(patterns: readonly string[]): string[] {
   return [...new Set(patterns.map((pattern) => pattern.trim()).filter(Boolean))];
+}
+
+function isDelegationToolPattern(pattern: string): boolean {
+  const trimmed = pattern.trim();
+  return (
+    trimmed === "Agent" || trimmed === "Task" || trimmed.startsWith("Agent(") || trimmed.startsWith("Task(")
+  );
 }
 
 function buildAgentDescription(agent: EcoAgentInstanceConfig, template: EcoAgentTemplateConfig): string {

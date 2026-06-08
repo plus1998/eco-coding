@@ -1,11 +1,19 @@
 import { Copy, Download, History, Pencil, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
-import type { AgentDomain, AgentTemplate, AgentTemplateVersionView } from "../shared/ipc";
+import type {
+  AgentDomain,
+  AgentTemplate,
+  AgentTemplateVersionView,
+  McpServerConfigView,
+  SkillsListResult,
+} from "../shared/ipc";
 import {
   AGENT_DOMAIN_OPTIONS,
   AGENT_SOURCE_OPTIONS,
+  type AgentTemplateCapabilityOption,
   type AgentTemplateFormState,
   agentTemplateToForm,
+  buildAgentTemplateCapabilityOptions,
   buildAgentTemplateFromForm,
   buildAgentTemplatePermissionChips,
   createBlankAgentTemplateForm,
@@ -13,15 +21,11 @@ import {
   formatAgentDomain,
   formatAgentSource,
   parseList,
+  toggleAgentTemplateListValue,
+  toggleAgentTemplateToolSelection,
 } from "./agent-template-form";
 
 const DOMAIN_ORDER: AgentDomain[] = ["coding", "research", "writing", "product", "data", "ops", "custom"];
-
-interface SelectableOption {
-  value: string;
-  label: string;
-  hint?: string | undefined;
-}
 
 interface ToolPresetOption {
   id: string;
@@ -30,25 +34,6 @@ interface ToolPresetOption {
   allowedTools: string[];
   disallowedTools: string[];
 }
-
-const CLAUDE_TOOL_OPTIONS: SelectableOption[] = [
-  { value: "Agent", label: "Agent", hint: "继续调用子代理" },
-  { value: "Read", label: "Read", hint: "读取文件" },
-  { value: "Glob", label: "Glob", hint: "查找文件" },
-  { value: "Grep", label: "Grep", hint: "搜索文本" },
-  { value: "LS", label: "LS", hint: "列目录" },
-  { value: "Bash", label: "Bash", hint: "运行命令" },
-  { value: "BashOutput", label: "BashOutput", hint: "读取后台命令输出" },
-  { value: "KillBash", label: "KillBash", hint: "停止后台命令" },
-  { value: "Write", label: "Write", hint: "写入新文件" },
-  { value: "Edit", label: "Edit", hint: "编辑文件" },
-  { value: "MultiEdit", label: "MultiEdit", hint: "批量编辑文件" },
-  { value: "NotebookEdit", label: "NotebookEdit", hint: "编辑 notebook" },
-  { value: "TodoWrite", label: "TodoWrite", hint: "维护任务清单" },
-  { value: "WebSearch", label: "WebSearch", hint: "网页搜索" },
-  { value: "WebFetch", label: "WebFetch", hint: "读取网页" },
-  { value: "AskUserQuestion", label: "AskUserQuestion", hint: "向用户提问" },
-];
 
 const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
   {
@@ -83,6 +68,8 @@ const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
 
 interface SubagentSettingsSectionProps {
   templates: AgentTemplate[];
+  mcpServers?: McpServerConfigView[] | undefined;
+  skillsSnapshot?: SkillsListResult | undefined;
   registryDisabled?: boolean | undefined;
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
@@ -90,6 +77,8 @@ interface SubagentSettingsSectionProps {
 
 export function SubagentSettingsSection({
   templates,
+  mcpServers = [],
+  skillsSnapshot,
   registryDisabled,
   onRegistryChange,
   onSavingChange,
@@ -428,6 +417,8 @@ export function SubagentSettingsSection({
           form={editorForm}
           setForm={setEditorForm}
           templates={templates}
+          mcpServerConfigs={mcpServers}
+          skillsSnapshot={skillsSnapshot}
           error={editorError}
           busy={registryBusy}
           editing={Boolean(editingTemplateId)}
@@ -454,6 +445,8 @@ function AgentTemplateEditorModal({
   form,
   setForm,
   templates,
+  mcpServerConfigs,
+  skillsSnapshot,
   error,
   busy,
   editing,
@@ -463,6 +456,8 @@ function AgentTemplateEditorModal({
   form: AgentTemplateFormState;
   setForm: Dispatch<SetStateAction<AgentTemplateFormState | undefined>>;
   templates: AgentTemplate[];
+  mcpServerConfigs: McpServerConfigView[];
+  skillsSnapshot?: SkillsListResult | undefined;
   error?: string | undefined;
   busy?: boolean | undefined;
   editing: boolean;
@@ -472,33 +467,28 @@ function AgentTemplateEditorModal({
   const title = editing ? `编辑 ${form.name.trim() || "子代理模板"}` : "新建子代理模板";
   const allowedTools = parseList(form.allowedTools);
   const disallowedTools = parseList(form.disallowedTools);
-  const mcpServers = parseList(form.mcpServers);
+  const selectedMcpServers = parseList(form.mcpServers);
   const mcpTools = parseList(form.mcpTools);
   const skills = parseList(form.skills);
-  const toolOptions = useMemo(
-    () => mergeSelectableOptions(CLAUDE_TOOL_OPTIONS, [...allowedTools, ...disallowedTools]),
-    [allowedTools, disallowedTools],
+  const capabilityForm = useMemo(
+    () => ({
+      allowedTools: form.allowedTools,
+      disallowedTools: form.disallowedTools,
+      mcpServers: form.mcpServers,
+      mcpTools: form.mcpTools,
+      skills: form.skills,
+    }),
+    [form.allowedTools, form.disallowedTools, form.mcpServers, form.mcpTools, form.skills],
   );
-  const mcpServerOptions = useMemo(
+  const capabilityOptions = useMemo(
     () =>
-      buildValueOptions([
-        ...templates.flatMap((template) => template.mcpServers),
-        ...templates.flatMap((template) => template.defaultTools.mcp?.allowedServers ?? []),
-        ...mcpServers,
-      ]),
-    [templates, mcpServers],
-  );
-  const mcpToolOptions = useMemo(
-    () =>
-      buildValueOptions([
-        ...templates.flatMap((template) => template.defaultTools.mcp?.allowedTools ?? []),
-        ...mcpTools,
-      ]),
-    [templates, mcpTools],
-  );
-  const skillOptions = useMemo(
-    () => buildValueOptions([...templates.flatMap((template) => template.skills), ...skills]),
-    [templates, skills],
+      buildAgentTemplateCapabilityOptions({
+        templates,
+        form: capabilityForm,
+        mcpServers: mcpServerConfigs,
+        skillsSnapshot,
+      }),
+    [templates, capabilityForm, mcpServerConfigs, skillsSnapshot],
   );
   const activeToolPresetId = CLAUDE_TOOL_PRESETS.find(
     (preset) =>
@@ -517,18 +507,12 @@ function AgentTemplateEditorModal({
     });
   }
 
-  function toggleAllowedTool(tool: string) {
-    patchForm({
-      allowedTools: formatFormList(toggleListValue(allowedTools, tool)),
-      disallowedTools: formatFormList(disallowedTools.filter((value) => value !== tool)),
-    });
+  function toggleTool(target: "allowedTools" | "disallowedTools", value: string, checked: boolean) {
+    patchForm(toggleAgentTemplateToolSelection(form, target, value, checked));
   }
 
-  function toggleDisallowedTool(tool: string) {
-    patchForm({
-      disallowedTools: formatFormList(toggleListValue(disallowedTools, tool)),
-      allowedTools: formatFormList(allowedTools.filter((value) => value !== tool)),
-    });
+  function toggleList(field: "mcpServers" | "mcpTools" | "skills", value: string, checked: boolean) {
+    patchForm({ [field]: toggleAgentTemplateListValue(form[field], value, checked) });
   }
 
   return (
@@ -688,52 +672,51 @@ function AgentTemplateEditorModal({
 
               <SelectableTokenGroup
                 label="允许工具"
-                options={toolOptions}
+                options={capabilityOptions.tools}
                 selectedValues={allowedTools}
                 disabled={busy}
-                onToggle={toggleAllowedTool}
+                onToggle={(value, checked) => toggleTool("allowedTools", value, checked)}
               />
               <SelectableTokenGroup
                 label="禁用工具"
                 tone="danger"
-                options={toolOptions}
+                options={capabilityOptions.tools}
                 selectedValues={disallowedTools}
                 disabled={busy}
-                onToggle={toggleDisallowedTool}
+                onToggle={(value, checked) => toggleTool("disallowedTools", value, checked)}
               />
               <SelectableTokenGroup
                 label="MCP Servers"
-                options={mcpServerOptions}
-                selectedValues={mcpServers}
+                options={capabilityOptions.mcpServers}
+                selectedValues={selectedMcpServers}
                 disabled={busy}
                 emptyText="当前模板库没有可选 MCP Server。"
-                onToggle={(value) =>
-                  patchForm({ mcpServers: formatFormList(toggleListValue(mcpServers, value)) })
-                }
+                onToggle={(value, checked) => toggleList("mcpServers", value, checked)}
               />
               <SelectableTokenGroup
                 label="MCP Tools"
-                options={mcpToolOptions}
+                options={capabilityOptions.mcpTools}
                 selectedValues={mcpTools}
                 disabled={busy}
                 emptyText="当前模板库没有可选 MCP Tool。"
-                onToggle={(value) =>
-                  patchForm({ mcpTools: formatFormList(toggleListValue(mcpTools, value)) })
-                }
+                onToggle={(value, checked) => toggleList("mcpTools", value, checked)}
               />
               <SelectableTokenGroup
                 label="Skills"
-                options={skillOptions}
+                options={capabilityOptions.skills}
                 selectedValues={skills}
                 disabled={busy}
                 emptyText="当前模板库没有可选 Skill。"
-                onToggle={(value) => patchForm({ skills: formatFormList(toggleListValue(skills, value)) })}
+                onToggle={(value, checked) => toggleList("skills", value, checked)}
               />
 
               <div className="models-agent-template-delegation-card">
                 <span>
                   <strong>允许继续委派</strong>
-                  <small>允许该子代理继续调用 Agent 形成嵌套委派。默认关闭，避免不可控链式执行。</small>
+                  <small>
+                    开启后，这个子代理可以再次调用 Agent/Task
+                    把工作交给其他子代理；关闭可降低递归委派、成本和上下文失控风险。
+                  </small>
                 </span>
                 <label className="mcp-toggle" title={form.allowDelegation ? "已启用" : "已禁用"}>
                   <input
@@ -774,12 +757,12 @@ function SelectableTokenGroup({
   onToggle,
 }: {
   label: string;
-  options: SelectableOption[];
+  options: AgentTemplateCapabilityOption[];
   selectedValues: string[];
   disabled?: boolean | undefined;
   tone?: "danger" | undefined;
   emptyText?: string;
-  onToggle: (value: string) => void;
+  onToggle: (value: string, checked: boolean) => void;
 }) {
   const selected = new Set(selectedValues);
   return (
@@ -794,24 +777,26 @@ function SelectableTokenGroup({
         <div className="models-agent-token-options">
           {options.map((option) => {
             const active = selected.has(option.value);
+            const optionDisabled = disabled || (option.disabled && !active);
             const className = [
               "models-agent-token-option",
               active ? "active" : "",
               tone === "danger" ? "danger" : "",
+              optionDisabled ? "is-disabled" : "",
             ]
               .filter(Boolean)
               .join(" ");
             return (
-              <button
-                key={option.value}
-                type="button"
-                className={className}
-                disabled={disabled}
-                onClick={() => onToggle(option.value)}
-                title={option.hint ?? option.label}
-              >
-                {option.label}
-              </button>
+              <label key={option.value} className={className} title={option.description ?? option.label}>
+                <input
+                  type="checkbox"
+                  checked={active}
+                  disabled={optionDisabled}
+                  onChange={(event) => onToggle(option.value, event.target.checked)}
+                />
+                <span className="models-agent-token-name">{option.label}</span>
+                <span className="models-agent-token-source">{option.sourceLabel}</span>
+              </label>
             );
           })}
         </div>
@@ -912,33 +897,6 @@ function formatTools(template: AgentTemplate): string {
     return "无默认工具";
   }
   return `${count} tools`;
-}
-
-function mergeSelectableOptions(
-  baseOptions: SelectableOption[],
-  values: readonly string[],
-): SelectableOption[] {
-  const options = [...baseOptions];
-  const seen = new Set(options.map((option) => option.value));
-  for (const value of values) {
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    options.push({ value: trimmed, label: trimmed, hint: "来自已有模板配置" });
-  }
-  return options;
-}
-
-function buildValueOptions(values: readonly string[]): SelectableOption[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right))
-    .map((value) => ({ value, label: value }));
-}
-
-function toggleListValue(values: readonly string[], value: string): string[] {
-  return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value];
 }
 
 function formatFormList(values: readonly string[]): string {
