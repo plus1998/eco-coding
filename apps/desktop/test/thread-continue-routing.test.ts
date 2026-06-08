@@ -20,6 +20,8 @@ test("userRequestsPlanRevision detects replan intent", () => {
   expect(userRequestsPlanRevision("继续")).toBe(false);
   expect(userRequestsPlanRevision("请重新规划一下")).toBe(true);
   expect(userRequestsPlanRevision("改计划：加上测试")).toBe(true);
+  expect(userRequestsPlanRevision("先别做导出，改成修复登录")).toBe(true);
+  expect(userRequestsPlanRevision("换方向，先做批量导入")).toBe(true);
 });
 
 test("threadEnteredExecutionPhase uses plan_cleared and approved file signals", () => {
@@ -129,6 +131,23 @@ test("explicit replan uses sdk planning when session resumable", () => {
     activityLines: [],
   });
   expect(action).toEqual({ kind: "resume_sdk", phase: "planning" });
+});
+
+test("continue with extra tests stays on execution route", () => {
+  const action = resolveThreadContinueAction({
+    intent: "coding",
+    followUp: "继续，但加测试",
+    canResume: true,
+    usesManualOrchestration: true,
+    hasPendingPlan: false,
+    hasApprovedPlanOnDisk: true,
+    enteredExecutionPhase: true,
+    hasCoderTodos: true,
+    hasAppliedDiff: false,
+    threadStatus: "completed",
+    activityLines: [{ role: "system", message: "计划已进入执行阶段。" }],
+  });
+  expect(action).toEqual({ kind: "resume_execution" });
 });
 
 test("parseApprovedPlanDocument round-trips snapshot sections", () => {

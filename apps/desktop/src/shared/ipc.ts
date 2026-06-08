@@ -462,6 +462,10 @@ export type ThreadFollowUpDeliveryMode =
   | "interrupt_resume"
   | "streaming_push";
 
+export type ThreadFollowUpRunPhase = "planning" | "execution" | "question" | "continuation";
+
+export type ThreadFollowUpBoundary = "safe_boundary" | "forced_interrupt";
+
 export interface ThreadPendingFollowUp {
   id: string;
   threadId: string;
@@ -476,6 +480,8 @@ export interface ThreadPendingFollowUp {
   appliedAt?: string;
   sourceRunAttemptId?: string;
   targetRunAttemptId?: string;
+  queuedDuringPhase?: ThreadFollowUpRunPhase;
+  deliveryBoundary?: ThreadFollowUpBoundary;
   error?: string;
 }
 

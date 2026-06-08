@@ -36,10 +36,22 @@ test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
 
 test("buildThreadFollowUpDrainPrompt merges delivered follow-ups in order", () => {
   const prompt = buildThreadFollowUpDrainPrompt([
-    followUp("1", { prompt: "先补测试" }),
-    followUp("2", { prompt: "再更新文档", priority: "escalated" }),
+    followUp("1", {
+      prompt: "先补测试",
+      queuedDuringPhase: "execution",
+      deliveryBoundary: "safe_boundary",
+    }),
+    followUp("2", {
+      prompt: "再更新文档",
+      priority: "escalated",
+      queuedDuringPhase: "execution",
+      deliveryBoundary: "forced_interrupt",
+    }),
   ]);
 
+  expect(prompt).toContain("不要重规划");
+  expect(prompt).toContain("queuedDuringPhase=execution");
+  expect(prompt).toContain("boundary=forced_interrupt");
   expect(prompt).toContain("后续消息 1");
   expect(prompt).toContain("先补测试");
   expect(prompt).toContain("立即后续消息 2");

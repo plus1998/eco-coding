@@ -41,6 +41,8 @@ test.skipIf(!sqliteAvailable)("persists and orders queued follow-ups by priority
     threadId: "thr_followup",
     prompt: "普通后续",
     attachments: [{ mediaType: "image/png", data: "abc" }],
+    sourceRunAttemptId: "attempt_1",
+    queuedDuringPhase: "execution",
   });
   const escalated = store.enqueueThreadFollowUp({
     threadId: "thr_followup",
@@ -58,6 +60,10 @@ test.skipIf(!sqliteAvailable)("persists and orders queued follow-ups by priority
     status: "queued",
   });
   expect(listed[1]?.attachments?.[0]?.mediaType).toBe("image/png");
+  expect(listed[1]).toMatchObject({
+    sourceRunAttemptId: "attempt_1",
+    queuedDuringPhase: "execution",
+  });
 });
 
 test.skipIf(!sqliteAvailable)("loads pending follow-ups from an existing database", async () => {
@@ -123,6 +129,7 @@ test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", asy
     limit: 1,
     deliveryMode: "resume",
     targetRunAttemptId: "attempt_1",
+    deliveryBoundary: "safe_boundary",
   });
 
   expect(claimed).toHaveLength(1);
@@ -131,6 +138,7 @@ test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", asy
     status: "delivered",
     deliveryMode: "resume",
     targetRunAttemptId: "attempt_1",
+    deliveryBoundary: "safe_boundary",
   });
   expect(claimed[0]?.deliveredAt).toBeTruthy();
   expect(store.getThreadFollowUp("thr_followup", second.id)?.status).toBe("queued");

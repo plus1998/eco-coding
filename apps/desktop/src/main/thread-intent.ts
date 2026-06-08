@@ -10,6 +10,9 @@ const questionPatterns = [
   /？$/,
   /^(what|why|how|when|where|which|can you explain|explain)\b/i,
   /^(什么|为什么|为何|怎么|怎样|如何|能否解释|解释一下|说明一下|介绍一下|请问)/,
+  /^(状态|进展).*(怎么样|如何|到哪|到哪里|了吗|了么)/,
+  /^(现在|目前).*(状态|进展)/,
+  /(做完了吗|完成了吗|还在跑吗|还在执行吗)/,
 ];
 
 export function classifyThreadIntent(prompt: string): ThreadIntent {

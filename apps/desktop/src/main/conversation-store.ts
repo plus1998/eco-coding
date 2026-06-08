@@ -16,8 +16,10 @@ import type {
   ThreadActivityLine,
   ThreadApiErrorInfo,
   ThreadContextSnapshot,
+  ThreadFollowUpBoundary,
   ThreadFollowUpDeliveryMode,
   ThreadFollowUpPriority,
+  ThreadFollowUpRunPhase,
   ThreadFollowUpStatus,
   ThreadPendingFollowUp,
   ThreadPendingPlan,
@@ -223,6 +225,8 @@ interface ThreadPendingFollowUpRow {
   delivery_mode: string;
   source_run_attempt_id: string | null;
   target_run_attempt_id: string | null;
+  queued_during_phase: string | null;
+  delivery_boundary: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -310,6 +314,8 @@ export class ConversationStore {
         delivery_mode TEXT NOT NULL,
         source_run_attempt_id TEXT,
         target_run_attempt_id TEXT,
+        queued_during_phase TEXT,
+        delivery_boundary TEXT,
         error TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -717,6 +723,8 @@ export class ConversationStore {
         delivery_mode TEXT NOT NULL,
         source_run_attempt_id TEXT,
         target_run_attempt_id TEXT,
+        queued_during_phase TEXT,
+        delivery_boundary TEXT,
         error TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -728,6 +736,16 @@ export class ConversationStore {
       CREATE INDEX IF NOT EXISTS idx_thread_pending_followups_thread_status
         ON thread_pending_followups(thread_id, status, priority, created_at);
     `);
+    const followUpColumns = this.db
+      .prepare(`PRAGMA table_info(thread_pending_followups)`)
+      .all() as Array<{ name: string }>;
+    const followUpNames = new Set(followUpColumns.map((column) => column.name));
+    if (!followUpNames.has("queued_during_phase")) {
+      this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN queued_during_phase TEXT`);
+    }
+    if (!followUpNames.has("delivery_boundary")) {
+      this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN delivery_boundary TEXT`);
+    }
   }
 
   saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
@@ -953,6 +971,7 @@ export class ConversationStore {
     priority?: ThreadFollowUpPriority;
     deliveryMode?: ThreadFollowUpDeliveryMode;
     sourceRunAttemptId?: string;
+    queuedDuringPhase?: ThreadFollowUpRunPhase;
   }): ThreadPendingFollowUp {
     const now = new Date().toISOString();
     const record: ThreadPendingFollowUp = {
@@ -966,14 +985,15 @@ export class ConversationStore {
       updatedAt: now,
       ...(input.attachments && input.attachments.length > 0 ? { attachments: [...input.attachments] } : {}),
       ...(input.sourceRunAttemptId?.trim() ? { sourceRunAttemptId: input.sourceRunAttemptId.trim() } : {}),
+      ...(input.queuedDuringPhase ? { queuedDuringPhase: input.queuedDuringPhase } : {}),
     };
     this.db
       .prepare(
         `INSERT INTO thread_pending_followups (
            id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
-           source_run_attempt_id, target_run_attempt_id, error,
+           source_run_attempt_id, target_run_attempt_id, queued_during_phase, delivery_boundary, error,
            created_at, updated_at, delivered_at, applied_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, NULL, NULL)`,
       )
       .run(
         record.id,
@@ -984,6 +1004,7 @@ export class ConversationStore {
         record.status,
         record.deliveryMode,
         record.sourceRunAttemptId ?? null,
+        record.queuedDuringPhase ?? null,
         record.createdAt,
         record.updatedAt,
       );
@@ -997,7 +1018,7 @@ export class ConversationStore {
     const row = this.db
       .prepare(
         `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
-                source_run_attempt_id, target_run_attempt_id, error,
+                source_run_attempt_id, target_run_attempt_id, queued_during_phase, delivery_boundary, error,
                 created_at, updated_at, delivered_at, applied_at
          FROM thread_pending_followups
          WHERE thread_id = ? AND id = ?`,
@@ -1012,7 +1033,7 @@ export class ConversationStore {
   ): ThreadPendingFollowUp[] {
     const statuses = options?.statuses?.filter(isThreadFollowUpStatus) ?? [];
     const base = `SELECT id, thread_id, prompt, attachments_json, priority, status, delivery_mode,
-                         source_run_attempt_id, target_run_attempt_id, error,
+                         source_run_attempt_id, target_run_attempt_id, queued_during_phase, delivery_boundary, error,
                          created_at, updated_at, delivered_at, applied_at
                   FROM thread_pending_followups
                   WHERE thread_id = ?`;
@@ -1035,6 +1056,7 @@ export class ConversationStore {
       status: ThreadFollowUpStatus;
       deliveryMode?: ThreadFollowUpDeliveryMode;
       targetRunAttemptId?: string;
+      deliveryBoundary?: ThreadFollowUpBoundary;
       error?: string;
     },
   ): ThreadPendingFollowUp | undefined {
@@ -1051,6 +1073,7 @@ export class ConversationStore {
          SET status = ?,
              delivery_mode = COALESCE(?, delivery_mode),
              target_run_attempt_id = COALESCE(?, target_run_attempt_id),
+             delivery_boundary = COALESCE(?, delivery_boundary),
              error = ?,
              updated_at = ?,
              delivered_at = ?,
@@ -1061,6 +1084,7 @@ export class ConversationStore {
         input.status,
         input.deliveryMode ?? null,
         input.targetRunAttemptId ?? null,
+        input.deliveryBoundary ?? null,
         input.error ?? null,
         now,
         deliveredAt ?? null,
@@ -1121,6 +1145,7 @@ export class ConversationStore {
       deliveryMode?: ThreadFollowUpDeliveryMode;
       targetRunAttemptId?: string;
       priority?: ThreadFollowUpPriority;
+      deliveryBoundary?: ThreadFollowUpBoundary;
     },
   ): ThreadPendingFollowUp[] {
     const limit = Math.max(1, Math.min(input?.limit ?? 20, 50));
@@ -1138,15 +1163,24 @@ export class ConversationStore {
         .prepare(
           `UPDATE thread_pending_followups
            SET status = 'delivered',
-               delivery_mode = ?,
-               target_run_attempt_id = COALESCE(?, target_run_attempt_id),
-               delivered_at = ?,
-               updated_at = ?
+             delivery_mode = ?,
+             target_run_attempt_id = COALESCE(?, target_run_attempt_id),
+             delivery_boundary = COALESCE(?, delivery_boundary),
+             delivered_at = ?,
+             updated_at = ?
            WHERE thread_id = ?
              AND status = 'queued'
              AND id IN (${ids.map(() => "?").join(", ")})`,
         )
-        .run(input?.deliveryMode ?? "resume", input?.targetRunAttemptId ?? null, now, now, threadId, ...ids);
+        .run(
+          input?.deliveryMode ?? "resume",
+          input?.targetRunAttemptId ?? null,
+          input?.deliveryBoundary ?? null,
+          now,
+          now,
+          threadId,
+          ...ids,
+        );
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -2811,6 +2845,10 @@ function rowToThreadPendingFollowUp(row: ThreadPendingFollowUpRow): ThreadPendin
     ...(row.applied_at ? { appliedAt: row.applied_at } : {}),
     ...(row.source_run_attempt_id ? { sourceRunAttemptId: row.source_run_attempt_id } : {}),
     ...(row.target_run_attempt_id ? { targetRunAttemptId: row.target_run_attempt_id } : {}),
+    ...(isThreadFollowUpRunPhase(row.queued_during_phase)
+      ? { queuedDuringPhase: row.queued_during_phase }
+      : {}),
+    ...(isThreadFollowUpBoundary(row.delivery_boundary) ? { deliveryBoundary: row.delivery_boundary } : {}),
     ...(row.error ? { error: row.error } : {}),
   };
 }
@@ -2872,6 +2910,14 @@ function isThreadFollowUpDeliveryMode(value: unknown): value is ThreadFollowUpDe
     value === "interrupt_resume" ||
     value === "streaming_push"
   );
+}
+
+function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPhase {
+  return value === "planning" || value === "execution" || value === "question" || value === "continuation";
+}
+
+function isThreadFollowUpBoundary(value: unknown): value is ThreadFollowUpBoundary {
+  return value === "safe_boundary" || value === "forced_interrupt";
 }
 
 function rowToThread(row: ThreadRow): ThreadSummary {

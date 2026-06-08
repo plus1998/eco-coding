@@ -11,4 +11,6 @@ test("classifies explanatory prompts as question", () => {
   expect(classifyThreadIntent("这个项目的 runtime 是怎么工作的？")).toBe("question");
   expect(classifyThreadIntent("why does the planner ask for approval?")).toBe("question");
   expect(classifyThreadIntent("解释一下当前的 MCP 配置")).toBe("question");
+  expect(classifyThreadIntent("状态怎么样了")).toBe("question");
+  expect(classifyThreadIntent("现在进展到哪里了？")).toBe("question");
 });

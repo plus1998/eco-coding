@@ -468,7 +468,7 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 
 ## 阶段 5：Prompt 与路由质量
 
-状态：Not Started
+状态：Completed
 
 目标：让 Agent 收到 queued follow-up 后能正确选择短答、合并、重规划或停止。
 
@@ -485,6 +485,15 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - “先别做 A，改做 B”会转 planning 或 interrupt_resume。
 - “继续，但加测试”会合并到 execution。
 - “重新规划”保持现有 planning continuation 语义。
+
+完成记录：
+
+- `ThreadPendingFollowUp` 新增 `queuedDuringPhase` / `deliveryBoundary`，store schema 和迁移同步新增 `queued_during_phase` / `delivery_boundary`。
+- enqueue 会记录 `sourceRunAttemptId` 和当前 run phase；safe boundary / forced interrupt drain 会写入 delivery boundary。
+- drain prompt 新增运行中追加消息说明，要求 Agent 区分状态问询、继续补充、停止/换方向/重新规划。
+- intent classifier 新增“状态怎么样 / 进展到哪里 / 做完了吗”等状态问询模式，避免误触发 coding/replan。
+- continuation routing 新增“先别做 / 先不要 / 换方向 / 改方向 / 改成”等计划修改意图；“继续，但加测试”仍保持 execution route。
+- 本阶段不做 V2 streaming input；真实运行中注入留在 Phase 6 spike。
 
 ## 阶段 6：V2 SDK Streaming / Assistant Worker 调研与 Spike
 

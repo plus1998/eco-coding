@@ -88,6 +88,7 @@ import {
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
   type ThreadFollowUpMutationResult,
+  type ThreadFollowUpRunPhase,
   type ThreadPendingFollowUp,
   type ThreadLiveEvent,
   type ThreadModelUsageEntry,
@@ -1752,12 +1753,14 @@ function registerIpcHandlers(): void {
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
     }
+    const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
       prompt: request.prompt,
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
       ...(request.priority ? { priority: request.priority } : {}),
       deliveryMode: request.priority === "escalated" ? "interrupt_resume" : "queued",
+      ...metadata,
     });
     emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
     return buildThreadFollowUpMutationResult(followUp);
@@ -1781,6 +1784,7 @@ function registerIpcHandlers(): void {
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
             priority: "escalated",
             deliveryMode: "interrupt_resume",
+            ...resolveThreadFollowUpEnqueueMetadata(thread.id),
           });
     if (!base) {
       throw new Error("Pending follow-up was not found or cannot be escalated.");
@@ -2149,6 +2153,7 @@ async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<voi
     : undefined;
   const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
     deliveryMode: "resume",
+    deliveryBoundary: forceEscalatedDrain ? "forced_interrupt" : "safe_boundary",
     ...(claimPriority ? { priority: claimPriority } : {}),
   });
   if (claimed.length === 0) {
@@ -5290,6 +5295,32 @@ function resolveCurrentRunAttemptId(threadId: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function resolveThreadFollowUpEnqueueMetadata(threadId: string): {
+  sourceRunAttemptId?: string;
+  queuedDuringPhase?: ThreadFollowUpRunPhase;
+} {
+  const sourceRunAttemptId = resolveCurrentRunAttemptId(threadId);
+  const phase = sourceRunAttemptId ? resolveRunAttemptPhase(threadId, sourceRunAttemptId) : undefined;
+  return {
+    ...(sourceRunAttemptId ? { sourceRunAttemptId } : {}),
+    ...(phase ? { queuedDuringPhase: phase } : {}),
+  };
+}
+
+function resolveRunAttemptPhase(
+  threadId: string,
+  attemptId: string,
+): ThreadFollowUpRunPhase | undefined {
+  const phase = conversationStore
+    .listRunAttempts(threadId)
+    .find((attempt) => attempt.attemptId === attemptId)?.phase;
+  return isThreadFollowUpRunPhase(phase) ? phase : undefined;
+}
+
+function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPhase {
+  return value === "planning" || value === "execution" || value === "question" || value === "continuation";
 }
 
 function buildCurrentThreadRunProjection(threadId: string): ThreadRunProjectionSnapshot | undefined {
