@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Settings2, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronRight, Save, Settings2, SlidersHorizontal } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -46,6 +46,7 @@ interface ComposerRoutePopoverProps {
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onSelectProfile: (profileId: string) => void | Promise<void>;
+  onSaveCurrentProfile?: (() => void | Promise<void>) | undefined;
   onOpenFullSettings: () => void;
 }
 
@@ -58,6 +59,7 @@ export function ComposerRoutePopover({
   anchorRef,
   onClose,
   onSelectProfile,
+  onSaveCurrentProfile,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -139,6 +141,20 @@ export function ComposerRoutePopover({
       </ul>
       {profileSummaries.length === 0 ? (
         <p className="composer-route-popover-empty">尚未配置可运行的 Agent Profile</p>
+      ) : null}
+      {onSaveCurrentProfile ? (
+        <button
+          type="button"
+          className="composer-route-popover-settings"
+          disabled={busy}
+          onClick={() => {
+            void onSaveCurrentProfile();
+          }}
+        >
+          <Save size={14} />
+          保存当前为 Profile
+          <ChevronRight size={14} />
+        </button>
       ) : null}
       <button
         type="button"

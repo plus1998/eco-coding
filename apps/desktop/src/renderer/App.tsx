@@ -103,6 +103,7 @@ import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerS
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
 import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { buildComposerSavedProfile } from "./composer-profile-save";
 import {
   applySlashSkillSelection,
   buildSkillMap,
@@ -149,6 +150,7 @@ function findOrchestrationProfileBySelectionId(
     settings.orchestrationProfiles.find((profile) => profile.sourceRouteProfileId === selectionId)
   );
 }
+
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
@@ -1549,6 +1551,45 @@ function App() {
     setComposerRoutePopoverOpen(false);
   }
 
+  async function saveComposerSelectionAsProfile() {
+    if (!window.eco?.saveOrchestrationProfile || !window.eco?.getModelSettings) {
+      setError("Agent Profile 保存接口不可用。");
+      return;
+    }
+    if (!composerRuntimeConfig || !selectedRuntimeProfile) {
+      return;
+    }
+    const defaultName = `${selectedRuntimeProfile.name} Copy`;
+    const name = window.prompt("保存为 Agent Profile", defaultName);
+    if (!name?.trim()) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const profile = buildComposerSavedProfile({
+        profile: selectedRuntimeProfile,
+        runtimeConfig: composerRuntimeConfig,
+        name,
+        existingIds: settings.orchestrationProfiles.map((entry) => entry.id),
+      });
+      const saved = await window.eco.saveOrchestrationProfile(profile);
+      const nextSettings = await window.eco.getModelSettings();
+      setSettings(nextSettings);
+      const nextRuntimeConfig: ThreadRuntimeConfig = {
+        ...composerRuntimeConfig,
+        agentProfileId: saved.id,
+        routeProfileId: saved.id,
+      };
+      await persistComposerRuntimeConfig(nextRuntimeConfig);
+      setComposerRoutePopoverOpen(false);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   async function toggleComposerSubagent(role: SubagentRole, enabled: boolean) {
     if (!composerRuntimeConfig || role === "coder") {
       return;
@@ -2086,6 +2127,11 @@ function App() {
                   runtimeConfig={composerRuntimeConfig ?? undefined}
                   onClose={() => setComposerRoutePopoverOpen(false)}
                   onSelectProfile={selectComposerRouteProfile}
+                  onSaveCurrentProfile={
+                    selectedRuntimeProfile && composerRuntimeConfig
+                      ? saveComposerSelectionAsProfile
+                      : undefined
+                  }
                   selectedProfileId={selectedRuntimeProfileId}
                   onOpenFullSettings={() => openModelsSettings("routes")}
                 />
