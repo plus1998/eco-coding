@@ -78,8 +78,8 @@ export function createBlankAgentTemplateForm(
     prompt: "",
     whenToUse: "",
     outputContract: "",
-    allowedTools: "Read, WebSearch, WebFetch",
-    disallowedTools: "Bash, Write, Edit",
+    allowedTools: "Read, Glob, Grep, LS, NotebookRead, WebSearch, WebFetch",
+    disallowedTools: "Bash, Write, Edit, MultiEdit, NotebookEdit",
     mcpServers: "",
     mcpTools: "",
     skills: "",
@@ -323,9 +323,33 @@ const COMMON_CLAUDE_TOOL_OPTIONS: AgentTemplateCapabilityOption[] = [
     sourceLabel: "Claude",
   },
   {
+    value: "TaskList",
+    label: "TaskList",
+    description: "列出委派任务状态。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "TaskOutput",
+    label: "TaskOutput",
+    description: "读取委派任务输出。",
+    sourceLabel: "Claude",
+  },
+  {
     value: "Skill",
     label: "Skill",
     description: "加载已配置的 Claude Skill。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "TaskCreate",
+    label: "TaskCreate",
+    description: "创建用户可见的执行进度任务。",
+    sourceLabel: "Claude",
+  },
+  {
+    value: "TaskUpdate",
+    label: "TaskUpdate",
+    description: "更新用户可见的执行进度任务状态。",
     sourceLabel: "Claude",
   },
   { value: "Read", label: "Read", description: "读取文件。", sourceLabel: "Claude" },
@@ -560,10 +584,10 @@ function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
   const mcpServers = parseList(form.mcpServers);
   const mcpTools = parseList(form.mcpTools);
   const bashEnabled = allowed.includes("Bash") && !disallowed.includes("Bash");
-  const writeEnabled = ["Write", "Edit", "MultiEdit"].some(
+  const writeEnabled = ["Write", "Edit", "MultiEdit", "NotebookEdit"].some(
     (tool) => allowed.includes(tool) && !disallowed.includes(tool),
   );
-  const readEnabled = ["Read", "Glob", "Grep", "Bash"].some(
+  const readEnabled = ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"].some(
     (tool) => allowed.includes(tool) && !disallowed.includes(tool),
   );
   const webSearch = allowed.includes("WebSearch") && !disallowed.includes("WebSearch");

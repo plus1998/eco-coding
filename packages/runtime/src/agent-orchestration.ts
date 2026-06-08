@@ -133,6 +133,10 @@ export interface EcoRuntimeToolPermissionPolicy {
 }
 
 export const SDK_SKILL_TOOL_NAME = "Skill";
+export const SDK_FILESYSTEM_READ_TOOL_NAMES = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
+export const SDK_FILESYSTEM_WRITE_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
+export const SDK_DELEGATION_SUPPORT_TOOL_NAMES = ["TaskList", "TaskOutput"] as const;
+export const SDK_TASK_PROGRESS_TOOL_NAMES = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
 
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
@@ -187,6 +191,7 @@ export function buildToolPermissionPolicyFromProfile(
     main: normalizeToolPermissionEntry(profile.mainAgent.tools, [
       ...(options.mainAllowedTools ?? []),
       SDK_SKILL_TOOL_NAME,
+      ...SDK_TASK_PROGRESS_TOOL_NAMES,
     ]),
     agents,
   };
@@ -282,7 +287,11 @@ export function resolveMainAgentAllowedTools(
     profile.preset === "coding"
       ? [...phaseAllowedTools, ...profile.mainAgent.tools.allowed]
       : profile.mainAgent.tools.allowed;
-  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, [...tools, SDK_SKILL_TOOL_NAME]);
+  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, [
+    ...tools,
+    SDK_SKILL_TOOL_NAME,
+    ...SDK_TASK_PROGRESS_TOOL_NAMES,
+  ]);
 }
 
 export function sdkAgentKeyForProfileAgent(agentKey: string): string {
@@ -396,7 +405,12 @@ function applyDelegationToolPolicy(policy: EcoToolPolicy, allowDelegation: boole
   return {
     ...policy,
     allowed: policy.allowed.filter((tool) => !isDelegationToolPattern(tool)),
-    disallowed: uniqueToolPatterns([...policy.disallowed, "Agent", "Task"]),
+    disallowed: uniqueToolPatterns([
+      ...policy.disallowed,
+      "Agent",
+      "Task",
+      ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+    ]),
   };
 }
 
@@ -404,22 +418,47 @@ function allowedToolPatternsFromPolicy(
   policy: EcoToolPolicy,
   extraAllowed: readonly string[] = [],
 ): string[] {
-  return uniqueToolPatterns([
+  const base = uniqueToolPatterns([
     ...policy.allowed,
     ...extraAllowed,
     ...(policy.mcp?.allowedTools ?? []),
     ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
   ]);
+  return uniqueToolPatterns([...base, ...relatedClaudeToolPatterns(base)]);
 }
 
 function uniqueToolPatterns(patterns: readonly string[]): string[] {
   return [...new Set(patterns.map((pattern) => pattern.trim()).filter(Boolean))];
 }
 
+function relatedClaudeToolPatterns(patterns: readonly string[]): string[] {
+  const allowed = new Set(patterns);
+  const related: string[] = [];
+  if (hasAnyToolPattern(allowed, SDK_FILESYSTEM_READ_TOOL_NAMES)) {
+    related.push("LS", "NotebookRead");
+  }
+  if (hasAnyToolPattern(allowed, SDK_FILESYSTEM_WRITE_TOOL_NAMES)) {
+    related.push("MultiEdit", "NotebookEdit");
+  }
+  if (allowed.has("Agent") || allowed.has("Task")) {
+    related.push(...SDK_DELEGATION_SUPPORT_TOOL_NAMES);
+  }
+  return related;
+}
+
+function hasAnyToolPattern(allowed: ReadonlySet<string>, tools: readonly string[]): boolean {
+  return tools.some((tool) => allowed.has(tool));
+}
+
 function isDelegationToolPattern(pattern: string): boolean {
   const trimmed = pattern.trim();
   return (
-    trimmed === "Agent" || trimmed === "Task" || trimmed.startsWith("Agent(") || trimmed.startsWith("Task(")
+    trimmed === "Agent" ||
+    trimmed === "Task" ||
+    trimmed === "TaskList" ||
+    trimmed === "TaskOutput" ||
+    trimmed.startsWith("Agent(") ||
+    trimmed.startsWith("Task(")
   );
 }
 

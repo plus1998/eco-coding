@@ -15,7 +15,11 @@ import {
   createAgentDefinitionsFromProfile,
   type EcoWorkflowStep,
   resolveMainAgentAllowedTools,
+  SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  SDK_FILESYSTEM_READ_TOOL_NAMES,
+  SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
+  SDK_TASK_PROGRESS_TOOL_NAMES,
   sdkAgentKeyForProfileAgent,
 } from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
@@ -124,36 +128,41 @@ export interface ClaudeAgentSdkModule {
 const networkAllowedTools = ["WebSearch", "WebFetch"] as const;
 const defaultAllowedTools = [
   "Agent",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
-  "Read",
-  "Glob",
-  "Grep",
-  "Write",
-  "Edit",
+  ...SDK_TASK_PROGRESS_TOOL_NAMES,
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   "Bash",
   ...networkAllowedTools,
 ] as const;
 const planningAllowedTools = [
   "Agent",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
-  "Read",
-  "Glob",
-  "Grep",
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
   "AskUserQuestion",
   FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;
 const questionAllowedTools = [
   "Agent",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
-  "Read",
-  "Glob",
-  "Grep",
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
 ] as const;
-const readOnlySubagentTools = ["Read", "Glob", "Grep", ...networkAllowedTools] as const;
-const readOnlySubagentBashTools = ["Read", "Glob", "Grep", "Bash", ...networkAllowedTools] as const;
-const executionCoderTools = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"] as const;
+const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
+const readOnlySubagentBashTools = [
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
+  "Bash",
+  ...networkAllowedTools,
+] as const;
+const executionCoderTools = [
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "Bash",
+] as const;
 const autonomousAllowedTools = [
   ...defaultAllowedTools,
   "AskUserQuestion",

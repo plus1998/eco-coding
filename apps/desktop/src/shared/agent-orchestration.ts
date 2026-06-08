@@ -168,61 +168,73 @@ export const CODING_AGENT_KEYS = {
 
 const BUILT_IN_TEMPLATE_UPDATED_AT = "2026-06-07T00:00:00.000Z";
 
+const CLAUDE_READ_TOOLS = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
+const CLAUDE_WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
+const CLAUDE_DELEGATION_SUPPORT_TOOLS = ["TaskList", "TaskOutput"] as const;
+const CLAUDE_TASK_PROGRESS_TOOLS = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
+const MAIN_ORCHESTRATION_TOOLS = [
+  "Agent",
+  ...CLAUDE_DELEGATION_SUPPORT_TOOLS,
+  "Skill",
+  ...CLAUDE_TASK_PROGRESS_TOOLS,
+] as const;
+const NETWORK_TOOLS = ["WebSearch", "WebFetch"] as const;
+
 const READ_ONLY_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...CLAUDE_READ_TOOLS, ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const READ_ONLY_BASH_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const RESEARCH_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit", "Bash"],
+  allowed: [...CLAUDE_READ_TOOLS, ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash"],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const WRITING_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: ["Read", "LS", "NotebookRead", ...CLAUDE_WRITE_TOOLS, ...NETWORK_TOOLS],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const PRODUCT_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, ...NETWORK_TOOLS],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const DATA_ANALYSIS_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "Bash"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...CLAUDE_READ_TOOLS, "Bash"],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
 
 const INCIDENT_TRIAGE_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const OPS_RUNBOOK_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: {
     enabled: true,
     approval: "risky",
@@ -233,7 +245,7 @@ const OPS_RUNBOOK_TOOLS: ToolPolicy = {
 };
 
 const CODER_TOOLS: ToolPolicy = {
-  allowed: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+  allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, "Bash"],
   disallowed: [],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "workspace" },
@@ -241,7 +253,13 @@ const CODER_TOOLS: ToolPolicy = {
 };
 
 const MAIN_CODING_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+  allowed: [
+    ...MAIN_ORCHESTRATION_TOOLS,
+    ...CLAUDE_READ_TOOLS,
+    ...CLAUDE_WRITE_TOOLS,
+    "Bash",
+    ...NETWORK_TOOLS,
+  ],
   disallowed: [],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "workspace" },
@@ -249,37 +267,44 @@ const MAIN_CODING_TOOLS: ToolPolicy = {
 };
 
 const MAIN_RESEARCH_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit", "Bash"],
+  allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash"],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_WRITING_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: [
+    ...MAIN_ORCHESTRATION_TOOLS,
+    "Read",
+    "LS",
+    "NotebookRead",
+    ...CLAUDE_WRITE_TOOLS,
+    ...NETWORK_TOOLS,
+  ],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_PRODUCT_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Write", "Edit", "WebSearch", "WebFetch"],
+  allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, ...NETWORK_TOOLS],
   disallowed: ["Bash"],
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
 
 const MAIN_DATA_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Bash"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, "Bash"],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
 
 const MAIN_OPS_TOOLS: ToolPolicy = {
-  allowed: ["Agent", "Skill", "Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit"],
+  allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: { enabled: true, approval: "risky" },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },

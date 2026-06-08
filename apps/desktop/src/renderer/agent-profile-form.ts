@@ -106,7 +106,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSystemPromptPreset: "custom",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
-    mainAllowedTools: "Agent, Skill, Read, Glob, Grep, WebSearch, WebFetch, AskUserQuestion",
+    mainAllowedTools:
+      "Agent, TaskList, TaskOutput, Skill, TaskCreate, TaskUpdate, TodoWrite, Read, Glob, Grep, LS, NotebookRead, WebSearch, WebFetch, AskUserQuestion",
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",
@@ -511,7 +512,9 @@ function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] 
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead:
       policy.filesystem?.read ??
-      (hasAllowedTool(allowed, disallowed, ["Read", "Glob", "Grep", "Bash"]) ? "workspace" : "none"),
+      (hasAllowedTool(allowed, disallowed, ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"])
+        ? "workspace"
+        : "none"),
     filesystemWrite:
       policy.filesystem?.write ??
       (hasAllowedTool(allowed, disallowed, ["Write", "Edit", "MultiEdit", "NotebookEdit"])

@@ -362,7 +362,16 @@ test("maps Claude family model ids to SDK subagent aliases", () => {
 test("includes network tools in default allowed tools", () => {
   const allowedTools = getDefaultAllowedTools();
   expect(allowedTools).toContain("Agent");
+  expect(allowedTools).toContain("TaskList");
+  expect(allowedTools).toContain("TaskOutput");
   expect(allowedTools).toContain("Skill");
+  expect(allowedTools).toContain("TaskCreate");
+  expect(allowedTools).toContain("TaskUpdate");
+  expect(allowedTools).toContain("TodoWrite");
+  expect(allowedTools).toContain("LS");
+  expect(allowedTools).toContain("NotebookRead");
+  expect(allowedTools).toContain("MultiEdit");
+  expect(allowedTools).toContain("NotebookEdit");
   expect(allowedTools).toContain("WebSearch");
   expect(allowedTools).toContain("WebFetch");
 });
@@ -396,12 +405,24 @@ test("creates native SDK subagent definitions", () => {
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     description: expect.stringContaining("focused coding"),
     skills: ["docx"],
-    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill"],
+    tools: [
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "NotebookRead",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash",
+      "Skill",
+    ],
     model: "qwen-coder-anthropic",
   });
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     skills: ["pdf"],
-    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch", "Skill"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).not.toHaveProperty("skills");
   expect((definitions[ecoSubagentKeyForRole("reviewer")] as { tools: string[] }).tools).not.toContain(
@@ -469,13 +490,13 @@ test("planning agents include network tools on read-only subagents", () => {
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     description: expect.stringContaining("Read-only"),
     prompt: expect.stringContaining("read-only"),
-    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
     model: "claude-haiku-explore",
   });
   expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
   });
 });
 
@@ -483,7 +504,7 @@ test("question explore subagent includes network tools", () => {
   const definitions = createQuestionAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     model: "claude-haiku-explore",
-    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
   });
   expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");
@@ -492,16 +513,27 @@ test("question explore subagent includes network tools", () => {
 test("execution subagents include network tools except coder", () => {
   const definitions = createExecutionAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("reviewer")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("tester")]).toMatchObject({
-    tools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash", "WebSearch", "WebFetch"],
   });
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
-    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+    tools: [
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "NotebookRead",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash",
+    ],
   });
   const coderTools = (definitions[ecoSubagentKeyForRole("coder")] as { tools: string[] }).tools;
   expect(coderTools).not.toContain("WebSearch");
@@ -1322,8 +1354,15 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     "Read",
     "WebSearch",
     "Skill",
+    "TaskCreate",
+    "TaskUpdate",
+    "TodoWrite",
     "mcp__sources__quote",
     "mcp__browser__*",
+    "LS",
+    "NotebookRead",
+    "TaskList",
+    "TaskOutput",
     "mcp__browser__open",
   ]);
 
@@ -1332,7 +1371,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(agents.eco_researcher).toMatchObject({
     model: "research-agent-model",
     tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*", "Skill"],
-    disallowedTools: ["Bash", "Agent", "Task"],
+    disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],
     skills: ["citation", "pdf", "workspace-research"],

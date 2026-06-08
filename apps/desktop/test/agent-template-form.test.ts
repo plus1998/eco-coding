@@ -155,6 +155,18 @@ test("buildAgentTemplateCapabilityOptions merges presets, current values, MCP co
   expect(options.tools.find((option) => option.value === "Skill")).toMatchObject({
     sourceLabel: "Claude",
   });
+  expect(options.tools.find((option) => option.value === "TaskList")).toMatchObject({
+    sourceLabel: "Claude",
+  });
+  expect(options.tools.find((option) => option.value === "TaskOutput")).toMatchObject({
+    sourceLabel: "Claude",
+  });
+  expect(options.tools.find((option) => option.value === "TaskCreate")).toMatchObject({
+    sourceLabel: "Claude",
+  });
+  expect(options.tools.find((option) => option.value === "TaskUpdate")).toMatchObject({
+    sourceLabel: "Claude",
+  });
   expect(options.tools.find((option) => option.value === "UnknownTool")).toMatchObject({
     sourceLabel: "当前",
   });

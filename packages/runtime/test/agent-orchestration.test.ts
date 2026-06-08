@@ -103,8 +103,8 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
   expect(definition).toMatchObject({
     model: "research-model",
-    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill"],
-    disallowedTools: ["Bash", "Agent", "Task"],
+    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
+    disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     prompt: researchTemplate.prompt,
     mcpServers: ["sources", "browser"],
     skills: ["citation", "pdf"],
@@ -164,8 +164,15 @@ test("resolveMainAgentAllowedTools uses profile tools for universal profiles and
     "Read",
     "WebSearch",
     "Skill",
+    "TaskCreate",
+    "TaskUpdate",
+    "TodoWrite",
     "mcp__sources__quote",
     "mcp__browser__*",
+    "LS",
+    "NotebookRead",
+    "TaskList",
+    "TaskOutput",
   ]);
 
   const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
@@ -176,8 +183,17 @@ test("resolveMainAgentAllowedTools uses profile tools for universal profiles and
     "Bash",
     "Write",
     "Skill",
+    "TaskCreate",
+    "TaskUpdate",
+    "TodoWrite",
     "mcp__sources__quote",
     "mcp__browser__*",
+    "LS",
+    "NotebookRead",
+    "MultiEdit",
+    "NotebookEdit",
+    "TaskList",
+    "TaskOutput",
   ]);
 });
 
@@ -194,15 +210,22 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
       "WebSearch",
       "AskUserQuestion",
       "Skill",
+      "TaskCreate",
+      "TaskUpdate",
+      "TodoWrite",
       "mcp__sources__quote",
       "mcp__browser__*",
+      "LS",
+      "NotebookRead",
+      "TaskList",
+      "TaskOutput",
     ],
     disallowed: ["Write"],
   });
   expect(policy.agents).toEqual({
     eco_researcher: {
-      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill"],
-      disallowed: ["Bash", "Agent", "Task"],
+      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
+      disallowed: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     },
   });
 });
@@ -266,13 +289,20 @@ test("subagent delegation tools require allowDelegation", () => {
 
   const blockedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [blockedTemplate]);
   const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
-  expect(blockedDefinition.tools).toEqual(["Read", "mcp__sources__*", "mcp__browser__*", "Skill"]);
-  expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task"]);
+  expect(blockedDefinition.tools).toEqual([
+    "Read",
+    "mcp__sources__*",
+    "mcp__browser__*",
+    "Skill",
+    "LS",
+    "NotebookRead",
+  ]);
+  expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
 
   const blockedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [blockedTemplate]);
   expect(blockedPolicy.agents.eco_researcher).toEqual({
-    allowed: ["Read", "mcp__sources__*", "mcp__browser__*", "Skill"],
-    disallowed: ["Agent", "Task"],
+    allowed: ["Read", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
+    disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
   });
 
   const allowedTemplate: EcoAgentTemplateConfig = { ...blockedTemplate, allowDelegation: true };
@@ -285,12 +315,27 @@ test("subagent delegation tools require allowDelegation", () => {
     "mcp__sources__*",
     "mcp__browser__*",
     "Skill",
+    "LS",
+    "NotebookRead",
+    "TaskList",
+    "TaskOutput",
   ]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
   const allowedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [allowedTemplate]);
   expect(allowedPolicy.agents.eco_researcher).toEqual({
-    allowed: ["Read", "Agent", "Task", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    allowed: [
+      "Read",
+      "Agent",
+      "Task",
+      "mcp__sources__*",
+      "mcp__browser__*",
+      "Skill",
+      "LS",
+      "NotebookRead",
+      "TaskList",
+      "TaskOutput",
+    ],
     disallowed: [],
   });
 });
