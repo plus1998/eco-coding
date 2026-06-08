@@ -800,6 +800,9 @@ type WorkflowStep = {
 - Phase 9.2 验证：`bun run test:agent-presets`。
 - Phase 9.3 已完成：新增 Agent 工具权限红队 eval suite，并提供 `bun run test:agent-security`；测试从真实 profile/template 生成 runtime permission policy，覆盖 main agent、动态子 agent、未加 `eco_` 前缀子 agent、固定 workflow step、Bash allow/deny/ask、文件范围、网络开关和 MCP server/tool 越权。
 - Phase 9.3 验证：`bun run test:agent-security`。
+- Phase 9.4 已完成：新增 Agent 商业质量闸门，内置 preset eval 会进一步验证 runtime AgentDefinition 生成、主 agent roster 注入、子代理完整 prompt 不泄露、工具权限 policy 可生成、fixed/hybrid workflow 可解析，并用真实 billing projector 做 workflow step 成本归因回归；根目录新增 `bun run test:agent-commercial` 覆盖 preset、权限、workflow、计费、运行投影、profile readiness、导入导出和历史表现关键链路。
+- Phase 9.4 行为边界：该闸门是本地确定性发布前检查，不直接调用真实模型；端到端模型质量仍需要后续接入在线 eval runner 和人工验收任务。
+- Phase 9.4 验证：`bun run test:agent-commercial`。
 
 发布前测试要求：
 

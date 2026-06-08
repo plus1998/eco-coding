@@ -1,4 +1,17 @@
-import type { ModelRef, OrchestrationProfile, OrchestrationStrategy } from "./agent-orchestration";
+import {
+  buildMainAgentSystemPrompt,
+  buildToolPermissionPolicyFromProfile,
+  createAgentDefinitionsFromProfile,
+  resolveFixedWorkflowBatches,
+  sdkAgentKeyForProfileAgent,
+} from "@eco/runtime";
+import type {
+  AgentTemplate,
+  ModelRef,
+  OrchestrationProfile,
+  OrchestrationStrategy,
+  WorkflowStep,
+} from "./agent-orchestration";
 import {
   buildOrchestrationProfileFromPreset,
   createBuiltInAgentTemplates,
@@ -20,6 +33,24 @@ export interface PresetEvalValidationResult {
   scenarioId: string;
   ok: boolean;
   errors: string[];
+}
+
+export interface PresetCommercialQualityGateResult {
+  scenarioId: string;
+  presetId: OrchestrationProfile["preset"];
+  ok: boolean;
+  errors: string[];
+  runtimeAgentKeys: string[];
+  workflowStepCount: number;
+}
+
+export interface PresetCommercialQualityGateReport {
+  ok: boolean;
+  scenarioCount: number;
+  presetIds: OrchestrationProfile["preset"][];
+  runtimeAgentCount: number;
+  workflowScenarioCount: number;
+  results: PresetCommercialQualityGateResult[];
 }
 
 const PRESET_EVAL_MODEL_REF: ModelRef = {
@@ -113,6 +144,131 @@ export function validateBuiltInPresetEvalSuite(
   return scenarios.map((scenario) => validateBuiltInPresetEvalScenario(scenario));
 }
 
+export function validateBuiltInPresetCommercialQualityGateScenario(
+  scenario: BuiltInPresetEvalScenario,
+  templates: readonly AgentTemplate[] = createBuiltInAgentTemplates(),
+): PresetCommercialQualityGateResult {
+  const errors = [...validateBuiltInPresetEvalScenario(scenario).errors];
+  const enabledAgents = scenario.profile.agents.filter((agent) => agent.enabled);
+  const enabledAgentKeys = new Set(enabledAgents.map((agent) => agent.agentKey));
+  const runtimeAgentKeys: string[] = [];
+  let workflowStepCount = 0;
+
+  let promptText = "";
+  try {
+    const systemPrompt = buildMainAgentSystemPrompt(scenario.profile, templates, "QUALITY_GATE_PHASE", {
+      excludeDynamicSections: scenario.profile.preset === "coding",
+    });
+    promptText = stringifySystemPrompt(systemPrompt);
+  } catch (caught) {
+    errors.push(`Main agent prompt cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+  }
+
+  try {
+    const resolved = createAgentDefinitionsFromProfile(scenario.profile, templates);
+    runtimeAgentKeys.push(...resolved.agentKeys);
+    const expectedAgentKeys = enabledAgents.map((agent) => sdkAgentKeyForProfileAgent(agent.agentKey));
+    for (const sdkKey of expectedAgentKeys) {
+      if (!resolved.agentKeys.includes(sdkKey)) {
+        errors.push(`Enabled agent is missing from runtime definitions: ${sdkKey}`);
+      }
+      if (!promptText.includes(`Agent(${sdkKey})`)) {
+        errors.push(`Main agent roster is missing runtime agent: ${sdkKey}`);
+      }
+      const definition = resolved.definitions[sdkKey] as Record<string, unknown> | undefined;
+      if (!definition) {
+        continue;
+      }
+      if (typeof definition.model !== "string" || !definition.model.trim()) {
+        errors.push(`Runtime agent has no model: ${sdkKey}`);
+      }
+      if (typeof definition.prompt !== "string" || !definition.prompt.trim()) {
+        errors.push(`Runtime agent has no child prompt: ${sdkKey}`);
+      }
+    }
+    if (resolved.agentKeys.length !== expectedAgentKeys.length) {
+      errors.push(
+        `Runtime definition count mismatch: expected ${expectedAgentKeys.length}, got ${resolved.agentKeys.length}`,
+      );
+    }
+  } catch (caught) {
+    errors.push(`Runtime agent definitions cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+  }
+
+  try {
+    const policy = buildToolPermissionPolicyFromProfile(scenario.profile, templates, {
+      agentKeys: runtimeAgentKeys,
+    });
+    if (enabledAgents.length > 0 && !policy.main.allowed.includes("Agent")) {
+      errors.push("Main agent must allow Agent tool when subagents are enabled.");
+    }
+    for (const sdkKey of runtimeAgentKeys) {
+      if (!policy.agents[sdkKey]) {
+        errors.push(`Runtime tool policy is missing agent: ${sdkKey}`);
+      }
+    }
+  } catch (caught) {
+    errors.push(`Runtime tool policy cannot be built: ${caught instanceof Error ? caught.message : String(caught)}`);
+  }
+
+  for (const template of templates) {
+    if (!enabledAgentKeys.has(templateIdToAgentKey(scenario.profile, template.id))) {
+      continue;
+    }
+    const childPrompt = template.prompt.trim();
+    if (childPrompt.length > 20 && promptText.includes(childPrompt)) {
+      errors.push(`Main agent prompt leaks child prompt: ${template.id}`);
+    }
+  }
+
+  const workflowSteps = collectStrategySteps(scenario.profile.strategy);
+  workflowStepCount = workflowSteps.length;
+  for (const step of workflowSteps) {
+    if (!enabledAgentKeys.has(step.agentKey)) {
+      errors.push(`Workflow step references disabled or missing agent: ${step.id} -> ${step.agentKey}`);
+    }
+  }
+  if (scenario.profile.strategy.kind === "fixed") {
+    try {
+      const batches = resolveFixedWorkflowBatches(scenario.profile.strategy);
+      if (workflowSteps.length > 0 && batches.length === 0) {
+        errors.push("Fixed workflow did not produce executable batches.");
+      }
+    } catch (caught) {
+      errors.push(`Fixed workflow cannot be resolved: ${caught instanceof Error ? caught.message : String(caught)}`);
+    }
+  }
+  if (scenario.profile.strategy.kind === "hybrid" && scenario.profile.strategy.recommendedSteps.length === 0) {
+    errors.push("Hybrid workflow must define recommended steps.");
+  }
+
+  return {
+    scenarioId: scenario.id,
+    presetId: scenario.presetId,
+    ok: errors.length === 0,
+    errors,
+    runtimeAgentKeys,
+    workflowStepCount,
+  };
+}
+
+export function createBuiltInPresetCommercialQualityGateReport(
+  scenarios: readonly BuiltInPresetEvalScenario[] = createBuiltInPresetEvalScenarios(),
+  templates: readonly AgentTemplate[] = createBuiltInAgentTemplates(),
+): PresetCommercialQualityGateReport {
+  const results = scenarios.map((scenario) =>
+    validateBuiltInPresetCommercialQualityGateScenario(scenario, templates),
+  );
+  return {
+    ok: results.every((result) => result.ok),
+    scenarioCount: scenarios.length,
+    presetIds: [...new Set(scenarios.map((scenario) => scenario.presetId))],
+    runtimeAgentCount: results.reduce((total, result) => total + result.runtimeAgentKeys.length, 0),
+    workflowScenarioCount: results.filter((result) => result.workflowStepCount > 0).length,
+    results,
+  };
+}
+
 function collectStrategyAgentKeys(strategy: OrchestrationStrategy): Set<string> {
   const keys = new Set<string>();
   if (strategy.kind === "autonomous") {
@@ -126,4 +282,22 @@ function collectStrategyAgentKeys(strategy: OrchestrationStrategy): Set<string> 
     keys.add(strategy.finalAggregator.agentKey);
   }
   return keys;
+}
+
+function collectStrategySteps(strategy: OrchestrationStrategy): WorkflowStep[] {
+  if (strategy.kind === "autonomous") {
+    return [];
+  }
+  if (strategy.kind === "fixed") {
+    return [...strategy.steps, ...(strategy.finalAggregator ? [strategy.finalAggregator] : [])];
+  }
+  return [...strategy.recommendedSteps];
+}
+
+function stringifySystemPrompt(systemPrompt: string | Record<string, unknown>): string {
+  return typeof systemPrompt === "string" ? systemPrompt : JSON.stringify(systemPrompt);
+}
+
+function templateIdToAgentKey(profile: OrchestrationProfile, templateId: string): string {
+  return profile.agents.find((agent) => agent.templateId === templateId && agent.enabled)?.agentKey ?? "";
 }
