@@ -796,6 +796,8 @@ type WorkflowStep = {
 - Phase 9.1 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts`、`bun run typecheck`、`bun run --cwd apps/desktop build`。
 - Phase 9.2 已完成：根目录新增 `bun run test:agent-presets`，一条命令覆盖 preset catalog、本地 eval suite、runtime dynamic agent definition、workflow orchestration 和工具权限 hook。
 - Phase 9.2 验证：`bun run test:agent-presets`。
+- Phase 9.3 已完成：新增 Agent 工具权限红队 eval suite，并提供 `bun run test:agent-security`；测试从真实 profile/template 生成 runtime permission policy，覆盖 main agent、动态子 agent、未加 `eco_` 前缀子 agent、固定 workflow step、Bash allow/deny/ask、文件范围、网络开关和 MCP server/tool 越权。
+- Phase 9.3 验证：`bun run test:agent-security`。
 
 发布前测试要求：
 
