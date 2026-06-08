@@ -229,33 +229,35 @@ export function SubagentSettingsSection({
       <section className="models-agent-library">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">模板</span>
-          <button
-            type="button"
-            className="mcp-add-button"
-            disabled={registryBusy}
-            onClick={openCreateTemplate}
-          >
-            <Plus size={16} />
-            新建模板
-          </button>
-          <button
-            type="button"
-            className="models-section-button"
-            disabled={registryBusy}
-            onClick={() => void importTemplates()}
-          >
-            <Upload size={14} />
-            导入 JSON
-          </button>
-          <button
-            type="button"
-            className="models-section-button"
-            disabled={registryBusy}
-            onClick={() => void exportTemplates()}
-          >
-            <Download size={14} />
-            导出 JSON
-          </button>
+          <div className="models-section-actions">
+            <button
+              type="button"
+              className="mcp-add-button"
+              disabled={registryBusy}
+              onClick={openCreateTemplate}
+            >
+              <Plus size={16} />
+              新建模板
+            </button>
+            <button
+              type="button"
+              className="models-section-button"
+              disabled={registryBusy}
+              onClick={() => void importTemplates()}
+            >
+              <Upload size={14} />
+              导入 JSON
+            </button>
+            <button
+              type="button"
+              className="models-section-button"
+              disabled={registryBusy}
+              onClick={() => void exportTemplates()}
+            >
+              <Download size={14} />
+              导出 JSON
+            </button>
+          </div>
         </div>
 
         {registryMessage ? <p className="models-agent-registry-message">{registryMessage}</p> : null}

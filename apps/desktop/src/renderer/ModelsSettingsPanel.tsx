@@ -883,8 +883,7 @@ export function ModelsSettingsPanel({
               <div className="models-section-intro">
                 <h2 className="models-section-title">子代理库</h2>
                 <p className="models-section-desc">
-                  只维护子代理模板本身：提示词、默认工具、MCP、skills
-                  和默认使用边界。新对话默认自主编排，当前对话的固定/自主切换在 Composer 内完成。
+                  维护模板本身：提示词、默认工具、MCP、skills 和默认使用边界。
                 </p>
               </div>
             </header>

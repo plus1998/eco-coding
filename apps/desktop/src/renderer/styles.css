@@ -7292,6 +7292,17 @@ button:not(:disabled) {
   gap: 12px;
 }
 
+.models-agent-library .mcp-list-toolbar {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.models-agent-library .models-section-actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .models-agent-template-list {
   list-style: none;
   margin: 0;
