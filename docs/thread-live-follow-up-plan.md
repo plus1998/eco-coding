@@ -380,7 +380,7 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 
 ## 阶段 2：Renderer 运行中发送 UX
 
-状态：Not Started
+状态：Completed
 
 目标：开放运行中留言入口，并诚实展示“排队”状态。
 
@@ -397,6 +397,15 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - UI 不显示“正在处理该消息”，只显示 queued。
 - pending clarification 不会被普通 follow-up 意外提交为答案。
 - pending Bash approval 不会因 follow-up 启动并发 continuation。
+
+完成记录：
+
+- Renderer 新增 thread-scoped pending follow-up state，selected thread/refresh/live event 都会同步队列。
+- Composer 在 `running / queued` 时保持可输入，发送调用 `enqueueThreadFollowUp`，不触发 `continueThread/startThread`。
+- clarification / bash approval 等待态下 composer 文案明确为“排队后续消息”，回答问题和命令审批仍由上方专用 panel 处理。
+- Activity feed 新增 queued follow-up 状态卡片，展示排队数量、消息预览、图片数量和取消入口。
+- route/profile/subagent controls 继续复用 `canEditComposerConfig`，运行中保持禁用。
+- 本阶段仍不处理 `awaiting_plan` 的计划修改 drain，也不实现强制提升；这些保持在 Phase 3/4。
 
 ## 阶段 3：Safe Boundary Drain
 

@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowUp,
   ChevronLeft,
+  Clock3,
   Database,
   FolderOpen,
   GitBranch,
@@ -55,6 +56,7 @@ import {
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
   type ThreadLiveEvent,
+  type ThreadPendingFollowUp,
   type ThreadPendingPlan,
   type ThreadRunProjectionSnapshot,
   type ThreadRuntimeConfig,
@@ -129,6 +131,13 @@ import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { ThreadInfoPanel } from "./ThreadInfoPanel";
+import {
+  formatThreadFollowUpPreview,
+  isLiveFollowUpThreadStatus,
+  mergeThreadFollowUp,
+  queuedThreadFollowUps,
+  sortThreadFollowUps,
+} from "./thread-follow-up-ui";
 import "./styles.css";
 
 const emptySettings: ModelSettingsSnapshot = {
@@ -234,6 +243,9 @@ function App() {
   const [clarificationBusy, setClarificationBusy] = useState(false);
   const [pendingBashApproval, setPendingBashApproval] = useState<BashApprovalRequest>();
   const [bashApprovalBusy, setBashApprovalBusy] = useState(false);
+  const [followUpsByThread, setFollowUpsByThread] = useState<Record<string, ThreadPendingFollowUp[]>>({});
+  const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -360,6 +372,25 @@ function App() {
       if (event.type === "bash_approval.requested" && event.bashApproval) {
         setPendingBashApproval(event.bashApproval);
       }
+
+      if (event.followUp) {
+        setFollowUpsByThread((current) => ({
+          ...current,
+          [event.threadId]: mergeThreadFollowUp(current[event.threadId] ?? [], event.followUp!),
+        }));
+        if (
+          event.type === "thread.follow_up.escalated" &&
+          typeof window.eco?.listThreadFollowUps === "function"
+        ) {
+          void window.eco.listThreadFollowUps(event.threadId).then((result) => {
+            setFollowUpsByThread((current) => ({
+              ...current,
+              [event.threadId]: sortThreadFollowUps(result.followUps),
+            }));
+          });
+        }
+      }
+
       if (event.type.startsWith("bash_approval.")) {
         setThreads((current) =>
           current.map((thread) =>
@@ -542,6 +573,17 @@ function App() {
             return;
           }
           setPendingBashApproval(approval);
+        });
+      }
+      if (typeof window.eco.listThreadFollowUps === "function") {
+        void window.eco.listThreadFollowUps(selectedThreadId).then((result) => {
+          if (cancelled) {
+            return;
+          }
+          setFollowUpsByThread((current) => ({
+            ...current,
+            [selectedThreadId]: sortThreadFollowUps(result.followUps),
+          }));
         });
       }
       void window.eco.listThreadTodos(selectedThreadId).then((todos) => {
@@ -918,15 +960,26 @@ function App() {
       (selectedRuntimeProfile.preset !== "coding" || areCodingRoutesReady(activeRoutes, providerById))
     : areCodingRoutesReady(activeRoutes, providerById);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
+  const composerFollowUpMode = Boolean(activeThread && isLiveFollowUpThreadStatus(activeThread.status));
   const activeBashApproval =
     activeThread && pendingBashApproval?.threadId === activeThread.id ? pendingBashApproval : undefined;
   const plannerSupportsImages =
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
   const canPasteComposerImages = plannerSupportsImages;
+  const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
 
-  const canSend = Boolean(
+  const canSendFollowUp = Boolean(
     currentProjectPath &&
-      (prompt.trim() || composerAttachments.length > 0) &&
+      activeThread &&
+      composerFollowUpMode &&
+      composerHasContent &&
+      !followUpBusy &&
+      !isStarting &&
+      !planActionBusy,
+  );
+  const canSendThreadMessage = Boolean(
+    currentProjectPath &&
+      composerHasContent &&
       routesReady &&
       !isStarting &&
       !planActionBusy &&
@@ -936,6 +989,7 @@ function App() {
       !activeBashApproval &&
       threadAcceptsInput,
   );
+  const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
   const showPlanApproval =
     activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
   const showClarification =
@@ -979,6 +1033,8 @@ function App() {
   const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
+  const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
+  const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
   const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
@@ -1280,6 +1336,7 @@ function App() {
       plan,
       clarification,
       bashApproval,
+      followUps,
       todos,
       usageSnapshot,
     ] = await Promise.all([
@@ -1298,6 +1355,9 @@ function App() {
       typeof window.eco.getPendingBashApproval === "function"
         ? window.eco.getPendingBashApproval(threadId)
         : Promise.resolve(undefined),
+      typeof window.eco.listThreadFollowUps === "function"
+        ? window.eco.listThreadFollowUps(threadId)
+        : Promise.resolve({ followUps: [] }),
       window.eco.listThreadTodos(threadId),
       window.eco.getThreadUsageSnapshot(threadId),
     ]);
@@ -1317,6 +1377,7 @@ function App() {
     setPendingPlan(plan);
     setPendingClarification(clarification);
     setPendingBashApproval(bashApproval);
+    setFollowUpsByThread((current) => ({ ...current, [threadId]: sortThreadFollowUps(followUps.followUps) }));
     setTodosByThread((current) => ({ ...current, [threadId]: todos }));
     if (usageSnapshot.billing) {
       setBillingByThread((current) => ({ ...current, [threadId]: usageSnapshot.billing! }));
@@ -1348,10 +1409,39 @@ function App() {
       return;
     }
     setError(undefined);
-    setIsStarting(true);
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
     const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+
+    if (composerFollowUpMode && activeThread) {
+      if (typeof window.eco.enqueueThreadFollowUp !== "function") {
+        setError("当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。");
+        return;
+      }
+      setFollowUpBusy(true);
+      try {
+        const result = await window.eco.enqueueThreadFollowUp({
+          threadId: activeThread.id,
+          prompt: messagePrompt,
+          ...(attachments && { attachments }),
+        });
+        setFollowUpsByThread((current) => ({
+          ...current,
+          [activeThread.id]: sortThreadFollowUps(result.followUps),
+        }));
+        setPrompt("");
+        setComposerRewindTarget(undefined);
+        setComposerAttachments([]);
+        setComposerImageNotice(undefined);
+      } catch (caught) {
+        setError(errorMessage(caught));
+      } finally {
+        setFollowUpBusy(false);
+      }
+      return;
+    }
+
+    setIsStarting(true);
     if (!composerRuntimeConfig) {
       setError("请先配置子代理编排方案。");
       setIsStarting(false);
@@ -1410,6 +1500,29 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsStarting(false);
+    }
+  }
+
+  async function cancelQueuedFollowUp(followUp: ThreadPendingFollowUp) {
+    if (!window.eco || typeof window.eco.cancelThreadFollowUp !== "function") {
+      setError("当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。");
+      return;
+    }
+    setError(undefined);
+    setFollowUpCancelBusyId(followUp.id);
+    try {
+      const result = await window.eco.cancelThreadFollowUp({
+        threadId: followUp.threadId,
+        followUpId: followUp.id,
+      });
+      setFollowUpsByThread((current) => ({
+        ...current,
+        [followUp.threadId]: sortThreadFollowUps(result.followUps),
+      }));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setFollowUpCancelBusyId(undefined);
     }
   }
 
@@ -1806,6 +1919,7 @@ function App() {
     resetComposerDefaultConfig();
     setActivityByThread({});
     setTodosByThread({});
+    setFollowUpsByThread({});
   }
 
   function registerImportedProject(path: string, name: string) {
@@ -1954,8 +2068,10 @@ function App() {
     setContextByThread((current) => removeRecordKey(current, threadId));
     setModelByThread((current) => removeRecordKey(current, threadId));
     setTodosByThread((current) => removeRecordKey(current, threadId));
+    setFollowUpsByThread((current) => removeRecordKey(current, threadId));
     setPendingPlan((current) => (current?.threadId === threadId ? undefined : current));
     setPendingClarification((current) => (current?.threadId === threadId ? undefined : current));
+    setPendingBashApproval((current) => (current?.threadId === threadId ? undefined : current));
   }
 
   async function deleteThread(thread: ThreadSummary) {
@@ -2146,11 +2262,41 @@ function App() {
 
   const showThreadInfo = Boolean(activeThread);
   const showLanding = !activeThread;
+  const liveFollowUpLabel = activeThread?.status === "queued" ? "等待启动" : "运行中";
+  const composerFollowUpNotice = composerFollowUpMode
+    ? showClarification
+      ? "等待问题回答 · 这里发送会排队为后续消息"
+      : showBashApproval
+        ? "等待命令审批 · 这里发送会排队为后续消息"
+        : queuedFollowUps.length > 0
+          ? `${liveFollowUpLabel} · 已排队 ${queuedFollowUps.length} 条后续消息`
+          : `${liveFollowUpLabel} · 新消息将排队`
+    : undefined;
+  const composerPlaceholder = showClarification
+    ? "补充消息会排队；回答问题请用上方卡片"
+    : showBashApproval
+      ? "补充消息会排队；命令审批请用上方卡片"
+      : activeThread?.status === "awaiting_plan"
+        ? "请先确认或忽略上方计划"
+        : activeThread && isContinuableThreadStatus(activeThread.status)
+          ? "继续对话；若需改计划请说明，将重新生成完整计划…"
+          : composerFollowUpMode
+            ? "追加后续消息；当前步骤结束后处理…"
+            : activeThread
+              ? "当前对话不可发送"
+              : "尽管问";
+  const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
 
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
-      {activeComposerRewindTarget ? (
+      {composerFollowUpNotice ? (
+        <div className="composer-follow-up-banner">
+          <Clock3 size={14} aria-hidden />
+          <span>{composerFollowUpNotice}</span>
+        </div>
+      ) : null}
+      {activeComposerRewindTarget && !composerFollowUpMode ? (
         <div className="composer-rewind-banner">
           <RotateCcw size={14} aria-hidden />
           <span>从所选节点分叉</span>
@@ -2208,18 +2354,8 @@ function App() {
           onKeyDown={handleComposerKeyDown}
           maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
           {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
-          placeholder={
-            pendingClarification
-              ? "请先在上方回答问题"
-              : activeThread?.status === "awaiting_plan"
-                ? "请先确认或忽略上方计划"
-                : activeThread && isContinuableThreadStatus(activeThread.status)
-                  ? "继续对话；若需改计划请说明，将重新生成完整计划…"
-                  : activeThread
-                    ? "当前对话不可发送"
-                    : "尽管问"
-          }
-          disabled={Boolean(activeThread && !threadAcceptsInput)}
+          placeholder={composerPlaceholder}
+          disabled={composerDisabled}
         />
         <div className="composer-footer">
           <div className="composer-footer-main">
@@ -2284,24 +2420,24 @@ function App() {
             >
               {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
             </button>
-          ) : (
-            <button
-              type="button"
-              className="send-button"
-              onClick={sendComposerMessage}
-              disabled={!canSend}
-              aria-label="发送"
-            >
-              {isStarting ? <Activity size={18} /> : <ArrowUp size={18} />}
-            </button>
-          )}
+          ) : null}
+          <button
+            type="button"
+            className="send-button"
+            onClick={sendComposerMessage}
+            disabled={!canSend}
+            title={composerFollowUpMode ? "排队后续消息" : "发送"}
+            aria-label={composerFollowUpMode ? "排队后续消息" : "发送"}
+          >
+            {isStarting || followUpBusy ? <Activity size={18} /> : <ArrowUp size={18} />}
+          </button>
         </div>
         {error && (
           <p className="composer-error">
             <AlertCircle size={14} /> {error}
           </p>
         )}
-        {!routesReady && (
+        {!routesReady && !composerFollowUpMode && (
           <p className="composer-hint">
             请先在
             <button type="button" className="link-button" onClick={openProviderSettings}>
@@ -2420,6 +2556,13 @@ function App() {
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />
+                {queuedFollowUps.length > 0 ? (
+                  <FollowUpQueuePanel
+                    followUps={queuedFollowUps}
+                    cancelBusyId={followUpCancelBusyId}
+                    onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
+                  />
+                ) : null}
                 {canRetryThread &&
                 !showPlanApproval &&
                 (planFailureMessage ||
@@ -2709,6 +2852,47 @@ function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
   }
   const candidate = event as ThreadLiveEvent;
   return typeof candidate.threadId === "string" && typeof candidate.message === "string";
+}
+
+function FollowUpQueuePanel({
+  followUps,
+  cancelBusyId,
+  onCancel,
+}: {
+  followUps: ThreadPendingFollowUp[];
+  cancelBusyId: string | undefined;
+  onCancel: (followUp: ThreadPendingFollowUp) => void;
+}) {
+  return (
+    <section className="follow-up-queue-panel" aria-label="已排队的后续消息">
+      <div className="follow-up-queue-header">
+        <Clock3 size={15} aria-hidden />
+        <span>已排队 {followUps.length} 条后续消息</span>
+      </div>
+      <ul className="follow-up-queue-list">
+        {followUps.map((followUp) => (
+          <li key={followUp.id} className="follow-up-queue-item">
+            <div className="follow-up-queue-item-main">
+              <span className="follow-up-queue-priority">
+                {followUp.priority === "escalated" ? "立即" : "排队"}
+              </span>
+              <span className="follow-up-queue-preview">{formatThreadFollowUpPreview(followUp)}</span>
+            </div>
+            <button
+              type="button"
+              className="follow-up-queue-cancel"
+              onClick={() => onCancel(followUp)}
+              disabled={cancelBusyId === followUp.id}
+              title="取消后续消息"
+              aria-label="取消后续消息"
+            >
+              {cancelBusyId === followUp.id ? <Activity size={14} /> : <X size={14} />}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {
