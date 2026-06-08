@@ -439,7 +439,7 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 
 ## 阶段 4：V1 强制提升
 
-状态：Not Started
+状态：Completed
 
 目标：用户可以要求立即处理，但仍走 Eco 现有 abort + resume 路径。
 
@@ -457,6 +457,14 @@ Execution continuation 需要引用 approved plan snapshot；如果 follow-up �
 - abort 成功后用最新 escalated follow-up 恢复。
 - abort 失败或无法 resume 时，pending 状态和错误原因可见。
 - 已 superseded 的旧 escalated 消息不会再次执行。
+
+完成记录：
+
+- Renderer 队列卡片新增“立即处理”动作，点击前需要确认；escalated 项显示为“立即”状态。
+- escalate IPC 现在会在持久化 escalated follow-up 后触发 active run abort，并取消未决 clarification/bash approval。
+- abort 成功后写入 `pendingEscalatedFollowUpDrain` 标记；cleanup 即使把 thread 收到 `idle`，也只对该标记触发一次 forced drain。
+- forced drain 要求存在可恢复 SDK 会话；无法恢复时将 follow-up 标记为 failed，并写入错误 activity event。
+- drain 检测到 queued escalated 时只领取 escalated follow-up，普通 queued 留到后续安全边界；旧 escalated 会被 store supersede，不会再次执行。
 
 ## 阶段 5：Prompt 与路由质量
 

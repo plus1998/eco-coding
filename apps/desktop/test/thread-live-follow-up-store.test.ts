@@ -136,6 +136,25 @@ test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", asy
   expect(store.getThreadFollowUp("thr_followup", second.id)?.status).toBe("queued");
 });
 
+test.skipIf(!sqliteAvailable)("claims only escalated follow-ups when priority is requested", async () => {
+  const store = await createStore();
+  const normal = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "普通排队" });
+  const escalated = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "立即处理",
+    priority: "escalated",
+    deliveryMode: "interrupt_resume",
+  });
+
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
+    priority: "escalated",
+    deliveryMode: "resume",
+  });
+
+  expect(claimed.map((item) => item.id)).toEqual([escalated.id]);
+  expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
+});
+
 test.skipIf(!sqliteAvailable)("deleteThread removes pending follow-ups", async () => {
   const store = await createStore();
   store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "待清理" });

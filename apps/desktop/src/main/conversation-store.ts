@@ -1120,10 +1120,13 @@ export class ConversationStore {
       limit?: number;
       deliveryMode?: ThreadFollowUpDeliveryMode;
       targetRunAttemptId?: string;
+      priority?: ThreadFollowUpPriority;
     },
   ): ThreadPendingFollowUp[] {
     const limit = Math.max(1, Math.min(input?.limit ?? 20, 50));
-    const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] }).slice(0, limit);
+    const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] })
+      .filter((followUp) => !input?.priority || followUp.priority === input.priority)
+      .slice(0, limit);
     if (queued.length === 0) {
       return [];
     }

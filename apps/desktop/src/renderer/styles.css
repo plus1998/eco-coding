@@ -1154,7 +1154,7 @@ button:not(:disabled) {
 
 .follow-up-queue-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1188,7 +1188,14 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
-.follow-up-queue-cancel {
+.follow-up-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.follow-up-queue-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1201,12 +1208,12 @@ button:not(:disabled) {
   color: #a3a3a3;
 }
 
-.follow-up-queue-cancel:hover:not(:disabled) {
+.follow-up-queue-action:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
   color: #f5f5f5;
 }
 
-.follow-up-queue-cancel:disabled {
+.follow-up-queue-action:disabled {
   cursor: wait;
   opacity: 0.7;
 }

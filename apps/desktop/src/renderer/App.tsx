@@ -17,6 +17,7 @@ import {
   Sparkles,
   Square,
   X,
+  Zap,
 } from "lucide-react";
 import {
   type ClipboardEvent,
@@ -246,6 +247,7 @@ function App() {
   const [followUpsByThread, setFollowUpsByThread] = useState<Record<string, ThreadPendingFollowUp[]>>({});
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
+  const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -1526,6 +1528,35 @@ function App() {
     }
   }
 
+  async function escalateQueuedFollowUp(followUp: ThreadPendingFollowUp) {
+    if (!window.eco || typeof window.eco.escalateThreadFollowUp !== "function") {
+      setError("当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。");
+      return;
+    }
+    const confirmed = window.confirm(
+      "立即处理会在必要时先停止当前步骤，完成清理后再恢复处理这条后续消息。继续？",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setError(undefined);
+    setFollowUpEscalateBusyId(followUp.id);
+    try {
+      const result = await window.eco.escalateThreadFollowUp({
+        threadId: followUp.threadId,
+        followUpId: followUp.id,
+      });
+      setFollowUpsByThread((current) => ({
+        ...current,
+        [followUp.threadId]: sortThreadFollowUps(result.followUps),
+      }));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setFollowUpEscalateBusyId(undefined);
+    }
+  }
+
   async function retryActiveThread(routeProfileId?: string) {
     if (!activeThread || !window.eco) {
       return;
@@ -2560,7 +2591,9 @@ function App() {
                   <FollowUpQueuePanel
                     followUps={queuedFollowUps}
                     cancelBusyId={followUpCancelBusyId}
+                    escalateBusyId={followUpEscalateBusyId}
                     onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
+                    onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
                   />
                 ) : null}
                 {canRetryThread &&
@@ -2857,11 +2890,15 @@ function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
 function FollowUpQueuePanel({
   followUps,
   cancelBusyId,
+  escalateBusyId,
   onCancel,
+  onEscalate,
 }: {
   followUps: ThreadPendingFollowUp[];
   cancelBusyId: string | undefined;
+  escalateBusyId: string | undefined;
   onCancel: (followUp: ThreadPendingFollowUp) => void;
+  onEscalate: (followUp: ThreadPendingFollowUp) => void;
 }) {
   return (
     <section className="follow-up-queue-panel" aria-label="已排队的后续消息">
@@ -2878,16 +2915,30 @@ function FollowUpQueuePanel({
               </span>
               <span className="follow-up-queue-preview">{formatThreadFollowUpPreview(followUp)}</span>
             </div>
-            <button
-              type="button"
-              className="follow-up-queue-cancel"
-              onClick={() => onCancel(followUp)}
-              disabled={cancelBusyId === followUp.id}
-              title="取消后续消息"
-              aria-label="取消后续消息"
-            >
-              {cancelBusyId === followUp.id ? <Activity size={14} /> : <X size={14} />}
-            </button>
+            <div className="follow-up-queue-actions">
+              {followUp.priority !== "escalated" ? (
+                <button
+                  type="button"
+                  className="follow-up-queue-action"
+                  onClick={() => onEscalate(followUp)}
+                  disabled={Boolean(escalateBusyId)}
+                  title="立即处理"
+                  aria-label="立即处理"
+                >
+                  {escalateBusyId === followUp.id ? <Activity size={14} /> : <Zap size={14} />}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="follow-up-queue-action"
+                onClick={() => onCancel(followUp)}
+                disabled={cancelBusyId === followUp.id || escalateBusyId === followUp.id}
+                title="取消后续消息"
+                aria-label="取消后续消息"
+              >
+                {cancelBusyId === followUp.id ? <Activity size={14} /> : <X size={14} />}
+              </button>
+            </div>
           </li>
         ))}
       </ul>

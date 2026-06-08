@@ -366,6 +366,7 @@ let closeSdkSessionStore: (() => Promise<void>) | undefined;
 const activeRunRuntimeState = new ActiveRunRuntimeStateStore();
 const activeRunBillingState = new ActiveRunBillingStateStore();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
+const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 let agentLifecycle: AgentLifecycleService;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
@@ -1786,7 +1787,8 @@ function registerIpcHandlers(): void {
     }
     const followUp = request.followUpId ? base : conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base;
     emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "已请求立即处理后续消息。");
-    return buildThreadFollowUpMutationResult(followUp);
+    const current = await requestEscalatedFollowUpInterrupt(thread, followUp);
+    return buildThreadFollowUpMutationResult(current);
   });
 
   ipcMain.handle(IPC_CHANNELS.threadFollowUpList, async (_event, threadId: unknown) => {
@@ -2087,16 +2089,67 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
   }
 }
 
+async function requestEscalatedFollowUpInterrupt(
+  thread: ThreadSummary,
+  followUp: ThreadPendingFollowUp,
+): Promise<ThreadPendingFollowUp> {
+  if (activeRunRuntimeState.abortRun(thread.id, "follow-up escalated")) {
+    pendingEscalatedFollowUpDrain.add(thread.id);
+    updateThread(thread.id, {
+      status: "running",
+      message: "正在停止当前步骤并处理最新后续消息…",
+    });
+    cancelClarificationsForThread(thread.id, "follow-up escalated");
+    cancelBashApprovalsForThread(thread.id, "follow-up escalated");
+    emitThreadEvent(
+      thread.id,
+      "thread.follow_up.interrupting",
+      "正在停止当前步骤，随后处理最新后续消息。",
+      "system",
+      false,
+      { followUp },
+    );
+    return followUp;
+  }
+
+  if (shouldDrainThreadFollowUps(thread.status)) {
+    void drainQueuedThreadFollowUpsAfterRun(thread.id);
+    return followUp;
+  }
+
+  const reason = "当前对话没有可中断的 active run，无法立即处理后续消息。";
+  const failed =
+    conversationStore.updateThreadFollowUpStatus(thread.id, followUp.id, {
+      status: "failed",
+      error: reason,
+    }) ?? followUp;
+  emitThreadEvent(
+    thread.id,
+    "thread.follow_up.failed",
+    `后续消息处理失败：${reason}`,
+    "system",
+    false,
+    { followUp: failed },
+  );
+  return failed;
+}
+
 async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<void> {
   if (activeRunRuntimeState.hasRun(threadId)) {
     return;
   }
   const thread = conversationStore.getThread(threadId);
-  if (!thread || !shouldDrainThreadFollowUps(thread.status)) {
+  const forceEscalatedDrain = pendingEscalatedFollowUpDrain.delete(threadId);
+  if (!thread || (!forceEscalatedDrain && !shouldDrainThreadFollowUps(thread.status))) {
     return;
   }
+  const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
+  const claimPriority = queued.some((followUp) => followUp.priority === "escalated")
+    ? "escalated"
+    : undefined;
   const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
     deliveryMode: "resume",
+    ...(claimPriority ? { priority: claimPriority } : {}),
   });
   if (claimed.length === 0) {
     return;
@@ -2112,7 +2165,8 @@ async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<voi
       threadId,
       prompt,
       ...(attachments.length > 0 ? { attachments } : {}),
-      requireResumeForInterrupted: thread.status === "failed" || thread.status === "blocked",
+      requireResumeForInterrupted:
+        forceEscalatedDrain || thread.status === "failed" || thread.status === "blocked",
     });
     for (const followUp of claimed) {
       const applied =
