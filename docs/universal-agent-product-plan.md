@@ -682,7 +682,7 @@ type WorkflowStep = {
 
 ## 阶段 8：预设场景打磨
 
-状态：进行中。
+状态：已完成。
 
 目标：不是只支持自定义，而是内置场景真的可用。
 
@@ -770,6 +770,9 @@ type WorkflowStep = {
 - Phase 8.2 验证：`bun test apps/desktop/test/agent-orchestration.test.ts`。
 - Phase 8.3 已完成：新增内置 preset eval suite，把 catalog 中 18 个 eval case 展开为本地可验证场景，校验 profile 可生成、必需 agent 启用、workflow step 引用有效、模型绑定完整，并防止非 Coding main prompt 出现 coding-only 术语污染。
 - Phase 8.3 验证：`bun test apps/desktop/test/agent-preset-evals.test.ts apps/desktop/test/agent-orchestration.test.ts`。
+- Phase 8.4 已完成：新增内置 preset 离线 E2E task suite，把 Coding、Research、Writing、Product、Data、Ops 六个场景各自 3 个示例任务展开为 18 个端到端任务；每个任务都会走真实 profile 构建、main prompt roster、动态 AgentDefinition、工具权限 policy、fixed/hybrid workflow prompt 渲染、step 产物传递和最终 artifact 验收。
+- Phase 8.4 行为边界：离线 E2E 使用确定性模拟输出验证产品运行路径和验收结构，不调用真实模型；在线模型质量、资料新鲜度和人工验收仍属于发布流程的独立外层检查。
+- Phase 8.4 验证：`bun run test:agent-e2e-offline`、`bun run test:agent-commercial`。
 
 验收标准：
 
@@ -779,7 +782,7 @@ type WorkflowStep = {
 
 ## 阶段 9：评测与质量体系
 
-状态：进行中。
+状态：已完成。
 
 目标：防止产品变成“看起来能用，但不可控、不稳定”。
 
@@ -809,6 +812,9 @@ type WorkflowStep = {
 - Phase 9.5 已完成：新增 Agent UI smoke 脚本，`bun run test:agent-ui-smoke` 会先构建 desktop，再校验 renderer `index.html`、JS/CSS asset 存在且包含 Agent Builder、Agent Profile、编排配置、场景预设、效果评测、Workflow Steps、运行 workflow 和计费诊断等关键 UI 入口标记。
 - Phase 9.5 行为边界：该 smoke 是生产构建产物检查，不替代真实浏览器点击流、Electron 窗口启动或在线模型端到端任务；后续仍需要接入完整 UI/E2E runner。
 - Phase 9.5 验证：`bun run test:agent-ui-smoke`。
+- Phase 9.6 已完成：新增 `bun run test:agent-e2e-offline`，并纳入 `test:agent-presets` 与 `test:agent-commercial`；发布前质量门现在覆盖 6 个内置 preset、18 个端到端任务、runtime prompt/AgentDefinition/tool policy/workflow/artifact 验收，以及 workflow step usage ledger 到 billing projector 的成本归因回归。
+- Phase 9.6 行为边界：该质量门保证 preset 配置和产品编排路径可运行、可观测、可计费；不替代在线 eval runner、真实模型回答质量评估或人工业务验收。
+- Phase 9.6 验证：`bun run test:agent-e2e-offline`、`bun run test:agent-commercial`。
 
 发布前测试要求：
 
@@ -817,7 +823,7 @@ type WorkflowStep = {
 - SDK agents 注入测试。
 - 权限拦截测试。
 - UI smoke test。
-- 至少 3 个 preset 的端到端任务。
+- 6 个内置 preset 各 3 个离线端到端任务。
 
 验收标准：
 
