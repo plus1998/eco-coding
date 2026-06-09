@@ -85,7 +85,7 @@ export function ComposerRoutePopover({
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
-  }, [open, updatePanelPosition, profileSummaries.length]);
+  }, [open, updatePanelPosition]);
 
   useEffect(() => {
     if (!open) {
@@ -198,7 +198,7 @@ function AgentProfileOption({
         <span className="composer-agent-profile-main">
           <span className="composer-route-popover-item-name">{summary.name}</span>
           <span className="composer-agent-profile-meta">
-            {summary.presetLabel} · {summary.strategyLabel} · {summary.enabledAgents.length} 个子代理
+            {summary.presetLabel} · {summary.enabledAgents.length} 个子代理
           </span>
           <span className="composer-agent-profile-model">主 Agent：{summary.main.modelLabel}</span>
           {summary.highRiskLabels.length > 0 ? (

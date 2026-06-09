@@ -173,6 +173,11 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
       },
       skills: [],
     },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "anthropic", modelId: "research-explore-model" },
+      },
+    },
     agents: [
       {
         agentKey: "researcher",
@@ -192,7 +197,7 @@ const universalAgentRegistry: EcoAgentRuntimeConfig = {
   },
 };
 
-const fixedWorkflowAgentRegistry: EcoAgentRuntimeConfig = {
+const guidedResearchAgentRegistry: EcoAgentRuntimeConfig = {
   templates: [
     ...universalAgentRegistry.templates,
     {
@@ -215,8 +220,8 @@ const fixedWorkflowAgentRegistry: EcoAgentRuntimeConfig = {
   ],
   profile: {
     ...universalAgentRegistry.profile,
-    id: "profile.fixed_research",
-    name: "Fixed Research Desk",
+    id: "profile.guided_research",
+    name: "Guided Research Desk",
     agents: [
       ...universalAgentRegistry.profile.agents,
       {
@@ -231,29 +236,8 @@ const fixedWorkflowAgentRegistry: EcoAgentRuntimeConfig = {
       },
     ],
     strategy: {
-      kind: "fixed",
-      steps: [
-        {
-          id: "research",
-          agentKey: "researcher",
-          promptTemplate: "Research {{userPrompt}}.",
-          dependsOn: [],
-          runMode: "sequential",
-          required: true,
-          outputKey: "research_notes",
-          failurePolicy: "stop",
-        },
-        {
-          id: "synthesis",
-          agentKey: "synthesizer",
-          promptTemplate: "Synthesize from {{step.research}}.",
-          dependsOn: ["research"],
-          runMode: "sequential",
-          required: true,
-          outputKey: "final_answer",
-          failurePolicy: "stop",
-        },
-      ],
+      kind: "autonomous",
+      guidancePrompt: "Use researcher for evidence discovery and synthesizer when synthesis improves the answer.",
     },
   },
 };
@@ -551,9 +535,12 @@ test("question explore subagent uses only codebase read tools", () => {
   expect(definitions).not.toHaveProperty("explore");
 });
 
-test("execution subagents avoid explore and network tools except writable coder", () => {
+test("execution subagents include read-only Explore and avoid network tools except writable coder", () => {
   const definitions = createExecutionAgentDefinitions(routes);
-  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("explore"));
+  expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
+    model: "claude-haiku-explore",
+    tools: ["Read", "Glob", "Grep"],
+  });
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
   });
@@ -636,7 +623,7 @@ test("buildExecutePhaseSystemAppend executes directly when coder is disabled", (
   expect(append).not.toContain("Coders (parallel)");
 });
 
-test("inferActivityRole maps Agent(Explore) to explore", () => {
+test("inferActivityRole does not map SDK built-in Agent(Explore) to Eco Explore", () => {
   expect(
     inferActivityRole({
       type: "tool.started",
@@ -647,7 +634,7 @@ test("inferActivityRole maps Agent(Explore) to explore", () => {
         input: { subagent_type: "Explore", prompt: "Find auth middleware" },
       },
     }),
-  ).toBe("explore");
+  ).toBe("tool");
 });
 
 test("inferActivityRole maps Agent(general-purpose) to general-purpose", () => {
@@ -1420,9 +1407,11 @@ test("ClaudeAgentSdkDriver forwards eco agent definitions with configured route 
   expect(Object.keys(executionAgents ?? {}).sort()).toEqual([
     ecoSubagentKeyForRole("architect"),
     ecoSubagentKeyForRole("coder"),
+    ecoSubagentKeyForRole("explore"),
     ecoSubagentKeyForRole("reviewer"),
     ecoSubagentKeyForRole("tester"),
   ]);
+  expect(executionAgents?.[ecoSubagentKeyForRole("explore")]?.model).toBe("claude-haiku-explore");
   expect(executionAgents?.[ecoSubagentKeyForRole("coder")]?.model).toBe("qwen-coder-anthropic");
   expect(executionAgents?.[ecoSubagentKeyForRole("reviewer")]?.model).toBe("claude-sonnet-reviewer");
   expect(executionAgents).not.toHaveProperty("Explore");
@@ -1499,7 +1488,11 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   ]);
 
   const agents = options.agents as Record<string, Record<string, unknown>>;
-  expect(Object.keys(agents)).toEqual(["eco_researcher"]);
+  expect(Object.keys(agents)).toEqual(["eco_explore", "eco_researcher"]);
+  expect(agents.eco_explore).toMatchObject({
+    model: "claude-haiku-explore",
+    tools: ["Read", "Glob", "Grep"],
+  });
   expect(agents.eco_researcher).toMatchObject({
     model: "research-agent-model",
     tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*", "Skill"],
@@ -1512,6 +1505,7 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   const systemPrompt = options.systemPrompt as string;
   expect(systemPrompt).toContain("Coordinate a research answer without assuming a coding task.");
   expect(systemPrompt).toContain("Eco universal orchestration.");
+  expect(systemPrompt).toContain("Agent(eco_explore)");
   expect(systemPrompt).toContain("Agent(eco_researcher)");
   expect(systemPrompt).not.toContain("CHILD SECRET PROMPT");
   expect(systemPrompt).not.toContain("File edits apply directly");
@@ -1598,11 +1592,12 @@ test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic per
   );
 });
 
-test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", async () => {
+test("ClaudeAgentSdkDriver treats profile guidance as main-agent guidance", async () => {
   const capturedQueries: Array<{ prompt: string; options: Record<string, unknown> }> = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
+    orchestration: "autonomous",
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
         const callIndex = capturedQueries.length + 1;
@@ -1612,13 +1607,13 @@ test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", asy
             yield {
               type: "system",
               subtype: "init",
-              session_id: `sess-fixed-${callIndex}`,
-              uuid: `init-fixed-${callIndex}`,
+              session_id: `sess-guided-${callIndex}`,
+              uuid: `init-guided-${callIndex}`,
             };
             yield {
               type: "assistant",
-              uuid: `assistant-fixed-${callIndex}`,
-              session_id: `sess-fixed-${callIndex}`,
+              uuid: `assistant-guided-${callIndex}`,
+              session_id: `sess-guided-${callIndex}`,
               message: {
                 content: [{ type: "text", text: `step output ${callIndex}` }],
               },
@@ -1626,8 +1621,8 @@ test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", asy
             yield {
               type: "result",
               subtype: "success",
-              session_id: `sess-fixed-${callIndex}`,
-              uuid: `result-fixed-${callIndex}`,
+              session_id: `sess-guided-${callIndex}`,
+              uuid: `result-guided-${callIndex}`,
             };
           },
           close: () => {},
@@ -1638,41 +1633,32 @@ test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", asy
 
   const events: Array<{ type: string; payload: unknown }> = [];
   for await (const event of driver.run({
-    threadId: "thr_fixed_universal",
+    threadId: "thr_guided_universal",
     prompt: "Explain the market landscape.",
     workspacePath: "/tmp/workspace",
     worktreePath: "/tmp/worktree",
     routes,
     signal: new AbortController().signal,
-    agentRegistry: fixedWorkflowAgentRegistry,
+    agentRegistry: guidedResearchAgentRegistry,
   })) {
     events.push({ type: event.type, payload: event.payload });
   }
 
-  expect(capturedQueries).toHaveLength(2);
+  expect(capturedQueries).toHaveLength(1);
   expect(Object.keys((capturedQueries[0]?.options.agents ?? {}) as Record<string, unknown>)).toEqual([
+    "eco_explore",
     "eco_researcher",
-  ]);
-  expect(Object.keys((capturedQueries[1]?.options.agents ?? {}) as Record<string, unknown>)).toEqual([
     "eco_synthesizer",
   ]);
-  expect(capturedQueries[0]?.prompt).toContain("Fixed workflow step: research.");
-  expect(capturedQueries[1]?.prompt).toContain("Fixed workflow step: synthesis.");
-  expect(capturedQueries[1]?.prompt).toContain("step output 1");
+  expect(capturedQueries[0]?.prompt).toBe("Explain the market landscape.");
+  expect(events.length).toBeGreaterThan(0);
 
-  expect(events.some((event) => JSON.stringify(event.payload).includes("固定流程开始"))).toBe(true);
-  expect(events.some((event) => JSON.stringify(event.payload).includes('"id":"research"'))).toBe(true);
-  expect(events.some((event) => JSON.stringify(event.payload).includes('"status":"completed"'))).toBe(true);
-  expect(
-    events.some(
-      (event) =>
-        event.type === "message.delta" &&
-        JSON.stringify(event.payload).includes('"ecoWorkflowStepContext"') &&
-        JSON.stringify(event.payload).includes('"id":"research"') &&
-        JSON.stringify(event.payload).includes('"agentKey":"researcher"') &&
-        JSON.stringify(event.payload).includes('"outputKey":"research_notes"'),
-    ),
-  ).toBe(true);
+  const systemPrompt = JSON.stringify(capturedQueries[0]?.options.systemPrompt);
+  expect(systemPrompt).toContain(
+    "Use researcher for evidence discovery and synthesizer when synthesis improves the answer.",
+  );
+  expect(systemPrompt).toContain("Agent(eco_researcher)");
+  expect(systemPrompt).toContain("Agent(eco_synthesizer)");
 });
 
 test("ClaudeAgentSdkDriver forwards resume options to SDK query", async () => {

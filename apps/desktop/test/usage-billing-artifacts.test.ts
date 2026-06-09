@@ -68,13 +68,6 @@ test("resolveSingleUsageBillingArtifacts builds assistant fallback ledger and bi
     agentId: "agent_coder",
     plannerAgentId: "planner_attempt_1",
     requestKey: "assistant:msg_1",
-    workflowStep: {
-      id: "research",
-      agentKey: "researcher",
-      outputKey: "research_notes",
-      attempt: 1,
-      batchIndex: 0,
-    },
   });
 
   expect(artifacts.billingRole).toBe("coder");
@@ -89,13 +82,6 @@ test("resolveSingleUsageBillingArtifacts builds assistant fallback ledger and bi
     modelId: "haiku",
   });
   expect(readUsageLedgerComputedBilling(artifacts.ledgerEvent.metadata)?.ecoCostUsd).toBeCloseTo(0.012, 6);
-  expect(artifacts.ledgerEvent.metadata?.ecoWorkflowStep).toEqual({
-    id: "research",
-    agentKey: "researcher",
-    outputKey: "research_notes",
-    attempt: 1,
-    batchIndex: 0,
-  });
   expect(artifacts.contextUpdate).toMatchObject({
     role: "coder",
     modelId: "haiku",
@@ -114,13 +100,6 @@ test("resolveSdkStreamPartialBillingArtifacts builds partial ledger and context 
     lookupPricing,
     runAttemptId: "attempt_1",
     subagentAgentId: "agent_coder",
-    workflowStep: {
-      id: "draft",
-      agentKey: "writer",
-      outputKey: "draft_copy",
-      attempt: 2,
-      batchIndex: 1,
-    },
   });
 
   expect(artifacts.resolvedModelId).toBe("haiku");
@@ -132,13 +111,6 @@ test("resolveSdkStreamPartialBillingArtifacts builds partial ledger and context 
     modelId: "haiku",
   });
   expect(artifacts.ledgerEvent.metadata).toMatchObject({ settlement: "partial" });
-  expect(artifacts.ledgerEvent.metadata?.ecoWorkflowStep).toEqual({
-    id: "draft",
-    agentKey: "writer",
-    outputKey: "draft_copy",
-    attempt: 2,
-    batchIndex: 1,
-  });
   expect(artifacts.contextUpdate).toMatchObject({
     role: "coder",
     modelId: "haiku",

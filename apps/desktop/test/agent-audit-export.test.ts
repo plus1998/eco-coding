@@ -17,7 +17,7 @@ const profile: OrchestrationProfile = {
     skills: [],
   },
   agents: [],
-  strategy: { kind: "fixed", steps: [] },
+  strategy: { kind: "autonomous" },
   version: 1,
   updatedAt: "2026-01-01T00:00:00.000Z",
   source: "user",
@@ -68,7 +68,7 @@ test("buildAgentAuditExportArchive writes structured audit data", () => {
         selectionId: "profile_research",
         profileName: "Research Desk",
         preset: "research",
-        strategyKind: "fixed",
+        strategyKind: "autonomous",
         source: "configured",
         runCount: 1,
         completedCount: 1,
@@ -86,7 +86,6 @@ test("buildAgentAuditExportArchive writes structured audit data", () => {
         avgCostUsd: 0.01,
         latestRunAt: "2026-01-01T00:00:02.000Z",
         modelIds: [],
-        workflowSteps: [],
         recentRuns: [],
       },
     ],
@@ -134,7 +133,7 @@ test("buildAgentAuditExportArchive writes structured audit data", () => {
     profileId: "profile_research",
     selectionId: "profile_research",
     name: "Research Desk",
-    strategyKind: "fixed",
+    strategyKind: "autonomous",
   });
   expect(archive.threads[0]?.billing?.ecoCostUsd).toBe(0.01);
   expect(archive.threads[0]?.activity).toHaveLength(1);

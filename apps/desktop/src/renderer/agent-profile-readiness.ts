@@ -17,6 +17,7 @@ export function isAgentProfileReady(
 ): boolean {
   return (
     isModelRefReady(profile.mainAgent.modelRef, providersById) &&
+    isModelRefReady(profile.builtinAgents.explore.modelRef, providersById) &&
     profile.agents
       .filter((agent) => agent.enabled)
       .every((agent) => isModelRefReady(agent.modelRef, providersById))

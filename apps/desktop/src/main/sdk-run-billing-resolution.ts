@@ -1,6 +1,6 @@
 import { parseSdkContextUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import { type UsageBillingObservation } from "./billing-orchestration";
+import type { UsageBillingObservation } from "./billing-orchestration";
 import type { RuntimeRoute } from "./billing-resolver";
 import {
   resolveSdkRunBillingAttribution,
@@ -12,7 +12,6 @@ import {
   resolveSdkRunBillingModels,
   type SdkRunBillingModels,
   type UsageBillingPricingLookup,
-  type WorkflowStepUsageMetadata,
 } from "./usage-billing-artifacts";
 
 export interface ResolveSdkRunBillingResolutionInput {
@@ -28,7 +27,6 @@ export interface ResolveSdkRunBillingResolutionInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
-  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export interface SdkRunBillingResolution {
@@ -99,7 +97,6 @@ export function resolveSdkRunBillingResolutionFromModels(
     }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    ...(input.workflowStep && { workflowStep: input.workflowStep }),
     ...(ledgerAgentId && { ledgerAgentId }),
     ...(resolvedSubagentId && { resolvedSubagentId }),
   };
@@ -125,10 +122,11 @@ function buildSdkRunUsageObservations(input: {
   if (!input.resolvedSubagentId) {
     return [];
   }
+  const agentId = input.resolvedSubagentId;
   return input.models.map((model) => ({
     source: input.source,
     role: input.billingRole,
-    agentId: input.resolvedSubagentId!,
+    agentId,
     usage: model.usage,
     requestKey: input.requestKey,
     ...(model.modelId && { modelId: model.modelId }),

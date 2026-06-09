@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import {
-  buildCodingOrchestrationProfileFromRouteProfile,
-  createBuiltInAgentTemplates,
-} from "../src/shared/agent-orchestration";
-import type { ModelSettingsSnapshot, OrchestrationProfile, RouteProfileView } from "../src/shared/ipc";
-import {
   buildAgentProfileSummary,
   findSelectableAgentProfileSummary,
   listSelectableAgentProfileSummaries,
 } from "../src/renderer/agent-profile-summary";
+import {
+  buildCodingOrchestrationProfileFromRouteProfile,
+  createBuiltInAgentTemplates,
+} from "../src/shared/agent-orchestration";
+import type { ModelSettingsSnapshot, OrchestrationProfile, RouteProfileView } from "../src/shared/ipc";
 
 const routeProfile: RouteProfileView = {
   id: "coding-default",
@@ -49,7 +49,6 @@ test("listSelectableAgentProfileSummaries returns route-backed and custom profil
   expect(summaries[0]?.selectionId).toBe("coding-default");
   expect(summaries[0]?.name).toBe("默认编程");
   expect(summaries[0]?.presetLabel).toBe("编程");
-  expect(summaries[0]?.strategyLabel).toBe("混合策略");
   expect(summaries[1]?.selectionId).toBe("custom-unbound");
   expect(summaries[1]?.sourceLabel).toBe("用户");
 });

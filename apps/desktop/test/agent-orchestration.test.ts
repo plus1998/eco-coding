@@ -33,12 +33,11 @@ function codingRouteProfile(): RouteProfileView {
 
 test("built-in agent templates define the default coding library", () => {
   const templates = createBuiltInAgentTemplates();
-  expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.explorer);
   expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.architect);
   expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.coder);
   expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.reviewer);
   expect(templates.map((template) => template.id)).toContain(CODING_AGENT_TEMPLATE_IDS.tester);
-  expect(templates.filter((template) => template.domain === "coding")).toHaveLength(5);
+  expect(templates.filter((template) => template.domain === "coding")).toHaveLength(4);
   expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
     templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.allowed,
@@ -78,8 +77,6 @@ test("built-in preset catalog defines commercial scenario metadata", () => {
     expect(preset.examples).toHaveLength(3);
     expect(preset.evals).toHaveLength(3);
     expect(preset.strategies.autonomous.kind).toBe("autonomous");
-    expect(preset.strategies.hybrid.recommendedSteps.length).toBeGreaterThan(0);
-    expect(preset.strategies.fixed.steps.length).toBeGreaterThan(0);
     for (const agent of preset.defaultAgents) {
       expect(templatesById.has(agent.templateId)).toBe(true);
     }
@@ -90,7 +87,7 @@ test("built-in preset catalog defines commercial scenario metadata", () => {
   }
 });
 
-test("non-coding preset prompts avoid coding workflow pollution", () => {
+test("non-coding preset prompts avoid coding prompt pollution", () => {
   const nonCodingPrompts = createBuiltInPresetCatalog()
     .filter((preset) => preset.id !== "coding")
     .map((preset) => preset.mainAgentPrompt.toLowerCase());
@@ -125,7 +122,12 @@ test("built-in preset can be copied into a runnable user orchestration profile",
       systemPromptPreset: "custom",
       modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
     },
-    strategy: { kind: "fixed" },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+      },
+    },
+    strategy: { kind: "autonomous" },
   });
   expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
     "researcher",
@@ -152,10 +154,14 @@ test("route profile migrates to a coding orchestration profile", () => {
       systemPromptPreset: "claude_code",
       modelRef: { providerId: "p1", modelId: "planner-model", thinkingEffort: "high" },
     },
-    strategy: { kind: "hybrid", allowPlannerAdjustments: true },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "p1", modelId: "explore-model" },
+      },
+    },
+    strategy: { kind: "autonomous" },
   });
   expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
-    "explore",
     "architect",
     "coder",
     "reviewer",
@@ -174,7 +180,9 @@ test("coding orchestration migration maps enabled agents without plan-mode strat
       tester: true,
     },
   });
-  expect(profile.strategy.kind).toBe("hybrid");
+  expect(profile.strategy.kind).toBe("autonomous");
+  expect(profile.agents.map((agent) => agent.agentKey)).not.toContain("explore");
+  expect(profile.builtinAgents.explore.modelRef.modelId).toBe("explore-model");
   expect(profile.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(false);
   expect(profile.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(false);
   expect(profile.agents.find((agent) => agent.agentKey === "coder")?.enabled).toBe(true);

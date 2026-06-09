@@ -170,62 +170,6 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
-test("emits fixed workflow lifecycle activity", () => {
-  const bridge = new SdkStreamActivityBridge();
-  const emitted: Array<{
-    type: string;
-    message: string;
-    role: string;
-    metadata?: Record<string, unknown>;
-  }> = [];
-
-  bridge.handleEvent(
-    "thr_1",
-    {
-      type: "agent.completed",
-      role: "planner",
-      agentId: "eco-workflow:research",
-      payload: {
-        ecoWorkflowStep: {
-          id: "research",
-          agentKey: "researcher",
-          outputKey: "research_notes",
-          status: "completed",
-          attempt: 1,
-          batchIndex: 0,
-        },
-        label: "固定编排步骤完成：research",
-      },
-    },
-    (_threadId, type, message, role, _stream, _agentId, extras) => {
-      emitted.push({
-        type,
-        message,
-        role,
-        ...(extras?.metadata && { metadata: extras.metadata }),
-      });
-    },
-  );
-
-  expect(emitted).toEqual([
-    {
-      type: "agent.completed",
-      message: "固定编排步骤完成：research",
-      role: "planner",
-      metadata: {
-        ecoWorkflowStep: {
-          id: "research",
-          agentKey: "researcher",
-          outputKey: "research_notes",
-          status: "completed",
-          attempt: 1,
-          batchIndex: 0,
-        },
-      },
-    },
-  ]);
-});
-
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];

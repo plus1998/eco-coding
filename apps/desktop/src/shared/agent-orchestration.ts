@@ -92,27 +92,22 @@ export interface AgentInstanceConfig {
   enabled: boolean;
 }
 
-export interface WorkflowStep {
-  id: string;
-  agentKey: string;
-  promptTemplate: string;
-  dependsOn: string[];
-  runMode: "sequential" | "parallel";
-  required: boolean;
-  outputKey: string;
-  failurePolicy: "stop" | "retry" | "skip" | "ask_user";
+export interface BuiltinAgentConfig {
+  modelRef: ModelRef;
 }
 
-export type OrchestrationStrategy =
-  | { kind: "autonomous"; guidancePrompt?: string }
-  | { kind: "hybrid"; recommendedSteps: WorkflowStep[]; allowPlannerAdjustments: boolean }
-  | { kind: "fixed"; steps: WorkflowStep[]; finalAggregator?: WorkflowStep };
+export interface BuiltinAgentsConfig {
+  explore: BuiltinAgentConfig;
+}
+
+export type OrchestrationStrategy = { kind: "autonomous"; guidancePrompt?: string };
 
 export interface OrchestrationProfile {
   id: string;
   name: string;
   preset: AgentDomain;
   mainAgent: MainAgentConfig;
+  builtinAgents: BuiltinAgentsConfig;
   agents: AgentInstanceConfig[];
   strategy: OrchestrationStrategy;
   version: number;
@@ -122,7 +117,6 @@ export interface OrchestrationProfile {
 }
 
 export const CODING_AGENT_TEMPLATE_IDS = {
-  explorer: "builtin.coding.explorer",
   architect: "builtin.coding.architect",
   coder: "builtin.coding.coder",
   reviewer: "builtin.coding.reviewer",
@@ -158,7 +152,6 @@ export const DATA_OPS_AGENT_TEMPLATE_IDS = {
 
 export const CODING_AGENT_KEYS = {
   main: "main",
-  explore: "explore",
   architect: "architect",
   coder: "coder",
   reviewer: "reviewer",
@@ -321,10 +314,7 @@ export interface BuiltInPresetModelSuggestion {
 }
 
 export interface BuiltInPresetStrategyRecommendation {
-  defaultKind: OrchestrationStrategy["kind"];
   autonomous: Extract<OrchestrationStrategy, { kind: "autonomous" }>;
-  hybrid: Extract<OrchestrationStrategy, { kind: "hybrid" }>;
-  fixed: Extract<OrchestrationStrategy, { kind: "fixed" }>;
 }
 
 export interface BuiltInPresetExampleTask {
@@ -357,23 +347,6 @@ export interface BuiltInPresetDefinition {
 
 export function createBuiltInAgentTemplates(): AgentTemplate[] {
   return [
-    {
-      id: CODING_AGENT_TEMPLATE_IDS.explorer,
-      name: "Explorer",
-      description: "Read-only context discovery agent for coding tasks.",
-      domain: "coding",
-      prompt: "Explore the relevant workspace context and report concise findings. Do not edit files.",
-      whenToUse: "Use before planning or answering when broad codebase context is needed.",
-      outputContract: "Return relevant files, facts, risks, and open questions.",
-      defaultTools: cloneToolPolicy(READ_ONLY_TOOLS),
-      mcpServers: [],
-      skills: [],
-      allowDelegation: false,
-      builtIn: true,
-      source: "built_in",
-      version: 1,
-      updatedAt: BUILT_IN_TEMPLATE_UPDATED_AT,
-    },
     {
       id: CODING_AGENT_TEMPLATE_IDS.architect,
       name: "Architect",
@@ -724,7 +697,6 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         "Coordinate software engineering work. Clarify scope, inspect the repository, delegate specialized work when useful, keep edits focused, and finish with verification evidence.",
       mainAgentTools: cloneToolPolicy(MAIN_CODING_TOOLS),
       defaultAgents: [
-        presetAgent(CODING_AGENT_KEYS.explore, CODING_AGENT_TEMPLATE_IDS.explorer, "Explorer"),
         presetAgent(CODING_AGENT_KEYS.architect, CODING_AGENT_TEMPLATE_IDS.architect, "Architect"),
         presetAgent(CODING_AGENT_KEYS.coder, CODING_AGENT_TEMPLATE_IDS.coder, "Coder"),
         presetAgent(CODING_AGENT_KEYS.reviewer, CODING_AGENT_TEMPLATE_IDS.reviewer, "Reviewer"),
@@ -741,11 +713,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "hybrid",
         autonomousGuidance:
           "Choose coding subagents only when their specialization materially improves correctness or speed.",
-        recommendedSteps: codingRecommendedSteps(),
-        fixedSteps: codingRecommendedSteps(),
       }),
       examples: [
         exampleTask(
@@ -774,7 +743,7 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
             "Changes only the relevant implementation and test files.",
             "Reports exact verification commands and results.",
           ],
-          ["explore", "coder", "tester"],
+          ["coder", "tester"],
         ),
         evalCase(
           "coding-review-quality",
@@ -792,7 +761,7 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
           "Cross-module plan",
           "Plan a cross-module API migration.",
           ["Maps affected modules.", "Names sequencing and rollback risks.", "Produces implementable tasks."],
-          ["explore", "architect"],
+          ["architect"],
         ),
       ],
     },
@@ -817,11 +786,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "fixed",
         autonomousGuidance:
           "Use source discovery first when facts may be current, then verify claims before synthesis.",
-        recommendedSteps: researchWorkflowSteps(),
-        fixedSteps: researchWorkflowSteps(),
       }),
       examples: [
         exampleTask(
@@ -889,11 +855,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "hybrid",
         autonomousGuidance:
           "Use editing directly for purely stylistic work; add fact checking when claims, names, numbers, or current facts appear.",
-        recommendedSteps: writingWorkflowSteps(),
-        fixedSteps: writingWorkflowSteps(),
       }),
       examples: [
         exampleTask(
@@ -965,11 +928,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "hybrid",
         autonomousGuidance:
           "Use analysis first when product intent is ambiguous, UX review when flows exist, and spec writing after decisions stabilize.",
-        recommendedSteps: productWorkflowSteps(),
-        fixedSteps: productWorkflowSteps(),
       }),
       examples: [
         exampleTask(
@@ -1041,11 +1001,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "fixed",
         autonomousGuidance:
           "Inspect data before drawing conclusions, review queries before risky execution, and report limitations clearly.",
-        recommendedSteps: dataWorkflowSteps(),
-        fixedSteps: dataWorkflowSteps(),
       }),
       examples: [
         exampleTask(
@@ -1117,11 +1074,8 @@ export function createBuiltInPresetCatalog(): BuiltInPresetDefinition[] {
         },
       },
       strategies: presetStrategies({
-        defaultKind: "fixed",
         autonomousGuidance:
           "Triage impact first, inspect evidence before mitigation, and execute only approved runbook steps.",
-        recommendedSteps: opsWorkflowSteps(),
-        fixedSteps: opsWorkflowSteps(),
       }),
       examples: [
         exampleTask(
@@ -1228,6 +1182,7 @@ export function buildOrchestrationProfileFromPreset(
       tools: cloneToolPolicy(preset.mainAgentTools),
       skills: [],
     },
+    builtinAgents: createBuiltinAgents(modelRef),
     agents: preset.defaultAgents.map((agent) => {
       const template = templateById.get(agent.templateId);
       if (!template) {
@@ -1244,7 +1199,7 @@ export function buildOrchestrationProfileFromPreset(
         enabled: true,
       };
     }),
-    strategy: cloneOrchestrationStrategy(selectPresetDefaultStrategy(preset)),
+    strategy: cloneOrchestrationStrategy(preset.strategies.autonomous),
     version: 1,
     updatedAt: now,
     source: options.source ?? "user",
@@ -1259,6 +1214,7 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
 ): OrchestrationProfile {
   const routeByRole = new Map(routeProfile.routes.map((route) => [route.role, route]));
   const plannerRoute = requireRoute(routeByRole, "planner", routeProfile.id);
+  const exploreRoute = requireRoute(routeByRole, "explore", routeProfile.id);
   const updatedAt = routeProfile.updatedAt;
   return {
     id: routeProfile.id,
@@ -1274,13 +1230,8 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
       tools: cloneToolPolicy(MAIN_CODING_TOOLS),
       skills: [],
     },
+    builtinAgents: createBuiltinAgents(routeToModelRef(exploreRoute)),
     agents: [
-      buildCodingAgentInstance(
-        CODING_AGENT_KEYS.explore,
-        CODING_AGENT_TEMPLATE_IDS.explorer,
-        requireRoute(routeByRole, "explore", routeProfile.id),
-        subagentEnabledFor("explore", options.subagentEnabled),
-      ),
       buildCodingAgentInstance(
         CODING_AGENT_KEYS.architect,
         CODING_AGENT_TEMPLATE_IDS.architect,
@@ -1345,6 +1296,14 @@ function buildCodingAgentInstance(
   };
 }
 
+function createBuiltinAgents(modelRef: ModelRef): BuiltinAgentsConfig {
+  return {
+    explore: {
+      modelRef: cloneModelRef(modelRef),
+    },
+  };
+}
+
 function subagentEnabledFor(
   key: keyof SubagentEnabledSettings,
   settings: Partial<SubagentEnabledSettings> | undefined,
@@ -1354,9 +1313,8 @@ function subagentEnabledFor(
 
 function codingDefaultStrategy(): OrchestrationStrategy {
   return {
-    kind: "hybrid",
-    recommendedSteps: codingRecommendedSteps(),
-    allowPlannerAdjustments: true,
+    kind: "autonomous",
+    guidancePrompt: "Choose coding subagents only when their specialization materially improves correctness or speed.",
   };
 }
 
@@ -1383,228 +1341,15 @@ function requireRoute(
   return route;
 }
 
-function codingRecommendedSteps(): WorkflowStep[] {
-  return [
-    {
-      id: "explore",
-      agentKey: CODING_AGENT_KEYS.explore,
-      promptTemplate: "Explore the workspace context needed for the user request.",
-      dependsOn: [],
-      runMode: "sequential",
-      required: false,
-      outputKey: "exploration",
-      failurePolicy: "ask_user",
-    },
-    {
-      id: "architect",
-      agentKey: CODING_AGENT_KEYS.architect,
-      promptTemplate: "Turn the approved direction into clear implementation tasks.",
-      dependsOn: ["explore"],
-      runMode: "sequential",
-      required: false,
-      outputKey: "tasks",
-      failurePolicy: "skip",
-    },
-    {
-      id: "coder",
-      agentKey: CODING_AGENT_KEYS.coder,
-      promptTemplate: "Implement the assigned task and verify the narrowest useful scope.",
-      dependsOn: ["architect"],
-      runMode: "parallel",
-      required: true,
-      outputKey: "implementation",
-      failurePolicy: "stop",
-    },
-    {
-      id: "reviewer",
-      agentKey: CODING_AGENT_KEYS.reviewer,
-      promptTemplate: "Review this session's changed files for blockers.",
-      dependsOn: ["coder"],
-      runMode: "sequential",
-      required: false,
-      outputKey: "review",
-      failurePolicy: "ask_user",
-    },
-    {
-      id: "tester",
-      agentKey: CODING_AGENT_KEYS.tester,
-      promptTemplate: "Run final verification for the completed coding task.",
-      dependsOn: ["reviewer"],
-      runMode: "sequential",
-      required: false,
-      outputKey: "verification",
-      failurePolicy: "ask_user",
-    },
-  ];
-}
-
-function researchWorkflowSteps(): WorkflowStep[] {
-  return [
-    workflowStep({
-      id: "research",
-      agentKey: "researcher",
-      promptTemplate:
-        "Collect source-backed findings for {{userPrompt}}. Include contradictions and unknowns.",
-      outputKey: "research_notes",
-      failurePolicy: "stop",
-    }),
-    workflowStep({
-      id: "verify_sources",
-      agentKey: "source_verifier",
-      promptTemplate: "Verify the claims and sources from {{step.research}}.",
-      dependsOn: ["research"],
-      outputKey: "verification",
-      failurePolicy: "ask_user",
-    }),
-    workflowStep({
-      id: "synthesize",
-      agentKey: "synthesizer",
-      promptTemplate:
-        "Synthesize {{output.research_notes}} and {{output.verification}} into the final brief.",
-      dependsOn: ["research", "verify_sources"],
-      outputKey: "brief",
-      failurePolicy: "stop",
-    }),
-  ];
-}
-
-function writingWorkflowSteps(): WorkflowStep[] {
-  return [
-    workflowStep({
-      id: "edit",
-      agentKey: "editor",
-      promptTemplate: "Edit or structure the user's draft or writing request: {{userPrompt}}.",
-      outputKey: "edited_draft",
-      failurePolicy: "stop",
-    }),
-    workflowStep({
-      id: "style_review",
-      agentKey: "style_critic",
-      promptTemplate: "Review tone, voice, and audience fit for {{output.edited_draft}}.",
-      dependsOn: ["edit"],
-      outputKey: "style_notes",
-      failurePolicy: "skip",
-    }),
-    workflowStep({
-      id: "fact_check",
-      agentKey: "fact_checker",
-      promptTemplate: "Check factual claims in {{output.edited_draft}} and flag unsupported statements.",
-      dependsOn: ["edit"],
-      outputKey: "fact_check",
-      failurePolicy: "ask_user",
-    }),
-  ];
-}
-
-function productWorkflowSteps(): WorkflowStep[] {
-  return [
-    workflowStep({
-      id: "product_analysis",
-      agentKey: "pm_analyst",
-      promptTemplate: "Analyze the product problem, users, constraints, and options for {{userPrompt}}.",
-      outputKey: "analysis",
-      failurePolicy: "stop",
-    }),
-    workflowStep({
-      id: "ux_review",
-      agentKey: "ux_reviewer",
-      promptTemplate: "Review the workflow or user experience implied by {{output.analysis}}.",
-      dependsOn: ["product_analysis"],
-      outputKey: "ux_findings",
-      failurePolicy: "skip",
-    }),
-    workflowStep({
-      id: "spec",
-      agentKey: "spec_writer",
-      promptTemplate: "Turn {{output.analysis}} and {{output.ux_findings}} into an actionable product spec.",
-      dependsOn: ["product_analysis", "ux_review"],
-      outputKey: "specification",
-      failurePolicy: "stop",
-    }),
-  ];
-}
-
-function dataWorkflowSteps(): WorkflowStep[] {
-  return [
-    workflowStep({
-      id: "analyze_data",
-      agentKey: "data_analyst",
-      promptTemplate: "Analyze the available data for {{userPrompt}}. State methodology and limitations.",
-      outputKey: "analysis",
-      failurePolicy: "stop",
-    }),
-    workflowStep({
-      id: "review_queries",
-      agentKey: "sql_reviewer",
-      promptTemplate:
-        "Review any SQL or data-query assumptions in {{output.analysis}} for correctness and safety.",
-      dependsOn: ["analyze_data"],
-      outputKey: "query_review",
-      failurePolicy: "ask_user",
-    }),
-    workflowStep({
-      id: "write_report",
-      agentKey: "report_writer",
-      promptTemplate:
-        "Convert {{output.analysis}} and {{output.query_review}} into a concise analytical report.",
-      dependsOn: ["analyze_data", "review_queries"],
-      outputKey: "report",
-      failurePolicy: "stop",
-    }),
-  ];
-}
-
-function opsWorkflowSteps(): WorkflowStep[] {
-  return [
-    workflowStep({
-      id: "triage",
-      agentKey: "incident_triage",
-      promptTemplate: "Triage impact, severity, timeline, and immediate risks for {{userPrompt}}.",
-      outputKey: "triage",
-      failurePolicy: "stop",
-    }),
-    workflowStep({
-      id: "inspect_logs",
-      agentKey: "log_analyst",
-      promptTemplate: "Inspect available logs and operational evidence from {{output.triage}}.",
-      dependsOn: ["triage"],
-      outputKey: "evidence",
-      failurePolicy: "ask_user",
-    }),
-    workflowStep({
-      id: "runbook",
-      agentKey: "runbook_executor",
-      promptTemplate:
-        "Follow only approved runbook steps based on {{output.triage}} and {{output.evidence}}.",
-      dependsOn: ["triage", "inspect_logs"],
-      outputKey: "runbook_result",
-      failurePolicy: "ask_user",
-    }),
-  ];
-}
-
 function presetAgent(agentKey: string, templateId: string, displayName: string): BuiltInPresetAgent {
   return { agentKey, templateId, displayName };
 }
 
 function presetStrategies(input: {
-  defaultKind: OrchestrationStrategy["kind"];
   autonomousGuidance: string;
-  recommendedSteps: WorkflowStep[];
-  fixedSteps: WorkflowStep[];
 }): BuiltInPresetStrategyRecommendation {
   return {
-    defaultKind: input.defaultKind,
     autonomous: { kind: "autonomous", guidancePrompt: input.autonomousGuidance },
-    hybrid: {
-      kind: "hybrid",
-      recommendedSteps: cloneWorkflowSteps(input.recommendedSteps),
-      allowPlannerAdjustments: true,
-    },
-    fixed: {
-      kind: "fixed",
-      steps: cloneWorkflowSteps(input.fixedSteps),
-    },
   };
 }
 
@@ -1633,35 +1378,6 @@ function evalCase(
   };
 }
 
-function workflowStep(input: {
-  id: string;
-  agentKey: string;
-  promptTemplate: string;
-  dependsOn?: string[];
-  runMode?: WorkflowStep["runMode"];
-  required?: boolean;
-  outputKey: string;
-  failurePolicy: WorkflowStep["failurePolicy"];
-}): WorkflowStep {
-  return {
-    id: input.id,
-    agentKey: input.agentKey,
-    promptTemplate: input.promptTemplate,
-    dependsOn: [...(input.dependsOn ?? [])],
-    runMode: input.runMode ?? "sequential",
-    required: input.required ?? true,
-    outputKey: input.outputKey,
-    failurePolicy: input.failurePolicy,
-  };
-}
-
-function cloneWorkflowSteps(steps: readonly WorkflowStep[]): WorkflowStep[] {
-  return steps.map((step) => ({
-    ...step,
-    dependsOn: [...step.dependsOn],
-  }));
-}
-
 function uniquePresetProfileValue(
   base: string,
   existingValues: readonly string[],
@@ -1680,39 +1396,10 @@ function uniquePresetProfileValue(
   throw new Error(`无法为 ${base} 生成唯一名称。`);
 }
 
-function selectPresetDefaultStrategy(preset: BuiltInPresetDefinition): OrchestrationStrategy {
-  if (preset.strategies.defaultKind === "fixed") {
-    return preset.strategies.fixed;
-  }
-  if (preset.strategies.defaultKind === "hybrid") {
-    return preset.strategies.hybrid;
-  }
-  return preset.strategies.autonomous;
-}
-
 function cloneOrchestrationStrategy(strategy: OrchestrationStrategy): OrchestrationStrategy {
-  if (strategy.kind === "autonomous") {
-    return {
-      kind: "autonomous",
-      ...(strategy.guidancePrompt && { guidancePrompt: strategy.guidancePrompt }),
-    };
-  }
-  if (strategy.kind === "hybrid") {
-    return {
-      kind: "hybrid",
-      recommendedSteps: cloneWorkflowSteps(strategy.recommendedSteps),
-      allowPlannerAdjustments: strategy.allowPlannerAdjustments,
-    };
-  }
   return {
-    kind: "fixed",
-    steps: cloneWorkflowSteps(strategy.steps),
-    ...(strategy.finalAggregator && {
-      finalAggregator: {
-        ...strategy.finalAggregator,
-        dependsOn: [...strategy.finalAggregator.dependsOn],
-      },
-    }),
+    kind: "autonomous",
+    ...(strategy.guidancePrompt && { guidancePrompt: strategy.guidancePrompt }),
   };
 }
 

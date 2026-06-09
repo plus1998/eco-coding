@@ -34,7 +34,6 @@ export interface AgentProfileSummary {
   name: string;
   presetLabel: string;
   sourceLabel: string;
-  strategyLabel: string;
   main: AgentProfileMainSummary;
   agents: AgentProfileAgentSummary[];
   enabledAgents: AgentProfileAgentSummary[];
@@ -43,6 +42,12 @@ export interface AgentProfileSummary {
 }
 
 const SUBAGENT_ROLE_SET = new Set<string>(SUBAGENT_ROLES);
+const EXPLORE_TOOLS: ToolPolicy = {
+  allowed: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
+  disallowed: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
+  filesystem: { read: "workspace", write: "none" },
+  network: { webSearch: false, webFetch: false },
+};
 
 export function listSelectableAgentProfileSummaries(
   settings: ModelSettingsSnapshot,
@@ -90,9 +95,12 @@ export function buildAgentProfileSummary(
       mcpServers: [],
     }),
   };
-  const agents = profile.agents.map((agent) =>
-    buildAgentSummary(agent, templatesById.get(agent.templateId), runtimeConfig),
-  );
+  const agents = [
+    buildExploreSummary(profile),
+    ...profile.agents.map((agent) =>
+      buildAgentSummary(agent, templatesById.get(agent.templateId), runtimeConfig),
+    ),
+  ];
   const enabledAgents = agents.filter((agent) => agent.enabled);
   return {
     profile,
@@ -100,7 +108,6 @@ export function buildAgentProfileSummary(
     name: profile.name,
     presetLabel: formatAgentDomainLabel(profile.preset),
     sourceLabel: formatProfileSourceLabel(profile),
-    strategyLabel: formatStrategyLabel(profile),
     main,
     agents,
     enabledAgents,
@@ -109,6 +116,23 @@ export function buildAgentProfileSummary(
       ...mainRiskLabels,
       ...enabledAgents.flatMap((agent) => agent.riskLabels),
     ]),
+  };
+}
+
+function buildExploreSummary(profile: OrchestrationProfile): AgentProfileAgentSummary {
+  return {
+    agentKey: "explore",
+    name: "Explore",
+    modelLabel: formatModelLabel(
+      profile.builtinAgents.explore.modelRef.providerId,
+      profile.builtinAgents.explore.modelRef.modelId,
+    ),
+    enabled: true,
+    riskLabels: summarizeToolRiskLabels(EXPLORE_TOOLS),
+    permissionChips: buildAgentTemplatePermissionChips({
+      defaultTools: EXPLORE_TOOLS,
+      mcpServers: [],
+    }),
   };
 }
 
@@ -178,16 +202,6 @@ function formatProfileSourceLabel(profile: OrchestrationProfile): string {
     return "用户";
   }
   return "自定义";
-}
-
-function formatStrategyLabel(profile: OrchestrationProfile): string {
-  if (profile.strategy.kind === "fixed") {
-    return "固定流程";
-  }
-  if (profile.strategy.kind === "hybrid") {
-    return "混合策略";
-  }
-  return "自主策略";
 }
 
 function summarizeToolRiskLabels(policy: ToolPolicy): string[] {

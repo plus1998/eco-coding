@@ -106,40 +106,6 @@ test("buildThreadRunEventFromLiveEvent maps SDK request status to request span",
   });
 });
 
-test("buildThreadRunEventFromLiveEvent preserves workflow lifecycle metadata", () => {
-  const event = buildThreadRunEventFromLiveEvent({
-    threadId: "thr_1",
-    eventId: "workflow_step_1",
-    liveType: "agent.completed",
-    role: "planner",
-    stream: false,
-    message: "固定编排步骤完成：research",
-    observedAt: "2026-01-01T00:00:03.000Z",
-    metadata: {
-      ecoWorkflowStep: {
-        id: "research",
-        agentKey: "researcher",
-        outputKey: "research_notes",
-        status: "completed",
-        attempt: 1,
-        batchIndex: 0,
-      },
-    },
-  });
-
-  expect(event?.metadata).toEqual({
-    liveType: "agent.completed",
-    ecoWorkflowStep: {
-      id: "research",
-      agentKey: "researcher",
-      outputKey: "research_notes",
-      status: "completed",
-      attempt: 1,
-      batchIndex: 0,
-    },
-  });
-});
-
 test("buildThreadRunEventFromLiveEvent maps SDK retry status to request retry", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

@@ -18,17 +18,12 @@ function profile(): OrchestrationProfile {
       tools: { allowed: ["Agent", "Read"], disallowed: [] },
       skills: [],
     },
-    agents: [
-      {
-        agentKey: "explore",
-        templateId: "builtin.explore",
-        displayName: "Explore",
+    builtinAgents: {
+      explore: {
         modelRef: { providerId: "p1", modelId: "m2" },
-        tools: { allowed: ["Read"], disallowed: [] },
-        mcpServers: [],
-        skills: [],
-        enabled: true,
       },
+    },
+    agents: [
       {
         agentKey: "reviewer",
         templateId: "builtin.reviewer",
@@ -76,10 +71,8 @@ test("buildComposerSavedProfile copies current composer state into a user profil
   expect(saved.source).toBe("user");
   expect(saved.version).toBe(1);
   expect(saved.sourceRouteProfileId).toBeUndefined();
-  expect(saved.agents.map((agent) => [agent.agentKey, agent.enabled])).toEqual([
-    ["explore", true],
-    ["reviewer", false],
-  ]);
+  expect(saved.builtinAgents.explore.modelRef).toEqual({ providerId: "p1", modelId: "m2" });
+  expect(saved.agents.map((agent) => [agent.agentKey, agent.enabled])).toEqual([["reviewer", false]]);
   expect(saved.strategy).toEqual({
     kind: "autonomous",
     guidancePrompt: "Delegate only when useful.",

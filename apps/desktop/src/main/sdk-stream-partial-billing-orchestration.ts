@@ -34,7 +34,6 @@ export async function resolveSdkStreamPartialBillingOrchestration(
     ...(request.plannerAgentId && { plannerAgentId: request.plannerAgentId }),
     ...(request.subagentAgentId && { subagentAgentId: request.subagentAgentId }),
     ...(request.parentToolUseId && { parentToolUseId: request.parentToolUseId }),
-    ...(request.workflowStep && { workflowStep: request.workflowStep }),
   });
 
   return {

@@ -295,13 +295,7 @@ export function createModelAlias(role: RuntimeAgentRole, providerId: string, mod
   return `eco-${role}-${digest}`;
 }
 
-/**
- * Model ids Claude Agent SDK may request for builtin Explore even when Eco routes explore elsewhere.
- * Users never configure these directly; the proxy maps them to the explore role route.
- */
-export const SDK_BUILTIN_EXPLORE_MODEL_IDS = new Set(["gpt-5.4"]);
-
-/** Family ids SDK may request when the configured route uses a suffixed variant (e.g. gpt-5.4-mini → gpt-5.4). */
+/** Family ids for configured model variants (e.g. gpt-5.4-mini → gpt-5.4). */
 export function canonicalModelFamilyIds(modelId: string): readonly string[] {
   const match = modelId.match(
     /^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i,
@@ -310,7 +304,7 @@ export function canonicalModelFamilyIds(modelId: string): readonly string[] {
   return family ? [family] : [];
 }
 
-/** When several roles share one upstream model id, prefer explore for canonical family ids (SDK builtin Explore). */
+/** When several roles share one upstream model id, keep attribution deterministic. */
 const SHARED_UPSTREAM_MODEL_ROLE_PRIORITY: readonly AgentRole[] = [
   "explore",
   "coder",
@@ -365,10 +359,6 @@ export function resolveProxyRoute(
   }
   if (byFamilyVariant.length > 1) {
     return pickSharedUpstreamModelRoute(byFamilyVariant);
-  }
-
-  if (SDK_BUILTIN_EXPLORE_MODEL_IDS.has(requestedModel)) {
-    return routes.find((route) => route.role === "explore");
   }
 
   return undefined;

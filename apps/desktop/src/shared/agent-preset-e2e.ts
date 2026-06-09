@@ -1,15 +1,10 @@
 import {
-  buildFixedWorkflowStepPrompt,
-  buildHybridWorkflowGuidance,
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
-  type EcoWorkflowStepOutput,
-  renderWorkflowStepPrompt,
-  resolveFixedWorkflowBatches,
   sdkAgentKeyForProfileAgent,
 } from "@eco/runtime";
-import type { AgentTemplate, ModelRef, OrchestrationProfile, WorkflowStep } from "./agent-orchestration";
+import type { AgentTemplate, ModelRef, OrchestrationProfile } from "./agent-orchestration";
 import {
   buildOrchestrationProfileFromPreset,
   createBuiltInAgentTemplates,
@@ -28,14 +23,13 @@ export interface BuiltInPresetE2ETaskScenario {
   profile: OrchestrationProfile;
 }
 
-export interface PresetE2ETaskStepResult {
-  stepId: string;
+export interface PresetE2ETaskAgentResult {
   agentKey: string;
   sdkAgentKey: string;
-  outputKey: string;
+  resultKey: string;
   prompt: string;
   output: string;
-  batchIndex: number;
+  sequence: number;
 }
 
 export interface PresetE2ETaskRunResult {
@@ -44,8 +38,8 @@ export interface PresetE2ETaskRunResult {
   ok: boolean;
   errors: string[];
   runtimeAgentKeys: string[];
-  workflowKind: OrchestrationProfile["strategy"]["kind"];
-  steps: PresetE2ETaskStepResult[];
+  strategyKind: OrchestrationProfile["strategy"]["kind"];
+  agentResults: PresetE2ETaskAgentResult[];
   finalArtifact: string;
 }
 
@@ -103,7 +97,7 @@ export function runPresetE2ETaskScenario(
   const enabledAgents = scenario.profile.agents.filter((agent) => agent.enabled);
   const enabledAgentKeys = new Set(enabledAgents.map((agent) => agent.agentKey));
   const runtimeAgentKeys: string[] = [];
-  const steps: PresetE2ETaskStepResult[] = [];
+  const agentResults: PresetE2ETaskAgentResult[] = [];
 
   for (const agentKey of scenario.expectedAgentKeys) {
     if (!enabledAgentKeys.has(agentKey)) {
@@ -154,20 +148,14 @@ export function runPresetE2ETaskScenario(
     errors.push(`Runtime tool policy cannot be built: ${errorMessage(caught)}`);
   }
 
-  for (const step of collectStrategySteps(scenario.profile)) {
-    if (!enabledAgentKeys.has(step.agentKey)) {
-      errors.push(`Workflow step references disabled or missing agent: ${step.id} -> ${step.agentKey}`);
-    }
-  }
-
   try {
-    steps.push(...runWorkflowSteps(scenario));
+    agentResults.push(...runPresetAgentResults(scenario));
   } catch (caught) {
-    errors.push(`Workflow steps cannot be simulated: ${errorMessage(caught)}`);
+    errors.push(`Preset agent results cannot be simulated: ${errorMessage(caught)}`);
   }
 
-  const finalArtifact = buildFinalArtifact(scenario, steps);
-  errors.push(...validateFinalArtifact(scenario, finalArtifact, steps));
+  const finalArtifact = buildFinalArtifact(scenario, agentResults);
+  errors.push(...validateFinalArtifact(scenario, finalArtifact, agentResults));
 
   return {
     scenarioId: scenario.id,
@@ -175,8 +163,8 @@ export function runPresetE2ETaskScenario(
     ok: errors.length === 0,
     errors,
     runtimeAgentKeys,
-    workflowKind: scenario.profile.strategy.kind,
-    steps,
+    strategyKind: scenario.profile.strategy.kind,
+    agentResults,
     finalArtifact,
   };
 }
@@ -199,127 +187,75 @@ export function createBuiltInPresetE2ETaskSuiteReport(
   };
 }
 
-function runWorkflowSteps(scenario: BuiltInPresetE2ETaskScenario): PresetE2ETaskStepResult[] {
-  if (scenario.profile.strategy.kind === "autonomous") {
-    const agentKey =
-      scenario.expectedAgentKeys[0] ?? scenario.profile.agents.find((agent) => agent.enabled)?.agentKey;
-    if (!agentKey) {
-      throw new Error("Autonomous E2E scenario has no enabled agent.");
-    }
-    return [
-      buildStepResult({
-        scenario,
-        step: {
-          id: "autonomous",
-          agentKey,
-          promptTemplate: `Autonomously complete {{userPrompt}} and satisfy ${scenario.expectedOutcome}.`,
-          dependsOn: [],
-          runMode: "sequential",
-          required: true,
-          outputKey: "final",
-          failurePolicy: "stop",
-        },
-        renderedPrompt: scenario.profile.strategy.guidancePrompt ?? scenario.userPrompt,
-        outputs: [],
-        batchIndex: 0,
-      }),
-    ];
+function runPresetAgentResults(scenario: BuiltInPresetE2ETaskScenario): PresetE2ETaskAgentResult[] {
+  const agentKeys =
+    scenario.expectedAgentKeys.length > 0
+      ? scenario.expectedAgentKeys
+      : scenario.profile.agents.filter((agent) => agent.enabled).map((agent) => agent.agentKey);
+  if (agentKeys.length === 0) {
+    throw new Error("E2E scenario has no enabled agent.");
   }
-
-  if (scenario.profile.strategy.kind === "fixed") {
-    const outputs: EcoWorkflowStepOutput[] = [];
-    const results: PresetE2ETaskStepResult[] = [];
-    const batches = resolveFixedWorkflowBatches(scenario.profile.strategy);
-    batches.forEach((batch, batchIndex) => {
-      for (const step of batch) {
-        const renderedPrompt = renderWorkflowStepPrompt(step, {
-          userPrompt: scenario.userPrompt,
-          outputs,
-        });
-        const result = buildStepResult({ scenario, step, renderedPrompt, outputs, batchIndex });
-        results.push(result);
-        outputs.push({ stepId: step.id, outputKey: step.outputKey, content: result.output });
-      }
-    });
-    return results;
-  }
-
-  const outputs: EcoWorkflowStepOutput[] = [];
-  const results: PresetE2ETaskStepResult[] = [];
-  const guidance = buildHybridWorkflowGuidance(scenario.profile.strategy);
-  scenario.profile.strategy.recommendedSteps.forEach((step, batchIndex) => {
-    const renderedPrompt = renderWorkflowStepPrompt(step, {
-      userPrompt: scenario.userPrompt,
-      outputs,
-    });
-    const result = buildStepResult({
+  return agentKeys.map((agentKey, index) =>
+    buildAgentResult({
       scenario,
-      step,
-      renderedPrompt: `${guidance}\n\n${renderedPrompt}`,
-      outputs,
-      batchIndex,
-    });
-    results.push(result);
-    outputs.push({ stepId: step.id, outputKey: step.outputKey, content: result.output });
-  });
-  return results;
+      agentKey,
+      sequence: index,
+    }),
+  );
 }
 
-function buildStepResult(input: {
+function buildAgentResult(input: {
   scenario: BuiltInPresetE2ETaskScenario;
-  step: WorkflowStep;
-  renderedPrompt: string;
-  outputs: readonly EcoWorkflowStepOutput[];
-  batchIndex: number;
-}): PresetE2ETaskStepResult {
-  const sdkAgentKey = sdkAgentKeyForProfileAgent(input.step.agentKey);
-  const prompt =
-    input.scenario.profile.strategy.kind === "fixed"
-      ? buildFixedWorkflowStepPrompt({
-          step: input.step,
-          renderedInstructions: input.renderedPrompt,
-        })
-      : input.renderedPrompt;
+  agentKey: string;
+  sequence: number;
+}): PresetE2ETaskAgentResult {
+  const sdkAgentKey = sdkAgentKeyForProfileAgent(input.agentKey);
+  const resultKey = `${input.agentKey}_result`;
+  const prompt = [
+    input.scenario.profile.strategy.guidancePrompt ?? "Choose agents based on the task.",
+    `User task: ${input.scenario.userPrompt}`,
+    `Consider Agent(${sdkAgentKey}) when it materially improves the result.`,
+  ].join("\n\n");
   return {
-    stepId: input.step.id,
-    agentKey: input.step.agentKey,
+    agentKey: input.agentKey,
     sdkAgentKey,
-    outputKey: input.step.outputKey,
+    resultKey,
     prompt,
-    output: buildSimulatedStepOutput(input.scenario, input.step, input.outputs),
-    batchIndex: input.batchIndex,
+    output: buildSimulatedAgentOutput(input.scenario, input.agentKey, resultKey),
+    sequence: input.sequence,
   };
 }
 
-function buildSimulatedStepOutput(
+function buildSimulatedAgentOutput(
   scenario: BuiltInPresetE2ETaskScenario,
-  step: WorkflowStep,
-  outputs: readonly EcoWorkflowStepOutput[],
+  agentKey: string,
+  resultKey: string,
 ): string {
   return [
     `Preset: ${scenario.presetName}`,
     `Task: ${scenario.userPrompt}`,
-    `Step: ${step.id}`,
-    `Agent: ${step.agentKey}`,
-    `Output key: ${step.outputKey}`,
+    `Agent: ${agentKey}`,
+    `Result key: ${resultKey}`,
     `Expected outcome: ${scenario.expectedOutcome}`,
     "Success criteria:",
     ...scenario.successCriteria.map((criterion) => `- ${criterion}`),
-    outputs.length > 0 ? "Previous outputs were incorporated." : "No previous outputs were required.",
+    "Main agent remains responsible for the final answer.",
   ].join("\n");
 }
 
 function buildFinalArtifact(
   scenario: BuiltInPresetE2ETaskScenario,
-  steps: readonly PresetE2ETaskStepResult[],
+  agentResults: readonly PresetE2ETaskAgentResult[],
 ): string {
   return [
     `Preset E2E result: ${scenario.presetName}`,
     `Scenario: ${scenario.id}`,
     `Task: ${scenario.userPrompt}`,
     `Expected outcome: ${scenario.expectedOutcome}`,
-    "Completed workflow steps:",
-    ...steps.map((step) => `- ${step.stepId} via Agent(${step.sdkAgentKey}) -> ${step.outputKey}`),
+    "Expected agent coverage:",
+    ...agentResults.map(
+      (result) => `- ${result.agentKey} via Agent(${result.sdkAgentKey}) -> ${result.resultKey}`,
+    ),
     "Acceptance coverage:",
     ...scenario.successCriteria.map((criterion) => `- ${criterion}`),
     "Final answer:",
@@ -330,7 +266,7 @@ function buildFinalArtifact(
 function validateFinalArtifact(
   scenario: BuiltInPresetE2ETaskScenario,
   artifact: string,
-  steps: readonly PresetE2ETaskStepResult[],
+  agentResults: readonly PresetE2ETaskAgentResult[],
 ): string[] {
   const errors: string[] = [];
   if (!artifact.includes(scenario.expectedOutcome)) {
@@ -342,35 +278,22 @@ function validateFinalArtifact(
     }
   }
   for (const agentKey of scenario.expectedAgentKeys) {
-    if (!steps.some((step) => step.agentKey === agentKey)) {
-      errors.push(`Expected E2E agent did not produce a step output: ${agentKey}`);
+    if (!agentResults.some((result) => result.agentKey === agentKey)) {
+      errors.push(`Expected E2E agent did not produce a result: ${agentKey}`);
     }
   }
-  if (steps.length === 0) {
-    errors.push("E2E task produced no workflow steps.");
+  if (agentResults.length === 0) {
+    errors.push("E2E task produced no agent results.");
   }
-  for (const step of steps) {
-    if (!step.prompt.trim()) {
-      errors.push(`Step prompt is empty: ${step.stepId}`);
+  for (const result of agentResults) {
+    if (!result.prompt.trim()) {
+      errors.push(`Agent prompt is empty: ${result.agentKey}`);
     }
-    if (!step.output.includes(step.outputKey)) {
-      errors.push(`Step output does not mention output key: ${step.stepId}`);
+    if (!result.output.includes(result.resultKey)) {
+      errors.push(`Agent output does not mention result key: ${result.agentKey}`);
     }
   }
   return errors;
-}
-
-function collectStrategySteps(profile: OrchestrationProfile): WorkflowStep[] {
-  if (profile.strategy.kind === "autonomous") {
-    return [];
-  }
-  if (profile.strategy.kind === "fixed") {
-    return [
-      ...profile.strategy.steps,
-      ...(profile.strategy.finalAggregator ? [profile.strategy.finalAggregator] : []),
-    ];
-  }
-  return [...profile.strategy.recommendedSteps];
 }
 
 function stringifySystemPrompt(systemPrompt: string | Record<string, unknown>): string {

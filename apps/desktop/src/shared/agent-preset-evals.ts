@@ -2,16 +2,9 @@ import {
   buildMainAgentSystemPrompt,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
-  resolveFixedWorkflowBatches,
   sdkAgentKeyForProfileAgent,
 } from "@eco/runtime";
-import type {
-  AgentTemplate,
-  ModelRef,
-  OrchestrationProfile,
-  OrchestrationStrategy,
-  WorkflowStep,
-} from "./agent-orchestration";
+import type { AgentTemplate, ModelRef, OrchestrationProfile } from "./agent-orchestration";
 import {
   buildOrchestrationProfileFromPreset,
   createBuiltInAgentTemplates,
@@ -41,7 +34,6 @@ export interface PresetCommercialQualityGateResult {
   ok: boolean;
   errors: string[];
   runtimeAgentKeys: string[];
-  workflowStepCount: number;
 }
 
 export interface PresetCommercialQualityGateReport {
@@ -49,7 +41,6 @@ export interface PresetCommercialQualityGateReport {
   scenarioCount: number;
   presetIds: OrchestrationProfile["preset"][];
   runtimeAgentCount: number;
-  workflowScenarioCount: number;
   results: PresetCommercialQualityGateResult[];
 }
 
@@ -104,11 +95,6 @@ export function validateBuiltInPresetEvalScenario(
       errors.push(`Expected agent is not enabled: ${agentKey}`);
     }
   }
-  for (const agentKey of collectStrategyAgentKeys(scenario.profile.strategy)) {
-    if (!enabledAgentKeys.has(agentKey)) {
-      errors.push(`Workflow references a disabled or missing agent: ${agentKey}`);
-    }
-  }
   if (!scenario.profile.mainAgent.modelRef.providerId || !scenario.profile.mainAgent.modelRef.modelId) {
     errors.push("Main agent model is incomplete.");
   }
@@ -152,7 +138,6 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
   const enabledAgents = scenario.profile.agents.filter((agent) => agent.enabled);
   const enabledAgentKeys = new Set(enabledAgents.map((agent) => agent.agentKey));
   const runtimeAgentKeys: string[] = [];
-  let workflowStepCount = 0;
 
   let promptText = "";
   try {
@@ -227,39 +212,12 @@ export function validateBuiltInPresetCommercialQualityGateScenario(
     }
   }
 
-  const workflowSteps = collectStrategySteps(scenario.profile.strategy);
-  workflowStepCount = workflowSteps.length;
-  for (const step of workflowSteps) {
-    if (!enabledAgentKeys.has(step.agentKey)) {
-      errors.push(`Workflow step references disabled or missing agent: ${step.id} -> ${step.agentKey}`);
-    }
-  }
-  if (scenario.profile.strategy.kind === "fixed") {
-    try {
-      const batches = resolveFixedWorkflowBatches(scenario.profile.strategy);
-      if (workflowSteps.length > 0 && batches.length === 0) {
-        errors.push("Fixed workflow did not produce executable batches.");
-      }
-    } catch (caught) {
-      errors.push(
-        `Fixed workflow cannot be resolved: ${caught instanceof Error ? caught.message : String(caught)}`,
-      );
-    }
-  }
-  if (
-    scenario.profile.strategy.kind === "hybrid" &&
-    scenario.profile.strategy.recommendedSteps.length === 0
-  ) {
-    errors.push("Hybrid workflow must define recommended steps.");
-  }
-
   return {
     scenarioId: scenario.id,
     presetId: scenario.presetId,
     ok: errors.length === 0,
     errors,
     runtimeAgentKeys,
-    workflowStepCount,
   };
 }
 
@@ -275,34 +233,8 @@ export function createBuiltInPresetCommercialQualityGateReport(
     scenarioCount: scenarios.length,
     presetIds: [...new Set(scenarios.map((scenario) => scenario.presetId))],
     runtimeAgentCount: results.reduce((total, result) => total + result.runtimeAgentKeys.length, 0),
-    workflowScenarioCount: results.filter((result) => result.workflowStepCount > 0).length,
     results,
   };
-}
-
-function collectStrategyAgentKeys(strategy: OrchestrationStrategy): Set<string> {
-  const keys = new Set<string>();
-  if (strategy.kind === "autonomous") {
-    return keys;
-  }
-  const steps = strategy.kind === "fixed" ? strategy.steps : strategy.recommendedSteps;
-  for (const step of steps) {
-    keys.add(step.agentKey);
-  }
-  if (strategy.kind === "fixed" && strategy.finalAggregator) {
-    keys.add(strategy.finalAggregator.agentKey);
-  }
-  return keys;
-}
-
-function collectStrategySteps(strategy: OrchestrationStrategy): WorkflowStep[] {
-  if (strategy.kind === "autonomous") {
-    return [];
-  }
-  if (strategy.kind === "fixed") {
-    return [...strategy.steps, ...(strategy.finalAggregator ? [strategy.finalAggregator] : [])];
-  }
-  return [...strategy.recommendedSteps];
 }
 
 function stringifySystemPrompt(systemPrompt: string | Record<string, unknown>): string {

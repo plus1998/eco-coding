@@ -281,6 +281,12 @@ export function normalizeStoredOrchestrationProfile(profile: OrchestrationProfil
   if (!profile.name.trim()) {
     throw new Error("编排配置名称不能为空。");
   }
+  if (
+    !profile.builtinAgents?.explore?.modelRef?.providerId?.trim() ||
+    !profile.builtinAgents.explore.modelRef.modelId?.trim()
+  ) {
+    throw new Error("Agent Profile 必须配置 Explore 的 provider 和模型。");
+  }
   const now = new Date().toISOString();
   return {
     ...profile,

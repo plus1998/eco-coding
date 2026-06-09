@@ -4751,7 +4751,6 @@ async function processSdkRunBilling(input: SdkRunUsageBillingInput): Promise<voi
     ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
     ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    ...(input.workflowStep && { workflowStep: input.workflowStep }),
   });
 
   for (const observation of resolved.observations) {

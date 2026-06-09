@@ -13,9 +13,6 @@ export function normalizeSdkSubagentType(type: string): RuntimeAgentRole | undef
   if (!trimmed) {
     return undefined;
   }
-  if (trimmed === "Explore") {
-    return "explore";
-  }
   for (const role of SUBAGENT_ROLES) {
     if (trimmed === ecoSubagentKeyForRole(role)) {
       return role;

@@ -20,5 +20,5 @@ test("pickDisplayModelId prefers configured upstream over SDK alias live value",
 
 test("formatRoleModelLabel with pickDisplayModelId does not show eco alias", () => {
   const modelId = pickDisplayModelId("eco-planner-59c6458bbc15", "claude-opus-4-7");
-  expect(formatRoleModelLabel("planner", modelId)).toBe("规划 · claude-opus-4-7");
+  expect(formatRoleModelLabel("planner", modelId)).toBe("主代理 · claude-opus-4-7");
 });

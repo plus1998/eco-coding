@@ -33,6 +33,11 @@ function profile(agentEnabled: boolean): OrchestrationProfile {
       tools,
       skills: [],
     },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "p1", modelId: "explore-model" },
+      },
+    },
     agents: [
       {
         agentKey: "draft",
@@ -58,7 +63,15 @@ test("isAgentProfileReady ignores disabled agent model refs", () => {
   expect(isAgentProfileReady(profile(true), providers)).toBe(false);
 });
 
-test("areCodingRoutesReady still requires all fixed coding routes", () => {
+test("isAgentProfileReady requires the built-in Explore model", () => {
+  const providers = new Map([[provider.id, provider]]);
+  const draft = profile(false);
+  draft.builtinAgents.explore.modelRef = { providerId: "missing", modelId: "explore-model" };
+
+  expect(isAgentProfileReady(draft, providers)).toBe(false);
+});
+
+test("areCodingRoutesReady requires all required coding routes", () => {
   const providers = new Map([[provider.id, provider]]);
 
   expect(

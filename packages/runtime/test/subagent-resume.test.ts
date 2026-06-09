@@ -8,8 +8,8 @@ import {
 } from "../src/subagent-resume";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
-test("normalizeSdkSubagentType maps Explore to explore", () => {
-  expect(normalizeSdkSubagentType("Explore")).toBe("explore");
+test("normalizeSdkSubagentType rejects SDK built-in Explore and maps Eco keys", () => {
+  expect(normalizeSdkSubagentType("Explore")).toBeUndefined();
   expect(normalizeSdkSubagentType(ecoSubagentKeyForRole("explore"))).toBe("explore");
   expect(normalizeSdkSubagentType("explore")).toBe("explore");
   expect(normalizeSdkSubagentType(ecoSubagentKeyForRole("coder"))).toBe("coder");
@@ -19,13 +19,12 @@ test("normalizeSdkSubagentType maps Explore to explore", () => {
   expect(normalizeSdkSubagentType("Plan")).toBeUndefined();
 });
 
-test("normalizeAgentToolInputSubagentType rewrites legacy names to eco keys", () => {
+test("normalizeAgentToolInputSubagentType rewrites Eco runtime names to eco keys", () => {
   expect(
     normalizeAgentToolInputSubagentType({ subagent_type: "Explore", prompt: "Map auth" }),
   ).toMatchObject({
-    role: "explore",
-    changed: true,
-    input: { subagent_type: ecoSubagentKeyForRole("explore"), prompt: "Map auth" },
+    changed: false,
+    input: { subagent_type: "Explore", prompt: "Map auth" },
   });
   expect(
     normalizeAgentToolInputSubagentType({ agent_type: "reviewer", prompt: "Review" }),
@@ -54,8 +53,10 @@ test("buildResumeAgentPrompt formats SDK resume line", () => {
   );
 });
 
-test("createSubagentResumePreToolHook rewrites Explore to explore role", async () => {
+test("createSubagentResumePreToolHook ignores SDK built-in Explore", async () => {
+  let called = false;
   const hook = createSubagentResumePreToolHook("thr_1", "planning", (input) => {
+    called = true;
     expect(input.role).toBe("explore");
     return "explore-agent-id";
   });
@@ -69,12 +70,8 @@ test("createSubagentResumePreToolHook rewrites Explore to explore role", async (
     "tool_explore",
   );
 
-  expect(result.hookSpecificOutput?.updatedInput?.prompt).toBe(
-    "Resume agent explore-agent-id and Map auth flow",
-  );
-  expect(result.hookSpecificOutput?.updatedInput?.subagent_type).toBe(
-    ecoSubagentKeyForRole("explore"),
-  );
+  expect(result.hookSpecificOutput).toBeUndefined();
+  expect(called).toBe(false);
 });
 
 test("createSubagentResumePreToolHook rewrites Agent tool input", async () => {

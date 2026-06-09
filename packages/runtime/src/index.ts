@@ -21,7 +21,7 @@ export interface EcoSdkSessionOptions {
   settingSources?: EcoSettingSource[];
   /** Main session (Planner) skill directories to preload */
   skills?: string[];
-  /** Per-agent skill directories for subagent definitions. Keys may be fixed roles, profile agentKeys, or SDK eco_* keys. */
+  /** Per-agent skill directories for subagent definitions. Keys may be built-in roles, profile agentKeys, or SDK eco_* keys. */
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>;
   /** Subagent on/off. */
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
@@ -235,7 +235,6 @@ export type {
   SdkToolPermissionRequest,
 } from "./claude-agent-sdk";
 export * from "./eco-sdk-hooks";
-export * from "./workflow-orchestration";
 export {
   buildResumeAgentPrompt,
   createSubagentMissionCapturePreToolHook,

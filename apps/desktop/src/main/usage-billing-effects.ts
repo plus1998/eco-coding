@@ -21,12 +21,11 @@ import {
   type UsageLegacyBillingAccumulator,
 } from "./usage-legacy-billing";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import {
-  type ResolvedSdkRunBillingModel,
-  type SdkStreamPartialBillingArtifacts,
-  type SingleUsageBillingArtifacts,
-  type UsageBillingContextUpdate,
-  type WorkflowStepUsageMetadata,
+import type {
+  ResolvedSdkRunBillingModel,
+  SdkStreamPartialBillingArtifacts,
+  SingleUsageBillingArtifacts,
+  UsageBillingContextUpdate,
 } from "./usage-billing-artifacts";
 import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
 
@@ -200,7 +199,6 @@ export interface ApplySdkRunBillingEffectsInput {
   ledgerAgentId?: string;
   resolvedSubagentId?: string;
   contextUpdate?: UsageBillingContextUpdate;
-  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export async function applySdkRunBillingEffects(
@@ -219,7 +217,6 @@ export async function applySdkRunBillingEffects(
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       metadata: {
         path: "processSdkRunBilling",
-        ...(input.workflowStep && { ecoWorkflowStep: input.workflowStep }),
       },
     }),
   );

@@ -210,7 +210,11 @@ export function ComposerAgentModels({
             const subagent = !main;
             const enabled = subagentRole && subagentSettings ? subagentSettings[subagentRole] : true;
             const clickable = Boolean(
-              canEditSubagents && subagentRole && subagentSettings && onToggleSubagent,
+              canEditSubagents &&
+                subagentRole &&
+                subagentRole !== "explore" &&
+                subagentSettings &&
+                onToggleSubagent,
             );
             const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : "未配置";
             const className = rowClassName({ subagent, enabled, clickable, planner: main });

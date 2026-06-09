@@ -73,7 +73,7 @@ test("buildComposerAgentModelLabels renders dynamic Agent Profile labels", () =>
       role: "planner",
       displayName: "Research Captain",
       modelId: "main-model",
-      title: "规划 · main-model",
+      title: "主代理 · main-model",
       main: true,
     },
     {

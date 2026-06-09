@@ -199,6 +199,8 @@ export type {
   AgentDomain,
   AgentInstanceConfig,
   AgentTemplate,
+  BuiltinAgentConfig,
+  BuiltinAgentsConfig,
   MainAgentConfig,
   ModelRef,
   ModelRequirementCapability,
@@ -206,7 +208,6 @@ export type {
   OrchestrationProfile,
   OrchestrationStrategy,
   ToolPolicy,
-  WorkflowStep,
 } from "./agent-orchestration";
 export type { UpstreamApiCompat };
 
@@ -793,20 +794,6 @@ export interface ThreadSubagentBillingSnapshot {
   modelId?: string;
 }
 
-export interface ThreadBillingWorkflowStepSnapshot {
-  stepId: string;
-  agentKey: string;
-  outputKey: string;
-  attempt: number;
-  batchIndex: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  ecoCostUsd: number;
-  modelIds: string[];
-}
-
 export type ThreadBillingDiagnosticSeverity = "info" | "warning" | "error";
 
 export type ThreadBillingDiagnosticType =
@@ -866,7 +853,6 @@ export interface ThreadBillingSnapshot {
     >
   >;
   subagents?: ThreadSubagentBillingSnapshot[];
-  workflowSteps?: ThreadBillingWorkflowStepSnapshot[];
   diagnostics?: ThreadBillingDiagnostic[];
 }
 
@@ -885,26 +871,11 @@ export interface AgentProfilePerformanceRunSnapshot {
   ecoCostUsd: number;
 }
 
-export interface AgentProfileWorkflowStepPerformanceSnapshot {
-  stepId: string;
-  agentKey: string;
-  outputKey: string;
-  runCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  totalTokens: number;
-  ecoCostUsd: number;
-  modelIds: string[];
-}
-
 export interface AgentProfilePerformanceSnapshot {
   profileId: string;
   selectionId: string;
   profileName: string;
   preset: string;
-  strategyKind: "autonomous" | "hybrid" | "fixed" | "unknown";
   source: "configured" | "historical";
   runCount: number;
   completedCount: number;
@@ -923,7 +894,6 @@ export interface AgentProfilePerformanceSnapshot {
   avgCostUsd?: number;
   latestRunAt?: string;
   modelIds: string[];
-  workflowSteps: AgentProfileWorkflowStepPerformanceSnapshot[];
   recentRuns: AgentProfilePerformanceRunSnapshot[];
 }
 

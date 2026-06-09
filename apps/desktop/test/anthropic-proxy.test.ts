@@ -117,7 +117,7 @@ test("buildModelsListResponse lists only configured alias and upstream model ids
   expect(ids).not.toContain("gpt-5.4");
 });
 
-test("resolveProxyRoute maps SDK builtin Explore gpt-5.4 to configured explore route", () => {
+test("resolveProxyRoute does not guess SDK built-in Explore model ids", () => {
   const provider = createProvider("anthropic", "Anthropic", "provider-secret");
   const exploreRoute: AnthropicProxyResolvedRoute = {
     role: "explore",
@@ -133,7 +133,7 @@ test("resolveProxyRoute maps SDK builtin Explore gpt-5.4 to configured explore r
     apiCompat: "anthropic",
     aliasModelId: createModelAlias("planner", provider.id, "claude-sonnet-4-6"),
   };
-  expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4")).toEqual(exploreRoute);
+  expect(resolveProxyRoute([exploreRoute, plannerRoute], "gpt-5.4")).toBeUndefined();
 });
 
 test("resolveProxyRoute does not guess SDK default Claude models", () => {

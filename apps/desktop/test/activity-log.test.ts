@@ -1331,11 +1331,11 @@ test("resolveSubagentRunTitle returns mission summary text", () => {
   ).toBe("实现 API");
 });
 
-test("resolveSubagentRunDisplayTitle uses fixed Chinese role label", () => {
+test("resolveSubagentRunDisplayTitle uses stable Chinese role label", () => {
   expect(resolveSubagentRunDisplayTitle("coder")).toBe("编码");
   expect(resolveSubagentRunDisplayTitle("reviewer")).toBe("审查");
   expect(resolveSubagentRunDisplayTitle("探索")).toBe("探索");
-  expect(resolveSubagentRunDisplayTitle("Explore")).toBe("探索");
+  expect(resolveSubagentRunDisplayTitle("Explore")).toBe("Explore");
 });
 
 test("backfills subagent card agentId from persisted session timings", () => {

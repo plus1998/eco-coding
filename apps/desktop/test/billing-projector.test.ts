@@ -138,47 +138,6 @@ test("projectBillingFromUsageLedger preserves dynamic Agent Profile roles", () =
   });
 });
 
-test("projectBillingFromUsageLedger attributes billing to workflow steps", () => {
-  const usage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 200, cacheCreationTokens: 50 };
-  const event = buildSingleUsageLedgerEvent({
-    threadId: "thr_projector",
-    role: "coder",
-    source: "sdk",
-    sourceEventId: "sdk:workflow:research",
-    requestKey: "sdk:workflow:research",
-    usage,
-    computedBilling: billingFor(usage),
-    agentId: "agent_researcher",
-    modelId: "haiku",
-    metadata: {
-      ecoWorkflowStep: {
-        id: "research",
-        agentKey: "researcher",
-        outputKey: "research_notes",
-        attempt: 2,
-        batchIndex: 1,
-      },
-    },
-  });
-
-  const projection = projectBillingFromUsageLedger({ events: [event] });
-
-  expect(projection.snapshot?.workflowSteps).toHaveLength(1);
-  expect(projection.snapshot?.workflowSteps?.[0]).toMatchObject({
-    stepId: "research",
-    agentKey: "researcher",
-    outputKey: "research_notes",
-    attempt: 2,
-    batchIndex: 1,
-    inputTokens: 10_000,
-    outputTokens: 1_000,
-    cacheReadTokens: 200,
-    cacheCreationTokens: 50,
-    modelIds: ["haiku"],
-  });
-  expect(projection.snapshot?.workflowSteps?.[0]?.ecoCostUsd).toBeCloseTo(0.012066, 8);
-});
-
 test("projectBillingFromUsageLedger exposes unattributed unresolved usage", () => {
   const event = buildSingleUsageLedgerEvent({
     threadId: "thr_projector",

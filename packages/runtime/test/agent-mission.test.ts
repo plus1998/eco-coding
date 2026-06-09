@@ -38,5 +38,5 @@ test("detects generic mission summaries and weak agent tool labels", () => {
 
 test("normalizes explore labels in agent tool detail", () => {
   expect(missionFromAgentToolDetail("探索 · 搜索代码库")?.role).toBe("explore");
-  expect(missionFromAgentToolDetail("编码 (Explore)")?.role).toBe("explore");
+  expect(missionFromAgentToolDetail("编码 (Explore)")?.role).toBe("Explore");
 });

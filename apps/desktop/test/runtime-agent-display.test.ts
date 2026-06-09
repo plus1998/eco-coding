@@ -47,8 +47,8 @@ test("buildRuntimeAgentDisplayNames maps runtime roles to profile agent names", 
 
   expect(names.planner).toBe("Main Agent");
   expect(names.main).toBe("Main Agent");
-  expect(names.explore).toBe("Explorer");
-  expect(names.eco_explore).toBe("Explorer");
+  expect(names.explore).toBe("Explore");
+  expect(names.eco_explore).toBe("Explore");
   expect(resolveRuntimeAgentName("eco_coder", names)).toBe("Coder");
 });
 

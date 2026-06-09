@@ -107,13 +107,13 @@ test("createExitPlanModePreToolHook captures plan and defers SDK approval", asyn
   });
 });
 
-test("createNormalizeSubagentPreToolHook rewrites legacy Agent input to eco key", async () => {
+test("createNormalizeSubagentPreToolHook rewrites runtime Agent input to eco key", async () => {
   const hook = createNormalizeSubagentPreToolHook();
   const result = await hook(
     {
       hook_event_name: "PreToolUse",
       tool_name: "Agent",
-      tool_input: { subagent_type: "Explore", prompt: "Scan repo" },
+      tool_input: { subagent_type: "reviewer", prompt: "Review" },
       tool_use_id: "tool_norm",
       session_id: "s1",
       cwd: "/tmp",
@@ -125,7 +125,7 @@ test("createNormalizeSubagentPreToolHook rewrites legacy Agent input to eco key"
   expect(result.hookSpecificOutput).toMatchObject({
     hookEventName: "PreToolUse",
     permissionDecision: "allow",
-    updatedInput: { subagent_type: ecoSubagentKeyForRole("explore"), prompt: "Scan repo" },
+    updatedInput: { subagent_type: ecoSubagentKeyForRole("reviewer"), prompt: "Review" },
   });
 });
 
@@ -742,7 +742,7 @@ test("createToolPermissionPreToolHook reports denied permissions for audit", asy
   ]);
 });
 
-test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is disabled", async () => {
+test("createDisabledSubagentPreToolHook ignores SDK built-in Explore", async () => {
   const hook = createDisabledSubagentPreToolHook({
     explore: false,
     architect: true,
@@ -764,10 +764,7 @@ test("createDisabledSubagentPreToolHook denies Agent(Explore) when explore is di
     { signal: new AbortController().signal },
   );
 
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "deny",
-  });
+  expect(result.hookSpecificOutput).toBeUndefined();
 });
 
 test("createDisabledSubagentPreToolHook denies Agent for disabled roles", async () => {

@@ -1,6 +1,6 @@
 export const SUBAGENT_ROLES = ["explore", "architect", "coder", "reviewer", "tester"] as const;
 
-/** Legacy SDK built-in explore key accepted for old sessions/tool calls. */
+/** Claude SDK built-in Explore key. Eco blocks this and registers its own configured Explore agent. */
 export const SDK_EXPLORE_AGENT_KEY = "Explore";
 
 /** Official Claude SDK built-in agent Eco allows through unchanged. */
@@ -91,6 +91,10 @@ export function normalizeSubagentAvailability(
     return availability;
   }
   for (const role of SUBAGENT_ROLES) {
+    if (role === "explore") {
+      availability.explore = true;
+      continue;
+    }
     if (typeof input[role] === "boolean") {
       availability[role] = input[role];
     }
@@ -107,9 +111,6 @@ export function listEnabledSubagents(availability: SubagentAvailability): Subage
 }
 
 export function agentDefinitionAvailabilityRole(key: string): SubagentRole | undefined {
-  if (key === SDK_EXPLORE_AGENT_KEY) {
-    return "explore";
-  }
   for (const role of SUBAGENT_ROLES) {
     if (key === ECO_SUBAGENT_KEY_BY_ROLE[role]) {
       return role;
@@ -124,6 +125,9 @@ export function filterAgentDefinitions<T extends Record<string, unknown>>(
 ): Partial<T> {
   const filtered: Partial<T> = {};
   for (const [key, value] of Object.entries(definitions)) {
+    if (key === SDK_EXPLORE_AGENT_KEY) {
+      continue;
+    }
     const role = agentDefinitionAvailabilityRole(key);
     if (!role) {
       (filtered as Record<string, unknown>)[key] = value;

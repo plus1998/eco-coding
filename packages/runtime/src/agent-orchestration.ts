@@ -1,3 +1,5 @@
+import { ecoSubagentKeyForRole } from "./subagent-availability.js";
+
 export type EcoAgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type EcoAgentConfigSource = "built_in" | "user" | "project" | "derived";
 
@@ -80,27 +82,22 @@ export interface EcoAgentInstanceConfig {
   enabled: boolean;
 }
 
-export type EcoOrchestrationStrategy =
-  | { kind: "autonomous"; guidancePrompt?: string }
-  | { kind: "hybrid"; recommendedSteps: EcoWorkflowStep[]; allowPlannerAdjustments: boolean }
-  | { kind: "fixed"; steps: EcoWorkflowStep[]; finalAggregator?: EcoWorkflowStep };
-
-export interface EcoWorkflowStep {
-  id: string;
-  agentKey: string;
-  promptTemplate: string;
-  dependsOn: string[];
-  runMode: "sequential" | "parallel";
-  required: boolean;
-  outputKey: string;
-  failurePolicy: "stop" | "retry" | "skip" | "ask_user";
+export interface EcoBuiltinAgentConfig {
+  modelRef: EcoModelRef;
 }
+
+export interface EcoBuiltinAgentsConfig {
+  explore: EcoBuiltinAgentConfig;
+}
+
+export type EcoOrchestrationStrategy = { kind: "autonomous"; guidancePrompt?: string };
 
 export interface EcoOrchestrationProfileConfig {
   id: string;
   name: string;
   preset: EcoAgentDomain;
   mainAgent: EcoMainAgentConfig;
+  builtinAgents: EcoBuiltinAgentsConfig;
   agents: EcoAgentInstanceConfig[];
   strategy: EcoOrchestrationStrategy;
   version: number;
@@ -138,6 +135,13 @@ export const SDK_FILESYSTEM_WRITE_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "N
 export const SDK_DELEGATION_SUPPORT_TOOL_NAMES = ["TaskList", "TaskOutput"] as const;
 export const SDK_TASK_PROGRESS_TOOL_NAMES = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
 
+const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
+  allowed: ["Read", "Glob", "Grep"],
+  disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+  filesystem: { read: "workspace", write: "none" },
+  network: { webSearch: false, webFetch: false },
+};
+
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -173,6 +177,10 @@ export function buildToolPermissionPolicyFromProfile(
   const explicitAgentKeys = options.agentKeys ? new Set(options.agentKeys) : undefined;
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
+  const builtinExploreKey = ecoSubagentKeyForRole("explore");
+  if (!explicitAgentKeys || explicitAgentKeys.has(builtinExploreKey)) {
+    agents[builtinExploreKey] = normalizeToolPermissionEntry(BUILTIN_EXPLORE_TOOL_POLICY);
+  }
   for (const agent of profile.agents) {
     if (!agent.enabled) {
       continue;
@@ -202,21 +210,28 @@ export function buildMainAgentRoster(
   templates: readonly EcoAgentTemplateConfig[],
 ): string {
   const templateById = new Map(templates.map((template) => [template.id, template]));
-  const lines = profile.agents
-    .filter((agent) => agent.enabled)
-    .map((agent) => {
-      const template = templateById.get(agent.templateId);
-      if (!template) {
-        return `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): missing template ${agent.templateId}`;
-      }
-      const displayName = agent.displayName?.trim() || template.name;
-      const output = template.outputContract?.trim() ? ` Output: ${template.outputContract.trim()}` : "";
-      return [
-        `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): ${displayName} [${template.domain}]`,
-        `  Description: ${template.description.trim()}`,
-        `  Use when: ${template.whenToUse.trim()}.${output}`,
-      ].join("\n");
-    });
+  const lines = [
+    [
+      `- Agent(${ecoSubagentKeyForRole("explore")}): Explore [built-in]`,
+      "  Description: Read-only codebase discovery for gathering context with the configured Explore model.",
+      "  Use when: repository context or file discovery is needed before planning, answering, or implementing.",
+    ].join("\n"),
+    ...profile.agents
+      .filter((agent) => agent.enabled)
+      .map((agent) => {
+        const template = templateById.get(agent.templateId);
+        if (!template) {
+          return `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): missing template ${agent.templateId}`;
+        }
+        const displayName = agent.displayName?.trim() || template.name;
+        const output = template.outputContract?.trim() ? ` Output: ${template.outputContract.trim()}` : "";
+        return [
+          `- Agent(${sdkAgentKeyForProfileAgent(agent.agentKey)}): ${displayName} [${template.domain}]`,
+          `  Description: ${template.description.trim()}`,
+          `  Use when: ${template.whenToUse.trim()}.${output}`,
+        ].join("\n");
+      }),
+  ];
   if (lines.length === 0) {
     return "Available Eco subagents: none.";
   }
@@ -225,26 +240,9 @@ export function buildMainAgentRoster(
 
 export function buildMainAgentStrategySummary(profile: EcoOrchestrationProfileConfig): string {
   const strategy = profile.strategy;
-  if (strategy.kind === "autonomous") {
-    return [
-      "Orchestration strategy: autonomous.",
-      strategy.guidancePrompt?.trim() || "Choose subagents only when they materially improve the result.",
-    ].join("\n");
-  }
-  if (strategy.kind === "fixed") {
-    return [
-      "Orchestration strategy: fixed.",
-      ...strategy.steps.map((step) => `- ${step.id}: Agent(${sdkAgentKeyForProfileAgent(step.agentKey)})`),
-    ].join("\n");
-  }
   return [
-    "Orchestration strategy: hybrid.",
-    strategy.allowPlannerAdjustments
-      ? "Recommended steps may be skipped, added, or reordered when justified."
-      : "Follow recommended steps unless blocked.",
-    ...strategy.recommendedSteps.map(
-      (step) => `- ${step.id}: Agent(${sdkAgentKeyForProfileAgent(step.agentKey)})`,
-    ),
+    "Main-agent delegation guidance.",
+    strategy.guidancePrompt?.trim() || "Choose subagents only when they materially improve the result.",
   ].join("\n");
 }
 

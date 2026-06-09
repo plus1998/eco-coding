@@ -1,7 +1,6 @@
 import type {
   AgentProfilePerformanceRunSnapshot,
   AgentProfilePerformanceSnapshot,
-  AgentProfileWorkflowStepPerformanceSnapshot,
   OrchestrationProfile,
   ThreadBillingSnapshot,
   ThreadStatus,
@@ -19,7 +18,6 @@ interface MutableProfilePerformance {
   selectionId: string;
   profileName: string;
   preset: string;
-  strategyKind: AgentProfilePerformanceSnapshot["strategyKind"];
   source: AgentProfilePerformanceSnapshot["source"];
   runCount: number;
   completedCount: number;
@@ -36,21 +34,7 @@ interface MutableProfilePerformance {
   ecoCostUsd: number;
   latestRunAt?: string;
   modelIds: Set<string>;
-  workflowSteps: Map<string, MutableWorkflowStepPerformance>;
   recentRuns: AgentProfilePerformanceRunSnapshot[];
-}
-
-interface MutableWorkflowStepPerformance {
-  stepId: string;
-  agentKey: string;
-  outputKey: string;
-  runCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  ecoCostUsd: number;
-  modelIds: Set<string>;
 }
 
 export function buildAgentProfilePerformanceSnapshots(
@@ -88,7 +72,6 @@ function createConfiguredProfilePerformance(profile: OrchestrationProfile): Muta
     selectionId: profile.sourceRouteProfileId ?? profile.id,
     profileName: profile.name,
     preset: profile.preset,
-    strategyKind: profile.strategy.kind,
     source: "configured",
     runCount: 0,
     completedCount: 0,
@@ -104,7 +87,6 @@ function createConfiguredProfilePerformance(profile: OrchestrationProfile): Muta
     cacheCreationTokens: 0,
     ecoCostUsd: 0,
     modelIds: new Set(),
-    workflowSteps: new Map(),
     recentRuns: [],
   };
 }
@@ -134,7 +116,6 @@ function getOrCreateProfilePerformance(
     selectionId,
     profileName: `已删除 Profile · ${selectionId}`,
     preset: "unknown",
-    strategyKind: "unknown",
     source: "historical",
     runCount: 0,
     completedCount: 0,
@@ -150,7 +131,6 @@ function getOrCreateProfilePerformance(
     cacheCreationTokens: 0,
     ecoCostUsd: 0,
     modelIds: new Set(),
-    workflowSteps: new Map(),
     recentRuns: [],
   };
   byProfileId.set(profileId, created);
@@ -193,20 +173,6 @@ function addThreadToProfilePerformance(
     }
   }
 
-  for (const step of billing?.workflowSteps ?? []) {
-    const stepState = getOrCreateWorkflowStepPerformance(state, step.stepId, step.agentKey, step.outputKey);
-    stepState.runCount += 1;
-    stepState.inputTokens += step.inputTokens;
-    stepState.outputTokens += step.outputTokens;
-    stepState.cacheReadTokens += step.cacheReadTokens;
-    stepState.cacheCreationTokens += step.cacheCreationTokens;
-    stepState.ecoCostUsd += step.ecoCostUsd;
-    for (const modelId of step.modelIds) {
-      stepState.modelIds.add(modelId);
-      state.modelIds.add(modelId);
-    }
-  }
-
   state.recentRuns.push({
     threadId: thread.id,
     title: thread.title,
@@ -238,32 +204,6 @@ function addStatusCount(state: MutableProfilePerformance, status: ThreadStatus):
   state.activeCount += 1;
 }
 
-function getOrCreateWorkflowStepPerformance(
-  profile: MutableProfilePerformance,
-  stepId: string,
-  agentKey: string,
-  outputKey: string,
-): MutableWorkflowStepPerformance {
-  const existing = profile.workflowSteps.get(stepId);
-  if (existing) {
-    return existing;
-  }
-  const created: MutableWorkflowStepPerformance = {
-    stepId,
-    agentKey,
-    outputKey,
-    runCount: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    ecoCostUsd: 0,
-    modelIds: new Set(),
-  };
-  profile.workflowSteps.set(stepId, created);
-  return created;
-}
-
 function finalizeProfilePerformance(state: MutableProfilePerformance): AgentProfilePerformanceSnapshot {
   const totalTokens = tokenTotalFromParts(state);
   const terminalCount = state.completedCount + state.failedCount + state.blockedCount;
@@ -272,7 +212,6 @@ function finalizeProfilePerformance(state: MutableProfilePerformance): AgentProf
     selectionId: state.selectionId,
     profileName: state.profileName,
     preset: state.preset,
-    strategyKind: state.strategyKind,
     source: state.source,
     runCount: state.runCount,
     completedCount: state.completedCount,
@@ -295,28 +234,7 @@ function finalizeProfilePerformance(state: MutableProfilePerformance): AgentProf
     ...(state.runCount > 0 && { avgCostUsd: state.ecoCostUsd / state.runCount }),
     ...(state.latestRunAt && { latestRunAt: state.latestRunAt }),
     modelIds: [...state.modelIds].sort(),
-    workflowSteps: [...state.workflowSteps.values()]
-      .map(finalizeWorkflowStepPerformance)
-      .sort(compareWorkflowStepPerformance),
     recentRuns: state.recentRuns.sort(compareRecentRuns).slice(0, 3),
-  };
-}
-
-function finalizeWorkflowStepPerformance(
-  state: MutableWorkflowStepPerformance,
-): AgentProfileWorkflowStepPerformanceSnapshot {
-  return {
-    stepId: state.stepId,
-    agentKey: state.agentKey,
-    outputKey: state.outputKey,
-    runCount: state.runCount,
-    inputTokens: state.inputTokens,
-    outputTokens: state.outputTokens,
-    cacheReadTokens: state.cacheReadTokens,
-    cacheCreationTokens: state.cacheCreationTokens,
-    totalTokens: tokenTotalFromParts(state),
-    ecoCostUsd: state.ecoCostUsd,
-    modelIds: [...state.modelIds].sort(),
   };
 }
 
@@ -377,17 +295,6 @@ function compareRecentRuns(
   right: AgentProfilePerformanceRunSnapshot,
 ): number {
   return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-}
-
-function compareWorkflowStepPerformance(
-  left: AgentProfileWorkflowStepPerformanceSnapshot,
-  right: AgentProfileWorkflowStepPerformanceSnapshot,
-): number {
-  return (
-    right.ecoCostUsd - left.ecoCostUsd ||
-    right.totalTokens - left.totalTokens ||
-    left.stepId.localeCompare(right.stepId)
-  );
 }
 
 function compareProfilePerformanceSnapshots(

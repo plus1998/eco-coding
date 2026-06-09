@@ -7,7 +7,6 @@ import {
   type RequestBillingDelta,
 } from "@eco/runtime";
 import type {
-  AgentRole,
   BillingUsageSource,
   ModelsDevMapping,
   RouteManualSpec,
@@ -45,14 +44,6 @@ export interface UsageBillingContextUpdate {
   manualSpec?: RouteManualSpec;
 }
 
-export interface WorkflowStepUsageMetadata {
-  id: string;
-  agentKey: string;
-  outputKey: string;
-  attempt: number;
-  batchIndex: number;
-}
-
 export interface SingleUsageBillingArtifacts {
   delta: ParsedUsage;
   source: BillingUsageSource;
@@ -87,7 +78,6 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   sourceEventId?: string;
   providerRequestId?: string;
   otelDedupId?: string;
-  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export async function resolveSingleUsageBillingArtifacts(
@@ -170,7 +160,6 @@ export async function resolveSingleUsageBillingArtifacts(
       metadata: {
         path: "processUsageBilling",
         ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
-        ...(input.workflowStep && { ecoWorkflowStep: input.workflowStep }),
       },
     }),
     parsedUsage,
@@ -198,7 +187,6 @@ export interface ResolveSdkStreamPartialBillingArtifactsInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
-  workflowStep?: WorkflowStepUsageMetadata;
 }
 
 export async function resolveSdkStreamPartialBillingArtifacts(
@@ -234,7 +222,6 @@ export async function resolveSdkStreamPartialBillingArtifacts(
       metadata: {
         path: "processSdkStreamPartialUsage",
         settlement: "partial",
-        ...(input.workflowStep && { ecoWorkflowStep: input.workflowStep }),
       },
     }),
     ...(resolvedModelId && { resolvedModelId }),

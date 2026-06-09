@@ -37,9 +37,11 @@ export function getRoutesForProfile(
 export function runtimeRoleRoutesFromAgentProfile(profile: OrchestrationProfile): RuntimeRoleRouteConfig[] {
   const routes = new Map<RuntimeAgentRole, RuntimeRoleRouteConfig>();
   routes.set("planner", routeFromAgentProfileModelRef("planner", profile.mainAgent.modelRef));
+  routes.set("explore", routeFromAgentProfileModelRef("explore", profile.builtinAgents.explore.modelRef));
   for (const agent of profile.agents) {
-    if (agent.enabled && agent.agentKey !== "planner" && !routes.has(agent.agentKey)) {
-      routes.set(agent.agentKey, routeFromAgentProfileModelRef(agent.agentKey, agent.modelRef));
+    const role = agent.agentKey;
+    if (agent.enabled && role !== "planner" && !routes.has(role)) {
+      routes.set(role, routeFromAgentProfileModelRef(role, agent.modelRef));
     }
   }
   return [...routes.values()];

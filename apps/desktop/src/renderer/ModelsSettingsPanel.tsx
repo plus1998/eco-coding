@@ -705,6 +705,7 @@ export function ModelsSettingsPanel({
     const routes = runtimeRoleRoutesFromAgentProfile(profile);
     const displayNames = new Map<string, string>([
       ["planner", profile.mainAgent.name || "主 Agent"],
+      ["explore", "Explore"],
       ...profile.agents.map((agent) => [agent.agentKey, agent.displayName || agent.agentKey] as const),
     ]);
     setTestingAgentProfileId(profile.id);
@@ -1347,7 +1348,10 @@ interface AgentProfileToolPolicyFieldValues {
 
 const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
 
-type AgentProfileSelectedNode = { kind: "main" } | { kind: "agent"; agentKey: string };
+type AgentProfileSelectedNode =
+  | { kind: "main" }
+  | { kind: "builtinExplore" }
+  | { kind: "agent"; agentKey: string };
 
 function AgentProfileEditorModal({
   form,
@@ -1393,6 +1397,7 @@ function AgentProfileEditorModal({
         : "创建新的 Profile，并选择需要的子代理节点。";
   const saveLabel = mode === "edit" ? "保存修改" : mode === "copy" ? "创建副本" : "创建";
   const activeProvider = providers.find((provider) => provider.id === form.mainProviderId);
+  const builtinExploreProvider = providers.find((provider) => provider.id === form.builtinExploreProviderId);
   const selectedTemplateIds = useMemo(
     () => new Set(form.agents.map((agent) => agent.templateId)),
     [form.agents],
@@ -1509,9 +1514,6 @@ function AgentProfileEditorModal({
     const removingAgentKey = form.agents[index]?.agentKey;
     setForm((current) => ({
       ...current,
-      workflowSteps: removingAgentKey
-        ? current.workflowSteps.filter((step) => step.agentKey !== removingAgentKey)
-        : current.workflowSteps,
       agents: current.agents.filter((_, agentIndex) => agentIndex !== index),
     }));
     if (selectedAgentKey !== undefined && selectedAgentKey === removingAgentKey) {
@@ -1628,7 +1630,7 @@ function AgentProfileEditorModal({
                   <div>
                     <h3 className="models-route-profile-section-title">Agent Profile 画布</h3>
                     <p className="models-agent-profile-builder-subtitle">
-                      主 Agent 编排 {form.agents.length} 个子代理节点
+                      主 Agent、Explore 和 {form.agents.length} 个子代理节点
                     </p>
                   </div>
                   <span className="models-agent-source-badge">
@@ -1656,6 +1658,27 @@ function AgentProfileEditorModal({
                   </button>
 
                   <div className="models-agent-profile-node-rail" aria-hidden />
+
+                  <article className="models-agent-profile-node-shell">
+                    <button
+                      type="button"
+                      className="models-agent-profile-node"
+                      disabled={busy}
+                      onClick={() => setSelectedNode({ kind: "builtinExplore" })}
+                    >
+                      <span className="models-agent-profile-node-type">内置代理</span>
+                      <span className="models-agent-profile-node-title">Explore</span>
+                      <span className="models-agent-profile-node-model">
+                        {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) ||
+                          "未选 Provider"}{" "}
+                        / {form.builtinExploreModelId || "未选模型"}
+                      </span>
+                      <span className="models-agent-profile-node-footer">
+                        <Settings2 size={14} />
+                        模型
+                      </span>
+                    </button>
+                  </article>
 
                   {form.agents.length === 0 ? (
                     <div className="models-agent-profile-empty-drop">
@@ -1789,11 +1812,17 @@ function AgentProfileNodeConfigModal({
   onFetchModels: (provider: ProviderConfigView) => void;
 }) {
   const isMainNode = node.kind === "main";
+  const isBuiltinExploreNode = node.kind === "builtinExplore";
   const mainProvider = providers.find((provider) => provider.id === form.mainProviderId);
+  const builtinExploreProvider = providers.find(
+    (provider) => provider.id === form.builtinExploreProviderId,
+  );
   const agentProvider = agent ? providers.find((provider) => provider.id === agent.providerId) : undefined;
   const nodeTitle = isMainNode
     ? "主 Agent 配置"
-    : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
+    : isBuiltinExploreNode
+      ? "Explore 配置"
+      : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
   const mainCapabilityForm = useMemo(
     () => ({
       allowedTools: form.mainAllowedTools,
@@ -1821,7 +1850,7 @@ function AgentProfileNodeConfigModal({
     [templates, mainCapabilityForm, mcpServers, skillsSnapshot],
   );
 
-  if (!isMainNode && (!agent || agentIndex < 0)) {
+  if (!isMainNode && !isBuiltinExploreNode && (!agent || agentIndex < 0)) {
     return null;
   }
 
@@ -1973,6 +2002,57 @@ function AgentProfileNodeConfigModal({
                   })
                 }
               />
+            </>
+          ) : isBuiltinExploreNode ? (
+            <>
+              <div className="models-agent-profile-template-summary">
+                <div className="models-agent-profile-title-row">
+                  <span className="models-route-role">Explore</span>
+                  <span className="models-agent-source-badge">内置</span>
+                </div>
+                <p className="models-subagent-card-desc">
+                  内置只读探索代理，用于代码库上下文发现，可绑定当前 Profile 的专用模型。
+                </p>
+              </div>
+
+              <div className="models-agent-template-form-grid">
+                <label className="mcp-field">
+                  <span className="mcp-field-label">Provider</span>
+                  <select
+                    className="mcp-field-input"
+                    value={form.builtinExploreProviderId}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const nextProvider = providers.find((entry) => entry.id === event.target.value);
+                      onPatchProfile({
+                        builtinExploreProviderId: event.target.value,
+                        builtinExploreModelId:
+                          nextProvider?.defaultModel || form.builtinExploreModelId || "",
+                      });
+                    }}
+                  >
+                    {providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mcp-field">
+                  <span className="mcp-field-label">模型</span>
+                  <ModelSelectField
+                    value={form.builtinExploreModelId}
+                    disabled={busy}
+                    models={modelsForProvider(form.builtinExploreProviderId)}
+                    loading={loadingForProvider(form.builtinExploreProviderId)}
+                    error={modelsErrorForProvider(form.builtinExploreProviderId)}
+                    onChange={(modelId) => onPatchProfile({ builtinExploreModelId: modelId })}
+                    onRefresh={
+                      builtinExploreProvider ? () => onFetchModels(builtinExploreProvider) : undefined
+                    }
+                  />
+                </div>
+              </div>
             </>
           ) : (
             <>
@@ -2489,7 +2569,6 @@ function AgentProfileSummaryBlock({ summary }: { summary: AgentProfileSummary })
         <span className="mcp-server-name">{summary.name}</span>
         <span className="models-agent-domain-badge">{summary.presetLabel}</span>
         <span className="models-agent-source-badge">{summary.sourceLabel}</span>
-        <span className="models-agent-source-badge">{summary.strategyLabel}</span>
       </div>
       <div className="models-agent-profile-meta">
         <span>主 Agent：{summary.main.modelLabel}</span>
@@ -2539,7 +2618,6 @@ function AgentProfilePerformanceStrip({
       </div>
     );
   }
-  const topStep = performance.workflowSteps[0];
   return (
     <div className="models-agent-profile-performance">
       <span className="models-agent-profile-performance-pill">运行 {performance.runCount}</span>
@@ -2558,11 +2636,6 @@ function AgentProfilePerformanceStrip({
       {performance.latestRunAt ? (
         <span className="models-agent-profile-performance-pill">
           最近 {formatPerformanceDate(performance.latestRunAt)}
-        </span>
-      ) : null}
-      {topStep ? (
-        <span className="models-agent-profile-performance-pill emphasis">
-          Step {topStep.stepId} · {formatCostUsd(topStep.ecoCostUsd)}
         </span>
       ) : null}
     </div>
@@ -2675,7 +2748,7 @@ function PresetOverview({
             </div>
 
             <div className="models-preset-focus">
-              <span>默认 {formatPresetStrategyKind(preset.strategies.defaultKind)}</span>
+              <span>默认 Agent Profile</span>
               <p>{primaryExample?.title ?? preset.modelSuggestion.main}</p>
             </div>
 
@@ -2697,16 +2770,6 @@ function PresetOverview({
       })}
     </div>
   );
-}
-
-function formatPresetStrategyKind(kind: BuiltInPresetDefinition["strategies"]["defaultKind"]): string {
-  if (kind === "fixed") {
-    return "固定流程";
-  }
-  if (kind === "hybrid") {
-    return "混合策略";
-  }
-  return "自主策略";
 }
 
 function PresetEvaluationOverview({
@@ -2802,13 +2865,7 @@ function formatVersionTime(value: string): string {
 
 function formatAgentProfileVersionSummary(profile: OrchestrationProfile): string {
   const enabledAgents = profile.agents.filter((agent) => agent.enabled);
-  const strategy =
-    profile.strategy.kind === "autonomous"
-      ? "自主策略"
-      : profile.strategy.kind === "hybrid"
-        ? "混合策略"
-        : "固定流程";
-  return `${profile.preset} · ${strategy} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
+  return `${formatAgentDomainLabel(profile.preset)} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
 }
 
 function selectPresetDefaultProvider(

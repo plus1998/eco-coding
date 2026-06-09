@@ -174,8 +174,34 @@ test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => 
 
   expect(runtimeRoleRoutesFromAgentProfile(profile)).toEqual([
     { role: "planner", providerId: "main-provider", modelId: "main-model" },
+    { role: "explore", providerId: "p1", modelId: "m-research" },
     { role: "research lead", providerId: "agent-provider", modelId: "agent-model" },
   ]);
+});
+
+test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", () => {
+  const codingPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
+  if (!codingPreset) {
+    throw new Error("Missing built-in coding preset.");
+  }
+  const profile = buildOrchestrationProfileFromPreset(codingPreset, {
+    id: "coding-copy",
+    name: "编程副本",
+    modelRef: { providerId: "main-provider", modelId: "main-model" },
+    updatedAt: "2026-06-07T00:00:00.000Z",
+  });
+  profile.builtinAgents.explore.modelRef = {
+    providerId: "explore-provider",
+    modelId: "gpt-5.4-mini",
+  };
+
+  const routes = runtimeRoleRoutesFromAgentProfile(profile);
+  expect(routes).toContainEqual({
+    role: "explore",
+    providerId: "explore-provider",
+    modelId: "gpt-5.4-mini",
+  });
+  expect(profile.agents.map((agent) => agent.agentKey)).not.toContain("explore");
 });
 
 test("serialize and parse thread runtime config round-trip", () => {

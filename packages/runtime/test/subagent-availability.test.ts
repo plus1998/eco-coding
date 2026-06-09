@@ -7,7 +7,7 @@ import {
   sdkBuiltinSubagentDenyRules,
 } from "../src/subagent-availability";
 
-test("normalizeSubagentAvailability respects disabled coder", () => {
+test("normalizeSubagentAvailability keeps Explore enabled and respects disabled coder", () => {
   const availability = normalizeSubagentAvailability({
     explore: false,
     architect: false,
@@ -16,10 +16,10 @@ test("normalizeSubagentAvailability respects disabled coder", () => {
     tester: true,
   });
   expect(availability.coder).toBe(false);
-  expect(availability.explore).toBe(false);
+  expect(availability.explore).toBe(true);
 });
 
-test("filterAgentDefinitions omits Explore when explore is disabled", () => {
+test("filterAgentDefinitions always omits SDK built-in Explore definitions", () => {
   const availability = normalizeSubagentAvailability({ explore: false });
   const filtered = filterAgentDefinitions(
     {

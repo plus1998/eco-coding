@@ -18,7 +18,7 @@ function profile(input: Partial<OrchestrationProfile> & { id: string; name: stri
       skills: [],
     },
     agents: [],
-    strategy: input.strategy ?? { kind: "fixed", steps: [] },
+    strategy: input.strategy ?? { kind: "autonomous" },
     version: 1,
     updatedAt: "2026-01-01T00:00:00.000Z",
     source: input.source ?? "user",
@@ -65,7 +65,6 @@ function billing(input: Partial<ThreadBillingSnapshot> = {}): ThreadBillingSnaps
     savedPct: input.savedPct ?? 0,
     pricingResolved: input.pricingResolved ?? true,
     ...(input.byModel && { byModel: input.byModel }),
-    ...(input.workflowSteps && { workflowSteps: input.workflowSteps }),
   };
 }
 
@@ -88,21 +87,6 @@ test("buildAgentProfilePerformanceSnapshots aggregates configured and historical
             cacheCreationTokens: 2,
             ecoCostUsd: 0.03,
             reportedCostUsd: 0,
-          },
-        ],
-        workflowSteps: [
-          {
-            stepId: "research",
-            agentKey: "researcher",
-            outputKey: "research_notes",
-            attempt: 1,
-            batchIndex: 0,
-            inputTokens: 200,
-            outputTokens: 40,
-            cacheReadTokens: 8,
-            cacheCreationTokens: 1,
-            ecoCostUsd: 0.02,
-            modelIds: ["research-model"],
           },
         ],
       }),
@@ -151,21 +135,6 @@ test("buildAgentProfilePerformanceSnapshots aggregates configured and historical
     totalTokens: 498,
     modelIds: ["research-model"],
   });
-  expect(research?.workflowSteps).toEqual([
-    {
-      stepId: "research",
-      agentKey: "researcher",
-      outputKey: "research_notes",
-      runCount: 1,
-      inputTokens: 200,
-      outputTokens: 40,
-      cacheReadTokens: 8,
-      cacheCreationTokens: 1,
-      totalTokens: 249,
-      ecoCostUsd: 0.02,
-      modelIds: ["research-model"],
-    },
-  ]);
   expect(research?.recentRuns.map((run) => run.threadId)).toEqual(["thr_failed", "thr_done"]);
 
   expect(snapshots.find((snapshot) => snapshot.profileId === "profile_idle")).toMatchObject({

@@ -6,8 +6,6 @@ test("PLAN_MODE_UI defines plan mode on and off copy", () => {
   expect(planModeUi(false).title).toBe("计划模式关");
   expect(planModeUi(true).title).toBe("计划模式开");
   expect(planModeUi(true).description).toContain("生成计划");
-  expect(PLAN_MODE_UI.map((entry) => entry.title).join(" ")).not.toContain("固定编排");
-  expect(PLAN_MODE_UI.map((entry) => entry.title).join(" ")).not.toContain("自主编排");
 });
 
 test("togglePlanMode switches between on and off", () => {

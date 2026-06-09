@@ -30,13 +30,6 @@ export interface SingleUsageBillingRequest {
   updateContext?: boolean;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
-  workflowStep?: {
-    id: string;
-    agentKey: string;
-    outputKey: string;
-    attempt: number;
-    batchIndex: number;
-  };
 }
 
 export interface ResolveSingleUsageBillingOrchestrationInput {
@@ -89,7 +82,6 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.sourceEventId && { sourceEventId: request.sourceEventId }),
     ...(request.providerRequestId && { providerRequestId: request.providerRequestId }),
     ...(request.otelDedupId && { otelDedupId: request.otelDedupId }),
-    ...(request.workflowStep && { workflowStep: request.workflowStep }),
   });
   const updateContext =
     request.updateContext ?? shouldUpdateContextFromUsageSource(request.source, request.role);

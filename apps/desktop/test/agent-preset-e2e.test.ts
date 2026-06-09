@@ -32,7 +32,7 @@ test("built-in preset E2E scenarios cover three tasks for every preset", () => {
   expect([...counts.values()]).toEqual([3, 3, 3, 3, 3, 3]);
 });
 
-test("built-in preset E2E suite runs runtime, workflow, permission, and artifact gates", () => {
+test("built-in preset E2E suite runs runtime, permission, and artifact gates", () => {
   const report = createBuiltInPresetE2ETaskSuiteReport();
 
   expect(report.ok).toBe(true);
@@ -48,7 +48,7 @@ test("built-in preset E2E suite runs runtime, workflow, permission, and artifact
   expect(report.results.flatMap((result) => result.errors)).toEqual([]);
   for (const result of report.results) {
     expect(result.runtimeAgentKeys.length).toBeGreaterThanOrEqual(3);
-    expect(result.steps.length).toBeGreaterThan(0);
+    expect(result.agentResults.length).toBeGreaterThan(0);
     expect(result.finalArtifact).toContain("Acceptance coverage:");
   }
 });
@@ -74,12 +74,9 @@ test("preset E2E gate rejects a task whose expected agent is disabled", () => {
 
   expect(result.ok).toBe(false);
   expect(result.errors).toContain("Expected E2E agent is not enabled: runbook_executor");
-  expect(result.errors).toContain(
-    "Workflow step references disabled or missing agent: runbook -> runbook_executor",
-  );
 });
 
-test("preset E2E workflow outputs can be attributed by billing projector", () => {
+test("preset E2E agent outputs can be attributed by billing projector", () => {
   const scenario = createBuiltInPresetE2ETaskScenarios().find(
     (candidate) => candidate.id === "data.data-report",
   );
@@ -87,27 +84,19 @@ test("preset E2E workflow outputs can be attributed by billing projector", () =>
     throw new Error("Missing data report E2E scenario.");
   }
   const result = runPresetE2ETaskScenario(scenario);
-  const events = result.steps.map((step, index) => {
+  const events = result.agentResults.map((agentResult, index) => {
     const usage = usageFor(index + 1);
     return buildSingleUsageLedgerEvent({
       threadId: "thr_preset_e2e",
-      role: step.agentKey,
+      role: agentResult.agentKey,
       source: "sdk",
-      sourceEventId: `sdk:e2e:${step.stepId}`,
-      requestKey: `sdk:e2e:${step.stepId}`,
+      sourceEventId: `sdk:e2e:${agentResult.agentKey}`,
+      requestKey: `sdk:e2e:${agentResult.agentKey}`,
       usage,
       computedBilling: computeRequestBilling(usage, launchGateRates, launchGateRates),
-      agentId: `agent_${step.agentKey}`,
-      modelId: scenario.profile.agents.find((agent) => agent.agentKey === step.agentKey)?.modelRef.modelId,
-      metadata: {
-        ecoWorkflowStep: {
-          id: step.stepId,
-          agentKey: step.agentKey,
-          outputKey: step.outputKey,
-          attempt: 1,
-          batchIndex: step.batchIndex,
-        },
-      },
+      agentId: `agent_${agentResult.agentKey}`,
+      modelId: scenario.profile.agents.find((agent) => agent.agentKey === agentResult.agentKey)?.modelRef
+        .modelId,
     });
   });
 
@@ -115,11 +104,10 @@ test("preset E2E workflow outputs can be attributed by billing projector", () =>
 
   expect(result.ok).toBe(true);
   expect(projection.unresolvedEventCount).toBe(0);
-  expect(projection.snapshot?.workflowSteps).toHaveLength(result.steps.length);
   expect(projection.snapshot?.pricingResolved).toBe(true);
   expect(projection.snapshot?.ecoCostUsd ?? 0).toBeGreaterThan(0);
-  for (const step of result.steps) {
-    expect(projection.snapshot?.byRole?.[step.agentKey]?.inputTokens).toBeGreaterThan(0);
+  for (const agentResult of result.agentResults) {
+    expect(projection.snapshot?.byRole?.[agentResult.agentKey]?.inputTokens).toBeGreaterThan(0);
   }
 });
 

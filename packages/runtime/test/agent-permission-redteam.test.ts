@@ -105,29 +105,8 @@ const registry: EcoAgentRuntimeConfig = {
       },
     ],
     strategy: {
-      kind: "fixed",
-      steps: [
-        {
-          id: "research",
-          agentKey: "researcher",
-          promptTemplate: "Gather sources.",
-          dependsOn: [],
-          runMode: "parallel",
-          required: true,
-          outputKey: "research_notes",
-          failurePolicy: "stop",
-        },
-        {
-          id: "synthesis",
-          agentKey: "synthesizer",
-          promptTemplate: "Synthesize notes.",
-          dependsOn: ["research"],
-          runMode: "sequential",
-          required: true,
-          outputKey: "brief",
-          failurePolicy: "stop",
-        },
-      ],
+      kind: "autonomous",
+      guidancePrompt: "Use researcher for source gathering and synthesizer for final synthesis when useful.",
     },
     version: 1,
     updatedAt: "2026-06-08T00:00:00.000Z",
@@ -144,7 +123,7 @@ interface RedTeamCase {
   reasonIncludes?: string;
 }
 
-test("Agent profile tool permission red-team suite covers main, subagent, and fixed-step actors", async () => {
+test("Agent profile tool permission red-team suite covers main and subagent actors", async () => {
   const decisions: Array<{ actor: string; toolName: string; reason: string }> = [];
   const hook = createToolPermissionPreToolHook(
     buildToolPermissionPolicyFromProfile(registry.profile, registry.templates),
@@ -160,6 +139,9 @@ test("Agent profile tool permission red-team suite covers main, subagent, and fi
     },
   );
   expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected permission hook to be created.");
+  }
 
   const cases: RedTeamCase[] = [
     {
@@ -219,42 +201,20 @@ test("Agent profile tool permission red-team suite covers main, subagent, and fi
       expected: "allow",
     },
     {
-      name: "fixed synthesis step inherits synthesizer permissions",
-      input: preTool(
-        "WebSearch",
-        { query: "should not search" },
-        {
-          agentType: "eco_synthesizer",
-          workflowStep: {
-            id: "synthesis",
-            agentKey: "synthesizer",
-            outputKey: "brief",
-          },
-        },
-      ),
+      name: "synthesizer inherits synthesizer permissions",
+      input: preTool("WebSearch", { query: "should not search" }, { agentType: "eco_synthesizer" }),
       expected: "deny",
       reasonIncludes: "disallowed",
     },
     {
-      name: "fixed synthesis step can read workspace evidence",
-      input: preTool(
-        "Read",
-        { file_path: "evidence.md" },
-        {
-          agentType: "synthesizer",
-          workflowStep: {
-            id: "synthesis",
-            agentKey: "synthesizer",
-            outputKey: "brief",
-          },
-        },
-      ),
+      name: "synthesizer can read workspace evidence",
+      input: preTool("Read", { file_path: "evidence.md" }, { agentType: "synthesizer" }),
       expected: "allow",
     },
   ];
 
   for (const testCase of cases) {
-    const result = await hook!(testCase.input, testCase.input.tool_use_id, {
+    const result = await hook(testCase.input, testCase.input.tool_use_id, {
       signal: new AbortController().signal,
     });
     const actual =
@@ -285,22 +245,12 @@ function preTool(
   toolInput: Record<string, unknown>,
   options: {
     agentType?: string;
-    workflowStep?: { id: string; agentKey: string; outputKey: string };
   } = {},
 ): PreToolUseHookInput {
   return {
     hook_event_name: "PreToolUse",
     tool_name: toolName,
-    tool_input: {
-      ...toolInput,
-      ...(options.workflowStep && {
-        ecoWorkflowStepContext: {
-          ...options.workflowStep,
-          profileId: registry.profile.id,
-          attempt: 1,
-        },
-      }),
-    },
+    tool_input: toolInput,
     tool_use_id: `tool_${toolName}_${options.agentType ?? "main"}_${String(toolInput.command ?? toolInput.file_path ?? toolInput.query ?? "").length}`,
     session_id: "session_redteam",
     cwd: "/workspace/project",
