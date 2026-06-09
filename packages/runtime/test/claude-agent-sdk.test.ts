@@ -497,12 +497,12 @@ test("builds phased orchestration prompts", () => {
   );
 });
 
-test("planning agents include network tools on read-only subagents", () => {
+test("planning explore uses only codebase read tools while architect keeps network lookup", () => {
   const definitions = createPlanningAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     description: expect.stringContaining("Read-only"),
     prompt: expect.stringContaining("read-only"),
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep"],
     model: "claude-haiku-explore",
   });
   expect(definitions).not.toHaveProperty("Explore");
@@ -515,11 +515,11 @@ test("planning agents include network tools on read-only subagents", () => {
   });
 });
 
-test("question explore subagent includes network tools", () => {
+test("question explore subagent uses only codebase read tools", () => {
   const definitions = createQuestionAgentDefinitions(routes);
   expect(definitions[ecoSubagentKeyForRole("explore")]).toMatchObject({
     model: "claude-haiku-explore",
-    tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
+    tools: ["Read", "Glob", "Grep"],
   });
   expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");

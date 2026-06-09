@@ -175,6 +175,7 @@ const questionAllowedTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
 ] as const;
+const exploreSubagentTools = ["Read", "Glob", "Grep"] as const;
 const readOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES, ...networkAllowedTools] as const;
 const executionReadOnlySubagentTools = [...SDK_FILESYSTEM_READ_TOOL_NAMES] as const;
 const readOnlySubagentBashTools = [
@@ -1355,7 +1356,7 @@ function createExploreAgentDefinition(
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   return {
     description: exploreAgentDescription,
-    ...agentDefinitionToolFields("explore", readOnlySubagentTools, agentSkills),
+    ...agentDefinitionToolFields("explore", exploreSubagentTools, agentSkills),
     prompt: exploreAgentPrompt,
     model: toSdkAgentModel(routeByRole.get("explore")?.primary.modelId, "explore"),
   };
