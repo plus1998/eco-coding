@@ -138,6 +138,28 @@ test("maps general-purpose stream metadata to the role", () => {
   expect(events[0]?.role).toBe("general-purpose");
 });
 
+test("maps Plan stream metadata to the role", () => {
+  const ctx = createSdkStreamContext();
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_plan",
+      session_id: "sess",
+      subagent_type: "Plan",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "Read", id: "toolu_plan" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_plan",
+    ctx,
+  );
+  expect(events[0]?.role).toBe("Plan");
+});
+
 test("attributes dynamic subagent stream usage through resolver", () => {
   const calls: Array<{ role: string; parentToolUseId?: string; sessionId: string }> = [];
   const ctx = createSdkStreamContext({

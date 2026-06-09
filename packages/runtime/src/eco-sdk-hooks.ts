@@ -36,6 +36,7 @@ import {
   isSubagentRole,
   normalizeSubagentAvailability,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
   type SubagentAvailability,
 } from "./subagent-availability";
 
@@ -89,6 +90,7 @@ export interface EcoHookContext {
   getStopTodoStatus?: () => "completed" | "blocked" | "cancelled";
   subagentAvailability?: SubagentAvailability;
   allowedAgentKeys?: string[];
+  allowedSdkBuiltinAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
   forceBashApproval?: boolean;
   workspacePath?: string;
@@ -280,8 +282,12 @@ export function createNormalizeSubagentPreToolHook(): HookCallback {
   };
 }
 
-export function createNonEcoSubagentDenyPreToolHook(allowedAgentKeys: readonly string[] = []): HookCallback {
+export function createNonEcoSubagentDenyPreToolHook(
+  allowedAgentKeys: readonly string[] = [],
+  allowedSdkBuiltinAgentKeys: readonly string[] = [],
+): HookCallback {
   const allowed = new Set(allowedAgentKeys);
+  const allowedSdkBuiltins = new Set([SDK_GENERAL_PURPOSE_AGENT_KEY, ...allowedSdkBuiltinAgentKeys]);
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") {
       return {};
@@ -295,7 +301,7 @@ export function createNonEcoSubagentDenyPreToolHook(allowedAgentKeys: readonly s
     if (!rawType) {
       return {};
     }
-    if (rawType === SDK_GENERAL_PURPOSE_AGENT_KEY) {
+    if (allowedSdkBuiltins.has(rawType)) {
       return {};
     }
     const normalizedType = normalizeSdkSubagentType(rawType);
@@ -831,14 +837,18 @@ export function createSubagentToolAttributionPreToolHook(
     if (typeof toolUseID === "string" && (preInput.tool_name === "Task" || preInput.tool_name === "Agent")) {
       const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
       const rawType = readAgentSubagentType(toolInput);
-      const role =
-        rawType === SDK_GENERAL_PURPOSE_AGENT_KEY
-          ? SDK_GENERAL_PURPOSE_AGENT_KEY
-          : normalizeSdkSubagentType(rawType ?? "");
+      const role = normalizeSdkBuiltinOrEcoAgentRole(rawType);
       onTaskToolUse(toolUseID, role ? { role } : undefined);
     }
     return {};
   };
+}
+
+function normalizeSdkBuiltinOrEcoAgentRole(rawType: string | undefined): RuntimeAgentRole | undefined {
+  if (rawType === SDK_GENERAL_PURPOSE_AGENT_KEY || rawType === SDK_PLAN_AGENT_KEY) {
+    return rawType;
+  }
+  return normalizeSdkSubagentType(rawType ?? "");
 }
 
 export function createTaskToolPreToolHook(taskTracker: EcoTaskTrackerHooks): HookCallback {
@@ -1020,7 +1030,12 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
   pushHook(hooks, "PreToolUse", createExitPlanModePreToolHook(ctx.onExitPlanMode), "ExitPlanMode");
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
-  pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys), "Agent|Task");
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys, ctx.allowedSdkBuiltinAgentKeys),
+    "Agent|Task",
+  );
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");
   pushHook(
     hooks,

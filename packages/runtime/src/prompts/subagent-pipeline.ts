@@ -4,6 +4,7 @@ import {
   isSubagentEnabled,
   listEnabledSubagents,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
   type SubagentAvailability,
   type SubagentRole,
 } from "../subagent-availability.js";
@@ -14,22 +15,36 @@ function agentCall(role: SubagentRole): string {
   return `Agent(${ecoSubagentKeyForRole(role)})`;
 }
 
-/** Shared rule: Eco role delegation must use Eco subagent keys; general-purpose is the only SDK built-in exception. */
-export function formatMandatoryEcoSubagentRule(): string {
+/** Shared rule: Eco role delegation must use Eco subagent keys; SDK built-in exceptions are explicit. */
+export function formatMandatoryEcoSubagentRule(options: { allowPlanAgent?: boolean } = {}): string {
+  const blockedExamples = options.allowPlanAgent ? "Explore, Bash" : "Explore, Plan, Bash";
   return [
     "Mandatory subagent policy: when delegating to an Eco role via Agent(), set subagent_type to the exact eco_* key for that role.",
     `Allowed SDK built-in exception: Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) for complex, multi-step tasks that require both exploration and action.`,
-    "Do not use other SDK built-in agents (e.g. Explore, Plan, Bash), plain role names (coder/reviewer/explore/...), or Agent(<role>).",
+    ...(options.allowPlanAgent
+      ? [
+          `Plan Mode exception: Agent(${SDK_PLAN_AGENT_KEY}) is also allowed for read-only codebase research before ExitPlanMode.`,
+        ]
+      : []),
+    `Do not use other SDK built-in agents (e.g. ${blockedExamples}), plain role names (coder/reviewer/explore/...), or Agent(<role>).`,
   ].join(" ");
 }
 
-export function formatAvailableSubagentsLine(availability: SubagentAvailability): string {
+export function formatAvailableSubagentsLine(
+  availability: SubagentAvailability,
+  options: { allowPlanAgent?: boolean } = {},
+): string {
   const enabled = listEnabledSubagents(availability);
   const names = enabled.map((role) => `${role}: ${ecoSubagentKeyForRole(role)}`).join(", ");
   return [
     `Available Eco subagents in this session: ${names}.`,
     `Available SDK built-in subagent: ${SDK_GENERAL_PURPOSE_AGENT_KEY} (inherits the main conversation model and all tools).`,
-    formatMandatoryEcoSubagentRule(),
+    ...(options.allowPlanAgent
+      ? [
+          `Available SDK Plan Mode subagent: ${SDK_PLAN_AGENT_KEY} (inherits the main conversation model; read-only).`,
+        ]
+      : []),
+    formatMandatoryEcoSubagentRule(options),
   ].join("\n");
 }
 
@@ -273,7 +288,7 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "- User clarifications: **`AskUserQuestion`** (Codex Plan Mode asking-questions section; same role).",
     "- Final plan submission: **`ExitPlanMode`** with the complete Markdown plan.",
     exploreLine,
-    `- Official SDK built-in: **\`Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY})\`** is available for complex multi-step research/decomposition, but Plan Mode remains read-only; do not use it to implement before approval.`,
+    `- Official SDK built-ins: **\`Agent(${SDK_PLAN_AGENT_KEY})\`** is available for Plan Mode read-only codebase research; **\`Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY})\`** is available for complex multi-step research/decomposition. Plan Mode remains read-only; do not use either to implement before approval.`,
     "- External facts (official docs, API versions, third-party behavior, current best practices not in the repo): use **`WebSearch`**; open a specific URL with **`WebFetch`** after repo exploration — do not skip local exploration for in-repo questions.",
     "- Do **not** use `update_plan` in Plan Mode (Codex rule still applies).",
     `- Do **not** call ${agentCall("coder")}, ${agentCall("reviewer")}, or ${agentCall("tester")} in this phase.`,
@@ -291,7 +306,7 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "",
     'For `AskUserQuestion`, Eco always provides a custom text field; include an "其他（自定义说明）" option when presets may not fit.',
     "",
-    formatAvailableSubagentsLine(availability),
+    formatAvailableSubagentsLine(availability, { allowPlanAgent: true }),
     "",
     "## Eco Plan Mode pipeline (mandatory ordering)",
     "",
@@ -316,14 +331,14 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
 
 export function buildPlanningExploreInstruction(availability: SubagentAvailability): string {
   return isSubagentEnabled(availability, "explore")
-    ? `Read / Glob / Grep and/or ${agentCall("explore")}`
-    : `Read / Glob / Grep only — do not call ${agentCall("explore")}`;
+    ? `Read / Glob / Grep, ${agentCall("explore")}, and/or Agent(${SDK_PLAN_AGENT_KEY})`
+    : `Read / Glob / Grep and/or Agent(${SDK_PLAN_AGENT_KEY}) — do not call ${agentCall("explore")}`;
 }
 
 export function buildPlanningContinuationExploreHint(availability: SubagentAvailability): string {
   const explore = isSubagentEnabled(availability, "explore")
-    ? `${agentCall("explore")} or AskUserQuestion`
-    : "Read/Glob/Grep or AskUserQuestion";
+    ? `${agentCall("explore")}, Agent(${SDK_PLAN_AGENT_KEY}), or AskUserQuestion`
+    : `Read/Glob/Grep, Agent(${SDK_PLAN_AGENT_KEY}), or AskUserQuestion`;
   return [
     `Incorporate this message; ${explore} if material ambiguity remains.`,
     "If explore/architect already ran in this Plan Mode session, call the same eco_* Agent key again — Eco will Resume prior subagent context when available (use fresh/restart in the prompt to force a new pass).",

@@ -94,6 +94,7 @@ import {
   isSubagentRole,
   normalizeSubagentAvailability,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
   SUBAGENT_ROLES,
   type SubagentAvailability,
   type SubagentRole,
@@ -1118,6 +1119,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             };
           }
         : undefined;
+    const allowedSdkBuiltinAgentKeys = phase.permissionMode === "plan" ? [SDK_PLAN_AGENT_KEY] : undefined;
     const shouldBuildHooks = Boolean(
       this.options.hookContext || onExitPlanMode || dynamicAgentKeys || toolPermissions,
     );
@@ -1161,6 +1163,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(onExitPlanMode ? { onExitPlanMode } : {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
+              ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
               ...(toolPermissions ? { onToolPermissionDecision } : {}),
               ...(this.options.toolPermissionHandler ? { forceBashApproval: true } : {}),
@@ -1181,7 +1184,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applySessionStoreToQueryOptions(queryOptions, this.options.sessionStore);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
-    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
+    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
+      ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
+    });
 
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
@@ -1550,12 +1555,15 @@ export function applyEcoSdkSettings(
   queryOptions: Record<string, unknown>,
   apiKey: string,
   baseUrl: string,
+  options: { allowedSdkBuiltinAgentKeys?: readonly string[] } = {},
 ): void {
   const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
   const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
   const existingPermissions = isRecord(existing.permissions) ? existing.permissions : {};
   const existingDeny = Array.isArray(existingPermissions.deny) ? (existingPermissions.deny as string[]) : [];
-  const deny = [...new Set([...existingDeny, ...sdkBuiltinSubagentDenyRules()])];
+  const deny = [
+    ...new Set([...existingDeny, ...sdkBuiltinSubagentDenyRules(options.allowedSdkBuiltinAgentKeys)]),
+  ];
   queryOptions.settings = {
     ...existing,
     disableWorkflows: true,
@@ -2369,8 +2377,8 @@ function resolveActivitySubagentRole(value: string): ActivityDisplayRole | undef
 
 function normalizeSdkRuntimeAgentRole(value: string): RuntimeAgentRole | undefined {
   const trimmed = value.trim();
-  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY) {
-    return SDK_GENERAL_PURPOSE_AGENT_KEY;
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY || trimmed === SDK_PLAN_AGENT_KEY) {
+    return trimmed;
   }
   return normalizeSdkSubagentType(trimmed);
 }

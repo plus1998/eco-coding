@@ -78,14 +78,17 @@ test("orchestrator prompts require eco subagent keys when delegating", () => {
   expect(rule).toContain("Do not use other SDK built-in agents");
 
   const planning = buildPlanningPhaseSystemAppend();
-  expect(planning).toContain(formatMandatoryEcoSubagentRule());
+  expect(planning).toContain(formatMandatoryEcoSubagentRule({ allowPlanAgent: true }));
   expect(planning).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
   expect(planning).toContain("Agent(general-purpose)");
+  expect(planning).toContain("Agent(Plan)");
+  expect(planning).toContain("Plan Mode exception");
   expect(planning).not.toContain("Agent(Explore)");
 
   const autonomous = buildAutonomousOrchestratorAppend();
   expect(autonomous).toContain(ecoSubagentKeyForRole("coder"));
   expect(autonomous).toContain(formatMandatoryEcoSubagentRule());
+  expect(autonomous).not.toContain("Plan Mode exception");
   expect(autonomous).not.toContain("explore → coder");
 });
 

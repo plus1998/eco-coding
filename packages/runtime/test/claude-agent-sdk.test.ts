@@ -335,6 +335,20 @@ test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in su
   });
 });
 
+test("applyEcoSdkSettings opens Plan when plan mode allows it", () => {
+  const options: Record<string, unknown> = {};
+  applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/", {
+    allowedSdkBuiltinAgentKeys: ["Plan"],
+  });
+  const settings = options.settings as {
+    permissions?: { deny?: string[] };
+  };
+  const deny = settings.permissions?.deny ?? [];
+  expect(deny).toEqual(["Agent(statusline-setup)", "Agent(Explore)", "Agent(Bash)"]);
+  expect(deny.includes("Agent(Plan)")).toBe(false);
+  expect(deny.includes("Agent(general-purpose)")).toBe(false);
+});
+
 test("createAutonomousAgentDefinitions registers all subagent roles", () => {
   const definitions = createAutonomousAgentDefinitions(routes);
   expect(Object.keys(definitions).sort()).toEqual([
@@ -648,6 +662,20 @@ test("inferActivityRole maps Agent(general-purpose) to general-purpose", () => {
       },
     }),
   ).toBe("general-purpose");
+});
+
+test("inferActivityRole maps Agent(Plan) to Plan", () => {
+  expect(
+    inferActivityRole({
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Agent",
+        input: { subagent_type: "Plan", prompt: "Research plan context" },
+      },
+    }),
+  ).toBe("Plan");
 });
 
 test("builds read-only question answering prompts", () => {
@@ -1880,6 +1908,9 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
   expect(capturedOptions[0]?.allowedTools).toContain("ExitPlanMode");
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
+  const settings = capturedOptions[0]?.settings as { permissions?: { deny?: string[] } } | undefined;
+  expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
+  expect(settings?.permissions?.deny).toContain("Agent(Explore)");
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({

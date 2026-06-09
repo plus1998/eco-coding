@@ -1,6 +1,6 @@
 import { type AgentEvent, createAgentEvent, type RuntimeAgentRole } from "../../shared/src";
 import { tryParseSerializedAnthropicContentBlocks } from "./anthropic-content-normalize.js";
-import { SDK_GENERAL_PURPOSE_AGENT_KEY } from "./subagent-availability.js";
+import { SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "./subagent-availability.js";
 import { normalizeSdkSubagentType } from "./subagent-resume.js";
 
 export type EcoStreamBlockKind = "text" | "thinking" | "tool_use";
@@ -140,8 +140,8 @@ function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, u
 
 function normalizeSdkRuntimeAgentRole(type: string): RuntimeAgentRole | undefined {
   const trimmed = type.trim();
-  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY) {
-    return SDK_GENERAL_PURPOSE_AGENT_KEY;
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY || trimmed === SDK_PLAN_AGENT_KEY) {
+    return trimmed;
   }
   return normalizeSdkSubagentType(trimmed);
 }

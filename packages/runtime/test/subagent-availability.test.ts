@@ -53,3 +53,12 @@ test("sdkBuiltinSubagentDenyRules leaves general-purpose open", () => {
   expect(deny).toContain("Agent(Bash)");
   expect(deny).toContain("Agent(statusline-setup)");
 });
+
+test("sdkBuiltinSubagentDenyRules can open Plan for plan mode", () => {
+  const deny = sdkBuiltinSubagentDenyRules(["Plan"]);
+  expect(deny).not.toContain("Agent(general-purpose)");
+  expect(deny).not.toContain("Agent(Plan)");
+  expect(deny).toContain("Agent(Explore)");
+  expect(deny).toContain("Agent(Bash)");
+  expect(deny).toContain("Agent(statusline-setup)");
+});
