@@ -26,7 +26,7 @@ export function PlanApprovalPanel({
         <h3>实施计划</h3>
         <p>
           {executionSummary ??
-            "确认后将按你已启用的子代理执行。若要调整计划，请选择「忽略」后在下方对话中说明，Planner 会重新输出完整计划。"}
+            "确认后将按你已启用的子代理执行。若要调整计划，请选择「忽略」后在下方对话中说明，主代理会重新输出完整计划。"}
         </p>
       </header>
       {failureMessage && (

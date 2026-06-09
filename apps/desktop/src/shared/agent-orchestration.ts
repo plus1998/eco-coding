@@ -1,7 +1,6 @@
 import type { UpstreamApiCompat } from "./api-compat";
 import type {
   ModelsDevMapping,
-  OrchestrationModeSetting,
   RoleRouteConfig,
   RouteManualSpec,
   RouteProfileView,
@@ -1256,7 +1255,6 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
   routeProfile: RouteProfileView,
   options: {
     subagentEnabled?: Partial<SubagentEnabledSettings>;
-    orchestrationMode?: OrchestrationModeSetting;
   } = {},
 ): OrchestrationProfile {
   const routeByRole = new Map(routeProfile.routes.map((route) => [route.role, route]));
@@ -1308,7 +1306,7 @@ export function buildCodingOrchestrationProfileFromRouteProfile(
         subagentEnabledFor("tester", options.subagentEnabled),
       ),
     ],
-    strategy: codingStrategyFromMode(options.orchestrationMode),
+    strategy: codingDefaultStrategy(),
     version: 1,
     updatedAt,
     source: "derived",
@@ -1320,7 +1318,6 @@ export function buildCodingOrchestrationProfilesFromRouteProfiles(
   routeProfiles: readonly RouteProfileView[],
   options: {
     subagentEnabled?: Partial<SubagentEnabledSettings>;
-    orchestrationMode?: OrchestrationModeSetting;
   } = {},
 ): OrchestrationProfile[] {
   return routeProfiles.map((profile) => buildCodingOrchestrationProfileFromRouteProfile(profile, options));
@@ -1355,20 +1352,7 @@ function subagentEnabledFor(
   return settings?.[key] ?? true;
 }
 
-function codingStrategyFromMode(mode: OrchestrationModeSetting | undefined): OrchestrationStrategy {
-  if (mode === "autonomous") {
-    return {
-      kind: "autonomous",
-      guidancePrompt:
-        "Use the available coding subagents only when their specialization improves the result.",
-    };
-  }
-  if (mode === "manual") {
-    return {
-      kind: "fixed",
-      steps: codingRecommendedSteps(),
-    };
-  }
+function codingDefaultStrategy(): OrchestrationStrategy {
   return {
     kind: "hybrid",
     recommendedSteps: codingRecommendedSteps(),

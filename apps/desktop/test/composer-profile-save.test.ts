@@ -51,7 +51,7 @@ function runtimeConfig(input: Partial<ThreadRuntimeConfig> = {}): ThreadRuntimeC
   return {
     routeProfileId: "coding",
     agentProfileId: "derived.coding.default",
-    orchestrationMode: "manual",
+    planModeEnabled: true,
     subagentEnabled: {
       explore: true,
       architect: true,
@@ -80,23 +80,16 @@ test("buildComposerSavedProfile copies current composer state into a user profil
     ["explore", true],
     ["reviewer", false],
   ]);
-  expect(saved.strategy).toMatchObject({
-    kind: "fixed",
-    steps: [
-      {
-        id: "explore",
-        agentKey: "explore",
-        dependsOn: [],
-        outputKey: "explore_output",
-      },
-    ],
+  expect(saved.strategy).toEqual({
+    kind: "autonomous",
+    guidancePrompt: "Delegate only when useful.",
   });
 });
 
-test("buildComposerSavedProfile preserves autonomous strategy when composer is autonomous", () => {
+test("buildComposerSavedProfile preserves strategy when plan mode is off", () => {
   const saved = buildComposerSavedProfile({
     profile: profile(),
-    runtimeConfig: runtimeConfig({ orchestrationMode: "autonomous" }),
+    runtimeConfig: runtimeConfig({ planModeEnabled: false }),
     name: "Research Mode",
     existingIds: [],
   });

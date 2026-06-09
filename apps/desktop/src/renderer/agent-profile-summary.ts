@@ -182,12 +182,12 @@ function formatProfileSourceLabel(profile: OrchestrationProfile): string {
 
 function formatStrategyLabel(profile: OrchestrationProfile): string {
   if (profile.strategy.kind === "fixed") {
-    return "固定编排";
+    return "固定流程";
   }
   if (profile.strategy.kind === "hybrid") {
-    return "混合编排";
+    return "混合策略";
   }
-  return "自主编排";
+  return "自主策略";
 }
 
 function summarizeToolRiskLabels(policy: ToolPolicy): string[] {

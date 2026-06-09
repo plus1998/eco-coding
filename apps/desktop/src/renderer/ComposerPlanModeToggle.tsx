@@ -1,39 +1,34 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { OrchestrationModeSetting } from "../shared/ipc";
-import {
-  orchestrationModeUi,
-  toggleOrchestrationMode,
-} from "../shared/orchestration-mode-ui";
+import { planModeUi, togglePlanMode } from "../shared/plan-mode-ui";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 
-interface ComposerOrchestrationModeToggleProps {
-  orchestrationMode: OrchestrationModeSetting;
+interface ComposerPlanModeToggleProps {
+  planModeEnabled: boolean;
   canEdit: boolean;
   saving?: boolean | undefined;
-  onToggle: (mode: OrchestrationModeSetting) => void;
+  onToggle: (planModeEnabled: boolean) => void;
 }
 
-export function ComposerOrchestrationModeToggle({
-  orchestrationMode,
+export function ComposerPlanModeToggle({
+  planModeEnabled,
   canEdit,
   saving,
   onToggle,
-}: ComposerOrchestrationModeToggleProps) {
+}: ComposerPlanModeToggleProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const [hovered, setHovered] = useState(false);
   const [tooltipStyle, setTooltipStyle] = useState<CSSProperties>(() => ({
     visibility: "hidden",
   }));
 
-  const isManual = orchestrationMode === "manual";
   const clickable = canEdit && !saving;
-  const current = orchestrationModeUi(orchestrationMode);
-  const next = orchestrationModeUi(toggleOrchestrationMode(orchestrationMode));
+  const current = planModeUi(planModeEnabled);
+  const next = planModeUi(togglePlanMode(planModeEnabled));
   const className = [
     "composer-meta-pill",
     "composer-orchestration-pill",
-    isManual ? "is-manual" : "is-autonomous",
+    planModeEnabled ? "is-manual" : "is-autonomous",
     clickable ? "is-clickable" : "",
   ]
     .filter(Boolean)
@@ -44,9 +39,7 @@ export function ComposerOrchestrationModeToggle({
     if (!el) {
       return;
     }
-    setTooltipStyle(
-      composerFloatingStyleForAnchor(el, { width: 280, minHeight: 112, prefer: "above" }),
-    );
+    setTooltipStyle(composerFloatingStyleForAnchor(el, { width: 280, minHeight: 112, prefer: "above" }));
   }, []);
 
   const showTooltip = useCallback(() => {
@@ -74,11 +67,7 @@ export function ComposerOrchestrationModeToggle({
   const tooltip =
     hovered &&
     createPortal(
-      <span
-        className="composer-meta-tooltip"
-        role="tooltip"
-        style={tooltipStyle}
-      >
+      <span className="composer-meta-tooltip" role="tooltip" style={tooltipStyle}>
         <span className="composer-meta-tooltip-line">
           <strong>{current.title}</strong>
           <span className="composer-meta-tooltip-subtitle">{current.subtitle}</span>
@@ -90,7 +79,7 @@ export function ComposerOrchestrationModeToggle({
           </span>
         ) : (
           <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            当前对话进行中，编排策略不可修改
+            当前对话进行中，计划模式不可修改
           </span>
         )}
       </span>,
@@ -109,15 +98,15 @@ export function ComposerOrchestrationModeToggle({
       type="button"
       className={className}
       disabled={saving}
-      aria-pressed={isManual}
+      aria-pressed={planModeEnabled}
       aria-label={current.title}
-      onClick={() => onToggle(toggleOrchestrationMode(orchestrationMode))}
+      onClick={() => onToggle(togglePlanMode(planModeEnabled))}
       {...controlProps}
     >
       {current.title}
     </button>
   ) : (
-    <span className={className} aria-label={current.title} {...controlProps}>
+    <span className={className} {...controlProps}>
       {current.title}
     </span>
   );

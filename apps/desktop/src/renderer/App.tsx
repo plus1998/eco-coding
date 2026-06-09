@@ -97,7 +97,7 @@ import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { BashApprovalPanel } from "./BashApprovalPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
-import { ComposerOrchestrationModeToggle } from "./ComposerOrchestrationModeToggle";
+import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
@@ -877,7 +877,7 @@ function App() {
   }, [composerSkillSlash?.query, composerSkillSlash?.start, composerSkillMatches.length]);
 
   const buildComposerDefaultConfig = useCallback(
-    (modeOverride?: ThreadRuntimeConfig["orchestrationMode"]): ThreadRuntimeConfig | undefined => {
+    (planModeOverride?: boolean): ThreadRuntimeConfig | undefined => {
       if (settings.orchestrationProfiles.length === 0) {
         return undefined;
       }
@@ -887,10 +887,10 @@ function App() {
           composerRuntimeConfig?.routeProfileId ??
           getDefaultAgentProfileId(settings);
         const routeProfileId = composerRuntimeConfig?.routeProfileId;
-        const orchestrationMode = modeOverride ?? composerRuntimeConfig?.orchestrationMode ?? "autonomous";
+        const planModeEnabled = planModeOverride ?? composerRuntimeConfig?.planModeEnabled ?? false;
         return buildThreadRuntimeConfigFromDefaults({
           settings,
-          workflowDefaults: { orchestrationMode },
+          workflowDefaults: { planModeEnabled },
           ...(agentProfileId && { agentProfileId }),
           ...(routeProfileId && { routeProfileId }),
         });
@@ -902,12 +902,12 @@ function App() {
       settings,
       composerRuntimeConfig?.agentProfileId,
       composerRuntimeConfig?.routeProfileId,
-      composerRuntimeConfig?.orchestrationMode,
+      composerRuntimeConfig?.planModeEnabled,
     ],
   );
 
   const resetComposerDefaultConfig = useCallback(() => {
-    setComposerRuntimeConfig(buildComposerDefaultConfig("autonomous") ?? null);
+    setComposerRuntimeConfig(buildComposerDefaultConfig(false) ?? null);
   }, [buildComposerDefaultConfig]);
 
   useEffect(() => {
@@ -1869,11 +1869,11 @@ function App() {
     await persistComposerRuntimeConfig(next);
   }
 
-  async function toggleComposerOrchestrationMode(mode: ThreadRuntimeConfig["orchestrationMode"]) {
+  async function toggleComposerPlanMode(planModeEnabled: boolean) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
     }
-    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, orchestrationMode: mode };
+    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, planModeEnabled };
     await persistComposerRuntimeConfig(next);
   }
 
@@ -2158,11 +2158,11 @@ function App() {
 
   async function addComposerImageFiles(files: FileList | File[]) {
     if (!canPasteComposerImages) {
-      setComposerImageNotice("当前规划模型不支持图片输入。");
+      setComposerImageNotice("当前主代理模型不支持图片输入。");
       return;
     }
     if (plannerCapability && !plannerCapability.capabilitiesResolved) {
-      setComposerImageNotice("未匹配 models.dev，请自行确认规划模型是否支持图片。");
+      setComposerImageNotice("未匹配 models.dev，请自行确认主代理模型是否支持图片。");
     } else {
       setComposerImageNotice(undefined);
     }
@@ -2422,19 +2422,17 @@ function App() {
                 />
               </div>
               {composerRuntimeConfig ? (
-                <ComposerOrchestrationModeToggle
-                  orchestrationMode={composerRuntimeConfig.orchestrationMode}
+                <ComposerPlanModeToggle
+                  planModeEnabled={composerRuntimeConfig.planModeEnabled}
                   canEdit={canEditComposerConfig}
                   saving={isSavingSettings}
-                  onToggle={(mode) => void toggleComposerOrchestrationMode(mode)}
+                  onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
                 />
               ) : null}
               <ComposerAgentModels
                 labels={agentModelLabels}
                 subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-                canEditSubagents={
-                  canEditComposerConfig && composerRuntimeConfig?.orchestrationMode === "manual"
-                }
+                canEditSubagents={canEditComposerConfig}
                 subagentSaving={isSavingSettings}
                 onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
               />

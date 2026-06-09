@@ -192,7 +192,6 @@ const executionCoderTools = [
 const autonomousAllowedTools = [
   ...defaultAllowedTools,
   "AskUserQuestion",
-  FINALIZE_PLAN_ALLOWED_TOOL,
 ] as const;
 const universalEcoBasePromptAppend = [
   "You are running inside Eco, a configurable agent command center.",
@@ -227,7 +226,7 @@ function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "auton
         ? "Current phase: understand the request and produce a decision-ready plan when planning is required."
         : phase === "execute"
           ? "Current phase: carry out the approved or current task according to the active profile."
-          : "Current phase: decide whether to answer directly, ask a clarifying question, plan, or delegate.";
+          : "Current phase: handle the task directly, ask a clarifying question when needed, or delegate.";
   return [
     "Eco universal orchestration.",
     phaseLine,
@@ -746,7 +745,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const universalProfile = usesUniversalAgentProfile(input);
     if (this.options.orchestration === "autonomous") {
       if (mode === "question") {
-        const availability = defaultSubagentAvailability();
+        const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
         yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
         yield* this.runSingleSession(input, {
           prompt: universalProfile
@@ -763,7 +762,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         return;
       }
 
-      const availability = defaultSubagentAvailability();
+      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       const continuationPrompt =
         mode === "execution" && planning
           ? universalProfile
@@ -794,7 +793,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         phaseAppend: universalProfile
           ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
           : buildAutonomousOrchestratorAppend(),
-        agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+        agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
       return;
@@ -878,28 +877,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    const availability = defaultSubagentAvailability();
-    const transcript = yield* this.runSingleSession(input, {
+    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    yield* this.runSingleSession(input, {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
       phaseAppend: universalProfile
         ? buildUniversalPhaseAppend("autonomous")
         : buildAutonomousOrchestratorAppend(),
-      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills),
+      agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
-    if (input.signal.aborted) {
-      return;
-    }
-    const finalizedPlan = transcript.finalizedPlan;
-    if (finalizedPlan) {
-      yield createPlanReadyEvent(input.threadId, {
-        userPrompt: input.prompt,
-        analysis: finalizedPlan.analysis,
-        plan: finalizedPlan.plan,
-      });
-    }
   }
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
@@ -1441,45 +1429,49 @@ export function createExecutionAgentDefinitions(
 const autonomousReviewerDescription = [
   "High-risk code review only: cross-module changes, security, or data-sensitive paths.",
   "Review ONLY this session's workspace changes (not full repo history).",
-  "When NOT to use: low/medium risk — the planner should self-review with Read/Grep/git diff instead.",
+  "When NOT to use: low/medium risk — the main agent should self-review with Read/Grep/git diff instead.",
 ].join(" ");
 
 export function createAutonomousAgentDefinitions(
   routes: readonly ResolvedModelRoute[],
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
+  availability: SubagentAvailability = defaultSubagentAvailability(),
 ): Record<string, unknown> {
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
   const architectKey = ecoSubagentKeyForRole("architect");
   const coderKey = ecoSubagentKeyForRole("coder");
   const reviewerKey = ecoSubagentKeyForRole("reviewer");
   const testerKey = ecoSubagentKeyForRole("tester");
-  return {
-    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-    [architectKey]: {
-      description: executionArchitectDescription,
-      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
-      prompt: executionArchitectPrompt,
-      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
+  return filterAgentDefinitions(
+    {
+      [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
+      [architectKey]: {
+        description: executionArchitectDescription,
+        ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
+        prompt: executionArchitectPrompt,
+        model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
+      },
+      [coderKey]: {
+        description: executionCoderDescription,
+        ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
+        prompt: executionCoderPrompt,
+        model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
+      },
+      [reviewerKey]: {
+        description: autonomousReviewerDescription,
+        ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
+        prompt: reviewerAgentPrompt,
+        model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
+      },
+      [testerKey]: {
+        description: executionTesterDescription,
+        ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
+        prompt: executionTesterPrompt,
+        model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
+      },
     },
-    [coderKey]: {
-      description: executionCoderDescription,
-      ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
-      prompt: executionCoderPrompt,
-      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
-    },
-    [reviewerKey]: {
-      description: autonomousReviewerDescription,
-      ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
-      prompt: reviewerAgentPrompt,
-      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
-    },
-    [testerKey]: {
-      description: executionTesterDescription,
-      ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
-      prompt: executionTesterPrompt,
-      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
-    },
-  };
+    availability,
+  );
 }
 
 export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
@@ -1727,7 +1719,7 @@ export function createWorkflowRunEvent(
     type: status === "started" ? "agent.started" : "agent.completed",
     payload: {
       ecoWorkflow: { profileName, status },
-      label: status === "started" ? `固定编排开始：${profileName}` : `固定编排完成：${profileName}`,
+      label: status === "started" ? `固定流程开始：${profileName}` : `固定流程完成：${profileName}`,
     },
   });
 }
@@ -1757,10 +1749,10 @@ export function createWorkflowStepEvent(
       },
       label:
         status === "started"
-          ? `固定编排步骤开始：${step.id}`
+          ? `固定流程步骤开始：${step.id}`
           : status === "completed"
-            ? `固定编排步骤完成：${step.id}`
-            : `固定编排步骤失败：${step.id}`,
+            ? `固定流程步骤完成：${step.id}`
+            : `固定流程步骤失败：${step.id}`,
     },
   });
 }

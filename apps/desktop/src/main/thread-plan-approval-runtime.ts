@@ -1,8 +1,8 @@
 import type { RuntimeRoleRouteConfig, ThreadSummary } from "../shared/ipc";
-import type { RuntimeConfig, RuntimeConfigResolution } from "./thread-runtime-routes";
 import type { ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
+import type { RuntimeConfig, RuntimeConfigResolution } from "./thread-runtime-routes";
 
-export type ThreadPlanApprovalLaunchMode = "manual_execution" | "autonomous_after_approval";
+export type ThreadPlanApprovalLaunchMode = "execution";
 
 export interface ThreadPlanApprovalRuntimeServices {
   getThread(threadId: string): ThreadSummary | undefined;
@@ -10,7 +10,6 @@ export interface ThreadPlanApprovalRuntimeServices {
   getPendingPlan(threadId: string): ThreadPendingPlanWithRoutes | undefined;
   resolveRoleRoutes(threadId: string): readonly RuntimeRoleRouteConfig[];
   resolveRuntimeConfig(routes: readonly RuntimeRoleRouteConfig[]): RuntimeConfigResolution;
-  usesManualOrchestration(threadId: string): boolean;
 }
 
 export interface ThreadPlanApprovalRuntime {
@@ -55,6 +54,6 @@ export function resolveThreadPlanApprovalRuntime(
     pendingPlan,
     roleRoutes,
     runtimeConfig: { routes: runtimeConfig.routes },
-    launchMode: services.usesManualOrchestration(threadId) ? "manual_execution" : "autonomous_after_approval",
+    launchMode: "execution",
   };
 }

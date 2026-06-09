@@ -849,14 +849,15 @@ function resolveAgentRuntimeConfigForThreadId(threadId: string): EcoAgentRuntime
   return thread ? resolveAgentRuntimeConfigForThread(thread) : undefined;
 }
 
-function threadOrchestrationMode(threadId: string): "autonomous" | "manual" {
+function threadPlanModeEnabled(threadId: string): boolean {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
-  return config?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
+  return config?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
 }
 
+/** @deprecated Use threadPlanModeEnabled. */
 function threadUsesManualOrchestration(threadId: string): boolean {
-  return threadOrchestrationMode(threadId) === "manual";
+  return threadPlanModeEnabled(threadId);
 }
 
 function registerIpcHandlers(): void {
@@ -1580,7 +1581,7 @@ function registerIpcHandlers(): void {
           attachments,
           roleRoutes,
         );
-      } else if (threadRuntime.orchestrationMode === "manual") {
+      } else if (threadRuntime.planModeEnabled) {
         void runCodingThreadPlanning(
           thread,
           workspace,
@@ -1703,22 +1704,15 @@ function registerIpcHandlers(): void {
       getPendingPlan: (id) => conversationStore.getPendingPlan(id),
       resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
       resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
-      usesManualOrchestration: (id) => threadUsesManualOrchestration(id),
     });
 
     updateThread(threadId, {
       status: "running",
       message: "正在按计划执行…",
     });
-    if (approval.launchMode === "manual_execution") {
-      void runCodingThreadExecution(threadId, approval.runtimeConfig, {
-        routesOverride: approval.roleRoutes,
-      });
-    } else {
-      void runCodingThreadAutonomousAfterApproval(threadId, approval.runtimeConfig, {
-        routesOverride: approval.roleRoutes,
-      });
-    }
+    void runCodingThreadExecution(threadId, approval.runtimeConfig, {
+      routesOverride: approval.roleRoutes,
+    });
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
   });
 
@@ -2639,124 +2633,6 @@ async function runCodingThreadPlanning(
   }
 }
 
-async function runCodingThreadAutonomousAfterApproval(
-  threadId: string,
-  runtimeConfig: RuntimeConfig,
-  options?: {
-    routesOverride?: readonly RuntimeRoleRouteConfig[];
-  },
-): Promise<void> {
-  const pending = conversationStore.getPendingPlan(threadId);
-  const thread = conversationStore.getThread(threadId);
-  if (!pending || !thread) {
-    updateThread(threadId, { status: "failed", message: "执行失败：找不到待批准的计划。" });
-    return;
-  }
-
-  const planning: EcoPlanningContext = {
-    userPrompt: pending.userPrompt,
-    analysis: pending.analysis,
-    plan: pending.plan,
-  };
-
-  const workspace = await ensureWorkspace(pending.workspacePath);
-  let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
-  const controller = new AbortController();
-  startActiveRun(threadId, { controller, worktreePlan });
-  resetSubagentContextWindows(threadId);
-
-  const resolved = await resolveThreadWorktree(workspace, threadId, worktreePlan);
-  worktreePlan = resolved.worktreePlan;
-  const cwd = resolved.cwd;
-  activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
-
-  try {
-    await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
-  } catch (error) {
-    process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
-  }
-
-  try {
-    conversationStore.clearPendingPlan(threadId);
-    emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，继续同会话执行。", "system");
-
-    const outcome = await runThreadRequestWithAutoRetry(
-      threadId,
-      "execution",
-      controller.signal,
-      async () => {
-        return runThreadRequestWithRuntimeProxy({
-          threadId,
-          resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(threadId, options?.routesOverride),
-          recordRouteFingerprint: recordThreadRouteFingerprint,
-          startRuntimeProxy,
-          run: async ({ proxy: attemptProxy, routes }) => {
-            const resume = resolveResumeOptions(threadId, cwd);
-            if (!resume) {
-              return { ok: false, reason: "无法恢复 SDK 会话以继续执行。" };
-            }
-            await ensureContextHeadroom(threadId, cwd, controller.signal, { ignoreRunningGuard: true });
-            const driver = createSdkDriver(threadId, attemptProxy, undefined, "execution");
-            return await consumeSdkRunEvents({
-              events: driver.runContinuation(
-                buildSdkRunInput({
-                  threadId,
-                  prompt: pending.userPrompt,
-                  workspacePath: pending.workspacePath,
-                  worktreePath: cwd,
-                  routes,
-                  signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(threadId, pending.userPrompt),
-                  agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
-                  resume,
-                }),
-                "execution",
-                planning,
-              ),
-              threadId,
-              worktreePath: cwd,
-              signal: controller.signal,
-              onUsageRecorded: onSdkUsageRecordedEvent,
-              captureSession: captureSdkSessionFromEvent,
-              emitActivity: emitSdkStreamActivity,
-            });
-          },
-        });
-      },
-    );
-
-    const decision = resolveExecutionRunOutcome(outcome);
-    if (
-      await applyMainThreadRunDecisionEffects({
-        threadId,
-        decision,
-        onCancelled: async (reason) => {
-          cancelClarificationsForThread(threadId, reason);
-          await handleRunCancelled(threadId, worktreePlan);
-        },
-        onFailed: (reason) => {
-          cancelClarificationsForThread(threadId, reason);
-          markThreadInterrupted(threadId, reason);
-        },
-      })
-    ) {
-      return;
-    }
-
-    await completeCodingThreadRun(threadId, worktreePlan);
-    scheduleThreadTitleSummary(threadId, runtimeConfig);
-  } catch (error) {
-    cancelClarificationsForThread(threadId, errorMessage(error));
-    markThreadInterrupted(threadId, errorMessage(error));
-  } finally {
-    await finalizeMainThreadRunCleanup({
-      threadId,
-      worktreePath: cwd,
-      cancelClarificationsReason: "run finished",
-    });
-  }
-}
-
 async function runCodingThreadExecution(
   threadId: string,
   runtimeConfig: RuntimeConfig,
@@ -3016,7 +2892,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     intent,
     followUp: prompt,
     canResume,
-    usesManualOrchestration: threadUsesManualOrchestration(input.threadId),
+    planModeEnabled: threadPlanModeEnabled(input.threadId),
     hasPendingPlan,
     hasApprovedPlanOnDisk,
     enteredExecutionPhase,
@@ -3304,7 +3180,7 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
       undefined,
       routesOverride,
     );
-  } else if (threadUsesManualOrchestration(threadId)) {
+  } else if (threadPlanModeEnabled(threadId)) {
     void runCodingThreadPlanning(
       updated,
       workspace,
@@ -3797,11 +3673,11 @@ function createSdkDriver(
     throw new Error("Thread was not found.");
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
-  const orchestrationMode = threadConfig?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
+  const planModeEnabled = threadConfig?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
-    orchestration: orchestrationModeFromSnapshot({ orchestrationMode }),
+    orchestration: orchestrationModeFromSnapshot({ planModeEnabled }),
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
@@ -4135,7 +4011,7 @@ async function dispatchThreadContinueAction(input: {
         action.phase === "execution"
           ? await resolvePlanningContextForThread(threadId, workspace.path)
           : undefined;
-      if (threadOrchestrationMode(threadId) === "autonomous" && action.phase !== "question") {
+      if (!threadPlanModeEnabled(threadId) && action.phase !== "question") {
         await runCodingThreadAutonomous(
           updated,
           workspace,
@@ -4164,34 +4040,37 @@ async function dispatchThreadContinueAction(input: {
     return;
   }
 
+  if (action.kind === "fresh_autonomous") {
+    conversationStore.clearSubagentSessions(threadId);
+    subagentMetricsRegistry.clearThread(threadId);
+    void runCodingThreadAutonomous(
+      updated,
+      workspace,
+      runtimeConfig,
+      agentPrompt,
+      existingWorktreePlan,
+      undefined,
+      attachments,
+      roleRoutes,
+    );
+    return;
+  }
+
   if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
     if (action.kind === "fresh_plan") {
       conversationStore.clearSubagentSessions(threadId);
       subagentMetricsRegistry.clearThread(threadId);
     }
-    if (threadUsesManualOrchestration(threadId)) {
-      void runCodingThreadPlanning(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        existingWorktreePlan,
-        undefined,
-        attachments,
-        roleRoutes,
-      );
-    } else {
-      void runCodingThreadAutonomous(
-        updated,
-        workspace,
-        runtimeConfig,
-        agentPrompt,
-        existingWorktreePlan,
-        undefined,
-        attachments,
-        roleRoutes,
-      );
-    }
+    void runCodingThreadPlanning(
+      updated,
+      workspace,
+      runtimeConfig,
+      agentPrompt,
+      existingWorktreePlan,
+      undefined,
+      attachments,
+      roleRoutes,
+    );
   }
 }
 
@@ -4207,7 +4086,7 @@ async function runThreadContinuation(
   planningContext?: EcoPlanningContext,
   resumeOverride?: EcoSdkResumeOptions,
 ): Promise<void> {
-  if (threadOrchestrationMode(thread.id) === "autonomous" && mode !== "question") {
+  if (!threadPlanModeEnabled(thread.id) && mode !== "question") {
     const controller = new AbortController();
     startActiveRun(thread.id, {
       controller,
@@ -4919,12 +4798,7 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
   const profile = hydrated?.runtimeConfig
     ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
     : undefined;
-  const orchestrationMode =
-    hydrated?.runtimeConfig?.orchestrationMode ?? workflowSettingsStore.get().orchestrationMode;
-  const enabledSubagents =
-    orchestrationMode === "autonomous"
-      ? defaultSubagentAvailability()
-      : (hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability());
+  const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
     thread?.workspacePath ??
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);

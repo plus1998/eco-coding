@@ -24,14 +24,13 @@ test("resolveQuestionRunOutcome maps cancelled failed and completed results", ()
   });
 });
 
-test("resolveAutonomousRunOutcome waits for pending or captured plans", () => {
+test("resolveAutonomousRunOutcome only waits for existing pending plans", () => {
   expect(resolveAutonomousRunOutcome({ ok: true }, { hasPendingPlan: true, planCaptured: false })).toEqual({
     kind: "awaiting_plan",
     message: "等待你确认计划。",
   });
   expect(resolveAutonomousRunOutcome({ ok: true }, { hasPendingPlan: false, planCaptured: true })).toEqual({
-    kind: "awaiting_plan",
-    message: "等待你确认计划。",
+    kind: "completed",
   });
   expect(resolveAutonomousRunOutcome({ ok: true }, { hasPendingPlan: false, planCaptured: false })).toEqual({
     kind: "completed",

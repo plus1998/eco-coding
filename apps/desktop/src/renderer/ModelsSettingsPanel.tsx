@@ -2701,12 +2701,12 @@ function PresetOverview({
 
 function formatPresetStrategyKind(kind: BuiltInPresetDefinition["strategies"]["defaultKind"]): string {
   if (kind === "fixed") {
-    return "固定编排";
+    return "固定流程";
   }
   if (kind === "hybrid") {
-    return "混合编排";
+    return "混合策略";
   }
-  return "自主编排";
+  return "自主策略";
 }
 
 function PresetEvaluationOverview({
@@ -2804,10 +2804,10 @@ function formatAgentProfileVersionSummary(profile: OrchestrationProfile): string
   const enabledAgents = profile.agents.filter((agent) => agent.enabled);
   const strategy =
     profile.strategy.kind === "autonomous"
-      ? "自主编排"
+      ? "自主策略"
       : profile.strategy.kind === "hybrid"
-        ? "混合编排"
-        : "固定编排";
+        ? "混合策略"
+        : "固定流程";
   return `${profile.preset} · ${strategy} · 主模型 ${profile.mainAgent.modelRef.modelId} · ${enabledAgents.length} 个子 Agent`;
 }
 

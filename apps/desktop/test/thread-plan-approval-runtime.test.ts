@@ -46,7 +46,6 @@ function services(
     getPendingPlan: () => pendingPlan,
     resolveRoleRoutes: () => roleRoutes,
     resolveRuntimeConfig: () => ({ ok: true, routes: [] }) satisfies RuntimeConfigResolution,
-    usesManualOrchestration: () => true,
     ...overrides,
   };
 }
@@ -88,7 +87,7 @@ test("resolveThreadPlanApprovalRuntime rejects invalid approval state before lau
   ).toThrow("missing coder route");
 });
 
-test("resolveThreadPlanApprovalRuntime returns manual execution launch context", () => {
+test("resolveThreadPlanApprovalRuntime returns execution launch context", () => {
   const runtime = resolveThreadPlanApprovalRuntime(thread.id, services());
 
   expect(runtime).toMatchObject({
@@ -96,15 +95,6 @@ test("resolveThreadPlanApprovalRuntime returns manual execution launch context",
     pendingPlan,
     roleRoutes,
     runtimeConfig: { routes: [] },
-    launchMode: "manual_execution",
+    launchMode: "execution",
   });
-});
-
-test("resolveThreadPlanApprovalRuntime returns autonomous approval launch context", () => {
-  const runtime = resolveThreadPlanApprovalRuntime(
-    thread.id,
-    services({ usesManualOrchestration: () => false }),
-  );
-
-  expect(runtime.launchMode).toBe("autonomous_after_approval");
 });

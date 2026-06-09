@@ -14,7 +14,7 @@ export interface ThreadRuntimeConfig {
   routeProfileId: string;
   agentProfileId?: string;
   subagentEnabled: SubagentEnabledSettings;
-  orchestrationMode: OrchestrationModeSetting;
+  planModeEnabled: boolean;
 }
 
 export type ThreadRuntimeConfigInput = ThreadRuntimeConfig;
@@ -84,20 +84,23 @@ export function resolveThreadAgentProfile(
   );
 }
 
-function normalizeOrchestrationMode(value: unknown): OrchestrationModeSetting {
-  if (value === "manual" || value === "autonomous") {
+function normalizePlanModeEnabled(value: unknown): boolean {
+  if (typeof value === "boolean") {
     return value;
   }
+  if (value === "manual") {
+    return true;
+  }
+  if (value === "autonomous") {
+    return false;
+  }
   if (value === "analyze_plan_execute") {
-    return "manual";
+    return true;
   }
   if (value === "sdk_default") {
-    return "autonomous";
+    return false;
   }
-  if (typeof value === "boolean") {
-    return value ? "manual" : "autonomous";
-  }
-  return "autonomous";
+  return false;
 }
 
 export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeConfig {
@@ -110,13 +113,13 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (!hasRouteProfileId && !hasAgentProfileId) {
     return false;
   }
-  const orchestration = record.orchestrationMode ?? record.planModeEnabled;
+  const planMode = record.planModeEnabled ?? record.orchestrationMode;
   if (
-    orchestration !== "manual" &&
-    orchestration !== "autonomous" &&
-    orchestration !== "analyze_plan_execute" &&
-    orchestration !== "sdk_default" &&
-    typeof orchestration !== "boolean"
+    planMode !== "manual" &&
+    planMode !== "autonomous" &&
+    planMode !== "analyze_plan_execute" &&
+    planMode !== "sdk_default" &&
+    typeof planMode !== "boolean"
   ) {
     return false;
   }
@@ -149,14 +152,14 @@ export function serializeThreadRuntimeConfig(config: ThreadRuntimeConfig): strin
 }
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
-  const record = config as ThreadRuntimeConfig & { planModeEnabled?: boolean };
-  const orchestrationMode = normalizeOrchestrationMode(record.orchestrationMode ?? record.planModeEnabled);
+  const record = config as ThreadRuntimeConfig & { orchestrationMode?: OrchestrationModeSetting };
+  const planModeEnabled = normalizePlanModeEnabled(record.planModeEnabled ?? record.orchestrationMode);
   const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
-    orchestrationMode,
+    planModeEnabled,
   };
 }
 
@@ -184,15 +187,19 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   if (routeProfileId && !agentProfile && !getRoutesForProfile(input.settings, routeProfileId)) {
     throw new Error(`找不到路由配置：${routeProfileId}`);
   }
-  const orchestrationMode = input.workflowDefaults.orchestrationMode;
   return {
     routeProfileId: routeProfileId ?? agentProfile?.id ?? "",
     ...(agentProfile && { agentProfileId: agentProfile.id }),
     subagentEnabled: defaultSubagentAvailability(),
-    orchestrationMode,
+    planModeEnabled: input.workflowDefaults.planModeEnabled,
   };
 }
 
+export function isPlanModeThreadRuntime(config: ThreadRuntimeConfig): boolean {
+  return config.planModeEnabled;
+}
+
+/** @deprecated Use isPlanModeThreadRuntime and invert it if needed. */
 export function isAutonomousThreadRuntime(config: ThreadRuntimeConfig): boolean {
-  return config.orchestrationMode === "autonomous";
+  return !config.planModeEnabled;
 }

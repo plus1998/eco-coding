@@ -164,9 +164,8 @@ test("route profile migrates to a coding orchestration profile", () => {
   expect(profile.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId).toBe("coder-model");
 });
 
-test("coding orchestration migration maps legacy settings to strategy and enabled agents", () => {
-  const manualProfile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
-    orchestrationMode: "manual",
+test("coding orchestration migration maps enabled agents without plan-mode strategy coupling", () => {
+  const profile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
     subagentEnabled: {
       explore: true,
       architect: false,
@@ -175,15 +174,10 @@ test("coding orchestration migration maps legacy settings to strategy and enable
       tester: true,
     },
   });
-  expect(manualProfile.strategy.kind).toBe("fixed");
-  expect(manualProfile.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(false);
-  expect(manualProfile.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(false);
-  expect(manualProfile.agents.find((agent) => agent.agentKey === "coder")?.enabled).toBe(true);
-
-  const autonomousProfile = buildCodingOrchestrationProfileFromRouteProfile(codingRouteProfile(), {
-    orchestrationMode: "autonomous",
-  });
-  expect(autonomousProfile.strategy.kind).toBe("autonomous");
+  expect(profile.strategy.kind).toBe("hybrid");
+  expect(profile.agents.find((agent) => agent.agentKey === "architect")?.enabled).toBe(false);
+  expect(profile.agents.find((agent) => agent.agentKey === "reviewer")?.enabled).toBe(false);
+  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.enabled).toBe(true);
 });
 
 test("coding orchestration migration requires a complete coding route set", () => {

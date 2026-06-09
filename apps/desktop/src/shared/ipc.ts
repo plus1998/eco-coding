@@ -183,7 +183,7 @@ export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
 export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
-  orchestrationMode: OrchestrationModeSetting;
+  planModeEnabled: boolean;
 }
 
 export interface ProxyBridgeSettingsSnapshot {

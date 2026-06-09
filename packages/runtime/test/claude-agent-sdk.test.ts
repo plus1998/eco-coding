@@ -351,6 +351,21 @@ test("createAutonomousAgentDefinitions registers all subagent roles", () => {
   expect(reviewer.description).toContain("High-risk");
 });
 
+test("createAutonomousAgentDefinitions filters disabled subagent roles", () => {
+  const definitions = createAutonomousAgentDefinitions(routes, undefined, {
+    explore: true,
+    architect: true,
+    coder: true,
+    reviewer: false,
+    tester: false,
+  });
+  expect(Object.keys(definitions).sort()).toEqual([
+    ecoSubagentKeyForRole("architect"),
+    ecoSubagentKeyForRole("coder"),
+    ecoSubagentKeyForRole("explore"),
+  ]);
+});
+
 test("maps Claude family model ids to SDK subagent aliases", () => {
   expect(toSdkAgentModel("claude-opus-4")).toBe("claude-opus-4");
   expect(toSdkAgentModel("claude-sonnet")).toBe("claude-sonnet");
@@ -1606,7 +1621,7 @@ test("ClaudeAgentSdkDriver executes fixed universal workflows step by step", asy
   expect(capturedQueries[1]?.prompt).toContain("Fixed workflow step: synthesis.");
   expect(capturedQueries[1]?.prompt).toContain("step output 1");
 
-  expect(events.some((event) => JSON.stringify(event.payload).includes("固定编排开始"))).toBe(true);
+  expect(events.some((event) => JSON.stringify(event.payload).includes("固定流程开始"))).toBe(true);
   expect(events.some((event) => JSON.stringify(event.payload).includes('"id":"research"'))).toBe(true);
   expect(events.some((event) => JSON.stringify(event.payload).includes('"status":"completed"'))).toBe(true);
   expect(
@@ -1834,6 +1849,47 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
   expect(Object.hasOwn((capturedOptions[0]?.mcpServers ?? {}) as Record<string, unknown>, "eco_plan")).toBe(
     true,
   );
+  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
+});
+
+test("ClaudeAgentSdkDriver autonomous does not register finalize_plan MCP tool", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    orchestration: "autonomous",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-autonomous-no-plan",
+              uuid: "result-autonomous-no-plan",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  const events: Array<{ type: string }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_autonomous_no_plan_tool",
+    prompt: "Fix typo",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type });
+  }
+
+  expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
+  expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 

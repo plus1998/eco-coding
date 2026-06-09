@@ -69,7 +69,7 @@ test("awaiting_plan with pending after execution failure resumes execution not r
     intent: "coding",
     followUp: "继续",
     canResume: true,
-    usesManualOrchestration: true,
+    planModeEnabled: true,
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -87,7 +87,7 @@ test("awaiting_plan with pending before approval continues planning session", ()
     intent: "coding",
     followUp: "继续",
     canResume: true,
-    usesManualOrchestration: true,
+    planModeEnabled: true,
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: false,
     enteredExecutionPhase: false,
@@ -104,7 +104,7 @@ test("canResume false with approved snapshot resumes execution", () => {
     intent: "coding",
     followUp: "继续",
     canResume: false,
-    usesManualOrchestration: true,
+    planModeEnabled: true,
     hasPendingPlan: false,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -121,7 +121,7 @@ test("explicit replan uses sdk planning when session resumable", () => {
     intent: "coding",
     followUp: "重新规划",
     canResume: true,
-    usesManualOrchestration: true,
+    planModeEnabled: true,
     hasPendingPlan: true,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -138,7 +138,7 @@ test("continue with extra tests stays on execution route", () => {
     intent: "coding",
     followUp: "继续，但加测试",
     canResume: true,
-    usesManualOrchestration: true,
+    planModeEnabled: true,
     hasPendingPlan: false,
     hasApprovedPlanOnDisk: true,
     enteredExecutionPhase: true,
@@ -148,6 +148,24 @@ test("continue with extra tests stays on execution route", () => {
     activityLines: [{ role: "system", message: "计划已进入执行阶段。" }],
   });
   expect(action).toEqual({ kind: "resume_execution" });
+});
+
+test("plan mode off without resumable session starts fresh autonomous handling", () => {
+  const action = resolveThreadContinueAction({
+    intent: "coding",
+    followUp: "继续",
+    canResume: false,
+    planModeEnabled: false,
+    hasPendingPlan: false,
+    hasApprovedPlanOnDisk: false,
+    enteredExecutionPhase: false,
+    hasCoderTodos: false,
+    hasAppliedDiff: false,
+    threadStatus: "blocked",
+    activityLines: [],
+  });
+  expect(action).toEqual({ kind: "fresh_autonomous" });
+  expect(continueStatusMessage(action, "coding")).toBe("正在交给主代理处理…");
 });
 
 test("parseApprovedPlanDocument round-trips snapshot sections", () => {

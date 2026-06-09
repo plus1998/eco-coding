@@ -35,7 +35,7 @@ const settings: ModelSettingsSnapshot = {
 test("buildRuntimeAgentDisplayNames maps runtime roles to profile agent names", () => {
   const names = buildRuntimeAgentDisplayNames(settings, {
     routeProfileId: "coding-default",
-    orchestrationMode: "manual",
+    planModeEnabled: true,
     subagentEnabled: {
       explore: true,
       architect: true,
@@ -55,7 +55,7 @@ test("buildRuntimeAgentDisplayNames maps runtime roles to profile agent names", 
 test("formatRuntimeRoleModelLabel prefers runtime agent names and falls back to role labels", () => {
   const names = buildRuntimeAgentDisplayNames(settings, {
     routeProfileId: "coding-default",
-    orchestrationMode: "autonomous",
+    planModeEnabled: false,
     subagentEnabled: {
       explore: true,
       architect: true,

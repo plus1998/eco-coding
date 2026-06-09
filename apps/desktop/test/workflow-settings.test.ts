@@ -5,11 +5,13 @@ import {
   normalizeWorkflowSettingsSnapshot,
   orchestrationModeFromSnapshot,
   usesManualOrchestration,
+  usesPlanMode,
   usesPlanOrchestration,
 } from "../src/main/workflow-settings-store";
 
-test("orchestration defaults to autonomous", () => {
-  expect(defaultWorkflowSettings()).toEqual({ orchestrationMode: "autonomous" });
+test("plan mode defaults to off", () => {
+  expect(defaultWorkflowSettings()).toEqual({ planModeEnabled: false });
+  expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
 });
 
@@ -23,25 +25,25 @@ test("isWorkflowSettingsSnapshot accepts orchestrationMode and legacy fields", (
 
 test("normalizeWorkflowSettingsSnapshot maps legacy values", () => {
   expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "sdk_default" })).toEqual({
-    orchestrationMode: "autonomous",
+    planModeEnabled: false,
   });
   expect(normalizeWorkflowSettingsSnapshot({ orchestrationMode: "analyze_plan_execute" })).toEqual({
-    orchestrationMode: "manual",
+    planModeEnabled: true,
   });
   expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: true })).toEqual({
-    orchestrationMode: "manual",
+    planModeEnabled: true,
   });
   expect(normalizeWorkflowSettingsSnapshot({ planModeEnabled: false })).toEqual({
-    orchestrationMode: "autonomous",
+    planModeEnabled: false,
   });
 });
 
-test("orchestrationModeFromSnapshot maps to runtime mode", () => {
-  expect(orchestrationModeFromSnapshot({ orchestrationMode: "manual" })).toBe("manual");
-  expect(orchestrationModeFromSnapshot({ orchestrationMode: "autonomous" })).toBe("autonomous");
+test("orchestrationModeFromSnapshot maps plan mode to runtime mode", () => {
+  expect(orchestrationModeFromSnapshot({ planModeEnabled: true })).toBe("manual");
+  expect(orchestrationModeFromSnapshot({ planModeEnabled: false })).toBe("autonomous");
 });
 
-test("usesPlanOrchestration is alias for manual", () => {
-  expect(usesPlanOrchestration({ orchestrationMode: "manual" })).toBe(true);
-  expect(usesPlanOrchestration({ orchestrationMode: "autonomous" })).toBe(false);
+test("usesPlanOrchestration is alias for plan mode", () => {
+  expect(usesPlanOrchestration({ planModeEnabled: true })).toBe(true);
+  expect(usesPlanOrchestration({ planModeEnabled: false })).toBe(false);
 });

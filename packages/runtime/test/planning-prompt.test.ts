@@ -87,12 +87,12 @@ test("orchestrator prompts require eco subagent keys when delegating", () => {
   expect(autonomous).not.toContain("explore → coder");
 });
 
-test("autonomous orchestrator separates AskUserQuestion from finalize_plan", () => {
+test("autonomous orchestrator asks questions without planning approval", () => {
   const autonomous = buildAutonomousOrchestratorAppend();
   expect(autonomous).toContain("Clarify vs plan");
   expect(autonomous).toContain("AskUserQuestion");
   expect(autonomous).toContain("finalize_plan");
-  expect(autonomous).toContain("Skip finalize_plan");
+  expect(autonomous).toContain("Do not call finalize_plan");
   expect(autonomous).not.toContain("call finalize_plan when the user should approve before large changes");
 });
 

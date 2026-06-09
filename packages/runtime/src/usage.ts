@@ -316,7 +316,7 @@ export function formatUsageBadge(usage: ParsedUsage): string {
 
 export function formatRoleModelLabel(role: string, modelId?: string): string {
   const roleLabels: Record<string, string> = {
-    planner: "规划",
+    planner: "主代理",
     explore: "探索",
     architect: "架构",
     coder: "编码",

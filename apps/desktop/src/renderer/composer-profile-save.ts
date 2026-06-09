@@ -26,42 +26,7 @@ export function buildComposerSavedProfile(input: {
     version: 1,
     updatedAt: new Date().toISOString(),
     agents,
-    strategy: buildComposerSavedStrategy(copy.strategy, input.runtimeConfig, agents),
-  };
-}
-
-function buildComposerSavedStrategy(
-  strategy: OrchestrationProfile["strategy"],
-  runtimeConfig: ThreadRuntimeConfig,
-  agents: readonly OrchestrationProfile["agents"][number][],
-): OrchestrationProfile["strategy"] {
-  if (runtimeConfig.orchestrationMode === "autonomous") {
-    return {
-      kind: "autonomous",
-      ...(strategy.kind === "autonomous" && strategy.guidancePrompt
-        ? { guidancePrompt: strategy.guidancePrompt }
-        : {}),
-    };
-  }
-  if (strategy.kind !== "autonomous") {
-    return strategy;
-  }
-  const enabledAgents = agents.filter((agent) => agent.enabled);
-  return {
-    kind: "fixed",
-    steps: enabledAgents.map((agent, index) => {
-      const id = slugifyComposerProfileId(agent.agentKey) || `step_${index + 1}`;
-      return {
-        id,
-        agentKey: agent.agentKey,
-        promptTemplate: `Run ${agent.displayName || agent.agentKey}.`,
-        dependsOn: index === 0 ? [] : [slugifyComposerProfileId(enabledAgents[index - 1]?.agentKey ?? "")],
-        runMode: "sequential",
-        required: true,
-        outputKey: `${id}_output`,
-        failurePolicy: index === 0 ? "stop" : "ask_user",
-      };
-    }),
+    strategy: structuredClone(copy.strategy) as OrchestrationProfile["strategy"],
   };
 }
 

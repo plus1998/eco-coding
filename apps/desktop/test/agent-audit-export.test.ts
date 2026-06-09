@@ -34,7 +34,7 @@ const thread: ThreadSummary = {
   message: "Done.",
   runtimeConfig: {
     routeProfileId: "profile_research",
-    orchestrationMode: "manual",
+    planModeEnabled: true,
     subagentEnabled: {
       explore: true,
       architect: true,

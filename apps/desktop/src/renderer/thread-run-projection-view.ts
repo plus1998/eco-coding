@@ -380,7 +380,7 @@ function isProjectionInternalMessageText(text: string): boolean {
 }
 
 function isProjectionWorkflowLifecycleItem(item: ThreadRunProjectionTimelineItem): boolean {
-  return /^固定编排(?:开始|完成|步骤开始|步骤完成|步骤失败)：/u.test(item.text.trim());
+  return /^固定(?:编排|流程)(?:开始|完成|步骤开始|步骤完成|步骤失败)：/u.test(item.text.trim());
 }
 
 export function buildProjectionDisplayTimelineItems(

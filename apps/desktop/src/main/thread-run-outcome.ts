@@ -34,7 +34,7 @@ export function resolveAutonomousRunOutcome(
   if (interrupted) {
     return interrupted;
   }
-  if (input.hasPendingPlan || input.planCaptured) {
+  if (input.hasPendingPlan) {
     return { kind: "awaiting_plan", message: "等待你确认计划。" };
   }
   return { kind: "completed" };

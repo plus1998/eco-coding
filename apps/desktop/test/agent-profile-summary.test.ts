@@ -49,7 +49,7 @@ test("listSelectableAgentProfileSummaries returns route-backed and custom profil
   expect(summaries[0]?.selectionId).toBe("coding-default");
   expect(summaries[0]?.name).toBe("默认编程");
   expect(summaries[0]?.presetLabel).toBe("编程");
-  expect(summaries[0]?.strategyLabel).toBe("混合编排");
+  expect(summaries[0]?.strategyLabel).toBe("混合策略");
   expect(summaries[1]?.selectionId).toBe("custom-unbound");
   expect(summaries[1]?.sourceLabel).toBe("用户");
 });
@@ -57,7 +57,7 @@ test("listSelectableAgentProfileSummaries returns route-backed and custom profil
 test("profile summary applies current runtime subagent switches", () => {
   const summary = findSelectableAgentProfileSummary(settings(), "coding-default", {
     routeProfileId: "coding-default",
-    orchestrationMode: "manual",
+    planModeEnabled: true,
     subagentEnabled: {
       explore: true,
       architect: false,

@@ -17,9 +17,7 @@ export const autonomousOrchestratorAppend = [
   [
     "Clarify vs plan (separate tools): After exploration, use AskUserQuestion for material ambiguity",
     "(preferences, scope, tradeoffs) that the repo cannot resolve — do not substitute a full plan for targeted questions.",
-    "Call finalize_plan only when the change is substantial and the user should approve the overall approach before implementation",
-    "(cross-module work, public API/schema shifts, migrations, or edits where mistaken assumptions would be costly).",
-    "Skip finalize_plan for localized, well-scoped fixes once the spec is clear.",
+    "Do not call finalize_plan in this mode; handle the task directly after the spec is clear.",
   ].join(" "),
   `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
   `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}.`,

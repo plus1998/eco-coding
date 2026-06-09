@@ -12,7 +12,6 @@ import {
   parseLegacyApiErrorActivityMessage,
   parseOtelApiErrorAttribute,
 } from "@eco/runtime";
-import { isQuotaOrRateLimitFailure } from "../shared/request-errors";
 
 export { isQuotaOrRateLimitFailure } from "../shared/request-errors";
 
@@ -87,7 +86,7 @@ export function formatUserFacingRequestError(reason: string): string {
     return "上游模型连接中断（流式响应未完成）。请检查 Provider 的 Base URL、API Key 与网络后重试。";
   }
   if (text.includes("未提交 FinalizePlan")) {
-    return "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换 Planner 模型。";
+    return "计划阶段未完成：主代理未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换主代理模型。";
   }
   const routeMiss = text.match(/No provider route configured for model\s+([^."}\s]+)/i);
   if (routeMiss?.[1]) {

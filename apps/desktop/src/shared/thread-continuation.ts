@@ -20,13 +20,14 @@ export type ThreadContinueAction =
   | { kind: "resume_sdk"; phase: "planning" | "execution" | "question" }
   | { kind: "revise_plan" }
   | { kind: "fresh_plan" }
+  | { kind: "fresh_autonomous" }
   | { kind: "question"; resume: boolean };
 
 export interface ThreadContinueRoutingInput {
   intent: "question" | "coding";
   followUp: string;
   canResume: boolean;
-  usesManualOrchestration: boolean;
+  planModeEnabled: boolean;
   hasPendingPlan: boolean;
   hasApprovedPlanOnDisk: boolean;
   enteredExecutionPhase: boolean;
@@ -119,10 +120,8 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
     return { kind: "question", resume: input.canResume };
   }
 
-  if (!input.usesManualOrchestration) {
-    return input.canResume
-      ? { kind: "resume_sdk", phase: "execution" }
-      : { kind: "fresh_plan" };
+  if (!input.planModeEnabled) {
+    return input.canResume ? { kind: "resume_sdk", phase: "execution" } : { kind: "fresh_autonomous" };
   }
 
   if (wantsRevision) {
@@ -182,6 +181,9 @@ export function continueStatusMessage(
       return "正在继续执行…";
     }
     return "正在分析并制定计划…";
+  }
+  if (action.kind === "fresh_autonomous") {
+    return "正在交给主代理处理…";
   }
   if (action.kind === "revise_plan" || action.kind === "fresh_plan") {
     return intent === "question" ? "正在回答…" : "正在分析并制定计划…";
@@ -244,7 +246,7 @@ export function buildActivityContextForPrompt(
       line.role === "user"
         ? "用户"
         : line.role === "planner"
-          ? "规划"
+          ? "主代理"
           : line.role === "explore"
             ? "探索"
             : line.role === "architect"
