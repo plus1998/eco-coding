@@ -35,6 +35,9 @@ test("planning system append is Codex template plus minimal Eco adapter", () => 
   expect(append).toContain("Explore first");
   expect(append).toContain("WebSearch");
   expect(append).toContain("Clarify when needed");
+  expect(append).toContain("Context Digest");
+  expect(append).toContain("Architecture Decision");
+  expect(append).toContain("Architect is a targeted reviewer");
   expect(append).not.toContain("MUST NOT call `mcp__eco_plan__finalize_plan`");
   expect(append).toContain("complete replacement");
 });

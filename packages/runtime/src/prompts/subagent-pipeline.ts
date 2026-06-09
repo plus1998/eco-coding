@@ -68,7 +68,8 @@ function buildArchitectStep(availability: SubagentAvailability, step: number): s
     : "before direct implementation";
   return [
     `${step}. Architect (targeted): Call ${agentCall("architect")} only when the approved plan truly needs architecture decomposition — use it if ANY apply: ${architectUseCriteria}.`,
-    `   Default: skip architect and publish implementation tasks yourself ${implementationTarget}. If you call architect, pass only the approved plan plus the specific boundary/decomposition question.`,
+    `   Default: skip architect and publish implementation tasks yourself ${implementationTarget}. If you call architect, pass the approved plan, the planner's Context Digest / Architecture Decision excerpts, and the specific boundary/decomposition question.`,
+    "   Do not ask architect to re-explore the project. If the digest is insufficient, name the missing fact or file explicitly before delegating.",
   ];
 }
 
@@ -246,6 +247,8 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
         "",
         "## Optional planning architect",
         `- For cross-module or boundary decisions, you may call **\`${agentCall("architect")}\`** for read-only structural guidance.`,
+        "- Planner owns repository exploration. If you call architect, pass the exploration facts / Context Digest you already gathered plus one precise structural question.",
+        "- Architect is a targeted reviewer, not a second full-project reader; if it lacks a fact, it should name that gap instead of inferring around it.",
         "- Do not use architect for simple localized changes — prefer direct exploration.",
       ]
     : [];
@@ -272,9 +275,11 @@ export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): 
     "Follow Codex **Finalization rule** content quality exactly; submission channel differs:",
     "",
     "1. Optional: analysis summary in plain text — exploration facts, extracted requirements, open assumptions.",
+    "   Include a `## Context Digest` section with the concrete repo facts future subagents need: tech stack, entry points, affected files/modules, existing contracts, and important constraints.",
     "2. Required: submit decision-complete plan via `mcp__eco_plan__finalize_plan`.",
-    "   - `analysis`: complete analysis summary string.",
-    "   - `plan`: complete implementation plan string (Summary/Key Changes/Test Plan/Assumptions).",
+    "   - `analysis`: complete analysis summary string; include the same `## Context Digest` when it is material to execution.",
+    "   - `plan`: complete implementation plan string (Summary/Key Changes/Architecture Decision/Test Plan/Assumptions).",
+    "   - `Architecture Decision`: state the chosen boundary/data-flow approach, or explicitly say the change is localized and no new architecture boundary is introduced.",
     '3. Do not ask "should I proceed?" — the user approves the submitted plan in Eco UI before execution phase 2/2.',
     "",
     'For `AskUserQuestion`, Eco always provides a custom text field; include an "其他（自定义说明）" option when presets may not fit.',

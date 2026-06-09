@@ -443,9 +443,10 @@ test("creates native SDK subagent definitions", () => {
 
 test("execution architect prompt requires Coder Tasks section", () => {
   const definitions = createExecutionAgentDefinitions(routes);
-  expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
-    prompt: expect.stringContaining("## Coder Tasks"),
-  });
+  const architectPrompt = (definitions[ecoSubagentKeyForRole("architect")] as { prompt: string }).prompt;
+  expect(architectPrompt).toContain("## Coder Tasks");
+  expect(architectPrompt).toContain("Context Digest");
+  expect(architectPrompt).toContain("## Context Gaps");
   expect(definitions[ecoSubagentKeyForRole("coder")]).toMatchObject({
     prompt: expect.stringMatching(/runnable, verified code/),
   });
@@ -483,6 +484,8 @@ test("builds phased orchestration prompts", () => {
   expect(executePhaseSystemAppend).toContain("Do not restate the full approved plan");
   expect(executePhaseSystemAppend).toContain("Architect (targeted)");
   expect(executePhaseSystemAppend).toContain("Default: skip architect");
+  expect(executePhaseSystemAppend).toContain("Context Digest / Architecture Decision");
+  expect(executePhaseSystemAppend).toContain("Do not ask architect to re-explore the project");
   expect(executePhaseSystemAppend).toContain("Do not call architect for routine task listing");
   expect(executePhaseSystemAppend).not.toContain(`explore: ${ecoSubagentKeyForRole("explore")}`);
   expect(executePhaseSystemAppend).toContain("Coders (parallel)");
@@ -504,6 +507,9 @@ test("planning agents include network tools on read-only subagents", () => {
   });
   expect(definitions).not.toHaveProperty("Explore");
   expect(definitions).not.toHaveProperty("explore");
+  const architectPrompt = (definitions[ecoSubagentKeyForRole("architect")] as { prompt: string }).prompt;
+  expect(architectPrompt).toContain("targeted structural reviewer");
+  expect(architectPrompt).toContain("## Context Gaps");
   expect(definitions[ecoSubagentKeyForRole("architect")]).toMatchObject({
     tools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
   });
