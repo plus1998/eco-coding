@@ -261,73 +261,32 @@ export function formatPlanExecutionSummary(availability: SubagentAvailability): 
 
 export function buildEcoPlanHarnessAdapter(availability: SubagentAvailability): string {
   const exploreLine = isSubagentEnabled(availability, "explore")
-    ? `- Exploration: use Read, Glob, Grep, and **\`${agentCall("explore")}\`** for broad codebase discovery (same role as Codex PHASE 1 exploration).`
+    ? `- Optional broad repository exploration: use Read, Glob, Grep, and **\`${agentCall("explore")}\`** when materially useful.`
     : `- Exploration: use Read, Glob, and Grep only — **do not** call ${agentCall("explore")} (disabled in Eco settings).`;
-
-  const architectLines = isSubagentEnabled(availability, "architect")
-    ? [
-        "",
-        "## Optional planning architect",
-        `- For cross-module or boundary decisions, you may call **\`${agentCall("architect")}\`** for read-only structural guidance.`,
-        "- Planner owns repository exploration. If you call architect, pass the exploration facts / Context Digest you already gathered plus one precise structural question.",
-        "- Architect is a targeted reviewer, not a second full-project reader; if it lacks a fact, it should name that gap instead of inferring around it.",
-        "- Do not use architect for simple localized changes — prefer direct exploration.",
-      ]
-    : [];
-
-  const exploreFirstRule = isSubagentEnabled(availability, "explore")
-    ? `- **Explore first**: run at least one targeted pass with Read, Glob, Grep, and/or \`${agentCall("explore")}\` before asking the user anything answerable from the repo.`
-    : `- **Explore first**: run at least one targeted pass with Read, Glob, and/or Grep before asking the user anything answerable from the repo. Do not call ${agentCall("explore")}.`;
+  const architectLine = isSubagentEnabled(availability, "architect")
+    ? `- Optional architecture review: for cross-module or boundary decisions, you may call **\`${agentCall("architect")}\`** with one precise structural question.`
+    : "";
 
   return [
-    "# Eco harness (minimal overrides — Codex Plan text above is authoritative)",
+    "# Eco Plan Mode integration",
     "",
-    "You are in Eco Coding phase 1/2 PLAN (read-only).",
+    "Use Claude Code's native Plan Mode workflow. Eco only adds product boundaries and approval routing.",
     "",
-    "## Tool name mapping",
-    "- User clarifications: **`AskUserQuestion`** (Codex Plan Mode asking-questions section; same role).",
-    "- Final plan submission: present the complete Markdown plan and call **`ExitPlanMode`**. Claude Code saves the plan file internally and injects `plan` / `planFilePath` into hooks.",
+    "## Eco boundaries",
+    "- Eco captures `ExitPlanMode` and shows the submitted plan for user approval before execution phase 2/2.",
+    "- Use `AskUserQuestion` only when a material decision cannot be resolved from repository exploration or the user request.",
     "- Do **not** use `Write`, `Edit`, or `MultiEdit` to create the plan file; those tools remain unavailable in Plan Mode.",
     exploreLine,
-    `- Official SDK built-ins: **\`Agent(${SDK_PLAN_AGENT_KEY})\`** is available for Plan Mode read-only codebase research; **\`Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY})\`** is available for complex multi-step research/decomposition. Plan Mode remains read-only; do not use either to implement before approval.`,
-    "- External facts (official docs, API versions, third-party behavior, current best practices not in the repo): use **`WebSearch`**; open a specific URL with **`WebFetch`** after repo exploration — do not skip local exploration for in-repo questions.",
-    "- Do **not** use `update_plan` in Plan Mode (Codex rule still applies).",
+    architectLine,
+    `- Official SDK built-ins: **\`Agent(${SDK_PLAN_AGENT_KEY})\`** is available for native Plan Mode read-only research; **\`Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY})\`** is available for complex multi-step research/decomposition.`,
     `- Do **not** call ${agentCall("coder")}, ${agentCall("reviewer")}, or ${agentCall("tester")} in this phase.`,
-    ...architectLines,
-    "",
-    "## Deliverable envelope (Eco UI approval)",
-    "Follow Codex **Finalization rule** content quality exactly; Eco captures the official ExitPlanMode plan and shows it for approval:",
-    "",
-    "1. Optional: analysis summary in plain text — exploration facts, extracted requirements, open assumptions.",
-    "   Include a `## Context Digest` section with the concrete repo facts future subagents need: tech stack, entry points, affected files/modules, existing contracts, and important constraints.",
-    "2. Required: present a decision-complete Markdown plan and submit it via `ExitPlanMode`.",
-    "   - Include Summary, Key Changes, Architecture Decision, Test Plan, and Assumptions when they are material.",
-    "   - `Architecture Decision`: state the chosen boundary/data-flow approach, or explicitly say the change is localized and no new architecture boundary is introduced.",
-    '3. Do not ask "should I proceed?" — the user approves the submitted plan in Eco UI before execution phase 2/2.',
-    "",
-    'For `AskUserQuestion`, Eco always provides a custom text field; include an "其他（自定义说明）" option when presets may not fit.',
+    "- For external facts outside the repository, use `WebSearch` / `WebFetch` when needed.",
+    "- If the user revises the spec after a prior submitted plan, the next `ExitPlanMode` plan must be a complete replacement, not a partial diff.",
     "",
     formatAvailableSubagentsLine(availability, { allowPlanAgent: true }),
-    "",
-    "## Eco Plan Mode pipeline (mandatory ordering)",
-    "",
-    "A detailed user message is **not** permission to skip exploration. A clear request may proceed to finalize after exploration without extra clarification.",
-    "",
-    "### Required order",
-    "",
-    exploreFirstRule,
-    "- **External lookup when needed**: after repo exploration, use `WebSearch` / `WebFetch` only for facts outside the repo (not for code or config discoverable locally).",
-    "- **Clarify when needed**: after exploration, call **`AskUserQuestion`** only for material preferences/tradeoffs that exploration cannot resolve (Codex PHASE 2–3). Do not ask questions answerable from the repo.",
-    "- **Submit when ready**: present the plan and call `ExitPlanMode` once decision-complete per Codex Finalization rule (unanswered preference questions use recommended defaults recorded under Assumptions).",
-    "",
-    "Exploration, clarification, and finalization may occur in the same assistant turn, but `ExitPlanMode` must come after exploration completes in that turn.",
-    "Optional: short `## Analysis Result` / `## 分析结果` summarizing repo facts and open assumptions.",
-    "",
-    "### Plan revisions via chat (after dismiss or follow-up)",
-    "",
-    "If the user revises the spec after a prior submitted plan (including after dismissing Eco plan approval),",
-    "the next `ExitPlanMode` plan MUST be a **complete replacement**, not a partial diff.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildPlanningExploreInstruction(availability: SubagentAvailability): string {

@@ -1,6 +1,6 @@
 /**
- * @deprecated Plan structure is defined in inlined Codex template (Finalization rule in codex-plan-template.ts).
- * Eco captures official Claude Plan Mode submissions via `ExitPlanMode`.
+ * @deprecated Claude Code native Plan Mode owns the plan structure.
+ * Eco only captures official submissions via `ExitPlanMode`.
  */
 export const implementationPlanOutline = "";
 export const analysisResultOutline = "";

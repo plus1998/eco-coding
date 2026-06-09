@@ -1,31 +1,46 @@
 export {
+  autonomousOrchestratorAppend,
+  buildAutonomousOrchestratorAppend,
+  buildAutonomousPlanContinuationPrompt,
+} from "./autonomous.js";
+export {
   ecoBasePromptAppend,
   executeCoreGoalAppend,
 } from "./eco-common.js";
-export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
+export { buildEcoPlanHarnessAdapter, ecoPlanHarnessAdapter } from "./eco-plan-adapter.js";
 export {
-  planningPhaseSystemAppend,
-  buildPlanningPhaseSystemAppend,
-  buildPlanningPhasePrompt,
-  buildPlanningContinuationPrompt,
-  buildAnalyzePhasePrompt,
-  buildPlanPhasePrompt,
-} from "./planning.js";
-export { CODEX_PLAN_MODE_TEMPLATE, loadCodexPlanTemplate } from "./codex-plan-template.js";
-export { ecoPlanHarnessAdapter, buildEcoPlanHarnessAdapter } from "./eco-plan-adapter.js";
-export {
-  executePhaseSystemAppend,
+  architectUseCriteria,
+  buildExecuteBuildSwitchAppend,
   buildExecutePhasePrompt,
+  buildExecutePhaseSystemAppend,
   buildExecuteResumePrompt,
   buildExecutionPromptWithFollowUp,
-  buildExecutePhaseSystemAppend,
-  buildExecuteBuildSwitchAppend,
-  architectUseCriteria,
+  executePhaseSystemAppend,
 } from "./execute.js";
 export {
-  questionAnswerSystemAppend,
-  buildQuestionAnswerSystemAppend,
+  executionArchitectDescription,
+  executionArchitectPrompt,
+  executionCoderDescription,
+  executionCoderPrompt,
+  executionTesterDescription,
+  executionTesterPrompt,
+  planningArchitectDescription,
+  planningArchitectPrompt,
+  reviewerAgentPrompt,
+} from "./execution-agents.js";
+export { exploreAgentDescription, exploreAgentPrompt } from "./explore.js";
+export {
+  buildAnalyzePhasePrompt,
+  buildPlanningContinuationPrompt,
+  buildPlanningPhasePrompt,
+  buildPlanningPhaseSystemAppend,
+  buildPlanPhasePrompt,
+  planningPhaseSystemAppend,
+} from "./planning.js";
+export {
   buildQuestionAnswerPrompt,
+  buildQuestionAnswerSystemAppend,
+  questionAnswerSystemAppend,
 } from "./question.js";
 export {
   formatAvailableSubagentsLine,
@@ -33,19 +48,3 @@ export {
   formatPlanExecutionSummary,
   summarizeExecutePipeline,
 } from "./subagent-pipeline.js";
-export {
-  autonomousOrchestratorAppend,
-  buildAutonomousOrchestratorAppend,
-  buildAutonomousPlanContinuationPrompt,
-} from "./autonomous.js";
-export {
-  reviewerAgentPrompt,
-  executionArchitectPrompt,
-  executionArchitectDescription,
-  executionCoderPrompt,
-  executionCoderDescription,
-  executionTesterPrompt,
-  executionTesterDescription,
-  planningArchitectPrompt,
-  planningArchitectDescription,
-} from "./execution-agents.js";

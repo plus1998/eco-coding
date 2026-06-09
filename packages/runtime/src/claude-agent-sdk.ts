@@ -737,7 +737,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         permissionMode: "plan",
         allowedTools: [...planningAllowedTools],
         phaseAppend: planningPhaseAppend,
-        planModeInstructions: planningPhaseAppend,
         agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
@@ -830,7 +829,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "plan",
       allowedTools: [...planningAllowedTools],
       phaseAppend: planningPhaseAppend,
-      planModeInstructions: planningPhaseAppend,
       agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -854,7 +852,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
       allowedTools: string[];
       phaseAppend: string;
-      planModeInstructions?: string;
       agents?: Record<string, unknown>;
       availability?: SubagentAvailability;
       dynamicAgentKeys?: string[];
@@ -943,7 +940,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
-      ...(phase.planModeInstructions ? { planModeInstructions: phase.planModeInstructions } : {}),
       allowedTools,
       ...(this.options.toolPermissionHandler
         ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }

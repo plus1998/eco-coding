@@ -482,14 +482,13 @@ test("builds phased orchestration prompts", () => {
   const analysis = "## 分析结果\n\nNeed to extend styles.css";
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("explore before ExitPlanMode");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("native Plan Mode");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("ExitPlanMode");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do not use Write/Edit/MultiEdit");
-  expect(planningPhaseSystemAppend).toContain("explore first, ask second");
-  expect(planningPhaseSystemAppend).toContain("Finalization rule");
-  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode pipeline");
-  expect(planningPhaseSystemAppend).toContain("Claude Code saves the plan file internally");
+  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode integration");
+  expect(planningPhaseSystemAppend).toContain("native Plan Mode workflow");
+  expect(planningPhaseSystemAppend).not.toContain("Finalization rule");
   expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("mcp__eco_plan__finalize_plan");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
@@ -1893,7 +1892,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
-  expect(capturedOptions[0]?.planModeInstructions).toContain("ExitPlanMode");
+  expect(capturedOptions[0]?.planModeInstructions).toBeUndefined();
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
   expect(capturedOptions[0]?.allowedTools).toContain("ExitPlanMode");

@@ -3,7 +3,6 @@ import {
   buildAutonomousOrchestratorAppend,
   buildAutonomousPlanContinuationPrompt,
 } from "../src/prompts/autonomous.js";
-import { CODEX_PLAN_MODE_TEMPLATE } from "../src/prompts/codex-plan-template.js";
 import { buildPlanningPhaseSystemAppend } from "../src/prompts/eco-plan-adapter.js";
 import {
   buildPlanningContinuationPrompt,
@@ -13,50 +12,39 @@ import {
 import { formatMandatoryEcoSubagentRule } from "../src/prompts/subagent-pipeline.js";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability.js";
 
-test("inlined Codex plan template matches upstream structure", () => {
-  const template = CODEX_PLAN_MODE_TEMPLATE;
-  expect(template).toContain("# Plan Mode (Conversational)");
-  expect(template).toContain("PHASE 1 — Ground in the environment");
-  expect(template).toContain("request_user_input");
-  expect(template).toContain("Finalization rule");
-  expect(template).not.toContain("proposed_plan");
-  expect(template).toContain("Two kinds of unknowns");
-});
-
-test("planning system append is Codex template plus minimal Eco adapter", () => {
+test("planning system append keeps only Eco boundaries for native Plan Mode", () => {
   const append = buildPlanningPhaseSystemAppend();
-  expect(append).toContain("PHASE 1 — Ground in the environment");
+  expect(append).toContain("Claude Code's native Plan Mode workflow");
+  expect(append).toContain("Eco captures `ExitPlanMode`");
   expect(append).toContain("AskUserQuestion");
   expect(append).toContain("ExitPlanMode");
-  expect(append).not.toMatch(/`request_user_input`/);
+  expect(append).not.toContain("PHASE 1");
+  expect(append).not.toContain("Finalization rule");
+  expect(append).not.toMatch(/request_user_input/);
   expect(append).not.toContain("## Implementation Plan");
   expect(append).toContain(`Agent(${ecoSubagentKeyForRole("explore")})`);
-  expect(append).toContain("Eco Plan Mode pipeline");
-  expect(append).toContain("Explore first");
   expect(append).toContain("WebSearch");
-  expect(append).toContain("Clarify when needed");
-  expect(append).toContain("Context Digest");
-  expect(append).toContain("Architecture Decision");
-  expect(append).toContain("Architect is a targeted reviewer");
-  expect(append).not.toContain("mcp__eco_plan__finalize_plan");
   expect(append).toContain("complete replacement");
+  expect(append).not.toContain("mcp__eco_plan__finalize_plan");
 });
 
-test("planningPhaseSystemAppend is built from inlined Codex template", () => {
-  expect(planningPhaseSystemAppend).toContain("Finalization rule");
+test("planningPhaseSystemAppend does not include legacy template text", () => {
+  expect(planningPhaseSystemAppend).toContain("Eco Plan Mode integration");
+  expect(planningPhaseSystemAppend).not.toContain("Finalization rule");
+  expect(planningPhaseSystemAppend).not.toContain("PHASE 1");
   expect(planningPhaseSystemAppend).not.toContain("adq_account");
 });
 
-test("buildPlanningPhasePrompt enforces explore-before-ExitPlanMode sequential workflow", () => {
+test("buildPlanningPhasePrompt preserves native Plan Mode with Eco boundaries", () => {
   const prompt = buildPlanningPhasePrompt("Add caching to the API layer");
-  expect(prompt).toContain("explore before ExitPlanMode");
-  expect(prompt).toContain("Explore the repository first");
+  expect(prompt).toContain("native Plan Mode");
+  expect(prompt).toContain("Explore the repository as needed");
   expect(prompt).toContain("WebSearch");
   expect(prompt).toContain("WebFetch");
   expect(prompt).toContain("material ambiguity");
   expect(prompt).toContain("AskUserQuestion");
   expect(prompt).toContain("ExitPlanMode");
-  expect(prompt).toContain("one assistant turn");
+  expect(prompt).toContain("Do not use Write/Edit/MultiEdit");
   expect(prompt).not.toContain("turn 1");
   expect(prompt).not.toContain("mcp__eco_plan__finalize_plan");
 });
