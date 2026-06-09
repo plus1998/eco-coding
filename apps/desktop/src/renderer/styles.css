@@ -2058,69 +2058,61 @@ button:not(:disabled) {
   font-family: inherit;
 }
 
-.bash-approval-panel.codex-style {
+.bash-approval-shell {
   margin-top: 10px;
 }
 
 .bash-approval-running {
-  display: inline-flex;
+  display: flex;
   max-width: 100%;
   align-items: center;
   gap: 8px;
-  margin: 0 0 14px 2px;
-  color: #a3a3a3;
-  font-size: 15px;
-  line-height: 1.3;
+  margin: 0 0 10px 2px;
+  color: #8b8b8b;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .bash-approval-mini-icon {
   display: inline-flex;
   flex: 0 0 auto;
-  color: #a3a3a3;
+  color: #8b8b8b;
 }
 
-.bash-approval-running code {
+.bash-approval-running-label {
   overflow: hidden;
-  color: #a3a3a3;
-  font-size: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bash-approval-card {
-  padding: 22px 18px 14px;
+.bash-approval-panel.codex-style {
+  padding: 18px 20px 14px;
   border: 1px solid #3a3a3a;
-  border-radius: 14px;
+  border-radius: 16px;
   background: #262626;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
-.bash-approval-header {
+.bash-approval-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
-.bash-approval-header h3 {
+.bash-approval-title {
   margin: 0;
+  flex: 1;
   color: #f5f5f5;
   font-size: 15px;
   font-weight: 650;
   line-height: 1.45;
 }
 
-.bash-approval-header p {
-  margin: 6px 0 0;
-  color: #a3a3a3;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 .bash-approval-risk {
   flex: 0 0 auto;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 650;
@@ -2146,128 +2138,149 @@ button:not(:disabled) {
 
 .bash-approval-command {
   max-height: 160px;
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   overflow: auto;
   color: #a3a3a3;
   background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
   font-size: 14px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.bash-approval-options {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 14px;
+.bash-approval-option-list {
+  margin: 0;
   padding: 0;
-  border: 0;
+  list-style: none;
 }
 
-.bash-approval-option {
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 22px;
-  gap: 8px;
+.bash-approval-option-row {
+  display: flex;
   align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 10px 14px 10px 12px;
-  border: 1px solid transparent;
-  border-radius: 14px;
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
   background: transparent;
-  color: #d4d4d4;
+  color: inherit;
   text-align: left;
   cursor: pointer;
+  font: inherit;
 }
 
-.bash-approval-option:hover:not(:disabled),
-.bash-approval-option:focus-visible {
-  background: #303030;
+.bash-approval-option-row.is-highlighted {
+  background: #333333;
 }
 
-.bash-approval-option.primary {
-  background: #303030;
+.bash-approval-option-row:hover:not(:disabled),
+.bash-approval-option-row:focus-visible {
+  background: #333333;
 }
 
-.bash-approval-option:disabled {
+.bash-approval-option-row:disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }
 
 .bash-approval-option-index {
+  flex-shrink: 0;
+  min-width: 1.25rem;
   color: #a3a3a3;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
-.bash-approval-option-main {
-  display: flex;
+.bash-approval-option-label {
+  flex: 1;
   min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.bash-approval-option-main strong {
   color: #f5f5f5;
   font-size: 14px;
-  font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.4;
 }
 
-.bash-approval-option-main span {
-  overflow: hidden;
+.bash-approval-option-nav {
+  display: inline-flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0;
+  margin-left: auto;
+  color: #737373;
+}
+
+.bash-approval-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #333333;
+}
+
+.bash-approval-dismiss {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: #a3a3a3;
   font-size: 13px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
 }
 
-.bash-approval-option svg {
-  justify-self: end;
-  color: #a3a3a3;
+.bash-approval-dismiss:hover:not(:disabled) {
+  color: #e5e5e5;
 }
 
-.bash-approval-option.primary svg {
-  color: #4ade80;
+.bash-approval-dismiss:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.bash-approval-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.bash-approval-meta span {
+.bash-approval-submit {
   display: inline-flex;
-  max-width: 100%;
   align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 4px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #171717;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.bash-approval-meta svg {
-  flex: 0 0 auto;
-  color: #fbbf24;
+.bash-approval-submit:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+.bash-approval-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bash-approval-footer kbd {
+  margin-left: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(23, 23, 23, 0.1);
+  font-size: 11px;
+  font-family: inherit;
 }
 
 @media (max-width: 720px) {
-  .bash-approval-card {
-    padding: 18px 14px 12px;
+  .bash-approval-panel.codex-style {
+    padding: 16px 14px 12px;
   }
 
-  .bash-approval-header {
+  .bash-approval-top {
     flex-direction: column;
     gap: 10px;
-  }
-
-  .bash-approval-option {
-    grid-template-columns: 28px minmax(0, 1fr) 20px;
   }
 }
 
@@ -7476,6 +7489,17 @@ button:not(:disabled) {
   min-width: 0;
 }
 
+.models-agent-profile-node-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.models-agent-profile-node-column > .models-agent-profile-node-shell {
+  width: min(230px, 100%);
+}
+
 .models-agent-profile-node-shell {
   position: relative;
   min-width: 0;
@@ -7519,6 +7543,11 @@ button:not(:disabled) {
 .models-agent-profile-node-main {
   border-color: rgba(34, 197, 94, 0.42);
   background: #1f2823;
+}
+
+.models-agent-profile-node-builtin {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: #1f2530;
 }
 
 .models-agent-profile-node-type,
@@ -9449,10 +9478,51 @@ button:not(:disabled) {
 }
 
 .codex-main:not(.codex-main-landing) .clarification-answer-card,
+.codex-main:not(.codex-main-landing) .clarification-panel.codex-style,
+.codex-main:not(.codex-main-landing) .bash-approval-panel.codex-style,
 .codex-main:not(.codex-main-landing) .workspace-changes-card.codex-style {
   border-color: #333333;
   background: #202020;
   box-shadow: none;
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-running {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-mini-icon {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-title {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-command {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-option-row.is-highlighted,
+.codex-main:not(.codex-main-landing) .bash-approval-option-row:hover:not(:disabled),
+.codex-main:not(.codex-main-landing) .bash-approval-option-row:focus-visible {
+  background: #2a2a2a;
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-option-label {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-footer {
+  border-top-color: #333333;
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-submit {
+  background: #f2f2f2;
+  color: #171717;
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-submit:hover:not(:disabled) {
+  background: #ffffff;
 }
 
 .codex-main:not(.codex-main-landing) .clarification-answer-title,

@@ -237,7 +237,8 @@ const guidedResearchAgentRegistry: EcoAgentRuntimeConfig = {
     ],
     strategy: {
       kind: "autonomous",
-      guidancePrompt: "Use researcher for evidence discovery and synthesizer when synthesis improves the answer.",
+      guidancePrompt:
+        "Use researcher for evidence discovery and synthesizer when synthesis improves the answer.",
     },
   },
 };
@@ -484,9 +485,11 @@ test("builds phased orchestration prompts", () => {
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("explore before ExitPlanMode");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("ExitPlanMode");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("Do not use Write/Edit/MultiEdit");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
   expect(planningPhaseSystemAppend).toContain("Eco Plan Mode pipeline");
+  expect(planningPhaseSystemAppend).toContain("Claude Code saves the plan file internally");
   expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("mcp__eco_plan__finalize_plan");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
@@ -1852,12 +1855,13 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
                 hook_event_name: "PreToolUse",
                 tool_name: "ExitPlanMode",
                 tool_input: {
-                  plan: "## Summary\n\nShip the official plan.",
-                  planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+                  allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
                 },
                 tool_use_id: "tool_exit_plan",
                 session_id: "sess-plan",
                 cwd: "/tmp/workspace",
+                plan: "## Summary\n\nShip the official plan.",
+                planFilePath: "/tmp/workspace/.claude/plans/plan.md",
               },
               "tool_exit_plan",
               { signal: new AbortController().signal },

@@ -1659,75 +1659,79 @@ function AgentProfileEditorModal({
 
                   <div className="models-agent-profile-node-rail" aria-hidden />
 
-                  <article className="models-agent-profile-node-shell">
-                    <button
-                      type="button"
-                      className="models-agent-profile-node"
-                      disabled={busy}
-                      onClick={() => setSelectedNode({ kind: "builtinExplore" })}
-                    >
-                      <span className="models-agent-profile-node-type">内置代理</span>
-                      <span className="models-agent-profile-node-title">Explore</span>
-                      <span className="models-agent-profile-node-model">
-                        {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) ||
-                          "未选 Provider"}{" "}
-                        / {form.builtinExploreModelId || "未选模型"}
-                      </span>
-                      <span className="models-agent-profile-node-footer">
-                        <Settings2 size={14} />
-                        模型
-                      </span>
-                    </button>
-                  </article>
+                  <div className="models-agent-profile-node-column">
+                    <article className="models-agent-profile-node-shell">
+                      <button
+                        type="button"
+                        className="models-agent-profile-node models-agent-profile-node-builtin"
+                        disabled={busy}
+                        onClick={() => setSelectedNode({ kind: "builtinExplore" })}
+                      >
+                        <span className="models-agent-profile-node-type">内置代理</span>
+                        <span className="models-agent-profile-node-title">Explore</span>
+                        <span className="models-agent-profile-node-model">
+                          {(builtinExploreProvider?.name ?? form.builtinExploreProviderId) ||
+                            "未选 Provider"}{" "}
+                          / {form.builtinExploreModelId || "未选模型"}
+                        </span>
+                        <span className="models-agent-profile-node-footer">
+                          <Settings2 size={14} />
+                          模型
+                        </span>
+                      </button>
+                    </article>
 
-                  {form.agents.length === 0 ? (
-                    <div className="models-agent-profile-empty-drop">
-                      <span>拖入子代理节点</span>
-                      <small>子代理节点只绑定 Provider 和模型。</small>
-                    </div>
-                  ) : (
-                    <div className="models-agent-profile-node-grid">
-                      {form.agents.map((agent, index) => {
-                        const provider = providers.find((entry) => entry.id === agent.providerId);
-                        const template = templates.find((entry) => entry.id === agent.templateId);
-                        const nodeTitle = (template?.name ?? agent.displayName) || agent.agentKey;
-                        return (
-                          <article key={agent.agentKey} className="models-agent-profile-node-shell">
-                            <button
-                              type="button"
-                              className="models-agent-profile-node"
-                              disabled={busy}
-                              onClick={() => setSelectedNode({ kind: "agent", agentKey: agent.agentKey })}
-                            >
-                              <span className="models-agent-profile-node-type">
-                                {template ? formatAgentDomainLabel(template.domain) : "模板缺失"}
-                              </span>
-                              <span className="models-agent-profile-node-title">{nodeTitle}</span>
-                              <span className="models-agent-profile-node-key">{agent.agentKey}</span>
-                              <span className="models-agent-profile-node-model">
-                                {(provider?.name ?? agent.providerId) || "未选 Provider"} /{" "}
-                                {agent.modelId || "未选模型"}
-                              </span>
-                              <span className="models-agent-profile-node-footer">
-                                <Settings2 size={14} />
-                                模型
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              className="mcp-icon-button danger models-agent-profile-node-remove"
-                              disabled={busy}
-                              onClick={() => removeAgent(index)}
-                              aria-label={`移除 ${nodeTitle}`}
-                              title={`移除 ${nodeTitle}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  )}
+                    {form.agents.length === 0 ? (
+                      <div className="models-agent-profile-empty-drop">
+                        <span>拖入子代理节点</span>
+                        <small>子代理节点只绑定 Provider 和模型。</small>
+                      </div>
+                    ) : (
+                      <div className="models-agent-profile-node-grid">
+                        {form.agents.map((agent, index) => {
+                          const provider = providers.find((entry) => entry.id === agent.providerId);
+                          const template = templates.find((entry) => entry.id === agent.templateId);
+                          const nodeTitle = (template?.name ?? agent.displayName) || agent.agentKey;
+                          return (
+                            <article key={agent.agentKey} className="models-agent-profile-node-shell">
+                              <button
+                                type="button"
+                                className="models-agent-profile-node"
+                                disabled={busy}
+                                onClick={() =>
+                                  setSelectedNode({ kind: "agent", agentKey: agent.agentKey })
+                                }
+                              >
+                                <span className="models-agent-profile-node-type">
+                                  {template ? formatAgentDomainLabel(template.domain) : "模板缺失"}
+                                </span>
+                                <span className="models-agent-profile-node-title">{nodeTitle}</span>
+                                <span className="models-agent-profile-node-key">{agent.agentKey}</span>
+                                <span className="models-agent-profile-node-model">
+                                  {(provider?.name ?? agent.providerId) || "未选 Provider"} /{" "}
+                                  {agent.modelId || "未选模型"}
+                                </span>
+                                <span className="models-agent-profile-node-footer">
+                                  <Settings2 size={14} />
+                                  模型
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="mcp-icon-button danger models-agent-profile-node-remove"
+                                disabled={busy}
+                                onClick={() => removeAgent(index)}
+                                aria-label={`移除 ${nodeTitle}`}
+                                title={`移除 ${nodeTitle}`}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </section>
             </div>

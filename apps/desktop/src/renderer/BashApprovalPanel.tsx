@@ -1,4 +1,5 @@
-import { CheckCircle2, ShieldAlert, Terminal, XCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { BashApprovalRequest } from "../shared/ipc";
 
 interface BashApprovalPanelProps {
@@ -8,24 +9,79 @@ interface BashApprovalPanelProps {
   onDeny: () => void;
 }
 
+type BashApprovalChoice = "approve" | "deny";
+
+interface BashApprovalOption {
+  choice: BashApprovalChoice;
+  label: string;
+}
+
 export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashApprovalPanelProps) {
-  const actor = request.agentType || request.agentId || "planner";
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const options = useMemo<BashApprovalOption[]>(
+    () => [
+      { choice: "approve", label: "是" },
+      { choice: "deny", label: "否，请告知 Agent 如何调整" },
+    ],
+    [],
+  );
+
+  function submitHighlightedChoice() {
+    const option = options[highlightIndex];
+    if (!option || busy) {
+      return;
+    }
+    if (option.choice === "approve") {
+      onApprove();
+      return;
+    }
+    onDeny();
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (busy) {
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onDeny();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setHighlightIndex((index) => (index + 1) % options.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setHighlightIndex((index) => (index - 1 + options.length) % options.length);
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        submitHighlightedChoice();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, highlightIndex, onApprove, onDeny, options]);
+
+  const title = request.description?.trim() || request.reason;
+
   return (
-    <section className="bash-approval-panel codex-style" aria-label="Bash 执行确认">
+    <div className="bash-approval-shell">
       <div className="bash-approval-running" aria-hidden>
         <span className="bash-approval-mini-icon">
-          <Terminal size={18} />
+          <Terminal size={16} />
         </span>
-        <span>正在运行</span>
-        <code>{request.command}</code>
+        <span className="bash-approval-running-label">正在运行 {request.command}</span>
       </div>
 
-      <div className="bash-approval-card">
-        <header className="bash-approval-header">
-          <div>
-            <h3>需要确认后才能执行 Bash 命令。</h3>
-            <p>批准仅对本次调用生效，不会记住这条命令。</p>
-          </div>
+      <section className="bash-approval-panel codex-style" aria-label="Bash 执行确认">
+        <header className="bash-approval-top">
+          <p className="bash-approval-title">{title}</p>
           <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
             {formatRiskLevel(request.riskLevel)}
           </span>
@@ -33,36 +89,58 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
 
         <pre className="bash-approval-command">{request.command}</pre>
 
-        <fieldset className="bash-approval-options" aria-label="Bash 执行选项">
-          <button type="button" className="bash-approval-option primary" disabled={busy} onClick={onApprove}>
-            <span className="bash-approval-option-index">1.</span>
-            <span className="bash-approval-option-main">
-              <strong>允许本次</strong>
-              <span>执行这条 Bash 命令</span>
-            </span>
-            <CheckCircle2 size={18} aria-hidden />
-          </button>
-          <button type="button" className="bash-approval-option" disabled={busy} onClick={onDeny}>
-            <span className="bash-approval-option-index">2.</span>
-            <span className="bash-approval-option-main">
-              <strong>拒绝</strong>
-              <span>请 Agent 调整方案</span>
-            </span>
-            <XCircle size={18} aria-hidden />
-          </button>
-        </fieldset>
+        <ul className="bash-approval-option-list" role="listbox" aria-label="Bash 执行选项">
+          {options.map((option, optionIndex) => {
+            const highlighted = highlightIndex === optionIndex;
+            return (
+              <li key={option.choice}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={highlighted}
+                  className={["bash-approval-option-row", highlighted ? "is-highlighted" : ""]
+                    .filter(Boolean)
+                    .join(" ")}
+                  disabled={busy}
+                  onMouseEnter={() => setHighlightIndex(optionIndex)}
+                  onClick={() => {
+                    setHighlightIndex(optionIndex);
+                    if (option.choice === "approve") {
+                      onApprove();
+                      return;
+                    }
+                    onDeny();
+                  }}
+                >
+                  <span className="bash-approval-option-index">{optionIndex + 1}.</span>
+                  <span className="bash-approval-option-label">{option.label}</span>
+                  {highlighted ? (
+                    <span className="bash-approval-option-nav" aria-hidden>
+                      <ChevronUp size={14} />
+                      <ChevronDown size={14} />
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
 
-        <div className="bash-approval-meta">
-          <span>
-            <ShieldAlert size={15} aria-hidden />
-            {request.reason}
-          </span>
-          <span title={request.cwd}>cwd {request.cwd}</span>
-          <span>agent {actor}</span>
-          {request.description ? <span>{request.description}</span> : null}
-        </div>
-      </div>
-    </section>
+        <footer className="bash-approval-footer">
+          <button type="button" className="bash-approval-dismiss" disabled={busy} onClick={onDeny}>
+            跳过
+          </button>
+          <button
+            type="button"
+            className="bash-approval-submit"
+            disabled={busy}
+            onClick={submitHighlightedChoice}
+          >
+            提交 <kbd>↵</kbd>
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 

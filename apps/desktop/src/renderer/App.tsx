@@ -2304,7 +2304,7 @@ function App() {
         ? "等待命令审批 · 这里发送会排队为后续消息"
         : queuedFollowUps.length > 0
           ? `${liveFollowUpLabel} · 已排队 ${queuedFollowUps.length} 条后续消息`
-          : `${liveFollowUpLabel} · 新消息将排队`
+          : undefined
     : undefined;
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"

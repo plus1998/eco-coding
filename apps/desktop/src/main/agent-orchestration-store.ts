@@ -131,10 +131,20 @@ export class AgentOrchestrationStore {
   }
 
   listOrchestrationProfiles(): OrchestrationProfile[] {
-    return this.db
+    const profiles: OrchestrationProfile[] = [];
+    for (const row of this.db
       .prepare(`SELECT id, value_json FROM orchestration_profiles ORDER BY id ASC`)
-      .all()
-      .map((row) => parseOrchestrationProfileRow(row as unknown as StoredConfigRow));
+      .all()) {
+      const parsed = parseOrchestrationProfileRow(row as unknown as StoredConfigRow);
+      if (parsed.ok) {
+        profiles.push(parsed.profile);
+        continue;
+      }
+      console.warn(
+        `[agent-profile] skipped invalid stored profile ${parsed.id}: ${parsed.error.message}`,
+      );
+    }
+    return profiles;
   }
 
   saveOrchestrationProfile(profile: OrchestrationProfile): OrchestrationProfile {
@@ -302,9 +312,22 @@ function parseAgentTemplateRow(row: StoredConfigRow): AgentTemplate {
   return normalizeStoredAgentTemplate(parsed as unknown as AgentTemplate);
 }
 
-function parseOrchestrationProfileRow(row: StoredConfigRow): OrchestrationProfile {
-  const parsed = parseJsonObject(row.value_json);
-  return normalizeStoredOrchestrationProfile(parsed as unknown as OrchestrationProfile);
+function parseOrchestrationProfileRow(
+  row: StoredConfigRow,
+): { ok: true; profile: OrchestrationProfile } | { ok: false; id: string; error: Error } {
+  try {
+    const parsed = parseJsonObject(row.value_json);
+    return {
+      ok: true,
+      profile: normalizeStoredOrchestrationProfile(parsed as unknown as OrchestrationProfile),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      id: row.id,
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
 }
 
 function parseAgentTemplateVersionRow(row: StoredTemplateVersionRow): AgentTemplateVersionView {

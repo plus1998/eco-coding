@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  AgentOrchestrationStore,
   createAgentOrchestrationStore,
   normalizeStoredAgentTemplate,
   normalizeStoredOrchestrationProfile,
@@ -59,6 +60,11 @@ function customProfile(): OrchestrationProfile {
       modelRef: { providerId: "p1", modelId: "m1" },
       tools: { allowed: ["Agent", "WebSearch", "WebFetch"], disallowed: [] },
       skills: [],
+    },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "p1", modelId: "m1" },
+      },
     },
     agents: [
       {
@@ -117,6 +123,22 @@ test("normalizer strips legacy template model binding", () => {
   } as unknown as AgentTemplate);
 
   expect("defaultModelRef" in normalized).toBe(false);
+});
+
+test("agent orchestration store skips invalid old profiles without inferring Explore", () => {
+  const oldProfile = { ...customProfile() } as OrchestrationProfile & { builtinAgents?: unknown };
+  delete oldProfile.builtinAgents;
+  const rows = [
+    { id: "old.profile", value_json: JSON.stringify(oldProfile) },
+    { id: "user.research", value_json: JSON.stringify(customProfile()) },
+  ];
+  const store = new AgentOrchestrationStore({
+    prepare: (sql: string) => ({
+      all: () => (sql.includes("orchestration_profiles") ? rows : []),
+    }),
+  } as never);
+
+  expect(store.listOrchestrationProfiles().map((profile) => profile.id)).toEqual(["user.research"]);
 });
 
 test.skipIf(!sqliteAvailable)("agent orchestration store persists user templates and profiles", async () => {

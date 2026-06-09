@@ -19,7 +19,6 @@ import {
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   SDK_SKILL_TOOL_NAME,
   SDK_TASK_PROGRESS_TOOL_NAMES,
-  sdkAgentKeyForProfileAgent,
 } from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
@@ -192,10 +191,6 @@ function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "autonomous"): string {
   const phaseLine =
     phase === "answer"
@@ -229,7 +224,8 @@ function buildUniversalPlanningPrompt(userPrompt: string): string {
     "",
     "You are in Eco planning mode.",
     "Use available Eco subagents when they improve the analysis.",
-    "If the next actions are clear, call `ExitPlanMode` with a decision-complete Markdown plan.",
+    "If the next actions are clear, present a decision-complete Markdown plan and call `ExitPlanMode`.",
+    "Do not use Write/Edit/MultiEdit to create a plan file; Claude Code persists the plan internally and injects it into ExitPlanMode hooks.",
     "Do not execute the plan in this phase.",
   ].join("\n");
 }
@@ -240,7 +236,7 @@ function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
     userPrompt.trim(),
     "",
     "Update the analysis and plan as needed.",
-    "When the spec is decision-complete, call `ExitPlanMode` with a complete replacement plan rather than a delta.",
+    "When the spec is decision-complete, present a complete replacement Markdown plan and call `ExitPlanMode` rather than producing a delta.",
   ].join("\n");
 }
 
@@ -891,10 +887,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             phase.dynamicAgentKeys,
           )
         : undefined;
-    const dynamicDefinitions = mergeBuiltinExploreAgentDefinition(
-      dynamicProfileDefinitions,
-      phase.agents,
-    );
+    const dynamicDefinitions = mergeBuiltinExploreAgentDefinition(dynamicProfileDefinitions, phase.agents);
     const dynamicAgentKeys = dynamicDefinitions ? Object.keys(dynamicDefinitions) : undefined;
     const mainAllowedTools = input.agentRegistry
       ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)

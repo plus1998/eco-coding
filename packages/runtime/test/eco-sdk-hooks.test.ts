@@ -83,13 +83,14 @@ test("createExitPlanModePreToolHook captures plan and defers SDK approval", asyn
       hook_event_name: "PreToolUse",
       tool_name: "ExitPlanMode",
       tool_input: {
-        plan: "## Summary\n\nImplement plan mode.",
+        allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
       },
       tool_use_id: "tool_exit",
       session_id: "s1",
       cwd: "/tmp",
+      plan: "## Summary\n\nImplement plan mode.",
       planFilePath: "/tmp/.claude/plans/plan.md",
-    } as PreToolUseHookInput & { planFilePath: string },
+    } as PreToolUseHookInput & { plan: string; planFilePath: string },
     "tool_exit",
     { signal: new AbortController().signal },
   );
