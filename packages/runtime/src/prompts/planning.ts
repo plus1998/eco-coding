@@ -19,13 +19,13 @@ export function buildPlanningPhasePrompt(
     "",
     "You are in Plan Mode (session start).",
     "",
-    "Required workflow (explore before finalize — same assistant turn is allowed):",
+    "Required workflow (explore before ExitPlanMode — same assistant turn is allowed):",
     `1. Explore the repository first (${explore}).`,
     "2. For facts outside the repo (docs, API versions, third-party behavior), use WebSearch and WebFetch after step 1 — not instead of it.",
     "3. If material ambiguity remains, call AskUserQuestion — do not ask things discoverable from the repo.",
-    "4. When the spec is decision-complete, call `mcp__eco_plan__finalize_plan` with full `analysis` and `plan` strings.",
+    "4. When the spec is decision-complete, call `ExitPlanMode` with the full Markdown plan.",
     "",
-    "You may complete exploration, clarification, and plan submission in one assistant turn as long as exploration runs before `mcp__eco_plan__finalize_plan`.",
+    "You may complete exploration, clarification, and plan submission in one assistant turn as long as exploration runs before `ExitPlanMode`.",
     "Optional: brief analysis summary in plain text after exploration.",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
@@ -42,8 +42,7 @@ export function buildPlanningContinuationPrompt(
     "",
     `You are still in Eco Plan Mode. ${buildPlanningContinuationExploreHint(availability)}`,
     "",
-    "When the spec is decision-complete, call `mcp__eco_plan__finalize_plan` once with a **complete replacement** plan (not a delta patch).",
-    "Tool input must include `analysis` and `plan` as full strings.",
+    "When the spec is decision-complete, call `ExitPlanMode` once with a **complete replacement** Markdown plan (not a delta patch).",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }

@@ -28,12 +28,6 @@ import {
   type EcoHookContext,
   type EcoToolPermissionDecisionAudit,
 } from "./eco-sdk-hooks.js";
-import {
-  createFinalizePlanMcpServer,
-  FINALIZE_PLAN_ALLOWED_TOOL,
-  FINALIZE_PLAN_MCP_SERVER_NAME,
-  isFinalizePlanSubmissionComplete,
-} from "./finalize-plan";
 import type {
   AgentRuntimeDriver,
   AgentRuntimeRunInput,
@@ -166,7 +160,7 @@ const planningAllowedTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
   "AskUserQuestion",
-  FINALIZE_PLAN_ALLOWED_TOOL,
+  "ExitPlanMode",
 ] as const;
 const questionAllowedTools = [
   "Agent",
@@ -189,10 +183,7 @@ const executionCoderTools = [
   ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
   "Bash",
 ] as const;
-const autonomousAllowedTools = [
-  ...defaultAllowedTools,
-  "AskUserQuestion",
-] as const;
+const autonomousAllowedTools = [...defaultAllowedTools, "AskUserQuestion"] as const;
 const universalEcoBasePromptAppend = [
   "You are running inside Eco, a configurable agent command center.",
   "Follow the active Eco orchestration profile and delegate only to the listed Eco subagents.",
@@ -251,7 +242,7 @@ function buildUniversalPlanningPrompt(userPrompt: string): string {
     "",
     "You are in Eco planning mode.",
     "Use available Eco subagents when they improve the analysis.",
-    "If the next actions are clear and `mcp__eco_plan__finalize_plan` is available, call it with complete `analysis` and `plan` strings.",
+    "If the next actions are clear, call `ExitPlanMode` with a decision-complete Markdown plan.",
     "Do not execute the plan in this phase.",
   ].join("\n");
 }
@@ -262,7 +253,7 @@ function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
     userPrompt.trim(),
     "",
     "Update the analysis and plan as needed.",
-    "If `mcp__eco_plan__finalize_plan` is available, submit a complete replacement plan rather than a delta.",
+    "When the spec is decision-complete, call `ExitPlanMode` with a complete replacement plan rather than a delta.",
   ].join("\n");
 }
 
@@ -586,7 +577,9 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
   }
 
   const messages = await sdk.getSessionMessages(sessionId, options);
-  const targetIndex = messages.findIndex((message) => message.uuid === userMessageId && message.type === "user");
+  const targetIndex = messages.findIndex(
+    (message) => message.uuid === userMessageId && message.type === "user",
+  );
   if (targetIndex < 0) {
     throw new Error("找不到该节点对应的 SDK user message，无法安全回滚对话。");
   }
@@ -604,6 +597,15 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
 interface FinalizePlanPayload {
   analysis: string;
   plan: string;
+}
+
+function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): string {
+  return [
+    "Claude official Plan Mode submitted this plan via ExitPlanMode.",
+    submission.planFilePath ? `Plan file: ${submission.planFilePath}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
@@ -803,15 +805,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
       const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
+      const planningPhaseAppend = `${
+        universalProfile ? buildUniversalPhaseAppend("plan") : buildPlanningPhaseSystemAppend(availability)
+      }${planningResumableAppend}`;
       const planningTranscript = yield* this.runSingleSession(input, {
         prompt: universalProfile
           ? buildUniversalPlanningContinuationPrompt(input.prompt)
           : buildPlanningContinuationPrompt(input.prompt, availability),
-        permissionMode: readOnlyPermissionMode,
+        permissionMode: "plan",
         allowedTools: [...planningAllowedTools],
-        phaseAppend: `${
-          universalProfile ? buildUniversalPhaseAppend("plan") : buildPlanningPhaseSystemAppend(availability)
-        }${planningResumableAppend}`,
+        phaseAppend: planningPhaseAppend,
+        planModeInstructions: planningPhaseAppend,
         agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
@@ -894,15 +898,17 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
+    const planningPhaseAppend = universalProfile
+      ? buildUniversalPhaseAppend("plan")
+      : buildPlanningPhaseSystemAppend(availability);
     const planningTranscript = yield* this.runSingleSession(input, {
       prompt: universalProfile
         ? buildUniversalPlanningPrompt(input.prompt)
         : buildPlanningPhasePrompt(input.prompt, availability),
-      permissionMode: readOnlyPermissionMode,
+      permissionMode: "plan",
       allowedTools: [...planningAllowedTools],
-      phaseAppend: universalProfile
-        ? buildUniversalPhaseAppend("plan")
-        : buildPlanningPhaseSystemAppend(availability),
+      phaseAppend: planningPhaseAppend,
+      planModeInstructions: planningPhaseAppend,
       agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -1050,9 +1056,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input: AgentRuntimeRunInput,
     phase: {
       prompt: string;
-      permissionMode: "dontAsk" | "default" | "acceptEdits";
+      permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
       allowedTools: string[];
       phaseAppend: string;
+      planModeInstructions?: string;
       agents?: Record<string, unknown>;
       availability?: SubagentAvailability;
       dynamicAgentKeys?: string[];
@@ -1100,7 +1107,19 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       this.options.hookContext?.onToolPermissionDecision?.(decision);
       pendingToolPermissionDecisions.push(decision);
     };
-    const shouldBuildHooks = Boolean(this.options.hookContext || dynamicAgentKeys || toolPermissions);
+    let finalizedPlan: FinalizePlanPayload | undefined;
+    const onExitPlanMode =
+      phase.permissionMode === "plan"
+        ? (submission: { plan: string; planFilePath?: string }) => {
+            finalizedPlan = {
+              analysis: buildExitPlanModeAnalysis(submission),
+              plan: submission.plan,
+            };
+          }
+        : undefined;
+    const shouldBuildHooks = Boolean(
+      this.options.hookContext || onExitPlanMode || dynamicAgentKeys || toolPermissions,
+    );
     const allowedTools = this.options.toolPermissionHandler
       ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
       : mergeAllowedTools(mainAllowedTools, input.sdkSession);
@@ -1118,14 +1137,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           append: systemAppend,
           ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
         };
-    let finalizedPlan: FinalizePlanPayload | undefined;
-    const planningMcpServer = phase.allowedTools.includes(FINALIZE_PLAN_ALLOWED_TOOL)
-      ? await createFinalizePlanMcpServer((submission) => {
-          if (isFinalizePlanSubmissionComplete(submission)) {
-            finalizedPlan = submission;
-          }
-        })
-      : undefined;
     const sessionCwd = input.workspacePath.trim() || input.worktreePath;
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
@@ -1135,6 +1146,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       settingSources: session.settingSources,
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
+      ...(phase.planModeInstructions ? { planModeInstructions: phase.planModeInstructions } : {}),
       allowedTools,
       ...(this.options.toolPermissionHandler
         ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }
@@ -1145,6 +1157,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? {
             hooks: buildEcoSdkHooks({
               ...(this.options.hookContext ?? {}),
+              ...(onExitPlanMode ? { onExitPlanMode } : {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
@@ -1172,13 +1185,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (Object.keys(session.mcpServers).length > 0) {
       queryOptions.mcpServers = session.mcpServers;
     }
-    if (planningMcpServer) {
-      queryOptions.mcpServers = {
-        ...(isRecord(queryOptions.mcpServers) ? (queryOptions.mcpServers as Record<string, unknown>) : {}),
-        [FINALIZE_PLAN_MCP_SERVER_NAME]: planningMcpServer,
-      };
-    }
-
     if (dynamicDefinitions) {
       queryOptions.agents = dynamicDefinitions;
     } else if (phase.agents) {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { formatUserFacingRequestError } from "../src/main/request-retry";
 import {
   buildPlanExecutionFailureMessage,
   extractPlanFailureMessage,
@@ -10,7 +11,6 @@ import {
   shouldUpdateThreadSummaryFromLiveEvent,
   stripThreadInterruptedSuffix,
 } from "../src/shared/thread-failure-message";
-import { formatUserFacingRequestError } from "../src/main/request-retry";
 
 test("resolveThreadMessageFromLiveEvent rebuilds execution failure message", () => {
   expect(resolveThreadMessageFromLiveEvent("thread.execution_failed", "fetch failed")).toBe(
@@ -51,7 +51,7 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry
 
 test("resolveRetryBannerDetail keeps blocked reason after context refresh message would have applied", () => {
   const blocked =
-    "规划阶段未完成：模型未通过 mcp__eco_plan__finalize_plan 提交计划。可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
+    "规划阶段未完成：模型未通过 ExitPlanMode 提交计划。可在下方继续对话、切换模型后重试，或点击「重试此次请求」。";
   expect(resolveRetryBannerDetail(blocked, "blocked")).toContain("规划阶段未完成");
   expect(resolveRetryBannerDetail("上下文已更新", "blocked")).toBeUndefined();
 });
@@ -90,14 +90,11 @@ test("resolveRetryBannerHint only adds guidance for quota failures", () => {
 test("formatUserFacingRequestError translates structured upstream 502 failures", () => {
   const raw =
     'API error (eco-reviewer-1): 502 {"error":{"message":"Upstream request failed","type":"upstream_error"}}';
-  expect(formatUserFacingRequestError(raw)).toBe(
-    "上游模型服务暂时不可用，请稍后重试或切换 Provider。",
-  );
+  expect(formatUserFacingRequestError(raw)).toBe("上游模型服务暂时不可用，请稍后重试或切换 Provider。");
 });
 
 test("formatUserFacingRequestError surfaces local route misses as SDK model leaks", () => {
-  const raw =
-    '{"error":"No provider route configured for model claude-haiku-4-5-20251001."}';
+  const raw = '{"error":"No provider route configured for model claude-haiku-4-5-20251001."}';
   expect(formatUserFacingRequestError(raw)).toBe(
     "本地模型路由未配置 SDK 请求的模型 claude-haiku-4-5-20251001。这不是当前子代理编排配置的成功匹配；若再次出现，说明仍有 SDK 路径绕过了 Eco 子代理定义。",
   );

@@ -41,8 +41,8 @@ import {
   questionAnswerSystemAppend,
   readSdkSessionId,
   readSdkUserMessageCheckpointId,
-  resolveResumeSessionAtBeforeUserMessage,
   resolveAgentSkills,
+  resolveResumeSessionAtBeforeUserMessage,
   resolveSdkSessionOptions,
   stripBashAutoApprovedTools,
   toSdkAgentModel,
@@ -486,13 +486,13 @@ test("builds phased orchestration prompts", () => {
   const analysis = "## 分析结果\n\nNeed to extend styles.css";
   const plan = "## 实现计划\n\n1. Read styles.css\n2. Add editor block";
 
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("explore before finalize");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("explore before ExitPlanMode");
   expect(buildPlanningPhasePrompt(userPrompt)).toContain("AskUserQuestion");
-  expect(buildPlanningPhasePrompt(userPrompt)).toContain("mcp__eco_plan__finalize_plan");
+  expect(buildPlanningPhasePrompt(userPrompt)).toContain("ExitPlanMode");
   expect(planningPhaseSystemAppend).toContain("explore first, ask second");
   expect(planningPhaseSystemAppend).toContain("Finalization rule");
   expect(planningPhaseSystemAppend).toContain("Eco Plan Mode pipeline");
-  expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("Do NOT call `mcp__eco_plan__finalize_plan`");
+  expect(buildPlanningPhasePrompt(userPrompt)).not.toContain("mcp__eco_plan__finalize_plan");
   expect(executePhaseSystemAppend).toContain("TaskCreate");
   expect(executePhaseSystemAppend).toContain("TaskUpdate");
   expect(executePhaseSystemAppend).toContain("Exactly ONE step must be in_progress");
@@ -1799,7 +1799,7 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
   });
 });
 
-test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () => {
+test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPlanMode", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
@@ -1815,6 +1815,28 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
               session_id: "sess-plan",
               uuid: "init-plan",
             };
+            const hooks = options.hooks as
+              | Partial<
+                  Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>
+                >
+              | undefined;
+            const exitPlanHook = hooks?.PreToolUse?.find((matcher) => matcher.matcher === "ExitPlanMode")
+              ?.hooks[0];
+            await exitPlanHook?.(
+              {
+                hook_event_name: "PreToolUse",
+                tool_name: "ExitPlanMode",
+                tool_input: {
+                  plan: "## Summary\n\nShip the official plan.",
+                  planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+                },
+                tool_use_id: "tool_exit_plan",
+                session_id: "sess-plan",
+                cwd: "/tmp/workspace",
+              },
+              "tool_exit_plan",
+              { signal: new AbortController().signal },
+            );
             yield {
               type: "result",
               subtype: "success",
@@ -1828,7 +1850,7 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
     }),
   });
 
-  const events: Array<{ type: string }> = [];
+  const events: Array<{ type: string; payload?: unknown }> = [];
   for await (const event of driver.run({
     threadId: "thr_plan_tool",
     prompt: "Add markdown rendering",
@@ -1837,22 +1859,24 @@ test("ClaudeAgentSdkDriver planning registers finalize_plan MCP tool", async () 
     routes,
     signal: new AbortController().signal,
   })) {
-    events.push({ type: event.type });
+    events.push({ type: event.type, payload: event.payload });
   }
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
-  expect(capturedOptions[0]?.permissionMode).toBe("dontAsk");
+  expect(capturedOptions[0]?.permissionMode).toBe("plan");
+  expect(capturedOptions[0]?.planModeInstructions).toContain("ExitPlanMode");
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
-  expect(capturedOptions[0]?.allowedTools).toContain("mcp__eco_plan__finalize_plan");
-  expect(capturedOptions[0]?.mcpServers).toBeDefined();
-  expect(Object.hasOwn((capturedOptions[0]?.mcpServers ?? {}) as Record<string, unknown>, "eco_plan")).toBe(
-    true,
-  );
-  expect(events.some((event) => event.type === "plan.ready")).toBe(false);
+  expect(capturedOptions[0]?.allowedTools).toContain("ExitPlanMode");
+  expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
+  expect(capturedOptions[0]?.mcpServers).toBeUndefined();
+  const ready = events.find((event) => event.type === "plan.ready");
+  expect(ready?.payload).toMatchObject({
+    plan: "## Summary\n\nShip the official plan.",
+  });
 });
 
-test("ClaudeAgentSdkDriver autonomous does not register finalize_plan MCP tool", async () => {
+test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
@@ -1889,11 +1913,12 @@ test("ClaudeAgentSdkDriver autonomous does not register finalize_plan MCP tool",
   }
 
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
+  expect(capturedOptions[0]?.allowedTools).not.toContain("ExitPlanMode");
   expect(capturedOptions[0]?.mcpServers).toBeUndefined();
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
 });
 
-test("ClaudeAgentSdkDriver planning completes without FinalizePlan", async () => {
+test("ClaudeAgentSdkDriver planning completes without ExitPlanMode", async () => {
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",

@@ -17,7 +17,7 @@ export const autonomousOrchestratorAppend = [
   [
     "Clarify vs plan (separate tools): After exploration, use AskUserQuestion for material ambiguity",
     "(preferences, scope, tradeoffs) that the repo cannot resolve — do not substitute a full plan for targeted questions.",
-    "Do not call finalize_plan in this mode; handle the task directly after the spec is clear.",
+    "Do not call ExitPlanMode or finalize_plan in this mode; handle the task directly after the spec is clear.",
   ].join(" "),
   `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
   `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}.`,

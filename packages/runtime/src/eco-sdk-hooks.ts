@@ -79,6 +79,7 @@ export interface EcoHookContext {
   askUserQuestion?: (
     request: SdkAskUserQuestionRequest & { toolUseId: string },
   ) => Promise<Record<string, unknown>>;
+  onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
   subagentAttribution?: EcoSubagentAttributionHooks;
@@ -113,6 +114,92 @@ export interface EcoToolPermissionDecisionAudit {
   agentId?: string;
   agentType?: string;
   cwd: string;
+}
+
+export interface SdkExitPlanModeRequest {
+  plan: string;
+  planFilePath?: string;
+  allowedPrompts?: unknown;
+  rawInput: Record<string, unknown>;
+}
+
+export function parseExitPlanModeInput(input: Record<string, unknown>): SdkExitPlanModeRequest {
+  const plan = readStringField(input, ["plan", "markdown", "content"]);
+  const planFilePath = readStringField(input, ["planFilePath", "plan_file_path", "filePath", "file_path"]);
+  const allowedPrompts = input.allowedPrompts ?? input.allowed_prompts;
+  return {
+    plan,
+    ...(planFilePath ? { planFilePath } : {}),
+    ...(allowedPrompts !== undefined ? { allowedPrompts } : {}),
+    rawInput: input,
+  };
+}
+
+function readStringField(input: Record<string, unknown>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+export function createExitPlanModePreToolHook(
+  delegate: EcoHookContext["onExitPlanMode"],
+): HookCallback | undefined {
+  if (!delegate) {
+    return undefined;
+  }
+
+  return async (input, toolUseID) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    const injectedInput = mergeExitPlanModeInjectedFields(toolInput, preInput);
+    const parsed = parseExitPlanModeInput(injectedInput);
+    if (!parsed.plan) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: "ExitPlanMode requires injected plan content for Eco approval.",
+        },
+      };
+    }
+
+    await delegate({
+      ...parsed,
+      toolUseId: toolUseID ?? preInput.tool_use_id,
+    });
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "defer",
+        permissionDecisionReason: "Eco captured the plan and will present it for approval.",
+      },
+    };
+  };
+}
+
+function mergeExitPlanModeInjectedFields(
+  toolInput: Record<string, unknown>,
+  hookInput: PreToolUseHookInput,
+): Record<string, unknown> {
+  const merged = { ...toolInput };
+  const hookRecord = hookInput as unknown as Record<string, unknown>;
+  for (const key of ["plan", "planFilePath", "plan_file_path", "allowedPrompts", "allowed_prompts"]) {
+    if (merged[key] === undefined && hookRecord[key] !== undefined) {
+      merged[key] = hookRecord[key];
+    }
+  }
+  return merged;
 }
 
 export function createWorkflowDenyPreToolHook(): HookCallback {
@@ -923,6 +1010,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
 
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
+  pushHook(hooks, "PreToolUse", createExitPlanModePreToolHook(ctx.onExitPlanMode), "ExitPlanMode");
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(hooks, "PreToolUse", createNonEcoSubagentDenyPreToolHook(ctx.allowedAgentKeys), "Agent|Task");
   pushHook(hooks, "PreToolUse", createDisabledSubagentPreToolHook(availability), "Agent|Task");

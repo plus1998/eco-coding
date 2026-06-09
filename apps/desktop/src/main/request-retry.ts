@@ -3,9 +3,7 @@ export const REQUEST_AUTO_RETRY_MAX = 2;
 export const REQUEST_AUTO_RETRY_INTERVAL_MS = 5000;
 export const REQUEST_AUTO_RETRY_MAX_ELAPSED_MS = 20_000;
 
-export type RequestAttemptResult =
-  | { ok: true }
-  | { ok: false; reason: string; aborted?: boolean };
+export type RequestAttemptResult = { ok: true } | { ok: false; reason: string; aborted?: boolean };
 
 import {
   formatApiErrorUserMessage,
@@ -32,7 +30,8 @@ export function isRetryableRequestFailure(reason: string): boolean {
   if (
     text.includes("未能生成可执行的计划") ||
     text.includes("找不到待批准的计划") ||
-    text.includes("未提交 FinalizePlan")
+    text.includes("未提交 FinalizePlan") ||
+    text.includes("未提交 ExitPlanMode")
   ) {
     return false;
   }
@@ -85,8 +84,8 @@ export function formatUserFacingRequestError(reason: string): string {
   if (normalized.includes("terminated")) {
     return "上游模型连接中断（流式响应未完成）。请检查 Provider 的 Base URL、API Key 与网络后重试。";
   }
-  if (text.includes("未提交 FinalizePlan")) {
-    return "计划阶段未完成：主代理未通过 mcp__eco_plan__finalize_plan 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换主代理模型。";
+  if (text.includes("未提交 FinalizePlan") || text.includes("未提交 ExitPlanMode")) {
+    return "计划阶段未完成：主代理未通过 ExitPlanMode 提交计划。若对话里只有「计划已提交」等文字而无工具调用，请重试或更换主代理模型。";
   }
   const routeMiss = text.match(/No provider route configured for model\s+([^."}\s]+)/i);
   if (routeMiss?.[1]) {

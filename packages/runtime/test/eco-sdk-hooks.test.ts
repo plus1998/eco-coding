@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test";
+import type {
+  PreCompactHookInput,
+  PreToolUseHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
+} from "@anthropic-ai/claude-agent-sdk";
 import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
+  createExitPlanModePreToolHook,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
   createPreCompactHook,
@@ -13,13 +20,8 @@ import {
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
+  parseExitPlanModeInput,
 } from "../src/eco-sdk-hooks";
-import type {
-  PreCompactHookInput,
-  PreToolUseHookInput,
-  SubagentStartHookInput,
-  SubagentStopHookInput,
-} from "@anthropic-ai/claude-agent-sdk";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("createAskUserQuestionPreToolHook returns updated input", async () => {
@@ -45,6 +47,63 @@ test("createAskUserQuestionPreToolHook returns updated input", async () => {
     hookEventName: "PreToolUse",
     permissionDecision: "allow",
     updatedInput: { questions: [{ question: "Q", answer: "REST" }] },
+  });
+});
+
+test("parseExitPlanModeInput reads injected plan payload", () => {
+  const parsed = parseExitPlanModeInput({
+    plan: "  ## Plan\n\nShip it.  ",
+    planFilePath: "/tmp/plan.md",
+    allowedPrompts: ["yes"],
+  });
+
+  expect(parsed).toMatchObject({
+    plan: "## Plan\n\nShip it.",
+    planFilePath: "/tmp/plan.md",
+    allowedPrompts: ["yes"],
+  });
+});
+
+test("createExitPlanModePreToolHook captures plan and defers SDK approval", async () => {
+  const captured: Array<{ plan: string; planFilePath?: string; toolUseId: string }> = [];
+  const hook = createExitPlanModePreToolHook((request) => {
+    captured.push({
+      plan: request.plan,
+      ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
+      toolUseId: request.toolUseId,
+    });
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected ExitPlanMode hook");
+  }
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: {
+        plan: "## Summary\n\nImplement plan mode.",
+      },
+      tool_use_id: "tool_exit",
+      session_id: "s1",
+      cwd: "/tmp",
+      planFilePath: "/tmp/.claude/plans/plan.md",
+    } as PreToolUseHookInput & { planFilePath: string },
+    "tool_exit",
+    { signal: new AbortController().signal },
+  );
+
+  expect(captured).toEqual([
+    {
+      plan: "## Summary\n\nImplement plan mode.",
+      planFilePath: "/tmp/.claude/plans/plan.md",
+      toolUseId: "tool_exit",
+    },
+  ]);
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "defer",
   });
 });
 
