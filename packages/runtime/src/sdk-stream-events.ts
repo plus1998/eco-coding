@@ -1,10 +1,6 @@
-import {
-  type AgentEvent,
-  type AgentRole,
-  type RuntimeAgentRole,
-  createAgentEvent,
-} from "../../shared/src";
+import { type AgentEvent, createAgentEvent, type RuntimeAgentRole } from "../../shared/src";
 import { tryParseSerializedAnthropicContentBlocks } from "./anthropic-content-normalize.js";
+import { SDK_GENERAL_PURPOSE_AGENT_KEY } from "./subagent-availability.js";
 import { normalizeSdkSubagentType } from "./subagent-resume.js";
 
 export type EcoStreamBlockKind = "text" | "thinking" | "tool_use";
@@ -92,8 +88,7 @@ export type EcoStreamPayload =
     };
 
 export function slimStreamEventMessage(message: Record<string, unknown>): Record<string, unknown> {
-  const parentToolUseId =
-    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
+  const parentToolUseId = typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
   const event = isRecord(message.event) ? message.event : null;
@@ -134,13 +129,21 @@ function slimRawStreamEvent(event: Record<string, unknown>): Record<string, unkn
 function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, unknown>): void {
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
-  const subagentRole = subagentType ? normalizeSdkSubagentType(subagentType) : undefined;
-  const agentRole = agentType ? normalizeSdkSubagentType(agentType) : undefined;
+  const subagentRole = subagentType ? normalizeSdkRuntimeAgentRole(subagentType) : undefined;
+  const agentRole = agentType ? normalizeSdkRuntimeAgentRole(agentType) : undefined;
   if (subagentRole) {
     ctx.activeSubagentRole = subagentRole;
   } else if (agentRole) {
     ctx.activeSubagentRole = agentRole;
   }
+}
+
+function normalizeSdkRuntimeAgentRole(type: string): RuntimeAgentRole | undefined {
+  const trimmed = type.trim();
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY) {
+    return SDK_GENERAL_PURPOSE_AGENT_KEY;
+  }
+  return normalizeSdkSubagentType(trimmed);
 }
 
 function effectiveStreamRole(ctx: SdkStreamContext, fallback: RuntimeAgentRole): RuntimeAgentRole {
@@ -155,8 +158,7 @@ export function mapStreamEventToEvents(
   uuid: string,
   ctx: SdkStreamContext,
 ): AgentEvent[] {
-  const parentToolUseId =
-    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
+  const parentToolUseId = typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
   if (parentToolUseId) {
     ctx.parentToolUseId = parentToolUseId;
   }

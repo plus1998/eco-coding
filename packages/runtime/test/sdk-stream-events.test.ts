@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
-import {
-  createSdkStreamContext,
-  mapStreamEventToEvents,
-} from "../src/sdk-stream-events";
 import { mapSdkMessageToEvents } from "../src/claude-agent-sdk";
+import { createSdkStreamContext, mapStreamEventToEvents } from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 test("maps tool_use content_block_start to tool.started", () => {
@@ -52,7 +49,7 @@ test("marks tool_use content_block_stop input as complete", () => {
       session_id: "sess",
       event: {
         type: "content_block_delta",
-        delta: { type: "input_json_delta", partial_json: "{\"file_path\":\"/a.ts\"}" },
+        delta: { type: "input_json_delta", partial_json: '{"file_path":"/a.ts"}' },
       },
     },
     "thr_1",
@@ -119,6 +116,28 @@ test("maps dynamic eco subagent stream metadata to the role", () => {
   expect(events[0]?.role).toBe("researcher");
 });
 
+test("maps general-purpose stream metadata to the role", () => {
+  const ctx = createSdkStreamContext();
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_general",
+      session_id: "sess",
+      subagent_type: "general-purpose",
+      event: {
+        type: "content_block_start",
+        content_block: { type: "tool_use", name: "Read", id: "toolu_general" },
+      },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_general",
+    ctx,
+  );
+  expect(events[0]?.role).toBe("general-purpose");
+});
+
 test("attributes dynamic subagent stream usage through resolver", () => {
   const calls: Array<{ role: string; parentToolUseId?: string; sessionId: string }> = [];
   const ctx = createSdkStreamContext({
@@ -146,9 +165,7 @@ test("attributes dynamic subagent stream usage through resolver", () => {
     ctx,
   );
 
-  expect(calls).toEqual([
-    { role: "researcher", parentToolUseId: "toolu_parent", sessionId: "sess" },
-  ]);
+  expect(calls).toEqual([{ role: "researcher", parentToolUseId: "toolu_parent", sessionId: "sess" }]);
   expect(events[0]?.agentId).toBe("agent_researcher");
   expect(events[0]?.role).toBe("researcher");
 });

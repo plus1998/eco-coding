@@ -317,24 +317,21 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
   }
 });
 
-test("applyEcoSdkSettings disables workflows and denies SDK built-in subagents", () => {
+test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in subagents", () => {
   const options: Record<string, unknown> = {};
   applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/");
-  expect(options.settings).toMatchObject({
-    disableWorkflows: true,
-    permissions: {
-      deny: expect.arrayContaining([
-        "Agent(general-purpose)",
-        "Agent(Explore)",
-        "Agent(Plan)",
-        "Agent(Bash)",
-        "Agent(statusline-setup)",
-      ]),
-    },
-    env: {
-      ANTHROPIC_API_KEY: "router-key",
-      ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",
-    },
+  const settings = options.settings as {
+    disableWorkflows?: boolean;
+    permissions?: { deny?: string[] };
+    env?: Record<string, string>;
+  };
+  const deny = settings.permissions?.deny ?? [];
+  expect(settings.disableWorkflows).toBe(true);
+  expect(deny).toEqual(["Agent(statusline-setup)", "Agent(Explore)", "Agent(Plan)", "Agent(Bash)"]);
+  expect(deny.includes("Agent(general-purpose)")).toBe(false);
+  expect(settings.env).toEqual({
+    ANTHROPIC_API_KEY: "router-key",
+    ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",
   });
 });
 
@@ -637,6 +634,20 @@ test("inferActivityRole maps Agent(Explore) to explore", () => {
       },
     }),
   ).toBe("explore");
+});
+
+test("inferActivityRole maps Agent(general-purpose) to general-purpose", () => {
+  expect(
+    inferActivityRole({
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Agent",
+        input: { subagent_type: "general-purpose", prompt: "Research and modify" },
+      },
+    }),
+  ).toBe("general-purpose");
 });
 
 test("builds read-only question answering prompts", () => {

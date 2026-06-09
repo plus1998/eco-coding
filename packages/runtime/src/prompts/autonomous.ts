@@ -1,6 +1,6 @@
 /** Short orchestrator rules for autonomous mode — routing lives in subagent descriptions. */
 
-import { ecoSubagentKeyForRole } from "../subagent-availability.js";
+import { ecoSubagentKeyForRole, SDK_GENERAL_PURPOSE_AGENT_KEY } from "../subagent-availability.js";
 import { formatMandatoryEcoSubagentRule } from "./subagent-pipeline.js";
 
 const ecoExplore = ecoSubagentKeyForRole("explore");
@@ -19,6 +19,7 @@ export const autonomousOrchestratorAppend = [
     "(preferences, scope, tradeoffs) that the repo cannot resolve — do not substitute a full plan for targeted questions.",
     "Do not call ExitPlanMode or finalize_plan in this mode; handle the task directly after the spec is clear.",
   ].join(" "),
+  `SDK Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) is available for complex multi-step work that requires both exploration and action; it inherits the main conversation model and all tools.`,
   `Low risk: ${ecoExplore} → ${ecoCoder} → ${ecoTester}. Medium: add your own read-only review before ${ecoTester} (do not call ${ecoReviewer}).`,
   `High risk: ${ecoExplore} → ${ecoCoder} → ${ecoReviewer} → ${ecoTester}.`,
   "Do not use the SDK Workflow tool.",

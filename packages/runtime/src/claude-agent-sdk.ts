@@ -93,6 +93,7 @@ import {
   filterAgentDefinitions,
   isSubagentRole,
   normalizeSubagentAvailability,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
   SUBAGENT_ROLES,
   type SubagentAvailability,
   type SubagentRole,
@@ -221,8 +222,8 @@ function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "auton
   return [
     "Eco universal orchestration.",
     phaseLine,
-    "Use Agent(...) only with Eco agent keys shown in the active profile roster.",
-    "Do not use SDK built-in agents or the SDK Workflow tool.",
+    `Use Agent(...) with Eco agent keys shown in the active profile roster, or Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY}) for complex multi-step work that needs both exploration and action.`,
+    "Do not use other SDK built-in agents or the SDK Workflow tool.",
   ].join("\n");
 }
 
@@ -1647,7 +1648,7 @@ export function createToolPermissionDeniedEvent(
   decision: EcoToolPermissionDecisionAudit,
   uuidFactory: () => string = () => crypto.randomUUID(),
 ): AgentEvent {
-  const subagentRole = normalizeSdkSubagentType(decision.agentType ?? decision.actor);
+  const subagentRole = normalizeSdkRuntimeAgentRole(decision.agentType ?? decision.actor);
   return createAgentEvent({
     id: `${threadId}:tool-permission-denied:${decision.toolUseId}:${uuidFactory()}`,
     threadId,
@@ -2334,7 +2335,7 @@ function findRoute(routes: readonly ResolvedModelRoute[], role: AgentRole): Reso
 
 function inferRole(message: Record<string, unknown>): RuntimeAgentRole {
   if (typeof message.subagent_type === "string") {
-    const normalized = normalizeSdkSubagentType(message.subagent_type);
+    const normalized = normalizeSdkRuntimeAgentRole(message.subagent_type);
     if (normalized) {
       return normalized;
     }
@@ -2343,7 +2344,7 @@ function inferRole(message: Record<string, unknown>): RuntimeAgentRole {
     }
   }
   if (typeof message.agent_type === "string") {
-    const normalized = normalizeSdkSubagentType(message.agent_type);
+    const normalized = normalizeSdkRuntimeAgentRole(message.agent_type);
     if (normalized) {
       return normalized;
     }
@@ -2359,11 +2360,19 @@ function isAgentRole(value: string): value is AgentRole {
 }
 
 function resolveActivitySubagentRole(value: string): ActivityDisplayRole | undefined {
-  const normalized = normalizeSdkSubagentType(value);
+  const normalized = normalizeSdkRuntimeAgentRole(value);
   if (normalized) {
     return normalized;
   }
   return isAgentRole(value) ? value : undefined;
+}
+
+function normalizeSdkRuntimeAgentRole(value: string): RuntimeAgentRole | undefined {
+  const trimmed = value.trim();
+  if (trimmed === SDK_GENERAL_PURPOSE_AGENT_KEY) {
+    return SDK_GENERAL_PURPOSE_AGENT_KEY;
+  }
+  return normalizeSdkSubagentType(trimmed);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

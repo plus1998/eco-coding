@@ -4,6 +4,7 @@ import {
   filterAgentDefinitions,
   normalizeSubagentAvailability,
   SDK_EXPLORE_AGENT_KEY,
+  sdkBuiltinSubagentDenyRules,
 } from "../src/subagent-availability";
 
 test("normalizeSubagentAvailability respects disabled coder", () => {
@@ -42,4 +43,13 @@ test("filterAgentDefinitions maps eco keys to availability roles", () => {
   );
   expect(filtered[ecoSubagentKeyForRole("coder")]).toBeDefined();
   expect(filtered).not.toHaveProperty(ecoSubagentKeyForRole("reviewer"));
+});
+
+test("sdkBuiltinSubagentDenyRules leaves general-purpose open", () => {
+  const deny = sdkBuiltinSubagentDenyRules();
+  expect(deny).not.toContain("Agent(general-purpose)");
+  expect(deny).toContain("Agent(Explore)");
+  expect(deny).toContain("Agent(Plan)");
+  expect(deny).toContain("Agent(Bash)");
+  expect(deny).toContain("Agent(statusline-setup)");
 });

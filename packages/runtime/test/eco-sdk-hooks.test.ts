@@ -189,8 +189,11 @@ test("createSubagentToolAttributionPreToolHook forwards tool use id with role", 
       calls.push({ toolUseId, ...(input?.role && { role: input.role }) });
     },
   });
+  if (!hook) {
+    throw new Error("Expected subagent attribution hook to be created.");
+  }
 
-  await hook!(
+  await hook(
     {
       hook_event_name: "PreToolUse",
       tool_name: "Agent",
@@ -213,8 +216,11 @@ test("createSubagentToolAttributionPreToolHook forwards dynamic Eco agent role",
       calls.push({ toolUseId, ...(input?.role && { role: input.role }) });
     },
   });
+  if (!hook) {
+    throw new Error("Expected subagent attribution hook to be created.");
+  }
 
-  await hook!(
+  await hook(
     {
       hook_event_name: "PreToolUse",
       tool_name: "Agent",
@@ -230,7 +236,34 @@ test("createSubagentToolAttributionPreToolHook forwards dynamic Eco agent role",
   expect(calls).toEqual([{ toolUseId: "tool_researcher", role: "researcher" }]);
 });
 
-test("createNonEcoSubagentDenyPreToolHook denies Agent(general-purpose)", async () => {
+test("createSubagentToolAttributionPreToolHook forwards general-purpose role", async () => {
+  const calls: Array<{ toolUseId: string; role?: string }> = [];
+  const hook = createSubagentToolAttributionPreToolHook({
+    onTaskToolUse(toolUseId, input) {
+      calls.push({ toolUseId, ...(input?.role && { role: input.role }) });
+    },
+  });
+  if (!hook) {
+    throw new Error("Expected subagent attribution hook to be created.");
+  }
+
+  await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "general-purpose", prompt: "Research and modify." },
+      tool_use_id: "tool_general",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_general",
+    { signal: new AbortController().signal },
+  );
+
+  expect(calls).toEqual([{ toolUseId: "tool_general", role: "general-purpose" }]);
+});
+
+test("createNonEcoSubagentDenyPreToolHook allows Agent(general-purpose)", async () => {
   const hook = createNonEcoSubagentDenyPreToolHook();
   const result = await hook(
     {
@@ -245,11 +278,29 @@ test("createNonEcoSubagentDenyPreToolHook denies Agent(general-purpose)", async 
     { signal: new AbortController().signal },
   );
 
+  expect(result.hookSpecificOutput).toBeUndefined();
+});
+
+test("createNonEcoSubagentDenyPreToolHook denies SDK built-ins other than general-purpose", async () => {
+  const hook = createNonEcoSubagentDenyPreToolHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "Plan", prompt: "Plan the work" },
+      tool_use_id: "tool_plan",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_plan",
+    { signal: new AbortController().signal },
+  );
+
   expect(result.hookSpecificOutput).toMatchObject({
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
-  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("general-purpose");
+  expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("Plan");
 });
 
 test("createNonEcoSubagentDenyPreToolHook allows eco_* subagent keys", async () => {

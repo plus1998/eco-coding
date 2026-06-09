@@ -35,6 +35,7 @@ import {
   isSubagentEnabled,
   isSubagentRole,
   normalizeSubagentAvailability,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
   type SubagentAvailability,
 } from "./subagent-availability";
 
@@ -292,6 +293,9 @@ export function createNonEcoSubagentDenyPreToolHook(allowedAgentKeys: readonly s
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
     const rawType = readAgentSubagentType(toolInput);
     if (!rawType) {
+      return {};
+    }
+    if (rawType === SDK_GENERAL_PURPOSE_AGENT_KEY) {
       return {};
     }
     const normalizedType = normalizeSdkSubagentType(rawType);
@@ -826,7 +830,11 @@ export function createSubagentToolAttributionPreToolHook(
     const preInput = input as PreToolUseHookInput;
     if (typeof toolUseID === "string" && (preInput.tool_name === "Task" || preInput.tool_name === "Agent")) {
       const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
-      const role = normalizeSdkSubagentType(readAgentSubagentType(toolInput) ?? "");
+      const rawType = readAgentSubagentType(toolInput);
+      const role =
+        rawType === SDK_GENERAL_PURPOSE_AGENT_KEY
+          ? SDK_GENERAL_PURPOSE_AGENT_KEY
+          : normalizeSdkSubagentType(rawType ?? "");
       onTaskToolUse(toolUseID, role ? { role } : undefined);
     }
     return {};
