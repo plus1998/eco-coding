@@ -625,6 +625,38 @@ test("buildExecutePhaseSystemAppend executes directly when coder is disabled", (
   expect(append).not.toContain("Coders (parallel)");
 });
 
+test("buildExecutePhaseSystemAppend states hands-on rights when the main agent can write", () => {
+  const append = buildExecutePhaseSystemAppend(
+    { explore: true, architect: true, coder: true, reviewer: true, tester: true },
+    { canEditFiles: true, canRunBash: true },
+  );
+  expect(append).toContain("you may edit files");
+  expect(append).toContain("Hands-on boundary");
+  expect(append).toContain("You may edit files directly");
+  expect(append).toContain("You may run shell commands via Bash");
+  expect(append).not.toContain("pure orchestrator");
+});
+
+test("buildExecutePhaseSystemAppend states delegation-only boundary when writes are disabled", () => {
+  const append = buildExecutePhaseSystemAppend(
+    { explore: true, architect: true, coder: true, reviewer: true, tester: true },
+    { canEditFiles: false, canRunBash: false },
+  );
+  expect(append).toContain("pure orchestrator");
+  expect(append).toContain("Filesystem writes (Write/Edit) are DISABLED for you");
+  expect(append).toContain("Bash is DISABLED for you");
+  expect(append).toContain(`Agent(${ecoSubagentKeyForRole("coder")})`);
+  expect(append).not.toContain("you may edit files");
+});
+
+test("buildExecutePhasePrompt honors an explicit capability", () => {
+  const prompt = buildExecutePhasePrompt("Do the thing", "analysis", "plan", {
+    capability: { canEditFiles: false, canRunBash: false },
+  });
+  expect(prompt).toContain("pure orchestrator");
+  expect(prompt).not.toContain("you may edit files");
+});
+
 test("inferActivityRole does not map SDK built-in Agent(Explore) to Eco Explore", () => {
   expect(
     inferActivityRole({
@@ -1912,6 +1944,137 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
     plan: "## Summary\n\nShip the official plan.",
     planFilePath: ".claude/plans/plan.md",
   });
+});
+
+test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result payload", async () => {
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-plan-deferred",
+            uuid: "init-plan-deferred",
+          };
+          // Hook capture intentionally skipped: the defer payload on the result
+          // message is the official primary channel.
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-plan-deferred",
+            uuid: "result-plan-deferred",
+            stop_reason: "tool_deferred",
+            deferred_tool_use: {
+              id: "tool_exit_deferred",
+              name: "ExitPlanMode",
+              input: {
+                plan: "## Summary\n\nShip the deferred plan.",
+                planFilePath: "/tmp/workspace/.claude/plans/deferred.md",
+              },
+            },
+          };
+        },
+        close: () => {},
+      }),
+    }),
+  });
+
+  const events: Array<{ type: string; payload?: unknown }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_plan_deferred",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type, payload: event.payload });
+  }
+
+  const ready = events.find((event) => event.type === "plan.ready");
+  expect(ready?.payload).toMatchObject({
+    plan: "## Summary\n\nShip the deferred plan.",
+    planFilePath: ".claude/plans/deferred.md",
+  });
+});
+
+test("ClaudeAgentSdkDriver execution resume approves the deferred ExitPlanMode call", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-exec-resume",
+              uuid: "result-exec-resume",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runExecution(
+    {
+      threadId: "thr_exec_resume",
+      prompt: "",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      resume: { resumeSessionId: "sess-plan" },
+      signal: new AbortController().signal,
+    },
+    {
+      userPrompt: "Add markdown rendering",
+      analysis: "Approved",
+      plan: "## Summary\n\nShip it.",
+    },
+  )) {
+    // drain
+  }
+
+  const hooks = capturedOptions[0]?.hooks as
+    | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
+    | undefined;
+  const exitPlanMatchers = hooks?.PreToolUse?.filter((matcher) => matcher.matcher === "ExitPlanMode");
+  expect(exitPlanMatchers).toHaveLength(1);
+  const result = (await exitPlanMatchers![0]!.hooks[0]!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { allowedPrompts: [] },
+      tool_use_id: "tool_exit_deferred",
+      session_id: "sess-plan",
+      cwd: "/tmp/workspace",
+      plan: "## Summary\n\nShip it.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+    },
+    "tool_exit_deferred",
+    { signal: new AbortController().signal },
+  )) as { hookSpecificOutput?: Record<string, unknown> };
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "allow",
+    updatedInput: {
+      allowedPrompts: [],
+      plan: "## Summary\n\nShip it.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+    },
+  });
+  // PermissionRequest deny fallback is planning-only; execution must not deny ExitPlanMode.
+  expect(hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? []).toHaveLength(
+    0,
+  );
 });
 
 test("ClaudeAgentSdkDriver autonomous does not register plan submission tools", async () => {

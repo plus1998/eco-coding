@@ -3,6 +3,7 @@ import {
   buildExecutePhaseSystemAppend,
   summarizeExecutePipeline,
 } from "./subagent-pipeline.js";
+import type { MainAgentHandsOnCapability } from "../agent-orchestration.js";
 import { defaultSubagentAvailability, type SubagentAvailability } from "../subagent-availability.js";
 import { formatResumableSubagentsAppend } from "../subagent-resume.js";
 
@@ -26,11 +27,17 @@ export function buildExecutePhasePrompt(
   userPrompt: string,
   analysis: string,
   plan: string,
-  options?: { planUserEdited?: boolean; availability?: SubagentAvailability },
+  options?: {
+    planUserEdited?: boolean;
+    availability?: SubagentAvailability;
+    capability?: MainAgentHandsOnCapability;
+  },
 ): string {
   const availability = options?.availability ?? defaultSubagentAvailability();
   const lines = [
-    buildExecuteBuildSwitchAppend(availability),
+    options?.capability
+      ? buildExecuteBuildSwitchAppend(availability, options.capability)
+      : buildExecuteBuildSwitchAppend(availability),
     "",
     "User request:",
     userPrompt.trim(),
@@ -127,7 +134,12 @@ export function buildExecutionPromptWithFollowUp(
     resumableSubagents?: readonly { role: string; agentId: string }[];
   },
   followUp: string,
-  options: { isResume: boolean; availability?: SubagentAvailability; includePlanOnResume?: boolean },
+  options: {
+    isResume: boolean;
+    availability?: SubagentAvailability;
+    capability?: MainAgentHandsOnCapability;
+    includePlanOnResume?: boolean;
+  },
 ): string {
   if (options.isResume) {
     const base = buildExecuteResumePrompt({
@@ -152,5 +164,6 @@ export function buildExecutionPromptWithFollowUp(
   return buildExecutePhasePrompt(userPrompt, planning.analysis, planning.plan, {
     ...(planning.planUserEdited ? { planUserEdited: true } : {}),
     ...(options.availability ? { availability: options.availability } : {}),
+    ...(options.capability ? { capability: options.capability } : {}),
   });
 }

@@ -1,6 +1,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { extractPlanningDeliverables } from "./phase-deliverable.js";
+import { extractPlanningDeliverables, findPlanSectionStart } from "./phase-deliverable.js";
+
+/** Only an explicit plan section counts; arbitrary assistant text is not a plan. */
+function extractExplicitPlanningDeliverables(
+  text: string,
+): { analysis: string; plan: string } | undefined {
+  if (findPlanSectionStart(text.trim()) < 0) {
+    return undefined;
+  }
+  const deliverables = extractPlanningDeliverables(text);
+  return deliverables.plan.trim() ? deliverables : undefined;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -134,8 +145,7 @@ export async function readPlanFromSdkTranscriptPath(
         continue;
       }
     }
-    const deliverables = extractPlanningDeliverables(assistantParts.join("\n\n"));
-    return deliverables.plan.trim() ? deliverables : undefined;
+    return extractExplicitPlanningDeliverables(assistantParts.join("\n\n"));
   } catch {
     return undefined;
   }
@@ -144,6 +154,5 @@ export async function readPlanFromSdkTranscriptPath(
 export function readPlanFromPhaseTranscript(
   transcript: string,
 ): { plan: string; analysis: string } | undefined {
-  const deliverables = extractPlanningDeliverables(transcript);
-  return deliverables.plan.trim() ? deliverables : undefined;
+  return extractExplicitPlanningDeliverables(transcript);
 }

@@ -154,6 +154,33 @@ export function buildBuiltinPlanToolPermissionEntry(): EcoRuntimeToolPermissionE
   return normalizeToolPermissionEntry(BUILTIN_PLAN_TOOL_POLICY);
 }
 
+export interface MainAgentHandsOnCapability {
+  canEditFiles: boolean;
+  canRunBash: boolean;
+}
+
+/**
+ * What the main orchestrator can do hands-on under the active profile policy.
+ * Mirrors the runtime PreToolUse enforcement: `filesystem.write === "none"` denies write
+ * tools, a missing/disabled `bash` entry denies Bash, and bare-name disallow rules deny both.
+ * No profile means no Eco policy hook, so the SDK permission mode alone governs.
+ */
+export function resolveMainAgentHandsOnCapability(
+  profile?: EcoOrchestrationProfileConfig,
+): MainAgentHandsOnCapability {
+  if (!profile) {
+    return { canEditFiles: true, canRunBash: true };
+  }
+  const tools = profile.mainAgent.tools;
+  const disallowed = new Set(tools.disallowed.map((pattern) => pattern.trim()));
+  const writeDisallowed = SDK_FILESYSTEM_WRITE_TOOL_NAMES.every((tool) => disallowed.has(tool));
+  return {
+    canEditFiles:
+      !writeDisallowed && (tools.filesystem ? tools.filesystem.write !== "none" : true),
+    canRunBash: !disallowed.has("Bash") && tools.bash?.enabled === true,
+  };
+}
+
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],

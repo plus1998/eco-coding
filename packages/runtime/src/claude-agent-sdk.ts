@@ -15,6 +15,7 @@ import {
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
+  resolveMainAgentHandsOnCapability,
   SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
@@ -24,6 +25,7 @@ import {
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
   buildEcoSdkHooks,
+  captureDeferredExitPlanModeFromResult,
   type EcoHookContext,
   type EcoToolPermissionDecisionAudit,
 } from "./eco-sdk-hooks.js";
@@ -43,7 +45,7 @@ import {
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
 import { resolveSkillDisplayName } from "./skill-display";
-import { extractPlanningDeliverables } from "./phase-deliverable.js";
+import { extractPlanningDeliverables, findPlanSectionStart } from "./phase-deliverable.js";
 import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
@@ -51,6 +53,7 @@ import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./suba
 export type { EcoHookContext, EcoPreCompactHookInput } from "./eco-sdk-hooks.js";
 
 import { buildAutonomousOrchestratorAppend } from "./prompts/autonomous.js";
+import { buildMainAgentHandsOnBoundaryAppend } from "./prompts/subagent-pipeline.js";
 import {
   buildAnalyzePhasePrompt,
   buildAutonomousPlanContinuationPrompt,
@@ -196,6 +199,11 @@ const defaultSettingSources = ["user", "project"] as const;
 function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
 }
+
+/** Universal profiles use custom rosters, so the hands-on boundary points at the roster instead of eco_* keys. */
+const universalDelegateOptions = {
+  delegateTarget: "an implementation-capable agent from the active profile roster (via Agent(...))",
+} as const;
 
 function buildUniversalPhaseAppend(phase: "answer" | "plan" | "execute" | "autonomous"): string {
   const phaseLine =
@@ -536,6 +544,10 @@ interface FinalizePlanPayload {
 function resolvePlanningFinalizedPlanFromTranscript(
   transcript: string,
 ): FinalizePlanPayload | undefined {
+  // Only an explicit plan section counts; arbitrary assistant text is not a plan.
+  if (findPlanSectionStart(transcript.trim()) < 0) {
+    return undefined;
+  }
   const deliverables = extractPlanningDeliverables(transcript);
   if (!deliverables.plan.trim()) {
     return undefined;
@@ -572,6 +584,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   async *runExecution(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
     const planFile = planning.planFilePath?.trim()
@@ -597,14 +610,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
             },
             input.prompt,
-            { isResume, availability, includePlanOnResume: planning.planUserEdited === true },
+            {
+              isResume,
+              availability,
+              capability: handsOn,
+              includePlanOnResume: planning.planUserEdited === true,
+            },
           ));
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
+      ...(isResume ? { approveDeferredExitPlanMode: true } : {}),
       allowedTools: [...executionAllowedTools],
       phaseAppend: `${
-        universalProfile ? buildUniversalPhaseAppend("execute") : buildExecutePhaseSystemAppend(availability)
+        universalProfile
+          ? `${buildUniversalPhaseAppend("execute")}\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalDelegateOptions)}`
+          : buildExecutePhaseSystemAppend(availability, handsOn)
       }${resumableAppend}`,
       agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
@@ -733,13 +754,20 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         mode === "execution" ? "execute" : "plan",
         mode === "execution" ? "【续聊】继续执行" : "【续聊】继续对话",
       );
+      const autonomousHandsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
       yield* this.runSingleSession(input, {
         prompt: continuationPrompt,
         permissionMode: "acceptEdits",
         allowedTools: [...autonomousAllowedTools],
-        phaseAppend: universalProfile
-          ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
-          : buildAutonomousOrchestratorAppend(),
+        phaseAppend: `${
+          universalProfile
+            ? buildUniversalPhaseAppend(mode === "planning" ? "plan" : "execute")
+            : buildAutonomousOrchestratorAppend()
+        }\n${buildMainAgentHandsOnBoundaryAppend(
+          autonomousHandsOn,
+          availability,
+          universalProfile ? universalDelegateOptions : {},
+        )}`,
         agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
         availability,
       });
@@ -800,6 +828,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
     const planFile = planning?.planFilePath?.trim()
       ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
@@ -819,16 +848,18 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             {
             isResume: true,
             availability,
+            capability: handsOn,
             includePlanOnResume: false,
           })
       : input.prompt;
     yield* this.runSingleSession(input, {
       prompt: executionPrompt,
       permissionMode: "acceptEdits",
+      ...(input.resume?.resumeSessionId ? { approveDeferredExitPlanMode: true } : {}),
       allowedTools: [...executionAllowedTools],
       phaseAppend: universalProfile
-        ? buildUniversalPhaseAppend("execute")
-        : buildExecutePhaseSystemAppend(availability),
+        ? `${buildUniversalPhaseAppend("execute")}\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalDelegateOptions)}`
+        : buildExecutePhaseSystemAppend(availability, handsOn),
       agents: createExecutionAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -837,13 +868,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield* this.runSingleSession(input, {
       prompt: input.prompt,
       permissionMode: "acceptEdits",
       allowedTools: [...autonomousAllowedTools],
-      phaseAppend: universalProfile
-        ? buildUniversalPhaseAppend("autonomous")
-        : buildAutonomousOrchestratorAppend(),
+      phaseAppend: `${
+        universalProfile ? buildUniversalPhaseAppend("autonomous") : buildAutonomousOrchestratorAppend()
+      }\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalProfile ? universalDelegateOptions : {})}`,
       agents: createAutonomousAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
       availability,
     });
@@ -889,6 +921,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt: string;
       permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
       planningPhase?: boolean;
+      /** Execution resume after Eco plan approval: complete the deferred ExitPlanMode call. */
+      approveDeferredExitPlanMode?: boolean;
       allowedTools: string[];
       phaseAppend: string;
       agents?: Record<string, unknown>;
@@ -966,8 +1000,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }
         : undefined;
     const allowedSdkBuiltinAgentKeys = phase.planningPhase ? [SDK_PLAN_AGENT_KEY] : undefined;
+    const approveDeferredExitPlanMode = !phase.planningPhase && phase.approveDeferredExitPlanMode === true;
     const shouldBuildHooks = Boolean(
-      this.options.hookContext || onExitPlanMode || dynamicAgentKeys || toolPermissions,
+      this.options.hookContext ||
+        onExitPlanMode ||
+        approveDeferredExitPlanMode ||
+        dynamicAgentKeys ||
+        toolPermissions,
     );
     const allowedTools = this.options.toolPermissionHandler
       ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
@@ -1008,6 +1047,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(this.options.hookContext ?? {}),
               ...(onExitPlanMode ? { onExitPlanMode } : {}),
               ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
+              ...(approveDeferredExitPlanMode ? { approveDeferredExitPlanMode: true } : {}),
               ...(phase.planningPhase
                 ? { getPhaseTranscript: () => phaseTranscriptBox.text }
                 : {}),
@@ -1111,6 +1151,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
         phaseTranscriptBox.text = transcript;
+      }
+
+      // Defer protocol primary channel: the result payload carries the deferred ExitPlanMode
+      // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
+      // this only lands when the hook path missed it.
+      if (onExitPlanMode) {
+        await captureDeferredExitPlanModeFromResult(message, onExitPlanMode, exitPlanCaptureState, {
+          searchRoots: [input.workspacePath, sessionCwd],
+          getPhaseTranscript: () => phaseTranscriptBox.text,
+        });
       }
 
       if (input.signal.aborted) {

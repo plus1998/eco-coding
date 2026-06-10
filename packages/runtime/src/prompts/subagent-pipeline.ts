@@ -10,6 +10,51 @@ import {
 } from "../subagent-availability.js";
 import { executeCoreGoalAppend } from "./eco-common.js";
 import { architectUseCriteria } from "./execute.js";
+import type { MainAgentHandsOnCapability } from "../agent-orchestration.js";
+
+/** Hoisted (not a const) so the execute.ts <-> subagent-pipeline.ts import cycle stays TDZ-safe. */
+function fullHandsOnCapability(): MainAgentHandsOnCapability {
+  return { canEditFiles: true, canRunBash: true };
+}
+
+/**
+ * Hands-on boundary for the main orchestrator, derived from the active profile tool policy.
+ * The prompt must state the same rules the Eco PreToolUse policy hook enforces, so the
+ * model never has to discover them through denied tool calls.
+ */
+export function buildMainAgentHandsOnBoundaryAppend(
+  capability: MainAgentHandsOnCapability,
+  availability: SubagentAvailability = defaultSubagentAvailability(),
+  options: { delegateTarget?: string } = {},
+): string {
+  const coderEnabled = isSubagentEnabled(availability, "coder");
+  const coderTarget =
+    options.delegateTarget ??
+    (coderEnabled ? agentCall("coder") : `Agent(${SDK_GENERAL_PURPOSE_AGENT_KEY})`);
+  const lines: string[] = ["Hands-on boundary (enforced by Eco tool policy):"];
+  if (capability.canEditFiles) {
+    lines.push(
+      "- You may edit files directly. Prefer direct edits for small, localized changes (a focused fix within 1-2 files, config/copy/type tweaks).",
+      ...(coderEnabled
+        ? [
+            `- Delegate multi-file or parallelizable implementation to ${coderTarget}; keep the review/verify pipeline for substantial changes.`,
+          ]
+        : []),
+    );
+  } else {
+    lines.push(
+      `- Filesystem writes (Write/Edit) are DISABLED for you. Do not attempt them; every code change must be delegated to ${coderTarget}.`,
+    );
+  }
+  if (capability.canRunBash) {
+    lines.push("- You may run shell commands via Bash.");
+  } else {
+    lines.push(
+      `- Bash is DISABLED for you. Do not attempt it; have ${coderTarget} run commands and report results.`,
+    );
+  }
+  return lines.join("\n");
+}
 
 function agentCall(role: SubagentRole): string {
   return `Agent(${ecoSubagentKeyForRole(role)})`;
@@ -62,15 +107,22 @@ function executionSubagentAvailability(availability: SubagentAvailability): Suba
   };
 }
 
-export function buildExecuteBuildSwitchAppend(availability: SubagentAvailability): string {
+export function buildExecuteBuildSwitchAppend(
+  availability: SubagentAvailability,
+  capability: MainAgentHandsOnCapability = fullHandsOnCapability(),
+): string {
   const delegates = formatExecutionSubagentNames(availability);
-  const delegationRule = isSubagentEnabled(availability, "coder")
-    ? `You are now in EXECUTE phase: you may edit files, run shell commands, and delegate to subagents (${delegates}).`
-    : `You are now in EXECUTE phase: you may edit files and run shell commands. Coder is disabled, so implement directly unless another enabled subagent is materially useful (${delegates}).`;
+  const coderEnabled = isSubagentEnabled(availability, "coder");
+  const delegationRule = capability.canEditFiles
+    ? coderEnabled
+      ? `You are now in EXECUTE phase: you may edit files${capability.canRunBash ? ", run shell commands," : ""} and delegate to subagents (${delegates}).`
+      : `You are now in EXECUTE phase: you may edit files${capability.canRunBash ? " and run shell commands" : ""}. Coder is disabled, so implement directly unless another enabled subagent is materially useful (${delegates}).`
+    : `You are now in EXECUTE phase as a pure orchestrator: delegate implementation to subagents (${delegates}).`;
   return [
     "<system-reminder>",
     "The implementation plan has been approved by the user.",
     delegationRule,
+    buildMainAgentHandsOnBoundaryAppend(capability, availability),
     "Follow the approved plan and the execution pipeline. Do not restart planning from scratch unless blocked.",
     "</system-reminder>",
   ].join("\n");
@@ -141,12 +193,13 @@ function buildWhenNotToUseAgent(availability: SubagentAvailability): string[] {
 
 export function buildExecutePhaseSystemAppend(
   availability: SubagentAvailability = defaultSubagentAvailability(),
+  capability: MainAgentHandsOnCapability = fullHandsOnCapability(),
 ): string {
   let step = 0;
   const taskListName = isSubagentEnabled(availability, "coder") ? "Coder Tasks" : "Implementation Tasks";
   const pipeline: string[] = [
     "Eco orchestration phase 2/2 — EXECUTE.",
-    buildExecuteBuildSwitchAppend(availability),
+    buildExecuteBuildSwitchAppend(availability, capability),
     "",
     executeCoreGoalAppend,
     "Final response: keep it concise. State what changed, verification result, and blockers only.",

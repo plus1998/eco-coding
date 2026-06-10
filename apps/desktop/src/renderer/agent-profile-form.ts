@@ -107,7 +107,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
     mainAllowedTools:
-      "Agent, TaskList, TaskOutput, Skill, TaskCreate, TaskUpdate, TodoWrite, Read, Glob, Grep, LS, NotebookRead, WebSearch, WebFetch, AskUserQuestion",
+      "Agent, TaskList, TaskOutput, Skill, TaskCreate, TaskUpdate, TodoWrite, Read, Glob, Grep, LS, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, Bash, WebSearch, WebFetch, AskUserQuestion",
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",
@@ -115,7 +115,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainBashCommandAllowlist: "",
     mainBashCommandDenylist: "",
     mainFilesystemRead: "workspace",
-    mainFilesystemWrite: "none",
+    mainFilesystemWrite: "workspace",
     mainNetworkWebSearch: true,
     mainNetworkWebFetch: true,
     mainSkills: "",

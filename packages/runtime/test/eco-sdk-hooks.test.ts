@@ -7,10 +7,13 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   buildEcoSdkHooks,
+  captureDeferredExitPlanModeFromResult,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
+  createExitPlanModeResumeApproveHook,
+  parseDeferredExitPlanModeResult,
   parseExitPlanModeOutput,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
@@ -212,6 +215,142 @@ test("createExitPlanModePreToolHook captures injected plan and defers SDK comple
     hookEventName: "PreToolUse",
     permissionDecision: "defer",
   });
+});
+
+test("createExitPlanModeResumeApproveHook allows deferred ExitPlanMode with echoed input", async () => {
+  const hook = createExitPlanModeResumeApproveHook();
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { allowedPrompts: [{ tool: "Bash", prompt: "run tests" }] },
+      tool_use_id: "tool_exit_resume",
+      session_id: "s1",
+      cwd: "/tmp/workspace",
+      plan: "## Summary\n\nApproved plan.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+    } as PreToolUseHookInput & { plan: string; planFilePath: string },
+    "tool_exit_resume",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "allow",
+    updatedInput: {
+      allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
+      plan: "## Summary\n\nApproved plan.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+    },
+  });
+});
+
+test("createExitPlanModeResumeApproveHook ignores other tools", async () => {
+  const hook = createExitPlanModeResumeApproveHook();
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "echo hi" },
+      tool_use_id: "tool_bash",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_bash",
+    { signal: new AbortController().signal },
+  );
+  expect(result).toEqual({});
+});
+
+test("parseDeferredExitPlanModeResult reads deferred_tool_use from result message", () => {
+  const parsed = parseDeferredExitPlanModeResult({
+    type: "result",
+    subtype: "success",
+    stop_reason: "tool_deferred",
+    deferred_tool_use: {
+      id: "tool_exit_deferred",
+      name: "ExitPlanMode",
+      input: {
+        plan: "## Summary\n\nDeferred plan.",
+        planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+      },
+    },
+  });
+
+  expect(parsed).toMatchObject({
+    toolUseId: "tool_exit_deferred",
+    request: {
+      plan: "## Summary\n\nDeferred plan.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+    },
+  });
+
+  expect(parseDeferredExitPlanModeResult({ type: "assistant" })).toBeUndefined();
+  expect(
+    parseDeferredExitPlanModeResult({
+      type: "result",
+      deferred_tool_use: { id: "x", name: "AskUserQuestion", input: {} },
+    }),
+  ).toBeUndefined();
+});
+
+test("captureDeferredExitPlanModeFromResult delegates plan from result payload", async () => {
+  const captured: Array<{ plan: string; planFilePath?: string; toolUseId: string }> = [];
+  const message = {
+    type: "result",
+    subtype: "success",
+    stop_reason: "tool_deferred",
+    deferred_tool_use: {
+      id: "tool_exit_deferred",
+      name: "ExitPlanMode",
+      input: {
+        plan: "## Summary\n\nDeferred plan.",
+        planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+      },
+    },
+  };
+
+  const handled = await captureDeferredExitPlanModeFromResult(
+    message,
+    (request) => {
+      captured.push({
+        plan: request.plan,
+        ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
+        toolUseId: request.toolUseId,
+      });
+    },
+    { capturedToolUseIds: new Set<string>() },
+  );
+
+  expect(handled).toBe(true);
+  expect(captured).toEqual([
+    {
+      plan: "## Summary\n\nDeferred plan.",
+      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
+      toolUseId: "tool_exit_deferred",
+    },
+  ]);
+});
+
+test("captureDeferredExitPlanModeFromResult dedupes against hook capture by tool use id", async () => {
+  const state = { capturedToolUseIds: new Set<string>(["tool_exit_deferred"]) };
+  const handled = await captureDeferredExitPlanModeFromResult(
+    {
+      type: "result",
+      deferred_tool_use: {
+        id: "tool_exit_deferred",
+        name: "ExitPlanMode",
+        input: { plan: "## Summary\n\nDeferred plan." },
+      },
+    },
+    () => {
+      throw new Error("delegate should not run for an already captured tool use");
+    },
+    state,
+  );
+
+  expect(handled).toBe(false);
 });
 
 test("createNormalizeSubagentPreToolHook rewrites runtime Agent input to eco key", async () => {
@@ -619,6 +758,83 @@ test("createToolPermissionPreToolHook enforces main and subagent tool policies",
     { signal: new AbortController().signal },
   );
   expect(unprefixedSubagentSearch.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook adds delegation guidance only to main agent policy denials", async () => {
+  const hook = createToolPermissionPreToolHook({
+    main: {
+      allowed: ["Agent", "Read", "Edit", "Bash"],
+      disallowed: [],
+      filesystem: { read: "workspace", write: "none" },
+    },
+    agents: {
+      eco_coder: {
+        allowed: ["Read", "Edit"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+    },
+  });
+  expect(hook).toBeDefined();
+
+  const mainEdit = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: "/repo/file.ts" },
+      tool_use_id: "tool_main_edit",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_main_edit",
+    { signal: new AbortController().signal },
+  );
+  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Filesystem writes are disabled for this Eco agent.",
+  );
+  expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Delegate the work to an enabled subagent via the Agent tool",
+  );
+
+  const mainBash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "bun test" },
+      tool_use_id: "tool_main_bash",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_main_bash",
+    { signal: new AbortController().signal },
+  );
+  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Bash is disabled for this Eco agent.",
+  );
+  expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Delegate the work to an enabled subagent via the Agent tool",
+  );
+
+  const subagentEdit = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Edit",
+      tool_input: { file_path: "/repo/file.ts" },
+      tool_use_id: "tool_sub_edit",
+      session_id: "s1",
+      cwd: "/repo",
+      agent_id: "agent_1",
+      agent_type: "eco_coder",
+    } satisfies PreToolUseHookInput,
+    "tool_sub_edit",
+    { signal: new AbortController().signal },
+  );
+  expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
+    "Filesystem writes are disabled for this Eco agent.",
+  );
+  expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).not.toContain(
+    "Delegate the work",
+  );
 });
 
 test("createToolPermissionPreToolHook enforces structured bash filesystem and network policies", async () => {
@@ -1048,6 +1264,44 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(hooks.Stop).toHaveLength(1);
   expect(hooks.Notification).toHaveLength(1);
   expect(hooks.PreCompact).toHaveLength(1);
+});
+
+test("buildEcoSdkHooks registers ExitPlanMode resume approve hook only without planning capture", async () => {
+  const exitPlanInput = {
+    hook_event_name: "PreToolUse",
+    tool_name: "ExitPlanMode",
+    tool_input: { allowedPrompts: [] },
+    tool_use_id: "tool_exit",
+    session_id: "s1",
+    cwd: "/tmp/workspace",
+    plan: "## Summary\n\nApproved plan.",
+  } as PreToolUseHookInput & { plan: string };
+
+  const executionHooks = buildEcoSdkHooks({ approveDeferredExitPlanMode: true });
+  const exitPlanMatchers = executionHooks.PreToolUse?.filter(
+    (matcher) => matcher.matcher === "ExitPlanMode",
+  );
+  expect(exitPlanMatchers).toHaveLength(1);
+  const approveResult = await exitPlanMatchers![0]!.hooks[0]!(exitPlanInput, "tool_exit", {
+    signal: new AbortController().signal,
+  });
+  expect(approveResult.hookSpecificOutput).toMatchObject({
+    permissionDecision: "allow",
+    updatedInput: { plan: "## Summary\n\nApproved plan." },
+  });
+
+  const planningHooks = buildEcoSdkHooks({
+    onExitPlanMode: () => {},
+    approveDeferredExitPlanMode: true,
+  });
+  const planningMatchers = planningHooks.PreToolUse?.filter(
+    (matcher) => matcher.matcher === "ExitPlanMode",
+  );
+  expect(planningMatchers).toHaveLength(1);
+  const deferResult = await planningMatchers![0]!.hooks[0]!(exitPlanInput, "tool_exit", {
+    signal: new AbortController().signal,
+  });
+  expect(deferResult.hookSpecificOutput).toMatchObject({ permissionDecision: "defer" });
 });
 
 test("createPreCompactHook delegates trigger and session id", async () => {

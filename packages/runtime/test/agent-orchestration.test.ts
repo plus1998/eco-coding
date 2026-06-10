@@ -8,6 +8,7 @@ import {
   type EcoOrchestrationProfileConfig,
   type EcoToolPolicy,
   resolveMainAgentAllowedTools,
+  resolveMainAgentHandsOnCapability,
   sdkAgentKeyForProfileAgent,
 } from "../src/agent-orchestration";
 
@@ -157,6 +158,63 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
   });
   expect(systemPrompt.append).toContain("CODING PHASE APPEND");
   expect(systemPrompt.append).toContain("Agent(eco_researcher)");
+});
+
+test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enforcement", () => {
+  expect(resolveMainAgentHandsOnCapability(undefined)).toEqual({
+    canEditFiles: true,
+    canRunBash: true,
+  });
+
+  const restricted: EcoOrchestrationProfileConfig = {
+    ...profile,
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+    },
+  };
+  expect(resolveMainAgentHandsOnCapability(restricted)).toEqual({
+    canEditFiles: false,
+    canRunBash: false,
+  });
+
+  const handsOn: EcoOrchestrationProfileConfig = {
+    ...profile,
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read", "Write", "Edit", "Bash"],
+        disallowed: [],
+        bash: { enabled: true, approval: "risky" },
+        filesystem: { read: "workspace", write: "workspace" },
+      },
+    },
+  };
+  expect(resolveMainAgentHandsOnCapability(handsOn)).toEqual({
+    canEditFiles: true,
+    canRunBash: true,
+  });
+
+  const disallowedWrites: EcoOrchestrationProfileConfig = {
+    ...profile,
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read"],
+        disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+        bash: { enabled: true, approval: "risky" },
+        filesystem: { read: "workspace", write: "workspace" },
+      },
+    },
+  };
+  expect(resolveMainAgentHandsOnCapability(disallowedWrites)).toEqual({
+    canEditFiles: false,
+    canRunBash: false,
+  });
 });
 
 test("resolveMainAgentAllowedTools merges phase tools for universal profiles", () => {

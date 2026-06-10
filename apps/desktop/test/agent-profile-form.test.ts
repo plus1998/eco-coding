@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   agentProfileToForm,
   buildOrchestrationProfileFromForm,
+  createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
 } from "../src/renderer/agent-profile-form";
@@ -91,6 +92,22 @@ function requireElement<T>(values: readonly T[], index: number, label: string): 
   }
   return value;
 }
+
+test("createBlankAgentProfileForm defaults the main agent to hands-on (write + bash)", () => {
+  const form = createBlankAgentProfileForm({ providers: [provider] });
+
+  expect(form.mainFilesystemWrite).toBe("workspace");
+  for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]) {
+    expect(form.mainAllowedTools).toContain(tool);
+  }
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    templates: [],
+    nowIso: "2026-06-10T00:00:00.000Z",
+  });
+  expect(built.mainAgent.tools.filesystem).toEqual({ read: "workspace", write: "workspace" });
+  expect(built.mainAgent.tools.bash).toMatchObject({ enabled: true, approval: "risky" });
+});
 
 test("createCopiedAgentProfileForm turns protected profiles into user-editable copies", () => {
   const form = createCopiedAgentProfileForm(profile(), {

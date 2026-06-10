@@ -91,6 +91,8 @@ export interface EcoHookContext {
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
   /** Tracks ExitPlanMode captures to avoid duplicate Pre/Post hook submissions. */
   exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
+  /** Execution resume: auto-approve the deferred ExitPlanMode call (official defer protocol step 5). */
+  approveDeferredExitPlanMode?: boolean;
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
   subagentAttribution?: EcoSubagentAttributionHooks;
@@ -382,6 +384,81 @@ export function createExitPlanModePermissionRequestHook(
   };
 }
 
+/**
+ * PreToolUse (execution resume): complete the deferred ExitPlanMode call after Eco approval.
+ * Official defer protocol: resume re-fires PreToolUse for the same tool call; the hook must
+ * return `allow` + `updatedInput` (interactive tools reject a bare `allow` in `-p` mode).
+ * Without this, the pending ExitPlanMode is synthesized as a rejection in the transcript,
+ * which models can misread as "plan denied" (claude-code#34111).
+ */
+export function createExitPlanModeResumeApproveHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: "Plan already approved in Eco. Completing deferred ExitPlanMode.",
+        updatedInput: mergeExitPlanModeInjectedFields(toolInput, preInput),
+      },
+    };
+  };
+}
+
+/** Parse `deferred_tool_use` for ExitPlanMode from an SDK result message (defer protocol payload). */
+export function parseDeferredExitPlanModeResult(
+  message: unknown,
+): { toolUseId: string; request: SdkExitPlanModeRequest } | undefined {
+  if (!isRecord(message) || message.type !== "result") {
+    return undefined;
+  }
+  const deferred = message.deferred_tool_use;
+  if (!isRecord(deferred) || deferred.name !== "ExitPlanMode") {
+    return undefined;
+  }
+  const toolUseId = typeof deferred.id === "string" ? deferred.id.trim() : "";
+  const input = isRecord(deferred.input) ? deferred.input : {};
+  return { toolUseId, request: parseExitPlanModeInput(input) };
+}
+
+/**
+ * Capture the deferred ExitPlanMode plan from the SDK result payload.
+ * This is the official primary channel for defer-based integrations; the PreToolUse hook
+ * capture covers the same tool call, so `state` dedupes by tool use id.
+ */
+export async function captureDeferredExitPlanModeFromResult(
+  message: unknown,
+  delegate: EcoHookContext["onExitPlanMode"],
+  state: { capturedToolUseIds: Set<string> } | undefined,
+  options: {
+    searchRoots?: readonly (string | undefined)[];
+    getPhaseTranscript?: () => string;
+  } = {},
+): Promise<boolean> {
+  if (!delegate) {
+    return false;
+  }
+  const deferred = parseDeferredExitPlanModeResult(message);
+  if (!deferred) {
+    return false;
+  }
+  const resolved = await resolveExitPlanModeSubmission(deferred.request, {
+    searchRoots: options.searchRoots ?? [],
+    ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
+  });
+  if (!resolved.plan.trim()) {
+    return false;
+  }
+  return delegateExitPlanModeCapture(delegate, state, { ...resolved, toolUseId: deferred.toolUseId });
+}
+
 function mergeExitPlanModeInjectedFields(
   toolInput: Record<string, unknown>,
   hookInput: PreToolUseHookInput,
@@ -592,7 +669,7 @@ export function createToolPermissionPreToolHook(
         options,
       );
     }
-    const structuredDecision = evaluateStructuredToolPolicy(preInput, entry, options);
+    const structuredDecision = evaluateStructuredToolPolicy(preInput, entry, { ...options, actor });
     if (structuredDecision) {
       return recordToolPermissionDecision(preInput, actor, structuredDecision, options);
     }
@@ -638,10 +715,20 @@ function resolveToolPermissionEntry(
   return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
 }
 
+/**
+ * Delegation guidance appended to main-agent policy denials, so the orchestrator
+ * immediately knows the sanctioned alternative instead of retrying denied tools.
+ */
+function mainAgentDelegationHint(actor: "main" | string | undefined): string {
+  return actor === "main"
+    ? " This is the active Eco profile policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying."
+    : "";
+}
+
 function evaluateStructuredToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; forceBashApproval?: boolean },
+  options: { workspacePath?: string; forceBashApproval?: boolean; actor?: "main" | string },
 ): HookJSONOutput | undefined {
   if (input.tool_name === "Bash") {
     return evaluateBashToolPolicy(input, entry, options);
@@ -656,11 +743,14 @@ function evaluateStructuredToolPolicy(
 function evaluateBashToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; forceBashApproval?: boolean },
+  options: { workspacePath?: string; forceBashApproval?: boolean; actor?: "main" | string },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
   if (!bash?.enabled) {
-    return denyTool("Bash", "Bash is disabled for this Eco agent.");
+    return denyTool(
+      "Bash",
+      `Bash is disabled for this Eco agent.${mainAgentDelegationHint(options.actor)}`,
+    );
   }
   const command = readBashCommand(input.tool_input);
   if (command) {
@@ -703,7 +793,7 @@ function evaluateBashToolPolicy(
 function evaluateFilesystemToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string },
+  options: { workspacePath?: string; actor?: "main" | string },
 ): HookJSONOutput | undefined {
   const filesystem = entry.filesystem;
   if (!filesystem) {
@@ -718,7 +808,10 @@ function evaluateFilesystemToolPolicy(
     return denyTool(input.tool_name, "Filesystem reads are disabled for this Eco agent.");
   }
   if (isWriteTool && filesystem.write === "none") {
-    return denyTool(input.tool_name, "Filesystem writes are disabled for this Eco agent.");
+    return denyTool(
+      input.tool_name,
+      `Filesystem writes are disabled for this Eco agent.${mainAgentDelegationHint(options.actor)}`,
+    );
   }
   const filePath = readFilesystemPath(input.tool_input);
   if (!filePath) {
@@ -1249,6 +1342,9 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     createExitPlanModePermissionRequestHook(ctx.onExitPlanMode, ctx.exitPlanCaptureState, exitPlanHookOptions),
     "ExitPlanMode",
   );
+  if (!ctx.onExitPlanMode && ctx.approveDeferredExitPlanMode) {
+    pushHook(hooks, "PreToolUse", createExitPlanModeResumeApproveHook(), "ExitPlanMode");
+  }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(
     hooks,
