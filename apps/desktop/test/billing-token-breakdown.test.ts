@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { buildBillingTokenBreakdown } from "../src/shared/billing-token-breakdown";
+import {
+  type BillingAgentRow,
+  buildAgentViewRows,
+  buildBillingTokenBreakdown,
+} from "../src/shared/billing-token-breakdown";
 import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 
 function makeBilling(
@@ -217,6 +221,88 @@ test("buildBillingTokenBreakdown supplements missing roles from non-primary sour
   const breakdown = buildBillingTokenBreakdown(billing);
   expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "explore"]);
   expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["claude-haiku-4-5", "claude-opus-4-7"]);
+});
+
+function makeAgentRow(role: string, overrides: Partial<BillingAgentRow> = {}): BillingAgentRow {
+  return {
+    role,
+    label: `${role} · 主`,
+    inputTokens: 1000,
+    outputTokens: 100,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    ecoCostUsd: 0.01,
+    tokenBadge: "↑1k ↓100",
+    ...overrides,
+  };
+}
+
+function makeSubagentUsage(
+  role: string,
+  overrides: Partial<{
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    ecoCostUsd: number;
+  }> = {},
+) {
+  return {
+    role,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    ecoCostUsd: 0,
+    ...overrides,
+  };
+}
+
+test("buildAgentViewRows keeps roles without subagent rows as primary", () => {
+  const rows = buildAgentViewRows([makeAgentRow("planner")], []);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ role: "planner", kind: "primary", inputTokens: 1000 });
+});
+
+test("buildAgentViewRows keeps role usage visible when subagent rows are all zero", () => {
+  const rows = buildAgentViewRows(
+    [makeAgentRow("explore", { inputTokens: 225000, outputTokens: 4000, ecoCostUsd: 0.2 })],
+    [makeSubagentUsage("explore"), makeSubagentUsage("explore"), makeSubagentUsage("explore")],
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    role: "explore",
+    kind: "unattributed",
+    inputTokens: 225000,
+    outputTokens: 4000,
+    ecoCostUsd: 0.2,
+  });
+});
+
+test("buildAgentViewRows drops fully attributed role rows", () => {
+  const rows = buildAgentViewRows(
+    [makeAgentRow("explore", { inputTokens: 300, outputTokens: 30, ecoCostUsd: 0.03 })],
+    [
+      makeSubagentUsage("explore", { inputTokens: 100, outputTokens: 10, ecoCostUsd: 0.01 }),
+      makeSubagentUsage("explore", { inputTokens: 200, outputTokens: 20, ecoCostUsd: 0.02 }),
+    ],
+  );
+  expect(rows).toHaveLength(0);
+});
+
+test("buildAgentViewRows shows only the unattributed remainder for partially attributed roles", () => {
+  const rows = buildAgentViewRows(
+    [makeAgentRow("explore", { inputTokens: 500, outputTokens: 50, ecoCostUsd: 0.05 })],
+    [makeSubagentUsage("explore", { inputTokens: 300, outputTokens: 20, ecoCostUsd: 0.02 })],
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    role: "explore",
+    kind: "unattributed",
+    inputTokens: 200,
+    outputTokens: 30,
+  });
+  expect(rows[0]?.ecoCostUsd).toBeCloseTo(0.03, 6);
 });
 
 test("buildBillingTokenBreakdown returns null for empty or zero usage", () => {

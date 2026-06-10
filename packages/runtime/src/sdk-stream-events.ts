@@ -14,6 +14,8 @@ export interface SdkStreamContext {
   currentToolInputJson: string;
   parentToolUseId: string | null;
   activeSubagentRole?: RuntimeAgentRole;
+  /** Remembers each subagent's role so interleaved parallel streams keep correct roles. */
+  subagentRoleByParentToolUseId: Map<string, RuntimeAgentRole>;
   emittedToolUseIds: Set<string>;
   resolveSubagentAgentId?: (input: {
     role: RuntimeAgentRole;
@@ -30,6 +32,7 @@ export function createSdkStreamContext(options?: {
     activeBlockKind: null,
     currentToolInputJson: "",
     parentToolUseId: null,
+    subagentRoleByParentToolUseId: new Map(),
     emittedToolUseIds: new Set(),
     ...(options?.resolveSubagentAgentId && { resolveSubagentAgentId: options.resolveSubagentAgentId }),
   };
@@ -41,18 +44,36 @@ export function applySubagentUsageAttribution(
     role: RuntimeAgentRole;
     sessionId: string;
     payload: Record<string, unknown>;
+    /**
+     * parent_tool_use_id carried by the SDK message itself. A string marks subagent usage;
+     * null marks main-session usage and must never inherit a stale subagent stream context.
+     * Omit only for legacy callers that have no message-level signal.
+     */
+    messageParentToolUseId?: string | null;
   },
   streamCtx?: SdkStreamContext,
 ): { agentId: string; payload: Record<string, unknown> } {
-  const parentToolUseId = streamCtx?.parentToolUseId ?? undefined;
-  const attributionRole = streamCtx?.activeSubagentRole ?? input.role;
+  const explicit = input.messageParentToolUseId;
+  if (explicit === null) {
+    return { agentId: input.sessionId, payload: input.payload };
+  }
+  const parentToolUseId = explicit ?? streamCtx?.parentToolUseId ?? undefined;
+  const attributionRole =
+    explicit !== undefined ? input.role : (streamCtx?.activeSubagentRole ?? input.role);
   const subagentAgentId = streamCtx?.resolveSubagentAgentId?.({
     role: attributionRole,
     sessionId: input.sessionId,
     ...(parentToolUseId && { parentToolUseId }),
   });
   if (!subagentAgentId) {
-    return { agentId: input.sessionId, payload: input.payload };
+    // Keep parent_tool_use_id on the payload so downstream billing can still attribute the
+    // usage to a subagent instance when runtime-side resolution is unavailable or ambiguous.
+    return {
+      agentId: input.sessionId,
+      payload: parentToolUseId
+        ? { ...input.payload, parent_tool_use_id: parentToolUseId }
+        : input.payload,
+    };
   }
   return {
     agentId: subagentAgentId,
@@ -126,16 +147,12 @@ function slimRawStreamEvent(event: Record<string, unknown>): Record<string, unkn
   return slim;
 }
 
-function noteStreamSubagentRole(ctx: SdkStreamContext, message: Record<string, unknown>): void {
+function readMessageSubagentRole(message: Record<string, unknown>): RuntimeAgentRole | undefined {
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
   const agentType = typeof message.agent_type === "string" ? message.agent_type : undefined;
   const subagentRole = subagentType ? normalizeSdkRuntimeAgentRole(subagentType) : undefined;
   const agentRole = agentType ? normalizeSdkRuntimeAgentRole(agentType) : undefined;
-  if (subagentRole) {
-    ctx.activeSubagentRole = subagentRole;
-  } else if (agentRole) {
-    ctx.activeSubagentRole = agentRole;
-  }
+  return subagentRole ?? agentRole;
 }
 
 function normalizeSdkRuntimeAgentRole(type: string): RuntimeAgentRole | undefined {
@@ -159,11 +176,26 @@ export function mapStreamEventToEvents(
   ctx: SdkStreamContext,
 ): AgentEvent[] {
   const parentToolUseId = typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
-  if (parentToolUseId) {
-    ctx.parentToolUseId = parentToolUseId;
-  }
+  ctx.parentToolUseId = parentToolUseId;
 
-  noteStreamSubagentRole(ctx, message);
+  const messageRole = readMessageSubagentRole(message);
+  if (parentToolUseId) {
+    if (messageRole) {
+      ctx.subagentRoleByParentToolUseId.set(parentToolUseId, messageRole);
+    }
+    const resolvedRole = messageRole ?? ctx.subagentRoleByParentToolUseId.get(parentToolUseId);
+    if (resolvedRole) {
+      ctx.activeSubagentRole = resolvedRole;
+    } else {
+      delete ctx.activeSubagentRole;
+    }
+  } else if (messageRole) {
+    ctx.activeSubagentRole = messageRole;
+  } else {
+    // Messages with no subagent marker belong to the main session; clear subagent context
+    // so interleaved main-agent output is not attributed to the last streaming subagent.
+    delete ctx.activeSubagentRole;
+  }
   const streamRole = effectiveStreamRole(ctx, role);
 
   const subagentType = typeof message.subagent_type === "string" ? message.subagent_type : undefined;
@@ -370,8 +402,15 @@ export function mapStreamEventToEvents(
   }
 
   if (event.type === "message_delta" && isRecord(event.usage)) {
+    // A message carrying subagent_type but no parent id is still explicitly subagent usage;
+    // only messages with neither marker are main-session usage (null short-circuits).
     const attributed = applySubagentUsageAttribution(
-      { role: streamRole, sessionId, payload: { usage: event.usage } },
+      {
+        role: streamRole,
+        sessionId,
+        payload: { usage: event.usage },
+        messageParentToolUseId: parentToolUseId ?? (messageRole ? undefined : null),
+      },
       ctx,
     );
     events.push(

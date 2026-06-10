@@ -192,6 +192,128 @@ test("attributes dynamic subagent stream usage through resolver", () => {
   expect(events[0]?.role).toBe("researcher");
 });
 
+test("does not attribute main-session stream usage to a stale subagent context", () => {
+  const calls: Array<{ role: string; parentToolUseId?: string; sessionId: string }> = [];
+  const ctx = createSdkStreamContext({
+    resolveSubagentAgentId(input) {
+      calls.push(input);
+      return "agent_explore";
+    },
+  });
+  mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_sub",
+      session_id: "sess",
+      subagent_type: "eco_explore",
+      parent_tool_use_id: "toolu_parent",
+      event: { type: "message_delta", usage: { input_tokens: 50, output_tokens: 5 } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_sub",
+    ctx,
+  );
+  calls.length = 0;
+
+  const mainEvents = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_main",
+      session_id: "sess",
+      event: { type: "message_delta", usage: { input_tokens: 200, output_tokens: 10 } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_main",
+    ctx,
+  );
+
+  expect(calls).toHaveLength(0);
+  expect(mainEvents[0]?.agentId).toBe("sess");
+  expect(mainEvents[0]?.role).toBe("planner");
+  expect((mainEvents[0]?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
+});
+
+test("keeps parent_tool_use_id on usage payload when runtime resolution fails", () => {
+  const ctx = createSdkStreamContext({
+    resolveSubagentAgentId() {
+      return undefined;
+    },
+  });
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_unresolved",
+      session_id: "sess",
+      subagent_type: "eco_explore",
+      parent_tool_use_id: "toolu_parallel",
+      event: { type: "message_delta", usage: { input_tokens: 80, output_tokens: 8 } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_unresolved",
+    ctx,
+  );
+
+  expect(events[0]?.agentId).toBe("sess");
+  expect((events[0]?.payload as Record<string, unknown>).parent_tool_use_id).toBe("toolu_parallel");
+});
+
+test("keeps per-subagent roles when parallel streams interleave", () => {
+  const ctx = createSdkStreamContext();
+  mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_a1",
+      session_id: "sess",
+      subagent_type: "eco_explore",
+      parent_tool_use_id: "toolu_a",
+      event: { type: "content_block_start", content_block: { type: "text" } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_a1",
+    ctx,
+  );
+  mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_b1",
+      session_id: "sess",
+      subagent_type: ecoSubagentKeyForRole("coder"),
+      parent_tool_use_id: "toolu_b",
+      event: { type: "content_block_start", content_block: { type: "text" } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_b1",
+    ctx,
+  );
+
+  // Later chunk from subagent A carries only the parent id, not the subagent type.
+  const events = mapStreamEventToEvents(
+    {
+      type: "stream_event",
+      uuid: "u_a2",
+      session_id: "sess",
+      parent_tool_use_id: "toolu_a",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "hello" } },
+    },
+    "thr_1",
+    "sess",
+    "planner",
+    "u_a2",
+    ctx,
+  );
+  expect(events[0]?.role).toBe("explore");
+});
+
 test("suppresses text_delta while inside tool block", () => {
   const ctx = createSdkStreamContext();
   mapStreamEventToEvents(

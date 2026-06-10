@@ -184,7 +184,14 @@ export function resolveMainAgentHandsOnCapability(
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
-  options: { agentSkills?: Partial<Record<string, string[]>> } = {},
+  options: {
+    agentSkills?: Partial<Record<string, string[]>>;
+    /**
+     * Maps a profile agent's raw model id to the id the SDK should request (e.g. the local
+     * proxy role alias), so usage billing can attribute requests to the right agent role.
+     */
+    resolveModelId?: (agentKey: string, modelId: string) => string;
+  } = {},
 ): EcoResolvedAgentDefinitionSet {
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const definitions: Record<string, unknown> = {};
@@ -202,6 +209,7 @@ export function createAgentDefinitionsFromProfile(
       agent,
       template,
       resolveProfileAgentSkills(agent.agentKey, sdkKey, options),
+      options.resolveModelId,
     );
     agentKeys.push(sdkKey);
   }
@@ -364,6 +372,7 @@ function buildSdkAgentDefinition(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
   extraSkills: readonly string[] = [],
+  resolveModelId?: (agentKey: string, modelId: string) => string,
 ): Record<string, unknown> {
   const toolPolicy = applyDelegationToolPolicy(
     resolveAgentToolPolicy(agent, template),
@@ -383,7 +392,9 @@ function buildSdkAgentDefinition(
     ...(tools.length > 0 ? { tools } : {}),
     ...(disallowedTools.length > 0 ? { disallowedTools } : {}),
     prompt: template.prompt,
-    model: requireModelId(agent.modelRef.modelId, agent.agentKey),
+    model: resolveModelId
+      ? resolveModelId(agent.agentKey, requireModelId(agent.modelRef.modelId, agent.agentKey))
+      : requireModelId(agent.modelRef.modelId, agent.agentKey),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills.length > 0 ? { skills } : {}),
   };

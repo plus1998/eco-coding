@@ -47,6 +47,7 @@ import {
   stripBashAutoApprovedTools,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
+import { createSdkStreamContext } from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
 const routes: ResolvedModelRoute[] = [
@@ -958,6 +959,74 @@ test("maps assistant message usage to usage.recorded events", () => {
   expect((usageEvent?.payload as { messageId?: string }).messageId).toBe("msg_abc");
 });
 
+test("propagates parent_tool_use_id onto assistant usage events for billing attribution", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_sub_usage",
+      session_id: "session_1",
+      parent_tool_use_id: "tool_parent_1",
+      subagent_type: "eco_explore",
+      message: {
+        id: "msg_sub",
+        usage: { input_tokens: 500, output_tokens: 40 },
+        content: [{ type: "text", text: "found it" }],
+      },
+    },
+    "thr_1",
+  );
+
+  const usageEvent = events.find((event) => event.type === "usage.recorded");
+  expect(usageEvent).toBeDefined();
+  const payload = usageEvent?.payload as Record<string, unknown>;
+  expect(payload.parent_tool_use_id).toBe("tool_parent_1");
+  expect(payload.subagent_type).toBe("eco_explore");
+});
+
+test("does not attribute main assistant or result usage to a stale subagent stream context", () => {
+  const ctx = createSdkStreamContext({
+    resolveSubagentAgentId() {
+      return "agent_stale_subagent";
+    },
+  });
+  ctx.parentToolUseId = "toolu_stale";
+
+  const assistantEvents = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_main_usage",
+      session_id: "session_1",
+      message: {
+        id: "msg_main",
+        usage: { input_tokens: 900, output_tokens: 90 },
+        content: [{ type: "text", text: "final answer" }],
+      },
+    },
+    "thr_1",
+    ctx,
+  );
+  const assistantUsage = assistantEvents.find((event) => event.type === "usage.recorded");
+  expect(assistantUsage?.agentId).toBe("session_1");
+  expect((assistantUsage?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
+
+  const resultEvents = mapSdkMessageToEvents(
+    {
+      type: "result",
+      subtype: "success",
+      uuid: "sdk_result",
+      session_id: "session_1",
+      total_cost_usd: 0.5,
+      usage: { input_tokens: 100, output_tokens: 20 },
+      modelUsage: { "claude-opus-4": { input_tokens: 100 } },
+    },
+    "thr_1",
+    ctx,
+  );
+  const resultUsage = resultEvents.find((event) => event.type === "usage.recorded");
+  expect(resultUsage?.agentId).toBe("session_1");
+  expect((resultUsage?.payload as Record<string, unknown>).parent_tool_use_id).toBeUndefined();
+});
+
 test("preserves subagent metadata on tool_use events", () => {
   const events = mapSdkMessageToEvents(
     {
@@ -1503,7 +1572,9 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(query?.prompt).not.toContain("Do not create an implementation plan");
 
   const options = query?.options ?? {};
-  expect(options.model).toBe("research-main-model");
+  // Main agent requests go through the planner role route (proxy alias) so billing
+  // attributes the usage to the planner role even when models are shared across roles.
+  expect(options.model).toBe("claude-opus-4");
   expect(options.allowedTools).toEqual([
     "Agent",
     "TaskList",

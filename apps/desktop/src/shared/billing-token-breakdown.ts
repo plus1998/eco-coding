@@ -41,6 +41,73 @@ export interface BillingTokenBreakdown {
   byModel: BillingModelRow[];
 }
 
+export interface BillingAgentViewRow extends BillingAgentRow {
+  kind: "primary" | "unattributed";
+}
+
+interface SubagentUsageLike {
+  role: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  ecoCostUsd: number;
+}
+
+const UNATTRIBUTED_COST_EPSILON_USD = 0.000001;
+
+/**
+ * Splits role-level usage into per-role rows for the agent view: roles without subagent rows
+ * stay as-is; for roles with subagent rows, only the remainder that individual subagents did
+ * not account for is kept (as an "unattributed" row), so attribution gaps stay visible
+ * instead of being hidden whenever subagent rows merely exist.
+ */
+export function buildAgentViewRows(
+  byAgent: readonly BillingAgentRow[],
+  subagents: readonly SubagentUsageLike[],
+): BillingAgentViewRow[] {
+  const attributedByRole = new Map<string, SubagentUsageLike>();
+  for (const row of subagents) {
+    const existing = attributedByRole.get(row.role);
+    if (existing) {
+      existing.inputTokens += row.inputTokens;
+      existing.outputTokens += row.outputTokens;
+      existing.cacheReadTokens += row.cacheReadTokens;
+      existing.cacheCreationTokens += row.cacheCreationTokens;
+      existing.ecoCostUsd += row.ecoCostUsd;
+      continue;
+    }
+    attributedByRole.set(row.role, { ...row });
+  }
+
+  const rows: BillingAgentViewRow[] = [];
+  for (const row of byAgent) {
+    const attributed = attributedByRole.get(row.role);
+    if (!attributed) {
+      rows.push({ ...row, kind: "primary" });
+      continue;
+    }
+    const remainder = {
+      inputTokens: Math.max(0, row.inputTokens - attributed.inputTokens),
+      outputTokens: Math.max(0, row.outputTokens - attributed.outputTokens),
+      cacheReadTokens: Math.max(0, row.cacheReadTokens - attributed.cacheReadTokens),
+      cacheCreationTokens: Math.max(0, row.cacheCreationTokens - attributed.cacheCreationTokens),
+      ecoCostUsd: Math.max(0, row.ecoCostUsd - attributed.ecoCostUsd),
+    };
+    const hasTokens = roleUsageTotal(remainder) > 0;
+    if (!hasTokens && remainder.ecoCostUsd < UNATTRIBUTED_COST_EPSILON_USD) {
+      continue;
+    }
+    rows.push({
+      ...row,
+      ...remainder,
+      tokenBadge: toTokenBadge(remainder),
+      kind: "unattributed",
+    });
+  }
+  return rows;
+}
+
 function roleUsageTotal(entry: {
   inputTokens: number;
   outputTokens: number;

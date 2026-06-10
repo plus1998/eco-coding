@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { formatCostUsd, formatRoleModelLabel, formatUsageBadge } from "@eco/runtime";
-import { buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
+import { buildAgentViewRows, buildBillingTokenBreakdown } from "../shared/billing-token-breakdown";
 import type { ThreadBillingSnapshot, ThreadSubagentBillingSnapshot } from "../shared/ipc";
 import {
   type RuntimeAgentDisplayNames,
@@ -74,14 +74,13 @@ function BreakdownRows({
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   if (view === "agent") {
-    const rolesWithSubagents = new Set(subagents.map((row) => row.role));
-    const agentRows = breakdown.byAgent.filter((row) => !rolesWithSubagents.has(row.role));
+    const agentRows = buildAgentViewRows(breakdown.byAgent, subagents);
 
     return (
       <ul className={`usage-breakdown-list${compact ? " usage-breakdown-list-compact" : ""}`}>
         {agentRows.map((row) => (
           <li
-            key={row.role}
+            key={`${row.role}:${row.kind}`}
             className="usage-breakdown-row"
             title={
               row.modelId
@@ -90,7 +89,9 @@ function BreakdownRows({
             }
           >
             <span className="usage-breakdown-label">
-              {resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label}
+              {`${resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label}${
+                row.kind === "unattributed" ? " · 未归属" : ""
+              }`}
             </span>
             <span className="usage-breakdown-tokens" title="↑ 输入 ↓ 输出 ⊙ 缓存">
               {row.tokenBadge}

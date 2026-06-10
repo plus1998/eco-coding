@@ -943,9 +943,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       .filter(Boolean)
       .join("\n\n");
     const session = resolveSdkSessionOptions(input.sdkSession);
+    // Profile agents must request the role route's model id (the proxy alias), so the local
+    // proxy can attribute usage to the right agent role instead of guessing by shared model.
+    const routeModelByRole = new Map(input.routes.map((route) => [route.role, route.primary.modelId]));
     const dynamicAgents = input.agentRegistry
       ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
+          resolveModelId: (agentKey, modelId) => routeModelByRole.get(agentKey) ?? modelId,
         })
       : undefined;
     const dynamicProfileDefinitions =
@@ -1011,7 +1015,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const allowedTools = this.options.toolPermissionHandler
       ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
       : mergeAllowedTools(mainAllowedTools, input.sdkSession);
-    const mainModel = input.agentRegistry?.profile.mainAgent.modelRef.modelId ?? plannerRoute.primary.modelId;
+    // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
+    // attributed to the planner role; raw profile model ids are ambiguous when multiple
+    // roles share the same upstream model.
+    const mainModel =
+      findRoute(input.routes, "planner")?.primary.modelId ??
+      input.agentRegistry?.profile.mainAgent.modelRef.modelId ??
+      plannerRoute.primary.modelId;
     const systemPrompt = input.agentRegistry
       ? buildMainAgentSystemPrompt(
           input.agentRegistry.profile,
@@ -1961,7 +1971,11 @@ export function mapSdkMessageToEvents(
       subtype: message.subtype,
       ...(typeof message.result === "string" && { result: message.result }),
     };
-    const attributed = applySubagentUsageAttribution({ role, sessionId, payload: resultPayload }, streamCtx);
+    // Result messages summarize the main session; never attribute them to a stale subagent context.
+    const attributed = applySubagentUsageAttribution(
+      { role, sessionId, payload: resultPayload, messageParentToolUseId: null },
+      streamCtx,
+    );
     return [
       createAgentEvent({
         id: `${uuid}:usage`,
@@ -2038,6 +2052,9 @@ function mapAssistantMessageToEvents(
 ): AgentEvent[] {
   const events: AgentEvent[] = [];
 
+  const messageParentToolUseId =
+    typeof message.parent_tool_use_id === "string" ? message.parent_tool_use_id : null;
+
   if (isRecord(message.message)) {
     const nested = message.message;
     const messageId = typeof nested.id === "string" ? nested.id : undefined;
@@ -2046,9 +2063,11 @@ function mapAssistantMessageToEvents(
         usage: nested.usage,
         ...(messageId && { messageId }),
         ...(typeof nested.model === "string" && { model: nested.model }),
+        ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
+        ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
       };
       const attributed = applySubagentUsageAttribution(
-        { role, sessionId, payload: assistantPayload },
+        { role, sessionId, payload: assistantPayload, messageParentToolUseId },
         streamCtx,
       );
       events.push(
