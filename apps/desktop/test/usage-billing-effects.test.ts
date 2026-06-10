@@ -84,6 +84,9 @@ function createLedgerCoordinator() {
     listAgentInstances(threadId: string): AgentInstanceRecord[] {
       return ledger.listAgentInstances(threadId);
     },
+    updateUsageLedgerEventAttribution(eventId, update) {
+      return Boolean(ledger.updateUsageEventAttribution(eventId, update));
+    },
   };
   const coordinator = new UsageLedgerCoordinator({
     store,
@@ -143,6 +146,7 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
     runtimeRoutes: routes,
     lookupPricing,
     agentId: "agent_coder",
+    modelId: "haiku",
     requestKey: "proxy:coder:req_1",
   });
 

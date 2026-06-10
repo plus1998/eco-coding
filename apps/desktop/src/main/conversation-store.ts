@@ -1639,6 +1639,22 @@ export class ConversationStore {
     return (result.changes ?? 0) > 0;
   }
 
+  updateUsageLedgerEventAttribution(
+    eventId: string,
+    update: { agentId?: string; attribution: UsageAttribution },
+  ): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE thread_usage_ledger_events
+         SET agent_id = ?, attribution_json = ?
+         WHERE id = ?`,
+      )
+      .run(update.agentId ?? null, JSON.stringify(update.attribution), eventId) as {
+      changes?: number;
+    };
+    return (result.changes ?? 0) > 0;
+  }
+
   listUsageLedgerEvents(threadId: string): UsageLedgerEvent[] {
     const rows = this.db
       .prepare(
@@ -2818,6 +2834,14 @@ function parseUsageAttributionJson(raw: string): UsageAttribution {
     const parsed = JSON.parse(raw) as Partial<UsageAttribution>;
     if (parsed.status === "attributed" && typeof parsed.agentId === "string" && parsed.agentId.trim()) {
       return { status: "attributed", agentId: parsed.agentId.trim() };
+    }
+    if (parsed.status === "pending") {
+      return {
+        status: "pending",
+        ...(typeof parsed.reason === "string" && parsed.reason.trim()
+          ? { reason: parsed.reason.trim() }
+          : {}),
+      };
     }
     if (parsed.status === "unattributed") {
       return {

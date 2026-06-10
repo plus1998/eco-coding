@@ -21,6 +21,7 @@ import type {
   ThreadStatus,
   WorkspaceInfo,
 } from "../shared/ipc";
+import { collectBillingOpenBoundaryNotes } from "../shared/billing-open-boundaries";
 import { filterVisibleBillingDiagnostics } from "../shared/billing-diagnostics-visibility";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import {
@@ -127,12 +128,15 @@ function BillingDiagnostics({
   threadStatus: ThreadStatus | undefined;
 }) {
   const diagnostics = visibleBillingDiagnostics(billing, threadStatus);
-  if (diagnostics.length === 0) {
+  const openBoundaries = collectBillingOpenBoundaryNotes(billing);
+  if (diagnostics.length === 0 && openBoundaries.length === 0) {
     return null;
   }
   const highestSeverity = diagnostics.some((diagnostic) => diagnostic.severity === "error")
     ? "error"
-    : "warning";
+    : diagnostics.length > 0
+      ? "warning"
+      : "info";
   return (
     <div className={`thread-info-billing-diagnostics ${highestSeverity}`} role="status">
       <AlertTriangle size={13} aria-hidden />
@@ -140,6 +144,11 @@ function BillingDiagnostics({
         {diagnostics.slice(0, 4).map((diagnostic, index) => (
           <li key={`${diagnostic.type}-${diagnostic.field ?? ""}-${diagnostic.agentId ?? ""}-${index}`}>
             {diagnostic.message}
+          </li>
+        ))}
+        {openBoundaries.map((note) => (
+          <li key={note.id} className="thread-info-billing-open-boundary">
+            <span className="thread-info-billing-boundary-id">{note.id}</span> {note.message}
           </li>
         ))}
       </ul>
@@ -306,6 +315,7 @@ function ContextFloatPillLabel({ context }: { context?: ThreadContextSnapshot })
 
 function BillingFloatingCard({
   billing,
+  threadId,
   threadStatus,
   tokenBadge,
   plannerLabel,
@@ -315,6 +325,7 @@ function BillingFloatingCard({
   onDismiss,
 }: {
   billing?: ThreadBillingSnapshot;
+  threadId?: string;
   threadStatus?: ThreadStatus;
   tokenBadge: string | null;
   plannerLabel: string;
@@ -390,6 +401,7 @@ function BillingFloatingCard({
         <UsageBreakdownPanel
           billing={billing}
           variant="full"
+          {...(threadId !== undefined && { threadId })}
           {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}
@@ -627,6 +639,7 @@ function ThreadInfoFloatStack({
             {(closePanel) => (
               <BillingFloatingCard
                 {...(billing !== undefined && { billing })}
+                {...(threadId !== undefined && { threadId })}
                 {...(threadStatus !== undefined && { threadStatus })}
                 tokenBadge={tokenBadge}
                 plannerLabel={plannerLabel}

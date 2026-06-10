@@ -21,6 +21,10 @@ import {
   type UsageLegacyBillingAccumulator,
 } from "./usage-legacy-billing";
 import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
+import {
+  readBillingRole,
+  readRouteRole,
+} from "./proxy-usage-pending-settlement";
 import type {
   ResolvedSdkRunBillingModel,
   SdkStreamPartialBillingArtifacts,
@@ -43,7 +47,10 @@ export interface UsageBillingUpdatedEvent {
 
 export interface UsageBillingEffectsServices {
   context: UsageContextService;
-  usageLedger: Pick<UsageLedgerCoordinator, "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow">;
+  usageLedger: Pick<
+    UsageLedgerCoordinator,
+    "appendEvents" | "resolveBillingSnapshot" | "reconcileShadow" | "registerProxyPendingAttribution"
+  >;
   accumulator: UsageLegacyBillingAccumulator;
   subagentMetrics: Pick<SubagentMetricsRegistry, "recordContextObservation" | "recordSdkUsage">;
   billingSnapshotSelection?: BillingSnapshotSelectionPolicy;
@@ -94,6 +101,15 @@ export async function applySingleUsageBillingEffects(
 ): Promise<ThreadBillingSnapshot> {
   const { artifacts } = input;
   services.usageLedger.appendEvents([artifacts.ledgerEvent]);
+  if (artifacts.ledgerEvent.attribution.status === "pending") {
+    services.usageLedger.registerProxyPendingAttribution(input.threadId, {
+      eventId: artifacts.ledgerEvent.id,
+      requestKey: artifacts.requestKey,
+      routeRole: readRouteRole(artifacts.ledgerEvent),
+      billingRole: readBillingRole(artifacts.ledgerEvent),
+      observedAt: artifacts.ledgerEvent.observedAt,
+    });
+  }
 
   await services.context.applyUpdate({
     threadId: input.threadId,

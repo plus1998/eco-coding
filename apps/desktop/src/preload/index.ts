@@ -77,6 +77,7 @@ import {
   type ThreadSummary,
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageSnapshotResult,
+  type ThreadUsageLedgerEventView,
   type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
@@ -270,6 +271,9 @@ const api = {
   },
   getThreadUsageSnapshot(threadId: string): Promise<ThreadUsageSnapshotResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadGetUsageSnapshot, threadId);
+  },
+  listUsageLedgerEvents(threadId: string): Promise<ThreadUsageLedgerEventView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadUsageLedgerEventsList, threadId);
   },
   getPendingClarification(threadId: string): Promise<ClarificationRequest | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.clarificationGetPending, threadId);

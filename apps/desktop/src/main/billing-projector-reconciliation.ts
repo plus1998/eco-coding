@@ -111,6 +111,15 @@ function comparePrimarySource(
   issues: BillingProjectionReconciliationIssue[],
 ): void {
   if (projection.primarySource === legacy.primarySource) {
+    if (hasSyntheticSdkCompatibilityBreakdown(projection, legacy)) {
+      issues.push({
+        type: "synthetic_sdk_primary",
+        severity: "info",
+        source: projection.primarySource,
+        projectionValue: projection.primarySource,
+        legacyValue: "sdk",
+      });
+    }
     return;
   }
   if (legacy.primarySource === "sdk" && projection.primarySource && isSyntheticSdkPrimary(projection, legacy)) {
@@ -244,6 +253,13 @@ function compareCost(
 }
 
 function isSyntheticSdkPrimary(
+  projection: ThreadBillingSnapshot,
+  legacy: ThreadBillingSnapshot,
+): boolean {
+  return hasSyntheticSdkCompatibilityBreakdown(projection, legacy);
+}
+
+function hasSyntheticSdkCompatibilityBreakdown(
   projection: ThreadBillingSnapshot,
   legacy: ThreadBillingSnapshot,
 ): boolean {

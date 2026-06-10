@@ -1,7 +1,6 @@
 import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
 import {
   AGENT_ROLES,
-  type BillingUsageSource,
   type RuntimeAgentRole,
   type ThreadBillingModelSnapshot,
   type ThreadBillingSnapshot,
@@ -9,7 +8,6 @@ import {
 
 type RoleUsageEntry = NonNullable<ThreadBillingSnapshot["byRole"]>[string];
 
-const SUPPLEMENTAL_SOURCE_ORDER: BillingUsageSource[] = ["otel", "proxy", "sdk"];
 const ROLE_ORDER = new Map<string, number>(AGENT_ROLES.map((role, index) => [role, index]));
 
 export interface BillingAgentRow {
@@ -33,6 +31,7 @@ export interface BillingModelRow {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   ecoCostUsd: number;
+  reportedCostUsd?: number;
   tokenBadge: string;
 }
 
@@ -42,7 +41,7 @@ export interface BillingTokenBreakdown {
 }
 
 export interface BillingAgentViewRow extends BillingAgentRow {
-  kind: "primary" | "unattributed";
+  kind: "primary" | "unattributed" | "pending";
 }
 
 interface SubagentUsageLike {
@@ -140,34 +139,16 @@ function hasRoleUsage(entry: RoleUsageEntry | undefined): entry is NonNullable<R
   return Boolean(entry && (roleUsageTotal(entry) > 0 || entry.ecoCostUsd > 0));
 }
 
-/** Primary source drives headline byRole; fill missing roles from other sources without double-counting overlaps. */
+/** Primary snapshot only — no cross-source supplementation (Phase 3.1). */
 function collectDisplayByRole(
   billing: ThreadBillingSnapshot,
 ): Partial<Record<RuntimeAgentRole, NonNullable<RoleUsageEntry>>> {
   const merged: Partial<Record<RuntimeAgentRole, NonNullable<RoleUsageEntry>>> = {};
-
-  const mergeEntries = (entries: ThreadBillingSnapshot["byRole"] | undefined) => {
-    for (const [role, entry] of Object.entries(entries ?? {})) {
-      if (merged[role]) {
-        continue;
-      }
-      if (hasRoleUsage(entry)) {
-        merged[role] = entry;
-      }
-    }
-  };
-
-  mergeEntries(billing.byRole);
-
-  if (billing.sourceBreakdown) {
-    for (const source of SUPPLEMENTAL_SOURCE_ORDER) {
-      if (source === billing.primarySource) {
-        continue;
-      }
-      mergeEntries(billing.sourceBreakdown[source]?.byRole);
+  for (const [role, entry] of Object.entries(billing.byRole ?? {})) {
+    if (hasRoleUsage(entry)) {
+      merged[role] = entry;
     }
   }
-
   return merged;
 }
 
@@ -183,36 +164,12 @@ function sortRoleKeys(roles: Iterable<string>): string[] {
 }
 
 function collectDisplayByModel(billing: ThreadBillingSnapshot): ThreadBillingModelSnapshot[] {
-  const modelMap = new Map<string, ThreadBillingModelSnapshot>();
-
-  const addModel = (entry: ThreadBillingModelSnapshot) => {
-    if (roleUsageTotal(entry) <= 0 && entry.ecoCostUsd <= 0) {
-      return;
-    }
-    if (!modelMap.has(entry.modelId)) {
-      modelMap.set(entry.modelId, { ...entry, roles: [...entry.roles] });
-    }
-  };
-
-  for (const entry of billing.byModel ?? []) {
-    addModel(entry);
-  }
-
-  if (billing.sourceBreakdown) {
-    for (const source of SUPPLEMENTAL_SOURCE_ORDER) {
-      if (source === billing.primarySource) {
-        continue;
-      }
-      for (const entry of billing.sourceBreakdown[source]?.byModel ?? []) {
-        addModel(entry);
-      }
-    }
-  }
-
-  return [...modelMap.values()].sort((left, right) => {
-    const tokenDiff = roleUsageTotal(right) - roleUsageTotal(left);
-    return tokenDiff !== 0 ? tokenDiff : left.modelId.localeCompare(right.modelId);
-  });
+  return [...(billing.byModel ?? [])]
+    .filter((entry) => roleUsageTotal(entry) > 0 || entry.ecoCostUsd > 0)
+    .sort((left, right) => {
+      const tokenDiff = roleUsageTotal(right) - roleUsageTotal(left);
+      return tokenDiff !== 0 ? tokenDiff : left.modelId.localeCompare(right.modelId);
+    });
 }
 
 function toModelRows(entries: ThreadBillingModelSnapshot[]): BillingModelRow[] {
@@ -225,6 +182,8 @@ function toModelRows(entries: ThreadBillingModelSnapshot[]): BillingModelRow[] {
     cacheReadTokens: entry.cacheReadTokens,
     cacheCreationTokens: entry.cacheCreationTokens,
     ecoCostUsd: entry.ecoCostUsd,
+    ...(entry.reportedCostUsd !== undefined &&
+      entry.reportedCostUsd > 0 && { reportedCostUsd: entry.reportedCostUsd }),
     tokenBadge: toTokenBadge(entry),
   }));
 }

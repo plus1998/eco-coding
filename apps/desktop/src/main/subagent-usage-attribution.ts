@@ -19,6 +19,8 @@ export interface ResolveSubagentUsageAttributionInput {
   resolver: SubagentUsageAttributionResolver;
   explicitSubagentId?: string;
   parentToolUseId?: string;
+  stampedAgentId?: string;
+  stampedBillingRole?: RuntimeAgentRole;
 }
 
 export interface SubagentUsageAttribution {
@@ -30,7 +32,33 @@ export interface SubagentUsageAttribution {
 export function resolveSubagentUsageAttribution(
   input: ResolveSubagentUsageAttributionInput,
 ): SubagentUsageAttribution {
-  let billingRole = input.role;
+  let billingRole = input.stampedBillingRole ?? input.role;
+  const stampedAgentId = input.stampedAgentId?.trim();
+  if (stampedAgentId) {
+    const entryRole = input.resolver.roleForAgentId(input.threadId, stampedAgentId);
+    if (entryRole) {
+      billingRole = entryRole;
+    }
+    return {
+      billingRole,
+      attempted: true,
+      subagentAgentId: stampedAgentId,
+    };
+  }
+
+  const explicitSubagentId = input.explicitSubagentId?.trim();
+  if (explicitSubagentId) {
+    const entryRole = input.resolver.roleForAgentId(input.threadId, explicitSubagentId);
+    if (entryRole) {
+      billingRole = entryRole;
+    }
+    return {
+      billingRole,
+      attempted: true,
+      subagentAgentId: explicitSubagentId,
+    };
+  }
+
   const shouldResolve =
     isSubagentBillingRole(input.role) ||
     Boolean(input.explicitSubagentId) ||

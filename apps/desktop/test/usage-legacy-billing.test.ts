@@ -51,7 +51,37 @@ async function lookupPricing(route: UsageBillingPricingRoute): Promise<ModelPric
   };
 }
 
-test("recordLegacySingleUsageBilling fills synthetic SDK primary for subagent compatibility", async () => {
+test("recordLegacySingleUsageBilling keeps proxy primary when synthetic fill is disabled", async () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_legacy_proxy_only",
+    role: "coder",
+    source: "proxy",
+    usage: usage(2_000),
+    runtimeRoutes: routes,
+    lookupPricing,
+    agentId: "agent_coder",
+    requestKey: "proxy:coder:req_1",
+  });
+
+  const result = recordLegacySingleUsageBilling(accumulator, {
+    threadId: "thr_legacy_proxy_only",
+    artifacts,
+    agentId: "agent_coder",
+    reconciliationOnly: true,
+    fillSdkPrimaryForSubagent: false,
+  });
+
+  expect(result.filledSdkPrimary).toBe(false);
+  expect(result.syntheticSdkPrimaryDecision).toEqual({
+    fill: false,
+    reason: "not_requested",
+  });
+  expect(result.snapshot.primarySource).toBe("proxy");
+  expect(result.snapshot.sourceBreakdown?.sdk).toBeUndefined();
+});
+
+test("recordLegacySingleUsageBilling fills synthetic SDK primary when explicitly requested", async () => {
   const accumulator = new ThreadUsageAccumulator();
   const artifacts = await resolveSingleUsageBillingArtifacts({
     threadId: "thr_legacy_single",
@@ -77,7 +107,7 @@ test("recordLegacySingleUsageBilling fills synthetic SDK primary for subagent co
     fill: true,
     reason: "subagent_compatibility",
   });
-  expect(result.snapshot.primarySource).toBe("sdk");
+  expect(result.snapshot.primarySource).toBe("proxy");
   expect(result.snapshot.sourceBreakdown?.proxy).toBeDefined();
   expect(result.snapshot.sourceBreakdown?.sdk).toBeDefined();
   expect(

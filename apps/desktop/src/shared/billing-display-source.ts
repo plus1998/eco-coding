@@ -6,15 +6,11 @@ import type {
   ThreadStatus,
 } from "./ipc";
 
-export function shouldUseProxyBillingDisplay(threadStatus: ThreadStatus | undefined): boolean {
-  return threadStatus === "running" || threadStatus === "queued";
-}
-
 export function resolveBillingDisplaySource(
   billing: ThreadBillingSnapshot,
-  threadStatus: ThreadStatus | undefined,
+  _threadStatus?: ThreadStatus,
 ): BillingUsageSource | undefined {
-  if (shouldUseProxyBillingDisplay(threadStatus) && billing.sourceBreakdown?.proxy) {
+  if (billing.sourceBreakdown?.proxy) {
     return "proxy";
   }
   return billing.primarySource;

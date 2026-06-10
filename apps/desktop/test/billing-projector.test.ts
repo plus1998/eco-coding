@@ -211,3 +211,67 @@ test("projectBillingFromUsageLedger keeps partial and context events out of bill
   expect(projection.contextEvents).toEqual([context]);
   expect(projection.byAgent).toEqual({});
 });
+
+test("projectBillingFromUsageLedger prefers proxy primary when proxy events exist", () => {
+  const usage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const proxyEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "proxy",
+    sourceEventId: "proxy:coder:req_1",
+    requestKey: "proxy:coder:req_1",
+    usage,
+    computedBilling: billingFor(usage),
+    modelId: "haiku",
+  });
+  const sdkEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "sdk",
+    sourceEventId: "sdk-assistant:msg_1",
+    usageKind: "assistant_fallback",
+    usage,
+    computedBilling: billingFor(usage),
+    sdkMessageId: "msg_1",
+    modelId: "haiku",
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [proxyEvent, sdkEvent] });
+
+  expect(projection.snapshot?.primarySource).toBe("proxy");
+  expect(projection.snapshot?.totalTokens.input).toBe(10_000);
+  expect(projection.snapshot?.sourceBreakdown?.sdk).toBeUndefined();
+});
+
+test("projectBillingFromUsageLedger skips duplicate sdk totals when proxy already billable", () => {
+  const usage = { inputTokens: 5_000, outputTokens: 500, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const proxyEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "proxy",
+    sourceEventId: "proxy:coder:req_dup",
+    requestKey: "proxy:coder:req_dup",
+    providerRequestId: "req_dup",
+    usage,
+    computedBilling: billingFor(usage),
+    agentId: "agent_coder",
+    modelId: "haiku",
+  });
+  const sdkEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector",
+    role: "coder",
+    source: "sdk",
+    sourceEventId: "sdk-result:evt_dup",
+    requestKey: "sdk-result:evt_dup",
+    usage,
+    computedBilling: billingFor(usage),
+    agentId: "agent_coder",
+    modelId: "haiku",
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [proxyEvent, sdkEvent] });
+
+  expect(projection.snapshot?.primarySource).toBe("proxy");
+  expect(projection.snapshot?.totalTokens.input).toBe(5_000);
+  expect(projection.snapshot?.byRole?.coder?.inputTokens).toBe(5_000);
+});

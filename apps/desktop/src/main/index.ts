@@ -41,6 +41,7 @@ import {
 } from "@eco/workspace";
 import { evaluateThreadBashPermission } from "./thread-bash-permission";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
+import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   AGENT_ROLES,
@@ -110,6 +111,7 @@ import {
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageSnapshot,
   type ThreadUsageSnapshotResult,
+  type ThreadUsageLedgerEventView,
   type WorkspaceInfo,
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
@@ -220,6 +222,7 @@ import {
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
+import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
 import {
   formatUserFacingRequestError,
   REQUEST_AUTO_RETRY_INTERVAL_MS,
@@ -369,6 +372,7 @@ const activeRunBillingState = new ActiveRunBillingStateStore();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
+const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
 let agentLifecycle: AgentLifecycleService;
 let usageLedgerCoordinator: UsageLedgerCoordinator;
 let subagentMetricsRegistry: SubagentMetricsRegistry;
@@ -393,6 +397,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
 function finishActiveRun(threadId: string): void {
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
+  proxyBillingStampRegistry.clearThread(threadId);
 }
 
 async function createMainWindow(): Promise<void> {
@@ -434,6 +439,10 @@ app.whenReady().then(async () => {
     metrics: subagentMetricsRegistry,
     logDiag: logEcoDiag,
     logDiagThrottled: logEcoDiagThrottled,
+    onProxyAttributionSettled: (threadId) => {
+      schedulePersistThreadMetrics(threadId);
+      emitSubagentTimingUpdated(threadId);
+    },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
@@ -1667,11 +1676,24 @@ function registerIpcHandlers(): void {
       return {} satisfies ThreadUsageSnapshotResult;
     }
     const id = threadId.trim();
-    const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(id);
     const legacyBilling = threadUsageAccumulator.getSnapshot(id);
-    const billingBase = ledgerBilling
-      ? usageLedgerCoordinator.enrichBillingSnapshot(id, ledgerBilling)
-      : legacyBilling;
+    const selectionOptions = resolveBillingSnapshotSelectionOptions({
+      ...(legacyBilling?.plannerModelLabel && { plannerModelLabel: legacyBilling.plannerModelLabel }),
+    });
+    let billingBase: ThreadBillingSnapshot | undefined;
+    if (legacyBilling) {
+      const billingSelection = usageLedgerCoordinator.resolveBillingSnapshot(
+        id,
+        legacyBilling,
+        selectionOptions,
+      );
+      billingBase = usageLedgerCoordinator.enrichBillingSnapshot(id, billingSelection.snapshot);
+    } else {
+      const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(id);
+      billingBase = ledgerBilling
+        ? usageLedgerCoordinator.enrichBillingSnapshot(id, ledgerBilling)
+        : undefined;
+    }
     const billing = billingBase
       ? enrichBillingDisplaySource(billingBase, conversationStore.getThread(id)?.status)
       : undefined;
@@ -1680,6 +1702,13 @@ function registerIpcHandlers(): void {
       ...(billing && { billing }),
       ...(context && { context }),
     } satisfies ThreadUsageSnapshotResult;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadUsageLedgerEventsList, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      return [] as ThreadUsageLedgerEventView[];
+    }
+    return usageLedgerCoordinator.listUsageLedgerEventViews(threadId.trim());
   });
 
   ipcMain.handle(IPC_CHANNELS.threadGetPendingPlan, async (_event, threadId: unknown) => {
@@ -3606,6 +3635,20 @@ function buildSdkHookContextExtras(
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
     onTimingChanged: () => emitSubagentTimingUpdated(threadId),
+    onProxyAttributionSettled: ({ agentId, role }) => {
+      usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, { agentId, role });
+    },
+    onSubagentBillingStamp: ({ agentId, role, parentToolUseId, runAttemptId }) => {
+      proxyBillingStampRegistry.register(threadId, {
+        agentId,
+        role,
+        ...(parentToolUseId && { parentToolUseId }),
+        ...(runAttemptId && { runAttemptId }),
+      });
+    },
+    onSubagentBillingStampClear: ({ agentId }) => {
+      proxyBillingStampRegistry.unregister(threadId, agentId);
+    },
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
     consumePendingLaunch: (input) => {
       const roleIndex = pendingLaunches.findIndex((pending) => pending.role === input.role);
@@ -4473,12 +4516,22 @@ async function emitProxyUsage(
   const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const currentRequestSeq = activeRunBillingState.proxyRequestSeq(info.threadId);
+  const registryStamp = proxyBillingStampRegistry.resolveForRoute(info.threadId, info.role);
   const resolved = resolveProxyUsageBilling({
     info,
     ...(currentRequestSeq !== undefined && { currentRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
     resolver: subagentMetricsRegistry,
+    ...(info.stampedAgentId ?? registryStamp?.agentId
+      ? { stampedAgentId: info.stampedAgentId ?? registryStamp?.agentId }
+      : {}),
+    ...(info.stampedBillingRole ?? registryStamp?.billingRole
+      ? { stampedBillingRole: info.stampedBillingRole ?? registryStamp?.billingRole }
+      : {}),
+    ...(info.stampedParentToolUseId ?? registryStamp?.parentToolUseId
+      ? { stampedParentToolUseId: info.stampedParentToolUseId ?? registryStamp?.parentToolUseId }
+      : {}),
   });
   activeRunBillingState.recordProxyRequest(info.threadId, {
     nextRequestSeq: resolved.nextRequestSeq,

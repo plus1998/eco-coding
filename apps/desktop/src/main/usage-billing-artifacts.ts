@@ -23,7 +23,14 @@ import {
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import { buildUsageRequestKey } from "./thread-usage-accumulator";
 import { buildSingleUsageLedgerEvent } from "./usage-ledger-adapters";
-import type { UsageLedgerEvent } from "./usage-ledger";
+import type { UsageAttribution, UsageLedgerEvent } from "./usage-ledger";
+import {
+  PROXY_PENDING_ATTRIBUTION_REASON,
+  USAGE_LEDGER_BILLING_ROLE_METADATA_KEY,
+  USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY,
+  USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY,
+  USAGE_LEDGER_PROVIDER_ID_METADATA_KEY,
+} from "./proxy-usage-pending-settlement";
 
 export interface UsageBillingPricingRoute {
   provider: { baseUrl: string };
@@ -78,13 +85,42 @@ export interface ResolveSingleUsageBillingArtifactsInput {
   sourceEventId?: string;
   providerRequestId?: string;
   otelDedupId?: string;
+  routeRole?: RuntimeAgentRole;
+  attributionPending?: boolean;
+  aliasModelId?: string;
+  providerId?: string;
 }
 
 export async function resolveSingleUsageBillingArtifacts(
   input: ResolveSingleUsageBillingArtifactsInput,
 ): Promise<SingleUsageBillingArtifacts> {
-  const usageRoute = resolveUsageRoute(input.role, input.modelId, input.runtimeRoutes);
+  const source = input.source ?? "otel";
   const plannerRoute = input.runtimeRoutes.find((route) => route.role === "planner");
+
+  let usageRoute: ResolvedUsageRoute | undefined;
+  let billingRole: RuntimeAgentRole;
+  let resolvedModelId: string | undefined;
+
+  if (source === "proxy") {
+    billingRole = input.role;
+    resolvedModelId = input.modelId?.trim() || undefined;
+    const roleRoute = input.runtimeRoutes.find((route) => route.role === billingRole);
+    usageRoute = roleRoute
+      ? {
+          role: roleRoute.role,
+          provider: roleRoute.provider,
+          modelId: roleRoute.modelId,
+          ...(roleRoute.modelsDevMapping && { modelsDevMapping: roleRoute.modelsDevMapping }),
+          ...(roleRoute.manualSpec && { manualSpec: roleRoute.manualSpec }),
+        }
+      : undefined;
+  } else {
+    usageRoute = resolveUsageRoute(input.role, input.modelId, input.runtimeRoutes);
+    resolvedModelId =
+      resolvePublicModelId(input.role, input.modelId, input.runtimeRoutes) ?? input.modelId;
+    billingRole = usageRoute?.role ?? input.role;
+  }
+
   const actualLookup = usageRoute ? await input.lookupPricing(usageRoute) : null;
   const plannerLookup = plannerRoute ? await input.lookupPricing(plannerRoute) : null;
   const actualRates = resolveRatesForRoute(actualLookup, usageRoute?.manualSpec);
@@ -101,13 +137,13 @@ export async function resolveSingleUsageBillingArtifacts(
       ...(input.otelDedupId && { dedupId: input.otelDedupId }),
     });
 
-  const source = input.source ?? "otel";
-  const resolvedModelId =
-    resolvePublicModelId(input.role, input.modelId, input.runtimeRoutes) ?? input.modelId;
-  const billingRole = usageRoute?.role ?? input.role;
   const requestBilling = computeRequestBilling(input.usage, actualRates, plannerRates);
   const { savedUsd } = computeSavings(requestBilling.plannerTokenCostUsd, requestBilling.ecoCostUsd);
   const ledgerAgentId = input.agentId ?? (billingRole === "planner" ? input.plannerAgentId : undefined);
+  const ledgerAttribution: UsageAttribution | undefined =
+    source === "proxy" && input.attributionPending && !ledgerAgentId
+      ? { status: "pending", reason: PROXY_PENDING_ATTRIBUTION_REASON }
+      : undefined;
   const parsedUsage: ParsedUsage = {
     inputTokens: input.usage.inputTokens,
     outputTokens: input.usage.outputTokens,
@@ -152,6 +188,7 @@ export async function resolveSingleUsageBillingArtifacts(
       requestKey,
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(ledgerAgentId && { agentId: ledgerAgentId }),
+      ...(ledgerAttribution && { attribution: ledgerAttribution }),
       ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
       ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
       ...(input.messageId && { sdkMessageId: input.messageId }),
@@ -159,6 +196,10 @@ export async function resolveSingleUsageBillingArtifacts(
       ...(input.otelCostUsd !== undefined && { reportedCostUsd: input.otelCostUsd }),
       metadata: {
         path: "processUsageBilling",
+        ...(input.routeRole && { [USAGE_LEDGER_ROUTE_ROLE_METADATA_KEY]: input.routeRole }),
+        [USAGE_LEDGER_BILLING_ROLE_METADATA_KEY]: billingRole,
+        ...(input.aliasModelId && { [USAGE_LEDGER_ALIAS_MODEL_ID_METADATA_KEY]: input.aliasModelId }),
+        ...(input.providerId && { [USAGE_LEDGER_PROVIDER_ID_METADATA_KEY]: input.providerId }),
         ...(input.otelDedupId && { otelDedupId: input.otelDedupId }),
       },
     }),

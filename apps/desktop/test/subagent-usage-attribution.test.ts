@@ -67,7 +67,7 @@ test("resolveSubagentUsageAttribution lets explicit subagent context resolve fro
     explicitSubagentId: "agent_reviewer",
   });
 
-  expect(calls).toEqual([{ role: "planner", subagentAgentId: "agent_reviewer" }]);
+  expect(calls).toEqual([]);
   expect(attribution).toEqual({
     billingRole: "reviewer",
     attempted: true,

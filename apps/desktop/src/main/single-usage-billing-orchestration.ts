@@ -30,6 +30,10 @@ export interface SingleUsageBillingRequest {
   updateContext?: boolean;
   reconciliationOnly?: boolean;
   fillSdkPrimaryForSubagent?: boolean;
+  routeRole?: RuntimeAgentRole;
+  attributionPending?: boolean;
+  aliasModelId?: string;
+  providerId?: string;
 }
 
 export interface ResolveSingleUsageBillingOrchestrationInput {
@@ -82,6 +86,10 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.sourceEventId && { sourceEventId: request.sourceEventId }),
     ...(request.providerRequestId && { providerRequestId: request.providerRequestId }),
     ...(request.otelDedupId && { otelDedupId: request.otelDedupId }),
+    ...(request.routeRole && { routeRole: request.routeRole }),
+    ...(request.attributionPending && { attributionPending: true }),
+    ...(request.aliasModelId && { aliasModelId: request.aliasModelId }),
+    ...(request.providerId && { providerId: request.providerId }),
   });
   const updateContext =
     request.updateContext ?? shouldUpdateContextFromUsageSource(request.source, request.role);

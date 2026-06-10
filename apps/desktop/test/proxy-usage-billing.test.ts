@@ -109,7 +109,7 @@ test("resolveProxyUsageBilling builds observation and billing input", () => {
     runAttemptId: "attempt_1",
     plannerAgentId: "planner_attempt_1",
     reconciliationOnly: true,
-    fillSdkPrimaryForSubagent: true,
+    fillSdkPrimaryForSubagent: false,
     agentId: "agent_coder_1",
   });
 });
@@ -131,7 +131,7 @@ test("resolveProxyUsageBilling keeps request key role stable when registry role 
   });
   expect(resolved.billingInput).toMatchObject({
     role: "reviewer",
-    fillSdkPrimaryForSubagent: true,
+    fillSdkPrimaryForSubagent: false,
     agentId: "agent_reviewer_1",
   });
 });

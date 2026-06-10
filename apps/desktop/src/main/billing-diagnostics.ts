@@ -4,6 +4,7 @@ import type {
   ThreadBillingDiagnosticType,
   ThreadBillingSnapshot,
 } from "../shared/ipc";
+import type { UsageLedgerEvent } from "./usage-ledger";
 import type {
   BillingProjectionReconciliationIssue,
   BillingProjectionReconciliationResult,
@@ -13,15 +14,21 @@ export function withBillingDiagnostics(
   billing: ThreadBillingSnapshot,
   input: {
     projectionReconciliation?: BillingProjectionReconciliationResult | undefined;
+    ledgerEvents?: readonly UsageLedgerEvent[];
   } = {},
 ): ThreadBillingSnapshot {
-  const diagnostics = buildBillingDiagnostics(billing, input.projectionReconciliation);
+  const diagnostics = buildBillingDiagnostics(
+    billing,
+    input.projectionReconciliation,
+    input.ledgerEvents,
+  );
   return diagnostics.length > 0 ? { ...billing, diagnostics } : billing;
 }
 
 export function buildBillingDiagnostics(
   billing: ThreadBillingSnapshot,
   projectionReconciliation?: BillingProjectionReconciliationResult | undefined,
+  ledgerEvents?: readonly UsageLedgerEvent[],
 ): ThreadBillingDiagnostic[] {
   const diagnostics: ThreadBillingDiagnostic[] = [];
   if (!billing.pricingResolved) {
@@ -31,10 +38,73 @@ export function buildBillingDiagnostics(
       message: "部分模型未匹配 models.dev 单价，成本估算可能不完整。",
     });
   }
+  if (ledgerEvents && ledgerEvents.length > 0) {
+    appendLedgerAttributionDiagnostics(diagnostics, ledgerEvents);
+  }
   for (const issue of projectionReconciliation?.issues ?? []) {
     diagnostics.push(diagnosticFromProjectionIssue(issue));
   }
   return dedupeDiagnostics(diagnostics);
+}
+
+function appendLedgerAttributionDiagnostics(
+  diagnostics: ThreadBillingDiagnostic[],
+  events: readonly UsageLedgerEvent[],
+): void {
+  const proxyEvents = events.filter((event) => event.source === "proxy");
+  const pending = proxyEvents.filter((event) => event.attribution.status === "pending");
+  if (pending.length > 0) {
+    const pendingTokens = sumEventTokens(pending);
+    diagnostics.push({
+      type: "pending_attribution",
+      severity: "warning",
+      count: pending.length,
+      message: `有 ${pending.length} 笔 Proxy 用量等待 agent 归属（${formatTokenCount(pendingTokens)} tokens）。`,
+    });
+  }
+
+  const primaryUnattributed = proxyEvents.filter((event) => event.attribution.status === "unattributed");
+  const shadowUnattributed = events.filter(
+    (event) => event.source !== "proxy" && event.attribution.status === "unattributed",
+  );
+  if (primaryUnattributed.length > 0) {
+    const primaryTokens = sumEventTokens(primaryUnattributed);
+    const shadowSuffix =
+      shadowUnattributed.length > 0
+        ? `；校验源另有 ${shadowUnattributed.length} 笔 shadow 记录（不计入主账）`
+        : "";
+    diagnostics.push({
+      type: "unattributed_usage",
+      severity: "warning",
+      count: primaryUnattributed.length,
+      message: `主账有 ${primaryUnattributed.length} 笔 Proxy 用量未能归属 agent（${formatTokenCount(primaryTokens)} tokens）${shadowSuffix}。`,
+    });
+  } else if (shadowUnattributed.length > 0) {
+    diagnostics.push({
+      type: "shadow_reconciliation",
+      severity: "info",
+      count: shadowUnattributed.length,
+      message: `校验源 ${shadowUnattributed.length} 笔 SDK/OTel shadow 对账记录（无 agent 归属，不计入主账，可忽略）。`,
+    });
+  }
+}
+
+function sumEventTokens(events: readonly UsageLedgerEvent[]): number {
+  return events.reduce(
+    (total, event) =>
+      total + event.inputTokens + event.outputTokens + event.cacheReadTokens + event.cacheCreationTokens,
+    0,
+  );
+}
+
+function formatTokenCount(total: number): string {
+  if (total >= 1_000_000) {
+    return `${(total / 1_000_000).toFixed(1)}M`;
+  }
+  if (total >= 1_000) {
+    return `${Math.round(total / 1_000)}k`;
+  }
+  return String(total);
 }
 
 function diagnosticFromProjectionIssue(
@@ -65,7 +135,7 @@ function diagnosticFromProjectionIssue(
         ...base,
         severity: "warning",
         type: "primary_source_mismatch",
-        message: "计费主来源与 legacy 快照不一致，当前展示已回退到校验通过的来源。",
+        message: "计费主来源与 legacy 快照不一致；当前展示以 ledger 投影为准。",
       };
     case "synthetic_sdk_primary":
       return {

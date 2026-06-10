@@ -1,5 +1,5 @@
 import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
-import { normalizeSdkSubagentType } from "@eco/runtime";
+import { resolveSubagentSessionRole } from "../shared/subagent-roles.js";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
@@ -24,13 +24,21 @@ export function createSubagentSessionHooks(
     consumePendingLaunch?: (input: { role: RuntimeAgentRole }) => PendingSubagentLaunch | undefined;
     onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
     onTimingChanged?: () => void;
+    onProxyAttributionSettled?: (input: { agentId: string; role: RuntimeAgentRole }) => void;
+    onSubagentBillingStamp?: (input: {
+      agentId: string;
+      role: RuntimeAgentRole;
+      parentToolUseId?: string;
+      runAttemptId?: string;
+    }) => void;
+    onSubagentBillingStampClear?: (input: { agentId: string }) => void;
   },
 ): EcoSubagentSessionHooks {
   return {
     phase,
     threadId,
     onStart(input) {
-      const role = normalizeSdkSubagentType(input.agentType);
+      const role = resolveSubagentSessionRole(input.agentType) as RuntimeAgentRole | undefined;
       if (!role) {
         return;
       }
@@ -52,6 +60,10 @@ export function createSubagentSessionHooks(
         agentId: input.agentId,
         role,
       });
+      options?.onProxyAttributionSettled?.({
+        agentId: input.agentId,
+        role,
+      });
       const lifecycleRecord = options?.lifecycle?.startSubagent({
         threadId,
         agentId: input.agentId,
@@ -70,11 +82,17 @@ export function createSubagentSessionHooks(
         ...(missionKey && { missionKey }),
         ...(todoId && { todoId }),
       });
+      options?.onSubagentBillingStamp?.({
+        agentId: input.agentId,
+        role,
+        ...(lifecycleRecord?.parentToolUseId && { parentToolUseId: lifecycleRecord.parentToolUseId }),
+        ...(lifecycleRecord?.runAttemptId && { runAttemptId: lifecycleRecord.runAttemptId }),
+      });
       options?.onTimingChanged?.();
     },
     onStop(input) {
       store.markSubagentSessionStopped(threadId, input.agentId);
-      const role = normalizeSdkSubagentType(input.agentType);
+      const role = resolveSubagentSessionRole(input.agentType) as RuntimeAgentRole | undefined;
       if (role) {
         options?.metricsRegistry?.onSubagentStop(threadId, {
           agentId: input.agentId,
@@ -93,6 +111,7 @@ export function createSubagentSessionHooks(
           lifecycle: "stopped",
           ...(runAttemptId && { runAttemptId }),
         });
+        options?.onSubagentBillingStampClear?.({ agentId: input.agentId });
       }
       options?.onTimingChanged?.();
     },

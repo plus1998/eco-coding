@@ -102,7 +102,7 @@ test("resolveProxyRoute maps canonical gpt-5.4 to explore when roles share gpt-5
   expect(resolveProxyRoute(routes, "gpt-5.4-mini")).toEqual(exploreRoute);
 });
 
-test("buildModelsListResponse lists only configured alias and upstream model ids", () => {
+test("buildModelsListResponse lists only eco alias ids for SDK discovery", () => {
   const provider = createProvider("openai", "OpenAI", "provider-secret");
   const route: AnthropicProxyResolvedRoute = {
     role: "explore",
@@ -112,9 +112,29 @@ test("buildModelsListResponse lists only configured alias and upstream model ids
     aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
   };
   const ids = buildModelsListResponse([route]).data.map((entry) => entry.id);
-  expect(ids).toContain(route.aliasModelId);
-  expect(ids).toContain("gpt-5.4-mini");
+  expect(ids).toEqual([route.aliasModelId]);
+  expect(ids).not.toContain("gpt-5.4-mini");
   expect(ids).not.toContain("gpt-5.4");
+});
+
+test("buildModelsListResponse lists one alias per configured route", () => {
+  const provider = createProvider("openai", "OpenAI", "provider-secret");
+  const exploreRoute: AnthropicProxyResolvedRoute = {
+    role: "explore",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("explore", provider.id, "gpt-5.4-mini"),
+  };
+  const coderRoute: AnthropicProxyResolvedRoute = {
+    role: "coder",
+    provider,
+    modelId: "gpt-5.4-mini",
+    apiCompat: "anthropic",
+    aliasModelId: createModelAlias("coder", provider.id, "gpt-5.4-mini"),
+  };
+  const ids = buildModelsListResponse([exploreRoute, coderRoute]).data.map((entry) => entry.id);
+  expect(ids).toEqual([exploreRoute.aliasModelId, coderRoute.aliasModelId]);
 });
 
 test("resolveProxyRoute does not guess SDK built-in Explore model ids", () => {
@@ -170,7 +190,7 @@ test("createModelAlias includes explore role", () => {
   expect(resolveProxyRoute([route], alias)).toEqual(route);
 });
 
-test("lists alias and upstream model ids for SDK model discovery", () => {
+test("lists alias ids for SDK model discovery", () => {
   const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
   const route: AnthropicProxyResolvedRoute = {
     role: "planner",
@@ -181,7 +201,7 @@ test("lists alias and upstream model ids for SDK model discovery", () => {
   };
 
   const response = buildModelsListResponse([route]);
-  expect(response.data.map((entry) => entry.id)).toEqual([route.aliasModelId, route.modelId]);
+  expect(response.data.map((entry) => entry.id)).toEqual([route.aliasModelId]);
 });
 
 test("estimateInputTokensFromAnthropicBody counts messages and system", () => {

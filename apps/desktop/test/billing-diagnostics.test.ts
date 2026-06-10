@@ -69,3 +69,70 @@ test("withBillingDiagnostics attaches projection reconciliation drift", () => {
     }),
   ]);
 });
+
+test("buildBillingDiagnostics scopes unattributed counts to proxy primary ledger", () => {
+  const diagnostics = buildBillingDiagnostics(billing(), undefined, [
+    {
+      id: "evt_proxy_unattr",
+      threadId: "thr_diag",
+      source: "proxy",
+      role: "researcher",
+      inputTokens: 4000,
+      outputTokens: 300,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      observedAt: "2026-01-01T00:00:00.000Z",
+      attribution: { status: "unattributed", reason: "pending_agent_settlement_timeout" },
+      sourceEventId: "proxy:researcher:1",
+    },
+    {
+      id: "evt_sdk_unattr",
+      threadId: "thr_diag",
+      source: "sdk",
+      role: "researcher",
+      inputTokens: 90000,
+      outputTokens: 1000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      observedAt: "2026-01-01T00:00:01.000Z",
+      attribution: { status: "unattributed", reason: "agent_id_missing" },
+      sourceEventId: "sdk:researcher:1",
+    },
+  ]);
+
+  expect(diagnostics).toEqual([
+    expect.objectContaining({
+      type: "unattributed_usage",
+      count: 1,
+      message: expect.stringContaining("主账有 1 笔 Proxy"),
+    }),
+  ]);
+  expect(diagnostics[0]?.message).toContain("校验源另有 1 笔");
+});
+
+test("buildBillingDiagnostics reports shadow-only unattributed as info", () => {
+  const diagnostics = buildBillingDiagnostics(billing(), undefined, [
+    {
+      id: "evt_sdk_unattr",
+      threadId: "thr_diag",
+      source: "sdk",
+      role: "researcher",
+      inputTokens: 90000,
+      outputTokens: 1000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      observedAt: "2026-01-01T00:00:01.000Z",
+      attribution: { status: "unattributed", reason: "agent_id_missing" },
+      sourceEventId: "sdk:researcher:1",
+    },
+  ]);
+
+  expect(diagnostics).toEqual([
+    expect.objectContaining({
+      type: "shadow_reconciliation",
+      severity: "info",
+      count: 1,
+      message: expect.stringContaining("可忽略"),
+    }),
+  ]);
+});

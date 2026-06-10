@@ -4983,6 +4983,92 @@ button:not(:disabled) {
   white-space: nowrap;
 }
 
+.usage-breakdown-cost-reported {
+  color: #737373;
+  font-size: 0.92em;
+}
+
+.usage-breakdown-events-empty {
+  margin: 0;
+  color: #737373;
+  font-size: 12px;
+}
+
+.usage-breakdown-events .usage-breakdown-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.usage-breakdown-event-model,
+.usage-breakdown-event-agent,
+.usage-breakdown-event-source {
+  color: #737373;
+  font-size: 11px;
+}
+
+.usage-breakdown-event-status {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.usage-breakdown-event-status-pending {
+  color: #ca8a04;
+}
+
+.usage-breakdown-event-status-unattributed {
+  color: #dc2626;
+}
+
+.usage-breakdown-row-pending .usage-breakdown-label {
+  color: #a16207;
+}
+
+.usage-breakdown-row-unattributed .usage-breakdown-label {
+  color: #b91c1c;
+}
+
+.usage-breakdown-event-route {
+  color: #a16207;
+  font-size: 11px;
+}
+
+.usage-breakdown-event-no-agent {
+  color: #a3a3a3;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.usage-breakdown-events-footer {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #737373;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-breakdown-events-footer-ok {
+  color: #525252;
+}
+
+.usage-breakdown-events-footer-warn {
+  color: #b45309;
+}
+
+.usage-breakdown-events-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #737373;
+}
+
+.usage-breakdown-shadow-events {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .usage-breakdown-compact {
   margin: 0 0 12px;
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -5210,6 +5296,24 @@ button:not(:disabled) {
   color: #fecaca;
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(127, 29, 29, 0.2);
+}
+
+.thread-info-billing-diagnostics.info {
+  color: #a1a1aa;
+  border-color: rgba(161, 161, 170, 0.35);
+  background: rgba(39, 39, 42, 0.5);
+}
+
+.thread-info-billing-open-boundary {
+  color: #a1a1aa;
+}
+
+.thread-info-billing-boundary-id {
+  display: inline-block;
+  min-width: 2.2em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #71717a;
 }
 
 .thread-info-billing-diagnostics ul {

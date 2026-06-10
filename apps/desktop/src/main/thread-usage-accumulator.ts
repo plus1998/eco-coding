@@ -21,7 +21,11 @@ import { createEmptyUsage, type UsageRequestRecord } from "./usage-request-types
 
 export type { ThreadBillingSnapshot };
 
-const BILLING_SOURCE_PRIORITY: BillingUsageSource[] = ["sdk", "proxy", "otel"];
+import {
+  DEFAULT_BILLING_SOURCE_PRIORITY,
+  resolveBillingSourcePriority,
+  selectPrimaryBillingSource,
+} from "./billing-source-priority";
 
 export interface RecordUsageInput {
   threadId: string;
@@ -462,7 +466,7 @@ function restoreSourceStates(
     return {};
   }
   const restored: Partial<Record<BillingUsageSource, SourceUsageState>> = {};
-  for (const source of BILLING_SOURCE_PRIORITY) {
+  for (const source of DEFAULT_BILLING_SOURCE_PRIORITY) {
     const state = sources[source];
     if (!state) {
       continue;
@@ -480,7 +484,8 @@ function buildSourceBreakdown(
   sources: Partial<Record<BillingUsageSource, SourceUsageState>>,
 ): Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>> {
   const snapshots: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>> = {};
-  for (const source of BILLING_SOURCE_PRIORITY) {
+  const billingPriority = resolveBillingSourcePriority(sources);
+  for (const source of billingPriority) {
     const state = sources[source];
     if (!state || !hasSourceData(state)) {
       continue;
@@ -551,7 +556,7 @@ function buildModelSnapshot(
 function selectPrimarySource(
   sources: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>,
 ): BillingUsageSource | undefined {
-  return BILLING_SOURCE_PRIORITY.find((source) => sources[source]);
+  return selectPrimaryBillingSource(sources);
 }
 
 function hasSourceData(state: SourceUsageState): boolean {

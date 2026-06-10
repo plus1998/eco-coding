@@ -19,6 +19,8 @@ import {
   type TokenCostBreakdown,
 } from "@eco/runtime";
 import { isSubagentBillingRole } from "./billing-orchestration";
+import { resolveLedgerSourcePriority } from "./billing-source-priority";
+import { readRouteRole } from "./proxy-usage-pending-settlement";
 import type {
   AgentInstanceKind,
   AgentInstanceRecord,
@@ -30,8 +32,6 @@ import {
   readUsageLedgerComputedBilling,
 } from "./usage-ledger-cost-metadata";
 import { createEmptyUsage } from "./usage-request-types";
-
-const BILLING_SOURCE_PRIORITY: UsageLedgerSource[] = ["sdk", "proxy", "otel"];
 
 export interface BillingProjectorRateResolution {
   actualRates: ModelCostRates | null;
@@ -86,6 +86,7 @@ export interface UsageLedgerBillingProjection {
   byAgent: Record<string, BillingProjectorAgentSnapshot>;
   byRunAttempt: Record<string, BillingProjectorRunAttemptSnapshot>;
   unattributedEvents: UsageLedgerEvent[];
+  pendingEvents: UsageLedgerEvent[];
   unsettledPartialEvents: UsageLedgerEvent[];
   contextEvents: UsageLedgerEvent[];
   unresolvedEventCount: number;
@@ -146,9 +147,12 @@ export function projectBillingFromUsageLedger(
   const byAgent = new Map<string, MutableAgentState>();
   const byRunAttempt = new Map<string, MutableRunAttemptState>();
   const unattributedEvents: UsageLedgerEvent[] = [];
+  const pendingEvents: UsageLedgerEvent[] = [];
   const unsettledPartialEvents: UsageLedgerEvent[] = [];
   const contextEvents: UsageLedgerEvent[] = [];
   let unresolvedEventCount = 0;
+
+  const proxyBillableIndex = indexProxyBillableEvents(input.events);
 
   for (const event of input.events) {
     if (event.usageKind === "request_partial") {
@@ -157,6 +161,9 @@ export function projectBillingFromUsageLedger(
     }
     if (event.usageKind === "context") {
       contextEvents.push(event);
+      continue;
+    }
+    if (shouldSkipDuplicateBillableEvent(event, proxyBillableIndex)) {
       continue;
     }
     const usage = usageFromEvent(event);
@@ -171,7 +178,9 @@ export function projectBillingFromUsageLedger(
     if (event.runAttemptId) {
       addEventToRunAttempt(getOrCreateRunAttempt(byRunAttempt, event.runAttemptId), usage, billing);
     }
-    if (event.attribution.status === "unattributed") {
+    if (event.attribution.status === "pending") {
+      pendingEvents.push(event);
+    } else if (event.attribution.status === "unattributed") {
       unattributedEvents.push(event);
     }
   }
@@ -181,7 +190,7 @@ export function projectBillingFromUsageLedger(
   applyRunAttemptReportedCosts(byRunAttempt, input.events);
 
   const sourceBreakdown = buildSourceBreakdown(sources);
-  const priority = input.primarySourcePriority ?? BILLING_SOURCE_PRIORITY;
+  const priority = input.primarySourcePriority ?? resolveLedgerSourcePriority(sourceBreakdown);
   const primarySource = priority.find((source) => sourceBreakdown[source]);
   const agentRecords = new Map((input.agents ?? []).map((agent) => [agent.agentId, agent]));
   const agentSnapshots = finalizeAgents(byAgent, agentRecords);
@@ -201,6 +210,7 @@ export function projectBillingFromUsageLedger(
     byAgent: agentSnapshots,
     byRunAttempt: runAttemptSnapshots,
     unattributedEvents,
+    pendingEvents,
     unsettledPartialEvents,
     contextEvents,
     unresolvedEventCount,
@@ -277,7 +287,7 @@ function addEventToSource(
   state.ecoCostUsd += billing.ecoCostUsd;
   state.roleEcoCostUsd[event.role] = (state.roleEcoCostUsd[event.role] ?? 0) + billing.ecoCostUsd;
   state.byRole[event.role] = mergeUsageTotals(state.byRole[event.role] ?? createEmptyUsage(), usage);
-  if (event.modelId) {
+  if (event.modelId && event.agentId) {
     state.roleModelIds[event.role] = event.modelId;
   }
   if (billing.ecoBreakdown) {
@@ -290,7 +300,7 @@ function addEventToSource(
     );
   }
   const model = getOrCreateModel(state, event.modelId?.trim() || event.role);
-  addRole(model.roles, event.role);
+  addRole(model.roles, readRouteRole(event));
   model.usage = mergeUsageTotals(model.usage, usage);
   model.ecoCostUsd += billing.ecoCostUsd;
   if (event.reportedCostUsd !== undefined && Number.isFinite(event.reportedCostUsd)) {
@@ -341,7 +351,8 @@ function buildSourceBreakdown(
   sources: Partial<Record<UsageLedgerSource, MutableSourceState>>,
 ): Partial<Record<UsageLedgerSource, ThreadBillingSourceSnapshot>> {
   const snapshots: Partial<Record<UsageLedgerSource, ThreadBillingSourceSnapshot>> = {};
-  for (const source of BILLING_SOURCE_PRIORITY) {
+  const ledgerPriority = resolveLedgerSourcePriority(sources);
+  for (const source of ledgerPriority) {
     const state = sources[source];
     if (!state || !hasSourceData(state)) {
       continue;
@@ -730,4 +741,60 @@ function readNumberMetadata(
 ): number | undefined {
   const value = metadata?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+interface ProxyBillableIndex {
+  requestKeys: Set<string>;
+  providerRequestIds: Set<string>;
+  usageFingerprints: Set<string>;
+}
+
+function indexProxyBillableEvents(events: readonly UsageLedgerEvent[]): ProxyBillableIndex {
+  const requestKeys = new Set<string>();
+  const providerRequestIds = new Set<string>();
+  const usageFingerprints = new Set<string>();
+  for (const event of events) {
+    if (event.source !== "proxy") {
+      continue;
+    }
+    if (event.usageKind === "request_partial" || event.usageKind === "context") {
+      continue;
+    }
+    if (event.requestKey) {
+      requestKeys.add(event.requestKey);
+    }
+    if (event.providerRequestId) {
+      providerRequestIds.add(event.providerRequestId);
+    }
+    usageFingerprints.add(buildUsageLedgerFingerprint(event));
+  }
+  return { requestKeys, providerRequestIds, usageFingerprints };
+}
+
+function shouldSkipDuplicateBillableEvent(
+  event: UsageLedgerEvent,
+  proxyIndex: ProxyBillableIndex,
+): boolean {
+  if (event.source !== "sdk" && event.source !== "otel") {
+    return false;
+  }
+  if (event.requestKey && proxyIndex.requestKeys.has(event.requestKey)) {
+    return true;
+  }
+  if (event.providerRequestId && proxyIndex.providerRequestIds.has(event.providerRequestId)) {
+    return true;
+  }
+  return proxyIndex.usageFingerprints.has(buildUsageLedgerFingerprint(event));
+}
+
+function buildUsageLedgerFingerprint(event: UsageLedgerEvent): string {
+  return [
+    event.role,
+    event.agentId ?? "",
+    event.modelId ?? "",
+    event.inputTokens,
+    event.outputTokens,
+    event.cacheReadTokens,
+    event.cacheCreationTokens,
+  ].join(":");
 }

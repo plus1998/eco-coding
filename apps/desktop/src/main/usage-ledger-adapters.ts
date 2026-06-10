@@ -3,6 +3,7 @@ import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import {
   buildUsageLedgerEventKey,
+  type UsageAttribution,
   type UsageLedgerEvent,
   type UsageLedgerKind,
   type UsageLedgerSource,
@@ -51,6 +52,7 @@ export interface BuildSingleUsageLedgerEventInput {
   reportedCostUsd?: number;
   observedAt?: string;
   metadata?: Record<string, unknown>;
+  attribution?: UsageAttribution;
 }
 
 export function buildSdkUsageLedgerEvents(
@@ -109,9 +111,11 @@ export function buildSingleUsageLedgerEvent(
     cacheReadTokens: input.usage.cacheReadTokens,
     cacheCreationTokens: input.usage.cacheCreationTokens,
     observedAt: input.observedAt ?? new Date().toISOString(),
-    attribution: input.agentId
-      ? { status: "attributed", agentId: input.agentId }
-      : { status: "unattributed", reason: "agent_id_missing" },
+    attribution:
+      input.attribution ??
+      (input.agentId
+        ? { status: "attributed", agentId: input.agentId }
+        : { status: "unattributed", reason: "agent_id_missing" }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.agentId && { agentId: input.agentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),

@@ -1,17 +1,11 @@
 import type { RuntimeAgentRole } from "../shared/ipc";
+import {
+  resolveSubagentUsageAttribution,
+  type SubagentUsageAttributionResolver,
+} from "./subagent-usage-attribution";
 import type { ResolvedSdkRunBillingModel } from "./usage-billing-artifacts";
 
-export interface SdkRunBillingAttributionResolver {
-  resolveAgentId(
-    threadId: string,
-    input: {
-      role: RuntimeAgentRole;
-      subagentAgentId?: string;
-      parentToolUseId?: string;
-    },
-  ): string | undefined;
-  roleForAgentId(threadId: string, agentId: string): RuntimeAgentRole | undefined;
-}
+export interface SdkRunBillingAttributionResolver extends SubagentUsageAttributionResolver {}
 
 export interface ResolveSdkRunBillingAttributionInput {
   threadId: string;
@@ -21,6 +15,8 @@ export interface ResolveSdkRunBillingAttributionInput {
   parentToolUseId?: string;
   subagentAgentId?: string;
   plannerAgentId?: string;
+  stampedAgentId?: string;
+  stampedBillingRole?: RuntimeAgentRole;
 }
 
 export interface SdkRunBillingAttribution {
@@ -34,25 +30,21 @@ export function resolveSdkRunBillingAttribution(
   input: ResolveSdkRunBillingAttributionInput,
 ): SdkRunBillingAttribution {
   const primaryModel = input.models[0];
-  let billingRole = primaryModel?.role ?? input.role;
-  const resolvedSubagentId =
-    input.subagentAgentId ??
-    input.resolver.resolveAgentId(input.threadId, {
-      role: billingRole,
-      ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    });
+  const initialRole = primaryModel?.role ?? input.role;
+  const attribution = resolveSubagentUsageAttribution({
+    threadId: input.threadId,
+    role: initialRole,
+    resolver: input.resolver,
+    ...(input.subagentAgentId && { explicitSubagentId: input.subagentAgentId }),
+    ...(input.stampedAgentId && { stampedAgentId: input.stampedAgentId }),
+    ...(input.stampedBillingRole && { stampedBillingRole: input.stampedBillingRole }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+  });
 
-  if (resolvedSubagentId) {
-    const entryRole = input.resolver.roleForAgentId(input.threadId, resolvedSubagentId);
-    if (entryRole) {
-      billingRole = entryRole;
-    }
-  }
-
+  const { billingRole, subagentAgentId: resolvedSubagentId } = attribution;
   const allLedgerRowsArePlanner = input.models.every((model) => (model.role ?? input.role) === "planner");
   const ledgerAgentId =
-    resolvedSubagentId ??
-    (allLedgerRowsArePlanner ? input.plannerAgentId : undefined);
+    resolvedSubagentId ?? (allLedgerRowsArePlanner ? input.plannerAgentId : undefined);
 
   return {
     billingRole,

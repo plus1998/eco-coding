@@ -89,6 +89,31 @@ test("resolveSingleUsageBillingArtifacts builds assistant fallback ledger and bi
   });
 });
 
+test("resolveSingleUsageBillingArtifacts keeps proxy billing role without modelId route remapping", async () => {
+  const reviewerRoutes: RuntimeRoute[] = [
+    ...routes,
+    { role: "reviewer", provider, modelId: "sonnet", apiCompat: "anthropic" },
+  ];
+  const artifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_proxy_reviewer",
+    role: "reviewer",
+    source: "proxy",
+    usage: usage(),
+    runtimeRoutes: reviewerRoutes,
+    lookupPricing,
+    modelId: "haiku",
+    requestKey: "proxy:coder:req_remap",
+  });
+
+  expect(artifacts.billingRole).toBe("reviewer");
+  expect(artifacts.resolvedModelId).toBe("haiku");
+  expect(artifacts.ledgerEvent).toMatchObject({
+    role: "reviewer",
+    source: "proxy",
+    modelId: "haiku",
+  });
+});
+
 test("resolveSdkStreamPartialBillingArtifacts builds partial ledger and context update", async () => {
   const artifacts = await resolveSdkStreamPartialBillingArtifacts({
     threadId: "thr_artifacts",

@@ -27,6 +27,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadRollbackTo).toBe("thread:rollback-to");
   expect(IPC_CHANNELS.threadApprovePlan).toBe("thread:approve-plan");
   expect(IPC_CHANNELS.threadGetUsageSnapshot).toBe("thread:get-usage-snapshot");
+  expect(IPC_CHANNELS.threadUsageLedgerEventsList).toBe("thread:usage-ledger-events-list");
   expect(IPC_CHANNELS.threadRunProjectionGet).toBe("thread:run-projection-get");
   expect(IPC_CHANNELS.agentProfilePerformanceList).toBe("agent-profile:performance-list");
   expect(IPC_CHANNELS.agentAuditExport).toBe("agent-audit:export");

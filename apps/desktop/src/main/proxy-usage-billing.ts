@@ -2,7 +2,6 @@ import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { AnthropicProxyUsageInfo } from "./anthropic-proxy";
 import {
-  isSubagentBillingRole,
   type UsageBillingObservation,
 } from "./billing-orchestration";
 import {
@@ -28,6 +27,10 @@ export interface ProxyUsageBillingInput {
   reconciliationOnly: true;
   fillSdkPrimaryForSubagent: boolean;
   agentId?: string;
+  routeRole?: RuntimeAgentRole;
+  attributionPending?: boolean;
+  aliasModelId?: string;
+  providerId?: string;
 }
 
 export interface ResolveProxyUsageBillingInput {
@@ -36,6 +39,9 @@ export interface ResolveProxyUsageBillingInput {
   runAttemptId?: string;
   plannerAgentId?: string;
   resolver: SubagentUsageAttributionResolver;
+  stampedAgentId?: string;
+  stampedBillingRole?: RuntimeAgentRole;
+  stampedParentToolUseId?: string;
 }
 
 export interface ProxyUsageBillingResolution {
@@ -48,6 +54,8 @@ export interface ProxyUsageBillingResolution {
   observation: UsageBillingObservation;
   billingInput: ProxyUsageBillingInput;
   subagentAgentId?: string;
+  attributionAttempted: boolean;
+  attributionPending: boolean;
 }
 
 export function resolveProxyUsageBilling(
@@ -61,8 +69,12 @@ export function resolveProxyUsageBilling(
     threadId: info.threadId,
     role: initialBillingRole,
     resolver: input.resolver,
+    ...(input.stampedAgentId && { stampedAgentId: input.stampedAgentId }),
+    ...(input.stampedBillingRole && { stampedBillingRole: input.stampedBillingRole }),
+    ...(input.stampedParentToolUseId && { parentToolUseId: input.stampedParentToolUseId }),
   });
-  const { billingRole, subagentAgentId } = attribution;
+  const { billingRole, subagentAgentId, attempted: attributionAttempted } = attribution;
+  const attributionPending = attributionAttempted && !subagentAgentId;
   const usage: ParsedUsage = {
     inputTokens: info.usage.inputTokens,
     outputTokens: info.usage.outputTokens,
@@ -100,9 +112,15 @@ export function resolveProxyUsageBilling(
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
       reconciliationOnly: true,
-      fillSdkPrimaryForSubagent: isSubagentBillingRole(billingRole),
+      fillSdkPrimaryForSubagent: false,
+      routeRole: info.role,
+      ...(info.aliasModelId && { aliasModelId: info.aliasModelId }),
+      ...(info.providerId && { providerId: info.providerId }),
+      ...(attributionPending && { attributionPending: true }),
       ...(subagentAgentId && { agentId: subagentAgentId }),
     },
+    attributionAttempted,
+    attributionPending,
     ...(subagentAgentId && { subagentAgentId }),
   };
 }

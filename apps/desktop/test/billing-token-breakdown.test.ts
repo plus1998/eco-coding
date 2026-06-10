@@ -114,9 +114,10 @@ test("buildBillingTokenBreakdown includes dynamic Agent Profile roles", () => {
   expect(breakdown?.byModel.map((row) => row.roles).flat()).toContain("researcher");
 });
 
-test("buildBillingTokenBreakdown supplements dynamic roles from non-primary sources", () => {
+test("buildBillingTokenBreakdown does not supplement roles from non-primary sources", () => {
   const billing = makeBilling({});
   billing.primarySource = "sdk";
+  billing.byRole = {};
   billing.sourceBreakdown = {
     otel: {
       source: "otel",
@@ -138,7 +139,63 @@ test("buildBillingTokenBreakdown supplements dynamic roles from non-primary sour
   };
 
   const breakdown = buildBillingTokenBreakdown(billing);
-  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["researcher"]);
+  expect(breakdown).toBeNull();
+});
+
+test("buildBillingTokenBreakdown passes reportedCostUsd on model rows when present", () => {
+  const billing = makeBilling({
+    planner: {
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+      modelId: "sonnet",
+    },
+  });
+  billing.byModel = [
+    {
+      modelId: "sonnet",
+      roles: ["planner"],
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+      reportedCostUsd: 0.019,
+    },
+  ];
+
+  const breakdown = buildBillingTokenBreakdown(billing);
+  expect(breakdown?.byModel[0]?.reportedCostUsd).toBeCloseTo(0.019);
+});
+
+test("buildBillingTokenBreakdown omits zero reportedCostUsd on model rows", () => {
+  const billing = makeBilling({
+    planner: {
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+      modelId: "sonnet",
+    },
+  });
+  billing.byModel = [
+    {
+      modelId: "sonnet",
+      roles: ["planner"],
+      inputTokens: 1000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      ecoCostUsd: 0.02,
+      reportedCostUsd: 0,
+    },
+  ];
+
+  const breakdown = buildBillingTokenBreakdown(billing);
+  expect(breakdown?.byModel[0]?.reportedCostUsd).toBeUndefined();
 });
 
 test("buildBillingTokenBreakdown prefers explicit byModel rows", () => {
@@ -177,7 +234,7 @@ test("buildBillingTokenBreakdown prefers explicit byModel rows", () => {
   expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["haiku", "sonnet"]);
 });
 
-test("buildBillingTokenBreakdown supplements missing roles from non-primary sources", () => {
+test("buildBillingTokenBreakdown uses primary byRole only when supplemental sources exist", () => {
   const billing = makeBilling({
     explore: {
       inputTokens: 3000,
@@ -188,16 +245,15 @@ test("buildBillingTokenBreakdown supplements missing roles from non-primary sour
       modelId: "claude-haiku-4-5",
     },
   });
-  billing.primarySource = "sdk";
+  billing.primarySource = "proxy";
   billing.sourceBreakdown = {
-    sdk: {
-      source: "sdk",
+    proxy: {
+      source: "proxy",
       totalTokens: { input: 3000, output: 300, cacheRead: 0, cacheCreation: 0 },
       plannerTokenCostUsd: 0,
       ecoCostUsd: 0.02,
       pricingResolved: true,
       byRole: billing.byRole,
-      byModel: billing.byModel,
     },
     otel: {
       source: "otel",
@@ -219,8 +275,8 @@ test("buildBillingTokenBreakdown supplements missing roles from non-primary sour
   };
 
   const breakdown = buildBillingTokenBreakdown(billing);
-  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["planner", "explore"]);
-  expect(breakdown?.byModel.map((row) => row.modelId).sort()).toEqual(["claude-haiku-4-5", "claude-opus-4-7"]);
+  expect(breakdown?.byAgent.map((row) => row.role)).toEqual(["explore"]);
+  expect(breakdown?.byModel.map((row) => row.modelId)).toEqual(["claude-haiku-4-5"]);
 });
 
 function makeAgentRow(role: string, overrides: Partial<BillingAgentRow> = {}): BillingAgentRow {

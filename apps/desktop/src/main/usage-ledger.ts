@@ -6,7 +6,7 @@ export type AgentInstanceKind = "planner" | "subagent";
 export type AgentInstanceStatus = "launching" | "active" | "stopped" | "abandoned";
 export type UsageLedgerSource = "sdk" | "proxy" | "otel";
 export type UsageLedgerKind = "request_final" | "request_partial" | "assistant_fallback" | "context";
-export type UsageAttributionStatus = "attributed" | "unattributed";
+export type UsageAttributionStatus = "attributed" | "pending" | "unattributed";
 
 export interface RunAttemptRecord {
   threadId: string;
@@ -85,6 +85,7 @@ export interface UsageLedgerProjection {
   byRole: Record<string, UsageLedgerTotals>;
   byAgent: Record<string, UsageLedgerTotals>;
   byModel: Record<string, UsageLedgerTotals>;
+  pendingEvents: UsageLedgerEvent[];
   unattributedEvents: UsageLedgerEvent[];
 }
 
@@ -129,6 +130,7 @@ export function projectUsageLedger(events: readonly UsageLedgerEvent[]): UsageLe
     byRole: {},
     byAgent: {},
     byModel: {},
+    pendingEvents: [],
     unattributedEvents: [],
   };
 
@@ -141,7 +143,9 @@ export function projectUsageLedger(events: readonly UsageLedgerEvent[]): UsageLe
     if (event.modelId) {
       addEventToTotals((projection.byModel[event.modelId] ??= createEmptyUsageLedgerTotals()), event);
     }
-    if (event.attribution.status === "unattributed") {
+    if (event.attribution.status === "pending") {
+      projection.pendingEvents.push(event);
+    } else if (event.attribution.status === "unattributed") {
       projection.unattributedEvents.push(event);
     }
   }
@@ -171,6 +175,23 @@ export class InMemoryUsageLedger {
     }
     this.eventsByIdempotencyKey.set(event.idempotencyKey, event);
     return { event, inserted: true };
+  }
+
+  updateUsageEventAttribution(
+    eventId: string,
+    update: { agentId?: string; attribution: UsageAttribution },
+  ): UsageLedgerEvent | undefined {
+    const existing = [...this.eventsByIdempotencyKey.values()].find((event) => event.id === eventId);
+    if (!existing) {
+      return undefined;
+    }
+    const updated: UsageLedgerEvent = {
+      ...existing,
+      ...(update.agentId ? { agentId: update.agentId } : { agentId: undefined }),
+      attribution: update.attribution,
+    };
+    this.eventsByIdempotencyKey.set(updated.idempotencyKey, updated);
+    return updated;
   }
 
   listUsageEvents(threadId: string): UsageLedgerEvent[] {

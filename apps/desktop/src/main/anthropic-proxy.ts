@@ -17,6 +17,7 @@ import {
   proxyCallCommonFields,
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
+import { readProxyBillingStampFromHeaders } from "./proxy-billing-stamp";
 import {
   announceUpstreamLogDestination,
   formatUpstreamFetchError,
@@ -50,8 +51,13 @@ export interface AnthropicProxyUsageInfo {
   providerBaseUrl: string;
   modelId: string;
   requestedModel?: string;
+  aliasModelId?: string;
   requestId?: string;
   usage: ParsedUsage;
+  stampedAgentId?: string;
+  stampedBillingRole?: RuntimeAgentRole;
+  stampedParentToolUseId?: string;
+  stampedRunAttemptId?: string;
 }
 
 export type AnthropicProxyUsageHandler = (
@@ -123,8 +129,7 @@ export async function startAnthropicModelProxy(
       }
 
       if (request.method === "GET" && isModelsListPath(request.url)) {
-        const upstreamModels = await loadUpstreamModelsForRoutes(resolvedRoutes);
-        writeJson(response, 200, buildModelsListResponse(resolvedRoutes, upstreamModels));
+        writeJson(response, 200, buildModelsListResponse(resolvedRoutes));
         return;
       }
 
@@ -154,6 +159,7 @@ export async function startAnthropicModelProxy(
 
       const upstreamModel = route.modelId;
       body.model = upstreamModel;
+      const requestBillingStamp = readProxyBillingStampFromHeaders(request.headers);
 
       const countTokensRequest = isCountTokensPath(request.url);
 
@@ -206,9 +212,20 @@ export async function startAnthropicModelProxy(
               providerName: info.providerName,
               providerBaseUrl: info.providerBaseUrl,
               modelId: info.modelId,
+              aliasModelId: route.aliasModelId,
               ...(info.requestedModel && { requestedModel: info.requestedModel }),
               ...(info.requestId && { requestId: info.requestId }),
               usage: info.usage,
+              ...(requestBillingStamp.agentId && { stampedAgentId: requestBillingStamp.agentId }),
+              ...(requestBillingStamp.billingRole && {
+                stampedBillingRole: requestBillingStamp.billingRole,
+              }),
+              ...(requestBillingStamp.parentToolUseId && {
+                stampedParentToolUseId: requestBillingStamp.parentToolUseId,
+              }),
+              ...(requestBillingStamp.runAttemptId && {
+                stampedRunAttemptId: requestBillingStamp.runAttemptId,
+              }),
             })) ?? null;
           },
         }),
@@ -364,10 +381,8 @@ export function resolveProxyRoute(
   return undefined;
 }
 
-export function buildModelsListResponse(
-  routes: readonly AnthropicProxyResolvedRoute[],
-  upstreamModels: readonly UpstreamModelOption[] = [],
-): {
+/** SDK-visible model list: eco aliases only (no bare upstream ids). */
+export function buildModelsListResponse(routes: readonly AnthropicProxyResolvedRoute[]): {
   data: Array<{ id: string; display_name: string; type: string }>;
   has_more: boolean;
   first_id: string;
@@ -376,23 +391,16 @@ export function buildModelsListResponse(
   const seen = new Set<string>();
   const data: Array<{ id: string; display_name: string; type: string }> = [];
 
-  const pushModel = (id: string, display_name: string) => {
-    if (seen.has(id)) {
-      return;
-    }
-    seen.add(id);
-    data.push({ id, display_name, type: "model" });
-  };
-
-  for (const model of upstreamModels) {
-    pushModel(model.id, model.displayName ?? model.id);
-  }
-
   for (const route of routes) {
-    pushModel(route.aliasModelId, `${route.role} · ${route.provider.name} → ${route.modelId}`);
-    if (!seen.has(route.modelId)) {
-      pushModel(route.modelId, `${route.role} · ${route.provider.name} / ${route.modelId}`);
+    if (seen.has(route.aliasModelId)) {
+      continue;
     }
+    seen.add(route.aliasModelId);
+    data.push({
+      id: route.aliasModelId,
+      display_name: `${route.role} · ${route.provider.name} → ${route.modelId}`,
+      type: "model",
+    });
   }
 
   const firstId = data[0]?.id ?? "";

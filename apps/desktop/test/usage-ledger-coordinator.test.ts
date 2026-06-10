@@ -287,7 +287,7 @@ test("UsageLedgerCoordinator can select ledger billing snapshots when projection
   });
 });
 
-test("UsageLedgerCoordinator keeps legacy billing snapshots when ledger projection drifts", () => {
+test("UsageLedgerCoordinator keeps ledger billing snapshots when ledger projection drifts", () => {
   const { coordinator, logs } = createCoordinator();
   coordinator.appendEvents([
     buildSingleUsageLedgerEvent({
@@ -318,8 +318,9 @@ test("UsageLedgerCoordinator keeps legacy billing snapshots when ledger projecti
     useLedgerProjection: true,
   });
 
-  expect(selection.source).toBe("legacy");
-  expect(selection.snapshot.totalTokens.input).toBe(3_000);
+  expect(selection.source).toBe("ledger");
+  expect(selection.snapshot.totalTokens.input).toBe(2_000);
+  expect(selection.legacySnapshot.totalTokens.input).toBe(3_000);
   expect(selection.ledgerSnapshot?.totalTokens.input).toBe(2_000);
   expect(selection.snapshot.diagnostics).toEqual(
     expect.arrayContaining([

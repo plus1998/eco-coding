@@ -54,6 +54,7 @@ export const IPC_CHANNELS = {
   threadRetry: "thread:retry",
   threadGetPendingPlan: "thread:get-pending-plan",
   threadGetUsageSnapshot: "thread:get-usage-snapshot",
+  threadUsageLedgerEventsList: "thread:usage-ledger-events-list",
   threadTodoList: "thread:todo-list",
   clarificationGetPending: "clarification:get-pending",
   clarificationSubmit: "clarification:submit",
@@ -811,7 +812,9 @@ export type ThreadBillingDiagnosticType =
   | "cost_mismatch"
   | "subagent_metrics_mismatch"
   | "unattributed_usage"
-  | "unresolved_usage";
+  | "unresolved_usage"
+  | "pending_attribution"
+  | "shadow_reconciliation";
 
 export interface ThreadBillingDiagnostic {
   type: ThreadBillingDiagnosticType;
@@ -1027,6 +1030,27 @@ export interface ThreadActivityLine {
   agentId?: string;
   /** Structured API failure from OTLP api_error event (not parsed from stream text). */
   apiError?: ThreadApiErrorInfo;
+}
+
+export interface ThreadUsageLedgerEventView {
+  id: string;
+  source: BillingUsageSource;
+  role: RuntimeAgentRole;
+  routeRole: RuntimeAgentRole;
+  billingRole: RuntimeAgentRole;
+  modelId?: string;
+  aliasModelId?: string;
+  providerId?: string;
+  agentId?: string;
+  requestKey?: string;
+  providerRequestId?: string;
+  attributionStatus: "attributed" | "pending" | "unattributed";
+  attributionReason?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  observedAt: string;
 }
 
 export interface ThreadActivityRewindTarget {
