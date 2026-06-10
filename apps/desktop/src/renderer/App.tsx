@@ -2296,16 +2296,6 @@ function App() {
 
   const showThreadInfo = Boolean(activeThread);
   const showLanding = !activeThread;
-  const liveFollowUpLabel = activeThread?.status === "queued" ? "等待启动" : "运行中";
-  const composerFollowUpNotice = composerFollowUpMode
-    ? showClarification
-      ? "等待问题回答 · 这里发送会排队为后续消息"
-      : showBashApproval
-        ? "等待命令审批 · 这里发送会排队为后续消息"
-        : queuedFollowUps.length > 0
-          ? `${liveFollowUpLabel} · 已排队 ${queuedFollowUps.length} 条后续消息`
-          : undefined
-    : undefined;
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
@@ -2324,12 +2314,6 @@ function App() {
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
-      {composerFollowUpNotice ? (
-        <div className="composer-follow-up-banner">
-          <Clock3 size={14} aria-hidden />
-          <span>{composerFollowUpNotice}</span>
-        </div>
-      ) : null}
       {activeComposerRewindTarget && !composerFollowUpMode ? (
         <div className="composer-rewind-banner">
           <RotateCcw size={14} aria-hidden />
