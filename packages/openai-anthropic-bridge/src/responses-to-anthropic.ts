@@ -176,10 +176,53 @@ function containsAnthropicToolUseBlock(
   return false;
 }
 
+const EXIT_PLAN_MODE_INLINE_PLAN_KEYS = [
+  'plan',
+  'planContent',
+  'plan_content',
+  'markdown',
+  'content',
+] as const;
+
+/** Strip inline plan bodies so CLI Plan Mode injects from the plan file (native behavior). */
+export function stripExitPlanModeInlinePlanFromObject(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const rest = { ...input };
+  for (const key of EXIT_PLAN_MODE_INLINE_PLAN_KEYS) {
+    delete rest[key];
+  }
+  return rest;
+}
+
+export function sanitizeExitPlanModeInlinePlanJson(raw: string): string {
+  if (raw === '') {
+    return '{}';
+  }
+  try {
+    return jsonMarshal(
+      stripExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>),
+    );
+  } catch {
+    return '{}';
+  }
+}
+
 export function sanitizeAnthropicToolUseInput(
   name: string,
   raw: string,
 ): unknown {
+  if (name === 'ExitPlanMode') {
+    if (raw === '') {
+      return {};
+    }
+    try {
+      return stripExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>);
+    } catch {
+      return {};
+    }
+  }
+
   if (name !== 'Read' || raw === '') {
     return raw;
   }
@@ -475,7 +518,10 @@ function resToAnthHandleFuncArgsDelta(
     return [];
   }
 
-  if (state.currentBlockType === 'tool_use' && state.currentToolName === 'Read') {
+  if (
+    state.currentBlockType === 'tool_use' &&
+    (state.currentToolName === 'Read' || state.currentToolName === 'ExitPlanMode')
+  ) {
     state.currentToolArgs += evt.delta;
     return [];
   }
@@ -520,6 +566,26 @@ function resToAnthHandleFuncArgsDone(
   if (raw === '') {
     raw = state.currentToolArgs;
   }
+
+  if (state.currentToolName === 'ExitPlanMode') {
+    const idx =
+      state.outputIndexToBlockIdx.get(evt.output_index ?? 0) ?? state.contentBlockIndex;
+    const sanitized = sanitizeExitPlanModeInlinePlanJson(raw);
+    const events: AnthropicStreamEvent[] = [];
+    if (sanitized !== '' && sanitized !== '{}') {
+      events.push({
+        type: 'content_block_delta',
+        index: idx,
+        delta: {
+          type: 'input_json_delta',
+          partial_json: sanitized,
+        },
+      });
+    }
+    events.push(...closeCurrentBlock(state));
+    return events;
+  }
+
   if (raw === '' || state.currentToolHadDelta) {
     return closeCurrentBlock(state);
   }
@@ -798,7 +864,9 @@ function emitPendingToolUseArguments(
     const idx =
       state.outputIndexToBlockIdx.get(evt.output_index ?? 0) ?? state.contentBlockIndex;
     let raw = args;
-    if (state.currentToolName === 'Read') {
+    if (state.currentToolName === 'ExitPlanMode') {
+      raw = sanitizeExitPlanModeInlinePlanJson(raw);
+    } else if (state.currentToolName === 'Read') {
       const sanitized = sanitizeAnthropicToolUseInput(state.currentToolName, raw);
       raw = typeof sanitized === 'string' ? sanitized : jsonMarshal(sanitized);
     }

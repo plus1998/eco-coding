@@ -37,6 +37,8 @@ export {
   responsesEventToAnthropicEvents,
   responsesToAnthropic,
   sanitizeAnthropicToolUseInput,
+  sanitizeExitPlanModeInlinePlanJson,
+  stripExitPlanModeInlinePlanFromObject,
   type ResponsesEventToAnthropicState,
 } from './responses-to-anthropic.js';
 
