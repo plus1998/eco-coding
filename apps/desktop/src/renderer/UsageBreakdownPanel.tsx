@@ -31,13 +31,15 @@ export function ExpandableBillingSection({
   summary,
   children,
   className,
+  defaultExpanded,
 }: {
   title: string;
   summary?: string;
   children: ReactNode;
   className?: string;
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false);
 
   return (
     <div className={["usage-breakdown-expandable", className].filter(Boolean).join(" ")}>
@@ -228,7 +230,7 @@ export function UsageBreakdownPanel({ billing, variant, agentDisplayNames }: Usa
   const summary = summaryRows.map((row) => `${row.label} ${row.tokenBadge}`).join(" · ");
 
   return (
-    <ExpandableBillingSection title="用量明细" summary={summary}>
+    <ExpandableBillingSection title="用量明细" summary={summary} defaultExpanded>
       <ViewToggle view={view} onChange={setView} compact={false} />
       <BreakdownRows
         view={view}

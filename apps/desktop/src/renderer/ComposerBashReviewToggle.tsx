@@ -1,8 +1,41 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { Check, Hand, Shield, ShieldAlert, Terminal } from "lucide-react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
-import { bashReviewUi, cycleBashReviewMode } from "../shared/bash-review-ui";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { BASH_REVIEW_UI, bashReviewUi } from "../shared/bash-review-ui";
+
+const POPOVER_WIDTH = 320;
+const VIEWPORT_MARGIN = 8;
+const ANCHOR_GAP = 6;
+const MIN_POPOVER_HEIGHT = 120;
+
+function clampPopoverLeft(anchorLeft: number, width: number): number {
+  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
+  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
+}
+
+function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const spaceAbove = rect.top - VIEWPORT_MARGIN;
+  const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - ANCHOR_GAP);
+  return {
+    position: "fixed",
+    left: clampPopoverLeft(rect.left, width),
+    bottom: window.innerHeight - rect.top + ANCHOR_GAP,
+    width,
+    maxHeight,
+    zIndex: 10000,
+  };
+}
 
 interface ComposerBashReviewToggleProps {
   bashReviewMode: BashReviewMode;
@@ -17,107 +50,182 @@ export function ComposerBashReviewToggle({
   saving,
   onToggle,
 }: ComposerBashReviewToggleProps) {
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const [tooltipStyle, setTooltipStyle] = useState<CSSProperties>(() => ({
-    visibility: "hidden",
-  }));
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
 
   const clickable = canEdit && !saving;
   const current = bashReviewUi(bashReviewMode);
-  const next = bashReviewUi(cycleBashReviewMode(bashReviewMode));
   const className = [
     "composer-meta-pill",
     "composer-orchestration-pill",
+    "composer-bash-review-pill",
     `bash-review-${bashReviewMode}`,
     clickable ? "is-clickable" : "",
+    open ? "is-active" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  const updateTooltipPosition = useCallback(() => {
-    const el = wrapRef.current;
-    if (!el) {
+  const updatePanelPosition = useCallback(() => {
+    const anchor = buttonRef.current;
+    if (!anchor) {
       return;
     }
-    setTooltipStyle(composerFloatingStyleForAnchor(el, { width: 280, minHeight: 112, prefer: "above" }));
+    setPanelStyle(popoverStyleForAnchor(anchor));
   }, []);
 
-  const showTooltip = useCallback(() => {
-    updateTooltipPosition();
-    setHovered(true);
-  }, [updateTooltipPosition]);
-
-  const hideTooltip = useCallback(() => {
-    setHovered(false);
-  }, []);
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    updatePanelPosition();
+    window.addEventListener("resize", updatePanelPosition);
+    window.addEventListener("scroll", updatePanelPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePanelPosition);
+      window.removeEventListener("scroll", updatePanelPosition, true);
+    };
+  }, [open, updatePanelPosition]);
 
   useEffect(() => {
-    if (!hovered) {
+    if (!open) {
       return;
     }
-    updateTooltipPosition();
-    window.addEventListener("resize", updateTooltipPosition);
-    window.addEventListener("scroll", updateTooltipPosition, true);
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("resize", updateTooltipPosition);
-      window.removeEventListener("scroll", updateTooltipPosition, true);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
     };
-  }, [hovered, updateTooltipPosition]);
+  }, [open]);
 
-  const tooltip =
-    hovered &&
-    createPortal(
-      <span className="composer-meta-tooltip" role="tooltip" style={tooltipStyle}>
-        <span className="composer-meta-tooltip-line">
-          <strong>{current.title}</strong>
-          <span className="composer-meta-tooltip-subtitle">{current.subtitle}</span>
-        </span>
-        <span className="composer-meta-tooltip-line composer-meta-tooltip-desc">{current.description}</span>
-        {clickable ? (
-          <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            点击切换为 {next.title}
-          </span>
-        ) : (
-          <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            当前对话进行中，Bash 审查模式不可修改
-          </span>
-        )}
-      </span>,
-      document.body,
-    );
-
-  const controlProps = {
-    onMouseEnter: showTooltip,
-    onMouseLeave: hideTooltip,
-    onFocus: showTooltip,
-    onBlur: hideTooltip,
-  };
+  function selectMode(mode: BashReviewMode) {
+    if (mode !== bashReviewMode) {
+      onToggle(mode);
+    }
+    setOpen(false);
+  }
 
   const control = clickable ? (
     <button
+      ref={buttonRef}
       type="button"
       className={className}
       disabled={saving}
       aria-pressed={bashReviewMode !== "allow_all"}
       aria-label={current.title}
-      onClick={() => onToggle(cycleBashReviewMode(bashReviewMode))}
-      {...controlProps}
+      aria-expanded={open}
+      onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      {current.title}
+      <Terminal size={12} aria-hidden className="composer-bash-review-pill-icon" />
+      <span className="composer-bash-review-pill-name">{current.title}</span>
     </button>
   ) : (
-    <span className={className} {...controlProps}>
-      {current.title}
+    <span className={className} title="当前对话进行中，审批模式不可修改">
+      <Terminal size={12} aria-hidden className="composer-bash-review-pill-icon" />
+      <span className="composer-bash-review-pill-name">{current.title}</span>
     </span>
   );
 
   return (
     <>
-      <span ref={wrapRef} className="composer-orchestration-wrap">
-        {control}
-      </span>
-      {tooltip}
+      <span className="composer-orchestration-wrap">{control}</span>
+      {open && clickable ? (
+        <ComposerBashReviewPopover
+          panelRef={panelRef}
+          panelStyle={panelStyle}
+          bashReviewMode={bashReviewMode}
+          disabled={Boolean(saving)}
+          onSelect={selectMode}
+        />
+      ) : null}
     </>
   );
+}
+
+function ComposerBashReviewPopover({
+  panelRef,
+  panelStyle,
+  bashReviewMode,
+  disabled,
+  onSelect,
+}: {
+  panelRef: RefObject<HTMLDivElement | null>;
+  panelStyle: CSSProperties;
+  bashReviewMode: BashReviewMode;
+  disabled: boolean;
+  onSelect: (mode: BashReviewMode) => void;
+}) {
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="composer-bash-review-popover"
+      role="dialog"
+      aria-label="Bash 审批模式"
+      style={panelStyle}
+    >
+      <header className="composer-bash-review-popover-header">
+        <p className="composer-bash-review-popover-title">应如何批准 Bash 操作？</p>
+      </header>
+      <ul className="composer-bash-review-popover-list">
+        {BASH_REVIEW_UI.map((option) => (
+          <li key={option.value}>
+            <button
+              type="button"
+              className={
+                option.value === bashReviewMode
+                  ? "composer-bash-review-popover-item active"
+                  : "composer-bash-review-popover-item"
+              }
+              disabled={disabled}
+              onClick={() => onSelect(option.value)}
+            >
+              <span className="composer-bash-review-popover-icon" aria-hidden>
+                <BashReviewModeIcon mode={option.value} />
+              </span>
+              <span className="composer-bash-review-popover-body">
+                <span className="composer-bash-review-popover-item-title">{option.title}</span>
+                <span className="composer-bash-review-popover-item-desc">{option.description}</span>
+              </span>
+              {option.value === bashReviewMode ? (
+                <span className="composer-bash-review-popover-check" aria-hidden>
+                  <Check size={14} strokeWidth={2.25} />
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>,
+    document.body,
+  );
+}
+
+function BashReviewModeIcon({ mode }: { mode: BashReviewMode }) {
+  if (mode === "always") {
+    return <Hand size={16} strokeWidth={1.75} />;
+  }
+  if (mode === "auto") {
+    return (
+      <span className="composer-bash-review-icon-stack">
+        <Shield size={16} strokeWidth={1.75} />
+        <Terminal size={8} strokeWidth={2.25} className="composer-bash-review-icon-badge" />
+      </span>
+    );
+  }
+  return <ShieldAlert size={16} strokeWidth={1.75} />;
 }

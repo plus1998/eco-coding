@@ -5740,9 +5740,169 @@ button:not(:disabled) {
   color: #737373;
 }
 
-.composer-orchestration-pill.is-autonomous,
 .composer-orchestration-pill.is-manual {
-  color: #d4d4d4;
+  border-color: rgba(147, 197, 253, 0.2);
+  background: rgba(30, 64, 175, 0.14);
+  color: #bfdbfe;
+}
+
+.composer-orchestration-pill.bash-review-auto {
+  border-color: rgba(45, 212, 191, 0.18);
+  background: rgba(19, 78, 74, 0.14);
+  color: #99f6e4;
+}
+
+.composer-orchestration-pill.bash-review-allow_all {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+}
+
+.composer-bash-review-pill.is-active {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e5e5;
+}
+
+.composer-bash-review-pill {
+  max-width: min(120px, 32vw);
+  padding: 3px 8px;
+  gap: 4px;
+}
+
+.composer-bash-review-pill-icon {
+  flex-shrink: 0;
+  opacity: 0.72;
+}
+
+.composer-bash-review-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-bash-review-popover {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px 12px 8px;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  background: #262626;
+  color: #f5f5f5;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.composer-bash-review-popover-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.composer-bash-review-popover-title {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.composer-bash-review-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.composer-bash-review-popover-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-bash-review-popover-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.composer-bash-review-popover-item.active {
+  cursor: default;
+}
+
+.composer-bash-review-popover-item:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.composer-bash-review-popover-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: #f5f5f5;
+}
+
+.composer-bash-review-icon-stack {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.composer-bash-review-icon-badge {
+  position: absolute;
+  right: -1px;
+  bottom: 0;
+  color: #f5f5f5;
+}
+
+.composer-bash-review-popover-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.composer-bash-review-popover-item-title {
+  color: #f5f5f5;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.composer-bash-review-popover-item-desc {
+  color: #a3a3a3;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.composer-bash-review-popover-check {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: #f5f5f5;
+}
+
+.composer-orchestration-pill.is-clickable:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
 .composer-agents-control {
@@ -9607,6 +9767,48 @@ button:not(:disabled) {
   border-color: #454545;
   background: #2d2d2d;
   color: #f2f2f2;
+}
+
+.codex-main:not(.codex-main-landing) .composer-orchestration-pill.is-manual {
+  border-color: rgba(147, 197, 253, 0.2);
+  background: rgba(30, 64, 175, 0.14);
+  color: #bfdbfe;
+}
+
+.codex-main:not(.codex-main-landing) .composer-orchestration-pill.bash-review-auto {
+  border-color: rgba(45, 212, 191, 0.18);
+  background: rgba(19, 78, 74, 0.14);
+  color: #99f6e4;
+}
+
+.codex-main:not(.codex-main-landing) .composer-orchestration-pill.bash-review-allow_all {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+}
+
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover {
+  border-color: #333333;
+  background: #202020;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-title {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-item-title,
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-icon,
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-check {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-item-desc {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .composer-bash-review-popover-item:hover:not(:disabled) {
+  background: #2a2a2a;
 }
 
 .codex-main:not(.codex-main-landing) .composer-route-pill-name {

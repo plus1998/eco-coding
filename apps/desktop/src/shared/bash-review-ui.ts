@@ -10,21 +10,21 @@ export interface BashReviewUiOption {
 export const BASH_REVIEW_UI: BashReviewUiOption[] = [
   {
     value: "always",
-    title: "Bash 全审",
+    title: "请求批准",
     subtitle: "always",
-    description: "每条 Bash 命令都需要你手动确认后才会执行。",
+    description: "执行 Bash 命令时始终询问",
   },
   {
     value: "auto",
-    title: "Bash 智能审",
+    title: "替我审批",
     subtitle: "auto",
-    description: "低风险命令自动放行；风险分数超过 85 的命令仍需确认。",
+    description: "仅对检测到的风险操作请求批准",
   },
   {
     value: "allow_all",
-    title: "Bash 放行",
+    title: "完全访问权限",
     subtitle: "allow",
-    description: "默认自动执行 Bash；绝对拒绝规则（如 rm /、cwd 越界）仍然生效。",
+    description: "可不受限制地执行 Bash 命令",
   },
 ];
 
