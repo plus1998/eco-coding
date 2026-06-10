@@ -121,6 +121,16 @@ export function resolveThreadContinueAction(input: ThreadContinueRoutingInput): 
   }
 
   if (!input.planModeEnabled) {
+    if (
+      input.hasPendingPlan &&
+      input.threadStatus === "awaiting_plan" &&
+      !input.enteredExecutionPhase
+    ) {
+      if (wantsRevision) {
+        return input.canResume ? { kind: "resume_sdk", phase: "planning" } : { kind: "revise_plan" };
+      }
+      return { kind: "revise_plan" };
+    }
     return input.canResume ? { kind: "resume_sdk", phase: "execution" } : { kind: "fresh_autonomous" };
   }
 

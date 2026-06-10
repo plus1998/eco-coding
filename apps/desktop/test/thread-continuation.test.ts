@@ -84,6 +84,24 @@ test("awaiting plan follow-up routes to plan revision without resume", () => {
   ).toEqual({ kind: "revise_plan" });
 });
 
+test("awaiting plan follow-up still revises plan after ExitPlanMode disables plan mode", () => {
+  expect(
+    resolveThreadContinueAction({
+      intent: "coding",
+      followUp: "把测试覆盖也加进计划",
+      canResume: false,
+      planModeEnabled: false,
+      hasPendingPlan: true,
+      hasApprovedPlanOnDisk: false,
+      enteredExecutionPhase: false,
+      hasCoderTodos: false,
+      hasAppliedDiff: false,
+      threadStatus: "awaiting_plan",
+      activityLines: [],
+    }),
+  ).toEqual({ kind: "revise_plan" });
+});
+
 test("interrupted execution follow-up resumes sdk when possible", () => {
   expect(
     resolveThreadContinueAction({

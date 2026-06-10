@@ -295,6 +295,7 @@ export {
   normalizeThreadRuntimeConfig,
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
+  withPlanModeDisabled,
 } from "./thread-runtime-config";
 export type { ThreadRuntimeConfig, ThreadRuntimeConfigInput };
 
@@ -1002,6 +1003,7 @@ export interface ThreadLiveEvent {
   projection?: ThreadRunProjectionSnapshot;
   subagentSessions?: ThreadSubagentSessionTiming[];
   apiError?: ThreadApiErrorInfo;
+  runtimeConfig?: ThreadRuntimeConfig;
 }
 
 export interface ThreadApiErrorInfo {

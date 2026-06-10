@@ -16,6 +16,7 @@ import {
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
   serializeThreadRuntimeConfig,
+  withPlanModeDisabled,
 } from "../src/shared/thread-runtime-config";
 
 const threadSubagentEnabled: SubagentEnabledSettings = {
@@ -228,6 +229,19 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
     routeProfileId: "",
     agentProfileId: "research-copy",
     subagentEnabled: threadSubagentEnabled,
+    planModeEnabled: false,
+  });
+});
+
+test("withPlanModeDisabled turns off plan mode without mutating the original config", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: { planModeEnabled: true },
+  });
+  expect(withPlanModeDisabled(config)).toEqual({ ...config, planModeEnabled: false });
+  expect(config.planModeEnabled).toBe(true);
+  expect(withPlanModeDisabled({ ...config, planModeEnabled: false })).toEqual({
+    ...config,
     planModeEnabled: false,
   });
 });

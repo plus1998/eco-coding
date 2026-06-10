@@ -224,6 +224,14 @@ export function isPlanModeThreadRuntime(config: ThreadRuntimeConfig): boolean {
   return config.planModeEnabled;
 }
 
+/** ExitPlanMode ends the planning phase; keep thread config aligned with the UI toggle. */
+export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
+  if (!config.planModeEnabled) {
+    return config;
+  }
+  return { ...config, planModeEnabled: false };
+}
+
 /** @deprecated Use isPlanModeThreadRuntime and invert it if needed. */
 export function isAutonomousThreadRuntime(config: ThreadRuntimeConfig): boolean {
   return !config.planModeEnabled;

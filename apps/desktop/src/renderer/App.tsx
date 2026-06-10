@@ -368,6 +368,15 @@ function App() {
         });
       }
 
+      if (event.runtimeConfig) {
+        const runtimeConfig = event.runtimeConfig;
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId ? { ...thread, runtimeConfig } : thread,
+          ),
+        );
+      }
+
       if (event.type === "clarification.requested" && event.clarification) {
         setPendingClarification(event.clarification);
       }

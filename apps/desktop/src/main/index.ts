@@ -103,6 +103,7 @@ import {
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
   type ThreadRuntimeConfigInput,
+  withPlanModeDisabled,
   type ThreadStartRequest,
   type ThreadStatus,
   type ThreadSummary,
@@ -852,6 +853,23 @@ function threadPlanModeEnabled(threadId: string): boolean {
   const thread = conversationStore.getThread(threadId);
   const config = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig : undefined;
   return config?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
+}
+
+function disableThreadPlanMode(threadId: string): ThreadRuntimeConfig | undefined {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return undefined;
+  }
+  const config = ensureThreadRuntimeConfig(thread).runtimeConfig;
+  if (!config) {
+    return undefined;
+  }
+  const next = withPlanModeDisabled(config);
+  if (next === config) {
+    return config;
+  }
+  conversationStore.saveThreadRuntimeConfig(threadId, next);
+  return next;
 }
 
 /** @deprecated Use threadPlanModeEnabled. */
@@ -1988,8 +2006,10 @@ function captureThreadPlanReady(input: {
         conversationStore.savePendingPlan(plan);
       },
       emitAwaitingPlan: (event) => {
+        const runtimeConfig = disableThreadPlanMode(input.threadId);
         emitThreadEvent(event.threadId, "thread.awaiting_plan", event.message, "planner", false, {
           plan: event.plan,
+          ...(runtimeConfig ? { runtimeConfig } : {}),
         });
       },
       scheduleTitleSummary: (threadId, context) => {
@@ -4945,6 +4965,7 @@ interface EmitThreadEventExtras {
   agentId?: string;
   subagentSessions?: ThreadLiveEvent["subagentSessions"];
   apiError?: ThreadLiveEvent["apiError"];
+  runtimeConfig?: ThreadRuntimeConfig;
   tool?: ThreadRunToolMetadata;
   metadata?: Record<string, unknown>;
 }
@@ -5068,6 +5089,9 @@ function emitThreadEvent(
   }
   if (extras?.subagentSessions) {
     payload.subagentSessions = extras.subagentSessions;
+  }
+  if (extras?.runtimeConfig) {
+    payload.runtimeConfig = extras.runtimeConfig;
   }
 
   BrowserWindow.getAllWindows().forEach((window) => {
