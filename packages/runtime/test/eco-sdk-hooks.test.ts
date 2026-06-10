@@ -69,6 +69,11 @@ test("parseExitPlanModeInput reads injected plan payload", () => {
   });
 });
 
+test("parseExitPlanModeInput reads the planContent field used by OpenAI-protocol models", () => {
+  expect(parseExitPlanModeInput({ planContent: "## Plan\n\nShip it." }).plan).toBe("## Plan\n\nShip it.");
+  expect(parseExitPlanModeInput({ plan_content: "## Plan\n\nShip it." }).plan).toBe("## Plan\n\nShip it.");
+});
+
 test("createExitPlanModePreToolHook passes through when PreToolUse injection is missing", async () => {
   const hook = createExitPlanModePreToolHook(() => {
     throw new Error("delegate should not run without plan content");

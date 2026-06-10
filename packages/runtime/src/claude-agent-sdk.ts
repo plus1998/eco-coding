@@ -105,6 +105,7 @@ export { type EcoOrchestrationMode, isSubagentRole, SUBAGENT_ROLES, type Subagen
 
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
+  interrupt?: () => Promise<void>;
   getContextUsage?: () => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
@@ -569,6 +570,33 @@ function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): strin
     .join("\n");
 }
 
+const postPlanCaptureActivityMessageTypes = new Set(["stream_event", "assistant", "user", "tool_progress"]);
+
+/**
+ * In the working defer protocol, nothing but the final `result` message follows the plan
+ * capture. Any of these message types after capture means the CLI kept the agent loop running.
+ */
+function isPostPlanCaptureActivityMessage(message: unknown): boolean {
+  return (
+    isRecord(message) &&
+    typeof message.type === "string" &&
+    postPlanCaptureActivityMessageTypes.has(message.type)
+  );
+}
+
+function isExitPlanModeRetryMessage(message: unknown): boolean {
+  if (!isRecord(message) || message.type !== "assistant") {
+    return false;
+  }
+  const inner = message.message;
+  if (!isRecord(inner) || !Array.isArray(inner.content)) {
+    return false;
+  }
+  return inner.content.some(
+    (block) => isRecord(block) && block.type === "tool_use" && block.name === "ExitPlanMode",
+  );
+}
+
 export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
@@ -987,6 +1015,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       pendingToolPermissionDecisions.push(decision);
     };
     let finalizedPlan: FinalizePlanPayload | undefined;
+    let exitPlanInterruptRequested = false;
     const exitPlanCaptureState = phase.planningPhase ? { capturedToolUseIds: new Set<string>() } : undefined;
     const onExitPlanMode =
       phase.planningPhase
@@ -1171,6 +1200,28 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           searchRoots: [input.workspacePath, sessionCwd],
           getPhaseTranscript: () => phaseTranscriptBox.text,
         });
+      }
+
+      // Defer termination gap (claude-code 2.1.168, observed with OpenAI-protocol models):
+      // after the PreToolUse hook returns `defer`, the CLI keeps the agent loop running and
+      // feeds "Tool permission request failed: Error: Stream closed" back to the model, which
+      // retries ExitPlanMode until the user cancels. The plan is already captured at this
+      // point, so the planning session must end here instead of relying on the CLI.
+      if (onExitPlanMode && finalizedPlan && isPostPlanCaptureActivityMessage(message)) {
+        if (!exitPlanInterruptRequested) {
+          exitPlanInterruptRequested = true;
+          if (typeof query.interrupt === "function") {
+            query.interrupt().catch(() => query.close?.());
+          } else {
+            query.close?.();
+            break;
+          }
+        } else if (isExitPlanModeRetryMessage(message)) {
+          // A new ExitPlanMode attempt after the interrupt request means the CLI is not
+          // honoring control requests either; hard-close the transport to end the phase.
+          query.close?.();
+          break;
+        }
       }
 
       if (input.signal.aborted) {

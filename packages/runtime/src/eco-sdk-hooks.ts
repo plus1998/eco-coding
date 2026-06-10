@@ -157,7 +157,7 @@ export function parseExitPlanModeOutput(
 }
 
 export function parseExitPlanModeInput(input: Record<string, unknown>): SdkExitPlanModeRequest {
-  const plan = readStringField(input, ["plan", "markdown", "content"]);
+  const plan = readStringField(input, ["plan", "planContent", "plan_content", "markdown", "content"]);
   const planFilePath = readStringField(input, [
     "planFilePath",
     "plan_file_path",

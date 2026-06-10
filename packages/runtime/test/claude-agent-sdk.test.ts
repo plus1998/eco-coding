@@ -2072,6 +2072,160 @@ test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result 
   });
 });
 
+async function invokeExitPlanHook(options: Record<string, unknown>, plan: string): Promise<void> {
+  const hooks = options.hooks as
+    | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
+    | undefined;
+  const exitPlanHook = hooks?.PreToolUse?.find((matcher) => matcher.matcher === "ExitPlanMode")?.hooks[0];
+  await exitPlanHook?.(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { plan },
+      tool_use_id: "tool_exit_plan_1",
+      session_id: "sess-plan-runaway",
+      cwd: "/tmp/workspace",
+    },
+    "tool_exit_plan_1",
+    { signal: new AbortController().signal },
+  );
+}
+
+test("ClaudeAgentSdkDriver planning interrupts the session when the CLI continues after ExitPlanMode capture", async () => {
+  let interruptCalls = 0;
+  let closeCalls = 0;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-plan-runaway",
+            uuid: "init-plan-runaway",
+          };
+          await invokeExitPlanHook(options, "## Summary\n\nShip the captured plan.");
+          // Broken defer termination: the CLI starts a new model turn instead of
+          // ending the session with a deferred_tool_use result.
+          yield {
+            type: "assistant",
+            session_id: "sess-plan-runaway",
+            uuid: "assistant-after-capture",
+            message: {
+              content: [{ type: "text", text: "提交审批时遇到工具侧内部错误，我再试一次。" }],
+            },
+          };
+          // The CLI honors the interrupt request and ends the session.
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-plan-runaway",
+            uuid: "result-plan-runaway",
+          };
+        },
+        interrupt: async () => {
+          interruptCalls += 1;
+        },
+        close: () => {
+          closeCalls += 1;
+        },
+      }),
+    }),
+  });
+
+  const events: Array<{ type: string; payload?: unknown }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_plan_runaway",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type, payload: event.payload });
+  }
+
+  expect(interruptCalls).toBe(1);
+  expect(closeCalls).toBe(0);
+  const ready = events.find((event) => event.type === "plan.ready");
+  expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
+});
+
+test("ClaudeAgentSdkDriver planning hard-closes the session when ExitPlanMode retries survive the interrupt", async () => {
+  let interruptCalls = 0;
+  let closeCalls = 0;
+  let consumedAfterClose = false;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ options }) => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-plan-runaway",
+            uuid: "init-plan-runaway",
+          };
+          await invokeExitPlanHook(options, "## Summary\n\nShip the captured plan.");
+          yield {
+            type: "assistant",
+            session_id: "sess-plan-runaway",
+            uuid: "assistant-after-capture",
+            message: {
+              content: [{ type: "text", text: "ExitPlanMode 内部错误，重试。" }],
+            },
+          };
+          // The CLI ignores the interrupt and the model retries ExitPlanMode.
+          yield {
+            type: "assistant",
+            session_id: "sess-plan-runaway",
+            uuid: "assistant-retry",
+            message: {
+              content: [
+                { type: "tool_use", id: "tool_exit_plan_2", name: "ExitPlanMode", input: { plan: "retry" } },
+              ],
+            },
+          };
+          consumedAfterClose = true;
+          yield {
+            type: "assistant",
+            session_id: "sess-plan-runaway",
+            uuid: "assistant-should-not-run",
+            message: { content: [{ type: "text", text: "still running" }] },
+          };
+        },
+        interrupt: async () => {
+          interruptCalls += 1;
+        },
+        close: () => {
+          closeCalls += 1;
+        },
+      }),
+    }),
+  });
+
+  const events: Array<{ type: string; payload?: unknown }> = [];
+  for await (const event of driver.run({
+    threadId: "thr_plan_runaway_close",
+    prompt: "Add markdown rendering",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    events.push({ type: event.type, payload: event.payload });
+  }
+
+  expect(interruptCalls).toBe(1);
+  expect(closeCalls).toBe(1);
+  expect(consumedAfterClose).toBe(false);
+  const ready = events.find((event) => event.type === "plan.ready");
+  expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
+});
+
 test("ClaudeAgentSdkDriver execution resume approves the deferred ExitPlanMode call", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({

@@ -409,7 +409,11 @@ export function mapStreamEventToEvents(
         role: streamRole,
         sessionId,
         payload: { usage: event.usage },
-        messageParentToolUseId: parentToolUseId ?? (messageRole ? undefined : null),
+        ...(parentToolUseId != null
+          ? { messageParentToolUseId: parentToolUseId }
+          : messageRole
+            ? {}
+            : { messageParentToolUseId: null }),
       },
       ctx,
     );
