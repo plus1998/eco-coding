@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createModelAlias } from "../src/main/anthropic-proxy";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import {
   buildDriverRoutes,
@@ -126,7 +127,10 @@ test("resolveThreadRuntimeConfig preserves dynamic runtime roles for generic Age
   ]);
   expect(buildDriverRoutesFromRuntime(resolved.routes)[1]).toMatchObject({
     role: "researcher",
-    primary: { modelId: "research-model" },
+    upstreamModelId: "research-model",
+    primary: {
+      modelId: createModelAlias("researcher", "p1", "research-model"),
+    },
   });
 });
 
@@ -143,7 +147,7 @@ test("resolveThreadRuntimeConfig still requires full coding routes by default", 
   });
 });
 
-test("buildDriverRoutes uses proxy aliases while runtime routes use upstream model ids", () => {
+test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases to the SDK", () => {
   const resolved = resolveThreadRuntimeConfig(
     { providers: [], routeProfiles: [], agentTemplates: [], orchestrationProfiles: [] },
     [provider("p1")],
@@ -152,11 +156,14 @@ test("buildDriverRoutes uses proxy aliases while runtime routes use upstream mod
   if (!resolved.ok) {
     throw new Error("expected runtime config");
   }
+  const runtimeRoute = resolved.routes[0]!;
+  const expectedAlias = createModelAlias(runtimeRoute.role, runtimeRoute.provider.id, runtimeRoute.modelId);
   const proxyRoutes = resolved.routes.map((route) => ({
     ...route,
-    aliasModelId: `eco-${route.role}`,
+    aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
   }));
 
-  expect(buildDriverRoutes(proxyRoutes)[0]?.primary.modelId).toBe("eco-planner");
-  expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.primary.modelId).toBe("planner-model");
+  expect(buildDriverRoutes(proxyRoutes)[0]?.primary.modelId).toBe(expectedAlias);
+  expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.primary.modelId).toBe(expectedAlias);
+  expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.upstreamModelId).toBe("planner-model");
 });

@@ -397,7 +397,7 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
     "mcp__github__*",
   ]);
   expect(resolveSdkSessionOptions()).toEqual({
-    settingSources: ["user", "project"],
+    settingSources: ["project"],
     skills: undefined,
     mcpServers: {},
   });
@@ -406,7 +406,7 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
       agentSkills: { planner: ["pdf"], coder: ["docx", "lint"] },
     }),
   ).toEqual({
-    settingSources: ["user", "project"],
+    settingSources: ["project"],
     skills: ["pdf"],
     mcpServers: {},
   });
@@ -1602,7 +1602,8 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     tools: ["Read", "Glob", "Grep"],
   });
   expect(agents.eco_researcher).toMatchObject({
-    model: "research-agent-model",
+    // Without a researcher route in test `routes`, resolveSdkModelId falls back to planner.
+    model: "claude-opus-4",
     tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*", "Skill"],
     disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",

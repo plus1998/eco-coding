@@ -151,8 +151,10 @@ export async function startAnthropicModelProxy(
             modelId: entry.modelId,
           })),
         });
+        const availableAliases = [...new Set(resolvedRoutes.map((entry) => entry.aliasModelId))];
         writeJson(response, 400, {
           error: `No provider route configured for model ${requestedModel ?? "<missing>"}.`,
+          available_models: availableAliases,
         });
         return;
       }
@@ -398,7 +400,7 @@ export function buildModelsListResponse(routes: readonly AnthropicProxyResolvedR
     seen.add(route.aliasModelId);
     data.push({
       id: route.aliasModelId,
-      display_name: `${route.role} · ${route.provider.name} → ${route.modelId}`,
+      display_name: `${route.role} · ${route.provider.name}`,
       type: "model",
     });
   }

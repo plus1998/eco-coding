@@ -115,6 +115,8 @@ test("buildModelsListResponse lists only eco alias ids for SDK discovery", () =>
   expect(ids).toEqual([route.aliasModelId]);
   expect(ids).not.toContain("gpt-5.4-mini");
   expect(ids).not.toContain("gpt-5.4");
+  const displayNames = buildModelsListResponse([route]).data.map((entry) => entry.display_name);
+  expect(displayNames.every((name) => !name.includes("gpt-5.4"))).toBe(true);
 });
 
 test("buildModelsListResponse lists one alias per configured route", () => {

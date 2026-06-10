@@ -1,4 +1,5 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
+import { createSdkModelResolver, resolveMainSdkModelId } from "./sdk-model-alias";
 import type { SessionStore } from "../../persistence/src/session-store.js";
 import {
   type AgentEvent,
@@ -195,7 +196,7 @@ const universalEcoBasePromptAppend = [
 ].join("\n");
 /** Read-only phases: auto-approve tools in allowedTools without edit prompts. */
 const readOnlyPermissionMode = "dontAsk" as const;
-const defaultSettingSources = ["user", "project"] as const;
+const defaultSettingSources = ["project"] as const;
 
 function usesUniversalAgentProfile(input: AgentRuntimeRunInput): boolean {
   return Boolean(input.agentRegistry && input.agentRegistry.profile.preset !== "coding");
@@ -973,11 +974,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const session = resolveSdkSessionOptions(input.sdkSession);
     // Profile agents must request the role route's model id (the proxy alias), so the local
     // proxy can attribute usage to the right agent role instead of guessing by shared model.
-    const routeModelByRole = new Map(input.routes.map((route) => [route.role, route.primary.modelId]));
+    const resolveSdkModel = createSdkModelResolver(input.routes);
     const dynamicAgents = input.agentRegistry
       ? createAgentDefinitionsFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(input.sdkSession?.agentSkills && { agentSkills: input.sdkSession.agentSkills }),
-          resolveModelId: (agentKey, modelId) => routeModelByRole.get(agentKey) ?? modelId,
+          resolveModelId: resolveSdkModel,
         })
       : undefined;
     const dynamicProfileDefinitions =
@@ -1047,10 +1048,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw profile model ids are ambiguous when multiple
     // roles share the same upstream model.
-    const mainModel =
-      findRoute(input.routes, "planner")?.primary.modelId ??
-      input.agentRegistry?.profile.mainAgent.modelRef.modelId ??
-      plannerRoute.primary.modelId;
+    const profileMainModelId = input.agentRegistry?.profile.mainAgent.modelRef.modelId;
+    const mainModel = resolveMainSdkModelId(input.routes, profileMainModelId);
     const systemPrompt = input.agentRegistry
       ? buildMainAgentSystemPrompt(
           input.agentRegistry.profile,

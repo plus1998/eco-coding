@@ -47,7 +47,7 @@ test("resolveSdkSessionSkillConfig keeps only project skills during planning", (
   });
 });
 
-test("resolveSdkSessionSkillConfig keeps user and profile skills outside planning", () => {
+test("resolveSdkSessionSkillConfig uses project settings only during execution to avoid user default model leaks", () => {
   expect(
     resolveSdkSessionSkillConfig("default", {
       projectNames: ["project-skill"],
@@ -55,7 +55,7 @@ test("resolveSdkSessionSkillConfig keeps user and profile skills outside plannin
       explicitUser: ["user-skill"],
     }),
   ).toEqual({
-    settingSources: ["user", "project"],
+    settingSources: ["project"],
     skills: ["profile-skill", "project-skill", "user-skill"],
   });
 });

@@ -11,6 +11,8 @@ export type RouteThinkingEffort = "off" | "low" | "medium" | "high" | "xhigh" | 
 
 export interface ResolvedModelRoute {
   role: RuntimeAgentRole;
+  /** Upstream provider model id; SDK must use primary.modelId (eco alias) instead. */
+  upstreamModelId?: string;
   primary: ModelProfile;
   fallbacks: ModelProfile[];
   thinkingEffort?: RouteThinkingEffort;

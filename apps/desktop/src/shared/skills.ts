@@ -108,7 +108,7 @@ export function filterExplicitUserSkillNames(
 
 export type SdkSessionSkillsScope = "planning" | "default";
 
-/** Plan phase exposes only project skills; execution keeps user/project/profile skills. */
+/** Execution uses project settings only so ~/.claude user defaults (e.g. gpt-5.4) do not override Eco proxy aliases on subagent LLM calls. */
 export function resolveSdkSessionSkillConfig(
   scope: SdkSessionSkillsScope,
   input: {
@@ -125,7 +125,7 @@ export function resolveSdkSessionSkillConfig(
     };
   }
   return {
-    settingSources: ["user", "project"],
+    settingSources: ["project"],
     skills: mergeSkillNames(input.projectNames, input.profileMainSkills, input.explicitUser),
   };
 }

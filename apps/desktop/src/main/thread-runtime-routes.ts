@@ -1,7 +1,7 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import { AGENT_ROLES, type ModelSettingsSnapshot, type RuntimeRoleRouteConfig } from "../shared/ipc";
-import type { AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import { createModelAlias, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { ProviderConfigSecret } from "./provider-store";
 
@@ -83,10 +83,11 @@ export function roleRoutesFromRuntime(routes: readonly RuntimeRoute[]): RuntimeR
 export function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]): ResolvedModelRoute[] {
   return routes.map((route) => ({
     role: route.role,
+    upstreamModelId: route.modelId,
     primary: {
       id: `${route.role}:${route.provider.id}`,
       provider: "custom",
-      displayName: `${route.provider.name} / ${route.modelId}`,
+      displayName: `${route.provider.name} / ${route.role}`,
       baseUrl: route.provider.baseUrl,
       // Role-specific alias lets the local proxy attribute shared upstream models to the right context window.
       modelId: route.aliasModelId,
@@ -99,18 +100,22 @@ export function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]
 }
 
 export function buildDriverRoutesFromRuntime(routes: readonly RuntimeRoute[]): ResolvedModelRoute[] {
-  return routes.map((route) => ({
-    role: route.role,
-    primary: {
-      id: `${route.role}:${route.provider.id}`,
-      provider: "custom",
-      displayName: `${route.provider.name} / ${route.modelId}`,
-      baseUrl: route.provider.baseUrl,
-      modelId: route.modelId,
-      capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
-      enabled: route.provider.enabled,
-    },
-    fallbacks: [],
-    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-  }));
+  return routes.map((route) => {
+    const aliasModelId = createModelAlias(route.role, route.provider.id, route.modelId);
+    return {
+      role: route.role,
+      upstreamModelId: route.modelId,
+      primary: {
+        id: `${route.role}:${route.provider.id}`,
+        provider: "custom",
+        displayName: `${route.provider.name} / ${route.role}`,
+        baseUrl: route.provider.baseUrl,
+        modelId: aliasModelId,
+        capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
+        enabled: route.provider.enabled,
+      },
+      fallbacks: [],
+      ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+    };
+  });
 }
