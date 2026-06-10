@@ -381,6 +381,7 @@ const COMMON_CLAUDE_TOOL_OPTIONS: AgentTemplateCapabilityOption[] = [
     description: "请求用户选择或补充信息。",
     sourceLabel: "Eco",
   },
+
 ];
 
 function buildToolOptions(

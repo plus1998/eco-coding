@@ -11,6 +11,7 @@ import {
 import { formatSubagentMissionMessage } from "./agent-mission";
 import {
   buildMainAgentSystemPrompt,
+  buildBuiltinPlanToolPermissionEntry,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
@@ -42,6 +43,8 @@ import {
   slimStreamEventMessage,
 } from "./sdk-stream-events.js";
 import { resolveSkillDisplayName } from "./skill-display";
+import { extractPlanningDeliverables } from "./phase-deliverable.js";
+import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { mergeStreamText } from "./stream-text";
 import { formatResumableSubagentsAppend, normalizeSdkSubagentType } from "./subagent-resume.js";
 
@@ -154,7 +157,10 @@ const planningAllowedTools = [
   ...SDK_FILESYSTEM_READ_TOOL_NAMES,
   ...networkAllowedTools,
   "AskUserQuestion",
-  "ExitPlanMode",
+] as const;
+/** SDK `disallowedTools` removes write tools from the model context during planning. */
+const planningDisallowedSdkTools = [
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
 ] as const;
 const questionAllowedTools = [
   "Agent",
@@ -524,6 +530,22 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
 interface FinalizePlanPayload {
   analysis: string;
   plan: string;
+  planFilePath?: string;
+}
+
+function resolvePlanningFinalizedPlanFromTranscript(
+  transcript: string,
+): FinalizePlanPayload | undefined {
+  const deliverables = extractPlanningDeliverables(transcript);
+  if (!deliverables.plan.trim()) {
+    return undefined;
+  }
+  return {
+    analysis:
+      deliverables.analysis.trim() ||
+      "Plan captured from the planning session transcript after ExitPlanMode hooks had no SDK injection.",
+    plan: deliverables.plan,
+  };
 }
 
 function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): string {
@@ -552,8 +574,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
-    const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
+    const planFile = planning.planFilePath?.trim()
+      ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
+      : undefined;
     const resumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
     const prompt =
       input.executionPromptOverride ??
@@ -561,7 +584,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? buildUniversalExecutionPromptWithFollowUp(
             {
               ...planning,
-              approvedPlanFile,
+              ...(planFile ? { approvedPlanFile: planFile } : {}),
               ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
             },
             input.prompt,
@@ -570,7 +593,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : buildExecutionPromptWithFollowUp(
             {
               ...planning,
-              approvedPlanFile,
+              ...(planFile ? { approvedPlanFile: planFile } : {}),
               ...(input.resumableSubagents?.length ? { resumableSubagents: input.resumableSubagents } : {}),
             },
             input.prompt,
@@ -735,6 +758,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           ? buildUniversalPlanningContinuationPrompt(input.prompt)
           : buildPlanningContinuationPrompt(input.prompt, availability),
         permissionMode: "plan",
+        planningPhase: true,
         allowedTools: [...planningAllowedTools],
         phaseAppend: planningPhaseAppend,
         agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
@@ -743,12 +767,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       if (input.signal.aborted) {
         return;
       }
-      const finalizedPlan = planningTranscript.finalizedPlan;
+      const finalizedPlan =
+        planningTranscript.finalizedPlan ??
+        resolvePlanningFinalizedPlanFromTranscript(planningTranscript.transcript);
       if (finalizedPlan) {
         yield createPlanReadyEvent(input.threadId, {
           userPrompt: input.prompt,
           analysis: finalizedPlan.analysis,
           plan: finalizedPlan.plan,
+          ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
         });
       }
       return;
@@ -774,15 +801,22 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
     const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
-    const safeThreadId = input.threadId.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const approvedPlanFile = `.eco/approved-plans/${safeThreadId}.md`;
+    const planFile = planning?.planFilePath?.trim()
+      ? toWorkspaceRelativePlanFile(planning.planFilePath, input.workspacePath.trim() || input.worktreePath)
+      : undefined;
     const executionPrompt = planning
       ? universalProfile
-        ? buildUniversalExecutionPromptWithFollowUp({ ...planning, approvedPlanFile }, input.prompt, {
+        ? buildUniversalExecutionPromptWithFollowUp(
+            { ...planning, ...(planFile ? { approvedPlanFile: planFile } : {}) },
+            input.prompt,
+            {
             isResume: true,
             includePlanOnResume: false,
           })
-        : buildExecutionPromptWithFollowUp({ ...planning, approvedPlanFile }, input.prompt, {
+        : buildExecutionPromptWithFollowUp(
+            { ...planning, ...(planFile ? { approvedPlanFile: planFile } : {}) },
+            input.prompt,
+            {
             isResume: true,
             availability,
             includePlanOnResume: false,
@@ -827,6 +861,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? buildUniversalPlanningPrompt(input.prompt)
         : buildPlanningPhasePrompt(input.prompt, availability),
       permissionMode: "plan",
+      planningPhase: true,
       allowedTools: [...planningAllowedTools],
       phaseAppend: planningPhaseAppend,
       agents: createPlanningAgentDefinitions(input.routes, input.sdkSession?.agentSkills, availability),
@@ -835,12 +870,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (input.signal.aborted) {
       return;
     }
-    const finalizedPlan = planningTranscript.finalizedPlan;
+    const finalizedPlan =
+      planningTranscript.finalizedPlan ??
+      resolvePlanningFinalizedPlanFromTranscript(planningTranscript.transcript);
     if (finalizedPlan) {
       yield createPlanReadyEvent(input.threadId, {
         userPrompt: input.prompt,
         analysis: finalizedPlan.analysis,
         plan: finalizedPlan.plan,
+        ...(finalizedPlan.planFilePath ? { planFilePath: finalizedPlan.planFilePath } : {}),
       });
     }
   }
@@ -850,6 +888,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     phase: {
       prompt: string;
       permissionMode: "dontAsk" | "default" | "acceptEdits" | "plan";
+      planningPhase?: boolean;
       allowedTools: string[];
       phaseAppend: string;
       agents?: Record<string, unknown>;
@@ -889,28 +928,44 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const mainAllowedTools = input.agentRegistry
       ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
       : phase.allowedTools;
-    const toolPermissions = input.agentRegistry
+    let toolPermissions = input.agentRegistry
       ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
           mainAllowedTools,
         })
       : undefined;
+    if (toolPermissions && phase.planningPhase) {
+      toolPermissions = {
+        ...toolPermissions,
+        agents: {
+          ...toolPermissions.agents,
+          [SDK_PLAN_AGENT_KEY]: buildBuiltinPlanToolPermissionEntry(),
+        },
+      };
+    }
     const pendingToolPermissionDecisions: EcoToolPermissionDecisionAudit[] = [];
     const onToolPermissionDecision = (decision: EcoToolPermissionDecisionAudit) => {
       this.options.hookContext?.onToolPermissionDecision?.(decision);
       pendingToolPermissionDecisions.push(decision);
     };
     let finalizedPlan: FinalizePlanPayload | undefined;
+    const exitPlanCaptureState = phase.planningPhase ? { capturedToolUseIds: new Set<string>() } : undefined;
     const onExitPlanMode =
-      phase.permissionMode === "plan"
+      phase.planningPhase
         ? (submission: { plan: string; planFilePath?: string }) => {
+            const workspaceRoot = input.workspacePath.trim() || input.worktreePath;
             finalizedPlan = {
               analysis: buildExitPlanModeAnalysis(submission),
               plan: submission.plan,
+              ...(submission.planFilePath
+                ? {
+                    planFilePath: toWorkspaceRelativePlanFile(submission.planFilePath, workspaceRoot),
+                  }
+                : {}),
             };
           }
         : undefined;
-    const allowedSdkBuiltinAgentKeys = phase.permissionMode === "plan" ? [SDK_PLAN_AGENT_KEY] : undefined;
+    const allowedSdkBuiltinAgentKeys = phase.planningPhase ? [SDK_PLAN_AGENT_KEY] : undefined;
     const shouldBuildHooks = Boolean(
       this.options.hookContext || onExitPlanMode || dynamicAgentKeys || toolPermissions,
     );
@@ -941,6 +996,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
       allowedTools,
+      ...(phase.planningPhase ? { disallowedTools: [...planningDisallowedSdkTools] } : {}),
       ...(this.options.toolPermissionHandler
         ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }
         : {}),
@@ -951,6 +1007,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             hooks: buildEcoSdkHooks({
               ...(this.options.hookContext ?? {}),
               ...(onExitPlanMode ? { onExitPlanMode } : {}),
+              ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
+              ...(phase.planningPhase
+                ? { getPhaseTranscript: () => phaseTranscriptBox.text }
+                : {}),
               workspacePath: input.workspacePath,
               ...(dynamicAgentKeys ? { allowedAgentKeys: dynamicAgentKeys } : {}),
               ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
@@ -995,6 +1055,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     input.signal.addEventListener("abort", () => query.close?.(), { once: true });
 
     let transcript = "";
+    const phaseTranscriptBox = { text: "" };
     let sessionCaptured = false;
     let activeSessionId = "unknown-session";
     const resolveSubagent = this.options.hookContext?.subagentAttribution?.resolveAgentId;
@@ -1049,6 +1110,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
         yield event;
         transcript = appendToPhaseTranscript(transcript, event);
+        phaseTranscriptBox.text = transcript;
       }
 
       if (input.signal.aborted) {
@@ -1376,6 +1438,7 @@ export function applyEcoSdkSettings(
   queryOptions.settings = {
     ...existing,
     disableWorkflows: true,
+    plansDirectory: ".claude/plans",
     permissions: {
       ...existingPermissions,
       deny,

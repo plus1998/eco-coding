@@ -746,6 +746,18 @@ export class ConversationStore {
     if (!followUpNames.has("delivery_boundary")) {
       this.db.exec(`ALTER TABLE thread_pending_followups ADD COLUMN delivery_boundary TEXT`);
     }
+
+    if (!names.has("claude_plan_file_path")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN claude_plan_file_path TEXT`);
+    }
+
+    const pendingPlanColumns = this.db
+      .prepare(`PRAGMA table_info(thread_pending_plans)`)
+      .all() as Array<{ name: string }>;
+    const pendingPlanNames = new Set(pendingPlanColumns.map((column) => column.name));
+    if (!pendingPlanNames.has("plan_file_path")) {
+      this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN plan_file_path TEXT`);
+    }
   }
 
   saveThreadRuntimeConfig(threadId: string, config: ThreadRuntimeConfig): void {
@@ -2179,8 +2191,8 @@ export class ConversationStore {
     this.db
       .prepare(
         `INSERT INTO thread_pending_plans (
-           thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, plan_file_path, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(thread_id) DO UPDATE SET
            user_prompt = excluded.user_prompt,
            analysis = excluded.analysis,
@@ -2188,6 +2200,7 @@ export class ConversationStore {
            workspace_path = excluded.workspace_path,
            worktree_path = excluded.worktree_path,
            routes_json = excluded.routes_json,
+           plan_file_path = excluded.plan_file_path,
            created_at = excluded.created_at`,
       )
       .run(
@@ -2198,6 +2211,7 @@ export class ConversationStore {
         plan.workspacePath,
         plan.worktreePath,
         plan.routesJson,
+        plan.planFilePath?.trim() || null,
         new Date().toISOString(),
       );
   }
@@ -2205,7 +2219,7 @@ export class ConversationStore {
   getPendingPlan(threadId: string): (ThreadPendingPlan & { routesJson: string }) | undefined {
     const row = this.db
       .prepare(
-        `SELECT thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json
+        `SELECT thread_id, user_prompt, analysis, plan, workspace_path, worktree_path, routes_json, plan_file_path
          FROM thread_pending_plans
          WHERE thread_id = ?`,
       )
@@ -2218,6 +2232,7 @@ export class ConversationStore {
           workspace_path: string;
           worktree_path: string;
           routes_json: string;
+          plan_file_path: string | null;
         }
       | undefined;
 
@@ -2233,7 +2248,30 @@ export class ConversationStore {
       workspacePath: row.workspace_path,
       worktreePath: row.worktree_path,
       routesJson: row.routes_json,
+      ...(row.plan_file_path?.trim() ? { planFilePath: row.plan_file_path.trim() } : {}),
     };
+  }
+
+  getThreadClaudePlanFilePath(threadId: string): string | undefined {
+    const row = this.db
+      .prepare(`SELECT claude_plan_file_path FROM threads WHERE id = ?`)
+      .get(threadId) as { claude_plan_file_path: string | null } | undefined;
+    const path = row?.claude_plan_file_path?.trim();
+    return path || undefined;
+  }
+
+  setThreadClaudePlanFilePath(threadId: string, planFilePath: string | undefined): void {
+    this.db
+      .prepare(
+        `UPDATE threads
+         SET claude_plan_file_path = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(planFilePath?.trim() || null, new Date().toISOString(), threadId);
+  }
+
+  clearThreadClaudePlanFilePath(threadId: string): void {
+    this.setThreadClaudePlanFilePath(threadId, undefined);
   }
 
   clearPendingPlan(threadId: string): void {

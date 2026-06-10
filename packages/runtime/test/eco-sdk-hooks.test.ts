@@ -9,7 +9,9 @@ import {
   buildEcoSdkHooks,
   createAskUserQuestionPreToolHook,
   createDisabledSubagentPreToolHook,
+  createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
+  parseExitPlanModeOutput,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
   createPreCompactHook,
@@ -64,7 +66,111 @@ test("parseExitPlanModeInput reads injected plan payload", () => {
   });
 });
 
-test("createExitPlanModePreToolHook captures plan and defers SDK approval", async () => {
+test("createExitPlanModePreToolHook passes through when PreToolUse injection is missing", async () => {
+  const hook = createExitPlanModePreToolHook(() => {
+    throw new Error("delegate should not run without plan content");
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected ExitPlanMode hook");
+  }
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: {},
+      tool_use_id: "tool_exit_pending",
+      session_id: "s1",
+      cwd: "/tmp/workspace",
+    } satisfies PreToolUseHookInput,
+    "tool_exit_pending",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result).toEqual({});
+});
+
+test("createExitPlanModePreToolHook defers after capturing injected plan", async () => {
+  const hook = createExitPlanModePreToolHook((request) => {
+    expect(request.plan).toContain("Implement plan mode.");
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected ExitPlanMode hook");
+  }
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "ExitPlanMode",
+      tool_input: { allowedPrompts: [{ tool: "Bash", prompt: "run tests" }] },
+      tool_use_id: "tool_exit",
+      session_id: "s1",
+      cwd: "/tmp",
+      plan: "## Summary\n\nImplement plan mode.",
+      planFilePath: "/tmp/.claude/plans/plan.md",
+    } as PreToolUseHookInput & { plan: string; planFilePath: string },
+    "tool_exit",
+    { signal: new AbortController().signal },
+  );
+
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "defer",
+  });
+});
+
+test("createExitPlanModePermissionRequestHook denies SDK approval and captures plan", async () => {
+  const captured: Array<{ plan: string; planFilePath?: string }> = [];
+  const hook = createExitPlanModePermissionRequestHook((request) => {
+    captured.push({
+      plan: request.plan,
+      ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
+    });
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected ExitPlanMode permission hook");
+  }
+
+  const result = await hook(
+    {
+      hook_event_name: "PermissionRequest",
+      tool_name: "ExitPlanMode",
+      tool_input: {
+        plan: "## Summary\n\nShip from permission request.",
+        filePath: "/tmp/workspace/.claude/plans/plan.md",
+      },
+      session_id: "sess_perm",
+      cwd: "/tmp/workspace",
+      transcript_path: "/tmp/transcript.jsonl",
+    },
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
+  expect(captured[0]?.plan).toContain("Ship from permission request");
+  expect(result.hookSpecificOutput).toMatchObject({
+    hookEventName: "PermissionRequest",
+    decision: { behavior: "deny", interrupt: true },
+  });
+  expect(result.continue).toBeUndefined();
+});
+
+test("parseExitPlanModeOutput reads SDK tool response", () => {
+  expect(
+    parseExitPlanModeOutput({
+      plan: "  ## Plan\n\nDo it.  ",
+      filePath: "/repo/.claude/plans/a.md",
+    }),
+  ).toEqual({
+    plan: "## Plan\n\nDo it.",
+    planFilePath: "/repo/.claude/plans/a.md",
+  });
+});
+
+test("createExitPlanModePreToolHook captures injected plan and defers SDK completion", async () => {
   const captured: Array<{ plan: string; planFilePath?: string; toolUseId: string }> = [];
   const hook = createExitPlanModePreToolHook((request) => {
     captured.push({

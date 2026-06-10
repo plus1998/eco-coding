@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildMainAgentSystemPrompt,
+  buildBuiltinPlanToolPermissionEntry,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   type EcoAgentTemplateConfig,
@@ -158,69 +159,194 @@ test("buildMainAgentSystemPrompt keeps claude_code preset for coding profiles", 
   expect(systemPrompt.append).toContain("Agent(eco_researcher)");
 });
 
-test("resolveMainAgentAllowedTools uses profile tools for universal profiles and merges coding tools", () => {
+test("resolveMainAgentAllowedTools merges phase tools for universal profiles", () => {
   expect(resolveMainAgentAllowedTools(profile, ["Bash", "Write"])).toEqual([
-    "Agent",
-    "Read",
-    "WebSearch",
-    "Skill",
-    "TaskCreate",
-    "TaskUpdate",
-    "TodoWrite",
-    "mcp__sources__quote",
-    "mcp__browser__*",
-    "LS",
-    "NotebookRead",
-    "TaskList",
-    "TaskOutput",
-  ]);
-
-  const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
-  expect(resolveMainAgentAllowedTools(codingProfile, ["Bash", "Write"])).toEqual([
-    "Agent",
-    "Read",
-    "WebSearch",
     "Bash",
     "Write",
     "Skill",
     "TaskCreate",
     "TaskUpdate",
     "TodoWrite",
+    "MultiEdit",
+    "NotebookEdit",
+    "Agent",
+    "Read",
+    "WebSearch",
     "mcp__sources__quote",
     "mcp__browser__*",
+    "LS",
+    "NotebookRead",
+    "TaskList",
+    "TaskOutput",
+  ]);
+
+  const planningPhaseTools = [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+  ];
+  const planningResolved = resolveMainAgentAllowedTools(profile, planningPhaseTools);
+  expect(planningResolved).not.toContain("ExitPlanMode");
+  expect(planningResolved).toContain("AskUserQuestion");
+  expect(planningResolved).not.toContain("Bash");
+
+  const codingProfile: EcoOrchestrationProfileConfig = { ...profile, preset: "coding" };
+  const executionPhaseTools = [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+  ];
+  expect(resolveMainAgentAllowedTools(codingProfile, executionPhaseTools)).toEqual([
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+    "Skill",
+    "TaskCreate",
+    "TaskUpdate",
+    "TodoWrite",
     "LS",
     "NotebookRead",
     "MultiEdit",
     "NotebookEdit",
     "TaskList",
     "TaskOutput",
+    "mcp__sources__quote",
+    "mcp__browser__*",
   ]);
 });
 
+test("resolveMainAgentAllowedTools caps coding profile tools to planning phase", () => {
+  const codingProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    preset: "coding",
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+        disallowed: [],
+        bash: { enabled: true, approval: "risky" },
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const planningPhaseTools = [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+  ];
+  const resolved = resolveMainAgentAllowedTools(codingProfile, planningPhaseTools);
+  expect(resolved).not.toContain("ExitPlanMode");
+  expect(resolved).toContain("AskUserQuestion");
+  expect(resolved).toContain("Read");
+  expect(resolved).not.toContain("Write");
+  expect(resolved).not.toContain("Edit");
+  expect(resolved).not.toContain("MultiEdit");
+  expect(resolved).not.toContain("Bash");
+});
+
+test("buildBuiltinPlanToolPermissionEntry allows Skill and read tools for SDK Plan agent", () => {
+  const entry = buildBuiltinPlanToolPermissionEntry();
+  expect(entry.allowed).toContain("Skill");
+  expect(entry.allowed).toContain("Read");
+  expect(entry.allowed).not.toContain("Write");
+  expect(entry.filesystem).toEqual({ read: "workspace", write: "none" });
+});
+
+test("buildToolPermissionPolicyFromProfile disables main writes during planning phase", () => {
+  const codingProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    preset: "coding",
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+        disallowed: [],
+        bash: { enabled: true, approval: "risky" },
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const mainAllowedTools = resolveMainAgentAllowedTools(codingProfile, [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+  ]);
+  const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
+    mainAllowedTools,
+  });
+  expect(policy.main.allowed).not.toContain("ExitPlanMode");
+  expect(policy.main.allowed).not.toContain("Write");
+  expect(policy.main.filesystem).toEqual({ read: "workspace", write: "none" });
+  expect(policy.main.bash?.enabled).toBe(false);
+});
+
+test("buildToolPermissionPolicyFromProfile caps universal profile tools during planning phase", () => {
+  const mainAllowedTools = resolveMainAgentAllowedTools(profile, [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+  ]);
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
+    mainAllowedTools,
+  });
+  expect(policy.main.allowed).not.toContain("ExitPlanMode");
+  expect(policy.main.allowed).not.toContain("Write");
+});
+
 test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools", () => {
+  const mainAllowedTools = resolveMainAgentAllowedTools(profile, [
+    "Agent",
+    "TaskList",
+    "TaskOutput",
+    "Skill",
+    "Read",
+    "Glob",
+    "Grep",
+    "LS",
+    "NotebookRead",
+    "WebSearch",
+    "WebFetch",
+    "AskUserQuestion",
+  ]);
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
     agentKeys: ["eco_researcher"],
-    mainAllowedTools: ["AskUserQuestion"],
+    mainAllowedTools,
   });
 
-  expect(policy.main).toEqual({
-    allowed: [
-      "Agent",
-      "Read",
-      "WebSearch",
-      "AskUserQuestion",
-      "Skill",
-      "TaskCreate",
-      "TaskUpdate",
-      "TodoWrite",
-      "mcp__sources__quote",
-      "mcp__browser__*",
-      "LS",
-      "NotebookRead",
-      "TaskList",
-      "TaskOutput",
-    ],
+  expect(policy.main.allowed).toEqual(mainAllowedTools);
+  expect(policy.main).toMatchObject({
     disallowed: ["Write"],
+    filesystem: { read: "workspace", write: "none" },
   });
   expect(policy.agents).toEqual({
     eco_researcher: {

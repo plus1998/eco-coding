@@ -89,6 +89,44 @@ export async function readApprovedPlanSnapshot(
   }
 }
 
+export function resolveClaudePlanAbsolutePath(workspacePath: string, planFilePath: string): string {
+  const trimmed = planFilePath.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return path.isAbsolute(trimmed) ? trimmed : path.join(workspacePath, trimmed);
+}
+
+export async function claudePlanFileExists(workspacePath: string, planFilePath: string): Promise<boolean> {
+  const absolute = resolveClaudePlanAbsolutePath(workspacePath, planFilePath);
+  if (!absolute) {
+    return false;
+  }
+  try {
+    await fs.access(absolute);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function readClaudePlanFile(
+  workspacePath: string,
+  planFilePath: string,
+): Promise<string | undefined> {
+  const absolute = resolveClaudePlanAbsolutePath(workspacePath, planFilePath);
+  if (!absolute) {
+    return undefined;
+  }
+  try {
+    const text = await fs.readFile(absolute, "utf8");
+    return text.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** @deprecated Legacy `.eco/approved-plans/` snapshots; new threads use Claude `.claude/plans/`. */
 export async function approvedPlanSnapshotExists(
   workspacePath: string,
   threadId: string,

@@ -59,6 +59,8 @@ export interface PlanReadyPayload {
   userPrompt: string;
   analysis: string;
   plan: string;
+  /** Claude Code plan file written by ExitPlanMode (workspace-relative when possible). */
+  planFilePath?: string;
 }
 
 export interface SessionCapturedPayload {

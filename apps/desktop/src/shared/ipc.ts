@@ -389,6 +389,8 @@ export interface ThreadPendingPlan {
   plan: string;
   workspacePath: string;
   worktreePath: string;
+  /** Claude Code `.claude/plans/` path (workspace-relative when possible). */
+  planFilePath?: string;
 }
 
 /** Approve execution of the pending plan captured from the planner. */

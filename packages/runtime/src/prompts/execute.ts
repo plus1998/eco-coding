@@ -62,7 +62,7 @@ export function buildExecuteResumePrompt(planning: {
   analysis: string;
   plan: string;
   planUserEdited?: boolean;
-  /** Repo-relative path, e.g. `.eco/approved-plans/thr_x.md` */
+  /** Repo-relative path, e.g. `.claude/plans/<plan>.md` */
   approvedPlanFile?: string;
   resumableSubagents?: readonly { role: string; agentId: string }[];
 }, options?: { includePlanText?: boolean }): string {

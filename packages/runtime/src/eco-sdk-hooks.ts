@@ -4,6 +4,7 @@ import type {
   HookEvent,
   HookJSONOutput,
   NotificationHookInput,
+  PermissionRequestHookInput,
   PreCompactHookInput,
   PreToolUseHookInput,
   StopHookInput,
@@ -13,6 +14,12 @@ import type {
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
+import {
+  readLatestClaudePlanFile,
+  readPlanFileContent,
+  readPlanFromPhaseTranscript,
+  readPlanFromSdkTranscriptPath,
+} from "./plan-path.js";
 import { appendReviewerScopeToPrompt } from "./reviewer-scope";
 import {
   createSubagentMissionCapturePreToolHook,
@@ -82,6 +89,8 @@ export interface EcoHookContext {
     request: SdkAskUserQuestionRequest & { toolUseId: string },
   ) => Promise<Record<string, unknown>>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
+  /** Tracks ExitPlanMode captures to avoid duplicate Pre/Post hook submissions. */
+  exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
   taskTracker?: EcoTaskTrackerHooks;
   subagentSessions?: EcoSubagentSessionHooks;
   subagentAttribution?: EcoSubagentAttributionHooks;
@@ -94,6 +103,8 @@ export interface EcoHookContext {
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
   forceBashApproval?: boolean;
   workspacePath?: string;
+  /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
+  getPhaseTranscript?: () => string;
   onToolPermissionDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
 }
 
@@ -126,9 +137,33 @@ export interface SdkExitPlanModeRequest {
   rawInput: Record<string, unknown>;
 }
 
+export function parseExitPlanModeOutput(
+  response: unknown,
+): { plan: string; planFilePath?: string } | undefined {
+  if (!isRecord(response)) {
+    return undefined;
+  }
+  const plan = typeof response.plan === "string" ? response.plan.trim() : "";
+  const planFilePath = readStringField(response, ["filePath", "file_path", "planFilePath", "plan_file_path"]);
+  if (!plan && !planFilePath) {
+    return undefined;
+  }
+  return {
+    plan,
+    ...(planFilePath ? { planFilePath } : {}),
+  };
+}
+
 export function parseExitPlanModeInput(input: Record<string, unknown>): SdkExitPlanModeRequest {
   const plan = readStringField(input, ["plan", "markdown", "content"]);
-  const planFilePath = readStringField(input, ["planFilePath", "plan_file_path", "filePath", "file_path"]);
+  const planFilePath = readStringField(input, [
+    "planFilePath",
+    "plan_file_path",
+    "filePath",
+    "file_path",
+    "plan_filename",
+    "plan_path",
+  ]);
   const allowedPrompts = input.allowedPrompts ?? input.allowed_prompts;
   return {
     plan,
@@ -148,8 +183,113 @@ function readStringField(input: Record<string, unknown>, keys: readonly string[]
   return "";
 }
 
+function markExitPlanCaptured(
+  state: { capturedToolUseIds: Set<string> } | undefined,
+  toolUseId: string,
+): boolean {
+  const id = toolUseId.trim();
+  if (!id || !state) {
+    return false;
+  }
+  if (state.capturedToolUseIds.has(id)) {
+    return true;
+  }
+  state.capturedToolUseIds.add(id);
+  return false;
+}
+
+function uniqueSearchRoots(roots: readonly (string | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+  for (const root of roots) {
+    const trimmed = root?.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    resolved.push(trimmed);
+  }
+  return resolved;
+}
+
+interface ExitPlanResolveOptions {
+  searchRoots: readonly (string | undefined)[];
+  transcriptPath?: string;
+  getPhaseTranscript?: () => string;
+}
+
+function readHookTranscriptPath(hookInput: Record<string, unknown>): string | undefined {
+  const value = hookInput.transcript_path;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function resolveExitPlanModeSubmission(
+  parsed: SdkExitPlanModeRequest,
+  options: ExitPlanResolveOptions,
+): Promise<SdkExitPlanModeRequest> {
+  if (parsed.plan.trim()) {
+    return parsed;
+  }
+  const roots = uniqueSearchRoots(options.searchRoots);
+  for (const root of roots) {
+    if (parsed.planFilePath) {
+      const planText = await readPlanFileContent(root, parsed.planFilePath);
+      if (planText) {
+        return { ...parsed, plan: planText };
+      }
+    }
+  }
+  for (const root of roots) {
+    const latest = await readLatestClaudePlanFile(root);
+    if (latest) {
+      return {
+        ...parsed,
+        plan: latest.content,
+        planFilePath: parsed.planFilePath || latest.planFilePath,
+      };
+    }
+  }
+  const transcriptPath = options.transcriptPath?.trim();
+  if (transcriptPath) {
+    const fromTranscriptFile = await readPlanFromSdkTranscriptPath(transcriptPath);
+    if (fromTranscriptFile?.plan.trim()) {
+      return { ...parsed, plan: fromTranscriptFile.plan };
+    }
+  }
+  const phaseTranscript = options.getPhaseTranscript?.().trim();
+  if (phaseTranscript) {
+    const fromPhase = readPlanFromPhaseTranscript(phaseTranscript);
+    if (fromPhase?.plan.trim()) {
+      return { ...parsed, plan: fromPhase.plan };
+    }
+  }
+  return parsed;
+}
+
+async function delegateExitPlanModeCapture(
+  delegate: NonNullable<EcoHookContext["onExitPlanMode"]>,
+  state: { capturedToolUseIds: Set<string> } | undefined,
+  request: SdkExitPlanModeRequest & { toolUseId: string },
+): Promise<boolean> {
+  if (!request.plan.trim() || markExitPlanCaptured(state, request.toolUseId)) {
+    return false;
+  }
+  await delegate(request);
+  return true;
+}
+
+/**
+ * PreToolUse (Eco two-phase plan): capture injected plan, then `defer` to end the planning session.
+ * SDK layers this hook does NOT replace:
+ * - `allowedTools` = allow-rules (auto-approve listed tools at evaluation step 5), NOT tool visibility.
+ * - `disallowedTools` bare names = remove tools from model context.
+ * - `canUseTool` = runtime approval gate for unresolved tools.
+ * Do not list ExitPlanMode in `allowedTools` (would add an allow-rule). Eco ends phase 1 via `defer`, not PermissionRequest `allow`.
+ */
 export function createExitPlanModePreToolHook(
   delegate: EcoHookContext["onExitPlanMode"],
+  state?: { capturedToolUseIds: Set<string> },
+  options: { workspacePath?: string; getPhaseTranscript?: () => string } = {},
 ): HookCallback | undefined {
   if (!delegate) {
     return undefined;
@@ -163,29 +303,80 @@ export function createExitPlanModePreToolHook(
     if (preInput.tool_name !== "ExitPlanMode") {
       return {};
     }
+    const toolUseId = toolUseID ?? preInput.tool_use_id;
     const toolInput = isRecord(preInput.tool_input) ? preInput.tool_input : {};
     const injectedInput = mergeExitPlanModeInjectedFields(toolInput, preInput);
-    const parsed = parseExitPlanModeInput(injectedInput);
-    if (!parsed.plan) {
+    const hookRecord = preInput as unknown as Record<string, unknown>;
+    const transcriptPath = readHookTranscriptPath(hookRecord);
+    const resolved = await resolveExitPlanModeSubmission(parseExitPlanModeInput(injectedInput), {
+      searchRoots: [options.workspacePath, preInput.cwd],
+      ...(transcriptPath ? { transcriptPath } : {}),
+      ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
+    });
+    if (resolved.plan.trim()) {
+      await delegateExitPlanModeCapture(delegate, state, { ...resolved, toolUseId });
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: "ExitPlanMode requires injected plan content for Eco approval.",
+          permissionDecision: "defer",
+          permissionDecisionReason:
+            "Eco captured the plan for user approval. Planning session ends; execution starts after Eco approval.",
         },
       };
     }
+    return {};
+  };
+}
 
-    await delegate({
-      ...parsed,
-      toolUseId: toolUseID ?? preInput.tool_use_id,
+/**
+ * PermissionRequest fallback for ExitPlanMode.
+ * Plannotator (single-session) returns `allow` here after the user approves in its hook UI.
+ * Eco (two-phase) captures the plan and returns `deny` — approval happens in Eco UI, then a separate execution session runs.
+ */
+export function createExitPlanModePermissionRequestHook(
+  delegate: EcoHookContext["onExitPlanMode"],
+  state?: { capturedToolUseIds: Set<string> },
+  options: { workspacePath?: string; getPhaseTranscript?: () => string } = {},
+): HookCallback | undefined {
+  if (!delegate) {
+    return undefined;
+  }
+
+  return async (input) => {
+    if (input.hook_event_name !== "PermissionRequest") {
+      return {};
+    }
+    const requestInput = input as PermissionRequestHookInput;
+    if (requestInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    const toolInput = isRecord(requestInput.tool_input) ? requestInput.tool_input : {};
+    const injectedInput = mergeExitPlanModeInjectedFields(
+      toolInput,
+      requestInput as unknown as PreToolUseHookInput,
+    );
+    const hookRecord = requestInput as unknown as Record<string, unknown>;
+    const transcriptPath = readHookTranscriptPath(hookRecord);
+    const resolved = await resolveExitPlanModeSubmission(parseExitPlanModeInput(injectedInput), {
+      searchRoots: [options.workspacePath, requestInput.cwd],
+      ...(transcriptPath ? { transcriptPath } : {}),
+      ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
     });
+    const toolUseId = `permission:${requestInput.session_id}`;
+    const captured = resolved.plan.trim()
+      ? await delegateExitPlanModeCapture(delegate, state, { ...resolved, toolUseId })
+      : false;
 
     return {
       hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "defer",
-        permissionDecisionReason: "Eco captured the plan and will present it for approval.",
+        hookEventName: "PermissionRequest",
+        decision: {
+          behavior: "deny",
+          message: captured
+            ? "Plan captured for Eco approval. Implementation starts only after you approve in Eco."
+            : "ExitPlanMode requires plan content before Eco can present it for approval.",
+          interrupt: true,
+        },
       },
     };
   };
@@ -197,7 +388,17 @@ function mergeExitPlanModeInjectedFields(
 ): Record<string, unknown> {
   const merged = { ...toolInput };
   const hookRecord = hookInput as unknown as Record<string, unknown>;
-  for (const key of ["plan", "planFilePath", "plan_file_path", "allowedPrompts", "allowed_prompts"]) {
+  for (const key of [
+    "plan",
+    "planFilePath",
+    "plan_file_path",
+    "filePath",
+    "file_path",
+    "plan_filename",
+    "plan_path",
+    "allowedPrompts",
+    "allowed_prompts",
+  ]) {
     if (merged[key] === undefined && hookRecord[key] !== undefined) {
       merged[key] = hookRecord[key];
     }
@@ -370,6 +571,9 @@ export function createToolPermissionPreToolHook(
       return {};
     }
     const preInput = input as PreToolUseHookInput;
+    if (preInput.tool_name === "EnterPlanMode" || preInput.tool_name === "ExitPlanMode") {
+      return {};
+    }
     const actor = resolveToolPermissionActor(preInput);
     const entry = resolveToolPermissionEntry(policy, actor);
     if (!entry) {
@@ -525,13 +729,14 @@ function evaluateFilesystemToolPolicy(
     return undefined;
   }
   const absolutePath = resolvePolicyPath(filePath, input.cwd);
-  if (isReadTool && filesystem.read !== "none" && !isPathInsidePolicyScope(absolutePath, workspacePath)) {
+  const insideScope = isPathInsidePolicyScope(absolutePath, workspacePath);
+  if (isReadTool && filesystem.read !== "none" && !insideScope) {
     return denyTool(input.tool_name, "Filesystem read path is outside this Eco agent workspace scope.");
   }
   if (
     isWriteTool &&
     filesystem.write === "workspace" &&
-    !isPathInsidePolicyScope(absolutePath, workspacePath)
+    !insideScope
   ) {
     return denyTool(input.tool_name, "Filesystem write path is outside this Eco agent workspace scope.");
   }
@@ -1028,7 +1233,22 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
 
   pushHook(hooks, "PreToolUse", createWorkflowDenyPreToolHook(), "Workflow");
   pushHook(hooks, "PreToolUse", createAskUserQuestionPreToolHook(ctx.askUserQuestion), "AskUserQuestion");
-  pushHook(hooks, "PreToolUse", createExitPlanModePreToolHook(ctx.onExitPlanMode), "ExitPlanMode");
+  const exitPlanHookOptions = {
+    ...(ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {}),
+    ...(ctx.getPhaseTranscript ? { getPhaseTranscript: ctx.getPhaseTranscript } : {}),
+  };
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createExitPlanModePreToolHook(ctx.onExitPlanMode, ctx.exitPlanCaptureState, exitPlanHookOptions),
+    "ExitPlanMode",
+  );
+  pushHook(
+    hooks,
+    "PermissionRequest",
+    createExitPlanModePermissionRequestHook(ctx.onExitPlanMode, ctx.exitPlanCaptureState, exitPlanHookOptions),
+    "ExitPlanMode",
+  );
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");
   pushHook(
     hooks,

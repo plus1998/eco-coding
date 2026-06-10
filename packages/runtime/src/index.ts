@@ -64,6 +64,8 @@ export interface EcoPlanningContext {
   userPrompt: string;
   analysis: string;
   plan: string;
+  /** Claude Code `.claude/plans/` file path (workspace-relative when possible). */
+  planFilePath?: string;
   /** User edited plan/analysis in Eco UI before approving execution. */
   planUserEdited?: boolean;
 }

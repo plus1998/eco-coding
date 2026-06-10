@@ -6,6 +6,7 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
+  resolveSdkSessionSkillConfig,
   promptIncludesSkillName,
   type SkillInfo,
 } from "../src/shared/skills";
@@ -31,6 +32,32 @@ test("filterExplicitUserSkillNames keeps only sdk-ready user skills", () => {
 test("promptIncludesSkillName detects explicit tokens", () => {
   expect(promptIncludesSkillName("use $vue-best  ", "vue-best")).toBe(true);
   expect(promptIncludesSkillName("use $vue-best", "other")).toBe(false);
+});
+
+test("resolveSdkSessionSkillConfig keeps only project skills during planning", () => {
+  expect(
+    resolveSdkSessionSkillConfig("planning", {
+      projectNames: ["project-skill"],
+      profileMainSkills: ["profile-skill"],
+      explicitUser: ["user-skill"],
+    }),
+  ).toEqual({
+    settingSources: ["project"],
+    skills: ["project-skill"],
+  });
+});
+
+test("resolveSdkSessionSkillConfig keeps user and profile skills outside planning", () => {
+  expect(
+    resolveSdkSessionSkillConfig("default", {
+      projectNames: ["project-skill"],
+      profileMainSkills: ["profile-skill"],
+      explicitUser: ["user-skill"],
+    }),
+  ).toEqual({
+    settingSources: ["user", "project"],
+    skills: ["profile-skill", "project-skill", "user-skill"],
+  });
 });
 
 test("mergeSkillNames dedupes and sorts", () => {

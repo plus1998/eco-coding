@@ -142,6 +142,18 @@ const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
   network: { webSearch: false, webFetch: false },
 };
 
+/** Read-only policy for Claude SDK built-in Plan subagent during native Plan Mode. */
+export const BUILTIN_PLAN_TOOL_POLICY: EcoToolPolicy = {
+  allowed: ["Read", "Glob", "Grep", SDK_SKILL_TOOL_NAME, "WebSearch", "WebFetch"],
+  disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+  filesystem: { read: "workspace", write: "none" },
+  network: { webSearch: true, webFetch: true },
+};
+
+export function buildBuiltinPlanToolPermissionEntry(): EcoRuntimeToolPermissionEntry {
+  return normalizeToolPermissionEntry(BUILTIN_PLAN_TOOL_POLICY);
+}
+
 export function createAgentDefinitionsFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -195,9 +207,14 @@ export function buildToolPermissionPolicyFromProfile(
     }
     agents[sdkKey] = resolveAgentToolPermission(agent, template);
   }
+  const cappedMainAllowedTools =
+    options.mainAllowedTools && options.mainAllowedTools.length > 0 ? options.mainAllowedTools : undefined;
+  const mainToolPolicy = cappedMainAllowedTools
+    ? capMainAgentToolPolicyForPhase(profile.mainAgent.tools, cappedMainAllowedTools)
+    : profile.mainAgent.tools;
   return {
-    main: normalizeToolPermissionEntry(profile.mainAgent.tools, [
-      ...(options.mainAllowedTools ?? []),
+    main: normalizeToolPermissionEntry(mainToolPolicy, [
+      ...(cappedMainAllowedTools ? [] : (options.mainAllowedTools ?? [])),
       SDK_SKILL_TOOL_NAME,
       ...SDK_TASK_PROGRESS_TOOL_NAMES,
     ]),
@@ -281,15 +298,28 @@ export function resolveMainAgentAllowedTools(
   profile: EcoOrchestrationProfileConfig,
   phaseAllowedTools: readonly string[],
 ): string[] {
-  const tools =
-    profile.preset === "coding"
-      ? [...phaseAllowedTools, ...profile.mainAgent.tools.allowed]
-      : profile.mainAgent.tools.allowed;
-  return allowedToolPatternsFromPolicy(profile.mainAgent.tools, [
-    ...tools,
-    SDK_SKILL_TOOL_NAME,
-    ...SDK_TASK_PROGRESS_TOOL_NAMES,
-  ]);
+  const extras = [SDK_SKILL_TOOL_NAME, ...SDK_TASK_PROGRESS_TOOL_NAMES];
+  const phaseExpanded = allowedToolPatternsFromPolicy(
+    { allowed: [...phaseAllowedTools], disallowed: [] },
+    extras,
+  );
+  const phaseToolSet = new Set(phaseExpanded);
+  const phaseBlocksWrites = !hasAnyToolPattern(phaseToolSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES);
+  const phaseBlocksBash = !phaseToolSet.has("Bash");
+  const profileExpanded = allowedToolPatternsFromPolicy(profile.mainAgent.tools, extras);
+  const profileExtras = profileExpanded.filter((tool) => {
+    if (phaseToolSet.has(tool)) {
+      return false;
+    }
+    if (phaseBlocksWrites && hasAnyToolPattern(new Set([tool]), SDK_FILESYSTEM_WRITE_TOOL_NAMES)) {
+      return false;
+    }
+    if (phaseBlocksBash && tool === "Bash") {
+      return false;
+    }
+    return true;
+  });
+  return uniqueToolPatterns([...phaseExpanded, ...profileExtras]);
 }
 
 export function sdkAgentKeyForProfileAgent(agentKey: string): string {
@@ -446,6 +476,30 @@ function relatedClaudeToolPatterns(patterns: readonly string[]): string[] {
 
 function hasAnyToolPattern(allowed: ReadonlySet<string>, tools: readonly string[]): boolean {
   return tools.some((tool) => allowed.has(tool));
+}
+
+function capMainAgentToolPolicyForPhase(
+  base: EcoToolPolicy,
+  mainAllowedTools: readonly string[],
+): EcoToolPolicy {
+  const allowedSet = new Set(mainAllowedTools);
+  const filesystem = base.filesystem ?? { read: "workspace" as const, write: "workspace" as const };
+  return {
+    ...base,
+    allowed: [...mainAllowedTools],
+    ...(hasAnyToolPattern(allowedSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES)
+      ? { filesystem }
+      : { filesystem: { ...filesystem, write: "none" as const } }),
+    ...(base.bash && !allowedSet.has("Bash") ? { bash: { ...base.bash, enabled: false } } : {}),
+    ...(base.network
+      ? {
+          network: {
+            webSearch: allowedSet.has("WebSearch") && base.network.webSearch,
+            webFetch: allowedSet.has("WebFetch") && base.network.webFetch,
+          },
+        }
+      : {}),
+  };
 }
 
 function isDelegationToolPattern(pattern: string): boolean {

@@ -106,6 +106,30 @@ export function filterExplicitUserSkillNames(
   return parseExplicitSkillNames(prompt).filter((name) => allowed.has(name));
 }
 
+export type SdkSessionSkillsScope = "planning" | "default";
+
+/** Plan phase exposes only project skills; execution keeps user/project/profile skills. */
+export function resolveSdkSessionSkillConfig(
+  scope: SdkSessionSkillsScope,
+  input: {
+    projectNames: readonly string[];
+    profileMainSkills: readonly string[];
+    explicitUser: readonly string[];
+  },
+): { settingSources: Array<"user" | "project">; skills: string[] } {
+  if (scope === "planning") {
+    const skills = mergeSkillNames(input.projectNames);
+    return {
+      settingSources: ["project"],
+      skills,
+    };
+  }
+  return {
+    settingSources: ["user", "project"],
+    skills: mergeSkillNames(input.projectNames, input.profileMainSkills, input.explicitUser),
+  };
+}
+
 export function mergeSkillNames(...lists: readonly (readonly string[])[]): string[] {
   const seen = new Set<string>();
   const merged: string[] = [];

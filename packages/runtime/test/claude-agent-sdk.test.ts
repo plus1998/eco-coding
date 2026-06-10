@@ -1292,13 +1292,13 @@ test("buildExecuteResumePrompt references approved plan by default when resuming
     userPrompt: "Add feature X",
     analysis: "Needs tests",
     plan: "Do the thing",
-    approvedPlanFile: ".eco/approved-plans/thr_1.md",
+    approvedPlanFile: ".claude/plans/thr_1.md",
   });
   expect(prompt).toContain("phase 2 execution");
   expect(prompt).toContain("approved plan already submitted");
   expect(prompt).not.toContain("Do the thing");
   expect(prompt).not.toContain("Add feature X");
-  expect(prompt).toContain(".eco/approved-plans/thr_1.md");
+  expect(prompt).toContain(".claude/plans/thr_1.md");
   expect(prompt).not.toContain("from our conversation above");
 });
 
@@ -1308,7 +1308,7 @@ test("buildExecuteResumePrompt can inline edited approved plan once", () => {
       userPrompt: "Add feature X",
       analysis: "Needs tests",
       plan: "Edited plan",
-      approvedPlanFile: ".eco/approved-plans/thr_1.md",
+      approvedPlanFile: ".claude/plans/thr_1.md",
       planUserEdited: true,
     },
     { includePlanText: true },
@@ -1474,18 +1474,21 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(options.model).toBe("research-main-model");
   expect(options.allowedTools).toEqual([
     "Agent",
-    "Read",
-    "WebSearch",
+    "TaskList",
+    "TaskOutput",
     "Skill",
+    "Read",
+    "Glob",
+    "Grep",
+    "LS",
+    "NotebookRead",
+    "WebSearch",
+    "WebFetch",
     "TaskCreate",
     "TaskUpdate",
     "TodoWrite",
     "mcp__sources__quote",
     "mcp__browser__*",
-    "LS",
-    "NotebookRead",
-    "TaskList",
-    "TaskOutput",
     "mcp__browser__open",
   ]);
 
@@ -1892,10 +1895,13 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("Bash");
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
+  expect(capturedOptions[0]?.disallowedTools).toEqual(
+    expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit"]),
+  );
   expect(capturedOptions[0]?.planModeInstructions).toBeUndefined();
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");
   expect(capturedOptions[0]?.allowedTools).toContain("WebFetch");
-  expect(capturedOptions[0]?.allowedTools).toContain("ExitPlanMode");
+  expect(capturedOptions[0]?.allowedTools).not.toContain("ExitPlanMode");
   expect(capturedOptions[0]?.allowedTools).not.toContain("mcp__eco_plan__finalize_plan");
   const settings = capturedOptions[0]?.settings as { permissions?: { deny?: string[] } } | undefined;
   expect(settings?.permissions?.deny).not.toContain("Agent(Plan)");
@@ -1904,6 +1910,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({
     plan: "## Summary\n\nShip the official plan.",
+    planFilePath: ".claude/plans/plan.md",
   });
 });
 

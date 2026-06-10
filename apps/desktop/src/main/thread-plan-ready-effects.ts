@@ -2,7 +2,10 @@ import type { ThreadPendingPlan } from "../shared/ipc";
 
 export type ThreadPendingPlanWithRoutes = ThreadPendingPlan & { routesJson: string };
 
-export type ThreadPlanReadyPayload = Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
+export type ThreadPlanReadyPayload = Pick<
+  ThreadPendingPlan,
+  "analysis" | "plan" | "userPrompt" | "planFilePath"
+>;
 
 export interface ThreadPlanReadyAwaitingPlanEvent {
   threadId: string;
@@ -42,11 +45,13 @@ export function applyThreadPlanReadyEffects(
     workspacePath: input.workspacePath,
     worktreePath: input.worktreePath,
     routesJson: input.routesJson,
+    ...(input.payload.planFilePath ? { planFilePath: input.payload.planFilePath } : {}),
   };
   const plan: ThreadPlanReadyPayload = {
     userPrompt: input.payload.userPrompt,
     analysis: input.payload.analysis,
     plan: input.payload.plan,
+    ...(input.payload.planFilePath ? { planFilePath: input.payload.planFilePath } : {}),
   };
 
   input.effects.savePendingPlan(pendingPlan);

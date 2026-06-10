@@ -123,7 +123,8 @@ import {
   filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
-  mergeSkillNames,
+  resolveSdkSessionSkillConfig,
+  type SdkSessionSkillsScope,
 } from "../shared/skills";
 import {
   buildAgentPromptWithContext,
@@ -315,12 +316,10 @@ import {
 import { prepareWorkspaceGit } from "./workspace-git-setup";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
-  approvedPlanSnapshotExists,
-  deleteApprovedPlanSnapshotIfNewerThan,
+  claudePlanFileExists,
   isWorktreeGitCwdError,
-  readApprovedPlanSnapshot,
+  readClaudePlanFile,
   resolveWorktreePathHint,
-  writeApprovedPlanSnapshot,
 } from "./worktree-lifecycle";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2562,7 +2561,7 @@ async function runCodingThreadPlanning(
                     worktreePath: cwd,
                     routes,
                     signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(thread.id, prompt),
+                    sdkSession: await buildSdkSessionOptions(thread.id, prompt, { skillsScope: "planning" }),
                     agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                     ...(effectiveResume ? { resume: effectiveResume } : {}),
                   }),
@@ -2655,6 +2654,7 @@ async function runCodingThreadExecution(
     userPrompt: pending.userPrompt,
     analysis: pending.analysis,
     plan: pending.plan,
+    ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
     ...(options?.planUserEdited ? { planUserEdited: true } : {}),
   };
 
@@ -2669,10 +2669,8 @@ async function runCodingThreadExecution(
   const executionCwd = resolved.cwd;
   activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
-  try {
-    await writeApprovedPlanSnapshot(pending.workspacePath, threadId, planning);
-  } catch (error) {
-    process.stderr.write(`[eco] failed to write approved plan snapshot: ${errorMessage(error)}\n`);
+  if (pending.planFilePath) {
+    conversationStore.setThreadClaudePlanFilePath(threadId, pending.planFilePath);
   }
 
   const taskRuntime = createThreadSdkTaskRuntime({
@@ -2875,7 +2873,10 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   const existingWorktreePlan = createSessionPlan(workspace.path, input.threadId);
 
   const hasPendingPlan = Boolean(conversationStore.getPendingPlan(input.threadId));
-  const hasApprovedPlanOnDisk = await approvedPlanSnapshotExists(workspace.path, input.threadId);
+  const claudePlanPath = conversationStore.getThreadClaudePlanFilePath(input.threadId);
+  const hasApprovedPlanOnDisk = claudePlanPath
+    ? await claudePlanFileExists(workspace.path, claudePlanPath)
+    : false;
   const hasCoderTodos = conversationStore.listCoderTodos(input.threadId).length > 0;
   const hasAppliedDiff = Boolean(conversationStore.getAppliedDiff(input.threadId));
   const enteredExecutionPhase = threadEnteredExecutionPhase({
@@ -3682,7 +3683,7 @@ function createSdkDriver(
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
     },
-    toolPermissionHandler: createThreadToolPermissionHandler(threadId),
+    toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
     onContextProbe: onContextProbe
       ? (phase, detail) => {
           onContextProbe(phase, detail);
@@ -3790,11 +3791,7 @@ async function prepareThreadRewindForContinue(input: {
     input.threadId,
     storedTarget.activityLineId,
   );
-  await deleteApprovedPlanSnapshotIfNewerThan(
-    input.workspace.path,
-    input.threadId,
-    rewindSummary.cutoffCreatedAt,
-  );
+  conversationStore.clearThreadClaudePlanFilePath(input.threadId);
   const remainingActivity = conversationStore.listActivityLines(input.threadId);
   if (!remainingActivity.some((line) => line.role === "user")) {
     conversationStore.updateThreadPrompt(input.threadId, input.prompt);
@@ -3906,19 +3903,24 @@ async function ensurePendingPlanForExecution(
   if (conversationStore.getPendingPlan(threadId)) {
     return true;
   }
-  const snapshot = await readApprovedPlanSnapshot(workspacePath, threadId);
-  if (!snapshot?.plan.trim()) {
+  const planFilePath = conversationStore.getThreadClaudePlanFilePath(threadId);
+  if (!planFilePath) {
+    return false;
+  }
+  const planText = await readClaudePlanFile(workspacePath, planFilePath);
+  if (!planText) {
     return false;
   }
   const thread = conversationStore.getThread(threadId);
   conversationStore.savePendingPlan({
     threadId,
-    userPrompt: snapshot.userPrompt.trim() || thread?.prompt.trim() || "",
-    analysis: snapshot.analysis,
-    plan: snapshot.plan,
+    userPrompt: thread?.prompt.trim() || "",
+    analysis: "",
+    plan: planText,
     workspacePath,
     worktreePath,
     routesJson,
+    planFilePath,
   });
   return true;
 }
@@ -3933,17 +3935,23 @@ async function resolvePlanningContextForThread(
       userPrompt: pending.userPrompt,
       analysis: pending.analysis,
       plan: pending.plan,
+      ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
     };
   }
-  const snapshot = await readApprovedPlanSnapshot(workspacePath, threadId);
-  if (!snapshot) {
+  const planFilePath = conversationStore.getThreadClaudePlanFilePath(threadId);
+  if (!planFilePath) {
     return undefined;
   }
+  const planText = await readClaudePlanFile(workspacePath, planFilePath);
+  if (!planText) {
+    return undefined;
+  }
+  const thread = conversationStore.getThread(threadId);
   return {
-    userPrompt: snapshot.userPrompt,
-    analysis: snapshot.analysis,
-    plan: snapshot.plan,
-    ...(snapshot.planUserEdited ? { planUserEdited: true } : {}),
+    userPrompt: thread?.prompt.trim() || "",
+    analysis: "",
+    plan: planText,
+    planFilePath,
   };
 }
 
@@ -4235,7 +4243,9 @@ async function runThreadContinuation(
                 worktreePath: cwd,
                 routes,
                 signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(thread.id, followUp),
+                sdkSession: await buildSdkSessionOptions(thread.id, followUp, {
+                  skillsScope: mode === "planning" ? "planning" : "default",
+                }),
                 agentRegistry: resolveAgentRuntimeConfigForThread(thread),
                 resume,
                 resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
@@ -4789,7 +4799,11 @@ function isLinkAgentsSkillsRequest(value: unknown): value is LinkAgentsSkillsReq
   );
 }
 
-async function buildSdkSessionOptions(threadId: string, prompt?: string): Promise<EcoSdkSessionOptions> {
+async function buildSdkSessionOptions(
+  threadId: string,
+  prompt?: string,
+  options?: { skillsScope?: SdkSessionSkillsScope },
+): Promise<EcoSdkSessionOptions> {
   const mcp = mcpStore.buildSdkConfig();
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
@@ -4805,11 +4819,15 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
   const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
   const profileMainSkills = profile?.mainAgent.skills ?? [];
-  const merged = mergeSkillNames(projectNames, profileMainSkills, explicitUser);
-  const agentSkills = buildRuntimeAgentSkillAssignments(merged, profile);
+  const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
+    projectNames,
+    profileMainSkills,
+    explicitUser,
+  });
+  const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
   return {
-    settingSources: ["user", "project"],
-    ...(merged.length > 0 ? { skills: merged } : {}),
+    settingSources: skillConfig.settingSources,
+    ...(skillConfig.skills.length > 0 ? { skills: skillConfig.skills } : {}),
     agentSkills,
     enabledSubagents,
     mcpServers: mcp.mcpServers,
@@ -4818,13 +4836,15 @@ async function buildSdkSessionOptions(threadId: string, prompt?: string): Promis
 }
 
 function isPlanReadyPayload(payload: unknown): payload is PlanReadyPayload {
+  if (typeof payload !== "object" || payload === null) {
+    return false;
+  }
+  const candidate = payload as PlanReadyPayload;
   return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "userPrompt" in payload &&
-    "analysis" in payload &&
-    "plan" in payload &&
-    typeof (payload as PlanReadyPayload).plan === "string"
+    typeof candidate.userPrompt === "string" &&
+    typeof candidate.analysis === "string" &&
+    typeof candidate.plan === "string" &&
+    (candidate.planFilePath === undefined || typeof candidate.planFilePath === "string")
   );
 }
 
@@ -5360,6 +5380,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
 
 function createThreadToolPermissionHandler(
   threadId: string,
+  runPhase: SubagentRunPhase = "execution",
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   return async (request) => {
     if (request.toolName !== "Bash") {
