@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import {
-  buildCodingOrchestrationProfilesFromRouteProfiles,
-  createBuiltInAgentTemplates,
-} from "../shared/agent-orchestration";
+import { createBuiltInAgentTemplates } from "../shared/agent-orchestration";
 import { normalizeUpstreamApiCompat } from "../shared/api-compat";
 import {
   AGENT_ROLES,
@@ -119,7 +116,7 @@ export class ProviderStore {
       providers: this.listProviders(),
       routeProfiles,
       agentTemplates: createBuiltInAgentTemplates(),
-      orchestrationProfiles: buildCodingOrchestrationProfilesFromRouteProfiles(routeProfiles),
+      orchestrationProfiles: [],
     };
   }
 

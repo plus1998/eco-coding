@@ -54,7 +54,7 @@ import {
   buildThreadRuntimeConfigFromDefaults,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
-  getRoutesForProfile,
+  getAgentProfileById,
   IPC_CHANNELS,
   isKnownIpcChannel,
   isThreadRuntimeConfig,
@@ -546,19 +546,6 @@ function assertCanWriteAgentTemplateId(id: string): void {
   }
 }
 
-function assertCanWriteOrchestrationProfileId(id: string): void {
-  const profileId = id.trim();
-  if (!profileId) {
-    return;
-  }
-  const protectedIds = new Set(
-    providerStore.getSettings().orchestrationProfiles.map((profile) => profile.id),
-  );
-  if (protectedIds.has(profileId)) {
-    throw new Error("派生编排配置不可直接修改，请先复制为用户配置。");
-  }
-}
-
 function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<string>): AgentTemplate {
   const now = new Date().toISOString();
   const protectedId =
@@ -743,17 +730,10 @@ function roleRoutesForThreadConfig(
   config: ThreadRuntimeConfig,
 ): RuntimeRoleRouteConfig[] {
   const profile = resolveThreadAgentProfile(settings, config);
-  if (profile && config.agentProfileId?.trim()) {
-    return runtimeRoleRoutesFromAgentProfile(profile);
+  if (!profile) {
+    throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
   }
-  const routes = config.routeProfileId ? getRoutesForProfile(settings, config.routeProfileId) : undefined;
-  if (routes) {
-    return routes;
-  }
-  if (profile) {
-    return runtimeRoleRoutesFromAgentProfile(profile);
-  }
-  throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
+  return runtimeRoleRoutesFromAgentProfile(profile);
 }
 
 function runtimeValidationOptionsForThreadConfig(
@@ -799,14 +779,14 @@ function resolveRuntimeConfigForThreadId(
   );
 }
 
-function resolveRoleRoutesForThread(threadId: string, routeProfileIdOverride?: string): RuntimeRoleRouteConfig[] {
+function resolveRoleRoutesForThread(threadId: string, agentProfileIdOverride?: string): RuntimeRoleRouteConfig[] {
   const settings = getModelSettingsSnapshot();
-  if (routeProfileIdOverride) {
-    const routes = getRoutesForProfile(settings, routeProfileIdOverride);
-    if (!routes) {
-      throw new Error(`找不到路由配置：${routeProfileIdOverride}`);
+  if (agentProfileIdOverride) {
+    const profile = getAgentProfileById(settings, agentProfileIdOverride);
+    if (!profile) {
+      throw new Error(`找不到 Agent Profile：${agentProfileIdOverride}`);
     }
-    return routes;
+    return runtimeRoleRoutesFromAgentProfile(profile);
   }
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
@@ -1276,7 +1256,6 @@ function registerIpcHandlers(): void {
     if (typeof profile.id !== "string") {
       throw new Error("编排配置 id 不能为空。");
     }
-    assertCanWriteOrchestrationProfileId(profile.id);
     const saved = agentOrchestrationStore.saveOrchestrationProfile(profile);
     emitSettingsUpdated();
     return saved;
@@ -1286,7 +1265,6 @@ function registerIpcHandlers(): void {
     if (typeof profileId !== "string" || !profileId.trim()) {
       throw new Error("编排配置 id 不能为空。");
     }
-    assertCanWriteOrchestrationProfileId(profileId);
     agentOrchestrationStore.deleteOrchestrationProfile(profileId);
     emitSettingsUpdated();
     return { ok: true as const };
@@ -1384,7 +1362,6 @@ function registerIpcHandlers(): void {
     if (typeof profileId !== "string" || !profileId.trim()) {
       throw new Error("Agent Profile id 不能为空。");
     }
-    assertCanWriteOrchestrationProfileId(profileId);
     return agentOrchestrationStore.listOrchestrationProfileVersions(profileId);
   });
 
@@ -1398,7 +1375,6 @@ function registerIpcHandlers(): void {
       throw new Error("Agent Profile 版本恢复请求无效。");
     }
     const request = payload as OrchestrationProfileVersionRestoreRequest;
-    assertCanWriteOrchestrationProfileId(request.profileId);
     const restored = agentOrchestrationStore.restoreOrchestrationProfileVersion(
       request.profileId,
       request.version,
@@ -2967,11 +2943,13 @@ function parseThreadRetryRequest(payload: unknown): ThreadRetryRequest {
   if (typeof payload === "object" && payload !== null && "threadId" in payload) {
     const raw = payload as ThreadRetryRequest;
     if (typeof raw.threadId === "string" && raw.threadId.trim()) {
+      const agentProfileId =
+        (typeof raw.agentProfileId === "string" && raw.agentProfileId.trim()) ||
+        (typeof raw.routeProfileId === "string" && raw.routeProfileId.trim()) ||
+        undefined;
       return {
         threadId: raw.threadId.trim(),
-        ...(typeof raw.routeProfileId === "string" && raw.routeProfileId.trim()
-          ? { routeProfileId: raw.routeProfileId.trim() }
-          : {}),
+        ...(agentProfileId ? { agentProfileId } : {}),
       };
     }
   }
@@ -3122,14 +3100,14 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
   }
 
   const settings = getModelSettingsSnapshot();
-  const routesOverride = resolveRoleRoutesForThread(threadId, request.routeProfileId);
+  const routesOverride = resolveRoleRoutesForThread(threadId, request.agentProfileId);
 
   noteSdkSessionRouteChange(threadId, routesOverride);
 
   const runtimeConfig = resolveRuntimeConfigForThreadId(
     threadId,
     routesOverride,
-    request.routeProfileId ? { requireCompleteCodingRoutes: true } : undefined,
+    request.agentProfileId ? { requireCompleteCodingRoutes: true } : undefined,
   );
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
@@ -3141,8 +3119,8 @@ async function retryThread(request: ThreadRetryRequest): Promise<ThreadRetryResu
     throw new Error("没有可重试的需求内容。");
   }
 
-  const retryLabel = request.routeProfileId
-    ? (settings.routeProfiles.find((profile) => profile.id === request.routeProfileId)?.name ?? "备用路由")
+  const retryLabel = request.agentProfileId
+    ? (getAgentProfileById(settings, request.agentProfileId)?.name ?? "备用 Profile")
     : undefined;
 
   if (thread.status === "awaiting_plan" && pending) {

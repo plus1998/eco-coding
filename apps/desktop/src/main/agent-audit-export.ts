@@ -64,13 +64,9 @@ export interface BuildAgentAuditExportArchiveInput {
 export function buildAgentAuditExportArchive(
   input: BuildAgentAuditExportArchiveInput,
 ): AgentAuditExportArchive {
-  const profileBySelectionId = new Map<string, OrchestrationProfile>();
-  for (const profile of input.profiles) {
-    profileBySelectionId.set(profile.id, profile);
-    if (profile.sourceRouteProfileId) {
-      profileBySelectionId.set(profile.sourceRouteProfileId, profile);
-    }
-  }
+  const profileBySelectionId = new Map<string, OrchestrationProfile>(
+    input.profiles.map((profile) => [profile.id, profile]),
+  );
 
   const threads = input.threads.map((thread) => {
     const billing = input.getThreadBilling(thread.id);
@@ -115,7 +111,8 @@ function resolveThreadProfile(
   thread: ThreadSummary,
   profileBySelectionId: ReadonlyMap<string, OrchestrationProfile>,
 ): OrchestrationProfile | undefined {
-  const selectionId = thread.runtimeConfig?.routeProfileId?.trim();
+  const selectionId =
+    thread.runtimeConfig?.agentProfileId?.trim() || thread.runtimeConfig?.routeProfileId?.trim();
   return selectionId ? profileBySelectionId.get(selectionId) : undefined;
 }
 
@@ -125,7 +122,7 @@ function summarizeProfile(
 ): AgentAuditExportProfileSummary {
   return {
     profileId: profile.id,
-    selectionId: selectionId?.trim() || profile.sourceRouteProfileId || profile.id,
+    selectionId: selectionId?.trim() || profile.id,
     name: profile.name,
     preset: profile.preset,
     strategyKind: profile.strategy.kind,

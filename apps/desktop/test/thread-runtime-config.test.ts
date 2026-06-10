@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildCodingOrchestrationProfileFromRouteProfile,
   buildOrchestrationProfileFromPreset,
   createBuiltInPresetCatalog,
 } from "../src/shared/agent-orchestration";
@@ -80,6 +81,30 @@ if (!researchAgent) {
   throw new Error("Research preset must include at least one agent.");
 }
 
+const routeProfileA = settings.routeProfiles[0];
+const routeProfileB = settings.routeProfiles[1];
+if (!routeProfileA || !routeProfileB) {
+  throw new Error("Missing route profile fixtures.");
+}
+
+const profileA = {
+  ...buildCodingOrchestrationProfileFromRouteProfile(routeProfileA),
+  id: "profile-a",
+  source: "user" as const,
+  sourceRouteProfileId: undefined,
+};
+const profileB = {
+  ...buildCodingOrchestrationProfileFromRouteProfile(routeProfileB),
+  id: "profile-b",
+  source: "user" as const,
+  sourceRouteProfileId: undefined,
+};
+
+const agentSettings: ModelSettingsSnapshot = {
+  ...settings,
+  orchestrationProfiles: [profileA, profileB],
+};
+
 const genericSettings: ModelSettingsSnapshot = {
   providers: [],
   routeProfiles: [],
@@ -106,11 +131,12 @@ test("getDefaultAgentProfileId returns first orchestration profile", () => {
 
 test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings,
+    settings: agentSettings,
     workflowDefaults: { planModeEnabled: false },
-    routeProfileId: "profile-b",
+    agentProfileId: "profile-b",
   });
   expect(config.routeProfileId).toBe("profile-b");
+  expect(config.agentProfileId).toBe("profile-b");
   expect(config.planModeEnabled).toBe(false);
   expect(config.subagentEnabled.reviewer).toBe(true);
   expect(isAutonomousThreadRuntime(config)).toBe(true);
@@ -118,9 +144,10 @@ test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () =>
 
 test("buildThreadRuntimeConfigFromDefaults uses default subagents with plan mode on", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings,
+    settings: agentSettings,
     workflowDefaults: { planModeEnabled: true },
   });
+  expect(config.agentProfileId).toBe("profile-a");
   expect(config.planModeEnabled).toBe(true);
   expect(config.subagentEnabled.reviewer).toBe(true);
 });
@@ -207,7 +234,7 @@ test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", 
 
 test("serialize and parse thread runtime config round-trip", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings,
+    settings: agentSettings,
     workflowDefaults: { planModeEnabled: true },
   });
   const json = serializeThreadRuntimeConfig(config);
@@ -230,12 +257,13 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
     agentProfileId: "research-copy",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: false,
+    bashReviewMode: "always",
   });
 });
 
 test("withPlanModeDisabled turns off plan mode without mutating the original config", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
-    settings,
+    settings: agentSettings,
     workflowDefaults: { planModeEnabled: true },
   });
   expect(withPlanModeDisabled(config)).toEqual({ ...config, planModeEnabled: false });
@@ -257,6 +285,7 @@ test("normalizeThreadRuntimeConfig preserves planModeEnabled", () => {
     routeProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: true,
+    bashReviewMode: "always",
   });
 });
 
@@ -271,6 +300,7 @@ test("normalizeThreadRuntimeConfig migrates legacy orchestrationMode", () => {
     routeProfileId: "profile-a",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: true,
+    bashReviewMode: "always",
   });
 });
 

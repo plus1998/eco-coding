@@ -60,7 +60,7 @@ test.skipIf(!sqliteAvailable)("route profiles have no active flag semantics", as
 });
 
 test.skipIf(!sqliteAvailable)(
-  "settings expose built-in agents and migrated orchestration profiles",
+  "settings expose built-in agents without derived orchestration profiles",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-orchestration-"));
     const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
@@ -87,17 +87,8 @@ test.skipIf(!sqliteAvailable)(
 
     const settings = store.getSettings();
     expect(settings.agentTemplates.map((template) => template.id)).toContain("builtin.coding.coder");
-    expect(settings.orchestrationProfiles).toHaveLength(1);
-    expect(settings.orchestrationProfiles[0]).toMatchObject({
-      name: "默认编程",
-      preset: "coding",
-      mainAgent: {
-        agentKey: "main",
-        modelRef: { providerId: provider.id, modelId: "planner-model" },
-      },
-    });
-    expect(
-      settings.orchestrationProfiles[0]?.agents.find((agent) => agent.agentKey === "coder")?.modelRef.modelId,
-    ).toBe("coder-model");
+    expect(settings.orchestrationProfiles).toHaveLength(0);
+    expect(settings.routeProfiles).toHaveLength(1);
+    expect(settings.routeProfiles[0]?.name).toBe("默认编程");
   },
 );

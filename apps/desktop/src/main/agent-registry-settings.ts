@@ -12,7 +12,7 @@ export function mergeAgentRegistrySettings(
   return {
     ...base,
     agentTemplates: mergeUniqueById(base.agentTemplates, registry.listAgentTemplates()),
-    orchestrationProfiles: mergeUniqueById(base.orchestrationProfiles, registry.listOrchestrationProfiles()),
+    orchestrationProfiles: registry.listOrchestrationProfiles(),
   };
 }
 

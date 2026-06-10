@@ -45,19 +45,18 @@ function customProfile(id: string): OrchestrationProfile {
   };
 }
 
-test("registry settings merge appends user configs without shadowing protected ids", () => {
+test("registry settings merge keeps built-in templates and user orchestration profiles", () => {
   const protectedTemplate = createBuiltInAgentTemplates()[0] as AgentTemplate;
-  const protectedProfile = customProfile("derived.coding");
   const base: ModelSettingsSnapshot = {
     providers: [],
     routeProfiles: [],
     agentTemplates: [protectedTemplate],
-    orchestrationProfiles: [protectedProfile],
+    orchestrationProfiles: [],
   };
 
   const merged = mergeAgentRegistrySettings(base, {
     listAgentTemplates: () => [customTemplate("user.researcher"), customTemplate(protectedTemplate.id)],
-    listOrchestrationProfiles: () => [customProfile("user.research"), customProfile(protectedProfile.id)],
+    listOrchestrationProfiles: () => [customProfile("user.research"), customProfile("user.coding")],
   });
 
   expect(merged.agentTemplates.map((template) => template.id)).toEqual([
@@ -65,7 +64,7 @@ test("registry settings merge appends user configs without shadowing protected i
     "user.researcher",
   ]);
   expect(merged.orchestrationProfiles.map((profile) => profile.id)).toEqual([
-    protectedProfile.id,
     "user.research",
+    "user.coding",
   ]);
 });

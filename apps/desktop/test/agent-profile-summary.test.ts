@@ -26,7 +26,12 @@ const routeProfile: RouteProfileView = {
 };
 
 function settings(): ModelSettingsSnapshot {
-  const codingProfile = buildCodingOrchestrationProfileFromRouteProfile(routeProfile);
+  const codingProfile = {
+    ...buildCodingOrchestrationProfileFromRouteProfile(routeProfile),
+    id: "user.coding-default",
+    source: "user" as const,
+    sourceRouteProfileId: undefined,
+  };
   const customProfile: OrchestrationProfile = {
     ...codingProfile,
     id: "custom-unbound",
@@ -36,26 +41,31 @@ function settings(): ModelSettingsSnapshot {
   };
   return {
     providers: [],
-    routeProfiles: [routeProfile],
+    routeProfiles: [],
     agentTemplates: createBuiltInAgentTemplates(),
     orchestrationProfiles: [customProfile, codingProfile],
   };
 }
 
-test("listSelectableAgentProfileSummaries returns route-backed and custom profiles", () => {
+test("listSelectableAgentProfileSummaries returns user profiles sorted by name", () => {
   const summaries = listSelectableAgentProfileSummaries(settings());
 
   expect(summaries).toHaveLength(2);
-  expect(summaries[0]?.selectionId).toBe("coding-default");
-  expect(summaries[0]?.name).toBe("默认编程");
-  expect(summaries[0]?.presetLabel).toBe("编程");
-  expect(summaries[1]?.selectionId).toBe("custom-unbound");
-  expect(summaries[1]?.sourceLabel).toBe("用户");
+  expect(summaries.map((summary) => summary.selectionId).sort()).toEqual([
+    "custom-unbound",
+    "user.coding-default",
+  ]);
+  expect(summaries.find((summary) => summary.selectionId === "custom-unbound")?.sourceLabel).toBe("用户");
+  expect(summaries.find((summary) => summary.selectionId === "user.coding-default")?.name).toBe("默认编程");
+  expect(summaries.find((summary) => summary.selectionId === "user.coding-default")?.presetLabel).toBe(
+    "编程",
+  );
 });
 
 test("profile summary applies current runtime subagent switches", () => {
-  const summary = findSelectableAgentProfileSummary(settings(), "coding-default", {
-    routeProfileId: "coding-default",
+  const summary = findSelectableAgentProfileSummary(settings(), "user.coding-default", {
+    routeProfileId: "user.coding-default",
+    agentProfileId: "user.coding-default",
     planModeEnabled: true,
     subagentEnabled: {
       explore: true,

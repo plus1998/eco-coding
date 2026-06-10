@@ -38,7 +38,6 @@ import {
   type ClarificationRequest,
   type CoderTodoItem,
   getDefaultAgentProfileId,
-  getRoutesForProfile,
   type LinkAgentsSkillsResult,
   type McpServerConfigInput,
   type McpSettingsSnapshot,
@@ -153,10 +152,7 @@ function findOrchestrationProfileBySelectionId(
   settings: ModelSettingsSnapshot,
   selectionId: string,
 ): OrchestrationProfile | undefined {
-  return (
-    settings.orchestrationProfiles.find((profile) => profile.id === selectionId) ??
-    settings.orchestrationProfiles.find((profile) => profile.sourceRouteProfileId === selectionId)
-  );
+  return settings.orchestrationProfiles.find((profile) => profile.id === selectionId);
 }
 
 const recentProjectsStorageKey = "eco.recent-projects";
@@ -944,16 +940,8 @@ function App() {
     [settings, composerRuntimeConfig],
   );
   const activeRoutes = useMemo(() => {
-    if (selectedRuntimeProfile && composerRuntimeConfig?.agentProfileId?.trim()) {
-      return runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile);
-    }
-    const routeProfileId = composerRuntimeConfig?.routeProfileId;
-    const routeProfileRoutes = routeProfileId ? getRoutesForProfile(settings, routeProfileId) : undefined;
-    if (routeProfileRoutes) {
-      return routeProfileRoutes;
-    }
     return selectedRuntimeProfile ? runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
-  }, [settings, composerRuntimeConfig?.routeProfileId, selectedRuntimeProfile]);
+  }, [selectedRuntimeProfile]);
 
   useEffect(() => {
     if (!window.eco?.getRouteCapabilities || activeRoutes.length === 0) {
@@ -1012,14 +1000,17 @@ function App() {
     ? resolveRetryBannerDetail(activeThread.message, activeThread.status)
     : undefined;
   const retryBannerHint = retryBannerDetail ? resolveRetryBannerHint(retryBannerDetail) : undefined;
-  const alternateRouteProfiles = useMemo(
-    () => settings.routeProfiles.filter((profile) => profile.id !== composerRuntimeConfig?.routeProfileId),
-    [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
+  const alternateAgentProfiles = useMemo(
+    () =>
+      settings.orchestrationProfiles.filter(
+        (profile) => profile.id !== composerRuntimeConfig?.agentProfileId,
+      ),
+    [settings.orchestrationProfiles, composerRuntimeConfig?.agentProfileId],
   );
-  const [retryRouteProfileId, setRetryRouteProfileId] = useState<string>("");
+  const [retryAgentProfileId, setRetryAgentProfileId] = useState<string>("");
 
   useEffect(() => {
-    setRetryRouteProfileId("");
+    setRetryAgentProfileId("");
   }, [activeThread?.id]);
 
   const canRetryThread = Boolean(
@@ -1069,10 +1060,6 @@ function App() {
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
-  const selectedRouteProfile = useMemo(
-    () => settings.routeProfiles.find((profile) => profile.id === composerRuntimeConfig?.routeProfileId),
-    [settings.routeProfiles, composerRuntimeConfig?.routeProfileId],
-  );
   const selectedAgentProfileSummary = useMemo(
     () =>
       findSelectableAgentProfileSummary(
@@ -1567,7 +1554,7 @@ function App() {
     }
   }
 
-  async function retryActiveThread(routeProfileId?: string) {
+  async function retryActiveThread(agentProfileId?: string) {
     if (!activeThread || !window.eco) {
       return;
     }
@@ -1576,7 +1563,7 @@ function App() {
     try {
       const result = await window.eco.retryThread({
         threadId: activeThread.id,
-        ...(routeProfileId ? { routeProfileId } : {}),
+        ...(agentProfileId ? { agentProfileId } : {}),
       });
       if (result.thread) {
         setThreads((current) =>
@@ -1815,15 +1802,11 @@ function App() {
       return;
     }
     const profile = findOrchestrationProfileBySelectionId(settings, profileId);
-    const routeProfileId =
-      profile?.sourceRouteProfileId ??
-      (settings.routeProfiles.some((routeProfile) => routeProfile.id === profileId)
-        ? profileId
-        : (profile?.id ?? profileId));
+    const agentProfileId = profile?.id ?? profileId;
     const next: ThreadRuntimeConfig = {
       ...composerRuntimeConfig,
-      routeProfileId,
-      agentProfileId: profile?.id ?? profileId,
+      routeProfileId: agentProfileId,
+      agentProfileId,
     };
     await persistComposerRuntimeConfig(next);
     setComposerRoutePopoverOpen(false);
@@ -2401,7 +2384,7 @@ function App() {
                   buttonRef={composerRouteButtonRef}
                   open={composerRoutePopoverOpen}
                   disabled={!canSwitchRouteProfile || isSavingSettings}
-                  profileName={selectedAgentProfileSummary?.name ?? selectedRouteProfile?.name}
+                  profileName={selectedAgentProfileSummary?.name}
                   onToggle={() => {
                     if (!canSwitchRouteProfile) {
                       return;
@@ -2623,17 +2606,17 @@ function App() {
                       {retryBannerHint ? <p className="thread-retry-banner-hint">{retryBannerHint}</p> : null}
                     </div>
                     <div className="thread-retry-banner-actions">
-                      {alternateRouteProfiles.length > 0 ? (
+                      {alternateAgentProfiles.length > 0 ? (
                         <label className="thread-retry-banner-route-picker">
-                          <span>路由方案</span>
+                          <span>Agent Profile</span>
                           <select
                             className="mcp-field-input"
-                            value={retryRouteProfileId}
+                            value={retryAgentProfileId}
                             disabled={retryBusy}
-                            onChange={(event) => setRetryRouteProfileId(event.target.value)}
+                            onChange={(event) => setRetryAgentProfileId(event.target.value)}
                           >
                             <option value="">请选择…</option>
-                            {alternateRouteProfiles.map((profile) => (
+                            {alternateAgentProfiles.map((profile) => (
                               <option key={profile.id} value={profile.id}>
                                 {profile.name}
                               </option>
@@ -2642,20 +2625,20 @@ function App() {
                         </label>
                       ) : null}
                       <div className="thread-retry-banner-buttons">
-                        {alternateRouteProfiles.length > 0 && retryRouteProfileId ? (
+                        {alternateAgentProfiles.length > 0 && retryAgentProfileId ? (
                           <button
                             type="button"
                             className="plan-button primary"
-                            onClick={() => void retryActiveThread(retryRouteProfileId)}
+                            onClick={() => void retryActiveThread(retryAgentProfileId)}
                             disabled={retryBusy}
                           >
-                            {retryBusy ? "正在重试…" : "用所选方案重试"}
+                            {retryBusy ? "正在重试…" : "用所选 Profile 重试"}
                           </button>
                         ) : null}
                         <button
                           type="button"
                           className={
-                            alternateRouteProfiles.length > 0 && retryRouteProfileId
+                            alternateAgentProfiles.length > 0 && retryAgentProfileId
                               ? "plan-button"
                               : "plan-button primary"
                           }
@@ -2666,8 +2649,8 @@ function App() {
                             ? "正在重试…"
                             : activeThread?.status === "awaiting_plan"
                               ? "重试执行"
-                              : alternateRouteProfiles.length > 0
-                                ? "仍用当前方案重试"
+                              : alternateAgentProfiles.length > 0
+                                ? "仍用当前 Profile 重试"
                                 : "重试此次请求"}
                         </button>
                       </div>

@@ -53,17 +53,12 @@ export function listSelectableAgentProfileSummaries(
   settings: ModelSettingsSnapshot,
   runtimeConfig?: ThreadRuntimeConfig | undefined,
 ): AgentProfileSummary[] {
-  const routeOrder = new Map(settings.routeProfiles.map((profile, index) => [profile.id, index]));
   return settings.orchestrationProfiles
     .map((profile) => buildAgentProfileSummary(settings, profile, runtimeConfig))
     .filter((summary): summary is AgentProfileSummary & { selectionId: string } =>
       Boolean(summary.selectionId),
     )
-    .sort(
-      (left, right) =>
-        (routeOrder.get(left.selectionId) ?? Number.MAX_SAFE_INTEGER) -
-        (routeOrder.get(right.selectionId) ?? Number.MAX_SAFE_INTEGER),
-    );
+    .sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
 }
 
 export function findSelectableAgentProfileSummary(

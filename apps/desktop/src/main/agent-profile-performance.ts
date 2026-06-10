@@ -40,13 +40,9 @@ interface MutableProfilePerformance {
 export function buildAgentProfilePerformanceSnapshots(
   input: BuildAgentProfilePerformanceInput,
 ): AgentProfilePerformanceSnapshot[] {
-  const profileBySelectionId = new Map<string, OrchestrationProfile>();
-  for (const profile of input.profiles) {
-    profileBySelectionId.set(profile.id, profile);
-    if (profile.sourceRouteProfileId) {
-      profileBySelectionId.set(profile.sourceRouteProfileId, profile);
-    }
-  }
+  const profileBySelectionId = new Map<string, OrchestrationProfile>(
+    input.profiles.map((profile) => [profile.id, profile]),
+  );
 
   const byProfileId = new Map<string, MutableProfilePerformance>();
   for (const profile of input.profiles) {
@@ -54,7 +50,8 @@ export function buildAgentProfilePerformanceSnapshots(
   }
 
   for (const thread of input.threads) {
-    const selectionId = thread.runtimeConfig?.routeProfileId?.trim();
+    const selectionId =
+      thread.runtimeConfig?.agentProfileId?.trim() || thread.runtimeConfig?.routeProfileId?.trim();
     if (!selectionId) {
       continue;
     }
@@ -69,7 +66,7 @@ export function buildAgentProfilePerformanceSnapshots(
 function createConfiguredProfilePerformance(profile: OrchestrationProfile): MutableProfilePerformance {
   return {
     profileId: profile.id,
-    selectionId: profile.sourceRouteProfileId ?? profile.id,
+    selectionId: profile.id,
     profileName: profile.name,
     preset: profile.preset,
     source: "configured",
