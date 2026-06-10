@@ -36,10 +36,10 @@ import {
 import {
   type CommandRunner,
   createSessionPlan,
-  evaluateShellCommandText,
   GitWorktreeService,
   type WorktreePlan,
 } from "@eco/workspace";
+import { evaluateThreadBashPermission } from "./thread-bash-permission";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -3682,6 +3682,8 @@ function createSdkDriver(
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
+      bashReviewMode: threadConfig?.bashReviewMode ?? "always",
+      workspacePath: storedThread.workspacePath,
     },
     toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
     onContextProbe: onContextProbe
@@ -5407,10 +5409,16 @@ function createThreadToolPermissionHandler(
 
     const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
     const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
-    const policy = evaluateShellCommandText({
+    const runtimeConfig = ensureThreadRuntimeConfig(thread).runtimeConfig;
+    const agentRegistry = resolveAgentRuntimeConfigForThread(thread);
+    const policy = evaluateThreadBashPermission({
       command,
       cwd,
       workspacePath: thread.workspacePath,
+      bashReviewMode: runtimeConfig?.bashReviewMode ?? "always",
+      ...(agentRegistry ? { agentRegistry } : {}),
+      ...(request.agentId ? { agentId: request.agentId } : {}),
+      ...(request.agentType ? { agentType: request.agentType } : {}),
     });
     if (policy.action === "deny") {
       emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false);
@@ -5420,6 +5428,9 @@ function createThreadToolPermissionHandler(
         interrupt: false,
       };
     }
+    if (policy.action === "allow") {
+      return { behavior: "allow", updatedInput: request.input };
+    }
 
     const description = readBashDescriptionInput(request.input);
     const approvalRequest: BashApprovalRequest = {
@@ -5427,8 +5438,8 @@ function createThreadToolPermissionHandler(
       threadId,
       command,
       cwd,
-      reason:
-        policy.action === "ask" ? policy.reason : "Eco requires user confirmation before running Bash.",
+      reason: policy.reason,
+      riskScore: policy.riskScore,
       riskLevel: policy.riskLevel,
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.agentType ? { agentType: request.agentType } : {}),

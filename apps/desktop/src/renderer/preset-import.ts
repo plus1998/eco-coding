@@ -116,7 +116,6 @@ function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
   if (policy.bash) {
     cloned.bash = {
       enabled: policy.bash.enabled,
-      approval: policy.bash.approval,
     };
     if (policy.bash.commandAllowlist) {
       cloned.bash.commandAllowlist = [...policy.bash.commandAllowlist];

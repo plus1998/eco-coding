@@ -14,6 +14,7 @@ test("registers and resolves pending Bash approvals", async () => {
     command: "date",
     cwd: "/repo",
     reason: "Eco requires user confirmation before running Bash.",
+    riskScore: 5,
     riskLevel: "low",
   });
 
@@ -31,6 +32,7 @@ test("cancels pending Bash approvals for a thread", async () => {
     command: "npm test",
     cwd: "/repo",
     reason: "Eco requires user confirmation before running Bash.",
+    riskScore: 5,
     riskLevel: "low",
   });
 

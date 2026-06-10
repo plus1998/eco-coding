@@ -33,7 +33,6 @@ export interface ToolPolicy {
   disallowed: string[];
   bash?: {
     enabled: boolean;
-    approval: "always" | "risky" | "never";
     commandAllowlist?: string[];
     commandDenylist?: string[];
   };
@@ -182,7 +181,7 @@ const READ_ONLY_TOOLS: ToolPolicy = {
 const READ_ONLY_BASH_TOOLS: ToolPolicy = {
   allowed: [...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
   disallowed: [...CLAUDE_WRITE_TOOLS],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
@@ -211,7 +210,7 @@ const PRODUCT_TOOLS: ToolPolicy = {
 const DATA_ANALYSIS_TOOLS: ToolPolicy = {
   allowed: [...CLAUDE_READ_TOOLS, "Bash"],
   disallowed: [...CLAUDE_WRITE_TOOLS],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
@@ -219,7 +218,7 @@ const DATA_ANALYSIS_TOOLS: ToolPolicy = {
 const INCIDENT_TRIAGE_TOOLS: ToolPolicy = {
   allowed: [...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
   disallowed: [...CLAUDE_WRITE_TOOLS],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
@@ -229,7 +228,6 @@ const OPS_RUNBOOK_TOOLS: ToolPolicy = {
   disallowed: [...CLAUDE_WRITE_TOOLS],
   bash: {
     enabled: true,
-    approval: "risky",
     commandDenylist: ["rm *", "git reset *", "kubectl delete *", "terraform destroy *"],
   },
   filesystem: { read: "workspace", write: "none" },
@@ -239,7 +237,7 @@ const OPS_RUNBOOK_TOOLS: ToolPolicy = {
 const CODER_TOOLS: ToolPolicy = {
   allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, "Bash"],
   disallowed: [],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: false, webFetch: false },
 };
@@ -253,7 +251,7 @@ const MAIN_CODING_TOOLS: ToolPolicy = {
     ...NETWORK_TOOLS,
   ],
   disallowed: [],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "workspace" },
   network: { webSearch: true, webFetch: true },
 };
@@ -289,7 +287,7 @@ const MAIN_PRODUCT_TOOLS: ToolPolicy = {
 const MAIN_DATA_TOOLS: ToolPolicy = {
   allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, "Bash"],
   disallowed: [...CLAUDE_WRITE_TOOLS],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
@@ -297,7 +295,7 @@ const MAIN_DATA_TOOLS: ToolPolicy = {
 const MAIN_OPS_TOOLS: ToolPolicy = {
   allowed: [...MAIN_ORCHESTRATION_TOOLS, ...CLAUDE_READ_TOOLS, "Bash", ...NETWORK_TOOLS],
   disallowed: [...CLAUDE_WRITE_TOOLS],
-  bash: { enabled: true, approval: "risky" },
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };

@@ -23,7 +23,6 @@ export interface EcoToolPolicy {
   disallowed: string[];
   bash?: {
     enabled: boolean;
-    approval: "always" | "risky" | "never";
     commandAllowlist?: string[];
     commandDenylist?: string[];
   };

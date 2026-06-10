@@ -10,6 +10,7 @@
     { "path": "../shared" },
     { "path": "../persistence" },
     { "path": "../model-router" },
+    { "path": "../bash-policy" },
     { "path": "../workspace" }
   ]
 }

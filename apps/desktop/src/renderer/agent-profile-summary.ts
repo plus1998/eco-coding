@@ -209,7 +209,7 @@ function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
   const disallowed = new Set(policy.disallowed);
   const labels: string[] = [];
   if (policy.bash?.enabled && allowed.has("Bash") && !disallowed.has("Bash")) {
-    labels.push(policy.bash.approval === "never" ? "Bash 免确认" : "Bash");
+    labels.push("Bash");
   }
   const writeEnabled =
     policy.filesystem?.write === "workspace" ||

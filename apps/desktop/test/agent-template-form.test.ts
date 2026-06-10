@@ -86,7 +86,7 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
     skills: ["citations"],
     allowDelegation: true,
   });
-  expect(template.defaultTools.bash).toEqual({ enabled: true, approval: "risky" });
+  expect(template.defaultTools.bash).toEqual({ enabled: true });
   expect(template.defaultTools.mcp).toEqual({ allowedServers: ["docs"], allowedTools: ["search"] });
   expect(template.defaultTools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
@@ -225,7 +225,6 @@ test("buildAgentTemplatePermissionChips summarizes effective tool policy", () =>
       disallowed: ["Write", "Edit", "WebSearch"],
       bash: {
         enabled: true,
-        approval: "always",
         commandAllowlist: ["bun test"],
         commandDenylist: ["rm*"],
       },
@@ -237,7 +236,7 @@ test("buildAgentTemplatePermissionChips summarizes effective tool policy", () =>
   });
 
   expect(chips).toEqual([
-    { label: "Bash 每次确认", tone: "allow" },
+    { label: "Bash", tone: "allow" },
     { label: "读 工作区", tone: "allow" },
     { label: "写 禁用", tone: "deny" },
     { label: "网络 Fetch", tone: "allow" },

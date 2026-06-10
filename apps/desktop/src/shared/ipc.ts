@@ -642,6 +642,7 @@ export interface BashApprovalRequest {
   command: string;
   cwd: string;
   reason: string;
+  riskScore: number;
   riskLevel: "low" | "medium" | "high" | "critical";
   agentId?: string;
   agentType?: string;

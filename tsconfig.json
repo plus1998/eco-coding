@@ -4,6 +4,7 @@
     { "path": "packages/shared" },
     { "path": "packages/model-router" },
     { "path": "packages/persistence" },
+    { "path": "packages/bash-policy" },
     { "path": "packages/workspace" },
     { "path": "packages/approval" },
     { "path": "packages/terminal" },

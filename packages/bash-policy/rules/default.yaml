@@ -1,0 +1,23 @@
+# Declarative bash policy rules (mirrored in src/rules/default.ts).
+commands:
+  rm:
+    deny:
+      - targets: ["/", "/*"]
+    score: 100
+  dd:
+    score: 100
+  mkfs:
+    score: 100
+  reboot:
+    score: 80
+  chmod:
+    scoreWhen:
+      - argsContain: ["777"]
+        score: 60
+pipelines:
+  - pattern: ["curl", "bash"]
+    score: 95
+  - pattern: ["wget", "bash"]
+    score: 95
+workspace:
+  denyOutsideCwd: true

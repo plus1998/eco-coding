@@ -189,7 +189,7 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash"],
         disallowed: [],
-        bash: { enabled: true, approval: "risky" },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "workspace" },
       },
     },
@@ -206,7 +206,7 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
       tools: {
         allowed: ["Agent", "Read"],
         disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
-        bash: { enabled: true, approval: "risky" },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "workspace" },
       },
     },
@@ -298,7 +298,7 @@ test("resolveMainAgentAllowedTools caps coding profile tools to planning phase",
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
-        bash: { enabled: true, approval: "risky" },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "workspace" },
         network: { webSearch: true, webFetch: true },
       },
@@ -340,7 +340,7 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
       tools: {
         allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
         disallowed: [],
-        bash: { enabled: true, approval: "risky" },
+        bash: { enabled: true },
         filesystem: { read: "workspace", write: "workspace" },
         network: { webSearch: true, webFetch: true },
       },
@@ -422,7 +422,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
       ...profile.mainAgent,
       tools: {
         ...profile.mainAgent.tools,
-        bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"] },
+        bash: { enabled: true, commandAllowlist: ["bun test"] },
         filesystem: { read: "workspace", write: "none" },
         network: { webSearch: false, webFetch: true },
       },
@@ -432,7 +432,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
         ...firstAgent,
         tools: {
           ...firstAgent.tools,
-          bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
+          bash: { enabled: true, commandDenylist: ["rm*"] },
           filesystem: { read: "workspace", write: "none" },
           network: { webSearch: true, webFetch: false },
         },
@@ -443,12 +443,12 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
   const policy = buildToolPermissionPolicyFromProfile(structuredProfile, [researchTemplate]);
 
   expect(policy.main).toMatchObject({
-    bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"] },
+    bash: { enabled: true, commandAllowlist: ["bun test"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: false, webFetch: true },
   });
   expect(policy.agents.eco_researcher).toMatchObject({
-    bash: { enabled: true, approval: "risky", commandDenylist: ["rm*"] },
+    bash: { enabled: true, commandDenylist: ["rm*"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: true, webFetch: false },
   });

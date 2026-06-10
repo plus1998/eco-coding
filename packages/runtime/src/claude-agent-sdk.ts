@@ -1095,7 +1095,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
               ...(toolPermissions ? { toolPermissions } : {}),
               ...(toolPermissions ? { onToolPermissionDecision } : {}),
-              ...(this.options.toolPermissionHandler ? { forceBashApproval: true } : {}),
               subagentAvailability:
                 phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
             }),

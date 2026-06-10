@@ -1337,7 +1337,6 @@ interface AgentProfileToolPolicyFieldValues {
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
-  bashApproval: AgentProfileAgentFormState["bashApproval"];
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: AgentProfileAgentFormState["filesystemRead"];
@@ -1443,7 +1442,6 @@ function AgentProfileEditorModal({
       ...(toolPatch.disallowedTools !== undefined ? { mainDisallowedTools: toolPatch.disallowedTools } : {}),
       ...(toolPatch.mcpServers !== undefined ? { mainMcpServers: toolPatch.mcpServers } : {}),
       ...(toolPatch.mcpTools !== undefined ? { mainMcpTools: toolPatch.mcpTools } : {}),
-      ...(toolPatch.bashApproval !== undefined ? { mainBashApproval: toolPatch.bashApproval } : {}),
       ...(toolPatch.bashCommandAllowlist !== undefined
         ? { mainBashCommandAllowlist: toolPatch.bashCommandAllowlist }
         : {}),
@@ -1984,7 +1982,6 @@ function AgentProfileNodeConfigModal({
                   disallowedTools: form.mainDisallowedTools,
                   mcpServers: form.mainMcpServers,
                   mcpTools: form.mainMcpTools,
-                  bashApproval: form.mainBashApproval,
                   bashCommandAllowlist: form.mainBashCommandAllowlist,
                   bashCommandDenylist: form.mainBashCommandDenylist,
                   filesystemRead: form.mainFilesystemRead,
@@ -2205,23 +2202,6 @@ function AgentProfileToolPolicyFields({
             onChange({ mcpTools: toggleAgentTemplateListValue(values.mcpTools, value, checked) })
           }
         />
-        <label className="mcp-field">
-          <span className="mcp-field-label">Bash 审批</span>
-          <select
-            className="mcp-field-input"
-            value={values.bashApproval}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({
-                bashApproval: event.target.value as AgentProfileToolPolicyFieldValues["bashApproval"],
-              })
-            }
-          >
-            <option value="risky">风险确认</option>
-            <option value="always">每次确认</option>
-            <option value="never">免确认</option>
-          </select>
-        </label>
         <label className="mcp-field">
           <span className="mcp-field-label">命令白名单</span>
           <input

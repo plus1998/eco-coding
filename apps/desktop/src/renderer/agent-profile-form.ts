@@ -21,7 +21,6 @@ export interface AgentProfileAgentFormState {
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
-  bashApproval: NonNullable<ToolPolicy["bash"]>["approval"];
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
@@ -45,7 +44,6 @@ export interface AgentProfileFormState {
   mainDisallowedTools: string;
   mainMcpServers: string;
   mainMcpTools: string;
-  mainBashApproval: NonNullable<ToolPolicy["bash"]>["approval"];
   mainBashCommandAllowlist: string;
   mainBashCommandDenylist: string;
   mainFilesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
@@ -69,7 +67,6 @@ interface ProfileFormOptions {
 interface ToolPolicyFormFields {
   mcpServers: string;
   mcpTools: string;
-  bashApproval: NonNullable<ToolPolicy["bash"]>["approval"];
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
@@ -111,7 +108,6 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",
-    mainBashApproval: "risky",
     mainBashCommandAllowlist: "",
     mainBashCommandDenylist: "",
     mainFilesystemRead: "workspace",
@@ -270,7 +266,6 @@ export function buildOrchestrationProfileFromForm(
         {
           mcpServers: form.mainMcpServers,
           mcpTools: form.mainMcpTools,
-          bashApproval: form.mainBashApproval,
           bashCommandAllowlist: form.mainBashCommandAllowlist,
           bashCommandDenylist: form.mainBashCommandDenylist,
           filesystemRead: form.mainFilesystemRead,
@@ -337,7 +332,6 @@ function mainToolPolicyFormFields(
   AgentProfileFormState,
   | "mainMcpServers"
   | "mainMcpTools"
-  | "mainBashApproval"
   | "mainBashCommandAllowlist"
   | "mainBashCommandDenylist"
   | "mainFilesystemRead"
@@ -349,7 +343,6 @@ function mainToolPolicyFormFields(
   return {
     mainMcpServers: fields.mcpServers,
     mainMcpTools: fields.mcpTools,
-    mainBashApproval: fields.bashApproval,
     mainBashCommandAllowlist: fields.bashCommandAllowlist,
     mainBashCommandDenylist: fields.bashCommandDenylist,
     mainFilesystemRead: fields.filesystemRead,
@@ -365,7 +358,6 @@ function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] 
   return {
     mcpServers: formatList(mcpServers.length > 0 ? mcpServers : (policy.mcp?.allowedServers ?? [])),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashApproval: policy.bash?.approval ?? "risky",
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead:
@@ -401,7 +393,6 @@ function buildToolPolicyFromFormFields(
       ? {
           bash: {
             enabled: true,
-            approval: fields.bashApproval,
             ...(parseList(fields.bashCommandAllowlist).length > 0
               ? { commandAllowlist: parseList(fields.bashCommandAllowlist) }
               : {}),

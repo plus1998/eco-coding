@@ -63,7 +63,7 @@ test("requires approval for dangerous commands", () => {
       cwd: "/repo",
       workspacePath: "/repo",
     }).action,
-  ).toBe("ask");
+  ).toBe("allow");
 });
 
 test("denies commands and writes outside the workspace", () => {

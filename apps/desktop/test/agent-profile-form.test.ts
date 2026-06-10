@@ -106,7 +106,7 @@ test("createBlankAgentProfileForm defaults the main agent to hands-on (write + b
     nowIso: "2026-06-10T00:00:00.000Z",
   });
   expect(built.mainAgent.tools.filesystem).toEqual({ read: "workspace", write: "workspace" });
-  expect(built.mainAgent.tools.bash).toMatchObject({ enabled: true, approval: "risky" });
+  expect(built.mainAgent.tools.bash).toMatchObject({ enabled: true });
 });
 
 test("createCopiedAgentProfileForm turns protected profiles into user-editable copies", () => {
@@ -175,7 +175,6 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
   form.mainDisallowedTools = "Write";
   form.mainMcpServers = "docs";
   form.mainMcpTools = "mcp__docs__search";
-  form.mainBashApproval = "always";
   form.mainBashCommandAllowlist = "bun test";
   form.mainBashCommandDenylist = "rm*";
   form.mainFilesystemRead = "workspace";
@@ -187,7 +186,6 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
   firstAgent.disallowedTools = "Write";
   firstAgent.mcpServers = "browser";
   firstAgent.mcpTools = "mcp__browser__open";
-  firstAgent.bashApproval = "never";
   firstAgent.bashCommandDenylist = "curl *";
   firstAgent.filesystemWrite = "none";
   firstAgent.networkWebFetch = false;
@@ -200,7 +198,7 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
   expect(built.mainAgent.tools).toMatchObject({
     allowed: ["Agent", "Bash", "WebFetch"],
     disallowed: ["Write"],
-    bash: { enabled: true, approval: "always", commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
+    bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
     mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: false, webFetch: true },

@@ -1,4 +1,5 @@
 import { defaultSubagentAvailability, normalizeSubagentAvailability, SUBAGENT_ROLES } from "@eco/runtime";
+import type { BashReviewMode } from "../../../../packages/bash-policy/src";
 import type {
   ModelSettingsSnapshot,
   OrchestrationModeSetting,
@@ -10,11 +11,14 @@ import type {
   WorkflowSettingsSnapshot,
 } from "./ipc";
 
+export type { BashReviewMode };
+
 export interface ThreadRuntimeConfig {
   routeProfileId: string;
   agentProfileId?: string;
   subagentEnabled: SubagentEnabledSettings;
   planModeEnabled: boolean;
+  bashReviewMode: BashReviewMode;
 }
 
 export type ThreadRuntimeConfigInput = ThreadRuntimeConfig;
@@ -129,7 +133,16 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
     return false;
   }
   const subagents = record.subagentEnabled as Record<string, unknown>;
-  return SUBAGENT_ROLES.every((role) => typeof subagents[role] === "boolean");
+  if (!SUBAGENT_ROLES.every((role) => typeof subagents[role] === "boolean")) {
+    return false;
+  }
+  const bashReviewMode = record.bashReviewMode;
+  return (
+    bashReviewMode === undefined ||
+    bashReviewMode === "always" ||
+    bashReviewMode === "auto" ||
+    bashReviewMode === "allow_all"
+  );
 }
 
 export function parseThreadRuntimeConfigJson(
@@ -157,12 +170,21 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const record = config as ThreadRuntimeConfig & { orchestrationMode?: OrchestrationModeSetting };
   const planModeEnabled = normalizePlanModeEnabled(record.planModeEnabled ?? record.orchestrationMode);
   const routeProfileId = typeof record.routeProfileId === "string" ? record.routeProfileId.trim() : "";
+  const bashReviewMode = normalizeBashReviewMode(record.bashReviewMode);
   return {
     routeProfileId,
     ...(config.agentProfileId?.trim() && { agentProfileId: config.agentProfileId.trim() }),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
     planModeEnabled,
+    bashReviewMode,
   };
+}
+
+function normalizeBashReviewMode(value: unknown): BashReviewMode {
+  if (value === "auto" || value === "allow_all" || value === "always") {
+    return value;
+  }
+  return "always";
 }
 
 export function buildThreadRuntimeConfigFromDefaults(input: {
@@ -194,6 +216,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     ...(agentProfile && { agentProfileId: agentProfile.id }),
     subagentEnabled: defaultSubagentAvailability(),
     planModeEnabled: input.workflowDefaults.planModeEnabled,
+    bashReviewMode: "always",
   };
 }
 

@@ -83,7 +83,7 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
         <header className="bash-approval-top">
           <p className="bash-approval-title">{title}</p>
           <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
-            {formatRiskLevel(request.riskLevel)}
+            {formatRiskLevel(request.riskLevel)} · {request.riskScore}
           </span>
         </header>
 

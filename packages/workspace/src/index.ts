@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { evaluateBashPolicy } from "../../bash-policy/src";
 import type { ApprovalRiskLevel } from "../../shared/src";
 
 export type ApprovalAction = "allow" | "ask" | "deny";
@@ -27,73 +28,34 @@ export interface PolicyDecision {
   reason: string;
 }
 
-const PACKAGE_INSTALL_COMMANDS = new Set(["npm", "pnpm", "yarn", "bun"]);
-const PACKAGE_INSTALL_ARGS = new Set(["install", "i", "add", "remove"]);
-const ALWAYS_ASK_COMMANDS = new Set(["docker", "sudo"]);
-
 export function evaluateCommand(request: CommandRequest): PolicyDecision {
-  const [program, ...args] = request.command;
-  if (!program) {
-    return { action: "deny", riskLevel: "high", reason: "Empty command is not allowed" };
-  }
-
-  if (!isInsidePath(request.cwd, request.workspacePath)) {
-    return {
-      action: "deny",
-      riskLevel: "critical",
-      reason: "Command cwd is outside the workspace",
-    };
-  }
-
-  if (program === "rm") {
-    return { action: "ask", riskLevel: "critical", reason: "File deletion requires approval" };
-  }
-
-  if (program === "git" && args[0] === "reset") {
-    return { action: "ask", riskLevel: "critical", reason: "git reset requires approval" };
-  }
-
-  if (program === "git" && args[0] === "clean") {
-    return { action: "ask", riskLevel: "high", reason: "git clean can delete files" };
-  }
-
-  if (PACKAGE_INSTALL_COMMANDS.has(program) && args.some((arg) => PACKAGE_INSTALL_ARGS.has(arg))) {
-    return {
-      action: "ask",
-      riskLevel: "medium",
-      reason: "Dependency changes require approval",
-    };
-  }
-
-  if (ALWAYS_ASK_COMMANDS.has(program)) {
-    return { action: "ask", riskLevel: "high", reason: `${program} requires approval` };
-  }
-
-  return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };
+  return toPolicyDecision(
+    evaluateBashPolicy({
+      command: request.command.join(" "),
+      cwd: request.cwd,
+      workspacePath: request.workspacePath,
+      mode: "auto",
+    }),
+  );
 }
 
 export function evaluateShellCommandText(request: ShellCommandRequest): PolicyDecision {
-  if (!isInsidePath(request.cwd, request.workspacePath)) {
-    return {
-      action: "deny",
-      riskLevel: "critical",
-      reason: "Command cwd is outside the workspace",
-    };
-  }
+  return toPolicyDecision(
+    evaluateBashPolicy({
+      command: request.command,
+      cwd: request.cwd,
+      workspacePath: request.workspacePath,
+      mode: "auto",
+    }),
+  );
+}
 
-  const decisions = request.command
-    .split(/\s*(?:&&|\|\||;|\|)\s*/g)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) =>
-      evaluateCommand({
-        command: tokenizeShellSegment(segment),
-        cwd: request.cwd,
-        workspacePath: request.workspacePath,
-      }),
-    );
-
-  return pickStrictestDecision(decisions);
+function toPolicyDecision(decision: ReturnType<typeof evaluateBashPolicy>): PolicyDecision {
+  return {
+    action: decision.action,
+    riskLevel: decision.riskLevel,
+    reason: decision.reason,
+  };
 }
 
 export function evaluateFileWrite(request: FileWriteRequest): PolicyDecision {
@@ -404,35 +366,6 @@ async function pathExists(filePath: string): Promise<boolean> {
 export function isInsidePath(candidatePath: string, parentPath: string): boolean {
   const relativePath = path.relative(path.resolve(parentPath), path.resolve(candidatePath));
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-}
-
-function tokenizeShellSegment(segment: string): string[] {
-  return segment
-    .replace(/^\s*(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*/, "")
-    .split(/\s+/g)
-    .filter(Boolean);
-}
-
-function pickStrictestDecision(decisions: PolicyDecision[]): PolicyDecision {
-  if (decisions.length === 0) {
-    return { action: "deny", riskLevel: "high", reason: "Empty command is not allowed" };
-  }
-
-  const denied = decisions.find((decision) => decision.action === "deny");
-  if (denied) return denied;
-
-  const asks = decisions.filter((decision) => decision.action === "ask");
-  if (asks.length > 0) {
-    return asks.reduce((strictest, decision) =>
-      riskRank(decision.riskLevel) > riskRank(strictest.riskLevel) ? decision : strictest,
-    );
-  }
-
-  return { action: "allow", riskLevel: "low", reason: "Command is allowed by default policy" };
-}
-
-function riskRank(riskLevel: ApprovalRiskLevel): number {
-  return { low: 0, medium: 1, high: 2, critical: 3 }[riskLevel];
 }
 
 function formatGitCommandFailure(

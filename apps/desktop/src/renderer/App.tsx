@@ -97,6 +97,7 @@ import { findSelectableAgentProfileSummary } from "./agent-profile-summary";
 import { BashApprovalPanel } from "./BashApprovalPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
 import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
@@ -1880,6 +1881,14 @@ function App() {
     await persistComposerRuntimeConfig(next);
   }
 
+  async function toggleComposerBashReviewMode(bashReviewMode: ThreadRuntimeConfig["bashReviewMode"]) {
+    if (!composerRuntimeConfig || !canEditComposerConfig) {
+      return;
+    }
+    const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, bashReviewMode };
+    await persistComposerRuntimeConfig(next);
+  }
+
   async function saveProxyBridgeSettings(next: ProxyBridgeSettingsSnapshot) {
     if (!window.eco) return;
     setIsSavingProxyBridgeSettings(true);
@@ -2414,6 +2423,14 @@ function App() {
                   canEdit={canEditComposerConfig}
                   saving={isSavingSettings}
                   onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                />
+              ) : null}
+              {composerRuntimeConfig ? (
+                <ComposerBashReviewToggle
+                  bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                  canEdit={canEditComposerConfig}
+                  saving={isSavingSettings}
+                  onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
                 />
               ) : null}
               <ComposerAgentModels

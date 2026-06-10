@@ -36,6 +36,7 @@ export {
   readAgentSubagentType,
 } from "./subagent-resume.js";
 
+import { evaluateBashPolicy, type BashReviewMode } from "../../bash-policy/src";
 import type { RuntimeAgentRole } from "../../shared/src";
 import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 import {
@@ -103,7 +104,7 @@ export interface EcoHookContext {
   allowedAgentKeys?: string[];
   allowedSdkBuiltinAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
-  forceBashApproval?: boolean;
+  bashReviewMode?: BashReviewMode;
   workspacePath?: string;
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
   getPhaseTranscript?: () => string;
@@ -116,10 +117,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const READ_FILESYSTEM_TOOLS = new Set(["Read", "Glob", "Grep", "LS", "NotebookRead"]);
 const WRITE_FILESYSTEM_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
-const PACKAGE_INSTALL_COMMANDS = new Set(["npm", "pnpm", "yarn", "bun"]);
-const PACKAGE_INSTALL_ARGS = new Set(["install", "i", "add", "remove"]);
-const ALWAYS_ASK_COMMANDS = new Set(["docker", "sudo"]);
-
 export interface EcoToolPermissionDecisionAudit {
   permissionDecision: "deny";
   toolName: string;
@@ -636,7 +633,7 @@ export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
   options: {
     workspacePath?: string;
-    forceBashApproval?: boolean;
+    bashReviewMode?: BashReviewMode;
     onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
   } = {},
 ): HookCallback | undefined {
@@ -728,7 +725,7 @@ function mainAgentDelegationHint(actor: "main" | string | undefined): string {
 function evaluateStructuredToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; forceBashApproval?: boolean; actor?: "main" | string },
+  options: { workspacePath?: string; bashReviewMode?: BashReviewMode; actor?: "main" | string },
 ): HookJSONOutput | undefined {
   if (input.tool_name === "Bash") {
     return evaluateBashToolPolicy(input, entry, options);
@@ -743,7 +740,7 @@ function evaluateStructuredToolPolicy(
 function evaluateBashToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; forceBashApproval?: boolean; actor?: "main" | string },
+  options: { workspacePath?: string; bashReviewMode?: BashReviewMode; actor?: "main" | string },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
   if (!bash?.enabled) {
@@ -753,39 +750,29 @@ function evaluateBashToolPolicy(
     );
   }
   const command = readBashCommand(input.tool_input);
-  if (command) {
-    if (matchesAnyCommandPattern(command, bash.commandDenylist ?? [])) {
-      return denyTool("Bash", "Bash command is denied by this Eco agent command denylist.");
+  const mode = options.bashReviewMode ?? "always";
+  if (!command) {
+    if (mode === "allow_all") {
+      return undefined;
     }
-    if (
-      (bash.commandAllowlist?.length ?? 0) > 0 &&
-      !matchesAnyCommandPattern(command, bash.commandAllowlist ?? [])
-    ) {
-      return denyTool("Bash", "Bash command is outside this Eco agent command allowlist.");
-    }
+    return askTool("Bash", "Bash command could not be evaluated and requires approval.");
   }
-  if (options.forceBashApproval) {
-    return askTool("Bash", "Bash requires user confirmation before execution.");
+  const workspacePath = options.workspacePath?.trim() || input.cwd;
+  const decision = evaluateBashPolicy({
+    command,
+    cwd: input.cwd,
+    workspacePath,
+    mode,
+    agentBash: {
+      ...(bash.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
+      ...(bash.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
+    },
+  });
+  if (decision.action === "deny") {
+    return denyTool("Bash", decision.reason);
   }
-  if (bash.approval === "always") {
-    return askTool("Bash", "Bash requires approval for this Eco agent.");
-  }
-  if (bash.approval === "risky") {
-    if (!command) {
-      return askTool("Bash", "Bash command could not be evaluated and requires approval.");
-    }
-    const workspacePath = options.workspacePath?.trim() || input.cwd;
-    const decision = evaluateShellCommandTextPolicy({
-      command,
-      cwd: input.cwd,
-      workspacePath,
-    });
-    if (decision.action === "deny") {
-      return denyTool("Bash", decision.reason);
-    }
-    if (decision.action === "ask") {
-      return askTool("Bash", decision.reason);
-    }
+  if (decision.action === "ask") {
+    return askTool("Bash", decision.reason);
   }
   return undefined;
 }
@@ -850,72 +837,6 @@ function evaluateNetworkToolPolicy(
     return denyTool("WebFetch", "WebFetch is disabled for this Eco agent.");
   }
   return undefined;
-}
-
-type EcoPolicyDecision = {
-  action: "allow" | "ask" | "deny";
-  riskRank: number;
-  reason: string;
-};
-
-function evaluateShellCommandTextPolicy(input: {
-  command: string;
-  cwd: string;
-  workspacePath: string;
-}): EcoPolicyDecision {
-  if (!isPathInsidePolicyScope(input.cwd, input.workspacePath)) {
-    return { action: "deny", riskRank: 4, reason: "Command cwd is outside the workspace" };
-  }
-  const decisions = input.command
-    .split(/\s*(?:&&|\|\||;|\|)\s*/g)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map(evaluateShellSegmentPolicy);
-
-  if (decisions.length === 0) {
-    return { action: "deny", riskRank: 3, reason: "Empty command is not allowed" };
-  }
-  const denied = decisions.find((decision) => decision.action === "deny");
-  if (denied) {
-    return denied;
-  }
-  const asks = decisions.filter((decision) => decision.action === "ask");
-  if (asks.length > 0) {
-    return asks.reduce((strictest, decision) =>
-      decision.riskRank > strictest.riskRank ? decision : strictest,
-    );
-  }
-  return { action: "allow", riskRank: 1, reason: "Command is allowed by default policy" };
-}
-
-function evaluateShellSegmentPolicy(segment: string): EcoPolicyDecision {
-  const [program, ...args] = tokenizeShellSegment(segment);
-  if (!program) {
-    return { action: "deny", riskRank: 3, reason: "Empty command is not allowed" };
-  }
-  if (program === "rm") {
-    return { action: "ask", riskRank: 4, reason: "File deletion requires approval" };
-  }
-  if (program === "git" && args[0] === "reset") {
-    return { action: "ask", riskRank: 4, reason: "git reset requires approval" };
-  }
-  if (program === "git" && args[0] === "clean") {
-    return { action: "ask", riskRank: 3, reason: "git clean can delete files" };
-  }
-  if (PACKAGE_INSTALL_COMMANDS.has(program) && args.some((arg) => PACKAGE_INSTALL_ARGS.has(arg))) {
-    return { action: "ask", riskRank: 2, reason: "Dependency changes require approval" };
-  }
-  if (ALWAYS_ASK_COMMANDS.has(program)) {
-    return { action: "ask", riskRank: 3, reason: `${program} requires approval` };
-  }
-  return { action: "allow", riskRank: 1, reason: "Command is allowed by default policy" };
-}
-
-function tokenizeShellSegment(segment: string): string[] {
-  return segment
-    .replace(/^\s*(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*/, "")
-    .split(/\s+/g)
-    .filter(Boolean);
 }
 
 function resolvePolicyPath(filePath: string, cwd: string): string {
@@ -1358,7 +1279,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     "PreToolUse",
     createToolPermissionPreToolHook(ctx.toolPermissions, {
       ...(ctx.workspacePath && { workspacePath: ctx.workspacePath }),
-      ...(ctx.forceBashApproval && { forceBashApproval: true }),
+      bashReviewMode: ctx.bashReviewMode ?? "always",
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );

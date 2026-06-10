@@ -270,8 +270,8 @@ export function buildAgentTemplatePermissionChips(
   const mcpToolCount = tools.mcp?.allowedTools.length ?? 0;
   const chips: AgentTemplatePermissionChip[] = [
     {
-      label: bashEnabled ? `Bash ${formatBashApproval(tools.bash?.approval)}` : "Bash 禁用",
-      tone: bashEnabled ? (tools.bash?.approval === "never" ? "warn" : "allow") : "deny",
+      label: bashEnabled ? "Bash" : "Bash 禁用",
+      tone: bashEnabled ? "allow" : "deny",
     },
     {
       label: `读 ${formatReadScope(readScope)}`,
@@ -596,7 +596,7 @@ function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
   return {
     allowed,
     disallowed,
-    ...(bashEnabled ? { bash: { enabled: true, approval: "risky" as const } } : {}),
+    ...(bashEnabled ? { bash: { enabled: true } } : {}),
     ...(mcpServers.length > 0 || mcpTools.length > 0
       ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
       : {}),
@@ -610,16 +610,6 @@ function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
 
 function hasAny(values: ReadonlySet<string>, candidates: readonly string[]): boolean {
   return candidates.some((candidate) => values.has(candidate));
-}
-
-function formatBashApproval(value: NonNullable<ToolPolicy["bash"]>["approval"] | undefined): string {
-  if (value === "always") {
-    return "每次确认";
-  }
-  if (value === "never") {
-    return "免确认";
-  }
-  return "风险确认";
 }
 
 function formatReadScope(value: NonNullable<ToolPolicy["filesystem"]>["read"]): string {
