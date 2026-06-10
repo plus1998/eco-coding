@@ -8643,6 +8643,42 @@ button:not(:disabled) {
   color: #d4d4d4;
 }
 
+.models-dev-capability-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.models-dev-capability-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: 10px;
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+}
+
+.models-dev-capability-chip svg {
+  flex-shrink: 0;
+}
+
+.models-dev-capability-chip-price {
+  background: #1a2e1a;
+  color: #86efac;
+  border-color: #166534;
+}
+
+.models-dev-capability-chip-cache {
+  background: #1e1b4b;
+  color: #c4b5fd;
+  border-color: #3730a3;
+}
+
 .settings-modal-header {
   display: flex;
   align-items: center;

@@ -7,6 +7,8 @@ import type {
   OrchestrationStrategy,
   ProviderConfigView,
   ToolPolicy,
+  ThinkingEffort,
+  UpstreamApiCompat,
 } from "../shared/ipc";
 import { parseList } from "./agent-template-form";
 
@@ -16,6 +18,9 @@ export interface AgentProfileAgentFormState {
   displayName: string;
   providerId: string;
   modelId: string;
+  thinkingEffort: string;
+  modelsDevMappingProviderKey: string;
+  modelsDevMappingModelId: string;
   enabled: boolean;
   allowedTools: string;
   disallowedTools: string;
@@ -38,6 +43,10 @@ export interface AgentProfileFormState {
   mainName: string;
   mainProviderId: string;
   mainModelId: string;
+  mainThinkingEffort: string;
+  mainModelsDevMappingProviderKey: string;
+  mainModelsDevMappingModelId: string;
+  mainApiCompat: string;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
   mainAllowedTools: string;
@@ -53,6 +62,9 @@ export interface AgentProfileFormState {
   mainSkills: string;
   builtinExploreProviderId: string;
   builtinExploreModelId: string;
+  builtinExploreThinkingEffort: string;
+  builtinExploreModelsDevMappingProviderKey: string;
+  builtinExploreModelsDevMappingModelId: string;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -100,6 +112,10 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainName: "Main Agent",
     mainProviderId: provider?.id ?? "",
     mainModelId: provider?.defaultModel ?? "",
+    mainThinkingEffort: "",
+    mainModelsDevMappingProviderKey: "",
+    mainModelsDevMappingModelId: "",
+    mainApiCompat: "",
     mainSystemPromptPreset: "custom",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
@@ -117,6 +133,9 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSkills: "",
     builtinExploreProviderId: provider?.id ?? "",
     builtinExploreModelId: provider?.defaultModel ?? "",
+    builtinExploreThinkingEffort: "",
+    builtinExploreModelsDevMappingProviderKey: "",
+    builtinExploreModelsDevMappingModelId: "",
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -131,6 +150,10 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainName: profile.mainAgent.name,
     mainProviderId: profile.mainAgent.modelRef.providerId,
     mainModelId: profile.mainAgent.modelRef.modelId,
+    mainThinkingEffort: profile.mainAgent.modelRef.thinkingEffort ?? "",
+    mainModelsDevMappingProviderKey: profile.mainAgent.modelRef.modelsDevMapping?.providerKey ?? "",
+    mainModelsDevMappingModelId: profile.mainAgent.modelRef.modelsDevMapping?.modelId ?? "",
+    mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
     mainAllowedTools: formatList(profile.mainAgent.tools.allowed),
@@ -139,6 +162,11 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainSkills: formatList(profile.mainAgent.skills),
     builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
     builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
+    builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
+    builtinExploreModelsDevMappingProviderKey:
+      profile.builtinAgents.explore.modelRef.modelsDevMapping?.providerKey ?? "",
+    builtinExploreModelsDevMappingModelId:
+      profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -146,6 +174,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       displayName: agent.displayName ?? "",
       providerId: agent.modelRef.providerId,
       modelId: agent.modelRef.modelId,
+      thinkingEffort: agent.modelRef.thinkingEffort ?? "",
+      modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
+      modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
       enabled: agent.enabled,
       allowedTools: formatList(agent.tools.allowed),
       disallowedTools: formatList(agent.tools.disallowed),
@@ -178,6 +209,9 @@ export function createProfileAgentFormFromTemplate(
     displayName: template.name,
     providerId: options.provider?.id ?? "",
     modelId: options.provider?.defaultModel ?? "",
+    thinkingEffort: "",
+    modelsDevMappingProviderKey: "",
+    modelsDevMappingModelId: "",
     enabled: true,
     allowedTools: formatList(template.defaultTools.allowed),
     disallowedTools: formatList(template.defaultTools.disallowed),
@@ -212,11 +246,22 @@ export function buildOrchestrationProfileFromForm(
     form.mainProviderId,
     form.mainModelId,
     options.existing?.mainAgent.modelRef,
+    {
+      thinkingEffort: form.mainThinkingEffort,
+      modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
+      modelsDevMappingModelId: form.mainModelsDevMappingModelId,
+      apiCompat: form.mainApiCompat,
+    },
   );
   const builtinExploreModelRef = buildModelRef(
     form.builtinExploreProviderId,
     form.builtinExploreModelId,
     options.existing?.builtinAgents.explore.modelRef,
+    {
+      thinkingEffort: form.builtinExploreThinkingEffort,
+      modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
+      modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
+    },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
   const existingAgentByKey = new Map(options.existing?.agents.map((agent) => [agent.agentKey, agent]));
@@ -239,7 +284,11 @@ export function buildOrchestrationProfileFromForm(
       agentKey,
       templateId: template.id,
       displayName: existingAgent?.displayName ?? template.name,
-      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef),
+      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef, {
+        thinkingEffort: agentForm.thinkingEffort,
+        modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
+        modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
+      }),
       tools: cloneToolPolicy(sourceTools),
       mcpServers: [...sourceMcpServers],
       skills: [...sourceSkills],
@@ -309,17 +358,47 @@ function buildStrategyFromForm(
   };
 }
 
-function buildModelRef(providerId: string, modelId: string, existing?: ModelRef): ModelRef {
+function buildModelRef(
+  providerId: string,
+  modelId: string,
+  existing?: ModelRef,
+  options?: {
+    thinkingEffort?: string;
+    modelsDevMappingProviderKey?: string;
+    modelsDevMappingModelId?: string;
+    apiCompat?: string;
+  },
+): ModelRef {
   const provider = providerId.trim();
   const model = modelId.trim();
   if (!provider || !model) {
     throw new Error("Agent Profile 中的每个 Agent 都必须配置 provider 和模型。");
   }
-  return {
-    ...(existing ?? {}),
+  const thinkingEffort = options?.thinkingEffort?.trim();
+  const mappingProviderKey = options?.modelsDevMappingProviderKey?.trim();
+  const mappingModelId = options?.modelsDevMappingModelId?.trim();
+  const hasMapping = Boolean(mappingProviderKey && mappingModelId);
+  const apiCompat = options?.apiCompat?.trim();
+  const modelRef: ModelRef = {
     providerId: provider,
     modelId: model,
   };
+  if (thinkingEffort) {
+    modelRef.thinkingEffort = thinkingEffort as ThinkingEffort;
+  }
+  if (hasMapping) {
+    modelRef.modelsDevMapping = {
+      providerKey: mappingProviderKey as string,
+      modelId: mappingModelId as string,
+    };
+  }
+  if (apiCompat) {
+    modelRef.apiCompat = apiCompat as UpstreamApiCompat;
+  }
+  if (existing?.manualSpec) {
+    modelRef.manualSpec = existing.manualSpec;
+  }
+  return modelRef;
 }
 
 function emptyToolPolicy(): ToolPolicy {

@@ -1,3 +1,4 @@
+import type { ModelRef } from "../shared/agent-orchestration";
 import type {
   AgentDomain,
   AgentInstanceConfig,
@@ -81,9 +82,10 @@ export function buildAgentProfileSummary(
 ): AgentProfileSummary {
   const templatesById = new Map(settings.agentTemplates.map((template) => [template.id, template]));
   const mainRiskLabels = summarizeToolRiskLabels(profile.mainAgent.tools);
+  const mainModelRef = profile.mainAgent.modelRef;
   const main: AgentProfileMainSummary = {
     name: profile.mainAgent.name.trim() || "主 Agent",
-    modelLabel: formatModelLabel(profile.mainAgent.modelRef.providerId, profile.mainAgent.modelRef.modelId),
+    modelLabel: formatModelLabel(mainModelRef.providerId, mainModelRef.modelId, mainModelRef),
     riskLabels: mainRiskLabels,
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: profile.mainAgent.tools,
@@ -115,13 +117,11 @@ export function buildAgentProfileSummary(
 }
 
 function buildExploreSummary(profile: OrchestrationProfile): AgentProfileAgentSummary {
+  const exploreRef = profile.builtinAgents.explore.modelRef;
   return {
     agentKey: "explore",
     name: "Explore",
-    modelLabel: formatModelLabel(
-      profile.builtinAgents.explore.modelRef.providerId,
-      profile.builtinAgents.explore.modelRef.modelId,
-    ),
+    modelLabel: formatModelLabel(exploreRef.providerId, exploreRef.modelId, exploreRef),
     enabled: true,
     riskLabels: summarizeToolRiskLabels(EXPLORE_TOOLS),
     permissionChips: buildAgentTemplatePermissionChips({
@@ -160,7 +160,7 @@ function buildAgentSummary(
     agentKey: agent.agentKey,
     name: agent.displayName?.trim() || template?.name || agent.agentKey,
     ...(template?.name ? { templateName: template.name } : {}),
-    modelLabel: formatModelLabel(agent.modelRef.providerId, agent.modelRef.modelId),
+    modelLabel: formatModelLabel(agent.modelRef.providerId, agent.modelRef.modelId, agent.modelRef),
     enabled,
     riskLabels: summarizeToolRiskLabels(agent.tools),
     permissionChips: buildAgentTemplatePermissionChips({
@@ -238,16 +238,43 @@ function dedupeRiskLabels(labels: readonly string[]): string[] {
   return result;
 }
 
-function formatModelLabel(providerId: string, modelId: string): string {
+function formatModelLabel(providerId: string, modelId: string, modelRef?: ModelRef): string {
   const model = modelId.trim();
   const provider = providerId.trim();
-  if (!model && !provider) {
-    return "未配置";
+  const base =
+    !model && !provider
+      ? "未配置"
+      : !provider
+        ? shortenModelId(model)
+        : `${provider}/${shortenModelId(model || "未配置")}`;
+  const suffixes: string[] = [];
+  if (modelRef?.thinkingEffort) {
+    suffixes.push(formatThinkingEffort(modelRef.thinkingEffort));
   }
-  if (!provider) {
-    return shortenModelId(model);
+  if (modelRef?.modelsDevMapping) {
+    const m = modelRef.modelsDevMapping;
+    suffixes.push(`${m.providerKey}/${m.modelId}`);
   }
-  return `${provider}/${shortenModelId(model || "未配置")}`;
+  return suffixes.length > 0 ? `${base} · ${suffixes.join(" · ")}` : base;
+}
+
+function formatThinkingEffort(effort: string): string {
+  switch (effort) {
+    case "off":
+      return "思考:关";
+    case "low":
+      return "思考:低";
+    case "medium":
+      return "思考:中";
+    case "high":
+      return "思考:高";
+    case "xhigh":
+      return "思考:极高";
+    case "max":
+      return "思考:最大";
+    default:
+      return `思考:${effort}`;
+  }
 }
 
 function shortenModelId(modelId: string): string {
