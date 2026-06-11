@@ -16,6 +16,7 @@ import {
 import {
   activityActionKey,
   formatMcpToolDisplayName,
+  formatToolDisplayLabel,
   isMcpToolName,
   isReconnectActivityMessage,
   normalizeActivityActionLabel,
@@ -668,12 +669,13 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       upsertAgentRequest(subagent ?? toolContextSubagent);
       return;
     }
-    const label = normalizeActivityActionLabel(formatToolActionLabel(tool));
+    const label = formatToolActionLabel(tool);
     const last = current.details[current.details.length - 1];
-    const actionKey = activityActionKey(subagent, label);
+    const icon = iconForToolCategory(tool.category);
+    const actionKey = activityActionKey(subagent, label, icon);
     if (
       last?.kind === "action" &&
-      activityActionKey(last.subagent, last.label) === actionKey &&
+      activityActionKey(last.subagent, last.label, last.icon) === actionKey &&
       tool.tool !== "Agent"
     ) {
       return;
@@ -687,7 +689,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
     current.details.push({
       kind: "action",
-      icon: iconForToolCategory(tool.category),
+      icon,
       label,
       ...(subagent && { subagent }),
       ...((line.agentId?.trim() || toolContextAgentId) && {
@@ -2190,10 +2192,8 @@ function isRedundantMcpToolProgressLine(message: string): boolean {
   return /^Tool:\s*mcp_tool\s+\(\d+(?:\.\d+)?s\)\s*$/i.test(stripped);
 }
 
-function actionDetailFromLabel(label: string): string | undefined {
-  const separator = " · ";
-  const index = label.indexOf(separator);
-  return index >= 0 ? label.slice(index + separator.length) : undefined;
+function actionTargetFromLabel(label: string): string {
+  return label.trim();
 }
 
 /** Progress hints like Read-before-Grep on the same file collapse to one row. */
@@ -2206,10 +2206,10 @@ function replaceOverlappingToolAction(
   if (prior.subagent !== subagent) {
     return null;
   }
-  const priorDetail = actionDetailFromLabel(prior.label);
-  const nextDetail = actionDetailFromLabel(nextLabel) ?? tool.detail;
+  const priorTarget = actionTargetFromLabel(prior.label);
+  const nextTarget = tool.detail?.trim() ?? actionTargetFromLabel(nextLabel);
   const priorGenericLabel = formatToolActionLabel({ tool: tool.tool, category: tool.category });
-  if (!priorDetail && nextDetail && prior.label === priorGenericLabel) {
+  if (prior.label === priorGenericLabel && nextTarget && prior.label !== nextLabel) {
     return {
       kind: "action",
       icon: iconForToolCategory(tool.category),
@@ -2218,10 +2218,10 @@ function replaceOverlappingToolAction(
       ...(prior.agentId && { agentId: prior.agentId }),
     };
   }
-  if (!priorDetail || !nextDetail || priorDetail !== nextDetail) {
+  if (!priorTarget || !nextTarget || priorTarget !== nextTarget) {
     return null;
   }
-  const priorIsRead = prior.label.startsWith("读取 · ");
+  const priorIsRead = prior.icon === "file";
   const nextIsSearch = tool.tool === "Grep" || tool.tool === "Glob";
   if (priorIsRead && nextIsSearch) {
     return {
@@ -2356,6 +2356,18 @@ function isTaskActivityLine(line: ThreadActivityLine): boolean {
   );
 }
 
+const PROGRESS_ACTION_PATTERNS: Array<{
+  pattern: RegExp;
+  tool: string;
+  category: ParsedToolAction["category"];
+}> = [
+  { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i, tool: "Read", category: "read" },
+  { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i, tool: "Write", category: "edit" },
+  { pattern: /^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$/i, tool: "Edit", category: "edit" },
+  { pattern: /^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$/i, tool: "Grep", category: "search" },
+  { pattern: /^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$/i, tool: "Bash", category: "run" },
+];
+
 function parseProgressActionLine(message: string): ParsedToolAction | null {
   const stripped = stripSubagentBracketPrefix(message.trim());
   if (!stripped) {
@@ -2369,56 +2381,18 @@ function parseProgressActionLine(message: string): ParsedToolAction | null {
     }
   }
 
-  const normalized = normalizeActivityActionLabel(stripped);
-  const readMatch = normalized.match(/^读取 · (.+)$/);
-  const readDetail = readMatch?.[1]?.trim();
-  if (readDetail) {
-    return { tool: "Read", detail: readDetail, category: "read" };
-  }
-  const editMatch = normalized.match(/^编辑 · (.+)$/);
-  const editDetail = editMatch?.[1]?.trim();
-  if (editDetail) {
-    return { tool: "Edit", detail: editDetail, category: "edit" };
+  for (const { pattern, tool, category } of PROGRESS_ACTION_PATTERNS) {
+    const match = stripped.match(pattern);
+    if (match?.[1]) {
+      return { tool, detail: match[1].trim(), category };
+    }
   }
 
   return null;
 }
 
-const TOOL_VERB_LABELS: Record<string, string> = {
-  Read: "读取",
-  Write: "写入",
-  Edit: "编辑",
-  MultiEdit: "编辑",
-  Grep: "搜索",
-  Glob: "查找",
-  Bash: "运行命令",
-  Agent: "调用",
-  TodoWrite: "更新任务",
-  TaskCreate: "创建任务",
-  TaskUpdate: "更新任务",
-  TaskList: "列出任务",
-  TaskOutput: "读取任务输出",
-  AskUserQuestion: "澄清问题",
-  WebSearch: "网络搜索",
-  WebFetch: "获取网页",
-  Skill: "读取技能",
-};
-
 function formatToolActionLabel(tool: ParsedToolAction): string {
-  if (tool.tool === "Skill" || (tool.detail && tool.detail.endsWith(" 技能"))) {
-    return tool.detail ? `读取 · ${tool.detail}` : "读取技能";
-  }
-  if (isMcpToolName(tool.tool)) {
-    return formatMcpToolDisplayName(tool.tool);
-  }
-  const verb = TOOL_VERB_LABELS[tool.tool] ?? tool.tool;
-  if (tool.tool === "Agent") {
-    return "启动子代理";
-  }
-  if (tool.detail) {
-    return `${verb} · ${tool.detail}`;
-  }
-  return verb;
+  return formatToolDisplayLabel(tool.tool, tool.detail);
 }
 
 function iconForToolCategory(category: ParsedToolAction["category"]): ActivityActionIcon {

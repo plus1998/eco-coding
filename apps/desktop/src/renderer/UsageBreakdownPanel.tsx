@@ -278,13 +278,15 @@ function LedgerEventList({
   compact,
   agentDisplayNames,
   showSource,
+  scrollable = false,
 }: {
   events: ThreadUsageLedgerEventView[];
   compact: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   showSource?: boolean;
+  scrollable?: boolean;
 }) {
-  return (
+  const list = (
     <ul className={`usage-breakdown-list usage-breakdown-events${compact ? " usage-breakdown-list-compact" : ""}`}>
       {events.map((event) => (
         <LedgerEventRow
@@ -296,6 +298,12 @@ function LedgerEventList({
       ))}
     </ul>
   );
+
+  if (!scrollable) {
+    return list;
+  }
+
+  return <div className="usage-breakdown-events-scroll">{list}</div>;
 }
 
 function LedgerEventRows({
@@ -338,6 +346,7 @@ function LedgerEventRows({
             <LedgerEventList
               events={sortedShadow}
               compact={compact}
+              scrollable
               showSource
               {...(agentDisplayNames && { agentDisplayNames })}
             />
@@ -365,6 +374,7 @@ function LedgerEventRows({
       <LedgerEventList
         events={sortedPrimary}
         compact={compact}
+        scrollable
         {...(agentDisplayNames && { agentDisplayNames })}
       />
       <p
@@ -388,6 +398,7 @@ function LedgerEventRows({
           <LedgerEventList
             events={sortedShadow}
             compact={compact}
+            scrollable
             showSource
             {...(agentDisplayNames && { agentDisplayNames })}
           />

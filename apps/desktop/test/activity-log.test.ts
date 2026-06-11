@@ -622,11 +622,11 @@ test("resolves latest subagent log line for compact card", () => {
   );
 
   const item = subagentItems(blocks)[0];
-  expect(item?.statusLine).toBe("编辑 · src/api.ts");
+  expect(item?.statusLine).toBe("src/api.ts");
   expect(resolveLatestSubagentLogLine([
-    { kind: "action", icon: "file", label: "读取 · a.ts", subagent: "coder" },
-    { kind: "action", icon: "edit", label: "编辑 · b.ts", subagent: "coder" },
-  ])).toBe("编辑 · b.ts");
+    { kind: "action", icon: "file", label: "a.ts", subagent: "coder" },
+    { kind: "action", icon: "edit", label: "b.ts", subagent: "coder" },
+  ])).toBe("b.ts");
 });
 
 test("shows each subagent tool step with role and target", () => {
@@ -695,7 +695,7 @@ test("collapses read progress and grep tool on the same file", () => {
   expect(actions).toHaveLength(1);
   expect(actions[0]?.kind).toBe("action");
   if (actions[0]?.kind === "action") {
-    expect(actions[0].label).toBe("搜索 · activityLinkGroupMessage.service.ts");
+    expect(actions[0].label).toBe("activityLinkGroupMessage.service.ts");
   }
 });
 
@@ -1202,7 +1202,7 @@ test("renders TaskOutput and other SDK tools as styled actions", () => {
   }
 
   const switchMode = session.children.find(
-    (child) => child.kind === "action" && child.label === "SwitchMode · plan",
+    (child) => child.kind === "action" && child.label === "plan",
   );
   expect(switchMode?.kind).toBe("action");
   if (switchMode?.kind === "action") {
@@ -1460,11 +1460,11 @@ test("resolveSubagentRunStatusLine prefers tool action over duplicate mission su
   const status = resolveSubagentRunStatusLine(
     [
       { kind: "subagent-mission", subagent: "coder", summary: "修改: preload.js" },
-      { kind: "action", icon: "edit", label: "编辑 · preload.js", subagent: "coder" },
+      { kind: "action", icon: "edit", label: "preload.js", subagent: "coder" },
     ],
     "coder",
   );
-  expect(status).toBe("编辑 · preload.js");
+  expect(status).toBe("preload.js");
 });
 
 test("places worktree merge before the next user turn when continuing conversation", () => {

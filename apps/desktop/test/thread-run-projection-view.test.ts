@@ -369,7 +369,7 @@ test("buildThreadRunProjectionViewModel keeps pre-speech current action on the a
   const entry = view.mainFeedEntries[0];
   expect(entry?.kind).toBe("agent-card");
   if (entry?.kind === "agent-card") {
-    expect(entry.card.statusText).toBe("Read · ActivityLogView.tsx");
+    expect(entry.card.statusText).toBe("ActivityLogView.tsx");
     expect(entry.card.agent.agentId).toBe("coder_agent_00000001");
   }
 });
@@ -478,10 +478,10 @@ test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state
 
   expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
-  expect(view.subagentCards[0]?.statusText).toBe("WebFetch · https://weather.example");
+  expect(view.subagentCards[0]?.statusText).toBe("https://weather.example");
   expect(projectionItemToDetailBlock(view.subagentCards[0]!.agent.timeline[0]!)).toMatchObject({
     kind: "action",
-    label: "WebFetch · https://weather.example",
+    label: "https://weather.example",
   });
 });
 
@@ -1029,7 +1029,7 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   expect(detail).toEqual({
     kind: "action",
     icon: "agent",
-    label: "WebFetch · https://weather.example/guangzhou (8.3s)",
+    label: "https://weather.example/guangzhou (8.3s)",
     subagent: "explore",
     agentId: "agent_weather",
   });
@@ -1104,7 +1104,7 @@ test("projectionItemToDetailBlock treats structured todo metadata as tool action
   expect(detail).toEqual({
     kind: "action",
     icon: "agent",
-    label: "WebFetch · https://weather.example/guangzhou",
+    label: "https://weather.example/guangzhou",
     subagent: "explore",
     agentId: "agent_weather",
   });

@@ -309,6 +309,25 @@ function ProjectionActivityLogView({
   );
 }
 
+function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
+  return (
+    block.kind === "action" || block.kind === "model-request" || block.kind === "agent-request"
+  );
+}
+
+function wrapRunLogFeedEntry(
+  node: ReactNode,
+  options?: { compact?: boolean; tight?: boolean },
+): ReactNode {
+  if (options?.compact) {
+    return node;
+  }
+  const className = options?.tight
+    ? "run-log-feed-entry run-log-feed-entry--tight"
+    : "run-log-feed-entry";
+  return <div className={className}>{node}</div>;
+}
+
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
@@ -334,17 +353,19 @@ function ProjectionMainFeedEntry({
     );
   }
   if (entry.kind === "agent-card") {
-    return (
+    return wrapRunLogFeedEntry(
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
         requestSpansById={requestSpansById}
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
         {...(agentDisplayNames && { agentDisplayNames })}
-      />
+      />,
     );
   }
-  return <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />;
+  return wrapRunLogFeedEntry(
+    <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />,
+  );
 }
 
 function ProjectionAgentEchoEntry({
@@ -552,12 +573,12 @@ function ProjectionTimelineEntry({
       return null;
     }
     const rewindTarget = readProjectionRewindTarget(item);
-    return (
+    return wrapRunLogFeedEntry(
       <UserPromptBlock
         text={item.text}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
-      />
+      />,
     );
   }
 
@@ -570,38 +591,40 @@ function ProjectionTimelineEntry({
   const requestActive = isProjectionRequestActive(requestSpan);
 
   if (block.kind === "narrative") {
-    return (
+    return wrapRunLogFeedEntry(
       <RunLogNarrative
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(block.subagent && { subagent: block.subagent })}
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
         compact={compact}
-      />
+      />,
+      { compact },
     );
   }
   if (block.kind === "thinking") {
-    return (
+    return wrapRunLogFeedEntry(
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
-      />
+      />,
+      { compact },
     );
   }
   if (block.kind === "phase") {
-    return (
+    return wrapRunLogFeedEntry(
       <PhaseBlock
         label={block.label}
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
         {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
-      />
+      />,
+      { compact },
     );
   }
 
-  return (
-    <div className={compact ? undefined : "run-log-surfaced-detail"}>
-      <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity={compact} />
-    </div>
+  return wrapRunLogFeedEntry(
+    <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity={compact} />,
+    { compact, tight: isTightFeedDetailBlock(block) },
   );
 }
 
@@ -684,15 +707,14 @@ function RunLogBlock({
   }
   if (block.kind === "surfaced-detail") {
     const requestActive = threadStatus === "running" || threadStatus === "queued";
-    return (
-      <div className="run-log-surfaced-detail">
-        <DetailBlock
-          block={block.block}
-          requestActive={requestActive}
-          {...(modelByRole && { modelByRole })}
-          {...(usageByRole && { usageByRole })}
-        />
-      </div>
+    return wrapRunLogFeedEntry(
+      <DetailBlock
+        block={block.block}
+        requestActive={requestActive}
+        {...(modelByRole && { modelByRole })}
+        {...(usageByRole && { usageByRole })}
+      />,
+      { tight: isTightFeedDetailBlock(block.block) },
     );
   }
   return null;

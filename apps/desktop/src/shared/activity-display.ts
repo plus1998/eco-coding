@@ -166,16 +166,37 @@ export function formatMcpToolDisplayName(tool: string): string {
   return tool.replace(/^mcp__/, "").replace(/__/g, " · ").replace(/_/g, " ");
 }
 
-export function normalizeActivityActionLabel(raw: string): string {
-  let text = stripSubagentBracketPrefix(raw.trim());
+/** Display label for a tool action row (icon conveys the verb; text shows target/detail). */
+export function formatToolDisplayLabel(toolName: string, detail?: string): string {
+  const normalizedDetail = detail?.trim() || undefined;
+  if (toolName === "Skill" || (normalizedDetail && normalizedDetail.endsWith(" 技能"))) {
+    return normalizedDetail ?? "读取技能";
+  }
+  if (toolName === "mcp_tool" && normalizedDetail?.startsWith("mcp__")) {
+    return formatMcpToolDisplayName(normalizedDetail);
+  }
+  if (isMcpToolName(toolName)) {
+    return formatMcpToolDisplayName(toolName);
+  }
+  if (toolName === "Agent") {
+    return normalizedDetail ?? "启动子代理";
+  }
+  if (normalizedDetail) {
+    return normalizedDetail;
+  }
+  return TOOL_VERB_LABELS[toolName] ?? toolName;
+}
+
+export function parseToolActionDisplayLabel(raw: string): string {
+  const text = stripSubagentBracketPrefix(raw.trim());
   if (!text) {
     return raw.trim();
   }
 
-  for (const { pattern, verb } of PROGRESS_PATTERNS) {
+  for (const { pattern } of PROGRESS_PATTERNS) {
     const match = text.match(pattern);
     if (match?.[1]) {
-      return `${verb} · ${pathBasename(match[1].trim())}`;
+      return pathBasename(match[1].trim());
     }
   }
 
@@ -188,22 +209,32 @@ export function normalizeActivityActionLabel(raw: string): string {
     } else if (detail) {
       detail = detail.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim() || undefined;
     }
-    if (isMcpToolName(tool)) {
-      const base = formatMcpToolDisplayName(tool);
-      return detail ? `${base} · ${detail}` : base;
-    }
-    const verb = TOOL_VERB_LABELS[tool] ?? tool;
-    if (detail) {
-      return `${verb} · ${detail}`;
-    }
-    return verb;
+    return formatToolDisplayLabel(tool, detail);
+  }
+
+  const bareMatch = text.match(/^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$/);
+  if (bareMatch?.[1] && bareMatch[2]) {
+    const detail = bareMatch[2].replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim();
+    return formatToolDisplayLabel(bareMatch[1], detail);
+  }
+
+  if (isMcpToolName(text)) {
+    return formatMcpToolDisplayName(text);
   }
 
   return text;
 }
 
-export function activityActionKey(subagent: string | undefined, label: string): string {
-  return `${subagent ?? ""}\0${normalizeActivityActionLabel(label)}`;
+export function normalizeActivityActionLabel(raw: string): string {
+  return parseToolActionDisplayLabel(raw);
+}
+
+export function activityActionKey(
+  subagent: string | undefined,
+  label: string,
+  icon?: string,
+): string {
+  return `${subagent ?? ""}\0${icon ?? ""}\0${normalizeActivityActionLabel(label)}`;
 }
 
 const TOOL_VERB_LABELS: Record<string, string> = {

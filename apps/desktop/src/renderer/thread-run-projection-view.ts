@@ -4,7 +4,12 @@ import type {
   ThreadRunProjectionTimelineItem,
   ThreadRunToolMetadata,
 } from "../shared/ipc";
-import { formatMcpToolDisplayName, isMcpToolName } from "../shared/activity-display";
+import {
+  formatMcpToolDisplayName,
+  formatToolDisplayLabel,
+  isMcpToolName,
+  parseToolActionDisplayLabel,
+} from "../shared/activity-display";
 import {
   resolveSubagentRunDisplayTitle,
   type ActivityActionIcon,
@@ -795,7 +800,7 @@ function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem)
   if (isMcpToolName(normalized)) {
     return formatMcpToolDisplayName(normalized);
   }
-  return label;
+  return parseToolActionDisplayLabel(normalized);
 }
 
 function resolveProjectionToolIconText(item: ThreadRunProjectionTimelineItem): string {
@@ -815,13 +820,7 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
 }
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
-  if (tool.name === "mcp_tool" && tool.detail?.startsWith("mcp__")) {
-    return formatMcpToolDisplayName(tool.detail);
-  }
-  if (isMcpToolName(tool.name)) {
-    return formatMcpToolDisplayName(tool.name);
-  }
-  return tool.detail ? `${tool.name} · ${tool.detail}` : tool.name;
+  return formatToolDisplayLabel(tool.name, tool.detail);
 }
 
 function resolveProjectionActionIcon(text: string): ActivityActionIcon {

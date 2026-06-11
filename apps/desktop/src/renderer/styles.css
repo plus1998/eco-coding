@@ -3180,7 +3180,7 @@ button:not(:disabled) {
 }
 
 .run-log-surfaced-detail {
-  margin: 0 0 10px;
+  margin: 0;
 }
 
 .run-log-reconnect {
@@ -3443,7 +3443,7 @@ button:not(:disabled) {
   border-left: 1px solid #333;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
 }
 
 .work-session-preview {
@@ -4992,6 +4992,14 @@ button:not(:disabled) {
   margin: 0;
   color: #737373;
   font-size: 12px;
+}
+
+.usage-breakdown-events-scroll {
+  max-height: min(40vh, 280px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .usage-breakdown-events .usage-breakdown-label {
@@ -9411,8 +9419,16 @@ button:not(:disabled) {
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
-  gap: 24px;
+  gap: 0;
   color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry {
+  margin-bottom: 20px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry--tight {
+  margin-bottom: 2px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-progress,
