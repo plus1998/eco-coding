@@ -2386,6 +2386,15 @@ async function runCodingThreadAutonomous(
   resetSubagentContextWindows(thread.id);
 
   let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
+  const taskRuntime = createThreadSdkTaskRuntime({
+    threadId: thread.id,
+    store: {
+      listTodos: (id) => conversationStore.listCoderTodos(id),
+      replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+    },
+    emitTodoList,
+  });
+  const taskRunHooks = taskRuntime.taskRunHooks;
 
   try {
     const {
@@ -2432,7 +2441,12 @@ async function runCodingThreadAutonomous(
             }
 
             try {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
+              const driver = createSdkDriver(
+                thread.id,
+                attemptProxy,
+                taskRunHooks.hookContextExtras,
+                "execution",
+              );
               let planCaptured = false;
               const result = await consumeSdkRunEvents({
                 events: driver.run(
@@ -2466,6 +2480,7 @@ async function runCodingThreadAutonomous(
                       runtimeConfig,
                     });
                   }
+                  taskRuntime.handleEvent(event);
                 },
               });
               if (!result.ok) {
@@ -2493,10 +2508,12 @@ async function runCodingThreadAutonomous(
         threadId: thread.id,
         decision: runDecision,
         onCancelled: async (reason) => {
+          taskRunHooks.stopIfUnhandled("cancelled");
           cancelClarificationsForThread(thread.id, reason);
           await handleRunCancelled(thread.id, worktreePlan);
         },
         onFailed: (reason) => {
+          taskRunHooks.stopIfUnhandled("blocked");
           cancelClarificationsForThread(thread.id, reason);
           clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
           markThreadInterrupted(thread.id, reason);
@@ -2506,9 +2523,11 @@ async function runCodingThreadAutonomous(
       return;
     }
 
+    taskRunHooks.stopIfUnhandled("completed");
     await completeCodingThreadRun(thread.id, worktreePlan);
     scheduleThreadTitleSummary(thread.id, runtimeConfig);
   } catch (error) {
+    taskRunHooks.stopIfUnhandled("blocked");
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
@@ -4160,6 +4179,18 @@ async function runThreadContinuation(
     resetSubagentContextWindows(thread.id);
     let worktreePlan = existingWorktreePlan ?? createSessionPlan(workspace.path, thread.id);
     let cwd = workspace.path;
+    const taskRuntime =
+      mode === "execution"
+        ? createThreadSdkTaskRuntime({
+            threadId: thread.id,
+            store: {
+              listTodos: (id) => conversationStore.listCoderTodos(id),
+              replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+            },
+            emitTodoList,
+          })
+        : undefined;
+    const taskRunHooks = taskRuntime?.taskRunHooks;
     try {
       const resolved = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
       worktreePlan = resolved.worktreePlan;
@@ -4182,7 +4213,12 @@ async function runThreadContinuation(
             recordRouteFingerprint: recordThreadRouteFingerprint,
             startRuntimeProxy,
             run: async ({ proxy: attemptProxy, routes }) => {
-              const driver = createSdkDriver(thread.id, attemptProxy, undefined, "execution");
+              const driver = createSdkDriver(
+                thread.id,
+                attemptProxy,
+                taskRunHooks?.hookContextExtras,
+                "execution",
+              );
               return await consumeSdkRunEvents({
                 events: driver.runContinuation(
                   buildSdkRunInput({
@@ -4205,6 +4241,9 @@ async function runThreadContinuation(
                 onUsageRecorded: onSdkUsageRecordedEvent,
                 captureSession: captureSdkSessionFromEvent,
                 emitActivity: emitSdkStreamActivity,
+                onEvent: (event) => {
+                  taskRuntime?.handleEvent(event);
+                },
               });
             },
           });
@@ -4216,15 +4255,18 @@ async function runThreadContinuation(
           threadId: thread.id,
           decision,
           onCancelled: async () => {
+            taskRunHooks?.stopIfUnhandled("cancelled");
             await handleRunCancelled(thread.id, worktreePlan);
           },
           onFailed: (reason) => {
+            taskRunHooks?.stopIfUnhandled("blocked");
             markThreadInterrupted(thread.id, reason);
           },
         })
       ) {
         return;
       }
+      taskRunHooks?.stopIfUnhandled("completed");
       await completeCodingThreadRun(thread.id, worktreePlan);
     } finally {
       finishActiveRun(thread.id);
