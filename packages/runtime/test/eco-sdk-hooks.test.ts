@@ -1027,6 +1027,49 @@ test("createToolPermissionPreToolHook asks for all bash commands in always revie
   expect(result.hookSpecificOutput?.permissionDecisionReason).toContain("always review mode");
 });
 
+test("createToolPermissionPreToolHook reads live bash review mode from resolver", async () => {
+  let mode: "always" | "auto" = "always";
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Bash"],
+        disallowed: [],
+        bash: { enabled: true },
+      },
+      agents: {},
+    },
+    {
+      workspacePath: "/repo",
+      bashReviewMode: "always",
+      resolveBashReviewMode: () => mode,
+    },
+  );
+  expect(hook).toBeDefined();
+
+  const input = {
+    hook_event_name: "PreToolUse",
+    tool_name: "Bash",
+    tool_input: { command: "python3 -c 'print(1)'" },
+    tool_use_id: "tool_bash_live_mode",
+    session_id: "s1",
+    cwd: "/repo",
+  } satisfies PreToolUseHookInput;
+
+  const alwaysResult = await hook!(input, "tool_bash_live_mode", {
+    signal: new AbortController().signal,
+  });
+  expect(alwaysResult.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
+
+  mode = "auto";
+  const autoResult = await hook!(input, "tool_bash_live_mode", {
+    signal: new AbortController().signal,
+  });
+  expect(autoResult.hookSpecificOutput).toBeUndefined();
+});
+
 test("createToolPermissionPreToolHook reports denied permissions for audit", async () => {
   const decisions: Array<{ toolName: string; toolUseId: string; reason: string; actor: string }> = [];
   const hook = createToolPermissionPreToolHook(

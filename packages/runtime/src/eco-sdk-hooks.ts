@@ -105,6 +105,7 @@ export interface EcoHookContext {
   allowedSdkBuiltinAgentKeys?: string[];
   toolPermissions?: EcoRuntimeToolPermissionPolicy;
   bashReviewMode?: BashReviewMode;
+  resolveBashReviewMode?: () => BashReviewMode;
   workspacePath?: string;
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
   getPhaseTranscript?: () => string;
@@ -634,6 +635,7 @@ export function createToolPermissionPreToolHook(
   options: {
     workspacePath?: string;
     bashReviewMode?: BashReviewMode;
+    resolveBashReviewMode?: () => BashReviewMode;
     onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
   } = {},
 ): HookCallback | undefined {
@@ -725,7 +727,12 @@ function mainAgentDelegationHint(actor: "main" | string | undefined): string {
 function evaluateStructuredToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; bashReviewMode?: BashReviewMode; actor?: "main" | string },
+  options: {
+    workspacePath?: string;
+    bashReviewMode?: BashReviewMode;
+    resolveBashReviewMode?: () => BashReviewMode;
+    actor?: "main" | string;
+  },
 ): HookJSONOutput | undefined {
   if (input.tool_name === "Bash") {
     return evaluateBashToolPolicy(input, entry, options);
@@ -740,7 +747,12 @@ function evaluateStructuredToolPolicy(
 function evaluateBashToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; bashReviewMode?: BashReviewMode; actor?: "main" | string },
+  options: {
+    workspacePath?: string;
+    bashReviewMode?: BashReviewMode;
+    resolveBashReviewMode?: () => BashReviewMode;
+    actor?: "main" | string;
+  },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
   if (!bash?.enabled) {
@@ -750,7 +762,7 @@ function evaluateBashToolPolicy(
     );
   }
   const command = readBashCommand(input.tool_input);
-  const mode = options.bashReviewMode ?? "always";
+  const mode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
   if (!command) {
     if (mode === "allow_all") {
       return undefined;
@@ -1280,6 +1292,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     createToolPermissionPreToolHook(ctx.toolPermissions, {
       ...(ctx.workspacePath && { workspacePath: ctx.workspacePath }),
       bashReviewMode: ctx.bashReviewMode ?? "always",
+      ...(ctx.resolveBashReviewMode && { resolveBashReviewMode: ctx.resolveBashReviewMode }),
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
   );

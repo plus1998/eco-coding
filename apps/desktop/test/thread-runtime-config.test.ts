@@ -11,6 +11,7 @@ import {
   getDefaultRouteProfileId,
   getRoutesForProfile,
   isAutonomousThreadRuntime,
+  isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
@@ -302,6 +303,28 @@ test("normalizeThreadRuntimeConfig migrates legacy orchestrationMode", () => {
     planModeEnabled: true,
     bashReviewMode: "always",
   });
+});
+
+test("isBashReviewModeOnlyRuntimeConfigUpdate allows bashReviewMode changes only", () => {
+  const base = {
+    routeProfileId: "profile-a",
+    agentProfileId: "profile-a",
+    subagentEnabled: threadSubagentEnabled,
+    planModeEnabled: true,
+    bashReviewMode: "always" as const,
+  };
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, bashReviewMode: "auto" }),
+  ).toBe(true);
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, { ...base, planModeEnabled: false }),
+  ).toBe(false);
+  expect(
+    isBashReviewModeOnlyRuntimeConfigUpdate(base, {
+      ...base,
+      subagentEnabled: { ...threadSubagentEnabled, coder: false },
+    }),
+  ).toBe(false);
 });
 
 test("isThreadRuntimeConfig rejects invalid payloads", () => {

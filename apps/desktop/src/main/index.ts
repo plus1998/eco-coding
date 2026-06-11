@@ -58,6 +58,7 @@ import {
   getAgentProfileById,
   IPC_CHANNELS,
   isKnownIpcChannel,
+  isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
   type McpServerConfigInput,
@@ -958,14 +959,21 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread was not found.");
     }
+    const incoming = parseThreadRuntimeConfigInput(request.runtimeConfig);
+    const existing = ensureThreadRuntimeConfig(thread).runtimeConfig;
+    let runtimeConfig = incoming;
     if (thread.status === "running" || thread.status === "queued") {
-      throw new Error("请等待当前运行结束后再修改配置。");
+      if (!existing || !isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming)) {
+        throw new Error("请等待当前运行结束后再修改配置。");
+      }
+      runtimeConfig = { ...existing, bashReviewMode: incoming.bashReviewMode };
     }
-    const runtimeConfig = parseThreadRuntimeConfigInput(request.runtimeConfig);
     const settings = getModelSettingsSnapshot();
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-    noteSdkSessionRouteChange(threadId, roleRoutes);
+    if (!existing || !isBashReviewModeOnlyRuntimeConfigUpdate(existing, runtimeConfig)) {
+      noteSdkSessionRouteChange(threadId, roleRoutes);
+    }
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
@@ -3723,7 +3731,13 @@ function createSdkDriver(
     hookContext: {
       ...createThreadHookContext(threadId),
       ...buildSdkHookContextExtras(threadId, runPhase, hookContextExtras),
-      bashReviewMode: threadConfig?.bashReviewMode ?? "always",
+      resolveBashReviewMode: () => {
+        const current = conversationStore.getThread(threadId);
+        if (!current) {
+          return "always";
+        }
+        return ensureThreadRuntimeConfig(current).runtimeConfig?.bashReviewMode ?? "always";
+      },
       workspacePath: storedThread.workspacePath,
     },
     toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),

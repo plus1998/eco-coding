@@ -135,7 +135,7 @@ export function ComposerBashReviewToggle({
       <span className="composer-bash-review-pill-name">{current.title}</span>
     </button>
   ) : (
-    <span className={className} title="当前对话进行中，审批模式不可修改">
+    <span className={className} title="Bash 审批模式不可修改">
       <Terminal size={12} aria-hidden className="composer-bash-review-pill-icon" />
       <span className="composer-bash-review-pill-name">{current.title}</span>
     </span>

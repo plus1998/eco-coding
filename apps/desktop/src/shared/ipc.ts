@@ -293,6 +293,7 @@ export {
   getDefaultAgentProfileId,
   getDefaultRouteProfileId,
   getRoutesForProfile,
+  isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   resolveThreadAgentProfile,

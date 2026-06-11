@@ -1072,6 +1072,7 @@ function App() {
   const canEditComposerConfig =
     !activeThread ||
     (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
+  const canEditBashReviewMode = Boolean(composerRuntimeConfig);
   const canSwitchRouteProfile = canEditComposerConfig;
   const agentModelLabels = useMemo(
     () =>
@@ -1775,9 +1776,18 @@ function App() {
     setSettingsOpen(true);
   }
 
-  async function persistComposerRuntimeConfig(next: ThreadRuntimeConfig): Promise<void> {
+  async function persistComposerRuntimeConfig(
+    next: ThreadRuntimeConfig,
+    options?: { persistWhileRunning?: boolean },
+  ): Promise<void> {
     setComposerRuntimeConfig(next);
-    if (!activeThread || !window.eco || !canEditComposerConfig) {
+    if (!activeThread || !window.eco) {
+      return;
+    }
+    const isRunning = activeThread.status === "running" || activeThread.status === "queued";
+    const canPersist =
+      canEditComposerConfig || (options?.persistWhileRunning === true && isRunning);
+    if (!canPersist) {
       return;
     }
     setIsSavingSettings(true);
@@ -1874,11 +1884,11 @@ function App() {
   }
 
   async function toggleComposerBashReviewMode(bashReviewMode: ThreadRuntimeConfig["bashReviewMode"]) {
-    if (!composerRuntimeConfig || !canEditComposerConfig) {
+    if (!composerRuntimeConfig || !canEditBashReviewMode) {
       return;
     }
     const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, bashReviewMode };
-    await persistComposerRuntimeConfig(next);
+    await persistComposerRuntimeConfig(next, { persistWhileRunning: true });
   }
 
   async function saveProxyBridgeSettings(next: ProxyBridgeSettingsSnapshot) {
@@ -2420,7 +2430,7 @@ function App() {
               {composerRuntimeConfig ? (
                 <ComposerBashReviewToggle
                   bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                  canEdit={canEditComposerConfig}
+                  canEdit={canEditBashReviewMode}
                   saving={isSavingSettings}
                   onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
                 />

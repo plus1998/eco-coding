@@ -218,6 +218,21 @@ export function withPlanModeDisabled(config: ThreadRuntimeConfig): ThreadRuntime
   return { ...config, planModeEnabled: false };
 }
 
+/** True when `after` differs from `before` only by `bashReviewMode`. */
+export function isBashReviewModeOnlyRuntimeConfigUpdate(
+  before: ThreadRuntimeConfig,
+  after: ThreadRuntimeConfig,
+): boolean {
+  const left = normalizeThreadRuntimeConfig(before);
+  const right = normalizeThreadRuntimeConfig(after);
+  return (
+    left.routeProfileId === right.routeProfileId &&
+    left.agentProfileId === right.agentProfileId &&
+    left.planModeEnabled === right.planModeEnabled &&
+    SUBAGENT_ROLES.every((role) => left.subagentEnabled[role] === right.subagentEnabled[role])
+  );
+}
+
 /** @deprecated Use isPlanModeThreadRuntime and invert it if needed. */
 export function isAutonomousThreadRuntime(config: ThreadRuntimeConfig): boolean {
   return !config.planModeEnabled;
