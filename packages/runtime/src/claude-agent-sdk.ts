@@ -1516,6 +1516,8 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
 
   applyThinkingToProcessEnv(env, options.thinkingEffort);
   env.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
+  // Stop injecting per-request cch= into the system prompt (breaks prompt cache).
+  env.CLAUDE_CODE_ATTRIBUTION_HEADER = "0";
 
   delete env.ANTHROPIC_AUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -1556,6 +1558,7 @@ export function applyEcoSdkSettings(
       ...existingEnv,
       ANTHROPIC_API_KEY: apiKey,
       ANTHROPIC_BASE_URL: baseUrl.replace(/\/+$/, ""),
+      CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
     },
   };
 }

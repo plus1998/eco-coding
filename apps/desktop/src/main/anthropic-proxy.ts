@@ -17,6 +17,7 @@ import {
   proxyCallCommonFields,
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
+import { isProxyCchAuditEnabled } from "./proxy-cch-audit";
 import { readProxyBillingStampFromHeaders } from "./proxy-billing-stamp";
 import {
   announceUpstreamLogDestination,
@@ -288,6 +289,9 @@ export async function startAnthropicModelProxy(
   const baseUrl = `http://127.0.0.1:${address.port}`;
   announceUpstreamLogDestination({
     proxyBaseUrl: baseUrl,
+    cchAudit: isProxyCchAuditEnabled(),
+    cchAuditHint:
+      "ECO_PROXY_CCH_AUDIT=1 记录 sdk/upstream 两阶段扫描；默认已开启 proxy normalize（ECO_PROXY_CCH_NORMALIZE=0 关闭）",
     routeCount: resolvedRoutes.length,
     routes: resolvedRoutes.map((entry) => ({
       role: entry.role,

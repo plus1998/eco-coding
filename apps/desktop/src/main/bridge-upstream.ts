@@ -53,6 +53,12 @@ import {
   type UpstreamProxyCallBilling,
 } from "./upstream-proxy-log";
 import {
+  auditAnthropicMessagesBody,
+  isProxyCchAuditEnabled,
+  isProxyCchNormalizeEnabled,
+  normalizeAnthropicMessagesBodyForCache,
+} from "./proxy-cch-audit";
+import {
   headersToLoggable,
   logUpstream,
   logUpstreamError,
@@ -423,18 +429,60 @@ function writeBufferedAnthropicToClient(
   response.end(JSON.stringify(anthropicMessage));
 }
 
+function logProxyCchAudit(ctx: BridgeForwardContext, phase: "sdk" | "upstream"): void {
+  if (!isProxyCchAuditEnabled()) {
+    return;
+  }
+
+  const audit = auditAnthropicMessagesBody(ctx.body);
+  logUpstream("proxy-cch-audit", {
+    phase,
+    role: ctx.route.role,
+    apiCompat: ctx.route.apiCompat,
+    model: ctx.route.modelId,
+    ...(ctx.requestedModel && { requestedModel: ctx.requestedModel }),
+    hitCount: audit.hitCount,
+    uniqueCchValues: audit.uniqueCchValues,
+    billingHeaderInSystem: audit.billingHeaderInSystem,
+    hits: audit.hits,
+    hint:
+      phase === "upstream"
+        ? audit.hitCount === 0
+          ? "normalize 后上游 body 无 cch="
+          : "normalize 后仍有 cch=，检查规则"
+        : audit.hitCount === 0
+          ? "未在 SDK 请求体中发现 cch= / billing header"
+          : "若 uniqueCchValues 每轮变化，可能导致 prompt cache 失效",
+  });
+}
+
+function resolveBridgeForwardContext(ctx: BridgeForwardContext): BridgeForwardContext {
+  logProxyCchAudit(ctx, "sdk");
+
+  if (!isProxyCchNormalizeEnabled()) {
+    return ctx;
+  }
+
+  const body = normalizeAnthropicMessagesBodyForCache(ctx.body);
+  const normalizedCtx = body === ctx.body ? ctx : { ...ctx, body };
+  logProxyCchAudit(normalizedCtx, "upstream");
+  return normalizedCtx;
+}
+
 export async function forwardMessagesViaBridge(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   ctx: BridgeForwardContext,
 ): Promise<void> {
-  if (ctx.route.apiCompat === "anthropic") {
-    return forwardAnthropicNativeMessages(request, response, ctx);
+  const forwardCtx = resolveBridgeForwardContext(ctx);
+
+  if (forwardCtx.route.apiCompat === "anthropic") {
+    return forwardAnthropicNativeMessages(request, response, forwardCtx);
   }
-  if (ctx.route.apiCompat === "openai_chat_completions") {
-    return forwardOpenAIChatCompletionsMessages(request, response, ctx);
+  if (forwardCtx.route.apiCompat === "openai_chat_completions") {
+    return forwardOpenAIChatCompletionsMessages(request, response, forwardCtx);
   }
-  return forwardOpenAIResponsesMessages(request, response, ctx);
+  return forwardOpenAIResponsesMessages(request, response, forwardCtx);
 }
 
 async function forwardAnthropicNativeMessages(

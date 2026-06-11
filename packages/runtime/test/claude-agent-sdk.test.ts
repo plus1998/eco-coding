@@ -293,6 +293,7 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(env.PATH).toBe(previous.PATH);
     expect(env.CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
+    expect(env.CLAUDE_CODE_ATTRIBUTION_HEADER).toBe("0");
   } finally {
     if (previous.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY;
     else process.env.ANTHROPIC_API_KEY = previous.ANTHROPIC_API_KEY;
@@ -318,6 +319,7 @@ test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in su
   expect(settings.env).toEqual({
     ANTHROPIC_API_KEY: "router-key",
     ANTHROPIC_BASE_URL: "http://127.0.0.1:36037",
+    CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
   });
 });
 
