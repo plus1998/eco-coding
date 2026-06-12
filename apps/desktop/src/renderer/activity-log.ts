@@ -2411,6 +2411,10 @@ function iconForToolCategory(category: ParsedToolAction["category"]): ActivityAc
   return "file";
 }
 
+export function iconForToolName(toolName: string): ActivityActionIcon {
+  return iconForToolCategory(categorizeTool(toolName));
+}
+
 export function splitNarrativeSegments(text: string): Array<{ type: "text" | "code"; value: string }> {
   const segments: Array<{ type: "text" | "code"; value: string }> = [];
   const pattern = /`([^`]+)`/g;

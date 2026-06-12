@@ -1005,6 +1005,31 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
 });
 
+test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "read-index",
+      eventType: "tool.completed",
+      role: "tool",
+      text: "Tool: Read · index.vue",
+      metadata: {
+        liveType: "tool.completed",
+        tool: {
+          name: "Read",
+          detail: "index.vue",
+          toolUseId: "toolu_read_1",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "action",
+    icon: "file",
+    label: "index.vue",
+  });
+});
+
 test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({
@@ -1028,7 +1053,7 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
 
   expect(detail).toEqual({
     kind: "action",
-    icon: "agent",
+    icon: "file",
     label: "https://weather.example/guangzhou (8.3s)",
     subagent: "explore",
     agentId: "agent_weather",
@@ -1103,7 +1128,7 @@ test("projectionItemToDetailBlock treats structured todo metadata as tool action
 
   expect(detail).toEqual({
     kind: "action",
-    icon: "agent",
+    icon: "file",
     label: "https://weather.example/guangzhou",
     subagent: "explore",
     agentId: "agent_weather",

@@ -11,10 +11,11 @@ import {
   parseToolActionDisplayLabel,
 } from "../shared/activity-display";
 import {
+  iconForToolName,
   resolveSubagentRunDisplayTitle,
-  type ActivityActionIcon,
   type ActivityDetailBlock,
 } from "./activity-log";
+import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
@@ -489,17 +490,22 @@ export function shortProjectionAgentId(agentId: string): string {
   return agentId.slice(-8);
 }
 
+function resolveProjectionSubagent(item: ThreadRunProjectionTimelineItem): string | undefined {
+  return normalizeAgentDisplayRole(item.role);
+}
+
 export function projectionItemToDetailBlock(
   item: ThreadRunProjectionTimelineItem,
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
 
   if (isProjectionTodoToolActionItem(item)) {
+    const subagent = resolveProjectionSubagent(item);
     return {
       kind: "action",
-      icon: resolveProjectionActionIcon(text),
+      icon: iconForToolName(resolveProjectionToolName(item)),
       label: resolveProjectionToolActionLabel(item),
-      ...(item.role && { subagent: item.role }),
+      ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
   }
@@ -529,9 +535,10 @@ export function projectionItemToDetailBlock(
 
   if (item.eventType === "request.started") {
     if (item.scope === "agent" || item.agentId) {
+      const subagent = resolveProjectionSubagent(item);
       return {
         kind: "agent-request",
-        ...(item.role && { subagent: item.role }),
+        ...(subagent && { subagent }),
         ...(item.agentId && { agentId: item.agentId }),
       };
     }
@@ -543,32 +550,35 @@ export function projectionItemToDetailBlock(
 
   if (item.eventType === "api.error") {
     const apiError = readProjectionApiError(item);
+    const subagent = resolveProjectionSubagent(item);
     return {
       kind: "api-error",
       message: apiError?.message ?? text,
       ...(apiError?.statusCode !== undefined && { statusCode: apiError.statusCode }),
       ...(apiError?.code && { code: apiError.code }),
-      ...(item.role && { subagent: item.role }),
+      ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
   }
 
   if (item.eventType === "tool.failed") {
+    const subagent = resolveProjectionSubagent(item);
     return {
       kind: "tool-failed",
       tool: resolveProjectionToolName(item),
       ...(text && { error: text }),
-      ...(item.role && { subagent: item.role }),
+      ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
   }
 
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
+    const subagent = resolveProjectionSubagent(item);
     return {
       kind: "action",
-      icon: resolveProjectionActionIcon(resolveProjectionToolIconText(item)),
+      icon: iconForToolName(resolveProjectionToolName(item)),
       label: resolveProjectionToolActionLabel(item),
-      ...(item.role && { subagent: item.role }),
+      ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
   }
@@ -803,14 +813,6 @@ function resolveProjectionToolActionLabel(item: ThreadRunProjectionTimelineItem)
   return parseToolActionDisplayLabel(normalized);
 }
 
-function resolveProjectionToolIconText(item: ThreadRunProjectionTimelineItem): string {
-  const metadataTool = readProjectionToolMetadata(item);
-  if (!metadataTool) {
-    return item.text.trim();
-  }
-  return formatProjectionToolBaseLabel(metadataTool);
-}
-
 function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
   const base = formatProjectionToolBaseLabel(tool);
   if (tool.durationMs === undefined) {
@@ -821,21 +823,4 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
   return formatToolDisplayLabel(tool.name, tool.detail);
-}
-
-function resolveProjectionActionIcon(text: string): ActivityActionIcon {
-  const lower = text.toLowerCase();
-  if (/(search|grep|find|rg|ripgrep)/u.test(lower)) {
-    return "search";
-  }
-  if (/(read|open|cat|list|ls|file)/u.test(lower)) {
-    return "file";
-  }
-  if (/(edit|write|patch|apply)/u.test(lower)) {
-    return "edit";
-  }
-  if (/(bash|shell|terminal|run|exec|command)/u.test(lower)) {
-    return "terminal";
-  }
-  return "agent";
 }
