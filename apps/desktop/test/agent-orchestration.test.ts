@@ -7,10 +7,6 @@ import {
   createBuiltInPresetCatalog,
   createUserPresetProfileId,
   createUserPresetProfileName,
-  DATA_OPS_AGENT_TEMPLATE_IDS,
-  PRODUCT_AGENT_TEMPLATE_IDS,
-  RESEARCH_AGENT_TEMPLATE_IDS,
-  WRITING_AGENT_TEMPLATE_IDS,
 } from "../src/shared/agent-orchestration";
 import type { RouteProfileView } from "../src/shared/ipc";
 
@@ -44,32 +40,19 @@ test("built-in agent templates define the default coding library", () => {
   ).toContain("Write");
 });
 
-test("built-in agent registry includes non-coding presets", () => {
+test("built-in agent registry contains only coding templates", () => {
   const ids = createBuiltInAgentTemplates().map((template) => template.id);
-  expect(ids).toContain(RESEARCH_AGENT_TEMPLATE_IDS.researcher);
-  expect(ids).toContain(RESEARCH_AGENT_TEMPLATE_IDS.sourceVerifier);
-  expect(ids).toContain(WRITING_AGENT_TEMPLATE_IDS.editor);
-  expect(ids).toContain(WRITING_AGENT_TEMPLATE_IDS.factChecker);
-  expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.pmAnalyst);
-  expect(ids).toContain(PRODUCT_AGENT_TEMPLATE_IDS.specWriter);
-  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.dataAnalyst);
-  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.reportWriter);
-  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.incidentTriage);
-  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.logAnalyst);
-  expect(ids).toContain(DATA_OPS_AGENT_TEMPLATE_IDS.runbookExecutor);
+  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.architect);
+  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.coder);
+  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.reviewer);
+  expect(ids).toContain(CODING_AGENT_TEMPLATE_IDS.tester);
+  expect(ids).toHaveLength(4);
 });
 
-test("built-in preset catalog defines commercial scenario metadata", () => {
+test("built-in preset catalog defines only coding preset", () => {
   const templatesById = new Set(createBuiltInAgentTemplates().map((template) => template.id));
   const presets = createBuiltInPresetCatalog();
-  expect(presets.map((preset) => preset.id)).toEqual([
-    "coding",
-    "research",
-    "writing",
-    "product",
-    "data",
-    "ops",
-  ]);
+  expect(presets.map((preset) => preset.id)).toEqual(["coding"]);
   for (const preset of presets) {
     expect(preset.mainAgentPrompt.trim().length).toBeGreaterThan(40);
     expect(preset.mainAgentTools.allowed).toContain("Agent");
@@ -87,57 +70,46 @@ test("built-in preset catalog defines commercial scenario metadata", () => {
   }
 });
 
-test("non-coding preset prompts avoid coding prompt pollution", () => {
-  const nonCodingPrompts = createBuiltInPresetCatalog()
-    .filter((preset) => preset.id !== "coding")
-    .map((preset) => preset.mainAgentPrompt.toLowerCase());
-  for (const prompt of nonCodingPrompts) {
-    expect(prompt).not.toContain("software engineering");
-    expect(prompt).not.toContain("repository");
-    expect(prompt).not.toContain("code review");
-    expect(prompt).not.toContain("diff");
-  }
-});
-
 test("built-in preset can be copied into a runnable user orchestration profile", () => {
   const templates = createBuiltInAgentTemplates();
-  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "research");
+  const preset = createBuiltInPresetCatalog().find((candidate) => candidate.id === "coding");
   if (!preset) {
-    throw new Error("Missing research preset.");
+    throw new Error("Missing coding preset.");
   }
   const profile = buildOrchestrationProfileFromPreset(preset, {
-    id: createUserPresetProfileId("research", ["user.research.profile"]),
-    name: createUserPresetProfileName("Research", ["Research Profile"]),
-    modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+    id: createUserPresetProfileId("coding", ["user.coding.profile"]),
+    name: createUserPresetProfileName("Coding", ["Coding Profile"]),
+    modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
     templates,
     updatedAt: "2026-06-07T08:00:00.000Z",
   });
   expect(profile).toMatchObject({
-    id: "user.research.profile.2",
-    name: "Research Profile 2",
-    preset: "research",
+    id: "user.coding.profile.2",
+    name: "Coding Profile 2",
+    preset: "coding",
     source: "user",
     updatedAt: "2026-06-07T08:00:00.000Z",
     mainAgent: {
-      systemPromptPreset: "custom",
-      modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+      systemPromptPreset: "claude_code",
+      modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
     },
     builtinAgents: {
       explore: {
-        modelRef: { providerId: "p1", modelId: "research-model", apiCompat: "anthropic" },
+        modelRef: { providerId: "p1", modelId: "coding-model", apiCompat: "anthropic" },
       },
     },
     strategy: { kind: "autonomous" },
   });
   expect(profile.agents.map((agent) => agent.agentKey)).toEqual([
-    "researcher",
-    "source_verifier",
-    "synthesizer",
+    "architect",
+    "coder",
+    "reviewer",
+    "tester",
   ]);
   expect(profile.agents.every((agent) => agent.enabled)).toBe(true);
-  expect(profile.agents.every((agent) => agent.modelRef.modelId === "research-model")).toBe(true);
-  expect(profile.agents.find((agent) => agent.agentKey === "source_verifier")?.tools.allowed).toContain(
-    "WebSearch",
+  expect(profile.agents.every((agent) => agent.modelRef.modelId === "coding-model")).toBe(true);
+  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.tools.allowed).toContain(
+    "Write",
   );
 });
 

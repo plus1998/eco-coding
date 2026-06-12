@@ -65,21 +65,21 @@ const settings: ModelSettingsSnapshot = {
   ],
 };
 
-const researchPreset = createBuiltInPresetCatalog().find((preset) => preset.id === "research");
-if (!researchPreset) {
-  throw new Error("Missing built-in research preset.");
+const codingPresetForGeneric = createBuiltInPresetCatalog().find((preset) => preset.id === "coding");
+if (!codingPresetForGeneric) {
+  throw new Error("Missing built-in coding preset.");
 }
 
-const researchProfile = buildOrchestrationProfileFromPreset(researchPreset, {
-  id: "research-copy",
-  name: "研究副本",
-  modelRef: { providerId: "p1", modelId: "m-research" },
+const genericProfile = buildOrchestrationProfileFromPreset(codingPresetForGeneric, {
+  id: "generic-copy",
+  name: "通用副本",
+  modelRef: { providerId: "p1", modelId: "m-generic" },
   updatedAt: "2026-06-07T00:00:00.000Z",
 });
 
-const researchAgent = researchProfile.agents[0];
-if (!researchAgent) {
-  throw new Error("Research preset must include at least one agent.");
+const genericAgent = genericProfile.agents[0];
+if (!genericAgent) {
+  throw new Error("Coding preset must include at least one agent.");
 }
 
 const routeProfileA = settings.routeProfiles[0];
@@ -110,7 +110,7 @@ const genericSettings: ModelSettingsSnapshot = {
   providers: [],
   routeProfiles: [],
   agentTemplates: [],
-  orchestrationProfiles: [researchProfile],
+  orchestrationProfiles: [genericProfile],
 };
 
 const mixedSettings: ModelSettingsSnapshot = {
@@ -127,7 +127,7 @@ test("getRoutesForProfile resolves routes by id", () => {
 });
 
 test("getDefaultAgentProfileId returns first orchestration profile", () => {
-  expect(getDefaultAgentProfileId(genericSettings)).toBe("research-copy");
+  expect(getDefaultAgentProfileId(genericSettings)).toBe("generic-copy");
 });
 
 test("buildThreadRuntimeConfigFromDefaults uses plan mode off by default", () => {
@@ -157,43 +157,43 @@ test("buildThreadRuntimeConfigFromDefaults can target a generic Agent Profile wi
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: genericSettings,
     workflowDefaults: { planModeEnabled: false },
-    agentProfileId: "research-copy",
+    agentProfileId: "generic-copy",
   });
 
-  expect(config.agentProfileId).toBe("research-copy");
-  expect(config.routeProfileId).toBe("research-copy");
-  expect(resolveThreadAgentProfile(genericSettings, config)?.preset).toBe("research");
+  expect(config.agentProfileId).toBe("generic-copy");
+  expect(config.routeProfileId).toBe("generic-copy");
+  expect(resolveThreadAgentProfile(genericSettings, config)?.preset).toBe("coding");
 });
 
 test("buildThreadRuntimeConfigFromDefaults does not let default routes override selected Agent Profile", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings: mixedSettings,
     workflowDefaults: { planModeEnabled: false },
-    agentProfileId: "research-copy",
+    agentProfileId: "generic-copy",
     routeProfileId: "profile-a",
   });
 
-  expect(config.agentProfileId).toBe("research-copy");
-  expect(config.routeProfileId).toBe("research-copy");
+  expect(config.agentProfileId).toBe("generic-copy");
+  expect(config.routeProfileId).toBe("generic-copy");
   expect(getRoutesForProfile(mixedSettings, config.routeProfileId)).toBeUndefined();
 });
 
 test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => {
   const profile = {
-    ...researchProfile,
+    ...genericProfile,
     mainAgent: {
-      ...researchProfile.mainAgent,
+      ...genericProfile.mainAgent,
       modelRef: { providerId: "main-provider", modelId: "main-model" },
     },
     agents: [
       {
-        ...researchAgent,
-        agentKey: "research lead",
+        ...genericAgent,
+        agentKey: "coding lead",
         modelRef: { providerId: "agent-provider", modelId: "agent-model" },
         enabled: true,
       },
       {
-        ...researchAgent,
+        ...genericAgent,
         agentKey: "disabled_agent",
         modelRef: { providerId: "disabled-provider", modelId: "disabled-model" },
         enabled: false,
@@ -203,8 +203,8 @@ test("runtimeRoleRoutesFromAgentProfile includes enabled dynamic agents", () => 
 
   expect(runtimeRoleRoutesFromAgentProfile(profile)).toEqual([
     { role: "planner", providerId: "main-provider", modelId: "main-model" },
-    { role: "explore", providerId: "p1", modelId: "m-research" },
-    { role: "research lead", providerId: "agent-provider", modelId: "agent-model" },
+    { role: "explore", providerId: "p1", modelId: "m-generic" },
+    { role: "coding lead", providerId: "agent-provider", modelId: "agent-model" },
   ]);
 });
 
@@ -248,14 +248,14 @@ test("parseThreadRuntimeConfigJson accepts agentProfileId-only payloads", () => 
   expect(
     parseThreadRuntimeConfigJson(
       JSON.stringify({
-        agentProfileId: "research-copy",
+        agentProfileId: "generic-copy",
         subagentEnabled: threadSubagentEnabled,
         orchestrationMode: "autonomous",
       }),
     ),
   ).toEqual({
     routeProfileId: "",
-    agentProfileId: "research-copy",
+    agentProfileId: "generic-copy",
     subagentEnabled: threadSubagentEnabled,
     planModeEnabled: false,
     bashReviewMode: "always",
