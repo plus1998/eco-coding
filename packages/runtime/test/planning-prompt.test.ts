@@ -26,6 +26,12 @@ test("planning system append keeps only Eco boundaries for native Plan Mode", ()
   expect(append).toContain("WebSearch");
   expect(append).toContain("complete replacement");
   expect(append).not.toContain("mcp__eco_plan__finalize_plan");
+  // New: AskUserQuestion strengthening
+  expect(append).toContain("Explore first, ask second");
+  expect(append).toContain("Two kinds of unknowns");
+  expect(append).toContain("Asking questions");
+  expect(append).toContain("materially change the plan");
+  expect(append).toContain("Bias toward questions over guessing");
 });
 
 test("planningPhaseSystemAppend does not include legacy template text", () => {
@@ -41,12 +47,17 @@ test("buildPlanningPhasePrompt preserves native Plan Mode with Eco boundaries", 
   expect(prompt).toContain("Explore the repository as needed");
   expect(prompt).toContain("WebSearch");
   expect(prompt).toContain("WebFetch");
-  expect(prompt).toContain("material ambiguity");
   expect(prompt).toContain("AskUserQuestion");
   expect(prompt).toContain("ExitPlanMode");
   expect(prompt).toContain("Do not use Write/Edit/MultiEdit");
   expect(prompt).not.toContain("turn 1");
   expect(prompt).not.toContain("mcp__eco_plan__finalize_plan");
+  // New: proactive questioning + explore-first
+  expect(prompt).toContain("high-impact ambiguity");
+  expect(prompt).toContain("Ask after exploring, not before");
+  expect(prompt).toContain("materially change the plan");
+  expect(prompt).toContain("informed decision");
+  expect(prompt).toContain("success criteria");
 });
 
 test("buildPlanningContinuationPrompt requires full replacement plan", () => {
@@ -56,6 +67,9 @@ test("buildPlanningContinuationPrompt requires full replacement plan", () => {
   expect(prompt).toContain("ExitPlanMode");
   expect(prompt).not.toContain("not turn 1");
   expect(prompt).not.toContain("turn 1");
+  // New: follow-up ambiguity handling
+  expect(prompt).toContain("new ambiguity");
+  expect(prompt).toContain("explore first");
 });
 
 test("orchestrator prompts require eco subagent keys when delegating", () => {

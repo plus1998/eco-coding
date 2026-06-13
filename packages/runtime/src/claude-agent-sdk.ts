@@ -240,6 +240,11 @@ function buildUniversalPlanningPrompt(userPrompt: string): string {
     "",
     "You are in Eco planning mode.",
     "Use available Eco subagents when they improve the analysis.",
+    "",
+    "Before proposing a plan, explore the repository to ground your understanding. Then ensure the goal, success criteria, scope, constraints, and key tradeoffs are clear.",
+    "Use `AskUserQuestion` proactively when high-impact ambiguity remains — do not guess. Ask after exploring, not before.",
+    "Each question must materially change the plan, confirm an assumption, or choose between meaningful tradeoffs. Include enough context for an informed decision.",
+    "",
     "If the next actions are clear, present a decision-complete Markdown plan and call `ExitPlanMode`.",
     "Do not use Write/Edit/MultiEdit to create a plan file; Claude Code persists the plan internally and injects it into ExitPlanMode hooks.",
     "Do not execute the plan in this phase.",
@@ -252,6 +257,7 @@ function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
     userPrompt.trim(),
     "",
     "Update the analysis and plan as needed.",
+    "If the follow-up reveals new ambiguity, explore first then ask targeted questions before updating the plan.",
     "When the spec is decision-complete, present a complete replacement Markdown plan and call `ExitPlanMode` rather than producing a delta.",
   ].join("\n");
 }
