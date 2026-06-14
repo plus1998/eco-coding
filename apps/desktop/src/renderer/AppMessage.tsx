@@ -35,6 +35,5 @@ export function formatDurationMs(ms: number): string {
   if (ms < 1000) {
     return `${Math.round(ms)}ms`;
   }
-  const seconds = ms / 1000;
-  return seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }

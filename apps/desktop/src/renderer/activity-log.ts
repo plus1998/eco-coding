@@ -2165,13 +2165,13 @@ export function isModelRequestLine(message: string): boolean {
 }
 
 export function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(1, Math.round(ms / 1000));
+  const totalSeconds = Math.max(0, ms / 1000);
   if (totalSeconds < 60) {
-    return `${totalSeconds}s`;
+    return `${totalSeconds.toFixed(1)}s`;
   }
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return seconds > 0 ? `${minutes}m ${seconds.toFixed(1)}s` : `${minutes}m`;
 }
 
 function isPhaseLine(message: string): boolean {
