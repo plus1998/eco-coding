@@ -2020,6 +2020,18 @@ function App() {
     });
   }
 
+  function unpinProject(projectPath: string) {
+    setPinnedProjectPaths((current) => {
+      if (!current.has(projectPath)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectPath);
+      window.localStorage.setItem(pinnedProjectsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
   function removeProject(projectPath: string) {
     setHiddenProjectPaths((current) => {
       const next = new Set(current);
@@ -2528,6 +2540,7 @@ function App() {
             onReorderProjects={reorderProjects}
             onOpenProjectPath={handleOpenProjectFromDrop}
             onPinProject={pinProject}
+            onUnpinProject={unpinProject}
             onRemoveProject={removeProject}
             onDeleteThread={(thread) => void deleteThread(thread)}
           />

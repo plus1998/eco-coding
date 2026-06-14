@@ -5,6 +5,7 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
   Pin,
+  PinOff,
   Trash2,
 } from "lucide-react";
 import { type DragEvent, useEffect, useRef, useState } from "react";
@@ -33,6 +34,7 @@ interface ProjectSidebarTreeProps {
   onReorderProjects: (draggedPath: string, targetPath: string, position: ProjectReorderPosition) => void;
   onOpenProjectPath: (path: string) => Promise<void>;
   onPinProject: (path: string) => void;
+  onUnpinProject: (path: string) => void;
   onRemoveProject: (path: string) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
 }
@@ -62,6 +64,7 @@ export function ProjectSidebarTree({
   onReorderProjects,
   onOpenProjectPath,
   onPinProject,
+  onUnpinProject,
   onRemoveProject,
   onDeleteThread,
 }: ProjectSidebarTreeProps) {
@@ -289,12 +292,20 @@ export function ProjectSidebarTree({
                       className="project-menu-item"
                       role="menuitem"
                       onClick={() => {
-                        onPinProject(project.path);
+                        if (project.pinned) {
+                          onUnpinProject(project.path);
+                        } else {
+                          onPinProject(project.path);
+                        }
                         setOpenMenuPath(undefined);
                       }}
                     >
-                      <Pin size={16} aria-hidden />
-                      <span>置顶</span>
+                      {project.pinned ? (
+                        <PinOff size={16} aria-hidden />
+                      ) : (
+                        <Pin size={16} aria-hidden />
+                      )}
+                      <span>{project.pinned ? "取消置顶" : "置顶"}</span>
                     </button>
                     <button
                       type="button"
