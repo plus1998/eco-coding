@@ -12,6 +12,7 @@ import {
 import {
   type AgentEvent,
   defaultSubagentAvailability,
+  collectProfileAssignedMcpServers,
   type EcoPlanningContext,
   type EcoAgentRuntimeConfig,
   type EcoSdkResumeOptions,
@@ -130,6 +131,7 @@ import {
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
 } from "../shared/skills";
+import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import {
   buildAgentPromptWithContext,
   continueStatusMessage,
@@ -4920,6 +4922,10 @@ async function buildSdkSessionOptions(
   const profile = hydrated?.runtimeConfig
     ? resolveThreadAgentProfile(settings, hydrated.runtimeConfig)
     : undefined;
+  const assignedMcpServers = profile
+    ? collectProfileAssignedMcpServers(profile, settings.agentTemplates)
+    : [];
+  const filteredMcp = filterMcpSdkConfigByAssignedServers(mcp, assignedMcpServers);
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
     thread?.workspacePath ??
@@ -4927,10 +4933,8 @@ async function buildSdkSessionOptions(
   const discovered = await listDiscoveredSkills(workspacePath);
   const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
-  const profileMainSkills = profile?.mainAgent.skills ?? [];
   const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
     projectNames,
-    profileMainSkills,
     explicitUser,
   });
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
@@ -4939,8 +4943,8 @@ async function buildSdkSessionOptions(
     ...(skillConfig.skills.length > 0 ? { skills: skillConfig.skills } : {}),
     agentSkills,
     enabledSubagents,
-    mcpServers: mcp.mcpServers,
-    mcpAllowedTools: mcp.allowedTools,
+    ...(Object.keys(filteredMcp.mcpServers).length > 0 ? { mcpServers: filteredMcp.mcpServers } : {}),
+    ...(filteredMcp.allowedTools.length > 0 ? { mcpAllowedTools: filteredMcp.allowedTools } : {}),
   };
 }
 

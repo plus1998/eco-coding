@@ -132,29 +132,18 @@ export const CODING_AGENT_KEYS = {
 
 const BUILT_IN_TEMPLATE_UPDATED_AT = "2026-06-07T00:00:00.000Z";
 
-const CLAUDE_READ_TOOLS = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
 const CLAUDE_WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
-const CLAUDE_DELEGATION_SUPPORT_TOOLS = ["TaskList", "TaskOutput"] as const;
 const CLAUDE_TASK_PROGRESS_TOOLS = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
-const MAIN_ORCHESTRATION_TOOLS = [
-  "Agent",
-  ...CLAUDE_DELEGATION_SUPPORT_TOOLS,
-  "Skill",
-  ...CLAUDE_TASK_PROGRESS_TOOLS,
-] as const;
-const NETWORK_TOOLS = ["WebSearch", "WebFetch"] as const;
-
-const TASK_AND_SKILL_TOOLS = [...CLAUDE_TASK_PROGRESS_TOOLS, "Skill", "AskUserQuestion"] as const;
 
 const ARCHITECT_TOOLS: ToolPolicy = {
-  allowed: [...CLAUDE_READ_TOOLS, ...TASK_AND_SKILL_TOOLS, ...NETWORK_TOOLS],
-  disallowed: [...CLAUDE_WRITE_TOOLS],
+  allowed: [],
+  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash"],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
 
 const CODER_TOOLS: ToolPolicy = {
-  allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, "Bash", ...CLAUDE_TASK_PROGRESS_TOOLS, "Skill"],
+  allowed: [],
   disallowed: [],
   bash: { enabled: true },
   filesystem: { read: "workspace", write: "workspace" },
@@ -162,14 +151,14 @@ const CODER_TOOLS: ToolPolicy = {
 };
 
 const REVIEW_TOOLS: ToolPolicy = {
-  allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_TASK_PROGRESS_TOOLS, "Skill"],
+  allowed: [],
   disallowed: [...CLAUDE_WRITE_TOOLS],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
 
 const TESTER_TOOLS: ToolPolicy = {
-  allowed: [...CLAUDE_READ_TOOLS, ...CLAUDE_WRITE_TOOLS, "Bash", ...CLAUDE_TASK_PROGRESS_TOOLS, "Skill"],
+  allowed: [],
   disallowed: [],
   bash: { enabled: true },
   filesystem: { read: "workspace", write: "workspace" },
@@ -177,14 +166,7 @@ const TESTER_TOOLS: ToolPolicy = {
 };
 
 const MAIN_CODING_TOOLS: ToolPolicy = {
-  allowed: [
-    ...MAIN_ORCHESTRATION_TOOLS,
-    ...CLAUDE_READ_TOOLS,
-    ...CLAUDE_WRITE_TOOLS,
-    "Bash",
-    ...NETWORK_TOOLS,
-    "AskUserQuestion",
-  ],
+  allowed: [],
   disallowed: [],
   bash: { enabled: true },
   filesystem: { read: "workspace", write: "workspace" },

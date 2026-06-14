@@ -200,23 +200,15 @@ function formatProfileSourceLabel(profile: OrchestrationProfile): string {
 }
 
 function summarizeToolRiskLabels(policy: ToolPolicy): string[] {
-  const allowed = new Set(policy.allowed);
   const disallowed = new Set(policy.disallowed);
   const labels: string[] = [];
-  if (policy.bash?.enabled && allowed.has("Bash") && !disallowed.has("Bash")) {
+  if (policy.bash?.enabled && !disallowed.has("Bash")) {
     labels.push("Bash");
   }
-  const writeEnabled =
-    policy.filesystem?.write === "workspace" ||
-    ["Write", "Edit", "MultiEdit", "NotebookEdit"].some((tool) => allowed.has(tool) && !disallowed.has(tool));
-  if (writeEnabled) {
+  if (policy.filesystem?.write === "workspace") {
     labels.push("写文件");
   }
-  const networkEnabled =
-    policy.network?.webSearch ||
-    policy.network?.webFetch ||
-    (allowed.has("WebSearch") && !disallowed.has("WebSearch")) ||
-    (allowed.has("WebFetch") && !disallowed.has("WebFetch"));
+  const networkEnabled = policy.network?.webSearch || policy.network?.webFetch;
   if (networkEnabled) {
     labels.push("联网");
   }

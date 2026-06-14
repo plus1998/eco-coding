@@ -180,7 +180,7 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       name: "main cannot call another MCP server",
       input: preTool("mcp__slack__post", { text: "leak" }),
       expected: "deny",
-      reasonIncludes: "not allowed",
+      reasonIncludes: "not assigned",
     },
     {
       name: "researcher can search web",
@@ -209,6 +209,11 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       input: preTool("WebSearch", { query: "should not search" }, { agentType: "eco_synthesizer" }),
       expected: "deny",
       reasonIncludes: "disallowed",
+    },
+    {
+      name: "main allows unknown SDK tools like Monitor",
+      input: preTool("Monitor", { action: "start" }),
+      expected: "allow",
     },
     {
       name: "synthesizer can read workspace evidence",

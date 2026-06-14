@@ -105,11 +105,10 @@ test("createAgentDefinitionsFromProfile builds enabled SDK agent definitions", (
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
   expect(definition).toMatchObject({
     model: "research-model",
-    tools: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
+    tools: ["Read", "WebSearch", "LS", "NotebookRead"],
     disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     prompt: researchTemplate.prompt,
     mcpServers: ["sources", "browser"],
-    skills: ["citation", "pdf"],
   });
   expect(definition.description).toContain("Evidence Researcher");
   expect(definition.description).toContain("Use when: Need sourced findings or external context");
@@ -121,7 +120,7 @@ test("createAgentDefinitionsFromProfile merges dynamic session skills", () => {
   });
 
   const definition = resolved.definitions.eco_researcher as Record<string, unknown>;
-  expect(definition.skills).toEqual(["citation", "pdf", "workspace-research"]);
+  expect(definition.skills).toEqual(["workspace-research"]);
 });
 
 test("buildMainAgentSystemPrompt injects roster without leaking child prompts", () => {
@@ -230,12 +229,12 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
     "Agent",
     "Read",
     "WebSearch",
-    "mcp__sources__quote",
-    "mcp__browser__*",
     "LS",
     "NotebookRead",
     "TaskList",
     "TaskOutput",
+    "mcp__browser__*",
+    "mcp__sources__*",
   ]);
 
   const planningPhaseTools = [
@@ -284,8 +283,8 @@ test("resolveMainAgentAllowedTools merges phase tools for universal profiles", (
     "NotebookEdit",
     "TaskList",
     "TaskOutput",
-    "mcp__sources__quote",
     "mcp__browser__*",
+    "mcp__sources__*",
   ]);
 });
 
@@ -323,12 +322,13 @@ test("resolveMainAgentAllowedTools caps coding profile tools to planning phase",
   expect(resolved).not.toContain("Bash");
 });
 
-test("buildBuiltinPlanToolPermissionEntry allows Skill and read tools for SDK Plan agent", () => {
+test("buildBuiltinPlanToolPermissionEntry keeps plan agent read-only with network access", () => {
   const entry = buildBuiltinPlanToolPermissionEntry();
-  expect(entry.allowed).toContain("Skill");
-  expect(entry.allowed).toContain("Read");
-  expect(entry.allowed).not.toContain("Write");
+  expect(entry.disallowed).toContain("Write");
+  expect(entry.disallowed).toContain("Bash");
+  expect(entry.allowed).toEqual([]);
   expect(entry.filesystem).toEqual({ read: "workspace", write: "none" });
+  expect(entry.network).toEqual({ webSearch: true, webFetch: true });
 });
 
 test("buildToolPermissionPolicyFromProfile disables main writes during planning phase", () => {
@@ -401,16 +401,18 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
     mainAllowedTools,
   });
 
-  expect(policy.main.allowed).toEqual(mainAllowedTools);
+  expect(policy.main.allowed).toEqual(
+    expect.arrayContaining(["Skill", "TaskCreate", "TaskUpdate", "TodoWrite"]),
+  );
+  expect(policy.main.mcpServers).toEqual(["browser", "sources"]);
   expect(policy.main).toMatchObject({
     disallowed: ["Write"],
     filesystem: { read: "workspace", write: "none" },
   });
-  expect(policy.agents).toEqual({
-    eco_researcher: {
-      allowed: ["Read", "WebSearch", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
-      disallowed: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
-    },
+  expect(policy.agents.eco_researcher).toMatchObject({
+    allowed: ["Read", "WebSearch", "Skill", "LS", "NotebookRead"],
+    disallowed: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
+    mcpServers: ["sources", "browser"],
   });
 });
 
@@ -473,20 +475,15 @@ test("subagent delegation tools require allowDelegation", () => {
 
   const blockedDefinitions = createAgentDefinitionsFromProfile(delegatingProfile, [blockedTemplate]);
   const blockedDefinition = blockedDefinitions.definitions.eco_researcher as Record<string, unknown>;
-  expect(blockedDefinition.tools).toEqual([
-    "Read",
-    "mcp__sources__*",
-    "mcp__browser__*",
-    "Skill",
-    "LS",
-    "NotebookRead",
-  ]);
+  expect(blockedDefinition.tools).toEqual(["Read", "LS", "NotebookRead"]);
+  expect(blockedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
 
   const blockedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [blockedTemplate]);
-  expect(blockedPolicy.agents.eco_researcher).toEqual({
-    allowed: ["Read", "mcp__sources__*", "mcp__browser__*", "Skill", "LS", "NotebookRead"],
+  expect(blockedPolicy.agents.eco_researcher).toMatchObject({
+    allowed: ["Read", "Skill", "LS", "NotebookRead"],
     disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
+    mcpServers: ["sources", "browser"],
   });
 
   const allowedTemplate: EcoAgentTemplateConfig = { ...blockedTemplate, allowDelegation: true };
@@ -496,31 +493,19 @@ test("subagent delegation tools require allowDelegation", () => {
     "Read",
     "Agent",
     "Task",
-    "mcp__sources__*",
-    "mcp__browser__*",
-    "Skill",
     "LS",
     "NotebookRead",
     "TaskList",
     "TaskOutput",
   ]);
+  expect(allowedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
   const allowedPolicy = buildToolPermissionPolicyFromProfile(delegatingProfile, [allowedTemplate]);
-  expect(allowedPolicy.agents.eco_researcher).toEqual({
-    allowed: [
-      "Read",
-      "Agent",
-      "Task",
-      "mcp__sources__*",
-      "mcp__browser__*",
-      "Skill",
-      "LS",
-      "NotebookRead",
-      "TaskList",
-      "TaskOutput",
-    ],
+  expect(allowedPolicy.agents.eco_researcher).toMatchObject({
+    allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead", "TaskList", "TaskOutput"],
     disallowed: [],
+    mcpServers: ["sources", "browser"],
   });
 });
 

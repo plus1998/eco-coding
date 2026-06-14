@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildMcpSdkConfig,
+  filterMcpSdkConfigByAssignedServers,
   parseAllowedToolPatterns,
   parseMcpArgsList,
   sanitizeMcpServerName,
@@ -76,4 +77,48 @@ test("serializes form args and env for storage", () => {
 test("sanitizes server names for tool prefixes", () => {
   expect(sanitizeMcpServerName("GitHub API")).toBe("github-api");
   expect(parseAllowedToolPatterns("", "My Server")).toEqual(["mcp__my-server__*"]);
+});
+
+test("filterMcpSdkConfigByAssignedServers keeps only assigned servers", () => {
+  const full = buildMcpSdkConfig([
+    {
+      id: "1",
+      name: "github",
+      transport: "stdio",
+      enabled: true,
+      command: "npx",
+      argsJson: "[]",
+      envJson: "{}",
+      headersJson: "{}",
+      allowedTools: "",
+      createdAt: "",
+      updatedAt: "",
+    },
+    {
+      id: "2",
+      name: "docs",
+      transport: "http",
+      enabled: true,
+      url: "https://example.com/mcp",
+      argsJson: "[]",
+      envJson: "{}",
+      headersJson: "{}",
+      allowedTools: "mcp__docs__search",
+      createdAt: "",
+      updatedAt: "",
+    },
+  ]);
+
+  expect(filterMcpSdkConfigByAssignedServers(full, [])).toEqual({
+    mcpServers: {},
+    allowedTools: [],
+  });
+
+  const githubOnly = filterMcpSdkConfigByAssignedServers(full, ["github"]);
+  expect(Object.keys(githubOnly.mcpServers)).toEqual(["github"]);
+  expect(githubOnly.allowedTools).toEqual(["mcp__github__*"]);
+
+  const docsOnly = filterMcpSdkConfigByAssignedServers(full, ["docs"]);
+  expect(Object.keys(docsOnly.mcpServers)).toEqual(["docs"]);
+  expect(docsOnly.allowedTools).toEqual(["mcp__docs__search"]);
 });

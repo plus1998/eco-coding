@@ -5,7 +5,6 @@ import type {
   AgentTemplate,
   AgentTemplateVersionView,
   McpServerConfigView,
-  SkillsListResult,
 } from "../shared/ipc";
 import {
   AGENT_DOMAIN_OPTIONS,
@@ -22,7 +21,7 @@ import {
   formatAgentSource,
   parseList,
   toggleAgentTemplateListValue,
-  toggleAgentTemplateToolSelection,
+  toggleAgentTemplateDisallowedTool,
 } from "./agent-template-form";
 
 const DOMAIN_ORDER: AgentDomain[] = ["coding", "research", "writing", "product", "data", "ops", "custom"];
@@ -31,8 +30,12 @@ interface ToolPresetOption {
   id: string;
   label: string;
   hint: string;
-  allowedTools: string[];
   disallowedTools: string[];
+  bashEnabled: boolean;
+  filesystemRead: AgentTemplateFormState["filesystemRead"];
+  filesystemWrite: AgentTemplateFormState["filesystemWrite"];
+  networkWebSearch: boolean;
+  networkWebFetch: boolean;
 }
 
 const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
@@ -40,48 +43,51 @@ const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
     id: "readonly",
     label: "只读探索",
     hint: "读文件和搜索代码，不写入、不运行命令。",
-    allowedTools: ["Read", "Glob", "Grep", "LS", "NotebookRead"],
     disallowedTools: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
+    bashEnabled: false,
+    filesystemRead: "workspace",
+    filesystemWrite: "none",
+    networkWebSearch: false,
+    networkWebFetch: false,
   },
   {
     id: "research",
     label: "研究检索",
     hint: "读本地上下文，也允许 WebSearch/WebFetch。",
-    allowedTools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch", "WebFetch"],
     disallowedTools: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
+    bashEnabled: false,
+    filesystemRead: "workspace",
+    filesystemWrite: "none",
+    networkWebSearch: true,
+    networkWebFetch: true,
   },
   {
     id: "coding",
     label: "代码执行",
     hint: "允许读写、编辑、命令和任务清单。",
-    allowedTools: [
-      "Read",
-      "Glob",
-      "Grep",
-      "LS",
-      "NotebookRead",
-      "Bash",
-      "Write",
-      "Edit",
-      "MultiEdit",
-      "NotebookEdit",
-      "TodoWrite",
-    ],
     disallowedTools: [],
+    bashEnabled: true,
+    filesystemRead: "workspace",
+    filesystemWrite: "workspace",
+    networkWebSearch: false,
+    networkWebFetch: false,
   },
   {
     id: "review",
     label: "评审验证",
     hint: "可读文件并运行验证命令，不允许修改文件。",
-    allowedTools: ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"],
     disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit"],
+    bashEnabled: true,
+    filesystemRead: "workspace",
+    filesystemWrite: "none",
+    networkWebSearch: false,
+    networkWebFetch: false,
   },
 ];
 
 interface SubagentSettingsSectionProps {
   templates: AgentTemplate[];
   mcpServers?: McpServerConfigView[] | undefined;
-  skillsSnapshot?: SkillsListResult | undefined;
   registryDisabled?: boolean | undefined;
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
@@ -90,7 +96,6 @@ interface SubagentSettingsSectionProps {
 export function SubagentSettingsSection({
   templates,
   mcpServers = [],
-  skillsSnapshot,
   registryDisabled,
   onRegistryChange,
   onSavingChange,
@@ -349,7 +354,6 @@ export function SubagentSettingsSection({
                     <div className="models-agent-template-meta">
                       <span>{formatModelBinding(template)}</span>
                       <span>{formatTools(template)}</span>
-                      {template.skills.length > 0 ? <span>{template.skills.length} skills</span> : null}
                       {template.mcpServers.length > 0 ? <span>{template.mcpServers.length} MCP</span> : null}
                     </div>
                     <div className="models-agent-template-permissions">
@@ -430,7 +434,6 @@ export function SubagentSettingsSection({
           setForm={setEditorForm}
           templates={templates}
           mcpServerConfigs={mcpServers}
-          skillsSnapshot={skillsSnapshot}
           error={editorError}
           busy={registryBusy}
           editing={Boolean(editingTemplateId)}
@@ -458,7 +461,6 @@ function AgentTemplateEditorModal({
   setForm,
   templates,
   mcpServerConfigs,
-  skillsSnapshot,
   error,
   busy,
   editing,
@@ -469,7 +471,6 @@ function AgentTemplateEditorModal({
   setForm: Dispatch<SetStateAction<AgentTemplateFormState | undefined>>;
   templates: AgentTemplate[];
   mcpServerConfigs: McpServerConfigView[];
-  skillsSnapshot?: SkillsListResult | undefined;
   error?: string | undefined;
   busy?: boolean | undefined;
   editing: boolean;
@@ -477,20 +478,16 @@ function AgentTemplateEditorModal({
   onSave: () => void;
 }) {
   const title = editing ? `编辑 ${form.name.trim() || "子代理模板"}` : "新建子代理模板";
-  const allowedTools = parseList(form.allowedTools);
   const disallowedTools = parseList(form.disallowedTools);
   const selectedMcpServers = parseList(form.mcpServers);
   const mcpTools = parseList(form.mcpTools);
-  const skills = parseList(form.skills);
   const capabilityForm = useMemo(
     () => ({
-      allowedTools: form.allowedTools,
       disallowedTools: form.disallowedTools,
       mcpServers: form.mcpServers,
       mcpTools: form.mcpTools,
-      skills: form.skills,
     }),
-    [form.allowedTools, form.disallowedTools, form.mcpServers, form.mcpTools, form.skills],
+    [form.disallowedTools, form.mcpServers, form.mcpTools],
   );
   const capabilityOptions = useMemo(
     () =>
@@ -498,15 +495,10 @@ function AgentTemplateEditorModal({
         templates,
         form: capabilityForm,
         mcpServers: mcpServerConfigs,
-        skillsSnapshot,
       }),
-    [templates, capabilityForm, mcpServerConfigs, skillsSnapshot],
+    [templates, capabilityForm, mcpServerConfigs],
   );
-  const activeToolPresetId = CLAUDE_TOOL_PRESETS.find(
-    (preset) =>
-      sameListValues(preset.allowedTools, allowedTools) &&
-      sameListValues(preset.disallowedTools, disallowedTools),
-  )?.id;
+  const activeToolPresetId = CLAUDE_TOOL_PRESETS.find((preset) => matchesToolPreset(form, preset))?.id;
 
   function patchForm(patch: Partial<AgentTemplateFormState>) {
     setForm((current) => (current ? { ...current, ...patch } : current));
@@ -514,16 +506,20 @@ function AgentTemplateEditorModal({
 
   function applyToolPreset(preset: ToolPresetOption) {
     patchForm({
-      allowedTools: formatFormList(preset.allowedTools),
       disallowedTools: formatFormList(preset.disallowedTools),
+      bashEnabled: preset.bashEnabled,
+      filesystemRead: preset.filesystemRead,
+      filesystemWrite: preset.filesystemWrite,
+      networkWebSearch: preset.networkWebSearch,
+      networkWebFetch: preset.networkWebFetch,
     });
   }
 
-  function toggleTool(target: "allowedTools" | "disallowedTools", value: string, checked: boolean) {
-    patchForm(toggleAgentTemplateToolSelection(form, target, value, checked));
+  function toggleDisallowedTool(value: string, checked: boolean) {
+    patchForm(toggleAgentTemplateDisallowedTool(form, value, checked));
   }
 
-  function toggleList(field: "mcpServers" | "mcpTools" | "skills", value: string, checked: boolean) {
+  function toggleList(field: "mcpServers" | "mcpTools", value: string, checked: boolean) {
     patchForm({ [field]: toggleAgentTemplateListValue(form[field], value, checked) });
   }
 
@@ -659,7 +655,7 @@ function AgentTemplateEditorModal({
             <aside className="models-agent-template-policy-panel">
               <div className="models-agent-template-policy-head">
                 <span className="models-route-profile-section-title">Claude Code 权限</span>
-                <p>用预设和选项配置工具、MCP 与 Skills，保存时仍写入模板权限策略。</p>
+                <p>用预设和选项配置 Write、Bash、Agent、MCP 等权限，其余工具默认允许。</p>
               </div>
 
               <div className="models-agent-template-preset-grid">
@@ -682,20 +678,101 @@ function AgentTemplateEditorModal({
                 ))}
               </div>
 
-              <SelectableTokenGroup
-                label="允许工具"
-                options={capabilityOptions.tools}
-                selectedValues={allowedTools}
-                disabled={busy}
-                onToggle={(value, checked) => toggleTool("allowedTools", value, checked)}
-              />
+              <label className="mcp-field">
+                <span className="mcp-field-label">Bash</span>
+                <label className="mcp-toggle" title={form.bashEnabled ? "已启用" : "已禁用"}>
+                  <input
+                    type="checkbox"
+                    checked={form.bashEnabled}
+                    disabled={busy}
+                    onChange={(event) => patchForm({ bashEnabled: event.target.checked })}
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">命令白名单</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.bashCommandAllowlist}
+                  disabled={busy}
+                  onChange={(event) => patchForm({ bashCommandAllowlist: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">命令黑名单</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.bashCommandDenylist}
+                  disabled={busy}
+                  onChange={(event) => patchForm({ bashCommandDenylist: event.target.value })}
+                />
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">文件读取</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.filesystemRead}
+                  disabled={busy}
+                  onChange={(event) =>
+                    patchForm({
+                      filesystemRead: event.target.value as AgentTemplateFormState["filesystemRead"],
+                    })
+                  }
+                >
+                  <option value="workspace">工作区</option>
+                  <option value="extra_dirs">工作区+扩展</option>
+                  <option value="none">禁用</option>
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">文件写入</span>
+                <select
+                  className="mcp-field-input"
+                  value={form.filesystemWrite}
+                  disabled={busy}
+                  onChange={(event) =>
+                    patchForm({
+                      filesystemWrite: event.target.value as AgentTemplateFormState["filesystemWrite"],
+                    })
+                  }
+                >
+                  <option value="workspace">工作区</option>
+                  <option value="none">禁用</option>
+                </select>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">WebSearch</span>
+                <label className="mcp-toggle" title={form.networkWebSearch ? "已启用" : "已禁用"}>
+                  <input
+                    type="checkbox"
+                    checked={form.networkWebSearch}
+                    disabled={busy}
+                    onChange={(event) => patchForm({ networkWebSearch: event.target.checked })}
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+              <label className="mcp-field">
+                <span className="mcp-field-label">WebFetch</span>
+                <label className="mcp-toggle" title={form.networkWebFetch ? "已启用" : "已禁用"}>
+                  <input
+                    type="checkbox"
+                    checked={form.networkWebFetch}
+                    disabled={busy}
+                    onChange={(event) => patchForm({ networkWebFetch: event.target.checked })}
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+
               <SelectableTokenGroup
                 label="禁用工具"
                 tone="danger"
                 options={capabilityOptions.tools}
                 selectedValues={disallowedTools}
                 disabled={busy}
-                onToggle={(value, checked) => toggleTool("disallowedTools", value, checked)}
+                onToggle={(value, checked) => toggleDisallowedTool(value, checked)}
               />
               <SelectableTokenGroup
                 label="MCP Servers"
@@ -712,14 +789,6 @@ function AgentTemplateEditorModal({
                 disabled={busy}
                 emptyText="当前模板库没有可选 MCP Tool。"
                 onToggle={(value, checked) => toggleList("mcpTools", value, checked)}
-              />
-              <SelectableTokenGroup
-                label="Skills"
-                options={capabilityOptions.skills}
-                selectedValues={skills}
-                disabled={busy}
-                emptyText="当前模板库没有可选 Skill。"
-                onToggle={(value, checked) => toggleList("skills", value, checked)}
               />
 
               <div className="models-agent-template-delegation-card">
@@ -904,11 +973,22 @@ function formatModelBinding(template: AgentTemplate): string {
 }
 
 function formatTools(template: AgentTemplate): string {
-  const count = template.defaultTools.allowed.length;
-  if (count === 0) {
-    return "无默认工具";
+  const disallowedCount = template.defaultTools.disallowed.length;
+  if (disallowedCount === 0) {
+    return "默认允许";
   }
-  return `${count} tools`;
+  return `禁用 ${disallowedCount} 项`;
+}
+
+function matchesToolPreset(form: AgentTemplateFormState, preset: ToolPresetOption): boolean {
+  return (
+    sameListValues(preset.disallowedTools, parseList(form.disallowedTools)) &&
+    form.bashEnabled === preset.bashEnabled &&
+    form.filesystemRead === preset.filesystemRead &&
+    form.filesystemWrite === preset.filesystemWrite &&
+    form.networkWebSearch === preset.networkWebSearch &&
+    form.networkWebFetch === preset.networkWebFetch
+  );
 }
 
 function formatFormList(values: readonly string[]): string {

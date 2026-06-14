@@ -22,17 +22,16 @@ export interface AgentProfileAgentFormState {
   modelsDevMappingProviderKey: string;
   modelsDevMappingModelId: string;
   enabled: boolean;
-  allowedTools: string;
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
+  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
   networkWebSearch: boolean;
   networkWebFetch: boolean;
-  skills: string;
 }
 
 export interface AgentProfileFormState {
@@ -49,17 +48,16 @@ export interface AgentProfileFormState {
   mainApiCompat: string;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
-  mainAllowedTools: string;
   mainDisallowedTools: string;
   mainMcpServers: string;
   mainMcpTools: string;
+  mainBashEnabled: boolean;
   mainBashCommandAllowlist: string;
   mainBashCommandDenylist: string;
   mainFilesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   mainFilesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
   mainNetworkWebSearch: boolean;
   mainNetworkWebFetch: boolean;
-  mainSkills: string;
   builtinExploreProviderId: string;
   builtinExploreModelId: string;
   builtinExploreThinkingEffort: string;
@@ -79,6 +77,7 @@ interface ProfileFormOptions {
 interface ToolPolicyFormFields {
   mcpServers: string;
   mcpTools: string;
+  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
@@ -119,18 +118,16 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSystemPromptPreset: "custom",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
-    mainAllowedTools:
-      "Agent, TaskList, TaskOutput, Skill, TaskCreate, TaskUpdate, TodoWrite, Read, Glob, Grep, LS, NotebookRead, Write, Edit, MultiEdit, NotebookEdit, Bash, WebSearch, WebFetch, AskUserQuestion",
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",
+    mainBashEnabled: true,
     mainBashCommandAllowlist: "",
     mainBashCommandDenylist: "",
     mainFilesystemRead: "workspace",
     mainFilesystemWrite: "workspace",
     mainNetworkWebSearch: true,
     mainNetworkWebFetch: true,
-    mainSkills: "",
     builtinExploreProviderId: provider?.id ?? "",
     builtinExploreModelId: provider?.defaultModel ?? "",
     builtinExploreThinkingEffort: "",
@@ -156,10 +153,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
-    mainAllowedTools: formatList(profile.mainAgent.tools.allowed),
     mainDisallowedTools: formatList(profile.mainAgent.tools.disallowed),
     ...mainToolPolicyFormFields(profile.mainAgent.tools),
-    mainSkills: formatList(profile.mainAgent.skills),
     builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
     builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
     builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
@@ -178,10 +173,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
       enabled: agent.enabled,
-      allowedTools: formatList(agent.tools.allowed),
       disallowedTools: formatList(agent.tools.disallowed),
       ...toolPolicyFormFields(agent.tools, agent.mcpServers),
-      skills: formatList(agent.skills),
     })),
   };
 }
@@ -213,10 +206,8 @@ export function createProfileAgentFormFromTemplate(
     modelsDevMappingProviderKey: "",
     modelsDevMappingModelId: "",
     enabled: true,
-    allowedTools: formatList(template.defaultTools.allowed),
     disallowedTools: formatList(template.defaultTools.disallowed),
     ...toolPolicyFormFields(template.defaultTools, template.mcpServers),
-    skills: formatList(template.skills),
   };
 }
 
@@ -279,7 +270,6 @@ export function buildOrchestrationProfileFromForm(
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
     const sourceTools = existingAgent?.tools ?? template.defaultTools;
     const sourceMcpServers = existingAgent?.mcpServers ?? template.mcpServers;
-    const sourceSkills = existingAgent?.skills ?? template.skills;
     return {
       agentKey,
       templateId: template.id,
@@ -291,7 +281,7 @@ export function buildOrchestrationProfileFromForm(
       }),
       tools: cloneToolPolicy(sourceTools),
       mcpServers: [...sourceMcpServers],
-      skills: [...sourceSkills],
+      skills: [],
       enabled: true,
     };
   });
@@ -310,11 +300,11 @@ export function buildOrchestrationProfileFromForm(
       modelRef: mainModelRef,
       tools: buildToolPolicyFromFormFields(
         sourceMainAgent?.tools ?? emptyToolPolicy(),
-        form.mainAllowedTools,
         form.mainDisallowedTools,
         {
           mcpServers: form.mainMcpServers,
           mcpTools: form.mainMcpTools,
+          bashEnabled: form.mainBashEnabled,
           bashCommandAllowlist: form.mainBashCommandAllowlist,
           bashCommandDenylist: form.mainBashCommandDenylist,
           filesystemRead: form.mainFilesystemRead,
@@ -323,7 +313,7 @@ export function buildOrchestrationProfileFromForm(
           networkWebFetch: form.mainNetworkWebFetch,
         },
       ),
-      skills: parseList(form.mainSkills),
+      skills: [],
     },
     builtinAgents: {
       explore: {
@@ -411,6 +401,7 @@ function mainToolPolicyFormFields(
   AgentProfileFormState,
   | "mainMcpServers"
   | "mainMcpTools"
+  | "mainBashEnabled"
   | "mainBashCommandAllowlist"
   | "mainBashCommandDenylist"
   | "mainFilesystemRead"
@@ -422,6 +413,7 @@ function mainToolPolicyFormFields(
   return {
     mainMcpServers: fields.mcpServers,
     mainMcpTools: fields.mcpTools,
+    mainBashEnabled: fields.bashEnabled,
     mainBashCommandAllowlist: fields.bashCommandAllowlist,
     mainBashCommandDenylist: fields.bashCommandDenylist,
     mainFilesystemRead: fields.filesystemRead,
@@ -432,43 +424,32 @@ function mainToolPolicyFormFields(
 }
 
 function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] = []): ToolPolicyFormFields {
-  const allowed = new Set(policy.allowed);
   const disallowed = new Set(policy.disallowed);
   return {
     mcpServers: formatList(mcpServers.length > 0 ? mcpServers : (policy.mcp?.allowedServers ?? [])),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
+    bashEnabled: policy.bash?.enabled === true && !disallowed.has("Bash"),
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
-    filesystemRead:
-      policy.filesystem?.read ??
-      (hasAllowedTool(allowed, disallowed, ["Read", "Glob", "Grep", "LS", "NotebookRead", "Bash"])
-        ? "workspace"
-        : "none"),
-    filesystemWrite:
-      policy.filesystem?.write ??
-      (hasAllowedTool(allowed, disallowed, ["Write", "Edit", "MultiEdit", "NotebookEdit"])
-        ? "workspace"
-        : "none"),
-    networkWebSearch: policy.network?.webSearch ?? (allowed.has("WebSearch") && !disallowed.has("WebSearch")),
-    networkWebFetch: policy.network?.webFetch ?? (allowed.has("WebFetch") && !disallowed.has("WebFetch")),
+    filesystemRead: policy.filesystem?.read ?? "workspace",
+    filesystemWrite: policy.filesystem?.write ?? "none",
+    networkWebSearch: policy.network?.webSearch ?? false,
+    networkWebFetch: policy.network?.webFetch ?? false,
   };
 }
 
 function buildToolPolicyFromFormFields(
   _base: ToolPolicy,
-  allowedRaw: string,
   disallowedRaw: string,
   fields: ToolPolicyFormFields,
 ): ToolPolicy {
-  const allowed = parseList(allowedRaw);
   const disallowed = parseList(disallowedRaw);
   const mcpServers = parseList(fields.mcpServers);
   const mcpTools = parseList(fields.mcpTools);
-  const bashEnabled = allowed.includes("Bash") && !disallowed.includes("Bash");
   return {
-    allowed,
+    allowed: [],
     disallowed,
-    ...(bashEnabled
+    ...(fields.bashEnabled && !disallowed.includes("Bash")
       ? {
           bash: {
             enabled: true,
@@ -493,14 +474,6 @@ function buildToolPolicyFromFormFields(
       webFetch: fields.networkWebFetch,
     },
   };
-}
-
-function hasAllowedTool(
-  allowed: ReadonlySet<string>,
-  disallowed: ReadonlySet<string>,
-  candidates: readonly string[],
-): boolean {
-  return candidates.some((candidate) => allowed.has(candidate) && !disallowed.has(candidate));
 }
 
 function normalizeAgentKey(raw: string): string {

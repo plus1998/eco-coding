@@ -39,6 +39,7 @@ export {
 import { evaluateBashPolicy, type BashReviewMode } from "../../bash-policy/src";
 import type { RuntimeAgentRole } from "../../shared/src";
 import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
+import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
@@ -672,13 +673,9 @@ export function createToolPermissionPreToolHook(
     if (structuredDecision) {
       return recordToolPermissionDecision(preInput, actor, structuredDecision, options);
     }
-    if (entry.allowed.length > 0 && !matchesAnyToolPattern(preInput.tool_name, entry.allowed)) {
-      return recordToolPermissionDecision(
-        preInput,
-        actor,
-        denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is not allowed for ${actor}.`),
-        options,
-      );
+    const mcpDecision = evaluateMcpToolPolicy(preInput, entry, { actor });
+    if (mcpDecision) {
+      return recordToolPermissionDecision(preInput, actor, mcpDecision, options);
     }
     return {};
   };
@@ -847,6 +844,33 @@ function evaluateNetworkToolPolicy(
   }
   if (input.tool_name === "WebFetch" && !entry.network.webFetch) {
     return denyTool("WebFetch", "WebFetch is disabled for this Eco agent.");
+  }
+  return undefined;
+}
+
+function evaluateMcpToolPolicy(
+  input: PreToolUseHookInput,
+  entry: EcoRuntimeToolPermissionEntry,
+  options: { actor?: "main" | string },
+): HookJSONOutput | undefined {
+  if (!input.tool_name.startsWith("mcp__")) {
+    return undefined;
+  }
+  const assignedServers = entry.mcpServers ?? [];
+  const actorLabel = options.actor ?? "this agent";
+  if (assignedServers.length === 0) {
+    return denyTool(input.tool_name, `MCP is not configured for ${actorLabel}.`);
+  }
+  const toolServer = parseMcpToolServerName(input.tool_name);
+  if (!toolServer) {
+    return denyTool(input.tool_name, `Tool "${input.tool_name}" is not a valid MCP tool for ${actorLabel}.`);
+  }
+  const assigned = new Set(assignedServers.map((server) => sanitizeMcpServerName(server)));
+  if (!assigned.has(toolServer)) {
+    return denyTool(
+      input.tool_name,
+      `MCP server "${toolServer}" is not assigned to ${actorLabel}.`,
+    );
   }
   return undefined;
 }

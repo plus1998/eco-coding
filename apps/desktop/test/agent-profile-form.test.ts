@@ -97,16 +97,16 @@ test("createBlankAgentProfileForm defaults the main agent to hands-on (write + b
   const form = createBlankAgentProfileForm({ providers: [provider] });
 
   expect(form.mainFilesystemWrite).toBe("workspace");
-  for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]) {
-    expect(form.mainAllowedTools).toContain(tool);
-  }
+  expect(form.mainBashEnabled).toBe(true);
 
   const built = buildOrchestrationProfileFromForm(form, {
     templates: [],
     nowIso: "2026-06-10T00:00:00.000Z",
   });
+  expect(built.mainAgent.tools.allowed).toEqual([]);
   expect(built.mainAgent.tools.filesystem).toEqual({ read: "workspace", write: "workspace" });
   expect(built.mainAgent.tools.bash).toMatchObject({ enabled: true });
+  expect(built.mainAgent.skills).toEqual([]);
 });
 
 test("createCopiedAgentProfileForm turns protected profiles into user-editable copies", () => {
@@ -125,7 +125,6 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
   const form = agentProfileToForm(profile());
   form.id = "user.research";
   form.source = "project";
-  form.mainSkills = "planning, citations";
   form.builtinExploreModelId = "model-explore-fast";
   form.guidancePrompt = "Delegate research only when it materially improves the answer.";
   form.agents.push(
@@ -137,7 +136,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
   const sourceVerifier = requireElement(form.agents, 1, "agent");
   sourceVerifier.agentKey = "source_verifier";
   sourceVerifier.displayName = "Source Verifier";
-  sourceVerifier.allowedTools = "Read, WebFetch";
+  sourceVerifier.networkWebFetch = true;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -151,7 +150,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
     updatedAt: "2026-06-08T00:00:00.000Z",
     mainAgent: {
       modelRef: { providerId: provider.id, modelId: "model-main" },
-      skills: ["planning", "citations"],
+      skills: [],
     },
     builtinAgents: {
       explore: {
@@ -171,7 +170,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
 test("buildOrchestrationProfileFromForm saves main tools but uses source subagent policies", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.structured";
-  form.mainAllowedTools = "Agent, Bash, WebFetch";
+  form.mainBashEnabled = true;
   form.mainDisallowedTools = "Write";
   form.mainMcpServers = "docs";
   form.mainMcpTools = "mcp__docs__search";
@@ -181,14 +180,6 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
   form.mainFilesystemWrite = "none";
   form.mainNetworkWebSearch = false;
   form.mainNetworkWebFetch = true;
-  const firstAgent = requireElement(form.agents, 0, "agent");
-  firstAgent.allowedTools = "Read, WebSearch, Bash";
-  firstAgent.disallowedTools = "Write";
-  firstAgent.mcpServers = "browser";
-  firstAgent.mcpTools = "mcp__browser__open";
-  firstAgent.bashCommandDenylist = "curl *";
-  firstAgent.filesystemWrite = "none";
-  firstAgent.networkWebFetch = false;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -196,7 +187,7 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
   });
 
   expect(built.mainAgent.tools).toMatchObject({
-    allowed: ["Agent", "Bash", "WebFetch"],
+    allowed: [],
     disallowed: ["Write"],
     bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
     mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
@@ -210,7 +201,7 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
     network: { webSearch: true, webFetch: false },
   });
   expect(built.agents[0]?.mcpServers).toEqual(["docs"]);
-  expect(built.agents[0]?.skills).toEqual(["citations"]);
+  expect(built.agents[0]?.skills).toEqual([]);
 });
 
 test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent keys", () => {

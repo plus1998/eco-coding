@@ -659,9 +659,18 @@ test("createNonEcoSubagentDenyPreToolHook denies unlisted dynamic Eco agent keys
 
 test("createToolPermissionPreToolHook enforces main and subagent tool policies", async () => {
   const hook = createToolPermissionPreToolHook({
-    main: { allowed: ["Agent", "Read", "mcp__docs__*"], disallowed: ["Bash"] },
+    main: {
+      allowed: ["Agent", "Read", "mcp__docs__*"],
+      disallowed: ["Bash"],
+      mcpServers: ["docs"],
+    },
     agents: {
-      eco_researcher: { allowed: ["WebSearch"], disallowed: ["Bash"] },
+      eco_researcher: {
+        allowed: ["WebSearch"],
+        disallowed: ["Bash", "Read"],
+        mcpServers: [],
+        network: { webSearch: true, webFetch: true },
+      },
     },
   });
   expect(hook).toBeDefined();
@@ -730,7 +739,39 @@ test("createToolPermissionPreToolHook enforces main and subagent tool policies",
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
-  expect(subagentRead.hookSpecificOutput?.permissionDecisionReason).toContain("not allowed");
+  expect(subagentRead.hookSpecificOutput?.permissionDecisionReason).toContain("disallowed");
+
+  const monitorTool = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Monitor",
+      tool_input: {},
+      tool_use_id: "tool_monitor",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_monitor",
+    { signal: new AbortController().signal },
+  );
+  expect(monitorTool.hookSpecificOutput).toBeUndefined();
+
+  const unconfiguredMcp = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "mcp__slack__post",
+      tool_input: {},
+      tool_use_id: "tool_slack",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies PreToolUseHookInput,
+    "tool_slack",
+    { signal: new AbortController().signal },
+  );
+  expect(unconfiguredMcp.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(unconfiguredMcp.hookSpecificOutput?.permissionDecisionReason).toContain("not assigned");
 
   const subagentSearch = await hook!(
     {
@@ -770,12 +811,14 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
     main: {
       allowed: ["Agent", "Read", "Edit", "Bash"],
       disallowed: [],
+      mcpServers: [],
       filesystem: { read: "workspace", write: "none" },
     },
     agents: {
       eco_coder: {
         allowed: ["Read", "Edit"],
         disallowed: [],
+        mcpServers: [],
         filesystem: { read: "workspace", write: "none" },
       },
     },

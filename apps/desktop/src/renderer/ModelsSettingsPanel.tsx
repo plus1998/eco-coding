@@ -83,7 +83,7 @@ import {
   buildAgentTemplateCapabilityOptions,
   parseList,
   toggleAgentTemplateListValue,
-  toggleAgentTemplateToolSelection,
+  toggleAgentTemplateDisallowedTool,
 } from "./agent-template-form";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
@@ -986,7 +986,6 @@ export function ModelsSettingsPanel({
             <SubagentSettingsSection
               templates={settings.agentTemplates}
               mcpServers={mcpServers}
-              skillsSnapshot={skillsSnapshot}
               registryDisabled={busy}
               onRegistryChange={refreshSettings}
               onSavingChange={onSavingChange}
@@ -1301,7 +1300,6 @@ export function ModelsSettingsPanel({
           providers={settings.providers}
           templates={settings.agentTemplates}
           mcpServers={mcpServers}
-          skillsSnapshot={skillsSnapshot}
           modelsForProvider={modelsForProvider}
           modelsErrorForProvider={modelsErrorForProvider}
           loadingForProvider={loadingForProvider}
@@ -1418,10 +1416,10 @@ function AgentProfileVersionModal({
 }
 
 interface AgentProfileToolPolicyFieldValues {
-  allowedTools: string;
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
+  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: AgentProfileAgentFormState["filesystemRead"];
@@ -1459,7 +1457,6 @@ function AgentProfileEditorModal({
   providers,
   templates,
   mcpServers,
-  skillsSnapshot,
   modelsForProvider,
   modelsErrorForProvider,
   loadingForProvider,
@@ -1481,7 +1478,6 @@ function AgentProfileEditorModal({
   providers: ProviderConfigView[];
   templates: AgentTemplate[];
   mcpServers: McpServerConfigView[];
-  skillsSnapshot?: SkillsListResult | undefined;
   modelsForProvider: (providerId: string) => UpstreamModelOption[];
   modelsErrorForProvider: (providerId: string) => string | undefined;
   loadingForProvider: (providerId: string) => boolean;
@@ -1587,10 +1583,10 @@ function AgentProfileEditorModal({
   function patchMainToolPolicy(toolPatch: Partial<AgentProfileToolPolicyFieldValues>) {
     setForm((current) => ({
       ...current,
-      ...(toolPatch.allowedTools !== undefined ? { mainAllowedTools: toolPatch.allowedTools } : {}),
       ...(toolPatch.disallowedTools !== undefined ? { mainDisallowedTools: toolPatch.disallowedTools } : {}),
       ...(toolPatch.mcpServers !== undefined ? { mainMcpServers: toolPatch.mcpServers } : {}),
       ...(toolPatch.mcpTools !== undefined ? { mainMcpTools: toolPatch.mcpTools } : {}),
+      ...(toolPatch.bashEnabled !== undefined ? { mainBashEnabled: toolPatch.bashEnabled } : {}),
       ...(toolPatch.bashCommandAllowlist !== undefined
         ? { mainBashCommandAllowlist: toolPatch.bashCommandAllowlist }
         : {}),
@@ -1896,7 +1892,6 @@ function AgentProfileEditorModal({
             template={selectedAgentTemplate}
             templates={templates}
             mcpServers={mcpServers}
-            skillsSnapshot={skillsSnapshot}
             providers={providers}
             modelsForProvider={modelsForProvider}
             modelsErrorForProvider={modelsErrorForProvider}
@@ -2044,7 +2039,6 @@ function AgentProfileNodeConfigModal({
   template,
   templates,
   mcpServers,
-  skillsSnapshot,
   providers,
   modelsForProvider,
   modelsErrorForProvider,
@@ -2067,7 +2061,6 @@ function AgentProfileNodeConfigModal({
   template?: AgentTemplate | undefined;
   templates: AgentTemplate[];
   mcpServers: McpServerConfigView[];
-  skillsSnapshot?: SkillsListResult | undefined;
   providers: ProviderConfigView[];
   modelsForProvider: (providerId: string) => UpstreamModelOption[];
   modelsErrorForProvider: (providerId: string) => string | undefined;
@@ -2109,19 +2102,11 @@ function AgentProfileNodeConfigModal({
       : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
   const mainCapabilityForm = useMemo(
     () => ({
-      allowedTools: form.mainAllowedTools,
       disallowedTools: form.mainDisallowedTools,
       mcpServers: form.mainMcpServers,
       mcpTools: form.mainMcpTools,
-      skills: form.mainSkills,
     }),
-    [
-      form.mainAllowedTools,
-      form.mainDisallowedTools,
-      form.mainMcpServers,
-      form.mainMcpTools,
-      form.mainSkills,
-    ],
+    [form.mainDisallowedTools, form.mainMcpServers, form.mainMcpTools],
   );
   const mainCapabilityOptions = useMemo(
     () =>
@@ -2129,9 +2114,8 @@ function AgentProfileNodeConfigModal({
         templates,
         form: mainCapabilityForm,
         mcpServers,
-        skillsSnapshot,
       }),
-    [templates, mainCapabilityForm, mcpServers, skillsSnapshot],
+    [templates, mainCapabilityForm, mcpServers],
   );
 
   if (!isMainNode && !isBuiltinExploreNode && (!agent || agentIndex < 0)) {
@@ -2324,10 +2308,10 @@ function AgentProfileNodeConfigModal({
                 disabled={busy}
                 capabilityOptions={mainCapabilityOptions}
                 values={{
-                  allowedTools: form.mainAllowedTools,
                   disallowedTools: form.mainDisallowedTools,
                   mcpServers: form.mainMcpServers,
                   mcpTools: form.mainMcpTools,
+                  bashEnabled: form.mainBashEnabled,
                   bashCommandAllowlist: form.mainBashCommandAllowlist,
                   bashCommandDenylist: form.mainBashCommandDenylist,
                   filesystemRead: form.mainFilesystemRead,
@@ -2336,18 +2320,6 @@ function AgentProfileNodeConfigModal({
                   networkWebFetch: form.mainNetworkWebFetch,
                 }}
                 onChange={onPatchMainToolPolicy}
-              />
-              <AgentProfileSelectableTokenGroup
-                label="Skills"
-                options={mainCapabilityOptions.skills}
-                selectedValues={parseList(form.mainSkills)}
-                disabled={busy}
-                emptyText="没有 SDK 可加载 Skills。"
-                onToggle={(value, checked) =>
-                  onPatchProfile({
-                    mainSkills: toggleAgentTemplateListValue(form.mainSkills, value, checked),
-                  })
-                }
               />
             </>
           ) : isBuiltinExploreNode ? (
@@ -2590,25 +2562,18 @@ function AgentProfileToolPolicyFields({
   return (
     <div className="models-agent-profile-tool-policy">
       <div className="models-agent-template-form-grid">
-        <AgentProfileSelectableTokenGroup
-          label="允许工具"
-          options={capabilityOptions.tools}
-          selectedValues={parseList(values.allowedTools)}
-          disabled={disabled}
-          onToggle={(value, checked) =>
-            onChange(
-              toggleAgentTemplateToolSelection(
-                {
-                  allowedTools: values.allowedTools,
-                  disallowedTools: values.disallowedTools,
-                },
-                "allowedTools",
-                value,
-                checked,
-              ),
-            )
-          }
-        />
+        <label className="mcp-field models-toggle-field">
+          <span className="mcp-field-label">Bash</span>
+          <label className="mcp-toggle" title={values.bashEnabled ? "已启用" : "已禁用"}>
+            <input
+              type="checkbox"
+              checked={values.bashEnabled}
+              disabled={disabled}
+              onChange={(event) => onChange({ bashEnabled: event.target.checked })}
+            />
+            <span className="mcp-toggle-track" aria-hidden />
+          </label>
+        </label>
         <AgentProfileSelectableTokenGroup
           label="禁用工具"
           tone="danger"
@@ -2616,17 +2581,13 @@ function AgentProfileToolPolicyFields({
           selectedValues={parseList(values.disallowedTools)}
           disabled={disabled}
           onToggle={(value, checked) =>
-            onChange(
-              toggleAgentTemplateToolSelection(
-                {
-                  allowedTools: values.allowedTools,
-                  disallowedTools: values.disallowedTools,
-                },
-                "disallowedTools",
+            onChange({
+              disallowedTools: toggleAgentTemplateDisallowedTool(
+                { disallowedTools: values.disallowedTools },
                 value,
                 checked,
-              ),
-            )
+              ).disallowedTools,
+            })
           }
         />
         <AgentProfileSelectableTokenGroup

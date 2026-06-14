@@ -36,8 +36,11 @@ test("built-in agent templates define the default coding library", () => {
   expect(templates.filter((template) => template.domain === "coding")).toHaveLength(4);
   expect(templates.every((template) => template.source === "built_in")).toBe(true);
   expect(
-    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.allowed,
-  ).toContain("Write");
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.coder)?.defaultTools.filesystem?.write,
+  ).toBe("workspace");
+  expect(
+    templates.find((template) => template.id === CODING_AGENT_TEMPLATE_IDS.architect)?.defaultTools.filesystem?.write,
+  ).toBe("none");
 });
 
 test("built-in agent registry contains only coding templates", () => {
@@ -55,7 +58,8 @@ test("built-in preset catalog defines only coding preset", () => {
   expect(presets.map((preset) => preset.id)).toEqual(["coding"]);
   for (const preset of presets) {
     expect(preset.mainAgentPrompt.trim().length).toBeGreaterThan(40);
-    expect(preset.mainAgentTools.allowed).toContain("Agent");
+    expect(preset.mainAgentTools.bash?.enabled).toBe(true);
+    expect(preset.mainAgentTools.filesystem?.write).toBe("workspace");
     expect(preset.defaultAgents.length).toBeGreaterThanOrEqual(3);
     expect(preset.examples).toHaveLength(3);
     expect(preset.evals).toHaveLength(3);
@@ -108,9 +112,10 @@ test("built-in preset can be copied into a runnable user orchestration profile",
   ]);
   expect(profile.agents.every((agent) => agent.enabled)).toBe(true);
   expect(profile.agents.every((agent) => agent.modelRef.modelId === "coding-model")).toBe(true);
-  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.tools.allowed).toContain(
-    "Write",
+  expect(profile.agents.find((agent) => agent.agentKey === "coder")?.tools.filesystem?.write).toBe(
+    "workspace",
   );
+  expect(profile.mainAgent.tools.bash?.enabled).toBe(true);
 });
 
 test("route profile migrates to a coding orchestration profile", () => {

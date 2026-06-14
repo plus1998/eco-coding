@@ -1592,8 +1592,8 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
     "TaskCreate",
     "TaskUpdate",
     "TodoWrite",
-    "mcp__sources__quote",
     "mcp__browser__*",
+    "mcp__sources__*",
     "mcp__browser__open",
   ]);
 
@@ -1606,11 +1606,11 @@ test("ClaudeAgentSdkDriver forwards universal agent registry without coding prom
   expect(agents.eco_researcher).toMatchObject({
     // Without a researcher route in test `routes`, resolveSdkModelId falls back to planner.
     model: "claude-opus-4",
-    tools: ["WebSearch", "WebFetch", "mcp__sources__*", "mcp__browser__*", "Skill"],
+    tools: ["WebSearch", "WebFetch"],
     disallowedTools: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],
     prompt: "CHILD SECRET PROMPT: find source-backed evidence.",
     mcpServers: ["sources", "browser"],
-    skills: ["citation", "pdf", "workspace-research"],
+    skills: ["workspace-research"],
   });
 
   const systemPrompt = options.systemPrompt as string;

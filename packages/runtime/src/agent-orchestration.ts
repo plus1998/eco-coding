@@ -118,9 +118,76 @@ export interface EcoResolvedAgentDefinitionSet {
 export interface EcoRuntimeToolPermissionEntry {
   allowed: string[];
   disallowed: string[];
+  /** Sanitized MCP server names assigned to this actor; any tool from these servers is allowed. */
+  mcpServers: string[];
   bash?: EcoToolPolicy["bash"];
   filesystem?: EcoToolPolicy["filesystem"];
   network?: EcoToolPolicy["network"];
+}
+
+export function sanitizeMcpServerName(name: string): string {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "mcp-server";
+}
+
+export function parseMcpToolServerName(toolName: string): string | undefined {
+  if (!toolName.startsWith("mcp__")) {
+    return undefined;
+  }
+  const rest = toolName.slice(5);
+  const separatorIndex = rest.indexOf("__");
+  if (separatorIndex <= 0) {
+    return undefined;
+  }
+  return rest.slice(0, separatorIndex);
+}
+
+export function mcpAutoApprovePatternsForServers(servers: readonly string[]): string[] {
+  return uniqueToolPatterns(servers.map((server) => `mcp__${sanitizeMcpServerName(server)}__*`));
+}
+
+export function resolveAssignedMcpServers(
+  policy: EcoToolPolicy,
+  extraServerNames: readonly string[] = [],
+): string[] {
+  const fromTools = (policy.mcp?.allowedTools ?? [])
+    .map((pattern) => parseMcpToolServerName(pattern))
+    .filter((server): server is string => Boolean(server));
+  const servers = [...(policy.mcp?.allowedServers ?? []), ...fromTools, ...extraServerNames];
+  return [...new Set(servers.map((server) => sanitizeMcpServerName(server)).filter(Boolean))];
+}
+
+export function collectProfileAssignedMcpServers(
+  profile: EcoOrchestrationProfileConfig,
+  templates: readonly EcoAgentTemplateConfig[],
+): string[] {
+  const templateById = new Map(templates.map((template) => [template.id, template]));
+  const servers = new Set<string>();
+
+  for (const server of resolveAssignedMcpServers(profile.mainAgent.tools)) {
+    servers.add(server);
+  }
+
+  for (const agent of profile.agents) {
+    if (!agent.enabled) {
+      continue;
+    }
+    for (const server of resolveAssignedMcpServers(agent.tools, agent.mcpServers)) {
+      servers.add(server);
+    }
+    const template = templateById.get(agent.templateId);
+    if (template) {
+      for (const server of template.mcpServers.map((name) => sanitizeMcpServerName(name))) {
+        servers.add(server);
+      }
+    }
+  }
+
+  return [...servers];
 }
 
 export interface EcoRuntimeToolPermissionPolicy {
@@ -134,17 +201,41 @@ export const SDK_FILESYSTEM_WRITE_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "N
 export const SDK_DELEGATION_SUPPORT_TOOL_NAMES = ["TaskList", "TaskOutput"] as const;
 export const SDK_TASK_PROGRESS_TOOL_NAMES = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
 
+const EXPLORE_DISALLOWED_TOOLS = [
+  "Agent",
+  "Task",
+  "TaskList",
+  "TaskOutput",
+  "Skill",
+  "Bash",
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "WebSearch",
+  "WebFetch",
+  "AskUserQuestion",
+  ...SDK_TASK_PROGRESS_TOOL_NAMES,
+] as const;
+
 const BUILTIN_EXPLORE_TOOL_POLICY: EcoToolPolicy = {
-  allowed: ["Read", "Glob", "Grep"],
-  disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+  allowed: [],
+  disallowed: [...EXPLORE_DISALLOWED_TOOLS],
+  bash: { enabled: false },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };
 
 /** Read-only policy for Claude SDK built-in Plan subagent during native Plan Mode. */
 export const BUILTIN_PLAN_TOOL_POLICY: EcoToolPolicy = {
-  allowed: ["Read", "Glob", "Grep", SDK_SKILL_TOOL_NAME, "WebSearch", "WebFetch"],
-  disallowed: ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"],
+  allowed: [],
+  disallowed: [
+    "Agent",
+    "Task",
+    "TaskList",
+    "TaskOutput",
+    "Bash",
+    ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+    ...SDK_TASK_PROGRESS_TOOL_NAMES,
+    "AskUserQuestion",
+  ],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
@@ -247,11 +338,15 @@ export function buildToolPermissionPolicyFromProfile(
     ? capMainAgentToolPolicyForPhase(profile.mainAgent.tools, cappedMainAllowedTools)
     : profile.mainAgent.tools;
   return {
-    main: normalizeToolPermissionEntry(mainToolPolicy, [
-      ...(cappedMainAllowedTools ? [] : (options.mainAllowedTools ?? [])),
-      SDK_SKILL_TOOL_NAME,
-      ...SDK_TASK_PROGRESS_TOOL_NAMES,
-    ]),
+    main: normalizeToolPermissionEntry(
+      mainToolPolicy,
+      [
+        ...(cappedMainAllowedTools ? [] : (options.mainAllowedTools ?? [])),
+        SDK_SKILL_TOOL_NAME,
+        ...SDK_TASK_PROGRESS_TOOL_NAMES,
+      ],
+      resolveAssignedMcpServers(mainToolPolicy),
+    ),
     agents,
   };
 }
@@ -341,6 +436,9 @@ export function resolveMainAgentAllowedTools(
   const phaseBlocksWrites = !hasAnyToolPattern(phaseToolSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES);
   const phaseBlocksBash = !phaseToolSet.has("Bash");
   const profileExpanded = allowedToolPatternsFromPolicy(profile.mainAgent.tools, extras);
+  const mainMcpAutoApprove = mcpAutoApprovePatternsForServers(
+    resolveAssignedMcpServers(profile.mainAgent.tools),
+  );
   const profileExtras = profileExpanded.filter((tool) => {
     if (phaseToolSet.has(tool)) {
       return false;
@@ -353,7 +451,7 @@ export function resolveMainAgentAllowedTools(
     }
     return true;
   });
-  return uniqueToolPatterns([...phaseExpanded, ...profileExtras]);
+  return uniqueToolPatterns([...phaseExpanded, ...profileExtras, ...mainMcpAutoApprove]);
 }
 
 export function sdkAgentKeyForProfileAgent(agentKey: string): string {
@@ -370,22 +468,18 @@ export function sdkAgentKeyForProfileAgent(agentKey: string): string {
 function buildSdkAgentDefinition(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
-  extraSkills: readonly string[] = [],
+  sessionSkills: readonly string[] = [],
   resolveModelId?: (agentKey: string, modelId: string) => string,
 ): Record<string, unknown> {
   const toolPolicy = applyDelegationToolPolicy(
     resolveAgentToolPolicy(agent, template),
     template.allowDelegation,
   );
-  const mcpServers = [
-    ...new Set([...template.mcpServers, ...agent.mcpServers, ...(toolPolicy.mcp?.allowedServers ?? [])]),
-  ];
-  const skills = [...new Set([...template.skills, ...agent.skills, ...extraSkills])];
-  const tools = allowedToolPatternsFromPolicy(toolPolicy, [
-    ...mcpServers.map((server) => `mcp__${server}__*`),
-    ...(skills.length > 0 ? [SDK_SKILL_TOOL_NAME] : []),
-  ]);
+  const mcpServers = resolveAssignedMcpServers(toolPolicy, [...template.mcpServers, ...agent.mcpServers]);
+  const tools =
+    toolPolicy.allowed.length > 0 ? allowedToolPatternsFromPolicy(toolPolicy) : [];
   const disallowedTools = toolPolicy.disallowed;
+  const skills = sessionSkills.length > 0 ? [...sessionSkills] : [];
   return {
     description: buildAgentDescription(agent, template),
     ...(tools.length > 0 ? { tools } : {}),
@@ -422,22 +516,22 @@ function resolveAgentToolPermission(
   template: EcoAgentTemplateConfig,
 ): EcoRuntimeToolPermissionEntry {
   const tools = applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation);
-  const mcpServers = [
-    ...new Set([...template.mcpServers, ...agent.mcpServers, ...(tools.mcp?.allowedServers ?? [])]),
-  ];
-  return normalizeToolPermissionEntry(tools, [
-    ...mcpServers.map((server) => `mcp__${server}__*`),
-    SDK_SKILL_TOOL_NAME,
-  ]);
+  return normalizeToolPermissionEntry(
+    tools,
+    [SDK_SKILL_TOOL_NAME],
+    resolveAssignedMcpServers(tools, [...template.mcpServers, ...agent.mcpServers]),
+  );
 }
 
 function normalizeToolPermissionEntry(
   policy: EcoToolPolicy,
   extraAllowed: readonly string[] = [],
+  assignedMcpServers: readonly string[] = [],
 ): EcoRuntimeToolPermissionEntry {
   return {
     allowed: allowedToolPatternsFromPolicy(policy, extraAllowed),
     disallowed: uniqueToolPatterns(policy.disallowed),
+    mcpServers: resolveAssignedMcpServers(policy, assignedMcpServers),
     ...(policy.bash && {
       bash: {
         ...policy.bash,
@@ -454,13 +548,23 @@ function normalizeToolPermissionEntry(
   };
 }
 
+function hasConfiguredToolPolicy(policy: EcoToolPolicy): boolean {
+  return (
+    policy.allowed.length > 0 ||
+    policy.disallowed.length > 0 ||
+    policy.bash !== undefined ||
+    policy.filesystem !== undefined ||
+    policy.network !== undefined ||
+    (policy.mcp?.allowedServers.length ?? 0) > 0 ||
+    (policy.mcp?.allowedTools.length ?? 0) > 0
+  );
+}
+
 function resolveAgentToolPolicy(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
 ): EcoToolPolicy {
-  return agent.tools.allowed.length > 0 || agent.tools.disallowed.length > 0
-    ? agent.tools
-    : template.defaultTools;
+  return hasConfiguredToolPolicy(agent.tools) ? agent.tools : template.defaultTools;
 }
 
 function applyDelegationToolPolicy(policy: EcoToolPolicy, allowDelegation: boolean): EcoToolPolicy {
@@ -483,12 +587,7 @@ function allowedToolPatternsFromPolicy(
   policy: EcoToolPolicy,
   extraAllowed: readonly string[] = [],
 ): string[] {
-  const base = uniqueToolPatterns([
-    ...policy.allowed,
-    ...extraAllowed,
-    ...(policy.mcp?.allowedTools ?? []),
-    ...(policy.mcp?.allowedServers.map((server) => `mcp__${server}__*`) ?? []),
-  ]);
+  const base = uniqueToolPatterns([...policy.allowed, ...extraAllowed]);
   return uniqueToolPatterns([...base, ...relatedClaudeToolPatterns(base)]);
 }
 
@@ -523,11 +622,15 @@ function capMainAgentToolPolicyForPhase(
   const filesystem = base.filesystem ?? { read: "workspace" as const, write: "workspace" as const };
   return {
     ...base,
-    allowed: [...mainAllowedTools],
+    allowed: [],
     ...(hasAnyToolPattern(allowedSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES)
       ? { filesystem }
       : { filesystem: { ...filesystem, write: "none" as const } }),
-    ...(base.bash && !allowedSet.has("Bash") ? { bash: { ...base.bash, enabled: false } } : {}),
+    ...(base.bash
+      ? allowedSet.has("Bash")
+        ? { bash: base.bash }
+        : { bash: { ...base.bash, enabled: false } }
+      : {}),
     ...(base.network
       ? {
           network: {

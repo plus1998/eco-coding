@@ -44,6 +44,47 @@ export interface McpSdkConfig {
   allowedTools: string[];
 }
 
+export function filterMcpSdkConfigByAssignedServers(
+  config: McpSdkConfig,
+  assignedServerNames: readonly string[],
+): McpSdkConfig {
+  if (assignedServerNames.length === 0) {
+    return { mcpServers: {}, allowedTools: [] };
+  }
+  const assigned = new Set(assignedServerNames.map((server) => sanitizeMcpServerName(server)));
+  const mcpServers: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(config.mcpServers)) {
+    if (assigned.has(key)) {
+      mcpServers[key] = entry;
+    }
+  }
+  const allowedTools: string[] = [];
+  for (const serverKey of assigned) {
+    if (!mcpServers[serverKey]) {
+      continue;
+    }
+    const fromConfig = config.allowedTools.filter((pattern) => mcpPatternMatchesServer(pattern, serverKey));
+    if (fromConfig.length > 0) {
+      allowedTools.push(...fromConfig);
+    } else {
+      allowedTools.push(`mcp__${serverKey}__*`);
+    }
+  }
+  return { mcpServers, allowedTools: [...new Set(allowedTools)] };
+}
+
+function mcpPatternMatchesServer(pattern: string, serverKey: string): boolean {
+  if (!pattern.startsWith("mcp__")) {
+    return false;
+  }
+  const rest = pattern.slice(5);
+  const separatorIndex = rest.indexOf("__");
+  if (separatorIndex <= 0) {
+    return false;
+  }
+  return rest.slice(0, separatorIndex) === serverKey;
+}
+
 export function buildMcpSdkConfig(servers: readonly McpServerConfigView[]): McpSdkConfig {
   const mcpServers: Record<string, unknown> = {};
   const allowedTools: string[] = [];

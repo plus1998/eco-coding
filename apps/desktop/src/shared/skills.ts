@@ -113,7 +113,6 @@ export function resolveSdkSessionSkillConfig(
   scope: SdkSessionSkillsScope,
   input: {
     projectNames: readonly string[];
-    profileMainSkills: readonly string[];
     explicitUser: readonly string[];
   },
 ): { settingSources: Array<"user" | "project">; skills: string[] } {
@@ -126,7 +125,7 @@ export function resolveSdkSessionSkillConfig(
   }
   return {
     settingSources: ["project"],
-    skills: mergeSkillNames(input.projectNames, input.profileMainSkills, input.explicitUser),
+    skills: mergeSkillNames(input.projectNames, input.explicitUser),
   };
 }
 

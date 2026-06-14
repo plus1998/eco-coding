@@ -136,7 +136,10 @@ export function runPresetE2ETaskScenario(
     const policy = buildToolPermissionPolicyFromProfile(scenario.profile, templates, {
       agentKeys: runtimeAgentKeys,
     });
-    if (enabledAgents.length > 0 && !policy.main.allowed.includes("Agent")) {
+    const agentBlocked = policy.main.disallowed.some(
+      (pattern) => pattern === "Agent" || pattern.startsWith("Agent("),
+    );
+    if (enabledAgents.length > 0 && agentBlocked) {
       errors.push("Main agent must allow Agent for E2E task execution.");
     }
     for (const sdkKey of runtimeAgentKeys) {
