@@ -37,6 +37,7 @@ import {
   type BashApprovalRequest,
   type ClarificationRequest,
   type CoderTodoItem,
+  deriveSubagentEnabledFromProfile,
   getDefaultAgentProfileId,
   type LinkAgentsSkillsResult,
   type McpServerConfigInput,
@@ -1817,6 +1818,14 @@ function App() {
       ...composerRuntimeConfig,
       routeProfileId: agentProfileId,
       agentProfileId,
+      ...(profile
+        ? {
+            subagentEnabled: deriveSubagentEnabledFromProfile(
+              profile,
+              composerRuntimeConfig.subagentEnabled,
+            ),
+          }
+        : {}),
     };
     await persistComposerRuntimeConfig(next);
     setComposerRoutePopoverOpen(false);

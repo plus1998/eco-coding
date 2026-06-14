@@ -7,6 +7,7 @@ import {
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  deriveSubagentEnabledFromProfile,
   getDefaultAgentProfileId,
   getDefaultRouteProfileId,
   getRoutesForProfile,
@@ -231,6 +232,15 @@ test("runtimeRoleRoutesFromAgentProfile includes fixed built-in Explore route", 
     modelId: "gpt-5.4-mini",
   });
   expect(profile.agents.map((agent) => agent.agentKey)).not.toContain("explore");
+});
+
+test("deriveSubagentEnabledFromProfile disables roles missing from the profile", () => {
+  const profile = {
+    ...genericProfile,
+    agents: genericProfile.agents.filter((agent) => agent.agentKey !== "architect"),
+  };
+  expect(deriveSubagentEnabledFromProfile(profile).architect).toBe(false);
+  expect(deriveSubagentEnabledFromProfile(profile).coder).toBe(true);
 });
 
 test("serialize and parse thread runtime config round-trip", () => {

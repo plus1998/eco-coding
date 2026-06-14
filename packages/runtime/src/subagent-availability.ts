@@ -106,6 +106,30 @@ export function isSubagentEnabled(availability: SubagentAvailability, role: Suba
   return availability[role];
 }
 
+export interface SubagentRouteLike {
+  role: string;
+  primary: { modelId: string };
+}
+
+/** Disable optional subagents that have no resolved model route. Explore stays managed separately. */
+export function effectiveSubagentAvailability(
+  availability: SubagentAvailability,
+  routes: readonly SubagentRouteLike[],
+): SubagentAvailability {
+  const routeByRole = new Map(routes.map((route) => [route.role, route]));
+  const effective = { ...availability };
+  for (const role of SUBAGENT_ROLES) {
+    if (role === "explore" || !isSubagentEnabled(effective, role)) {
+      continue;
+    }
+    const modelId = routeByRole.get(role)?.primary.modelId?.trim();
+    if (!modelId) {
+      effective[role] = false;
+    }
+  }
+  return effective;
+}
+
 export function listEnabledSubagents(availability: SubagentAvailability): SubagentRole[] {
   return SUBAGENT_ROLES.filter((role) => availability[role]);
 }

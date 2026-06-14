@@ -289,6 +289,7 @@ export interface RouteProfileInput {
 
 export {
   buildThreadRuntimeConfigFromDefaults,
+  deriveSubagentEnabledFromProfile,
   getAgentProfileById,
   getDefaultAgentProfileId,
   getDefaultRouteProfileId,

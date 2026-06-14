@@ -177,6 +177,29 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   };
 }
 
+/** Align runtime subagent toggles with agents actually present in the selected profile. */
+export function deriveSubagentEnabledFromProfile(
+  profile: OrchestrationProfile,
+  existing?: Partial<SubagentEnabledSettings>,
+): SubagentEnabledSettings {
+  const subagentEnabled = defaultSubagentAvailability();
+  for (const role of SUBAGENT_ROLES) {
+    if (role === "explore") {
+      subagentEnabled.explore = true;
+      continue;
+    }
+    const agent = profile.agents.find((candidate) => candidate.agentKey === role);
+    if (!agent?.enabled) {
+      subagentEnabled[role] = false;
+      continue;
+    }
+    if (typeof existing?.[role] === "boolean") {
+      subagentEnabled[role] = existing[role];
+    }
+  }
+  return subagentEnabled;
+}
+
 function normalizeBashReviewMode(value: unknown): BashReviewMode {
   if (value === "auto" || value === "allow_all" || value === "always") {
     return value;
@@ -200,7 +223,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   return {
     routeProfileId: agentProfile.id,
     agentProfileId: agentProfile.id,
-    subagentEnabled: defaultSubagentAvailability(),
+    subagentEnabled: deriveSubagentEnabledFromProfile(agentProfile),
     planModeEnabled: input.workflowDefaults.planModeEnabled,
     bashReviewMode: "always",
   };

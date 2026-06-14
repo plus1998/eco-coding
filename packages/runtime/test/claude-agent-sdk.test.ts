@@ -597,6 +597,13 @@ test("createExecutionAgentDefinitions omits every disabled role", () => {
   expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("tester"));
 });
 
+test("createExecutionAgentDefinitions skips architect when no route is configured", () => {
+  const partialRoutes = routes.filter((route) => route.role !== "architect");
+  const definitions = createExecutionAgentDefinitions(partialRoutes);
+  expect(definitions).not.toHaveProperty(ecoSubagentKeyForRole("architect"));
+  expect(definitions).toHaveProperty(ecoSubagentKeyForRole("coder"));
+});
+
 test("buildExecutePhaseSystemAppend skips reviewer and tester when disabled", () => {
   const append = buildExecutePhaseSystemAppend({
     explore: true,

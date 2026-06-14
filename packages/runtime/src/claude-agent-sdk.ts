@@ -89,7 +89,9 @@ import {
   defaultSubagentAvailability,
   type EcoOrchestrationMode,
   ecoSubagentKeyForRole,
+  effectiveSubagentAvailability,
   filterAgentDefinitions,
+  isSubagentEnabled,
   isSubagentRole,
   normalizeSubagentAvailability,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
@@ -374,6 +376,13 @@ export function resolveSubagentAvailabilityFromSession(session?: EcoSdkSessionOp
   return normalizeSubagentAvailability(session?.enabledSubagents);
 }
 
+export function resolveEffectiveSubagentAvailability(
+  session: EcoSdkSessionOptions | undefined,
+  routes: readonly ResolvedModelRoute[],
+): SubagentAvailability {
+  return effectiveSubagentAvailability(resolveSubagentAvailabilityFromSession(session), routes);
+}
+
 export function resolveAgentSkills(
   role: RuntimeAgentRole,
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
@@ -618,7 +627,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   async *runExecution(input: AgentRuntimeRunInput, planning: EcoPlanningContext): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【2/2】子代理执行");
     const isResume = Boolean(input.resume?.resumeSessionId);
@@ -669,7 +678,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   async *runQuestion(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     yield createPhaseBoundaryEvent(input.threadId, "answer", "【问答】只读回答");
     yield* this.runSingleSession(input, {
       prompt: universalProfile
@@ -748,7 +757,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const universalProfile = usesUniversalAgentProfile(input);
     if (this.options.orchestration === "autonomous") {
       if (mode === "question") {
-        const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+        const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
         yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
         yield* this.runSingleSession(input, {
           prompt: universalProfile
@@ -765,7 +774,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         return;
       }
 
-      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
       const continuationPrompt =
         mode === "execution" && planning
           ? universalProfile
@@ -810,7 +819,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     if (mode === "planning") {
-      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
       yield createPhaseBoundaryEvent(input.threadId, "plan", "【续聊】分析与制定计划");
       const planningResumableAppend = formatResumableSubagentsAppend(input.resumableSubagents ?? []);
       const planningPhaseAppend = `${
@@ -845,7 +854,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     if (mode === "question") {
-      const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+      const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
       yield createPhaseBoundaryEvent(input.threadId, "answer", "【续聊】只读回答");
       yield* this.runSingleSession(input, {
         prompt: universalProfile
@@ -862,7 +871,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       return;
     }
 
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield createPhaseBoundaryEvent(input.threadId, "execute", "【续聊】继续执行");
     const planFile = planning?.planFilePath?.trim()
@@ -902,7 +911,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   private async *runAutonomous(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     const handsOn = resolveMainAgentHandsOnCapability(input.agentRegistry?.profile);
     yield* this.runSingleSession(input, {
       prompt: input.prompt,
@@ -918,7 +927,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   private async *runPlanning(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
     const universalProfile = usesUniversalAgentProfile(input);
-    const availability = resolveSubagentAvailabilityFromSession(input.sdkSession);
+    const availability = resolveEffectiveSubagentAvailability(input.sdkSession, input.routes);
     yield createPhaseBoundaryEvent(input.threadId, "plan", "【1/2】分析与制定计划");
     const planningPhaseAppend = universalProfile
       ? buildUniversalPhaseAppend("plan")
@@ -1101,7 +1110,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
               ...(toolPermissions ? { toolPermissions } : {}),
               ...(toolPermissions ? { onToolPermissionDecision } : {}),
               subagentAvailability:
-                phase.availability ?? resolveSubagentAvailabilityFromSession(input.sdkSession),
+                phase.availability ?? resolveEffectiveSubagentAvailability(input.sdkSession, input.routes),
             }),
           }
         : {}),
@@ -1352,19 +1361,20 @@ export function createPlanningAgentDefinitions(
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
+  const effective = effectiveSubagentAvailability(availability, routes);
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const architectKey = ecoSubagentKeyForRole("architect");
-  const definitions = {
+  const definitions: Record<string, unknown> = {
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-    [architectKey]: {
+  };
+  if (isSubagentEnabled(effective, "architect")) {
+    definitions[ecoSubagentKeyForRole("architect")] = {
       description: planningArchitectDescription,
       ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
       prompt: planningArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
-    },
-  };
-
-  return filterAgentDefinitions(definitions, availability);
+    };
+  }
+  return definitions;
 }
 
 export function createQuestionAgentDefinitions(
@@ -1387,41 +1397,44 @@ export function createExecutionAgentDefinitions(
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = normalizeSubagentAvailability(),
 ): Record<string, unknown> {
+  const effective = effectiveSubagentAvailability(availability, routes);
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const architectKey = ecoSubagentKeyForRole("architect");
-  const coderKey = ecoSubagentKeyForRole("coder");
-  const reviewerKey = ecoSubagentKeyForRole("reviewer");
-  const testerKey = ecoSubagentKeyForRole("tester");
-
-  const definitions = {
+  const definitions: Record<string, unknown> = {
     [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-    [architectKey]: {
+  };
+  if (isSubagentEnabled(effective, "architect")) {
+    definitions[ecoSubagentKeyForRole("architect")] = {
       description: executionArchitectDescription,
       ...agentDefinitionToolFields("architect", executionReadOnlySubagentTools, agentSkills),
       prompt: executionArchitectPrompt,
       model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
-    },
-    [coderKey]: {
+    };
+  }
+  if (isSubagentEnabled(effective, "coder")) {
+    definitions[ecoSubagentKeyForRole("coder")] = {
       description: executionCoderDescription,
       ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
       prompt: executionCoderPrompt,
       model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
-    },
-    [reviewerKey]: {
+    };
+  }
+  if (isSubagentEnabled(effective, "reviewer")) {
+    definitions[ecoSubagentKeyForRole("reviewer")] = {
       description: autonomousReviewerDescription,
       ...agentDefinitionToolFields("reviewer", executionReadOnlySubagentBashTools, agentSkills),
       prompt: reviewerAgentPrompt,
       model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
-    },
-    [testerKey]: {
+    };
+  }
+  if (isSubagentEnabled(effective, "tester")) {
+    definitions[ecoSubagentKeyForRole("tester")] = {
       description: executionTesterDescription,
       ...agentDefinitionToolFields("tester", executionReadOnlySubagentBashTools, agentSkills),
       prompt: executionTesterPrompt,
       model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
-    },
-  };
-
-  return filterAgentDefinitions(definitions, availability);
+    };
+  }
+  return definitions;
 }
 
 const autonomousReviewerDescription = [
@@ -1435,41 +1448,44 @@ export function createAutonomousAgentDefinitions(
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>,
   availability: SubagentAvailability = defaultSubagentAvailability(),
 ): Record<string, unknown> {
+  const effective = effectiveSubagentAvailability(availability, routes);
   const routeByRole = new Map(routes.map((route) => [route.role, route]));
-  const architectKey = ecoSubagentKeyForRole("architect");
-  const coderKey = ecoSubagentKeyForRole("coder");
-  const reviewerKey = ecoSubagentKeyForRole("reviewer");
-  const testerKey = ecoSubagentKeyForRole("tester");
-  return filterAgentDefinitions(
-    {
-      [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
-      [architectKey]: {
-        description: executionArchitectDescription,
-        ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
-        prompt: executionArchitectPrompt,
-        model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
-      },
-      [coderKey]: {
-        description: executionCoderDescription,
-        ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
-        prompt: executionCoderPrompt,
-        model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
-      },
-      [reviewerKey]: {
-        description: autonomousReviewerDescription,
-        ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
-        prompt: reviewerAgentPrompt,
-        model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
-      },
-      [testerKey]: {
-        description: executionTesterDescription,
-        ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
-        prompt: executionTesterPrompt,
-        model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
-      },
-    },
-    availability,
-  );
+  const definitions: Record<string, unknown> = {
+    [ecoSubagentKeyForRole("explore")]: createExploreAgentDefinition(routes, agentSkills),
+  };
+  if (isSubagentEnabled(effective, "architect")) {
+    definitions[ecoSubagentKeyForRole("architect")] = {
+      description: executionArchitectDescription,
+      ...agentDefinitionToolFields("architect", readOnlySubagentTools, agentSkills),
+      prompt: executionArchitectPrompt,
+      model: toSdkAgentModel(routeByRole.get("architect")?.primary.modelId, "architect"),
+    };
+  }
+  if (isSubagentEnabled(effective, "coder")) {
+    definitions[ecoSubagentKeyForRole("coder")] = {
+      description: executionCoderDescription,
+      ...agentDefinitionToolFields("coder", executionCoderTools, agentSkills),
+      prompt: executionCoderPrompt,
+      model: toSdkAgentModel(routeByRole.get("coder")?.primary.modelId, "coder"),
+    };
+  }
+  if (isSubagentEnabled(effective, "reviewer")) {
+    definitions[ecoSubagentKeyForRole("reviewer")] = {
+      description: autonomousReviewerDescription,
+      ...agentDefinitionToolFields("reviewer", readOnlySubagentBashTools, agentSkills),
+      prompt: reviewerAgentPrompt,
+      model: toSdkAgentModel(routeByRole.get("reviewer")?.primary.modelId, "reviewer"),
+    };
+  }
+  if (isSubagentEnabled(effective, "tester")) {
+    definitions[ecoSubagentKeyForRole("tester")] = {
+      description: executionTesterDescription,
+      ...agentDefinitionToolFields("tester", readOnlySubagentBashTools, agentSkills),
+      prompt: executionTesterPrompt,
+      model: toSdkAgentModel(routeByRole.get("tester")?.primary.modelId, "tester"),
+    };
+  }
+  return definitions;
 }
 
 export function toSdkAgentModel(modelId?: string, role = "subagent"): string {
