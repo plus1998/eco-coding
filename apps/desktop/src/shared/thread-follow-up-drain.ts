@@ -6,6 +6,14 @@ export function shouldDrainThreadFollowUps(status: ThreadStatus): boolean {
   return (DRAINABLE_FOLLOW_UP_STATUSES as readonly string[]).includes(status);
 }
 
+export function buildThreadFollowUpDisplayPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
+  const queued = followUps.filter((followUp) => followUp.status === "delivered");
+  if (queued.length === 0) {
+    return "";
+  }
+  return queued.map((followUp) => normalizeFollowUpPrompt(followUp)).join("\n\n");
+}
+
 export function buildThreadFollowUpDrainPrompt(followUps: readonly ThreadPendingFollowUp[]): string {
   const queued = followUps.filter((followUp) => followUp.status === "delivered");
   if (queued.length === 0) {

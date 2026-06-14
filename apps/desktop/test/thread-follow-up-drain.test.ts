@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ThreadPendingFollowUp } from "../src/shared/ipc";
 import {
+  buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
   shouldDrainThreadFollowUps,
@@ -32,6 +33,27 @@ test("shouldDrainThreadFollowUps only allows safe boundary statuses", () => {
   expect(shouldDrainThreadFollowUps("running")).toBe(false);
   expect(shouldDrainThreadFollowUps("queued")).toBe(false);
   expect(shouldDrainThreadFollowUps("idle")).toBe(false);
+});
+
+test("buildThreadFollowUpDisplayPrompt only includes user follow-up text", () => {
+  const prompt = buildThreadFollowUpDisplayPrompt([
+    followUp("1", {
+      prompt: "api端口是什么",
+      queuedDuringPhase: "execution",
+      deliveryBoundary: "forced_interrupt",
+    }),
+    followUp("2", {
+      prompt: "再更新文档",
+      priority: "escalated",
+      queuedDuringPhase: "execution",
+      deliveryBoundary: "forced_interrupt",
+    }),
+  ]);
+
+  expect(prompt).toBe("api端口是什么\n\n再更新文档");
+  expect(prompt).not.toContain("以下是用户要求立即处理");
+  expect(prompt).not.toContain("queuedDuringPhase");
+  expect(prompt).not.toContain("后续消息");
 });
 
 test("buildThreadFollowUpDrainPrompt merges delivered follow-ups in order", () => {

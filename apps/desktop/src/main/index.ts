@@ -141,6 +141,7 @@ import {
   threadEnteredExecutionPhase,
 } from "../shared/thread-continuation";
 import {
+  buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
   shouldDrainThreadFollowUps,
@@ -2189,6 +2190,7 @@ async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<voi
   }
 
   const prompt = buildThreadFollowUpDrainPrompt(claimed);
+  const displayPrompt = buildThreadFollowUpDisplayPrompt(claimed);
   const attachments = collectThreadFollowUpAttachments(claimed);
   try {
     if (!prompt && attachments.length === 0) {
@@ -2197,6 +2199,7 @@ async function drainQueuedThreadFollowUpsAfterRun(threadId: string): Promise<voi
     await startThreadContinuation({
       threadId,
       prompt,
+      displayPrompt,
       ...(attachments.length > 0 ? { attachments } : {}),
       requireResumeForInterrupted:
         forceEscalatedDrain || thread.status === "failed" || thread.status === "blocked",
@@ -2858,6 +2861,7 @@ async function runCodingThreadExecution(
 interface StartThreadContinuationInput {
   threadId: string;
   prompt: string;
+  displayPrompt?: string;
   runtimeConfigInput?: ThreadRuntimeConfigInput;
   attachments?: PromptImageAttachment[];
   rewindTarget?: ThreadActivityRewindTarget;
@@ -2967,7 +2971,7 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     status: "running",
     message: statusMessage,
   });
-  recordUserPrompt(input.threadId, prompt);
+  recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt);
 
   const updated: ThreadSummary = {
     ...effectiveThread,
