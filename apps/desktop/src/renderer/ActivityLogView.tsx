@@ -18,6 +18,7 @@ import type {
   ThreadActivityRewindTarget,
   ThreadContextSnapshot,
   ThreadRunProjectionAgent,
+  ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
   ThreadStatus,
@@ -53,13 +54,28 @@ import { isAgentDisplayRole } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
-import { useStreamRequestTiming } from "./useStreamRequestTiming";
+import {
+  useStreamRequestTiming,
+  type StreamRequestTimingAnchor,
+} from "./useStreamRequestTiming";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 
 function isThreadRequestActive(sessionRunning: boolean, threadStatus?: ThreadStatus): boolean {
   return sessionRunning && (threadStatus === "running" || threadStatus === "queued");
+}
+
+function toStreamRequestTimingAnchor(
+  requestSpan?: ThreadRunProjectionRequestSpan,
+): StreamRequestTimingAnchor | undefined {
+  if (!requestSpan?.startedAt) {
+    return undefined;
+  }
+  return {
+    startedAtIso: requestSpan.startedAt,
+    ...(requestSpan.firstTokenAt && { firstTokenAtIso: requestSpan.firstTokenAt }),
+  };
 }
 
 function readRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
@@ -389,6 +405,7 @@ function ProjectionAgentEchoEntry({
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
           omitSubagentBadge
+          {...(requestSpan && { requestSpan })}
         />
       </ProjectionAgentEchoShell>
     );
@@ -399,13 +416,19 @@ function ProjectionAgentEchoEntry({
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
+          {...(requestSpan && { requestSpan })}
         />
       </ProjectionAgentEchoShell>
     );
   }
   return (
     <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
-      <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity />
+      <DetailBlock
+        block={block}
+        requestActive={requestActive}
+        hideSubagentIdentity
+        {...(requestSpan && { requestSpan })}
+      />
     </ProjectionAgentEchoShell>
   );
 }
@@ -598,6 +621,7 @@ function ProjectionTimelineEntry({
         {...(block.subagent && { subagent: block.subagent })}
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
         compact={compact}
+        {...(requestSpan && { requestSpan })}
       />,
       { compact },
     );
@@ -607,6 +631,7 @@ function ProjectionTimelineEntry({
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        {...(requestSpan && { requestSpan })}
       />,
       { compact },
     );
@@ -623,7 +648,12 @@ function ProjectionTimelineEntry({
   }
 
   return wrapRunLogFeedEntry(
-    <DetailBlock block={block} requestActive={requestActive} hideSubagentIdentity={compact} />,
+    <DetailBlock
+      block={block}
+      requestActive={requestActive}
+      hideSubagentIdentity={compact}
+      {...(requestSpan && { requestSpan })}
+    />,
     { compact, tight: isTightFeedDetailBlock(block) },
   );
 }
@@ -1069,12 +1099,14 @@ function DetailBlock({
   usageByRole,
   hideSubagentIdentity,
   requestActive = false,
+  requestSpan,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   hideSubagentIdentity?: boolean;
   requestActive?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -1105,6 +1137,7 @@ function DetailBlock({
         {...(block.role && { role: block.role })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
+        {...(requestSpan && { requestSpan })}
       />
     );
   }
@@ -1115,6 +1148,7 @@ function DetailBlock({
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
+        {...(requestSpan && { requestSpan })}
       />
     );
   }
@@ -1156,6 +1190,7 @@ function DetailBlock({
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        {...(requestSpan && { requestSpan })}
       />
     );
   }
@@ -1173,6 +1208,7 @@ function DetailBlock({
       omitSubagentBadge={omitSubagent}
       {...(!omitSubagent && modelByRole && { modelByRole })}
       {...(!omitSubagent && usageByRole && { usageByRole })}
+      {...(requestSpan && { requestSpan })}
       compact
     />
   );
@@ -1264,13 +1300,25 @@ function RequestTimingBadge({ timing }: { timing: ReturnType<typeof useStreamReq
   );
 }
 
-function ThinkingBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+function ThinkingBlock({
+  text,
+  streaming,
+  requestSpan,
+}: {
+  text: string;
+  streaming?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
+}) {
   const [collapsed, setCollapsed] = useState(true);
   const hasBody = text.trim().length > 0;
   const preview = hasBody ? thinkingPreviewLine(text) : "";
   const showPreview = hasBody && collapsed && !streaming;
   const showFullBody = hasBody && (streaming || !collapsed);
-  const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
+  const timing = useStreamRequestTiming(
+    Boolean(streaming) && !hasBody,
+    hasBody,
+    toStreamRequestTimingAnchor(requestSpan),
+  );
 
   return (
     <div
@@ -1485,13 +1533,15 @@ function ModelRequestBlock({
   modelByRole,
   omitRoleLabel,
   active = false,
+  requestSpan,
 }: {
   role?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
   active?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const timing = useStreamRequestTiming(active, false);
+  const timing = useStreamRequestTiming(active, false, toStreamRequestTimingAnchor(requestSpan));
   const roleLabel = omitRoleLabel
     ? "请求中"
     : role
@@ -1514,13 +1564,15 @@ function AgentRequestBlock({
   modelByRole,
   omitRoleLabel,
   active = false,
+  requestSpan,
 }: {
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
   active?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const timing = useStreamRequestTiming(active, false);
+  const timing = useStreamRequestTiming(active, false, toStreamRequestTimingAnchor(requestSpan));
   const roleLabel = omitRoleLabel
     ? "请求中"
     : subagent
@@ -1685,6 +1737,7 @@ function RunLogNarrative({
   modelByRole,
   usageByRole,
   omitSubagentBadge,
+  requestSpan,
 }: {
   text: string;
   streaming?: boolean;
@@ -1693,10 +1746,15 @@ function RunLogNarrative({
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   omitSubagentBadge?: boolean;
+  requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   const usage = subagent ? usageByRole?.[subagent] : undefined;
   const hasBody = text.trim().length > 0;
-  const timing = useStreamRequestTiming(Boolean(streaming) && !hasBody, hasBody);
+  const timing = useStreamRequestTiming(
+    Boolean(streaming) && !hasBody,
+    hasBody,
+    toStreamRequestTimingAnchor(requestSpan),
+  );
   const showSubagentBadge = subagent && !omitSubagentBadge;
   const showBody = hasBody || !streaming;
   const clarificationRows = !streaming ? parseClarificationAnswersSummary(text) : null;
