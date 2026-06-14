@@ -752,7 +752,7 @@ function evaluateBashToolPolicy(
   },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
-  if (!bash?.enabled) {
+  if (bash?.enabled === false) {
     return denyTool(
       "Bash",
       `Bash is disabled for this Eco agent.${mainAgentDelegationHint(options.actor)}`,
@@ -773,8 +773,9 @@ function evaluateBashToolPolicy(
     workspacePath,
     mode,
     agentBash: {
-      ...(bash.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
-      ...(bash.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
+      enabled: true,
+      ...(bash?.commandAllowlist ? { commandAllowlist: bash.commandAllowlist } : {}),
+      ...(bash?.commandDenylist ? { commandDenylist: bash.commandDenylist } : {}),
     },
   });
   if (decision.action === "deny") {

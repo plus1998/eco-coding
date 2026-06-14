@@ -161,6 +161,33 @@ export function resolveAssignedMcpServers(
   return [...new Set(servers.map((server) => sanitizeMcpServerName(server)).filter(Boolean))];
 }
 
+export function resolveEffectiveBashPolicy(
+  policy: EcoToolPolicy,
+  options: { phaseAllowsBash?: boolean } = {},
+): NonNullable<EcoToolPolicy["bash"]> {
+  const phaseAllowsBash = options.phaseAllowsBash !== false;
+  const disallowed = new Set(policy.disallowed.map((entry) => entry.trim()));
+  const bashLists = {
+    ...(policy.bash?.commandAllowlist && { commandAllowlist: [...policy.bash.commandAllowlist] }),
+    ...(policy.bash?.commandDenylist && { commandDenylist: [...policy.bash.commandDenylist] }),
+  };
+
+  if (disallowed.has("Bash") || policy.bash?.enabled === false) {
+    return { enabled: false, ...bashLists };
+  }
+
+  const structurallyEnabled =
+    policy.bash?.enabled === true ||
+    policy.allowed.some((pattern) => pattern.trim() === "Bash") ||
+    (policy.filesystem?.write ?? "none") !== "none";
+
+  if (!structurallyEnabled || !phaseAllowsBash) {
+    return { enabled: false, ...bashLists };
+  }
+
+  return { enabled: true, ...bashLists };
+}
+
 export function collectProfileAssignedMcpServers(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
@@ -267,7 +294,7 @@ export function resolveMainAgentHandsOnCapability(
   return {
     canEditFiles:
       !writeDisallowed && (tools.filesystem ? tools.filesystem.write !== "none" : true),
-    canRunBash: !disallowed.has("Bash") && tools.bash?.enabled === true,
+    canRunBash: resolveEffectiveBashPolicy(tools).enabled,
   };
 }
 
@@ -528,21 +555,20 @@ function normalizeToolPermissionEntry(
   extraAllowed: readonly string[] = [],
   assignedMcpServers: readonly string[] = [],
 ): EcoRuntimeToolPermissionEntry {
+  const effectiveBash = resolveEffectiveBashPolicy(policy);
   return {
     allowed: allowedToolPatternsFromPolicy(policy, extraAllowed),
     disallowed: uniqueToolPatterns(policy.disallowed),
     mcpServers: resolveAssignedMcpServers(policy, assignedMcpServers),
-    ...(policy.bash && {
-      bash: {
-        ...policy.bash,
-        ...(policy.bash.commandAllowlist && {
-          commandAllowlist: uniqueToolPatterns(policy.bash.commandAllowlist),
-        }),
-        ...(policy.bash.commandDenylist && {
-          commandDenylist: uniqueToolPatterns(policy.bash.commandDenylist),
-        }),
-      },
-    }),
+    bash: {
+      ...effectiveBash,
+      ...(effectiveBash.commandAllowlist && {
+        commandAllowlist: uniqueToolPatterns(effectiveBash.commandAllowlist),
+      }),
+      ...(effectiveBash.commandDenylist && {
+        commandDenylist: uniqueToolPatterns(effectiveBash.commandDenylist),
+      }),
+    },
     ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
     ...(policy.network && { network: { ...policy.network } }),
   };
@@ -619,18 +645,16 @@ function capMainAgentToolPolicyForPhase(
   mainAllowedTools: readonly string[],
 ): EcoToolPolicy {
   const allowedSet = new Set(mainAllowedTools);
+  const phaseAllowsBash = allowedSet.has("Bash");
   const filesystem = base.filesystem ?? { read: "workspace" as const, write: "workspace" as const };
+  const effectiveBash = resolveEffectiveBashPolicy(base, { phaseAllowsBash });
   return {
     ...base,
     allowed: [],
+    bash: effectiveBash,
     ...(hasAnyToolPattern(allowedSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES)
       ? { filesystem }
       : { filesystem: { ...filesystem, write: "none" as const } }),
-    ...(base.bash
-      ? allowedSet.has("Bash")
-        ? { bash: base.bash }
-        : { bash: { ...base.bash, enabled: false } }
-      : {}),
     ...(base.network
       ? {
           network: {

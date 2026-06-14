@@ -1,4 +1,5 @@
 import type { EcoAgentRuntimeConfig } from "@eco/runtime";
+import { resolveEffectiveBashPolicy } from "@eco/runtime";
 import {
   evaluateBashPolicy,
   type AgentBashPolicy,
@@ -13,10 +14,13 @@ export interface ThreadBashPermissionInput {
   agentRegistry?: EcoAgentRuntimeConfig | undefined;
   agentId?: string;
   agentType?: string;
+  phaseAllowsBash?: boolean;
 }
 
 export function evaluateThreadBashPermission(input: ThreadBashPermissionInput): BashPolicyDecision {
-  const agentBash = resolveAgentBashPolicy(input.agentRegistry, input.agentId, input.agentType);
+  const agentBash = resolveAgentBashPolicy(input.agentRegistry, input.agentId, input.agentType, {
+    phaseAllowsBash: input.phaseAllowsBash,
+  });
   return evaluateBashPolicy({
     command: input.command,
     cwd: input.cwd,
@@ -30,11 +34,12 @@ function resolveAgentBashPolicy(
   registry: EcoAgentRuntimeConfig | undefined,
   agentId?: string,
   agentType?: string,
+  options: { phaseAllowsBash?: boolean } = {},
 ): AgentBashPolicy | undefined {
   if (!registry) {
     return undefined;
   }
-  const bash = resolveToolBashPolicy(registry.profile, registry.templates, agentId, agentType);
+  const bash = resolveToolBashPolicy(registry.profile, registry.templates, agentId, agentType, options);
   if (!bash) {
     return undefined;
   }
@@ -50,20 +55,24 @@ function resolveToolBashPolicy(
   templates: EcoAgentRuntimeConfig["templates"],
   agentId?: string,
   agentType?: string,
-): NonNullable<EcoAgentRuntimeConfig["profile"]["mainAgent"]["tools"]["bash"]> | undefined {
+  options: { phaseAllowsBash?: boolean } = {},
+): ReturnType<typeof resolveEffectiveBashPolicy> {
   const actor = resolveBashPolicyActor(agentId, agentType);
   if (actor === "main") {
-    return profile.mainAgent.tools.bash;
+    return resolveEffectiveBashPolicy(profile.mainAgent.tools, options);
   }
   const agent = profile.agents.find((entry) => entry.agentKey === actor);
   if (!agent) {
-    return profile.mainAgent.tools.bash;
-  }
-  if (agent.tools.bash) {
-    return agent.tools.bash;
+    return resolveEffectiveBashPolicy(profile.mainAgent.tools, options);
   }
   const template = templates.find((entry) => entry.id === agent.templateId);
-  return template?.defaultTools.bash ?? profile.mainAgent.tools.bash;
+  const policy =
+    agent.tools.bash !== undefined ||
+    agent.tools.allowed.length > 0 ||
+    agent.tools.disallowed.some((entry) => entry.trim() === "Bash")
+      ? agent.tools
+      : (template?.defaultTools ?? profile.mainAgent.tools);
+  return resolveEffectiveBashPolicy(policy, options);
 }
 
 function resolveBashPolicyActor(agentId?: string, agentType?: string): "main" | string {

@@ -331,6 +331,68 @@ test("buildBuiltinPlanToolPermissionEntry keeps plan agent read-only with networ
   expect(entry.network).toEqual({ webSearch: true, webFetch: true });
 });
 
+test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles without explicit bash field", () => {
+  const handsOnProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    preset: "coding",
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: [],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const mainAllowedTools = resolveMainAgentAllowedTools(handsOnProfile, [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+  ]);
+  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate], {
+    mainAllowedTools,
+  });
+  expect(policy.main.bash?.enabled).toBe(true);
+});
+
+test("buildToolPermissionPolicyFromProfile enables bash for legacy allowed Bash during execution", () => {
+  const legacyCodingProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    preset: "coding",
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const mainAllowedTools = resolveMainAgentAllowedTools(legacyCodingProfile, [
+    "Agent",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+  ]);
+  const policy = buildToolPermissionPolicyFromProfile(legacyCodingProfile, [researchTemplate], {
+    mainAllowedTools,
+  });
+  expect(policy.main.bash?.enabled).toBe(true);
+});
+
 test("buildToolPermissionPolicyFromProfile disables main writes during planning phase", () => {
   const codingProfile: EcoOrchestrationProfileConfig = {
     ...profile,
@@ -434,6 +496,7 @@ test("buildToolPermissionPolicyFromProfile preserves structured tool policies", 
         ...firstAgent,
         tools: {
           ...firstAgent.tools,
+          disallowed: firstAgent.tools.disallowed.filter((tool) => tool !== "Bash"),
           bash: { enabled: true, commandDenylist: ["rm*"] },
           filesystem: { read: "workspace", write: "none" },
           network: { webSearch: true, webFetch: false },

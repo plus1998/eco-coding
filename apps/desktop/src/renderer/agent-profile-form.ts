@@ -1,4 +1,5 @@
 import type { AgentConfigSource } from "../shared/agent-orchestration";
+import { resolveEffectiveBashPolicy } from "@eco/runtime";
 import type {
   AgentDomain,
   AgentTemplate,
@@ -491,7 +492,7 @@ function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] 
   return {
     mcpServers: formatList(mcpServers.length > 0 ? mcpServers : (policy.mcp?.allowedServers ?? [])),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashEnabled: policy.bash?.enabled === true && !disallowed.has("Bash"),
+    bashEnabled: resolveEffectiveBashPolicy(policy).enabled,
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead: policy.filesystem?.read ?? "workspace",
@@ -512,19 +513,19 @@ function buildToolPolicyFromFormFields(
   return {
     allowed: [],
     disallowed,
-    ...(fields.bashEnabled && !disallowed.includes("Bash")
-      ? {
-          bash: {
-            enabled: true,
-            ...(parseList(fields.bashCommandAllowlist).length > 0
-              ? { commandAllowlist: parseList(fields.bashCommandAllowlist) }
-              : {}),
-            ...(parseList(fields.bashCommandDenylist).length > 0
-              ? { commandDenylist: parseList(fields.bashCommandDenylist) }
-              : {}),
-          },
-        }
-      : {}),
+    bash: {
+      enabled: fields.bashEnabled && !disallowed.includes("Bash"),
+      ...(fields.bashEnabled &&
+      !disallowed.includes("Bash") &&
+      parseList(fields.bashCommandAllowlist).length > 0
+        ? { commandAllowlist: parseList(fields.bashCommandAllowlist) }
+        : {}),
+      ...(fields.bashEnabled &&
+      !disallowed.includes("Bash") &&
+      parseList(fields.bashCommandDenylist).length > 0
+        ? { commandDenylist: parseList(fields.bashCommandDenylist) }
+        : {}),
+    },
     ...(mcpServers.length > 0 || mcpTools.length > 0
       ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
       : {}),

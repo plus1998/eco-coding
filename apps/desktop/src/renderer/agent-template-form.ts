@@ -4,6 +4,7 @@ import type {
   McpServerConfigView,
   ToolPolicy,
 } from "../shared/ipc";
+import { resolveEffectiveBashPolicy } from "@eco/runtime";
 import { parseAllowedToolPatterns, sanitizeMcpServerName } from "../shared/mcp";
 
 export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
@@ -245,7 +246,7 @@ export function buildAgentTemplatePermissionChips(
 ): AgentTemplatePermissionChip[] {
   const tools = template.defaultTools;
   const disallowed = new Set(tools.disallowed);
-  const bashEnabled = tools.bash?.enabled === true && !disallowed.has("Bash");
+  const bashEnabled = resolveEffectiveBashPolicy(tools).enabled;
   const readScope = tools.filesystem?.read ?? "workspace";
   const writeScope = tools.filesystem?.write ?? "none";
   const webSearch = tools.network?.webSearch ?? false;
@@ -512,19 +513,19 @@ function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
   return {
     allowed: [],
     disallowed,
-    ...(form.bashEnabled && !disallowed.includes("Bash")
-      ? {
-          bash: {
-            enabled: true,
-            ...(parseList(form.bashCommandAllowlist).length > 0
-              ? { commandAllowlist: parseList(form.bashCommandAllowlist) }
-              : {}),
-            ...(parseList(form.bashCommandDenylist).length > 0
-              ? { commandDenylist: parseList(form.bashCommandDenylist) }
-              : {}),
-          },
-        }
-      : {}),
+    bash: {
+      enabled: form.bashEnabled && !disallowed.includes("Bash"),
+      ...(form.bashEnabled &&
+      !disallowed.includes("Bash") &&
+      parseList(form.bashCommandAllowlist).length > 0
+        ? { commandAllowlist: parseList(form.bashCommandAllowlist) }
+        : {}),
+      ...(form.bashEnabled &&
+      !disallowed.includes("Bash") &&
+      parseList(form.bashCommandDenylist).length > 0
+        ? { commandDenylist: parseList(form.bashCommandDenylist) }
+        : {}),
+    },
     ...(mcpServers.length > 0 || mcpTools.length > 0
       ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
       : {}),
@@ -555,7 +556,7 @@ function toolPolicyToFormFields(policy: ToolPolicy): Pick<
   return {
     disallowedTools: formatList(policy.disallowed),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashEnabled: policy.bash?.enabled === true && !disallowed.has("Bash"),
+    bashEnabled: resolveEffectiveBashPolicy(policy).enabled,
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead: policy.filesystem?.read ?? "workspace",

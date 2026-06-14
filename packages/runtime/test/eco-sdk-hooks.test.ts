@@ -812,6 +812,7 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
       allowed: ["Agent", "Read", "Edit", "Bash"],
       disallowed: [],
       mcpServers: [],
+      bash: { enabled: false },
       filesystem: { read: "workspace", write: "none" },
     },
     agents: {

@@ -5535,6 +5535,7 @@ function createThreadToolPermissionHandler(
       cwd,
       workspacePath: thread.workspacePath,
       bashReviewMode: runtimeConfig?.bashReviewMode ?? "always",
+      phaseAllowsBash: runPhase !== "planning" && runPhase !== "question",
       ...(agentRegistry ? { agentRegistry } : {}),
       ...(request.agentId ? { agentId: request.agentId } : {}),
       ...(request.agentType ? { agentType: request.agentType } : {}),
