@@ -5668,7 +5668,8 @@ function startRuntimeProxy(
   proxyThreadOptions?: { emitRequestActivity?: boolean },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
   const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
-  const emitRequestActivity = proxyThreadOptions?.emitRequestActivity !== false;
+  // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
+  const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
   const options: AnthropicProxyStartOptions = {
     ...(upstreamUserAgent && { upstreamUserAgent }),
     ...(attachments && attachments.length > 0 && { pendingImages: attachments }),

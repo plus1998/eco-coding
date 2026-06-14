@@ -167,6 +167,10 @@ function filterProjectionTimelineForDetailFeed(
       .map(projectionOwnerKey)
       .filter((key): key is string => Boolean(key)),
   );
+  const latestActiveRequestStartedByOwner = buildLatestActiveRequestStartedByOwner(
+    displayTimeline,
+    requestSpansById,
+  );
 
   return displayTimeline.filter((item) => {
     if (isProjectionRequestCompletionItem(item)) {
@@ -184,8 +188,39 @@ function filterProjectionTimelineForDetailFeed(
       return false;
     }
     const ownerKey = projectionOwnerKey(item);
+    if (ownerKey) {
+      const latest = latestActiveRequestStartedByOwner.get(ownerKey);
+      if (latest && latest.id !== item.id) {
+        return false;
+      }
+    }
     return !ownerKey || !ownersWithStreamRows.has(ownerKey);
   });
+}
+
+function buildLatestActiveRequestStartedByOwner(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): Map<string, ThreadRunProjectionTimelineItem> {
+  const latestByOwner = new Map<string, ThreadRunProjectionTimelineItem>();
+  for (const item of timeline) {
+    if (item.eventType !== "request.started") {
+      continue;
+    }
+    const requestSpan = projectionRequestSpan(item, requestSpansById);
+    if (requestSpan && !isProjectionRequestActive(requestSpan)) {
+      continue;
+    }
+    const ownerKey = projectionOwnerKey(item);
+    if (!ownerKey) {
+      continue;
+    }
+    const current = latestByOwner.get(ownerKey);
+    if (!current || compareTimelineItems(current, item) <= 0) {
+      latestByOwner.set(ownerKey, item);
+    }
+  }
+  return latestByOwner;
 }
 
 function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean {

@@ -638,6 +638,47 @@ test("buildThreadRunProjectionViewModel hides completed request lifecycle placeh
   expect(view.mainFeedEntries).toEqual([]);
 });
 
+test("buildThreadRunProjectionViewModel hides duplicate active request placeholders for the same owner", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      requestSpans: [
+        {
+          requestId: "req_proxy",
+          status: "waiting_first_token",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          role: "planner",
+        },
+        {
+          requestId: "req_sdk",
+          status: "waiting_first_token",
+          startedAt: "2026-01-01T00:00:01.100Z",
+          role: "planner",
+        },
+      ],
+      timeline: [
+        item({
+          id: "proxy-request",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_proxy",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "sdk-request",
+          eventType: "request.started",
+          role: "planner",
+          requestId: "req_sdk",
+          at: "2026-01-01T00:00:01.100Z",
+          sequence: 2,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:sdk-request"]);
+});
+
 test("buildThreadRunProjectionViewModel hides request placeholders once owner output appears", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
