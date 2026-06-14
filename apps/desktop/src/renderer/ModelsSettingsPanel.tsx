@@ -71,6 +71,7 @@ import {
   createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
+  tryParseManualContextTokens,
 } from "./agent-profile-form";
 import {
   type AgentProfileSummary,
@@ -412,7 +413,17 @@ export function ModelsSettingsPanel({
   }, [modelsDevOptions.length, modelsDevLoading]);
 
   const lookupNodeCapabilities = useCallback(
-    async (nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }>) => {
+    async (
+      nodes: Array<{
+        key: string;
+        providerId: string;
+        modelId: string;
+        apiCompat?: string;
+        modelsDevMappingProviderKey?: string;
+        modelsDevMappingModelId?: string;
+        manualContextTokens?: string;
+      }>,
+    ) => {
       if (!window.eco?.getRouteCapabilities || nodes.length === 0) {
         return;
       }
@@ -437,7 +448,17 @@ export function ModelsSettingsPanel({
   );
 
   const lookupNodePricing = useCallback(
-    async (nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }>) => {
+    async (
+      nodes: Array<{
+        key: string;
+        providerId: string;
+        modelId: string;
+        apiCompat?: string;
+        modelsDevMappingProviderKey?: string;
+        modelsDevMappingModelId?: string;
+        manualContextTokens?: string;
+      }>,
+    ) => {
       if (!window.eco?.getRoutePricing || nodes.length === 0) {
         return;
       }
@@ -1435,20 +1456,65 @@ type AgentProfileSelectedNode =
   | { kind: "builtinExplore" }
   | { kind: "agent"; agentKey: string };
 
-function buildRouteLookupPayload(
-  nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }>,
-): RuntimeRoleRouteConfig[] {
+type AgentProfileRouteLookupNode = {
+  key: string;
+  providerId: string;
+  modelId: string;
+  apiCompat?: string;
+  modelsDevMappingProviderKey?: string;
+  modelsDevMappingModelId?: string;
+  manualContextTokens?: string;
+};
+
+function buildRouteLookupPayload(nodes: Array<AgentProfileRouteLookupNode>): RuntimeRoleRouteConfig[] {
   return nodes
     .filter((node) => node.providerId.trim() && node.modelId.trim())
     .map((node) => {
       const apiCompat = node.apiCompat?.trim();
+      const mappingProviderKey = node.modelsDevMappingProviderKey?.trim();
+      const mappingModelId = node.modelsDevMappingModelId?.trim();
+      const contextTokens = tryParseManualContextTokens(node.manualContextTokens ?? "");
       return {
         role: node.key,
         providerId: node.providerId.trim(),
         modelId: node.modelId.trim(),
         ...(apiCompat ? { apiCompat: apiCompat as UpstreamApiCompat } : {}),
+        ...(mappingProviderKey &&
+          mappingModelId && {
+            modelsDevMapping: {
+              providerKey: mappingProviderKey,
+              modelId: mappingModelId,
+            },
+          }),
+        ...(contextTokens !== undefined && { manualSpec: { contextTokens } }),
       };
     });
+}
+
+function ManualContextLimitField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="mcp-field">
+      <span className="mcp-field-label">手动上下文上限（tokens）</span>
+      <input
+        className="mcp-field-input"
+        type="text"
+        inputMode="numeric"
+        placeholder="留空则使用 models.dev 匹配"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <span className="mcp-field-hint">models.dev 未匹配或未覆盖时可手动填写上下文窗口大小</span>
+    </label>
+  );
 }
 
 function AgentProfileEditorModal({
@@ -1485,12 +1551,8 @@ function AgentProfileEditorModal({
   modelsDevLoading: boolean;
   capabilityHints: Record<string, RouteCapabilityHint>;
   pricingHints: Record<string, RoutePricingHint>;
-  onLookupCapabilities: (
-    nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }>,
-  ) => Promise<void>;
-  onLookupPricing: (
-    nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }>,
-  ) => Promise<void>;
+  onLookupCapabilities: (nodes: Array<AgentProfileRouteLookupNode>) => Promise<void>;
+  onLookupPricing: (nodes: Array<AgentProfileRouteLookupNode>) => Promise<void>;
   error?: string | undefined;
   busy?: boolean | undefined;
   mode: AgentProfileEditorMode;
@@ -1536,22 +1598,31 @@ function AgentProfileEditorModal({
   }, [selectedAgentIndex, selectedAgentKey]);
 
   useEffect(() => {
-    const nodes: Array<{ key: string; providerId: string; modelId: string; apiCompat?: string }> = [
+    const nodes: Array<AgentProfileRouteLookupNode> = [
       {
         key: "main",
         providerId: form.mainProviderId,
         modelId: form.mainModelId,
         ...(form.mainApiCompat ? { apiCompat: form.mainApiCompat } : {}),
+        modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
+        modelsDevMappingModelId: form.mainModelsDevMappingModelId,
+        manualContextTokens: form.mainManualContextTokens,
       },
       {
         key: "explore",
         providerId: form.builtinExploreProviderId,
         modelId: form.builtinExploreModelId,
+        modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
+        modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
+        manualContextTokens: form.builtinExploreManualContextTokens,
       },
       ...form.agents.map((agent) => ({
         key: agent.agentKey,
         providerId: agent.providerId,
         modelId: agent.modelId,
+        modelsDevMappingProviderKey: agent.modelsDevMappingProviderKey,
+        modelsDevMappingModelId: agent.modelsDevMappingModelId,
+        manualContextTokens: agent.manualContextTokens,
       })),
     ];
     void onLookupCapabilities(nodes);
@@ -1560,8 +1631,14 @@ function AgentProfileEditorModal({
     form.mainProviderId,
     form.mainModelId,
     form.mainApiCompat,
+    form.mainModelsDevMappingProviderKey,
+    form.mainModelsDevMappingModelId,
+    form.mainManualContextTokens,
     form.builtinExploreProviderId,
     form.builtinExploreModelId,
+    form.builtinExploreModelsDevMappingProviderKey,
+    form.builtinExploreModelsDevMappingModelId,
+    form.builtinExploreManualContextTokens,
     form.agents,
     onLookupCapabilities,
     onLookupPricing,
@@ -2293,6 +2370,11 @@ function AgentProfileNodeConfigModal({
                     {...(pricing ? { pricing } : {})}
                   />
                 </div>
+                <ManualContextLimitField
+                  value={form.mainManualContextTokens}
+                  disabled={busy}
+                  onChange={(manualContextTokens) => onPatchProfile({ mainManualContextTokens: manualContextTokens })}
+                />
               </div>
 
               <label className="mcp-field">
@@ -2422,6 +2504,13 @@ function AgentProfileNodeConfigModal({
                     {...(pricing ? { pricing } : {})}
                   />
                 </div>
+                <ManualContextLimitField
+                  value={form.builtinExploreManualContextTokens}
+                  disabled={busy}
+                  onChange={(manualContextTokens) =>
+                    onPatchProfile({ builtinExploreManualContextTokens: manualContextTokens })
+                  }
+                />
               </div>
             </>
           ) : (
@@ -2529,6 +2618,13 @@ function AgentProfileNodeConfigModal({
                     {...(pricing ? { pricing } : {})}
                   />
                 </div>
+                <ManualContextLimitField
+                  value={agent?.manualContextTokens ?? ""}
+                  disabled={busy}
+                  onChange={(manualContextTokens) =>
+                    onPatchAgent(agentIndex, { manualContextTokens })
+                  }
+                />
               </div>
             </>
           )}

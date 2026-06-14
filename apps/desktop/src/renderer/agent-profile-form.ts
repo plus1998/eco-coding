@@ -6,6 +6,7 @@ import type {
   OrchestrationProfile,
   OrchestrationStrategy,
   ProviderConfigView,
+  RouteManualSpec,
   ToolPolicy,
   ThinkingEffort,
   UpstreamApiCompat,
@@ -21,6 +22,7 @@ export interface AgentProfileAgentFormState {
   thinkingEffort: string;
   modelsDevMappingProviderKey: string;
   modelsDevMappingModelId: string;
+  manualContextTokens: string;
   enabled: boolean;
   disallowedTools: string;
   mcpServers: string;
@@ -45,6 +47,7 @@ export interface AgentProfileFormState {
   mainThinkingEffort: string;
   mainModelsDevMappingProviderKey: string;
   mainModelsDevMappingModelId: string;
+  mainManualContextTokens: string;
   mainApiCompat: string;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
@@ -63,6 +66,7 @@ export interface AgentProfileFormState {
   builtinExploreThinkingEffort: string;
   builtinExploreModelsDevMappingProviderKey: string;
   builtinExploreModelsDevMappingModelId: string;
+  builtinExploreManualContextTokens: string;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -114,6 +118,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainThinkingEffort: "",
     mainModelsDevMappingProviderKey: "",
     mainModelsDevMappingModelId: "",
+    mainManualContextTokens: "",
     mainApiCompat: "",
     mainSystemPromptPreset: "custom",
     mainPrompt:
@@ -133,6 +138,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreThinkingEffort: "",
     builtinExploreModelsDevMappingProviderKey: "",
     builtinExploreModelsDevMappingModelId: "",
+    builtinExploreManualContextTokens: "",
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -150,6 +156,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainThinkingEffort: profile.mainAgent.modelRef.thinkingEffort ?? "",
     mainModelsDevMappingProviderKey: profile.mainAgent.modelRef.modelsDevMapping?.providerKey ?? "",
     mainModelsDevMappingModelId: profile.mainAgent.modelRef.modelsDevMapping?.modelId ?? "",
+    mainManualContextTokens: formatManualContextTokens(profile.mainAgent.modelRef.manualSpec?.contextTokens),
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
@@ -162,6 +169,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.providerKey ?? "",
     builtinExploreModelsDevMappingModelId:
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
+    builtinExploreManualContextTokens: formatManualContextTokens(
+      profile.builtinAgents.explore.modelRef.manualSpec?.contextTokens,
+    ),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -172,6 +182,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       thinkingEffort: agent.modelRef.thinkingEffort ?? "",
       modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
+      manualContextTokens: formatManualContextTokens(agent.modelRef.manualSpec?.contextTokens),
       enabled: agent.enabled,
       disallowedTools: formatList(agent.tools.disallowed),
       ...toolPolicyFormFields(agent.tools, agent.mcpServers),
@@ -205,6 +216,7 @@ export function createProfileAgentFormFromTemplate(
     thinkingEffort: "",
     modelsDevMappingProviderKey: "",
     modelsDevMappingModelId: "",
+    manualContextTokens: "",
     enabled: true,
     disallowedTools: formatList(template.defaultTools.disallowed),
     ...toolPolicyFormFields(template.defaultTools, template.mcpServers),
@@ -241,6 +253,7 @@ export function buildOrchestrationProfileFromForm(
       thinkingEffort: form.mainThinkingEffort,
       modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
       modelsDevMappingModelId: form.mainModelsDevMappingModelId,
+      manualContextTokens: form.mainManualContextTokens,
       apiCompat: form.mainApiCompat,
     },
   );
@@ -252,6 +265,7 @@ export function buildOrchestrationProfileFromForm(
       thinkingEffort: form.builtinExploreThinkingEffort,
       modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
       modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
+      manualContextTokens: form.builtinExploreManualContextTokens,
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -278,6 +292,7 @@ export function buildOrchestrationProfileFromForm(
         thinkingEffort: agentForm.thinkingEffort,
         modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
+        manualContextTokens: agentForm.manualContextTokens,
       }),
       tools: cloneToolPolicy(sourceTools),
       mcpServers: [...sourceMcpServers],
@@ -348,6 +363,35 @@ function buildStrategyFromForm(
   };
 }
 
+export function formatManualContextTokens(value?: number): string {
+  return value !== undefined && value > 0 ? String(value) : "";
+}
+
+export function parseManualContextTokensInput(value: string): number | undefined {
+  const trimmed = value.trim().replace(/[_,\s]/g, "");
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error("手动上下文上限必须是正整数。");
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error("手动上下文上限必须是正整数。");
+  }
+  return parsed;
+}
+
+/** Lenient parse for live capability lookup while the user is editing. */
+export function tryParseManualContextTokens(value: string): number | undefined {
+  const trimmed = value.trim().replace(/[_,\s]/g, "");
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function buildModelRef(
   providerId: string,
   modelId: string,
@@ -356,6 +400,7 @@ function buildModelRef(
     thinkingEffort?: string;
     modelsDevMappingProviderKey?: string;
     modelsDevMappingModelId?: string;
+    manualContextTokens?: string;
     apiCompat?: string;
   },
 ): ModelRef {
@@ -385,10 +430,28 @@ function buildModelRef(
   if (apiCompat) {
     modelRef.apiCompat = apiCompat as UpstreamApiCompat;
   }
-  if (existing?.manualSpec) {
-    modelRef.manualSpec = existing.manualSpec;
+  const manualSpec = mergeManualSpec(
+    parseManualContextTokensInput(options?.manualContextTokens ?? ""),
+    existing?.manualSpec,
+  );
+  if (manualSpec) {
+    modelRef.manualSpec = manualSpec;
   }
   return modelRef;
+}
+
+function mergeManualSpec(
+  contextTokens: number | undefined,
+  existing?: RouteManualSpec,
+): RouteManualSpec | undefined {
+  const next: RouteManualSpec = {
+    ...(existing?.inputPerM !== undefined && { inputPerM: existing.inputPerM }),
+    ...(existing?.outputPerM !== undefined && { outputPerM: existing.outputPerM }),
+    ...(existing?.cacheReadPerM !== undefined && { cacheReadPerM: existing.cacheReadPerM }),
+    ...(existing?.cacheWritePerM !== undefined && { cacheWritePerM: existing.cacheWritePerM }),
+    ...(contextTokens !== undefined && { contextTokens }),
+  };
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 function emptyToolPolicy(): ToolPolicy {

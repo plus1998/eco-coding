@@ -220,3 +220,41 @@ test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent key
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("Agent key 重复");
 });
+
+test("buildOrchestrationProfileFromForm persists manual context limits for main, explore, and subagents", () => {
+  const source = profile();
+  source.mainAgent.modelRef.manualSpec = { contextTokens: 200_000, inputPerM: 3, outputPerM: 15 };
+  source.builtinAgents.explore.modelRef.manualSpec = { contextTokens: 128_000 };
+  source.agents[0]!.modelRef.manualSpec = { contextTokens: 64_000 };
+
+  const form = agentProfileToForm(source);
+  expect(form.mainManualContextTokens).toBe("200000");
+  expect(form.builtinExploreManualContextTokens).toBe("128000");
+  expect(form.agents[0]?.manualContextTokens).toBe("64000");
+
+  form.mainManualContextTokens = "256,000";
+  form.builtinExploreManualContextTokens = "";
+  form.agents[0]!.manualContextTokens = "100000";
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: source,
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.modelRef.manualSpec).toEqual({
+    contextTokens: 256_000,
+    inputPerM: 3,
+    outputPerM: 15,
+  });
+  expect(built.builtinAgents.explore.modelRef.manualSpec).toBeUndefined();
+  expect(built.agents[0]?.modelRef.manualSpec).toEqual({ contextTokens: 100_000 });
+});
+
+test("buildOrchestrationProfileFromForm rejects invalid manual context limits", () => {
+  const form = agentProfileToForm(profile());
+  form.mainManualContextTokens = "abc";
+
+  expect(() =>
+    buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
+  ).toThrow("手动上下文上限必须是正整数");
+});
