@@ -1,4 +1,6 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Laptop, Moon, Sun } from "lucide-react";
+import { useMemo } from "react";
+import { getRuntimePlatformLabel } from "./runtime-platform";
 import type { AppTheme } from "./theme";
 
 interface GeneralSettingsPanelProps {
@@ -6,27 +8,31 @@ interface GeneralSettingsPanelProps {
   onThemeChange: (theme: AppTheme) => void;
 }
 
-const themeOptions: Array<{
-  id: AppTheme;
-  label: string;
-  description: string;
-  icon: typeof Sun;
-}> = [
-  {
-    id: "dark",
-    label: "深色",
-    description: "适合低光环境，减轻眼睛疲劳。",
-    icon: Moon,
-  },
-  {
-    id: "light",
-    label: "浅色",
-    description: "明亮界面，类似 macOS 系统设置。",
-    icon: Sun,
-  },
-];
-
 export function GeneralSettingsPanel({ theme, onThemeChange }: GeneralSettingsPanelProps) {
+  const themeOptions = useMemo(() => {
+    const platformLabel = getRuntimePlatformLabel();
+    return [
+      {
+        id: "system" as const,
+        label: "系统",
+        description: `跟随${platformLabel}外观设置自动切换。`,
+        icon: Laptop,
+      },
+      {
+        id: "dark" as const,
+        label: "深色",
+        description: "适合低光环境，减轻眼睛疲劳。",
+        icon: Moon,
+      },
+      {
+        id: "light" as const,
+        label: "浅色",
+        description: "明亮清爽的浅色界面。",
+        icon: Sun,
+      },
+    ];
+  }, []);
+
   return (
     <>
       <header className="settings-page-header">
@@ -39,7 +45,6 @@ export function GeneralSettingsPanel({ theme, onThemeChange }: GeneralSettingsPa
             <span className="settings-section-label">主题</span>
             <p className="settings-section-subtitle">主界面与设置页使用同一套配色。</p>
           </div>
-          <Monitor size={18} className="settings-section-head-icon" aria-hidden />
         </div>
 
         <div className="theme-picker" role="radiogroup" aria-label="应用主题">

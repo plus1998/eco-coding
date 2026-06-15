@@ -143,7 +143,7 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
-import { type AppTheme, persistAppTheme, readStoredAppTheme } from "./theme";
+import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import "./themes.css";
 import "./styles.css";
 import "./theme-overrides.css";
@@ -228,6 +228,15 @@ function App() {
 
   useEffect(() => {
     persistAppTheme(appTheme);
+  }, [appTheme]);
+
+  useEffect(() => {
+    if (appTheme !== "system") {
+      return undefined;
+    }
+    return subscribeToSystemTheme(() => {
+      persistAppTheme("system");
+    });
   }, [appTheme]);
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
@@ -2855,7 +2864,8 @@ function App() {
             </nav>
           </aside>
 
-          <div className="settings-content">
+          <div className="settings-main">
+            <div className="settings-content">
             {settingsSection === "general" && (
               <GeneralSettingsPanel
                 theme={appTheme}
@@ -2977,6 +2987,7 @@ function App() {
                 </section>
               </>
             )}
+            </div>
           </div>
         </div>
       )}

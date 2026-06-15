@@ -1028,14 +1028,6 @@ export function ModelsSettingsPanel({
 
       {activeTab === "providers" && (
         <section className="mcp-list-section">
-          <header className="models-section-header">
-            <div className="models-section-intro">
-              <h2 className="models-section-title">Provider</h2>
-              <p className="models-section-desc">
-                管理上游模型服务、API Key、默认模型和 API 兼容模式。Agent Profile 里的模型绑定从这里选择。
-              </p>
-            </div>
-          </header>
           <div className="mcp-list-toolbar">
             <span className="mcp-list-toolbar-label">Provider</span>
             <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
@@ -1048,55 +1040,31 @@ export function ModelsSettingsPanel({
             <p className="mcp-list-empty">尚未添加 Provider</p>
           ) : (
             <ul className="mcp-server-list">
-              {providerOptions.map((provider) => {
-                const testing = testingProviderKey === provider.id;
-                return (
-                  <li key={provider.id} className="mcp-server-row models-provider-row">
-                    <div className="models-provider-row-main">
-                      <span className="mcp-server-name">{provider.name}</span>
-                      <small>
-                        {provider.defaultModel}
-                        {provider.hasApiKey ? " · 已配置 Key" : " · 无 Key"}
-                      </small>
-                    </div>
-                    <div className="mcp-server-actions">
-                      <span
-                        className={provider.enabled ? "models-provider-badge on" : "models-provider-badge"}
-                      >
-                        {provider.enabled ? "已启用" : "已禁用"}
-                      </span>
-                      <button
-                        type="button"
-                        className="models-section-button"
-                        disabled={busy || testing}
-                        onClick={() => void testProvider(providerToForm(provider))}
-                      >
-                        <RefreshCw size={14} className={testing ? "model-refresh-spin" : undefined} />
-                        测试
-                      </button>
-                      <button
-                        type="button"
-                        className="mcp-icon-button"
-                        onClick={() => openEditProvider(provider)}
-                        aria-label={`配置 ${provider.name}`}
-                        title={`配置 ${provider.name}`}
+              {providerOptions.map((provider) => (
+                <li key={provider.id} className="mcp-server-row">
+                  <span className="mcp-server-name">{provider.name}</span>
+                  <div className="mcp-server-actions">
+                    <button
+                      type="button"
+                      className="mcp-icon-button"
+                      onClick={() => openEditProvider(provider)}
+                      aria-label={`配置 ${provider.name}`}
+                      disabled={busy}
+                    >
+                      <Settings2 size={18} />
+                    </button>
+                    <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
+                      <input
+                        type="checkbox"
+                        checked={provider.enabled}
                         disabled={busy}
-                      >
-                        <Settings2 size={18} />
-                      </button>
-                      <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
-                        <input
-                          type="checkbox"
-                          checked={provider.enabled}
-                          disabled={busy}
-                          onChange={() => void toggleProvider(provider)}
-                        />
-                        <span className="mcp-toggle-track" aria-hidden />
-                      </label>
-                    </div>
-                  </li>
-                );
-              })}
+                        onChange={() => void toggleProvider(provider)}
+                      />
+                      <span className="mcp-toggle-track" aria-hidden />
+                    </label>
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </section>

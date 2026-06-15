@@ -453,6 +453,50 @@
   color: var(--text-muted);
 }
 
+.settings-page .models-agent-template-row,
+.settings-page .models-subagent-card {
+  border-color: var(--card-surface-border);
+  background: var(--card-surface-bg);
+}
+
+.settings-page .models-agent-template-row:hover,
+.settings-page .models-subagent-card:hover {
+  background: var(--card-surface-bg-hover);
+}
+
+.settings-page .models-agent-template-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .models-agent-permission-chip.is-allow {
+  border-color: var(--status-allow-border);
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
+}
+
+.settings-page .models-agent-permission-chip.is-deny {
+  border-color: var(--status-deny-border);
+  background: var(--status-deny-bg);
+  color: var(--status-deny-text);
+}
+
+.settings-page .models-agent-permission-chip.is-warn,
+.settings-page .models-agent-permission-chip.is-neutral {
+  border-color: var(--border-subtle);
+  background: var(--code-bg);
+  color: var(--text-secondary);
+}
+
+.settings-page .models-agent-permission-chip.is-warn {
+  border-color: var(--status-warn-border);
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
+}
+
+.settings-page .models-agent-registry-message {
+  color: var(--text-muted);
+}
+
 /* Agent profile cards */
 .settings-page .models-agent-profile-card {
   border-color: var(--border-subtle);
@@ -577,7 +621,7 @@
 
 .theme-picker {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -795,4 +839,16 @@
 
 [data-theme="dark"] .settings-primary-button:hover:not(:disabled) {
   filter: brightness(1.05);
+}
+
+@media (min-width: 720px) {
+  .theme-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 719px) {
+  .theme-picker {
+    grid-template-columns: 1fr;
+  }
 }

@@ -7,11 +7,19 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <script>
       (function () {
+        function systemTheme() {
+          return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        function resolveTheme(stored) {
+          if (stored === "light") return "light";
+          if (stored === "dark") return "dark";
+          return systemTheme();
+        }
         try {
-          var theme = localStorage.getItem("eco.app-theme");
-          document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+          var stored = localStorage.getItem("eco.app-theme");
+          document.documentElement.dataset.theme = resolveTheme(stored);
         } catch (error) {
-          document.documentElement.dataset.theme = "dark";
+          document.documentElement.dataset.theme = systemTheme();
         }
       })();
     </script>

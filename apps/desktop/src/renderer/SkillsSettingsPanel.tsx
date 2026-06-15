@@ -30,11 +30,7 @@ export function SkillsSettingsPanel({
       <header className="settings-page-header">
         <div className="settings-page-header-row">
           <div>
-            <h1>用户 Skills</h1>
-            <p className="settings-page-desc">
-              扫描 <code>~/.claude/skills/</code> 与 <code>~/.agents/skills/</code>。项目 Skills 自动预加载；输入{" "}
-              <code>/</code> 可引用用户 Skill（<code>$skill-name</code>）。
-            </p>
+            <h1>Skills</h1>
           </div>
           <button
             type="button"
