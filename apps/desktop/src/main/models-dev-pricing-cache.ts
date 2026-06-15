@@ -150,23 +150,31 @@ export class ModelsDevPricingCache {
     modelId: string,
     mapping?: ModelsDevMapping,
     manualContextTokens?: number,
+    manualMaxOutputTokens?: number,
   ): Promise<{
     limit: number;
     maxOutputTokens?: number;
     limitsResolved: boolean;
   }> {
-    const lookup = await this.lookupLimitsForRoute({ baseUrl, modelId, ...(mapping && { mapping }) });
-    if (lookup) {
+    if (manualContextTokens !== undefined && manualContextTokens > 0) {
       return {
-        limit: lookup.limits.contextTokens,
-        ...(lookup.limits.maxOutputTokens !== undefined && {
-          maxOutputTokens: lookup.limits.maxOutputTokens,
-        }),
+        limit: manualContextTokens,
+        ...(manualMaxOutputTokens !== undefined &&
+          manualMaxOutputTokens > 0 && { maxOutputTokens: manualMaxOutputTokens }),
         limitsResolved: true,
       };
     }
-    if (manualContextTokens !== undefined && manualContextTokens > 0) {
-      return { limit: manualContextTokens, limitsResolved: true };
+    const lookup = await this.lookupLimitsForRoute({ baseUrl, modelId, ...(mapping && { mapping }) });
+    if (lookup) {
+      const maxOutputTokens = manualMaxOutputTokens ?? lookup.limits.maxOutputTokens;
+      return {
+        limit: lookup.limits.contextTokens,
+        ...(maxOutputTokens !== undefined && { maxOutputTokens }),
+        limitsResolved: true,
+      };
+    }
+    if (manualMaxOutputTokens !== undefined && manualMaxOutputTokens > 0) {
+      return { limit: DEFAULT_CONTEXT_LIMIT, maxOutputTokens: manualMaxOutputTokens, limitsResolved: true };
     }
     return { limit: DEFAULT_CONTEXT_LIMIT, limitsResolved: false };
   }

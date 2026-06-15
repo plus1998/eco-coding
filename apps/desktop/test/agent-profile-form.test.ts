@@ -6,6 +6,7 @@ import {
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
 } from "../src/renderer/agent-profile-form";
+import { emptyManualSpecForm } from "../src/renderer/agent-profile-manual-spec-form";
 import type { AgentTemplate, OrchestrationProfile, ProviderConfigView } from "../src/shared/ipc";
 
 const provider: ProviderConfigView = {
@@ -218,20 +219,28 @@ test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent key
   ).toThrow("Agent key 重复");
 });
 
-test("buildOrchestrationProfileFromForm persists manual context limits for main, explore, and subagents", () => {
+test("buildOrchestrationProfileFromForm persists manual spec for main, explore, and subagents", () => {
   const source = profile();
   source.mainAgent.modelRef.manualSpec = { contextTokens: 200_000, inputPerM: 3, outputPerM: 15 };
   source.builtinAgents.explore.modelRef.manualSpec = { contextTokens: 128_000 };
   source.agents[0]!.modelRef.manualSpec = { contextTokens: 64_000 };
 
   const form = agentProfileToForm(source);
-  expect(form.mainManualContextTokens).toBe("200000");
-  expect(form.builtinExploreManualContextTokens).toBe("128000");
-  expect(form.agents[0]?.manualContextTokens).toBe("64000");
+  expect(form.mainManualSpec.contextTokens).toBe("200000");
+  expect(form.mainManualSpec.inputPerM).toBe("3");
+  expect(form.mainManualSpec.outputPerM).toBe("15");
+  expect(form.builtinExploreManualSpec.contextTokens).toBe("128000");
+  expect(form.agents[0]?.manualSpec.contextTokens).toBe("64000");
 
-  form.mainManualContextTokens = "256,000";
-  form.builtinExploreManualContextTokens = "";
-  form.agents[0]!.manualContextTokens = "100000";
+  form.mainManualSpec = {
+    ...form.mainManualSpec,
+    contextTokens: "256,000",
+  };
+  form.builtinExploreManualSpec = emptyManualSpecForm();
+  form.agents[0]!.manualSpec = {
+    ...form.agents[0]!.manualSpec,
+    contextTokens: "100000",
+  };
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: source,
@@ -249,9 +258,42 @@ test("buildOrchestrationProfileFromForm persists manual context limits for main,
 
 test("buildOrchestrationProfileFromForm rejects invalid manual context limits", () => {
   const form = agentProfileToForm(profile());
-  form.mainManualContextTokens = "abc";
+  form.mainManualSpec = {
+    ...form.mainManualSpec,
+    contextTokens: "abc",
+  };
 
   expect(() =>
     buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
   ).toThrow("手动上下文上限必须是正整数");
+});
+
+test("buildOrchestrationProfileFromForm persists full manual spec fields", () => {
+  const form = agentProfileToForm(profile());
+  form.mainManualSpec = {
+    contextTokens: "200000",
+    maxOutputTokens: "8192",
+    supportsImageInput: "yes",
+    supportsReasoning: "no",
+    inputPerM: "3",
+    outputPerM: "15",
+    cacheReadPerM: "0.3",
+    cacheWritePerM: "3.75",
+  };
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.modelRef.manualSpec).toEqual({
+    contextTokens: 200_000,
+    maxOutputTokens: 8192,
+    supportsImageInput: true,
+    supportsReasoning: false,
+    inputPerM: 3,
+    outputPerM: 15,
+    cacheReadPerM: 0.3,
+    cacheWritePerM: 3.75,
+  });
 });

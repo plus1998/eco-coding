@@ -55,7 +55,21 @@ export function resolveRatesForRoute(
   lookup: ModelPricingLookup | null,
   manualSpec?: RouteManualSpec,
 ): ModelCostRates | null {
-  return lookup?.rates ?? manualSpecToRates(manualSpec);
+  const catalogRates = lookup?.rates ?? null;
+  const manualRates = manualSpecToRates(manualSpec);
+  if (manualRates && manualSpec?.inputPerM !== undefined && manualSpec.outputPerM !== undefined) {
+    return {
+      input: manualSpec.inputPerM,
+      output: manualSpec.outputPerM,
+      ...(manualSpec.cacheReadPerM !== undefined
+        ? { cacheRead: manualSpec.cacheReadPerM }
+        : catalogRates?.cacheRead !== undefined && { cacheRead: catalogRates.cacheRead }),
+      ...(manualSpec.cacheWritePerM !== undefined
+        ? { cacheWrite: manualSpec.cacheWritePerM }
+        : catalogRates?.cacheWrite !== undefined && { cacheWrite: catalogRates.cacheWrite }),
+    };
+  }
+  return catalogRates ?? manualRates;
 }
 
 export function formatManualPricingLabel(spec: RouteManualSpec): string {
@@ -254,6 +268,90 @@ function manualContextTokens(spec?: RouteManualSpec): number | undefined {
   return tokens !== undefined && tokens > 0 ? tokens : undefined;
 }
 
+function manualMaxOutputTokens(spec?: RouteManualSpec): number | undefined {
+  const tokens = spec?.maxOutputTokens;
+  return tokens !== undefined && tokens > 0 ? tokens : undefined;
+}
+
+function hasManualCapabilityOverride(spec?: RouteManualSpec): boolean {
+  if (!spec) {
+    return false;
+  }
+  return (
+    spec.contextTokens !== undefined ||
+    spec.maxOutputTokens !== undefined ||
+    spec.supportsImageInput !== undefined ||
+    spec.supportsReasoning !== undefined
+  );
+}
+
+function hasManualPricingOverride(spec?: RouteManualSpec): boolean {
+  if (!spec) {
+    return false;
+  }
+  return (
+    spec.inputPerM !== undefined ||
+    spec.outputPerM !== undefined ||
+    spec.cacheReadPerM !== undefined ||
+    spec.cacheWritePerM !== undefined
+  );
+}
+
+function resolveEffectiveCapabilities(
+  catalog: ReturnType<typeof unresolvedModelCapabilities>,
+  manualSpec?: RouteManualSpec,
+) {
+  return {
+    supportsImageInput: manualSpec?.supportsImageInput ?? catalog.supportsImageInput,
+    supportsReasoning: manualSpec?.supportsReasoning ?? catalog.supportsReasoning,
+    capabilitiesResolved: catalog.capabilitiesResolved || hasManualCapabilityOverride(manualSpec),
+  };
+}
+
+function resolveEffectiveLimits(
+  limitsLookup: Awaited<ReturnType<ModelsDevPricingCache["lookupLimitsForRoute"]>>,
+  manualSpec?: RouteManualSpec,
+) {
+  const manualContext = manualContextTokens(manualSpec);
+  const manualMaxOutput = manualMaxOutputTokens(manualSpec);
+  const contextTokens = manualContext ?? limitsLookup?.limits.contextTokens;
+  const maxOutputTokens = manualMaxOutput ?? limitsLookup?.limits.maxOutputTokens;
+  const contextLimitResolved =
+    manualContext !== undefined || Boolean(limitsLookup);
+  return {
+    ...(contextTokens !== undefined && { contextTokens }),
+    ...(maxOutputTokens !== undefined && { maxOutputTokens }),
+    contextLimitResolved,
+  };
+}
+
+function resolveEffectivePricingSummary(
+  lookup: ModelPricingLookup | null,
+  manualSpec?: RouteManualSpec,
+) {
+  const catalogSummary = lookup ? buildModelPricingSummary(lookup) : null;
+  const rates = resolveRatesForRoute(lookup, manualSpec);
+  if (!rates) {
+    return null;
+  }
+  const summary = {
+    inputPerM: rates.input,
+    outputPerM: rates.output,
+    ...(rates.cacheRead !== undefined && { cacheReadPerM: rates.cacheRead }),
+    ...(rates.cacheWrite !== undefined && { cacheWritePerM: rates.cacheWrite }),
+  };
+  const pricingResolved = Boolean(catalogSummary) || hasManualPricingOverride(manualSpec);
+  const pricingLabel =
+    hasManualPricingOverride(manualSpec) && manualSpec
+      ? formatManualPricingLabel(manualSpec)
+      : lookup
+        ? formatModelPricingLabel(lookup)
+        : manualSpec
+          ? formatManualPricingLabel(manualSpec)
+          : undefined;
+  return { summary, pricingResolved, pricingLabel };
+}
+
 export async function lookupRouteCapabilityHints(
   cache: ModelsDevPricingCache,
   settings: ModelSettingsSnapshot,
@@ -269,27 +367,30 @@ export async function lookupRouteCapabilityHints(
     const limitsLookup = await cache.lookupLimitsForRoute(routeLookup);
     const pricingLookup = await cache.lookupForRoute(routeLookup);
     const capabilities = lookup?.capabilities ?? unresolvedModelCapabilities();
+    const effectiveCapabilities = resolveEffectiveCapabilities(capabilities, route.manualSpec);
     const resolved =
       resolvedMappingFromLookup(lookup) ??
       resolvedMappingFromLookup(limitsLookup) ??
       resolvedMappingFromLookup(pricingLookup);
-    const manualContext = manualContextTokens(route.manualSpec);
+    const effectiveLimits = resolveEffectiveLimits(limitsLookup, route.manualSpec);
     hints.push({
       role: route.role,
       modelId: route.modelId,
       providerName: route.provider.name,
-      supportsImageInput: capabilities.supportsImageInput,
-      supportsReasoning: capabilities.supportsReasoning,
-      capabilitiesResolved: capabilities.capabilitiesResolved || Boolean(manualContext),
-      ...(limitsLookup
-        ? {
-            contextTokens: limitsLookup.limits.contextTokens,
-            ...(limitsLookup.limits.maxOutputTokens !== undefined && {
-              maxOutputTokens: limitsLookup.limits.maxOutputTokens,
-            }),
-          }
-        : manualContext !== undefined && { contextTokens: manualContext }),
-      contextLimitResolved: Boolean(limitsLookup) || manualContext !== undefined,
+      supportsImageInput: effectiveCapabilities.supportsImageInput,
+      supportsReasoning: effectiveCapabilities.supportsReasoning,
+      capabilitiesResolved: effectiveCapabilities.capabilitiesResolved,
+      ...(capabilities.capabilitiesResolved && {
+        catalogSupportsImageInput: capabilities.supportsImageInput,
+        catalogSupportsReasoning: capabilities.supportsReasoning,
+      }),
+      ...(limitsLookup && {
+        catalogContextTokens: limitsLookup.limits.contextTokens,
+        ...(limitsLookup.limits.maxOutputTokens !== undefined && {
+          catalogMaxOutputTokens: limitsLookup.limits.maxOutputTokens,
+        }),
+      }),
+      ...effectiveLimits,
       ...(resolved && {
         resolvedModelsDevMapping: resolved.mapping,
         resolvedModelsDevLabel: resolved.label,
@@ -318,36 +419,25 @@ export async function lookupRoutePricingHints(
 
   for (const route of routes) {
     const lookup = await cache.lookupForRoute(routeLookupFromRuntime(route));
-    const summary = lookup ? buildModelPricingSummary(lookup) : null;
-    const manualRates = manualSpecToRates(route.manualSpec);
-    const manualSummary =
-      manualRates && route.manualSpec
-        ? {
-            inputPerM: manualRates.input,
-            outputPerM: manualRates.output,
-            ...(manualRates.cacheRead !== undefined && { cacheReadPerM: manualRates.cacheRead }),
-            ...(manualRates.cacheWrite !== undefined && { cacheWritePerM: manualRates.cacheWrite }),
-          }
-        : null;
+    const catalogSummary = lookup ? buildModelPricingSummary(lookup) : null;
+    const effectivePricing = resolveEffectivePricingSummary(lookup, route.manualSpec);
     hints.push({
       role: route.role,
       modelId: route.modelId,
       providerName: route.provider.name,
-      ...(summary
-        ? {
-            rates: {
-              inputPerM: summary.inputPerM,
-              outputPerM: summary.outputPerM,
-              ...(summary.cacheReadPerM !== undefined && { cacheReadPerM: summary.cacheReadPerM }),
-              ...(summary.cacheWritePerM !== undefined && { cacheWritePerM: summary.cacheWritePerM }),
-            },
-            pricingLabel: formatModelPricingLabel(lookup!),
-          }
-        : manualSummary && {
-            rates: manualSummary,
-            pricingLabel: formatManualPricingLabel(route.manualSpec!),
-          }),
-      pricingResolved: Boolean(lookup) || Boolean(manualSummary),
+      ...(effectivePricing?.summary && {
+        rates: effectivePricing.summary,
+        ...(effectivePricing.pricingLabel && { pricingLabel: effectivePricing.pricingLabel }),
+      }),
+      ...(catalogSummary && {
+        catalogRates: {
+          inputPerM: catalogSummary.inputPerM,
+          outputPerM: catalogSummary.outputPerM,
+          ...(catalogSummary.cacheReadPerM !== undefined && { cacheReadPerM: catalogSummary.cacheReadPerM }),
+          ...(catalogSummary.cacheWritePerM !== undefined && { cacheWritePerM: catalogSummary.cacheWritePerM }),
+        },
+      }),
+      pricingResolved: effectivePricing?.pricingResolved ?? false,
       ...(route.modelsDevMapping && {
         modelsDevMapping: route.modelsDevMapping,
         modelsDevLabel: formatModelsDevLabel(route.modelsDevMapping, lookup?.displayName),

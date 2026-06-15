@@ -75,8 +75,11 @@ import {
   agentCapabilityPatchToAgentForm,
   mainCapabilityFromProfileForm,
   mainCapabilityPatchToProfileForm,
-  tryParseManualContextTokens,
+  tryFormToManualSpec,
 } from "./agent-profile-form";
+import type { ManualSpecFormFields, ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
+import { catalogCapabilityHint, catalogPricingHint, emptyManualSpecForm } from "./agent-profile-manual-spec-form";
+import { ModelManualSpecPanel, useEffectiveModelSpecHints } from "./ModelManualSpecPanel";
 import {
   type AgentProfileSummary,
   buildAgentProfileSummary,
@@ -422,7 +425,7 @@ export function ModelsSettingsPanel({
         apiCompat?: string;
         modelsDevMappingProviderKey?: string;
         modelsDevMappingModelId?: string;
-        manualContextTokens?: string;
+        manualSpec?: ManualSpecFormFields;
       }>,
     ) => {
       if (!window.eco?.getRouteCapabilities || nodes.length === 0) {
@@ -457,7 +460,7 @@ export function ModelsSettingsPanel({
         apiCompat?: string;
         modelsDevMappingProviderKey?: string;
         modelsDevMappingModelId?: string;
-        manualContextTokens?: string;
+        manualSpec?: ManualSpecFormFields;
       }>,
     ) => {
       if (!window.eco?.getRoutePricing || nodes.length === 0) {
@@ -1451,7 +1454,7 @@ type AgentProfileRouteLookupNode = {
   apiCompat?: string;
   modelsDevMappingProviderKey?: string;
   modelsDevMappingModelId?: string;
-  manualContextTokens?: string;
+  manualSpec?: ManualSpecFormFields;
 };
 
 function buildRouteLookupPayload(nodes: Array<AgentProfileRouteLookupNode>): RuntimeRoleRouteConfig[] {
@@ -1461,7 +1464,7 @@ function buildRouteLookupPayload(nodes: Array<AgentProfileRouteLookupNode>): Run
       const apiCompat = node.apiCompat?.trim();
       const mappingProviderKey = node.modelsDevMappingProviderKey?.trim();
       const mappingModelId = node.modelsDevMappingModelId?.trim();
-      const contextTokens = tryParseManualContextTokens(node.manualContextTokens ?? "");
+      const manualSpec = node.manualSpec ? tryFormToManualSpec(node.manualSpec) : undefined;
       return {
         role: node.key,
         providerId: node.providerId.trim(),
@@ -1474,35 +1477,9 @@ function buildRouteLookupPayload(nodes: Array<AgentProfileRouteLookupNode>): Run
               modelId: mappingModelId,
             },
           }),
-        ...(contextTokens !== undefined && { manualSpec: { contextTokens } }),
+        ...(manualSpec && { manualSpec }),
       };
     });
-}
-
-function ManualContextLimitField({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  disabled?: boolean | undefined;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="mcp-field">
-      <span className="mcp-field-label">手动上下文上限（tokens）</span>
-      <input
-        className="mcp-field-input"
-        type="text"
-        inputMode="numeric"
-        placeholder="留空则使用 models.dev 匹配"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <span className="mcp-field-hint">models.dev 未匹配或未覆盖时可手动填写上下文窗口大小</span>
-    </label>
-  );
 }
 
 function AgentProfileEditorModal({
@@ -1594,7 +1571,7 @@ function AgentProfileEditorModal({
         ...(form.mainApiCompat ? { apiCompat: form.mainApiCompat } : {}),
         modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
         modelsDevMappingModelId: form.mainModelsDevMappingModelId,
-        manualContextTokens: form.mainManualContextTokens,
+        manualSpec: form.mainManualSpec,
       },
       {
         key: "explore",
@@ -1602,7 +1579,7 @@ function AgentProfileEditorModal({
         modelId: form.builtinExploreModelId,
         modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
         modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
-        manualContextTokens: form.builtinExploreManualContextTokens,
+        manualSpec: form.builtinExploreManualSpec,
       },
       ...form.agents.map((agent) => ({
         key: agent.agentKey,
@@ -1610,7 +1587,7 @@ function AgentProfileEditorModal({
         modelId: agent.modelId,
         modelsDevMappingProviderKey: agent.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agent.modelsDevMappingModelId,
-        manualContextTokens: agent.manualContextTokens,
+        manualSpec: agent.manualSpec,
       })),
     ];
     void onLookupCapabilities(nodes);
@@ -1621,12 +1598,12 @@ function AgentProfileEditorModal({
     form.mainApiCompat,
     form.mainModelsDevMappingProviderKey,
     form.mainModelsDevMappingModelId,
-    form.mainManualContextTokens,
+    form.mainManualSpec,
     form.builtinExploreProviderId,
     form.builtinExploreModelId,
     form.builtinExploreModelsDevMappingProviderKey,
     form.builtinExploreModelsDevMappingModelId,
-    form.builtinExploreManualContextTokens,
+    form.builtinExploreManualSpec,
     form.agents,
     onLookupCapabilities,
     onLookupPricing,
@@ -1992,14 +1969,17 @@ function valueHasManualMapping(
 function ModelsDevCapabilitySummary({
   capability,
   pricing,
+  overriddenFields,
 }: {
   capability?: RouteCapabilityHint;
   pricing?: RoutePricingHint;
+  overriddenFields?: Set<ManualSpecOverrideField>;
 }) {
   if (!capability && !pricing) {
     return null;
   }
   const cap = capability;
+  const overrides = overriddenFields ?? new Set<ManualSpecOverrideField>();
   const hasContext =
     cap?.contextLimitResolved && cap.contextTokens !== undefined && cap.contextTokens > 0;
   const hasOutput = cap?.maxOutputTokens !== undefined && cap.maxOutputTokens > 0;
@@ -2013,45 +1993,69 @@ function ModelsDevCapabilitySummary({
     return null;
   }
 
+  function chipClass(field?: ManualSpecOverrideField): string {
+    const base = "models-dev-capability-chip";
+    if (field && overrides.has(field)) {
+      return `${base} models-dev-capability-chip-manual`;
+    }
+    return base;
+  }
+
   return (
     <div className="models-dev-capability-summary">
       {hasContext ? (
-        <span className="models-dev-capability-chip" title="上下文窗口">
+        <span className={chipClass("contextTokens")} title="上下文窗口">
           <Eye size={14} />
           {cap!.contextTokens! >= 1_000_000
             ? `${(cap!.contextTokens! / 1_000_000).toFixed(1)}M`
             : `${Math.round(cap!.contextTokens! / 1000)}K`}{" "}
           上下文
+          {overrides.has("contextTokens") ? <span className="models-dev-capability-manual-badge">手动</span> : null}
         </span>
       ) : null}
       {hasOutput ? (
-        <span className="models-dev-capability-chip" title="最大输出">
+        <span className={chipClass("maxOutputTokens")} title="最大输出">
           <Zap size={14} />
           {cap!.maxOutputTokens! >= 1_000
             ? `${(cap!.maxOutputTokens! / 1000).toFixed(0)}K`
             : cap!.maxOutputTokens}{" "}
           输出
+          {overrides.has("maxOutputTokens") ? <span className="models-dev-capability-manual-badge">手动</span> : null}
         </span>
       ) : null}
       {hasImage ? (
-        <span className="models-dev-capability-chip" title="支持图像输入">
+        <span className={chipClass("supportsImageInput")} title="支持图像输入">
           <Image size={14} />
           多模态
+          {overrides.has("supportsImageInput") ? (
+            <span className="models-dev-capability-manual-badge">手动</span>
+          ) : null}
         </span>
       ) : null}
       {hasReasoning ? (
-        <span className="models-dev-capability-chip" title="支持推理">
+        <span className={chipClass("supportsReasoning")} title="支持推理">
           <Zap size={14} />
           推理
+          {overrides.has("supportsReasoning") ? (
+            <span className="models-dev-capability-manual-badge">手动</span>
+          ) : null}
         </span>
       ) : null}
       {hasPricing ? (
         <>
-          <span className="models-dev-capability-chip models-dev-capability-chip-price" title="输入价格 /M tokens">
+          <span
+            className={`${chipClass("inputPerM")} models-dev-capability-chip-price`}
+            title="输入价格 /M tokens"
+          >
             ↑{formatRatePerMillion(rates!.inputPerM)}
+            {overrides.has("inputPerM") ? <span className="models-dev-capability-manual-badge">手动</span> : null}
           </span>
-          <span className="models-dev-capability-chip models-dev-capability-chip-price" title="输出价格 /M tokens">
+          <span
+            className={`${chipClass("outputPerM")} models-dev-capability-chip-price`}
+            title="输出价格 /M tokens"
+          >
             ↓{formatRatePerMillion(rates!.outputPerM)}
+            {overrides.has("outputPerM") ? <span className="models-dev-capability-manual-badge">手动</span> : null}
           </span>
         </>
       ) : null}
@@ -2060,19 +2064,25 @@ function ModelsDevCapabilitySummary({
             rates?.cacheReadPerM !== undefined ? (
               <span
                 key="cache-read"
-                className="models-dev-capability-chip models-dev-capability-chip-cache"
+                className={`${chipClass("cacheReadPerM")} models-dev-capability-chip-cache`}
                 title="缓存读取价格 /M tokens"
               >
                 ⊙{formatRatePerMillion(rates!.cacheReadPerM!)}
+                {overrides.has("cacheReadPerM") ? (
+                  <span className="models-dev-capability-manual-badge">手动</span>
+                ) : null}
               </span>
             ) : null,
             rates?.cacheWritePerM !== undefined ? (
               <span
                 key="cache-write"
-                className="models-dev-capability-chip models-dev-capability-chip-cache"
+                className={`${chipClass("cacheWritePerM")} models-dev-capability-chip-cache`}
                 title="缓存写入价格 /M tokens"
               >
                 ⊕{formatRatePerMillion(rates!.cacheWritePerM!)}
+                {overrides.has("cacheWritePerM") ? (
+                  <span className="models-dev-capability-manual-badge">手动</span>
+                ) : null}
               </span>
             ) : null,
           ].filter(Boolean)
@@ -2131,6 +2141,18 @@ function AgentProfileNodeConfigModal({
   const nodeCapKey = isMainNode ? "main" : isBuiltinExploreNode ? "explore" : agent?.agentKey ?? "";
   const capability = capabilityHints[nodeCapKey];
   const pricing = pricingHints[nodeCapKey];
+  const manualSpecForm = isMainNode
+    ? form.mainManualSpec
+    : isBuiltinExploreNode
+      ? form.builtinExploreManualSpec
+      : agent?.manualSpec;
+  const effectiveHints = useEffectiveModelSpecHints(
+    capability,
+    pricing,
+    manualSpecForm ?? emptyManualSpecForm(),
+  );
+  const catalogCapability = catalogCapabilityHint(capability);
+  const catalogPricing = catalogPricingHint(pricing);
   const autoMatch =
     !valueHasManualMapping(isMainNode, isBuiltinExploreNode, form, agent) &&
     capability?.resolvedModelsDevMapping
@@ -2350,14 +2372,21 @@ function AgentProfileNodeConfigModal({
                     }
                   />
                   <ModelsDevCapabilitySummary
-                    {...(capability ? { capability } : {})}
-                    {...(pricing ? { pricing } : {})}
+                    {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
+                    {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
+                    overriddenFields={effectiveHints.overriddenFields}
                   />
                 </div>
-                <ManualContextLimitField
-                  value={form.mainManualContextTokens}
-                  disabled={busy}
-                  onChange={(manualContextTokens) => onPatchProfile({ mainManualContextTokens: manualContextTokens })}
+                <ModelManualSpecPanel
+                  value={form.mainManualSpec}
+                  {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
+                  {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
+                  {...(busy !== undefined ? { disabled: busy } : {})}
+                  onChange={(patch) =>
+                    onPatchProfile({
+                      mainManualSpec: { ...form.mainManualSpec, ...patch },
+                    })
+                  }
                 />
               </div>
 
@@ -2474,15 +2503,20 @@ function AgentProfileNodeConfigModal({
                     }
                   />
                   <ModelsDevCapabilitySummary
-                    {...(capability ? { capability } : {})}
-                    {...(pricing ? { pricing } : {})}
+                    {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
+                    {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
+                    overriddenFields={effectiveHints.overriddenFields}
                   />
                 </div>
-                <ManualContextLimitField
-                  value={form.builtinExploreManualContextTokens}
-                  disabled={busy}
-                  onChange={(manualContextTokens) =>
-                    onPatchProfile({ builtinExploreManualContextTokens: manualContextTokens })
+                <ModelManualSpecPanel
+                  value={form.builtinExploreManualSpec}
+                  {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
+                  {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
+                  {...(busy !== undefined ? { disabled: busy } : {})}
+                  onChange={(patch) =>
+                    onPatchProfile({
+                      builtinExploreManualSpec: { ...form.builtinExploreManualSpec, ...patch },
+                    })
                   }
                 />
               </div>
@@ -2588,17 +2622,24 @@ function AgentProfileNodeConfigModal({
                     }
                   />
                   <ModelsDevCapabilitySummary
-                    {...(capability ? { capability } : {})}
-                    {...(pricing ? { pricing } : {})}
+                    {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
+                    {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
+                    overriddenFields={effectiveHints.overriddenFields}
                   />
                 </div>
-                <ManualContextLimitField
-                  value={agent?.manualContextTokens ?? ""}
-                  disabled={busy}
-                  onChange={(manualContextTokens) =>
-                    onPatchAgent(agentIndex, { manualContextTokens })
-                  }
-                />
+                {agent ? (
+                  <ModelManualSpecPanel
+                    value={agent.manualSpec}
+                    {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
+                    {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
+                    {...(busy !== undefined ? { disabled: busy } : {})}
+                    onChange={(patch) =>
+                      onPatchAgent(agentIndex, {
+                        manualSpec: { ...agent.manualSpec, ...patch },
+                      })
+                    }
+                  />
+                ) : null}
               </div>
 
               {agent ? (

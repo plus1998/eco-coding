@@ -6,11 +6,16 @@ import type {
   OrchestrationProfile,
   OrchestrationStrategy,
   ProviderConfigView,
-  RouteManualSpec,
   ToolPolicy,
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
+import {
+  emptyManualSpecForm,
+  formToManualSpec,
+  manualSpecToForm,
+  type ManualSpecFormFields,
+} from "./agent-profile-manual-spec-form";
 import { formatList, parseList } from "./agent-template-form-utils";
 import {
   capabilityFieldsToToolPolicy,
@@ -30,7 +35,7 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   thinkingEffort: string;
   modelsDevMappingProviderKey: string;
   modelsDevMappingModelId: string;
-  manualContextTokens: string;
+  manualSpec: ManualSpecFormFields;
   enabled: boolean;
 }
 
@@ -45,7 +50,7 @@ export interface AgentProfileFormState {
   mainThinkingEffort: string;
   mainModelsDevMappingProviderKey: string;
   mainModelsDevMappingModelId: string;
-  mainManualContextTokens: string;
+  mainManualSpec: ManualSpecFormFields;
   mainApiCompat: string;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
@@ -68,7 +73,7 @@ export interface AgentProfileFormState {
   builtinExploreThinkingEffort: string;
   builtinExploreModelsDevMappingProviderKey: string;
   builtinExploreModelsDevMappingModelId: string;
-  builtinExploreManualContextTokens: string;
+  builtinExploreManualSpec: ManualSpecFormFields;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -182,7 +187,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainThinkingEffort: "",
     mainModelsDevMappingProviderKey: "",
     mainModelsDevMappingModelId: "",
-    mainManualContextTokens: "",
+    mainManualSpec: emptyManualSpecForm(),
     mainApiCompat: "",
     mainSystemPromptPreset: "custom",
     mainPrompt:
@@ -193,7 +198,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreThinkingEffort: "",
     builtinExploreModelsDevMappingProviderKey: "",
     builtinExploreModelsDevMappingModelId: "",
-    builtinExploreManualContextTokens: "",
+    builtinExploreManualSpec: emptyManualSpecForm(),
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -215,7 +220,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainThinkingEffort: profile.mainAgent.modelRef.thinkingEffort ?? "",
     mainModelsDevMappingProviderKey: profile.mainAgent.modelRef.modelsDevMapping?.providerKey ?? "",
     mainModelsDevMappingModelId: profile.mainAgent.modelRef.modelsDevMapping?.modelId ?? "",
-    mainManualContextTokens: formatManualContextTokens(profile.mainAgent.modelRef.manualSpec?.contextTokens),
+    mainManualSpec: manualSpecToForm(profile.mainAgent.modelRef.manualSpec),
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
@@ -227,9 +232,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.providerKey ?? "",
     builtinExploreModelsDevMappingModelId:
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
-    builtinExploreManualContextTokens: formatManualContextTokens(
-      profile.builtinAgents.explore.modelRef.manualSpec?.contextTokens,
-    ),
+    builtinExploreManualSpec: manualSpecToForm(profile.builtinAgents.explore.modelRef.manualSpec),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -240,7 +243,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       thinkingEffort: agent.modelRef.thinkingEffort ?? "",
       modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
-      manualContextTokens: formatManualContextTokens(agent.modelRef.manualSpec?.contextTokens),
+      manualSpec: manualSpecToForm(agent.modelRef.manualSpec),
       enabled: agent.enabled,
       ...agentCapabilityToAgentForm(
         toolPolicyToCapabilityFields(agent.tools, {
@@ -280,7 +283,7 @@ export function createProfileAgentFormFromTemplate(
     thinkingEffort: "",
     modelsDevMappingProviderKey: "",
     modelsDevMappingModelId: "",
-    manualContextTokens: "",
+    manualSpec: emptyManualSpecForm(),
     enabled: true,
     ...agentCapabilityToAgentForm(capability),
   };
@@ -316,7 +319,7 @@ export function buildOrchestrationProfileFromForm(
       thinkingEffort: form.mainThinkingEffort,
       modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
       modelsDevMappingModelId: form.mainModelsDevMappingModelId,
-      manualContextTokens: form.mainManualContextTokens,
+      manualSpec: form.mainManualSpec,
       apiCompat: form.mainApiCompat,
     },
   );
@@ -328,7 +331,7 @@ export function buildOrchestrationProfileFromForm(
       thinkingEffort: form.builtinExploreThinkingEffort,
       modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
       modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
-      manualContextTokens: form.builtinExploreManualContextTokens,
+      manualSpec: form.builtinExploreManualSpec,
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -357,7 +360,7 @@ export function buildOrchestrationProfileFromForm(
         thinkingEffort: agentForm.thinkingEffort,
         modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
-        manualContextTokens: agentForm.manualContextTokens,
+        manualSpec: agentForm.manualSpec,
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
@@ -409,34 +412,6 @@ function buildStrategyFromForm(
   };
 }
 
-export function formatManualContextTokens(value?: number): string {
-  return value !== undefined && value > 0 ? String(value) : "";
-}
-
-export function parseManualContextTokensInput(value: string): number | undefined {
-  const trimmed = value.trim().replace(/[_,\s]/g, "");
-  if (!trimmed) {
-    return undefined;
-  }
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error("手动上下文上限必须是正整数。");
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error("手动上下文上限必须是正整数。");
-  }
-  return parsed;
-}
-
-/** Lenient parse for live capability lookup while the user is editing. */
-export function tryParseManualContextTokens(value: string): number | undefined {
-  const trimmed = value.trim().replace(/[_,\s]/g, "");
-  if (!trimmed || !/^\d+$/.test(trimmed)) {
-    return undefined;
-  }
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
 
 function agentCapabilityToAgentForm(
   capability: ToolCapabilityFieldValues,
@@ -498,12 +473,12 @@ function mainCapabilityToProfileFormFields(
 function buildModelRef(
   providerId: string,
   modelId: string,
-  existing?: ModelRef,
+  _existing?: ModelRef,
   options?: {
     thinkingEffort?: string;
     modelsDevMappingProviderKey?: string;
     modelsDevMappingModelId?: string;
-    manualContextTokens?: string;
+    manualSpec?: ManualSpecFormFields;
     apiCompat?: string;
   },
 ): ModelRef {
@@ -533,29 +508,17 @@ function buildModelRef(
   if (apiCompat) {
     modelRef.apiCompat = apiCompat as UpstreamApiCompat;
   }
-  const manualSpec = mergeManualSpec(
-    parseManualContextTokensInput(options?.manualContextTokens ?? ""),
-    existing?.manualSpec,
-  );
+  const manualSpec = formToManualSpec(options?.manualSpec ?? emptyManualSpecForm(), { strict: true });
   if (manualSpec) {
     modelRef.manualSpec = manualSpec;
   }
   return modelRef;
 }
 
-function mergeManualSpec(
-  contextTokens: number | undefined,
-  existing?: RouteManualSpec,
-): RouteManualSpec | undefined {
-  const next: RouteManualSpec = {
-    ...(existing?.inputPerM !== undefined && { inputPerM: existing.inputPerM }),
-    ...(existing?.outputPerM !== undefined && { outputPerM: existing.outputPerM }),
-    ...(existing?.cacheReadPerM !== undefined && { cacheReadPerM: existing.cacheReadPerM }),
-    ...(existing?.cacheWritePerM !== undefined && { cacheWritePerM: existing.cacheWritePerM }),
-    ...(contextTokens !== undefined && { contextTokens }),
-  };
-  return Object.keys(next).length > 0 ? next : undefined;
-}
+export {
+  formatManualTokenValue as formatManualContextTokens,
+  tryFormToManualSpec,
+} from "./agent-profile-manual-spec-form";
 
 function normalizeAgentKey(raw: string): string {
   const agentKey = raw.trim();

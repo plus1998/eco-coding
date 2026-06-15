@@ -246,10 +246,16 @@ export interface ModelsDevMapping {
   modelId: string;
 }
 
-/** User-provided pricing/context when upstream model id is absent from models.dev. */
+/** User-provided pricing/context/capabilities when models.dev is absent or should be overridden. */
 export interface RouteManualSpec {
   /** Context window in tokens. */
   contextTokens?: number;
+  /** Max output tokens. */
+  maxOutputTokens?: number;
+  /** When set, overrides models.dev multimodal detection. */
+  supportsImageInput?: boolean;
+  /** When set, overrides models.dev reasoning detection. */
+  supportsReasoning?: boolean;
   /** USD per million input tokens. */
   inputPerM?: number;
   /** USD per million output tokens. */
@@ -933,6 +939,8 @@ export interface RoutePricingHint {
   providerName: string;
   /** models.dev 参考单价（每百万 token，USD） */
   rates?: RoutePricingRates;
+  /** catalog 原始单价，用于手动覆盖面板的「自动」提示 */
+  catalogRates?: RoutePricingRates;
   /** 完整说明，用于悬停提示 */
   pricingLabel?: string;
   pricingResolved: boolean;
@@ -948,6 +956,11 @@ export interface RouteCapabilityHint {
   contextTokens?: number;
   maxOutputTokens?: number;
   contextLimitResolved: boolean;
+  /** catalog 原始能力，用于手动覆盖面板的「自动」提示 */
+  catalogSupportsImageInput?: boolean;
+  catalogSupportsReasoning?: boolean;
+  catalogContextTokens?: number;
+  catalogMaxOutputTokens?: number;
   modelsDevMapping?: ModelsDevMapping;
   modelsDevLabel?: string;
   /** 自动匹配命中的 models.dev 模型（非手动映射） */

@@ -8988,6 +8988,100 @@ button:not(:disabled) {
   border-color: #3730a3;
 }
 
+.models-dev-capability-chip-manual {
+  border-style: dashed;
+}
+
+.models-dev-capability-manual-badge {
+  margin-left: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.model-manual-spec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  border: none;
+  background: transparent;
+  color: #e5e5e5;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.model-manual-spec-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-manual-spec-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.model-manual-spec-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.model-manual-spec-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a3a3a3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.model-manual-spec-tristate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.model-manual-spec-tristate {
+  display: inline-flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.model-manual-spec-tristate-btn {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  background: transparent;
+  color: #a3a3a3;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.model-manual-spec-tristate-btn.active {
+  border-color: #6b8afd;
+  color: #93c5fd;
+  background: color-mix(in srgb, #6b8afd 12%, transparent);
+}
+
+.model-manual-spec-tristate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-manual-spec-auto-hint {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: #737373;
+}
+
 .settings-modal-header {
   display: flex;
   align-items: center;

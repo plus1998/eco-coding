@@ -112,13 +112,37 @@ test("manualSpecToRates returns rates when input and output are set", () => {
   });
 });
 
-test("resolveRatesForRoute prefers models.dev lookup over manual spec", () => {
+test("resolveRatesForRoute prefers manual spec when input and output are set", () => {
   const lookup = {
     providerKey: "anthropic",
     modelId: "claude-sonnet-4",
-    rates: { input: 1, output: 2 },
+    rates: { input: 1, output: 2, cacheRead: 0.1 },
   };
-  expect(resolveRatesForRoute(lookup, { inputPerM: 9, outputPerM: 9 })).toEqual({ input: 1, output: 2 });
+  expect(resolveRatesForRoute(lookup, { inputPerM: 9, outputPerM: 9 })).toEqual({
+    input: 9,
+    output: 9,
+    cacheRead: 0.1,
+  });
+});
+
+test("resolveRatesForRoute uses manual cache fields when set", () => {
+  const lookup = {
+    providerKey: "anthropic",
+    modelId: "claude-sonnet-4",
+    rates: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1.2 },
+  };
+  expect(
+    resolveRatesForRoute(lookup, {
+      inputPerM: 9,
+      outputPerM: 9,
+      cacheWritePerM: 4,
+    }),
+  ).toEqual({
+    input: 9,
+    output: 9,
+    cacheRead: 0.1,
+    cacheWrite: 4,
+  });
 });
 
 test("resolveRatesForRoute falls back to manual spec", () => {

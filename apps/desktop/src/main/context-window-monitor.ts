@@ -391,6 +391,7 @@ export class ContextWindowMonitor {
       roleState.modelId,
       roleState.modelsDevMapping,
       roleState.manualSpec?.contextTokens,
+      roleState.manualSpec?.maxOutputTokens,
     );
     roleState.limit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
     roleState.limitsResolved = resolved.limitsResolved;
