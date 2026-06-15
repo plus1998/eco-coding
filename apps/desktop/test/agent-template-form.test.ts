@@ -94,6 +94,38 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
 });
 
+test("buildAgentTemplateFromForm syncs delegation tools with allowDelegation", () => {
+  const baseForm = {
+    id: "user.custom.agent",
+    name: "Custom Agent",
+    description: "Agent",
+    domain: "custom" as const,
+    prompt: "Do work.",
+    whenToUse: "Use when needed.",
+    outputContract: "",
+    disallowedTools: "Write",
+    mcpServers: "",
+    mcpTools: "",
+    bashCommandAllowlist: "",
+    bashCommandDenylist: "",
+    filesystemRead: "workspace" as const,
+    filesystemWrite: "none" as const,
+    allowDelegation: false,
+  };
+
+  const blocked = buildAgentTemplateFromForm(baseForm);
+  expect(blocked.defaultTools.disallowed).toEqual(
+    expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput", "Write"]),
+  );
+
+  const allowed = buildAgentTemplateFromForm({
+    ...baseForm,
+    allowDelegation: true,
+    disallowedTools: "Write, Agent, Task",
+  });
+  expect(allowed.defaultTools.disallowed).toEqual(["Write"]);
+});
+
 test("normalizeDisallowedTools merges legacy bash and network flags into disallowed list", () => {
   expect(
     normalizeDisallowedTools({
@@ -122,6 +154,8 @@ test("buildAgentTemplateCapabilityOptions merges presets, current values, and MC
   });
 
   expect(options.tools.map((option) => option.value)).toContain("WebSearch");
+  expect(options.tools.map((option) => option.value)).not.toContain("Agent");
+  expect(options.tools.map((option) => option.value)).not.toContain("Task");
   expect(options.tools.find((option) => option.value === "UnknownTool")).toMatchObject({
     sourceLabel: "当前",
   });
@@ -168,6 +202,7 @@ test("buildAgentTemplatePermissionChips summarizes effective tool policy", () =>
     { label: "写 禁用", tone: "deny" },
     { label: "网络 Fetch", tone: "allow" },
     { label: "MCP 1 个服务/1 个工具", tone: "allow" },
+    { label: "委派关闭", tone: "deny" },
     { label: "命令白名单 1", tone: "allow" },
     { label: "命令黑名单 1", tone: "deny" },
     { label: "禁用 Write/Edit/WebSearch", tone: "deny" },

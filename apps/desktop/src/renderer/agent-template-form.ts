@@ -23,6 +23,37 @@ export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> 
   { value: "custom", label: "Custom" },
 ];
 
+export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;
+
+export function isDelegationToolName(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed === "Agent" ||
+    trimmed === "Task" ||
+    trimmed === "TaskList" ||
+    trimmed === "TaskOutput" ||
+    trimmed.startsWith("Agent(") ||
+    trimmed.startsWith("Task(")
+  );
+}
+
+export function applyAllowDelegationToDisallowedTools(
+  disallowedTools: string,
+  allowDelegation: boolean,
+): Pick<AgentTemplateFormState, "disallowedTools"> {
+  const withoutDelegation = parseList(disallowedTools).filter((tool) => !isDelegationToolName(tool));
+  if (!allowDelegation) {
+    return {
+      disallowedTools: formatList(uniqueValues([...withoutDelegation, ...DELEGATION_TOOL_NAMES])),
+    };
+  }
+  return { disallowedTools: formatList(withoutDelegation) };
+}
+
+export function stripDelegationToolsFromDisallowedTools(disallowedTools: string): string {
+  return formatList(parseList(disallowedTools).filter((tool) => !isDelegationToolName(tool)));
+}
+
 export interface AgentTemplateFormState {
   id: string;
   name: string;
@@ -88,6 +119,7 @@ export function createBlankAgentTemplateForm(
 }
 
 export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormState {
+  const toolFields = toolPolicyToFormFields(template.defaultTools);
   return {
     id: template.id,
     name: template.name,
@@ -96,7 +128,8 @@ export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormS
     prompt: template.prompt,
     whenToUse: template.whenToUse,
     outputContract: template.outputContract ?? "",
-    ...toolPolicyToFormFields(template.defaultTools),
+    ...toolFields,
+    disallowedTools: stripDelegationToolsFromDisallowedTools(toolFields.disallowedTools),
     mcpServers: formatList(template.mcpServers),
     allowDelegation: template.allowDelegation,
   };
@@ -204,8 +237,8 @@ export function toggleAgentTemplateDisallowedTool(
   checked: boolean,
 ): Pick<AgentTemplateFormState, "disallowedTools"> {
   const tool = value.trim();
-  if (!tool) {
-    return { disallowedTools: formatList(parseList(form.disallowedTools)) };
+  if (!tool || isDelegationToolName(tool)) {
+    return { disallowedTools: stripDelegationToolsFromDisallowedTools(form.disallowedTools) };
   }
   const disallowed = parseList(form.disallowedTools).filter((entry) => entry !== tool);
   if (checked) {
@@ -273,10 +306,12 @@ export function buildStructuredToolPolicyFromDisallowed(
 }
 
 export function buildAgentTemplatePermissionChips(
-  template: Pick<AgentTemplate, "defaultTools" | "mcpServers">,
+  template: Pick<AgentTemplate, "defaultTools" | "mcpServers" | "allowDelegation">,
 ): AgentTemplatePermissionChip[] {
   const tools = template.defaultTools;
-  const disallowed = new Set(normalizeDisallowedTools(tools));
+  const disallowed = new Set(
+    normalizeDisallowedTools(tools).filter((tool) => !isDelegationToolName(tool)),
+  );
   const bashEnabled = !disallowed.has("Bash");
   const readScope = tools.filesystem?.read ?? "workspace";
   const writeScope = tools.filesystem?.write ?? "none";
@@ -311,6 +346,10 @@ export function buildAgentTemplatePermissionChips(
           : "MCP 关闭",
       tone: mcpServerCount > 0 || mcpToolCount > 0 ? "allow" : "neutral",
     },
+    {
+      label: template.allowDelegation ? "可委派" : "委派关闭",
+      tone: template.allowDelegation ? "allow" : "deny",
+    },
   ];
 
   if (tools.bash?.commandAllowlist?.length) {
@@ -326,30 +365,6 @@ export function buildAgentTemplatePermissionChips(
 }
 
 const COMMON_CLAUDE_TOOL_OPTIONS: AgentTemplateCapabilityOption[] = [
-  {
-    value: "Agent",
-    label: "Agent",
-    description: "调用 Eco 子代理。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "Task",
-    label: "Task",
-    description: "旧式子任务委派工具。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "TaskList",
-    label: "TaskList",
-    description: "列出委派任务状态。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "TaskOutput",
-    label: "TaskOutput",
-    description: "读取委派任务输出。",
-    sourceLabel: "Claude",
-  },
   {
     value: "Skill",
     label: "Skill",
@@ -418,7 +433,7 @@ function buildToolOptions(
     ...COMMON_CLAUDE_TOOL_OPTIONS.map((option) => option.value),
     ...templateTools,
     ...currentTools,
-  ]);
+  ]).filter((value) => !isDelegationToolName(value));
   return values.map((value) => {
     const commonOption = common.get(value);
     if (commonOption) {
@@ -538,8 +553,12 @@ function formatMcpServerDescription(server: McpServerConfigView): string {
 }
 
 function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
+  const { disallowedTools } = applyAllowDelegationToDisallowedTools(
+    form.disallowedTools,
+    form.allowDelegation,
+  );
   return buildStructuredToolPolicyFromDisallowed(
-    parseList(form.disallowedTools),
+    parseList(disallowedTools),
     {
       bashCommandAllowlist: form.bashCommandAllowlist,
       bashCommandDenylist: form.bashCommandDenylist,

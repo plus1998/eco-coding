@@ -11,6 +11,7 @@ import {
   type AgentTemplateCapabilityOption,
   type AgentTemplateFormState,
   agentTemplateToForm,
+  applyAllowDelegationToDisallowedTools,
   buildAgentTemplateCapabilityOptions,
   buildAgentTemplateFromForm,
   buildAgentTemplatePermissionChips,
@@ -734,8 +735,7 @@ function AgentTemplateEditorModal({
                 <span>
                   <strong>允许继续委派</strong>
                   <small>
-                    开启后，这个子代理可以再次调用 Agent/Task
-                    把工作交给其他子代理；关闭可降低递归委派、成本和上下文失控风险。
+                    控制 Agent、Task、TaskList、TaskOutput 是否可用。开启后子代理可继续委派其他子代理；关闭可降低递归委派、成本和上下文失控风险。
                   </small>
                 </span>
                 <label className="mcp-toggle" title={form.allowDelegation ? "已启用" : "已禁用"}>
@@ -743,7 +743,13 @@ function AgentTemplateEditorModal({
                     type="checkbox"
                     checked={form.allowDelegation}
                     disabled={busy}
-                    onChange={(event) => patchForm({ allowDelegation: event.target.checked })}
+                    onChange={(event) => {
+                      const allowDelegation = event.target.checked;
+                      patchForm({
+                        allowDelegation,
+                        ...applyAllowDelegationToDisallowedTools(form.disallowedTools, allowDelegation),
+                      });
+                    }}
                   />
                   <span className="mcp-toggle-track" aria-hidden />
                 </label>
