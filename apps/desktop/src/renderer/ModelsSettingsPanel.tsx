@@ -968,7 +968,6 @@ export function ModelsSettingsPanel({
         {mode === "providerSettings" ? (
           <>
             <h1>Provider</h1>
-            <p className="mcp-page-desc">管理上游模型服务、API Key、默认模型和本地代理桥。</p>
           </>
         ) : (
           <>

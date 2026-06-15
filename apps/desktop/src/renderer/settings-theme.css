@@ -1,0 +1,598 @@
+/* Light-theme overrides for settings panels (Codex / macOS System Settings style) */
+
+.settings-page .mcp-page-header h1,
+.settings-page .settings-page-header h1 {
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-page-desc,
+.settings-page .settings-page-desc {
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .mcp-page-desc code,
+.settings-page .settings-page-desc code {
+  color: var(--settings-text);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.settings-page .mcp-learn-more {
+  color: var(--settings-accent-text);
+}
+
+.settings-page .settings-form-error {
+  color: #d70015;
+}
+
+.settings-page .settings-page-meta {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .settings-icon-button {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .settings-icon-button:hover:not(:disabled) {
+  background: var(--settings-bg-elevated-hover);
+  color: var(--settings-text);
+}
+
+.settings-page .settings-section-subtitle {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .settings-count-badge {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .settings-empty-hint {
+  background: var(--settings-bg-elevated-hover);
+  color: var(--settings-text-muted);
+  border: 1px solid var(--settings-border-subtle);
+}
+
+.settings-page .settings-danger-button {
+  border-color: rgba(215, 0, 21, 0.35);
+  color: #d70015;
+}
+
+.settings-page .settings-danger-button:hover:not(:disabled) {
+  background: rgba(215, 0, 21, 0.06);
+}
+
+/* MCP list */
+.settings-page .mcp-list-toolbar-label {
+  color: var(--settings-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-page .mcp-add-button {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-add-button:hover:not(:disabled) {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .mcp-list-empty {
+  border-color: var(--settings-border-subtle);
+  color: var(--settings-text-muted);
+  background: var(--settings-bg-elevated);
+}
+
+.settings-page .mcp-server-list {
+  gap: 0;
+  border: 1px solid var(--settings-border-subtle);
+  border-radius: 10px;
+  background: var(--settings-bg-elevated);
+  overflow: hidden;
+}
+
+.settings-page .mcp-server-row {
+  padding: 12px 16px;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--settings-border-subtle);
+}
+
+.settings-page .mcp-server-row:last-child {
+  border-bottom: none;
+}
+
+.settings-page .mcp-server-row:hover {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .mcp-server-name {
+  color: var(--settings-text);
+  font-size: 14px;
+}
+
+.settings-page .mcp-icon-button {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .mcp-icon-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-toggle-track {
+  background: #d1d1d6;
+}
+
+.settings-page .mcp-toggle input:checked + .mcp-toggle-track {
+  background: var(--settings-accent);
+}
+
+.settings-page .mcp-toggle-track::after {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* MCP editor */
+.settings-page .mcp-back-button {
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .mcp-back-button:hover:not(:disabled) {
+  background: var(--settings-nav-hover);
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-editor-title-block h1 {
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-editor-hint,
+.settings-page .mcp-field-label,
+.settings-page .mcp-field-hint,
+.settings-page .mcp-advanced,
+.settings-page .mcp-inline-add {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .mcp-inline-add:hover {
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-field-input {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-input);
+  color: var(--settings-text);
+}
+
+.settings-page .mcp-field-input:focus {
+  border-color: var(--settings-accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+.settings-page .mcp-row-delete {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .mcp-row-delete:hover {
+  background: rgba(215, 0, 21, 0.06);
+  color: #d70015;
+}
+
+.settings-page .mcp-save-button {
+  background: var(--settings-accent);
+  color: #fff;
+}
+
+.settings-page .mcp-save-button:hover:not(:disabled) {
+  background: #0066d6;
+}
+
+.settings-page .mcp-uninstall-button {
+  border-color: rgba(215, 0, 21, 0.35);
+  color: #d70015;
+}
+
+/* Models tabs — segmented control */
+.settings-page .models-settings-tabs {
+  display: inline-flex;
+  gap: 0;
+  margin: 0 0 24px;
+  padding: 2px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.settings-page .models-settings-tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--settings-text-secondary);
+  font-size: 13px;
+}
+
+.settings-page .models-settings-tab:hover {
+  color: var(--settings-text);
+}
+
+.settings-page .models-settings-tab.active {
+  background: #fff;
+  color: var(--settings-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Models sections */
+.settings-page .models-section-header {
+  border-bottom-color: var(--settings-border-subtle);
+}
+
+.settings-page .models-section-title {
+  color: var(--settings-text);
+  font-size: 15px;
+}
+
+.settings-page .models-section-desc,
+.settings-page .models-section-meta {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-section-button {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text);
+}
+
+.settings-page .models-section-button:hover:not(:disabled) {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-section-button-primary {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent);
+  color: #fff;
+}
+
+.settings-page .models-section-button-primary:hover:not(:disabled) {
+  background: #0066d6;
+}
+
+.settings-page .models-provider-row-main small {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-provider-badge {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-provider-badge.on {
+  background: var(--settings-accent-soft);
+  color: var(--settings-accent-text);
+}
+
+.settings-page .models-route-pricing-key {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-route-pricing-val {
+  color: var(--settings-text);
+}
+
+.settings-page .models-route-pricing-chip {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .models-route-capability-badge {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .models-route-capability-badge-unresolved,
+.settings-page .models-route-pricing-badge-unresolved {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+/* Provider / agent rows in card groups */
+.settings-page .settings-rows .settings-row,
+.settings-page .models-provider-list .settings-row {
+  border-radius: 0;
+}
+
+.settings-page .mcp-list-section {
+  margin-top: 0;
+}
+
+.settings-page .models-subagent-section,
+.settings-page .mcp-list-section {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+/* Skills */
+.settings-page .settings-skills-link-block {
+  padding: 12px 14px;
+  border: 1px solid var(--settings-border-subtle);
+  border-radius: 10px;
+  background: var(--settings-bg-elevated);
+}
+
+.settings-page .composer-skills-link-hint-message {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .composer-skills-link-action {
+  color: var(--settings-accent-text);
+  text-decoration-color: rgba(0, 122, 255, 0.4);
+}
+
+.settings-page .composer-skills-link-action:hover:not(:disabled) {
+  color: #0066d6;
+}
+
+.settings-page .composer-skills-link-hint-meta {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .composer-skill-pill.is-pending {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+.settings-page .skill-list {
+  gap: 0;
+  border: 1px solid var(--settings-border-subtle);
+  border-radius: 10px;
+  background: var(--settings-bg-elevated);
+  overflow: hidden;
+}
+
+.settings-page .skill-card {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--settings-border-subtle);
+  background: transparent;
+}
+
+.settings-page .skill-card:last-child {
+  border-bottom: none;
+}
+
+.settings-page .skill-card:hover {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .skill-card-title-row strong {
+  color: var(--settings-text);
+}
+
+.settings-page .skill-card-description {
+  color: var(--settings-text-secondary);
+}
+
+.settings-page .skill-card-path {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .skill-source-badge.claude,
+.settings-page .skill-source-badge.user {
+  background: var(--settings-accent-soft);
+  color: var(--settings-accent-text);
+}
+
+.settings-page .skill-source-badge.agents {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+.settings-page .skill-source-badge.project {
+  background: rgba(52, 199, 89, 0.12);
+  color: #248a3d;
+}
+
+/* Telemetry */
+.settings-page .telemetry-hint {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .telemetry-hint code {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--settings-text);
+}
+
+/* Modals opened from settings */
+.settings-page .settings-modal {
+  border-color: var(--settings-border-subtle);
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
+  color: var(--settings-text);
+}
+
+.settings-page .settings-modal-header h2,
+.settings-page .settings-modal-title {
+  color: var(--settings-text);
+}
+
+.settings-page .settings-modal-desc {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .settings-modal-route-profile .settings-modal-header,
+.settings-page .settings-modal-route-profile .settings-modal-footer {
+  border-color: var(--settings-border-subtle);
+}
+
+.settings-page .models-agent-template-policy-panel {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-agent-template-policy-head p {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-agent-template-preset {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+}
+
+.settings-page .models-agent-template-preset:hover:not(:disabled) {
+  border-color: #c7c7cc;
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-agent-template-preset.active {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent-soft);
+}
+
+.settings-page .models-agent-template-preset span {
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-template-preset small {
+  color: var(--settings-text-muted);
+}
+
+/* Agent profile cards */
+.settings-page .models-agent-profile-card {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+}
+
+.settings-page .models-agent-profile-card:hover {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-card.active {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent-soft);
+}
+
+.settings-page .models-agent-profile-card-title {
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-profile-card-desc {
+  color: var(--settings-text-muted);
+}
+
+/* Proxy bridge section */
+.settings-page .models-proxy-bridge-section .mcp-field-input {
+  max-width: 480px;
+}
+
+/* Agent profile list cards */
+.settings-page .models-agent-profile-stack .settings-row,
+.settings-page .models-agent-library .settings-row {
+  border-radius: 0;
+}
+
+.settings-page .models-route-toolbar-actions .models-section-button {
+  font-size: 13px;
+}
+
+.settings-page .models-agent-version-row {
+  border-color: var(--settings-border-subtle);
+}
+
+.settings-page .models-agent-version-main .models-route-role {
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-source-badge {
+  background: var(--settings-accent-soft);
+  color: var(--settings-accent-text);
+}
+
+.settings-page .models-route-role-id,
+.settings-page .models-subagent-card-desc {
+  color: var(--settings-text-muted);
+}
+
+/* Modal internals */
+.settings-page .settings-modal-cancel {
+  border: 1px solid var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text);
+}
+
+.settings-page .settings-modal-cancel:hover:not(:disabled) {
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-form-section {
+  border-top-color: var(--settings-border-subtle);
+}
+
+.settings-page .models-agent-profile-modal-heading p,
+.settings-page .models-agent-profile-builder-subtitle {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-agent-profile-palette,
+.settings-page .models-agent-profile-canvas {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-palette-card {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-profile-palette-card:hover:not(:disabled) {
+  border-color: #c7c7cc;
+  background: #fff;
+}
+
+.settings-page .models-agent-profile-palette-title {
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-profile-palette-desc {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-agent-profile-node {
+  border-color: var(--settings-border-subtle);
+  background: var(--settings-bg-elevated);
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-profile-node:hover:not(:disabled) {
+  border-color: #c7c7cc;
+  background: #fff;
+}
+
+.settings-page .models-agent-profile-node-builtin {
+  border-style: dashed;
+}
+
+.settings-page .models-agent-profile-node-title {
+  color: var(--settings-text);
+}
+
+.settings-page .models-agent-profile-node-desc,
+.settings-page .models-agent-profile-node-meta {
+  color: var(--settings-text-muted);
+}
+
+.settings-page .models-agent-profile-node-rail::before,
+.settings-page .models-agent-profile-node-rail::after {
+  background: var(--settings-border-subtle);
+}
+
+.settings-page .model-manual-spec-auto-hint {
+  color: var(--settings-text-muted);
+}

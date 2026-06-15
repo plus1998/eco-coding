@@ -12,6 +12,7 @@ import {
   Plug,
   RefreshCw,
   RotateCcw,
+  Search,
   Settings2,
   SlidersHorizontal,
   Sparkles,
@@ -141,6 +142,7 @@ import {
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import "./styles.css";
+import "./settings-theme.css";
 
 const emptySettings: ModelSettingsSnapshot = {
   providers: [],
@@ -170,14 +172,26 @@ interface RecentProject {
   importedAt: string;
 }
 
-const settingsSections = [
-  { id: "providers", label: "Provider", icon: Settings2 },
-  { id: "models", label: "Agent Builder", icon: SlidersHorizontal },
-  { id: "mcp", label: "MCP", icon: Plug },
-  { id: "skills", label: "Skills", icon: Sparkles },
-  { id: "sessionSync", label: "会话同步", icon: Database },
-  { id: "git", label: "Git", icon: GitBranch },
+const settingsNavGroups = [
+  {
+    label: "集成",
+    sections: [
+      { id: "providers", label: "Provider", icon: Settings2 },
+      { id: "mcp", label: "MCP", icon: Plug },
+      { id: "sessionSync", label: "会话同步", icon: Database },
+    ],
+  },
+  {
+    label: "编码",
+    sections: [
+      { id: "models", label: "Agent Builder", icon: SlidersHorizontal },
+      { id: "skills", label: "Skills", icon: Sparkles },
+      { id: "git", label: "Git", icon: GitBranch },
+    ],
+  },
 ] as const;
+
+const settingsSections = settingsNavGroups.flatMap((group) => group.sections);
 
 const emptySessionSyncSettings: SessionSyncSettingsSnapshot = {
   settings: {
@@ -201,6 +215,7 @@ interface ComposerRewindTarget extends ThreadActivityRewindTarget {
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("models");
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
@@ -2761,26 +2776,70 @@ function App() {
       {settingsOpen && (
         <div className="settings-page" role="dialog" aria-modal="true" aria-label="设置">
           <aside className="settings-nav">
-            <button type="button" className="settings-nav-back" onClick={() => setSettingsOpen(false)}>
+            <button
+              type="button"
+              className="settings-nav-back"
+              onClick={() => {
+                setSettingsOpen(false);
+                setSettingsSearch("");
+              }}
+            >
               <ChevronLeft size={18} />
               返回应用
             </button>
-            {settingsSections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  className={
-                    settingsSection === section.id ? "settings-nav-item active" : "settings-nav-item"
-                  }
-                  onClick={() => setSettingsSection(section.id)}
-                >
-                  <Icon size={16} />
-                  {section.label}
-                </button>
-              );
-            })}
+
+            <div className="settings-nav-search">
+              <Search size={15} className="settings-nav-search-icon" aria-hidden />
+              <input
+                type="search"
+                className="settings-nav-search-input"
+                placeholder="搜索设置…"
+                value={settingsSearch}
+                onChange={(event) => setSettingsSearch(event.target.value)}
+                aria-label="搜索设置"
+              />
+            </div>
+
+            <nav className="settings-nav-groups" aria-label="设置分类">
+              {settingsNavGroups
+                .map((group) => ({
+                  ...group,
+                  sections: group.sections.filter((section) => {
+                    const query = settingsSearch.trim().toLowerCase();
+                    if (!query) {
+                      return true;
+                    }
+                    return (
+                      section.label.toLowerCase().includes(query) ||
+                      group.label.toLowerCase().includes(query)
+                    );
+                  }),
+                }))
+                .filter((group) => group.sections.length > 0)
+                .map((group) => (
+                  <div key={group.label} className="settings-nav-group">
+                    <span className="settings-nav-group-label">{group.label}</span>
+                    {group.sections.map((section) => {
+                      const Icon = section.icon;
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          className={
+                            settingsSection === section.id
+                              ? "settings-nav-item active"
+                              : "settings-nav-item"
+                          }
+                          onClick={() => setSettingsSection(section.id)}
+                        >
+                          <Icon size={16} />
+                          {section.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+            </nav>
           </aside>
 
           <div className="settings-content">
