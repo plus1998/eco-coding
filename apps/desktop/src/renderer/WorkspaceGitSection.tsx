@@ -10,6 +10,7 @@ import type {
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { GitCommitDialog } from "./GitCommitDialog";
+import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 
 export interface WorkspaceGitSectionProps {
   workspacePath?: string;
@@ -46,6 +47,7 @@ export function WorkspaceGitSection({
   onCommitSuccess,
 }: WorkspaceGitSectionProps) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+  const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
 
   const showCommitEntry = Boolean(
     workspacePath &&
@@ -60,6 +62,12 @@ export function WorkspaceGitSection({
   const insertions = gitStatus?.insertions ?? 0;
   const deletions = gitStatus?.deletions ?? 0;
   const branchLabel = gitStatus?.isGitRepository ? gitStatus.branch ?? "detached" : "非 Git 仓库";
+  const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
+
+  async function handleCommitSuccess() {
+    setCommitsRefreshKey((current) => current + 1);
+    await onCommitSuccess?.();
+  }
 
   return (
     <div className="thread-info-workspace-git">
@@ -130,6 +138,13 @@ export function WorkspaceGitSection({
         ) : null}
       </ul>
 
+      {showCommitGraph ? (
+        <WorkspaceGitCommitGraph
+          workspacePath={workspacePath!}
+          refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
+        />
+      ) : null}
+
       {showCommitEntry ? (
         <GitCommitDialog
           open={commitDialogOpen}
@@ -146,7 +161,7 @@ export function WorkspaceGitSection({
           {...(onCheckoutGitBranch && { onCheckoutBranch: onCheckoutGitBranch })}
           onClose={() => setCommitDialogOpen(false)}
           onSaveRolePreference={onSaveCommitRolePreference!}
-          onSuccess={onCommitSuccess!}
+          onSuccess={handleCommitSuccess}
         />
       ) : null}
     </div>

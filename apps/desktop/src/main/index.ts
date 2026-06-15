@@ -62,6 +62,7 @@ import {
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitGenerateCommitMessageRequest,
+  isGitListCommitsRequest,
   isGitPushRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
@@ -330,6 +331,7 @@ import {
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitPush,
+  listGitCommits,
 } from "./git-service";
 import {
   createGitSettingsStore,
@@ -1508,6 +1510,17 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path is required.");
     }
     return getGitWorkingTreeStatus(workspacePath.trim(), runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitListCommits, async (_event, payload: unknown) => {
+    if (!isGitListCommitsRequest(payload)) {
+      throw new Error("Invalid git list commits request.");
+    }
+    return listGitCommits(
+      payload.workspacePath.trim(),
+      { skip: payload.skip, limit: payload.limit },
+      runGitCommand,
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.gitCheckoutBranch, async (_event, payload: unknown) => {

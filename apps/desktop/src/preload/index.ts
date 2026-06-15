@@ -83,6 +83,8 @@ import {
   type GitCommitResult,
   type GitGenerateCommitMessageRequest,
   type GitGenerateCommitMessageResult,
+  type GitListCommitsRequest,
+  type GitListCommitsResult,
   type GitPushRequest,
   type GitPushResult,
   type GitSettingsSnapshot,
@@ -233,6 +235,9 @@ const api = {
   },
   getGitStatus(workspacePath: string): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetStatus, workspacePath);
+  },
+  listGitCommits(request: GitListCommitsRequest): Promise<GitListCommitsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitListCommits, request);
   },
   checkoutGitBranch(request: GitCheckoutBranchRequest): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitCheckoutBranch, request);

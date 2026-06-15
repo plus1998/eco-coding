@@ -87,6 +87,7 @@ export const IPC_CHANNELS = {
   billingRouteCapabilities: "billing:route-capabilities",
   billingModelsDevList: "billing:models-dev-list",
   gitGetStatus: "git:get-status",
+  gitListCommits: "git:list-commits",
   gitCheckoutBranch: "git:checkout-branch",
   gitGenerateCommitMessage: "git:generate-commit-message",
   gitCommit: "git:commit",
@@ -219,6 +220,26 @@ export interface GitWorkingTreeStatus {
 export interface GitCheckoutBranchRequest {
   workspacePath: string;
   branch: string;
+}
+
+export interface GitCommitRecord {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  relativeDate: string;
+  decorations: string[];
+}
+
+export interface GitListCommitsRequest {
+  workspacePath: string;
+  skip: number;
+  limit: number;
+}
+
+export interface GitListCommitsResult {
+  commits: GitCommitRecord[];
+  hasMore: boolean;
 }
 
 export interface GitGenerateCommitMessageRequest {
@@ -1160,6 +1181,21 @@ export function isGitGenerateCommitMessageRequest(value: unknown): value is GitG
     typeof record.workspacePath === "string" &&
     typeof record.profileId === "string" &&
     typeof record.includeUnstaged === "boolean"
+  );
+}
+
+export function isGitListCommitsRequest(value: unknown): value is GitListCommitsRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.skip === "number" &&
+    Number.isFinite(record.skip) &&
+    typeof record.limit === "number" &&
+    Number.isFinite(record.limit) &&
+    record.limit > 0
   );
 }
 

@@ -12,6 +12,7 @@ import {
   createCommit,
   defaultGitRunner,
   getGitWorkingTreeStatus,
+  listGitCommits,
   pushChanges,
   stageChanges,
   type GitRunner,
@@ -174,4 +175,5 @@ export async function handleGitPush(
 export {
   checkoutGitBranch,
   getGitWorkingTreeStatus,
+  listGitCommits,
 };

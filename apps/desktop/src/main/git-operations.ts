@@ -38,6 +38,17 @@ export interface GitWorkingTreeStatus {
   gh: GhAvailability;
 }
 
+export const GIT_COMMITS_PAGE_SIZE = 5;
+
+export interface GitCommitRecord {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  relativeDate: string;
+  decorations: string[];
+}
+
 export interface CommitDiffContext {
   stagedNameStatus: string;
   stagedStat: string;
@@ -224,6 +235,87 @@ export async function getGitWorkingTreeStatus(
     behindCount,
     ...(remoteOriginUrl && { remoteOriginUrl }),
     gh,
+  };
+}
+
+function parseGitLogDecorations(raw: string): string[] {
+  const trimmed = raw.trim().replace(/^\(|\)$/g, "").trim();
+  if (!trimmed) {
+    return [];
+  }
+  const labels = new Set<string>();
+  for (const part of trimmed.split(",")) {
+    const item = part.trim();
+    if (!item || item.startsWith("tag:")) {
+      continue;
+    }
+    const headMatch = item.match(/^HEAD\s*->\s*(.+)$/);
+    if (headMatch?.[1]) {
+      labels.add(headMatch[1].trim());
+      continue;
+    }
+    const originMatch = item.match(/^origin\/(.+)$/);
+    if (originMatch?.[1]) {
+      labels.add(originMatch[1].trim());
+      continue;
+    }
+    labels.add(item);
+  }
+  return [...labels];
+}
+
+function parseGitLogLine(line: string): GitCommitRecord {
+  const [sha = "", shortSha = "", subject = "", author = "", relativeDate = "", decorationsRaw = ""] =
+    line.split("\x1f");
+  return {
+    sha,
+    shortSha,
+    subject,
+    author,
+    relativeDate,
+    decorations: parseGitLogDecorations(decorationsRaw),
+  };
+}
+
+export async function listGitCommits(
+  workspacePath: string,
+  options: { skip: number; limit: number },
+  run: GitRunner = defaultGitRunner,
+): Promise<{ commits: GitCommitRecord[]; hasMore: boolean }> {
+  const cwd = path.resolve(workspacePath);
+  const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
+  if (revParse.exitCode !== 0) {
+    return { commits: [], hasMore: false };
+  }
+
+  const hasGitCommits = (await run(["git", "rev-parse", "--verify", "HEAD"], cwd)).exitCode === 0;
+  if (!hasGitCommits) {
+    return { commits: [], hasMore: false };
+  }
+
+  const skip = Math.max(0, options.skip);
+  const limit = Math.max(1, options.limit);
+  const fetchCount = limit + 1;
+  const result = await run(
+    [
+      "git",
+      "log",
+      `--skip=${skip}`,
+      "-n",
+      String(fetchCount),
+      "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%cr%x1f%d",
+    ],
+    cwd,
+  );
+  if (result.exitCode !== 0) {
+    return { commits: [], hasMore: false };
+  }
+
+  const lines = result.stdout.split("\n").filter(Boolean);
+  const hasMore = lines.length > limit;
+  return {
+    commits: lines.slice(0, limit).map(parseGitLogLine),
+    hasMore,
   };
 }
 
