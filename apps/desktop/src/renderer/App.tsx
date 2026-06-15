@@ -130,6 +130,7 @@ import {
   prependProjectOrder,
   reorderProjectPaths,
   sortProjectsByOrder,
+  sortThreadsForSidebar,
 } from "./project-sidebar-order";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
@@ -166,6 +167,7 @@ function findOrchestrationProfileBySelectionId(
 const recentProjectsStorageKey = "eco.recent-projects";
 const projectOrderStorageKey = "eco.project-order";
 const pinnedProjectsStorageKey = "eco.sidebar.pinned-projects";
+const pinnedThreadsStorageKey = "eco.sidebar.pinned-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
 const sidebarThreadsCollapsed = 5;
@@ -248,6 +250,7 @@ function App() {
   const [expandedProjectThreadPaths, setExpandedProjectThreadPaths] = useState<Set<string>>(() => new Set());
   const [hiddenProjectPaths, setHiddenProjectPaths] = useState<Set<string>>(() => new Set());
   const [pinnedProjectPaths, setPinnedProjectPaths] = useState<Set<string>>(() => new Set());
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
@@ -717,6 +720,19 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(pinnedThreadsStorageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        setPinnedThreadIds(new Set(parsed));
+      }
+    } catch {
+      window.localStorage.removeItem(pinnedThreadsStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
     const saved = window.localStorage.getItem(collapsedProjectsStorageKey);
     if (!saved) return;
     try {
@@ -792,8 +808,11 @@ function App() {
       bucket.push(thread);
       grouped.set(thread.workspacePath, bucket);
     }
+    for (const [path, projectThreads] of grouped) {
+      grouped.set(path, sortThreadsForSidebar(projectThreads, pinnedThreadIds));
+    }
     return grouped;
-  }, [threads]);
+  }, [pinnedThreadIds, threads]);
 
   const projectTree = useMemo(
     () =>
@@ -2072,6 +2091,30 @@ function App() {
     });
   }
 
+  function pinThread(threadId: string) {
+    setPinnedThreadIds((current) => {
+      if (current.has(threadId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(threadId);
+      window.localStorage.setItem(pinnedThreadsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  function unpinThread(threadId: string) {
+    setPinnedThreadIds((current) => {
+      if (!current.has(threadId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(threadId);
+      window.localStorage.setItem(pinnedThreadsStorageKey, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
   function removeProject(projectPath: string) {
     setHiddenProjectPaths((current) => {
       const next = new Set(current);
@@ -2191,6 +2234,15 @@ function App() {
     try {
       await window.eco.deleteThread(thread.id);
       clearThreadClientState(thread.id);
+      setPinnedThreadIds((current) => {
+        if (!current.has(thread.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(thread.id);
+        window.localStorage.setItem(pinnedThreadsStorageKey, JSON.stringify([...next]));
+        return next;
+      });
     } catch (caught) {
       setError(errorMessage(caught));
     }
@@ -2573,6 +2625,7 @@ function App() {
             projectTree={projectTree}
             currentProjectPath={currentProjectPath}
             activeThreadId={activeThread?.id}
+            pinnedThreadIds={pinnedThreadIds}
             onSwitchProject={switchProject}
             onSelectThread={selectThread}
             onToggleProjectCollapsed={toggleProjectCollapsed}
@@ -2582,6 +2635,8 @@ function App() {
             onPinProject={pinProject}
             onUnpinProject={unpinProject}
             onRemoveProject={removeProject}
+            onPinThread={pinThread}
+            onUnpinThread={unpinThread}
             onDeleteThread={(thread) => void deleteThread(thread)}
           />
         </div>

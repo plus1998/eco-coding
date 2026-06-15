@@ -40,6 +40,28 @@ export function prependProjectOrder(orderPaths: readonly string[], path: string)
   return [path, ...next];
 }
 
+export interface SidebarThread {
+  id: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export function sortThreadsForSidebar<T extends SidebarThread>(
+  threads: readonly T[],
+  pinnedThreadIds: ReadonlySet<string>,
+): T[] {
+  return [...threads].sort((a, b) => {
+    const aPinned = pinnedThreadIds.has(a.id);
+    const bPinned = pinnedThreadIds.has(b.id);
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
+    const aTime = a.updatedAt ?? a.createdAt;
+    const bTime = b.updatedAt ?? b.createdAt;
+    return bTime.localeCompare(aTime);
+  });
+}
+
 export function reorderProjectPaths(
   orderPaths: readonly string[],
   draggedPath: string,

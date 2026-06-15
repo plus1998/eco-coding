@@ -378,8 +378,7 @@ html[data-window-focused="true"] .codex-sidebar {
     transform 0.12s ease;
 }
 
-.project-row-actions.menu-open,
-.thread-row-actions.menu-open {
+.project-row-actions.menu-open {
   z-index: 180;
 }
 
@@ -391,14 +390,12 @@ html[data-window-focused="true"] .codex-sidebar {
   pointer-events: auto;
 }
 
-.project-menu-wrap,
-.thread-menu-wrap {
+.project-menu-wrap {
   position: relative;
   display: inline-flex;
 }
 
 .project-menu-trigger,
-.thread-menu-trigger,
 .project-new-chat {
   display: inline-flex;
   flex: 0 0 auto;
@@ -415,8 +412,6 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .project-menu-trigger:hover,
 .project-menu-trigger:focus-visible,
-.thread-menu-trigger:hover,
-.thread-menu-trigger:focus-visible,
 .project-new-chat:hover,
 .project-new-chat:focus-visible {
   background: rgba(255, 255, 255, 0.08);
@@ -510,32 +505,113 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #d4d4d4;
 }
 
-.thread-row-actions {
-  position: relative;
+.chat-item-row .chat-item.nested {
+  padding-right: 4px;
+}
+
+.chat-item-trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: center;
+  margin-right: 10px;
+  min-width: 0;
+}
+
+.chat-item-trailing-label {
+  overflow: hidden;
+  max-width: 72px;
+  opacity: 1;
+  white-space: nowrap;
+  transition:
+    max-width 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.chat-item-time,
+.chat-item-pin-indicator {
+  flex-shrink: 0;
+}
+
+.chat-item-time {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chat-item-pin-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: #a3a3a3;
+}
+
+.chat-item-trailing-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  gap: 0;
+  pointer-events: none;
+  transition:
+    width 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.chat-item-row-action {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  margin-right: 4px;
-  opacity: 0;
-  transform: translateX(3px);
-  pointer-events: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #a3a3a3;
   transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
-.chat-item-row:hover .thread-row-actions,
-.chat-item-row:focus-within .thread-row-actions,
-.thread-row-actions.menu-open {
+.chat-item-row-action:hover,
+.chat-item-row-action:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f5f5;
+}
+
+.chat-item-row-action-danger:hover,
+.chat-item-row-action-danger:focus-visible {
+  color: #fca5a5;
+}
+
+.chat-item-row:hover .chat-item-trailing-label,
+.chat-item-row:focus-within .chat-item-trailing-label {
+  max-width: 0;
+  opacity: 0;
+}
+
+.chat-item-row:hover .chat-item-trailing-actions,
+.chat-item-row:focus-within .chat-item-trailing-actions {
   opacity: 1;
-  transform: translateX(0);
   pointer-events: auto;
 }
 
-.thread-menu {
-  top: calc(100% + 4px);
-  right: 0;
+.chat-item-row:hover .chat-item-trailing:not(.chat-item-trailing-actions-only) .chat-item-trailing-actions,
+.chat-item-row:focus-within .chat-item-trailing:not(.chat-item-trailing-actions-only) .chat-item-trailing-actions {
+  width: 48px;
+}
+
+.chat-item-row:hover .chat-item-trailing-actions-only .chat-item-trailing-actions,
+.chat-item-row:focus-within .chat-item-trailing-actions-only .chat-item-trailing-actions {
+  width: 24px;
 }
 
 .project-empty {
@@ -574,10 +650,6 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #8a8a8a;
 }
 
-.chat-item {
-  justify-content: space-between;
-}
-
 .chat-item.nested {
   padding-left: 28px;
   color: #d4d4d4;
@@ -594,13 +666,6 @@ html[data-window-focused="true"] .codex-sidebar {
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-}
-
-.chat-item-time {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 .chat-item-approval {

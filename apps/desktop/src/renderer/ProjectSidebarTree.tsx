@@ -27,6 +27,7 @@ interface ProjectSidebarTreeProps {
   projectTree: ProjectTreeItem[];
   currentProjectPath: string | undefined;
   activeThreadId: string | undefined;
+  pinnedThreadIds: ReadonlySet<string>;
   onSwitchProject: (path: string) => void;
   onSelectThread: (thread: ThreadSummary) => void;
   onToggleProjectCollapsed: (path: string) => void;
@@ -36,6 +37,8 @@ interface ProjectSidebarTreeProps {
   onPinProject: (path: string) => void;
   onUnpinProject: (path: string) => void;
   onRemoveProject: (path: string) => void;
+  onPinThread: (threadId: string) => void;
+  onUnpinThread: (threadId: string) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
 }
 
@@ -57,6 +60,7 @@ export function ProjectSidebarTree({
   projectTree,
   currentProjectPath,
   activeThreadId,
+  pinnedThreadIds,
   onSwitchProject,
   onSelectThread,
   onToggleProjectCollapsed,
@@ -66,17 +70,18 @@ export function ProjectSidebarTree({
   onPinProject,
   onUnpinProject,
   onRemoveProject,
+  onPinThread,
+  onUnpinThread,
   onDeleteThread,
 }: ProjectSidebarTreeProps) {
   const [fileDropActive, setFileDropActive] = useState(false);
   const [draggingPath, setDraggingPath] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ path: string; position: ProjectReorderPosition }>();
   const [openMenuPath, setOpenMenuPath] = useState<string>();
-  const [openThreadMenuId, setOpenThreadMenuId] = useState<string>();
   const dragCounterRef = useRef(0);
 
   useEffect(() => {
-    if (!openMenuPath && !openThreadMenuId) {
+    if (!openMenuPath) {
       return;
     }
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -85,12 +90,10 @@ export function ProjectSidebarTree({
         return;
       }
       setOpenMenuPath(undefined);
-      setOpenThreadMenuId(undefined);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpenMenuPath(undefined);
-        setOpenThreadMenuId(undefined);
       }
     };
     document.addEventListener("mousedown", closeOnOutsideClick);
@@ -99,7 +102,7 @@ export function ProjectSidebarTree({
       document.removeEventListener("mousedown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [openMenuPath, openThreadMenuId]);
+  }, [openMenuPath]);
 
   function clearFileDropState() {
     dragCounterRef.current = 0;
@@ -209,7 +212,7 @@ export function ProjectSidebarTree({
   if (fileDropActive) {
     treeClassNames.push("project-tree-drop-target");
   }
-  if (openMenuPath || openThreadMenuId) {
+  if (openMenuPath) {
     treeClassNames.push("project-tree-menu-open");
   }
 
@@ -343,11 +346,22 @@ export function ProjectSidebarTree({
               {visibleThreads.map((thread) => {
                 const isThreadBusy = thread.status === "running" || thread.status === "queued";
                 const isThreadAwaitingApproval = isThreadWaitingForApproval(thread);
+                const hasThreadStatusIndicator =
+                  isThreadAwaitingApproval ||
+                  isThreadBusy ||
+                  thread.status === "failed" ||
+                  thread.status === "blocked";
+                const isThreadPinned = pinnedThreadIds.has(thread.id);
+                const rowClassName = [
+                  "chat-item-row",
+                  activeThreadId === thread.id ? "active" : "",
+                  isThreadPinned ? "is-thread-pinned" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
                 return (
-                  <div
-                    key={thread.id}
-                    className={activeThreadId === thread.id ? "chat-item-row active" : "chat-item-row"}
-                  >
+                  <div key={thread.id} className={rowClassName}>
                     <button
                       type="button"
                       className={
@@ -356,67 +370,82 @@ export function ProjectSidebarTree({
                       onClick={() => onSelectThread(thread)}
                     >
                       <span className="chat-item-title">{thread.title}</span>
-                      <span className="chat-item-meta">
-                        {isThreadAwaitingApproval ? (
-                          <span className="chat-item-approval" title={thread.message || "等待批准"}>
-                            等待批准
-                          </span>
-                        ) : isThreadBusy ? (
-                          <span
-                            className="chat-item-loading"
-                            title={thread.status}
-                            role="img"
-                            aria-label={thread.status}
-                          >
-                            <LoaderCircle size={14} className="spinning" aria-hidden />
-                          </span>
-                        ) : thread.status === "failed" || thread.status === "blocked" ? (
-                          <span className={`status-dot ${thread.status}`} title={thread.status} />
-                        ) : null}
-                        {!isThreadBusy && !isThreadAwaitingApproval ? (
-                          <span className="chat-item-time">
-                            {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
-                          </span>
-                        ) : null}
-                      </span>
+                      {hasThreadStatusIndicator ? (
+                        <span className="chat-item-meta">
+                          {isThreadAwaitingApproval ? (
+                            <span className="chat-item-approval" title={thread.message || "等待批准"}>
+                              等待批准
+                            </span>
+                          ) : isThreadBusy ? (
+                            <span
+                              className="chat-item-loading"
+                              title={thread.status}
+                              role="img"
+                              aria-label={thread.status}
+                            >
+                              <LoaderCircle size={14} className="spinning" aria-hidden />
+                            </span>
+                          ) : (
+                            <span className={`status-dot ${thread.status}`} title={thread.status} />
+                          )}
+                        </span>
+                      ) : null}
                     </button>
                     <span
                       className={
-                        openThreadMenuId === thread.id ? "thread-row-actions menu-open" : "thread-row-actions"
+                        hasThreadStatusIndicator
+                          ? "chat-item-trailing chat-item-trailing-actions-only"
+                          : "chat-item-trailing"
                       }
                     >
-                      <span className="thread-menu-wrap sidebar-menu-wrap">
+                      {!hasThreadStatusIndicator ? (
+                        <span className="chat-item-trailing-label">
+                          {isThreadPinned ? (
+                            <span className="chat-item-pin-indicator" aria-hidden>
+                              <Pin size={14} />
+                            </span>
+                          ) : (
+                            <span className="chat-item-time">
+                              {formatRelativeTime(thread.updatedAt ?? thread.createdAt)}
+                            </span>
+                          )}
+                        </span>
+                      ) : null}
+                      <span className="chat-item-trailing-actions">
+                        {!hasThreadStatusIndicator ? (
+                          <button
+                            type="button"
+                            className="chat-item-row-action"
+                            title={isThreadPinned ? "取消置顶" : "置顶"}
+                            aria-label={isThreadPinned ? `取消置顶 ${thread.title}` : `置顶 ${thread.title}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (isThreadPinned) {
+                                onUnpinThread(thread.id);
+                              } else {
+                                onPinThread(thread.id);
+                              }
+                            }}
+                          >
+                            {isThreadPinned ? (
+                              <PinOff size={14} aria-hidden />
+                            ) : (
+                              <Pin size={14} aria-hidden />
+                            )}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          className="thread-menu-trigger"
-                          title={`${thread.title} 操作`}
-                          aria-label={`${thread.title} 操作`}
-                          aria-haspopup="menu"
-                          aria-expanded={openThreadMenuId === thread.id}
+                          className="chat-item-row-action chat-item-row-action-danger"
+                          title="删除对话"
+                          aria-label={`删除对话 ${thread.title}`}
                           onClick={(event) => {
                             event.stopPropagation();
-                            setOpenMenuPath(undefined);
-                            setOpenThreadMenuId((current) => (current === thread.id ? undefined : thread.id));
+                            onDeleteThread(thread);
                           }}
                         >
-                          <MoreHorizontal size={16} />
+                          <Trash2 size={14} aria-hidden />
                         </button>
-                        {openThreadMenuId === thread.id ? (
-                          <div className="project-menu thread-menu" role="menu">
-                            <button
-                              type="button"
-                              className="project-menu-item danger"
-                              role="menuitem"
-                              onClick={() => {
-                                onDeleteThread(thread);
-                                setOpenThreadMenuId(undefined);
-                              }}
-                            >
-                              <Trash2 size={16} aria-hidden />
-                              <span>删除对话</span>
-                            </button>
-                          </div>
-                        ) : null}
                       </span>
                     </span>
                   </div>
