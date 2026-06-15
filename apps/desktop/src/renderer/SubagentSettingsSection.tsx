@@ -31,11 +31,8 @@ interface ToolPresetOption {
   label: string;
   hint: string;
   disallowedTools: string[];
-  bashEnabled: boolean;
   filesystemRead: AgentTemplateFormState["filesystemRead"];
   filesystemWrite: AgentTemplateFormState["filesystemWrite"];
-  networkWebSearch: boolean;
-  networkWebFetch: boolean;
 }
 
 const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
@@ -43,45 +40,41 @@ const CLAUDE_TOOL_PRESETS: ToolPresetOption[] = [
     id: "readonly",
     label: "只读探索",
     hint: "读文件和搜索代码，不写入、不运行命令。",
-    disallowedTools: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
-    bashEnabled: false,
+    disallowedTools: [
+      "Bash",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "WebSearch",
+      "WebFetch",
+    ],
     filesystemRead: "workspace",
     filesystemWrite: "none",
-    networkWebSearch: false,
-    networkWebFetch: false,
   },
   {
     id: "research",
     label: "研究检索",
     hint: "读本地上下文，也允许 WebSearch/WebFetch。",
     disallowedTools: ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"],
-    bashEnabled: false,
     filesystemRead: "workspace",
     filesystemWrite: "none",
-    networkWebSearch: true,
-    networkWebFetch: true,
   },
   {
     id: "coding",
     label: "代码执行",
     hint: "允许读写、编辑、命令和任务清单。",
-    disallowedTools: [],
-    bashEnabled: true,
+    disallowedTools: ["WebSearch", "WebFetch"],
     filesystemRead: "workspace",
     filesystemWrite: "workspace",
-    networkWebSearch: false,
-    networkWebFetch: false,
   },
   {
     id: "review",
     label: "评审验证",
     hint: "可读文件并运行验证命令，不允许修改文件。",
-    disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit"],
-    bashEnabled: true,
+    disallowedTools: ["Write", "Edit", "MultiEdit", "NotebookEdit", "WebSearch", "WebFetch"],
     filesystemRead: "workspace",
     filesystemWrite: "none",
-    networkWebSearch: false,
-    networkWebFetch: false,
   },
 ];
 
@@ -507,11 +500,8 @@ function AgentTemplateEditorModal({
   function applyToolPreset(preset: ToolPresetOption) {
     patchForm({
       disallowedTools: formatFormList(preset.disallowedTools),
-      bashEnabled: preset.bashEnabled,
       filesystemRead: preset.filesystemRead,
       filesystemWrite: preset.filesystemWrite,
-      networkWebSearch: preset.networkWebSearch,
-      networkWebFetch: preset.networkWebFetch,
     });
   }
 
@@ -655,7 +645,10 @@ function AgentTemplateEditorModal({
             <aside className="models-agent-template-policy-panel">
               <div className="models-agent-template-policy-head">
                 <span className="models-route-profile-section-title">Claude Code 权限</span>
-                <p>用预设和选项配置 Write、Bash、Agent、MCP 等权限，其余工具默认允许。</p>
+                <p>
+                  用预设和选项配置 Write、Bash、Agent、MCP 等权限，其余工具默认允许。Bash、WebSearch、WebFetch
+                  通过下方「禁用工具」控制。
+                </p>
               </div>
 
               <div className="models-agent-template-preset-grid">
@@ -678,18 +671,6 @@ function AgentTemplateEditorModal({
                 ))}
               </div>
 
-              <label className="mcp-field">
-                <span className="mcp-field-label">Bash</span>
-                <label className="mcp-toggle" title={form.bashEnabled ? "已启用" : "已禁用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.bashEnabled}
-                    disabled={busy}
-                    onChange={(event) => patchForm({ bashEnabled: event.target.checked })}
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
-              </label>
               <label className="mcp-field">
                 <span className="mcp-field-label">命令白名单</span>
                 <input
@@ -740,30 +721,6 @@ function AgentTemplateEditorModal({
                   <option value="workspace">工作区</option>
                   <option value="none">禁用</option>
                 </select>
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">WebSearch</span>
-                <label className="mcp-toggle" title={form.networkWebSearch ? "已启用" : "已禁用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.networkWebSearch}
-                    disabled={busy}
-                    onChange={(event) => patchForm({ networkWebSearch: event.target.checked })}
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
-              </label>
-              <label className="mcp-field">
-                <span className="mcp-field-label">WebFetch</span>
-                <label className="mcp-toggle" title={form.networkWebFetch ? "已启用" : "已禁用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.networkWebFetch}
-                    disabled={busy}
-                    onChange={(event) => patchForm({ networkWebFetch: event.target.checked })}
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
               </label>
 
               <SelectableTokenGroup
@@ -983,11 +940,8 @@ function formatTools(template: AgentTemplate): string {
 function matchesToolPreset(form: AgentTemplateFormState, preset: ToolPresetOption): boolean {
   return (
     sameListValues(preset.disallowedTools, parseList(form.disallowedTools)) &&
-    form.bashEnabled === preset.bashEnabled &&
     form.filesystemRead === preset.filesystemRead &&
-    form.filesystemWrite === preset.filesystemWrite &&
-    form.networkWebSearch === preset.networkWebSearch &&
-    form.networkWebFetch === preset.networkWebFetch
+    form.filesystemWrite === preset.filesystemWrite
   );
 }
 

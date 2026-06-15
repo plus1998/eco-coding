@@ -1440,13 +1440,10 @@ interface AgentProfileToolPolicyFieldValues {
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
-  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: AgentProfileAgentFormState["filesystemRead"];
   filesystemWrite: AgentProfileAgentFormState["filesystemWrite"];
-  networkWebSearch: boolean;
-  networkWebFetch: boolean;
 }
 
 const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
@@ -1663,7 +1660,6 @@ function AgentProfileEditorModal({
       ...(toolPatch.disallowedTools !== undefined ? { mainDisallowedTools: toolPatch.disallowedTools } : {}),
       ...(toolPatch.mcpServers !== undefined ? { mainMcpServers: toolPatch.mcpServers } : {}),
       ...(toolPatch.mcpTools !== undefined ? { mainMcpTools: toolPatch.mcpTools } : {}),
-      ...(toolPatch.bashEnabled !== undefined ? { mainBashEnabled: toolPatch.bashEnabled } : {}),
       ...(toolPatch.bashCommandAllowlist !== undefined
         ? { mainBashCommandAllowlist: toolPatch.bashCommandAllowlist }
         : {}),
@@ -1672,10 +1668,6 @@ function AgentProfileEditorModal({
         : {}),
       ...(toolPatch.filesystemRead !== undefined ? { mainFilesystemRead: toolPatch.filesystemRead } : {}),
       ...(toolPatch.filesystemWrite !== undefined ? { mainFilesystemWrite: toolPatch.filesystemWrite } : {}),
-      ...(toolPatch.networkWebSearch !== undefined
-        ? { mainNetworkWebSearch: toolPatch.networkWebSearch }
-        : {}),
-      ...(toolPatch.networkWebFetch !== undefined ? { mainNetworkWebFetch: toolPatch.networkWebFetch } : {}),
     }));
   }
 
@@ -2393,13 +2385,10 @@ function AgentProfileNodeConfigModal({
                   disallowedTools: form.mainDisallowedTools,
                   mcpServers: form.mainMcpServers,
                   mcpTools: form.mainMcpTools,
-                  bashEnabled: form.mainBashEnabled,
                   bashCommandAllowlist: form.mainBashCommandAllowlist,
                   bashCommandDenylist: form.mainBashCommandDenylist,
                   filesystemRead: form.mainFilesystemRead,
                   filesystemWrite: form.mainFilesystemWrite,
-                  networkWebSearch: form.mainNetworkWebSearch,
-                  networkWebFetch: form.mainNetworkWebFetch,
                 }}
                 onChange={onPatchMainToolPolicy}
               />
@@ -2658,18 +2647,6 @@ function AgentProfileToolPolicyFields({
   return (
     <div className="models-agent-profile-tool-policy">
       <div className="models-agent-template-form-grid">
-        <label className="mcp-field models-toggle-field">
-          <span className="mcp-field-label">Bash</span>
-          <label className="mcp-toggle" title={values.bashEnabled ? "已启用" : "已禁用"}>
-            <input
-              type="checkbox"
-              checked={values.bashEnabled}
-              disabled={disabled}
-              onChange={(event) => onChange({ bashEnabled: event.target.checked })}
-            />
-            <span className="mcp-toggle-track" aria-hidden />
-          </label>
-        </label>
         <AgentProfileSelectableTokenGroup
           label="禁用工具"
           tone="danger"
@@ -2756,30 +2733,6 @@ function AgentProfileToolPolicyFields({
             <option value="workspace">工作区</option>
             <option value="none">禁用</option>
           </select>
-        </label>
-        <label className="mcp-field models-toggle-field">
-          <span className="mcp-field-label">WebSearch</span>
-          <label className="mcp-toggle" title={values.networkWebSearch ? "已启用" : "已禁用"}>
-            <input
-              type="checkbox"
-              checked={values.networkWebSearch}
-              disabled={disabled}
-              onChange={(event) => onChange({ networkWebSearch: event.target.checked })}
-            />
-            <span className="mcp-toggle-track" aria-hidden />
-          </label>
-        </label>
-        <label className="mcp-field models-toggle-field">
-          <span className="mcp-field-label">WebFetch</span>
-          <label className="mcp-toggle" title={values.networkWebFetch ? "已启用" : "已禁用"}>
-            <input
-              type="checkbox"
-              checked={values.networkWebFetch}
-              disabled={disabled}
-              onChange={(event) => onChange({ networkWebFetch: event.target.checked })}
-            />
-            <span className="mcp-toggle-track" aria-hidden />
-          </label>
         </label>
       </div>
     </div>

@@ -4,8 +4,14 @@ import type {
   McpServerConfigView,
   ToolPolicy,
 } from "../shared/ipc";
-import { resolveEffectiveBashPolicy } from "@eco/runtime";
 import { parseAllowedToolPatterns, sanitizeMcpServerName } from "../shared/mcp";
+
+export interface StructuredToolPolicyFields {
+  bashCommandAllowlist: string;
+  bashCommandDenylist: string;
+  filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
+  filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
+}
 
 export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
   { value: "coding", label: "Coding" },
@@ -35,13 +41,10 @@ export interface AgentTemplateFormState {
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
-  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-  networkWebSearch: boolean;
-  networkWebFetch: boolean;
   allowDelegation: boolean;
   source: EditableAgentSource;
 }
@@ -84,13 +87,10 @@ export function createBlankAgentTemplateForm(
     disallowedTools: "Bash, Write, Edit, MultiEdit, NotebookEdit",
     mcpServers: "",
     mcpTools: "",
-    bashEnabled: false,
     bashCommandAllowlist: "",
     bashCommandDenylist: "",
     filesystemRead: "workspace",
     filesystemWrite: "none",
-    networkWebSearch: true,
-    networkWebFetch: true,
     allowDelegation: false,
     source: "user",
   };
@@ -241,16 +241,61 @@ export function buildAgentTemplateCapabilityOptions(input: {
   };
 }
 
+export function normalizeDisallowedTools(policy: ToolPolicy): string[] {
+  const disallowed = new Set(policy.disallowed.map((entry) => entry.trim()).filter(Boolean));
+  if (policy.bash?.enabled === false) {
+    disallowed.add("Bash");
+  }
+  if (policy.network?.webSearch === false) {
+    disallowed.add("WebSearch");
+  }
+  if (policy.network?.webFetch === false) {
+    disallowed.add("WebFetch");
+  }
+  return uniqueValues([...disallowed]);
+}
+
+export function buildStructuredToolPolicyFromDisallowed(
+  disallowedRaw: readonly string[],
+  fields: StructuredToolPolicyFields,
+  mcp?: { servers: readonly string[]; tools: readonly string[] },
+): ToolPolicy {
+  const disallowed = uniqueValues(disallowedRaw.map((entry) => entry.trim()).filter(Boolean));
+  const bashAllowed = !disallowed.includes("Bash");
+  const commandAllowlist = parseList(fields.bashCommandAllowlist);
+  const commandDenylist = parseList(fields.bashCommandDenylist);
+  return {
+    allowed: [],
+    disallowed,
+    bash: {
+      enabled: bashAllowed,
+      ...(bashAllowed && commandAllowlist.length > 0 ? { commandAllowlist } : {}),
+      ...(bashAllowed && commandDenylist.length > 0 ? { commandDenylist } : {}),
+    },
+    ...(mcp && (mcp.servers.length > 0 || mcp.tools.length > 0)
+      ? { mcp: { allowedServers: [...mcp.servers], allowedTools: [...mcp.tools] } }
+      : {}),
+    filesystem: {
+      read: fields.filesystemRead,
+      write: fields.filesystemWrite,
+    },
+    network: {
+      webSearch: !disallowed.includes("WebSearch"),
+      webFetch: !disallowed.includes("WebFetch"),
+    },
+  };
+}
+
 export function buildAgentTemplatePermissionChips(
   template: Pick<AgentTemplate, "defaultTools" | "mcpServers">,
 ): AgentTemplatePermissionChip[] {
   const tools = template.defaultTools;
-  const disallowed = new Set(tools.disallowed);
-  const bashEnabled = resolveEffectiveBashPolicy(tools).enabled;
+  const disallowed = new Set(normalizeDisallowedTools(tools));
+  const bashEnabled = !disallowed.has("Bash");
   const readScope = tools.filesystem?.read ?? "workspace";
   const writeScope = tools.filesystem?.write ?? "none";
-  const webSearch = tools.network?.webSearch ?? false;
-  const webFetch = tools.network?.webFetch ?? false;
+  const webSearch = !disallowed.has("WebSearch");
+  const webFetch = !disallowed.has("WebFetch");
   const mcpServerCount = new Set([...(tools.mcp?.allowedServers ?? []), ...template.mcpServers]).size;
   const mcpToolCount = tools.mcp?.allowedTools.length ?? 0;
   const chips: AgentTemplatePermissionChip[] = [
@@ -288,8 +333,8 @@ export function buildAgentTemplatePermissionChips(
   if (tools.bash?.commandDenylist?.length) {
     chips.push({ label: `命令黑名单 ${tools.bash.commandDenylist.length}`, tone: "deny" });
   }
-  if (tools.disallowed.length > 0) {
-    chips.push({ label: `禁用 ${formatShortList(tools.disallowed)}`, tone: "deny" });
+  if (disallowed.size > 0) {
+    chips.push({ label: `禁用 ${formatShortList([...disallowed])}`, tone: "deny" });
   }
   return chips;
 }
@@ -507,62 +552,34 @@ function formatMcpServerDescription(server: McpServerConfigView): string {
 }
 
 function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
-  const disallowed = parseList(form.disallowedTools);
-  const mcpServers = parseList(form.mcpServers);
-  const mcpTools = parseList(form.mcpTools);
-  return {
-    allowed: [],
-    disallowed,
-    bash: {
-      enabled: form.bashEnabled && !disallowed.includes("Bash"),
-      ...(form.bashEnabled &&
-      !disallowed.includes("Bash") &&
-      parseList(form.bashCommandAllowlist).length > 0
-        ? { commandAllowlist: parseList(form.bashCommandAllowlist) }
-        : {}),
-      ...(form.bashEnabled &&
-      !disallowed.includes("Bash") &&
-      parseList(form.bashCommandDenylist).length > 0
-        ? { commandDenylist: parseList(form.bashCommandDenylist) }
-        : {}),
+  return buildStructuredToolPolicyFromDisallowed(
+    parseList(form.disallowedTools),
+    {
+      bashCommandAllowlist: form.bashCommandAllowlist,
+      bashCommandDenylist: form.bashCommandDenylist,
+      filesystemRead: form.filesystemRead,
+      filesystemWrite: form.filesystemWrite,
     },
-    ...(mcpServers.length > 0 || mcpTools.length > 0
-      ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
-      : {}),
-    filesystem: {
-      read: form.filesystemRead,
-      write: form.filesystemWrite,
-    },
-    network: {
-      webSearch: form.networkWebSearch,
-      webFetch: form.networkWebFetch,
-    },
-  };
+    { servers: parseList(form.mcpServers), tools: parseList(form.mcpTools) },
+  );
 }
 
 function toolPolicyToFormFields(policy: ToolPolicy): Pick<
   AgentTemplateFormState,
   | "disallowedTools"
   | "mcpTools"
-  | "bashEnabled"
   | "bashCommandAllowlist"
   | "bashCommandDenylist"
   | "filesystemRead"
   | "filesystemWrite"
-  | "networkWebSearch"
-  | "networkWebFetch"
 > {
-  const disallowed = new Set(policy.disallowed);
   return {
-    disallowedTools: formatList(policy.disallowed),
+    disallowedTools: formatList(normalizeDisallowedTools(policy)),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashEnabled: resolveEffectiveBashPolicy(policy).enabled,
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead: policy.filesystem?.read ?? "workspace",
     filesystemWrite: policy.filesystem?.write ?? "none",
-    networkWebSearch: policy.network?.webSearch ?? false,
-    networkWebFetch: policy.network?.webFetch ?? false,
   };
 }
 

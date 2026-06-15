@@ -1,5 +1,4 @@
 import type { AgentConfigSource } from "../shared/agent-orchestration";
-import { resolveEffectiveBashPolicy } from "@eco/runtime";
 import type {
   AgentDomain,
   AgentTemplate,
@@ -12,7 +11,12 @@ import type {
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
-import { parseList } from "./agent-template-form";
+import {
+  buildStructuredToolPolicyFromDisallowed,
+  normalizeDisallowedTools,
+  parseList,
+  type StructuredToolPolicyFields,
+} from "./agent-template-form";
 
 export interface AgentProfileAgentFormState {
   agentKey: string;
@@ -28,13 +32,10 @@ export interface AgentProfileAgentFormState {
   disallowedTools: string;
   mcpServers: string;
   mcpTools: string;
-  bashEnabled: boolean;
   bashCommandAllowlist: string;
   bashCommandDenylist: string;
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-  networkWebSearch: boolean;
-  networkWebFetch: boolean;
 }
 
 export interface AgentProfileFormState {
@@ -55,13 +56,10 @@ export interface AgentProfileFormState {
   mainDisallowedTools: string;
   mainMcpServers: string;
   mainMcpTools: string;
-  mainBashEnabled: boolean;
   mainBashCommandAllowlist: string;
   mainBashCommandDenylist: string;
   mainFilesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   mainFilesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-  mainNetworkWebSearch: boolean;
-  mainNetworkWebFetch: boolean;
   builtinExploreProviderId: string;
   builtinExploreModelId: string;
   builtinExploreThinkingEffort: string;
@@ -79,16 +77,9 @@ interface ProfileFormOptions {
   templates?: readonly AgentTemplate[];
 }
 
-interface ToolPolicyFormFields {
+interface ToolPolicyFormFields extends StructuredToolPolicyFields {
   mcpServers: string;
   mcpTools: string;
-  bashEnabled: boolean;
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
-  filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
-  filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-  networkWebSearch: boolean;
-  networkWebFetch: boolean;
 }
 
 const RESERVED_AGENT_KEYS = new Set([
@@ -127,13 +118,10 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainDisallowedTools: "",
     mainMcpServers: "",
     mainMcpTools: "",
-    mainBashEnabled: true,
     mainBashCommandAllowlist: "",
     mainBashCommandDenylist: "",
     mainFilesystemRead: "workspace",
     mainFilesystemWrite: "workspace",
-    mainNetworkWebSearch: true,
-    mainNetworkWebFetch: true,
     builtinExploreProviderId: provider?.id ?? "",
     builtinExploreModelId: provider?.defaultModel ?? "",
     builtinExploreThinkingEffort: "",
@@ -161,7 +149,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
-    mainDisallowedTools: formatList(profile.mainAgent.tools.disallowed),
+    mainDisallowedTools: formatList(normalizeDisallowedTools(profile.mainAgent.tools)),
     ...mainToolPolicyFormFields(profile.mainAgent.tools),
     builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
     builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
@@ -185,7 +173,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
       manualContextTokens: formatManualContextTokens(agent.modelRef.manualSpec?.contextTokens),
       enabled: agent.enabled,
-      disallowedTools: formatList(agent.tools.disallowed),
+      disallowedTools: formatList(normalizeDisallowedTools(agent.tools)),
       ...toolPolicyFormFields(agent.tools, agent.mcpServers),
     })),
   };
@@ -219,7 +207,7 @@ export function createProfileAgentFormFromTemplate(
     modelsDevMappingModelId: "",
     manualContextTokens: "",
     enabled: true,
-    disallowedTools: formatList(template.defaultTools.disallowed),
+    disallowedTools: formatList(normalizeDisallowedTools(template.defaultTools)),
     ...toolPolicyFormFields(template.defaultTools, template.mcpServers),
   };
 }
@@ -320,13 +308,10 @@ export function buildOrchestrationProfileFromForm(
         {
           mcpServers: form.mainMcpServers,
           mcpTools: form.mainMcpTools,
-          bashEnabled: form.mainBashEnabled,
           bashCommandAllowlist: form.mainBashCommandAllowlist,
           bashCommandDenylist: form.mainBashCommandDenylist,
           filesystemRead: form.mainFilesystemRead,
           filesystemWrite: form.mainFilesystemWrite,
-          networkWebSearch: form.mainNetworkWebSearch,
-          networkWebFetch: form.mainNetworkWebFetch,
         },
       ),
       skills: [],
@@ -465,40 +450,30 @@ function mainToolPolicyFormFields(
   AgentProfileFormState,
   | "mainMcpServers"
   | "mainMcpTools"
-  | "mainBashEnabled"
   | "mainBashCommandAllowlist"
   | "mainBashCommandDenylist"
   | "mainFilesystemRead"
   | "mainFilesystemWrite"
-  | "mainNetworkWebSearch"
-  | "mainNetworkWebFetch"
 > {
   const fields = toolPolicyFormFields(policy);
   return {
     mainMcpServers: fields.mcpServers,
     mainMcpTools: fields.mcpTools,
-    mainBashEnabled: fields.bashEnabled,
     mainBashCommandAllowlist: fields.bashCommandAllowlist,
     mainBashCommandDenylist: fields.bashCommandDenylist,
     mainFilesystemRead: fields.filesystemRead,
     mainFilesystemWrite: fields.filesystemWrite,
-    mainNetworkWebSearch: fields.networkWebSearch,
-    mainNetworkWebFetch: fields.networkWebFetch,
   };
 }
 
 function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] = []): ToolPolicyFormFields {
-  const disallowed = new Set(policy.disallowed);
   return {
     mcpServers: formatList(mcpServers.length > 0 ? mcpServers : (policy.mcp?.allowedServers ?? [])),
     mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashEnabled: resolveEffectiveBashPolicy(policy).enabled,
     bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
     bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
     filesystemRead: policy.filesystem?.read ?? "workspace",
     filesystemWrite: policy.filesystem?.write ?? "none",
-    networkWebSearch: policy.network?.webSearch ?? false,
-    networkWebFetch: policy.network?.webFetch ?? false,
   };
 }
 
@@ -507,37 +482,16 @@ function buildToolPolicyFromFormFields(
   disallowedRaw: string,
   fields: ToolPolicyFormFields,
 ): ToolPolicy {
-  const disallowed = parseList(disallowedRaw);
-  const mcpServers = parseList(fields.mcpServers);
-  const mcpTools = parseList(fields.mcpTools);
-  return {
-    allowed: [],
-    disallowed,
-    bash: {
-      enabled: fields.bashEnabled && !disallowed.includes("Bash"),
-      ...(fields.bashEnabled &&
-      !disallowed.includes("Bash") &&
-      parseList(fields.bashCommandAllowlist).length > 0
-        ? { commandAllowlist: parseList(fields.bashCommandAllowlist) }
-        : {}),
-      ...(fields.bashEnabled &&
-      !disallowed.includes("Bash") &&
-      parseList(fields.bashCommandDenylist).length > 0
-        ? { commandDenylist: parseList(fields.bashCommandDenylist) }
-        : {}),
+  return buildStructuredToolPolicyFromDisallowed(
+    parseList(disallowedRaw),
+    {
+      bashCommandAllowlist: fields.bashCommandAllowlist,
+      bashCommandDenylist: fields.bashCommandDenylist,
+      filesystemRead: fields.filesystemRead,
+      filesystemWrite: fields.filesystemWrite,
     },
-    ...(mcpServers.length > 0 || mcpTools.length > 0
-      ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
-      : {}),
-    filesystem: {
-      read: fields.filesystemRead,
-      write: fields.filesystemWrite,
-    },
-    network: {
-      webSearch: fields.networkWebSearch,
-      webFetch: fields.networkWebFetch,
-    },
-  };
+    { servers: parseList(fields.mcpServers), tools: parseList(fields.mcpTools) },
+  );
 }
 
 function normalizeAgentKey(raw: string): string {

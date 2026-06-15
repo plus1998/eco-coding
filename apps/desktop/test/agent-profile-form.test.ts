@@ -97,7 +97,7 @@ test("createBlankAgentProfileForm defaults the main agent to hands-on (write + b
   const form = createBlankAgentProfileForm({ providers: [provider] });
 
   expect(form.mainFilesystemWrite).toBe("workspace");
-  expect(form.mainBashEnabled).toBe(true);
+  expect(form.mainDisallowedTools).toBe("");
 
   const built = buildOrchestrationProfileFromForm(form, {
     templates: [],
@@ -136,7 +136,6 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
   const sourceVerifier = requireElement(form.agents, 1, "agent");
   sourceVerifier.agentKey = "source_verifier";
   sourceVerifier.displayName = "Source Verifier";
-  sourceVerifier.networkWebFetch = true;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -170,16 +169,13 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
 test("buildOrchestrationProfileFromForm saves main tools but uses source subagent policies", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.structured";
-  form.mainBashEnabled = true;
-  form.mainDisallowedTools = "Write";
+  form.mainDisallowedTools = "Write, WebSearch";
   form.mainMcpServers = "docs";
   form.mainMcpTools = "mcp__docs__search";
   form.mainBashCommandAllowlist = "bun test";
   form.mainBashCommandDenylist = "rm*";
   form.mainFilesystemRead = "workspace";
   form.mainFilesystemWrite = "none";
-  form.mainNetworkWebSearch = false;
-  form.mainNetworkWebFetch = true;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -188,7 +184,7 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
 
   expect(built.mainAgent.tools).toMatchObject({
     allowed: [],
-    disallowed: ["Write"],
+    disallowed: ["Write", "WebSearch"],
     bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
     mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
     filesystem: { read: "workspace", write: "none" },

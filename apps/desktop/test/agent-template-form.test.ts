@@ -6,6 +6,7 @@ import {
   createBlankAgentTemplateForm,
   createCopiedAgentTemplateForm,
   createUniqueTemplateId,
+  normalizeDisallowedTools,
   toggleAgentTemplateDisallowedTool,
   toggleAgentTemplateListValue,
 } from "../src/renderer/agent-template-form";
@@ -67,16 +68,13 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
       prompt: "Research deeply.",
       whenToUse: "Use for research.",
       outputContract: "Return sources.",
-      disallowedTools: "Write, Edit",
+      disallowedTools: "Write, Edit, WebFetch",
       mcpServers: "docs",
       mcpTools: "search",
-      bashEnabled: true,
       bashCommandAllowlist: "",
       bashCommandDenylist: "",
       filesystemRead: "workspace",
       filesystemWrite: "none",
-      networkWebSearch: true,
-      networkWebFetch: false,
       allowDelegation: true,
       source: "project",
     },
@@ -96,6 +94,17 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template.defaultTools.mcp).toEqual({ allowedServers: ["docs"], allowedTools: ["search"] });
   expect(template.defaultTools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
+});
+
+test("normalizeDisallowedTools merges legacy bash and network flags into disallowed list", () => {
+  expect(
+    normalizeDisallowedTools({
+      allowed: [],
+      disallowed: ["Write"],
+      bash: { enabled: false },
+      network: { webSearch: false, webFetch: true },
+    }),
+  ).toEqual(["Write", "Bash", "WebSearch"]);
 });
 
 test("buildAgentTemplateCapabilityOptions merges presets, current values, and MCP config", () => {
@@ -179,13 +188,10 @@ test("template form rejects protected and malformed ids", () => {
     disallowedTools: "",
     mcpServers: "",
     mcpTools: "",
-    bashEnabled: false,
     bashCommandAllowlist: "",
     bashCommandDenylist: "",
     filesystemRead: "workspace" as const,
     filesystemWrite: "none" as const,
-    networkWebSearch: false,
-    networkWebFetch: false,
     allowDelegation: false,
     source: "user" as const,
   };
