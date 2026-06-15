@@ -96,8 +96,10 @@ function requireElement<T>(values: readonly T[], index: number, label: string): 
 test("createBlankAgentProfileForm defaults the main agent to hands-on (write + bash)", () => {
   const form = createBlankAgentProfileForm({ providers: [provider] });
 
-  expect(form.mainFilesystemWrite).toBe("workspace");
-  expect(form.mainDisallowedTools).toBe("");
+  expect(form.mainWriteCodebase).toBe(true);
+  expect(form.mainBash).toBe(true);
+  expect(form.mainAllowDelegation).toBe(true);
+  expect(form.mainAdvancedDisallowedTools).toBe("");
 
   const built = buildOrchestrationProfileFromForm(form, {
     templates: [],
@@ -158,7 +160,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
     },
   });
   expect(built.agents.map((agent) => agent.agentKey)).toEqual(["researcher", "source_verifier"]);
-  expect(built.agents[1]?.tools.allowed).toEqual(["Read", "WebSearch"]);
+  expect(built.agents[1]?.tools.disallowed).toContain("Bash");
   expect(built.agents[1]?.tools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(built.strategy).toEqual({
     kind: "autonomous",
@@ -166,16 +168,16 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
   });
 });
 
-test("buildOrchestrationProfileFromForm saves main tools but uses source subagent policies", () => {
+test("buildOrchestrationProfileFromForm saves main and subagent capability policies", () => {
   const form = agentProfileToForm(profile());
   form.id = "user.structured";
-  form.mainDisallowedTools = "Write, WebSearch";
+  form.mainWriteCodebase = false;
+  form.mainNetwork = false;
   form.mainMcpServers = "docs";
   form.mainMcpTools = "mcp__docs__search";
   form.mainBashCommandAllowlist = "bun test";
   form.mainBashCommandDenylist = "rm*";
-  form.mainFilesystemRead = "workspace";
-  form.mainFilesystemWrite = "none";
+  form.agents[0]!.bash = false;
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -184,17 +186,16 @@ test("buildOrchestrationProfileFromForm saves main tools but uses source subagen
 
   expect(built.mainAgent.tools).toMatchObject({
     allowed: [],
-    disallowed: ["Write", "WebSearch"],
+    disallowed: expect.arrayContaining(["Write", "WebSearch", "WebFetch"]),
     bash: { enabled: true, commandAllowlist: ["bun test"], commandDenylist: ["rm*"] },
     mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
     filesystem: { read: "workspace", write: "none" },
-    network: { webSearch: false, webFetch: true },
+    network: { webSearch: false, webFetch: false },
   });
   expect(built.agents[0]?.tools).toMatchObject({
-    allowed: ["Read", "WebSearch"],
-    disallowed: ["Bash"],
+    disallowed: expect.arrayContaining(["Bash"]),
     filesystem: { read: "workspace", write: "none" },
-    network: { webSearch: true, webFetch: false },
+    network: { webSearch: true, webFetch: true },
   });
   expect(built.agents[0]?.mcpServers).toEqual(["docs"]);
   expect(built.agents[0]?.skills).toEqual([]);

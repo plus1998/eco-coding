@@ -137,7 +137,7 @@ const CLAUDE_TASK_PROGRESS_TOOLS = ["TaskCreate", "TaskUpdate", "TodoWrite"] as 
 
 const ARCHITECT_TOOLS: ToolPolicy = {
   allowed: [],
-  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash"],
+  disallowed: [...CLAUDE_WRITE_TOOLS, "Bash", ...CLAUDE_TASK_PROGRESS_TOOLS],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: true, webFetch: true },
 };
@@ -152,7 +152,7 @@ const CODER_TOOLS: ToolPolicy = {
 
 const REVIEW_TOOLS: ToolPolicy = {
   allowed: [],
-  disallowed: [...CLAUDE_WRITE_TOOLS],
+  disallowed: [...CLAUDE_WRITE_TOOLS, ...CLAUDE_TASK_PROGRESS_TOOLS],
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };

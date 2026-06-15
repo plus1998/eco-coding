@@ -7,10 +7,11 @@ import {
   createCopiedAgentTemplateForm,
   createUniqueTemplateId,
   normalizeDisallowedTools,
-  toggleAgentTemplateDisallowedTool,
+  toggleAgentTemplateAdvancedDisallowedTool,
   toggleAgentTemplateListValue,
 } from "../src/renderer/agent-template-form";
 import type { AgentTemplate, McpServerConfigView } from "../src/shared/ipc";
+import { createDefaultToolCapabilityFields } from "../src/renderer/tool-capability-groups";
 
 const builtInTemplate: AgentTemplate = {
   id: "builtin.research.researcher",
@@ -28,6 +29,29 @@ const builtInTemplate: AgentTemplate = {
   version: 1,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
+
+function templateForm(
+  overrides: Partial<ReturnType<typeof createBlankAgentTemplateForm>> = {},
+) {
+  return {
+    id: "user.research.custom",
+    name: "Custom Research",
+    description: "Custom research agent",
+    domain: "research" as const,
+    prompt: "Research deeply.",
+    whenToUse: "Use for research.",
+    outputContract: "Return sources.",
+    ...createDefaultToolCapabilityFields({
+      writeCodebase: false,
+      bash: true,
+      network: false,
+      allowDelegation: true,
+    }),
+    mcpServers: "docs",
+    mcpTools: "search",
+    ...overrides,
+  };
+}
 
 test("copied built-in template becomes a user template form with unique id", () => {
   const form = createCopiedAgentTemplateForm(builtInTemplate, [
@@ -58,26 +82,9 @@ test("blank template form avoids existing default ids", () => {
 });
 
 test("buildAgentTemplateFromForm validates and derives tool policy", () => {
-  const template = buildAgentTemplateFromForm(
-    {
-      id: "user.research.custom",
-      name: "Custom Research",
-      description: "Custom research agent",
-      domain: "research",
-      prompt: "Research deeply.",
-      whenToUse: "Use for research.",
-      outputContract: "Return sources.",
-      disallowedTools: "Write, Edit, WebFetch",
-      mcpServers: "docs",
-      mcpTools: "search",
-      bashCommandAllowlist: "",
-      bashCommandDenylist: "",
-      filesystemRead: "workspace",
-      filesystemWrite: "none",
-      allowDelegation: true,
-    },
-    { nowIso: "2026-06-07T00:00:00.000Z" },
-  );
+  const template = buildAgentTemplateFromForm(templateForm(), {
+    nowIso: "2026-06-07T00:00:00.000Z",
+  });
 
   expect(template).toMatchObject({
     id: "user.research.custom",
@@ -91,39 +98,32 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template.defaultTools.bash).toEqual({ enabled: true });
   expect(template.defaultTools.mcp).toEqual({ allowedServers: ["docs"], allowedTools: ["search"] });
   expect(template.defaultTools.filesystem).toEqual({ read: "workspace", write: "none" });
-  expect(template.defaultTools.network).toEqual({ webSearch: true, webFetch: false });
+  expect(template.defaultTools.network).toEqual({ webSearch: false, webFetch: false });
 });
 
 test("buildAgentTemplateFromForm syncs delegation tools with allowDelegation", () => {
-  const baseForm = {
-    id: "user.custom.agent",
-    name: "Custom Agent",
-    description: "Agent",
-    domain: "custom" as const,
-    prompt: "Do work.",
-    whenToUse: "Use when needed.",
-    outputContract: "",
-    disallowedTools: "Write",
-    mcpServers: "",
-    mcpTools: "",
-    bashCommandAllowlist: "",
-    bashCommandDenylist: "",
-    filesystemRead: "workspace" as const,
-    filesystemWrite: "none" as const,
-    allowDelegation: false,
-  };
-
-  const blocked = buildAgentTemplateFromForm(baseForm);
+  const blocked = buildAgentTemplateFromForm(
+    templateForm({
+      allowDelegation: false,
+      writeCodebase: true,
+      advancedDisallowedTools: "",
+    }),
+  );
   expect(blocked.defaultTools.disallowed).toEqual(
-    expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput", "Write"]),
+    expect.arrayContaining(["Agent", "Task", "TaskList", "TaskOutput"]),
   );
 
-  const allowed = buildAgentTemplateFromForm({
-    ...baseForm,
-    allowDelegation: true,
-    disallowedTools: "Write, Agent, Task",
-  });
-  expect(allowed.defaultTools.disallowed).toEqual(["Write"]);
+  const allowed = buildAgentTemplateFromForm(
+    templateForm({
+      allowDelegation: true,
+      writeCodebase: true,
+      network: true,
+      askUser: true,
+      taskProgress: true,
+      advancedDisallowedTools: "CustomOnly",
+    }),
+  );
+  expect(allowed.defaultTools.disallowed).toEqual(["CustomOnly"]);
 });
 
 test("normalizeDisallowedTools merges legacy bash and network flags into disallowed list", () => {
@@ -137,7 +137,7 @@ test("normalizeDisallowedTools merges legacy bash and network flags into disallo
   ).toEqual(["Write", "Bash", "WebSearch"]);
 });
 
-test("buildAgentTemplateCapabilityOptions merges presets, current values, and MCP config", () => {
+test("buildAgentTemplateCapabilityOptions only exposes advanced tools", () => {
   const mcpServers: McpServerConfigView[] = [
     mcpServer({ name: "docs", enabled: true, allowedTools: "" }),
     mcpServer({ name: "disabled", enabled: false, allowedTools: "mcp__disabled__search" }),
@@ -146,39 +146,34 @@ test("buildAgentTemplateCapabilityOptions merges presets, current values, and MC
   const options = buildAgentTemplateCapabilityOptions({
     templates: [builtInTemplate],
     form: {
-      disallowedTools: "Bash, UnknownTool",
+      advancedDisallowedTools: "UnknownTool",
       mcpServers: "disabled, missing",
       mcpTools: "mcp__missing__tool",
     },
     mcpServers,
   });
 
-  expect(options.tools.map((option) => option.value)).toContain("WebSearch");
+  expect(options.tools.map((option) => option.value)).toEqual(["UnknownTool"]);
   expect(options.tools.map((option) => option.value)).not.toContain("Agent");
-  expect(options.tools.map((option) => option.value)).not.toContain("Task");
-  expect(options.tools.find((option) => option.value === "UnknownTool")).toMatchObject({
-    sourceLabel: "当前",
-  });
-  expect(options.mcpServers.map((option) => option.value)).toEqual(["docs", "disabled", "missing"]);
-  expect(options.mcpServers.find((option) => option.value === "disabled")).toMatchObject({
-    sourceLabel: "未启用",
-  });
-  expect(options.mcpTools.map((option) => option.value)).toEqual(["mcp__docs__*", "mcp__missing__tool"]);
+  expect(options.tools.map((option) => option.value)).not.toContain("Read");
 });
 
-test("template list toggles preserve unknown values and disallowed toggles update list", () => {
+test("template list toggles preserve unknown values and advanced toggles update list", () => {
   expect(toggleAgentTemplateListValue("docs, missing", "docs", false)).toBe("missing");
   expect(toggleAgentTemplateListValue("docs", "mcp__docs__*", true)).toBe("docs, mcp__docs__*");
 
-  expect(toggleAgentTemplateDisallowedTool({ disallowedTools: "Bash, Write" }, "Read", true)).toEqual({
-    disallowedTools: "Bash, Write, Read",
-  });
-  expect(toggleAgentTemplateDisallowedTool({ disallowedTools: "Bash, Write" }, "Bash", false)).toEqual({
-    disallowedTools: "Write",
-  });
+  expect(
+    toggleAgentTemplateAdvancedDisallowedTool("Bash, Write", "Read", true),
+  ).toBe("");
+  expect(
+    toggleAgentTemplateAdvancedDisallowedTool("Bash, Custom", "Bash", false),
+  ).toBe("Custom");
+  expect(
+    toggleAgentTemplateAdvancedDisallowedTool("Agent, Custom", "Agent", true),
+  ).toBe("Custom");
 });
 
-test("buildAgentTemplatePermissionChips summarizes effective tool policy", () => {
+test("buildAgentTemplatePermissionChips summarizes capability policy", () => {
   const chips = buildAgentTemplatePermissionChips({
     ...builtInTemplate,
     defaultTools: {
@@ -197,37 +192,22 @@ test("buildAgentTemplatePermissionChips summarizes effective tool policy", () =>
   });
 
   expect(chips).toEqual([
-    { label: "Bash", tone: "allow" },
     { label: "读 工作区", tone: "allow" },
     { label: "写 禁用", tone: "deny" },
-    { label: "网络 Fetch", tone: "allow" },
+    { label: "Bash", tone: "allow" },
+    { label: "联网", tone: "allow" },
     { label: "MCP 1 个服务/1 个工具", tone: "allow" },
+    { label: "可更新进度", tone: "allow" },
     { label: "委派关闭", tone: "deny" },
+    { label: "Skill", tone: "allow" },
+    { label: "询问用户", tone: "allow" },
     { label: "命令白名单 1", tone: "allow" },
     { label: "命令黑名单 1", tone: "deny" },
-    { label: "禁用 Write/Edit/WebSearch", tone: "deny" },
   ]);
 });
 
 test("template form rejects protected and malformed ids", () => {
-  const baseForm = {
-    id: "builtin.custom.agent",
-    name: "Agent",
-    description: "Agent",
-    domain: "custom" as const,
-    prompt: "Do work.",
-    whenToUse: "Use when needed.",
-    outputContract: "",
-    disallowedTools: "",
-    mcpServers: "",
-    mcpTools: "",
-    bashCommandAllowlist: "",
-    bashCommandDenylist: "",
-    filesystemRead: "workspace" as const,
-    filesystemWrite: "none" as const,
-    allowDelegation: false,
-    source: "user" as const,
-  };
+  const baseForm = templateForm({ id: "builtin.custom.agent" });
 
   expect(() => buildAgentTemplateFromForm(baseForm)).toThrow("内置子代理模板 id 不可用于用户配置");
   expect(() => buildAgentTemplateFromForm({ ...baseForm, id: "bad id" })).toThrow("子代理模板 id 只能包含");

@@ -71,6 +71,10 @@ import {
   createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
+  agentCapabilityFromAgentForm,
+  agentCapabilityPatchToAgentForm,
+  mainCapabilityFromProfileForm,
+  mainCapabilityPatchToProfileForm,
   tryParseManualContextTokens,
 } from "./agent-profile-form";
 import {
@@ -80,12 +84,9 @@ import {
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
 import {
-  type AgentTemplateCapabilityOption,
   buildAgentTemplateCapabilityOptions,
-  parseList,
-  toggleAgentTemplateListValue,
-  toggleAgentTemplateDisallowedTool,
 } from "./agent-template-form";
+import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
@@ -1436,16 +1437,6 @@ function AgentProfileVersionModal({
   );
 }
 
-interface AgentProfileToolPolicyFieldValues {
-  disallowedTools: string;
-  mcpServers: string;
-  mcpTools: string;
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
-  filesystemRead: AgentProfileAgentFormState["filesystemRead"];
-  filesystemWrite: AgentProfileAgentFormState["filesystemWrite"];
-}
-
 const AGENT_TEMPLATE_DRAG_TYPE = "application/x-eco-agent-template";
 
 type AgentProfileSelectedNode =
@@ -1654,20 +1645,10 @@ function AgentProfileEditorModal({
     }));
   }
 
-  function patchMainToolPolicy(toolPatch: Partial<AgentProfileToolPolicyFieldValues>) {
+  function patchMainToolPolicy(toolPatch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) {
     setForm((current) => ({
       ...current,
-      ...(toolPatch.disallowedTools !== undefined ? { mainDisallowedTools: toolPatch.disallowedTools } : {}),
-      ...(toolPatch.mcpServers !== undefined ? { mainMcpServers: toolPatch.mcpServers } : {}),
-      ...(toolPatch.mcpTools !== undefined ? { mainMcpTools: toolPatch.mcpTools } : {}),
-      ...(toolPatch.bashCommandAllowlist !== undefined
-        ? { mainBashCommandAllowlist: toolPatch.bashCommandAllowlist }
-        : {}),
-      ...(toolPatch.bashCommandDenylist !== undefined
-        ? { mainBashCommandDenylist: toolPatch.bashCommandDenylist }
-        : {}),
-      ...(toolPatch.filesystemRead !== undefined ? { mainFilesystemRead: toolPatch.filesystemRead } : {}),
-      ...(toolPatch.filesystemWrite !== undefined ? { mainFilesystemWrite: toolPatch.filesystemWrite } : {}),
+      ...mainCapabilityPatchToProfileForm(toolPatch),
     }));
   }
 
@@ -2142,7 +2123,7 @@ function AgentProfileNodeConfigModal({
   onClose: () => void;
   onPatchProfile: (patch: Partial<AgentProfileFormState>) => void;
   onPatchAgent: (index: number, patch: Partial<AgentProfileAgentFormState>) => void;
-  onPatchMainToolPolicy: (patch: Partial<AgentProfileToolPolicyFieldValues>) => void;
+  onPatchMainToolPolicy: (patch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) => void;
   onFetchModels: (provider: ProviderConfigView) => void;
 }) {
   const isMainNode = node.kind === "main";
@@ -2169,22 +2150,33 @@ function AgentProfileNodeConfigModal({
     : isBuiltinExploreNode
       ? "Explore 配置"
       : `${template?.name ?? agent?.displayName ?? agent?.agentKey ?? "子代理"} 节点配置`;
-  const mainCapabilityForm = useMemo(
-    () => ({
-      disallowedTools: form.mainDisallowedTools,
-      mcpServers: form.mainMcpServers,
-      mcpTools: form.mainMcpTools,
-    }),
-    [form.mainDisallowedTools, form.mainMcpServers, form.mainMcpTools],
-  );
   const mainCapabilityOptions = useMemo(
     () =>
       buildAgentTemplateCapabilityOptions({
         templates,
-        form: mainCapabilityForm,
+        form: {
+          advancedDisallowedTools: form.mainAdvancedDisallowedTools,
+          mcpServers: form.mainMcpServers,
+          mcpTools: form.mainMcpTools,
+        },
         mcpServers,
       }),
-    [templates, mainCapabilityForm, mcpServers],
+    [templates, form.mainAdvancedDisallowedTools, form.mainMcpServers, form.mainMcpTools, mcpServers],
+  );
+  const agentCapabilityOptions = useMemo(
+    () =>
+      agent
+        ? buildAgentTemplateCapabilityOptions({
+            templates,
+            form: {
+              advancedDisallowedTools: agent.advancedDisallowedTools,
+              mcpServers: agent.mcpServers,
+              mcpTools: agent.mcpTools,
+            },
+            mcpServers,
+          })
+        : { tools: [], mcpServers: [], mcpTools: [] },
+    [agent, templates, mcpServers],
   );
 
   if (!isMainNode && !isBuiltinExploreNode && (!agent || agentIndex < 0)) {
@@ -2378,19 +2370,12 @@ function AgentProfileNodeConfigModal({
                   onChange={(event) => onPatchProfile({ mainPrompt: event.target.value })}
                 />
               </label>
-              <AgentProfileToolPolicyFields
+              <ToolCapabilityPanel
+                values={mainCapabilityFromProfileForm(form)}
                 disabled={busy}
                 capabilityOptions={mainCapabilityOptions}
-                values={{
-                  disallowedTools: form.mainDisallowedTools,
-                  mcpServers: form.mainMcpServers,
-                  mcpTools: form.mainMcpTools,
-                  bashCommandAllowlist: form.mainBashCommandAllowlist,
-                  bashCommandDenylist: form.mainBashCommandDenylist,
-                  filesystemRead: form.mainFilesystemRead,
-                  filesystemWrite: form.mainFilesystemWrite,
-                }}
-                onChange={onPatchMainToolPolicy}
+                showPresets
+                onChange={(patch) => onPatchMainToolPolicy(patch)}
               />
             </>
           ) : isBuiltinExploreNode ? (
@@ -2615,6 +2600,18 @@ function AgentProfileNodeConfigModal({
                   }
                 />
               </div>
+
+              {agent ? (
+                <ToolCapabilityPanel
+                  values={agentCapabilityFromAgentForm(agent)}
+                  disabled={busy}
+                  capabilityOptions={agentCapabilityOptions}
+                  showDelegation={false}
+                  onChange={(patch) =>
+                    onPatchAgent(agentIndex, agentCapabilityPatchToAgentForm(patch))
+                  }
+                />
+              ) : null}
             </>
           )}
         </div>
@@ -2626,174 +2623,6 @@ function AgentProfileNodeConfigModal({
         </footer>
       </div>
     </div>
-  );
-}
-
-function AgentProfileToolPolicyFields({
-  values,
-  disabled,
-  capabilityOptions,
-  onChange,
-}: {
-  values: AgentProfileToolPolicyFieldValues;
-  disabled?: boolean | undefined;
-  capabilityOptions: {
-    tools: AgentTemplateCapabilityOption[];
-    mcpServers: AgentTemplateCapabilityOption[];
-    mcpTools: AgentTemplateCapabilityOption[];
-  };
-  onChange: (patch: Partial<AgentProfileToolPolicyFieldValues>) => void;
-}) {
-  return (
-    <div className="models-agent-profile-tool-policy">
-      <div className="models-agent-template-form-grid">
-        <AgentProfileSelectableTokenGroup
-          label="禁用工具"
-          tone="danger"
-          options={capabilityOptions.tools}
-          selectedValues={parseList(values.disallowedTools)}
-          disabled={disabled}
-          onToggle={(value, checked) =>
-            onChange({
-              disallowedTools: toggleAgentTemplateDisallowedTool(
-                { disallowedTools: values.disallowedTools },
-                value,
-                checked,
-              ).disallowedTools,
-            })
-          }
-        />
-        <AgentProfileSelectableTokenGroup
-          label="MCP Servers"
-          options={capabilityOptions.mcpServers}
-          selectedValues={parseList(values.mcpServers)}
-          disabled={disabled}
-          emptyText="没有可选 MCP Server。"
-          onToggle={(value, checked) =>
-            onChange({ mcpServers: toggleAgentTemplateListValue(values.mcpServers, value, checked) })
-          }
-        />
-        <AgentProfileSelectableTokenGroup
-          label="MCP Tools"
-          options={capabilityOptions.mcpTools}
-          selectedValues={parseList(values.mcpTools)}
-          disabled={disabled}
-          emptyText="没有 MCP 工具模式。"
-          onToggle={(value, checked) =>
-            onChange({ mcpTools: toggleAgentTemplateListValue(values.mcpTools, value, checked) })
-          }
-        />
-        <label className="mcp-field">
-          <span className="mcp-field-label">命令白名单</span>
-          <input
-            className="mcp-field-input"
-            value={values.bashCommandAllowlist}
-            disabled={disabled}
-            onChange={(event) => onChange({ bashCommandAllowlist: event.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">命令黑名单</span>
-          <input
-            className="mcp-field-input"
-            value={values.bashCommandDenylist}
-            disabled={disabled}
-            onChange={(event) => onChange({ bashCommandDenylist: event.target.value })}
-          />
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">文件读取</span>
-          <select
-            className="mcp-field-input"
-            value={values.filesystemRead}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({
-                filesystemRead: event.target.value as AgentProfileToolPolicyFieldValues["filesystemRead"],
-              })
-            }
-          >
-            <option value="workspace">工作区</option>
-            <option value="extra_dirs">工作区+扩展</option>
-            <option value="none">禁用</option>
-          </select>
-        </label>
-        <label className="mcp-field">
-          <span className="mcp-field-label">文件写入</span>
-          <select
-            className="mcp-field-input"
-            value={values.filesystemWrite}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({
-                filesystemWrite: event.target.value as AgentProfileToolPolicyFieldValues["filesystemWrite"],
-              })
-            }
-          >
-            <option value="workspace">工作区</option>
-            <option value="none">禁用</option>
-          </select>
-        </label>
-      </div>
-    </div>
-  );
-}
-
-function AgentProfileSelectableTokenGroup({
-  label,
-  options,
-  selectedValues,
-  disabled,
-  tone,
-  emptyText = "暂无可选项。",
-  onToggle,
-}: {
-  label: string;
-  options: AgentTemplateCapabilityOption[];
-  selectedValues: string[];
-  disabled?: boolean | undefined;
-  tone?: "danger" | undefined;
-  emptyText?: string | undefined;
-  onToggle: (value: string, checked: boolean) => void;
-}) {
-  const selected = new Set(selectedValues);
-  return (
-    <section className="models-agent-token-group">
-      <div className="models-agent-token-group-head">
-        <span>{label}</span>
-        <small>{selectedValues.length} 已选</small>
-      </div>
-      {options.length === 0 ? (
-        <p className="models-agent-token-empty">{emptyText}</p>
-      ) : (
-        <div className="models-agent-token-options">
-          {options.map((option) => {
-            const active = selected.has(option.value);
-            const optionDisabled = disabled || (option.disabled && !active);
-            const className = [
-              "models-agent-token-option",
-              active ? "active" : "",
-              tone === "danger" ? "danger" : "",
-              optionDisabled ? "is-disabled" : "",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <label key={option.value} className={className} title={option.description ?? option.label}>
-                <input
-                  type="checkbox"
-                  checked={active}
-                  disabled={optionDisabled}
-                  onChange={(event) => onToggle(option.value, event.target.checked)}
-                />
-                <span className="models-agent-token-name">{option.label}</span>
-                <span className="models-agent-token-source">{option.sourceLabel}</span>
-              </label>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
 

@@ -11,14 +11,17 @@ import type {
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
+import { formatList, parseList } from "./agent-template-form-utils";
 import {
-  buildStructuredToolPolicyFromDisallowed,
-  normalizeDisallowedTools,
-  parseList,
-  type StructuredToolPolicyFields,
-} from "./agent-template-form";
+  capabilityFieldsToToolPolicy,
+  createDefaultToolCapabilityFields,
+  toolPolicyToCapabilityFields,
+  type ToolCapabilityFieldValues,
+} from "./tool-capability-groups";
 
-export interface AgentProfileAgentFormState {
+export type AgentProfileAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
+
+export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityFields {
   agentKey: string;
   templateId: string;
   displayName: string;
@@ -29,13 +32,6 @@ export interface AgentProfileAgentFormState {
   modelsDevMappingModelId: string;
   manualContextTokens: string;
   enabled: boolean;
-  disallowedTools: string;
-  mcpServers: string;
-  mcpTools: string;
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
-  filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
-  filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
 }
 
 export interface AgentProfileFormState {
@@ -53,13 +49,20 @@ export interface AgentProfileFormState {
   mainApiCompat: string;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
-  mainDisallowedTools: string;
-  mainMcpServers: string;
-  mainMcpTools: string;
+  mainReadCodebase: boolean;
+  mainReadScope: ToolCapabilityFieldValues["readScope"];
+  mainWriteCodebase: boolean;
+  mainBash: boolean;
   mainBashCommandAllowlist: string;
   mainBashCommandDenylist: string;
-  mainFilesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
-  mainFilesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
+  mainNetwork: boolean;
+  mainSkill: boolean;
+  mainAskUser: boolean;
+  mainTaskProgress: boolean;
+  mainAllowDelegation: boolean;
+  mainAdvancedDisallowedTools: string;
+  mainMcpServers: string;
+  mainMcpTools: string;
   builtinExploreProviderId: string;
   builtinExploreModelId: string;
   builtinExploreThinkingEffort: string;
@@ -77,11 +80,6 @@ interface ProfileFormOptions {
   templates?: readonly AgentTemplate[];
 }
 
-interface ToolPolicyFormFields extends StructuredToolPolicyFields {
-  mcpServers: string;
-  mcpTools: string;
-}
-
 const RESERVED_AGENT_KEYS = new Set([
   "assistant",
   "eco_explore",
@@ -97,8 +95,82 @@ const RESERVED_AGENT_KEYS = new Set([
   "user",
 ]);
 
+export function mainCapabilityFromProfileForm(form: AgentProfileFormState): ToolCapabilityFieldValues {
+  return {
+    readCodebase: form.mainReadCodebase,
+    readScope: form.mainReadScope,
+    writeCodebase: form.mainWriteCodebase,
+    bash: form.mainBash,
+    bashCommandAllowlist: form.mainBashCommandAllowlist,
+    bashCommandDenylist: form.mainBashCommandDenylist,
+    network: form.mainNetwork,
+    skill: form.mainSkill,
+    askUser: form.mainAskUser,
+    taskProgress: form.mainTaskProgress,
+    allowDelegation: form.mainAllowDelegation,
+    advancedDisallowedTools: form.mainAdvancedDisallowedTools,
+    mcpServers: form.mainMcpServers,
+    mcpTools: form.mainMcpTools,
+  };
+}
+
+export function agentCapabilityFromAgentForm(agent: AgentProfileAgentFormState): AgentProfileAgentCapabilityFields {
+  return {
+    readCodebase: agent.readCodebase,
+    readScope: agent.readScope,
+    writeCodebase: agent.writeCodebase,
+    bash: agent.bash,
+    bashCommandAllowlist: agent.bashCommandAllowlist,
+    bashCommandDenylist: agent.bashCommandDenylist,
+    network: agent.network,
+    skill: agent.skill,
+    askUser: agent.askUser,
+    taskProgress: agent.taskProgress,
+    advancedDisallowedTools: agent.advancedDisallowedTools,
+    mcpServers: agent.mcpServers,
+    mcpTools: agent.mcpTools,
+  };
+}
+
+export function mainCapabilityPatchToProfileForm(
+  patch: Partial<ToolCapabilityFieldValues>,
+): Partial<AgentProfileFormState> {
+  const result: Partial<AgentProfileFormState> = {};
+  if (patch.readCodebase !== undefined) result.mainReadCodebase = patch.readCodebase;
+  if (patch.readScope !== undefined) result.mainReadScope = patch.readScope;
+  if (patch.writeCodebase !== undefined) result.mainWriteCodebase = patch.writeCodebase;
+  if (patch.bash !== undefined) result.mainBash = patch.bash;
+  if (patch.bashCommandAllowlist !== undefined) result.mainBashCommandAllowlist = patch.bashCommandAllowlist;
+  if (patch.bashCommandDenylist !== undefined) result.mainBashCommandDenylist = patch.bashCommandDenylist;
+  if (patch.network !== undefined) result.mainNetwork = patch.network;
+  if (patch.skill !== undefined) result.mainSkill = patch.skill;
+  if (patch.askUser !== undefined) result.mainAskUser = patch.askUser;
+  if (patch.taskProgress !== undefined) result.mainTaskProgress = patch.taskProgress;
+  if (patch.allowDelegation !== undefined) result.mainAllowDelegation = patch.allowDelegation;
+  if (patch.advancedDisallowedTools !== undefined) {
+    result.mainAdvancedDisallowedTools = patch.advancedDisallowedTools;
+  }
+  if (patch.mcpServers !== undefined) result.mainMcpServers = patch.mcpServers;
+  if (patch.mcpTools !== undefined) result.mainMcpTools = patch.mcpTools;
+  return result;
+}
+
+export function agentCapabilityPatchToAgentForm(
+  patch: Partial<AgentProfileAgentCapabilityFields>,
+): Partial<AgentProfileAgentFormState> {
+  return patch;
+}
+
 export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): AgentProfileFormState {
   const provider = selectDefaultProvider(options.providers ?? []);
+  const mainCapability = createDefaultToolCapabilityFields({
+    writeCodebase: true,
+    bash: true,
+    network: true,
+    taskProgress: true,
+    allowDelegation: true,
+    askUser: true,
+  });
   return {
     id: createUniqueProfileId("user.custom.profile", options.existingIds ?? []),
     name: createUniqueProfileName("Custom Agent Profile", options.existingNames ?? []),
@@ -115,13 +187,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainSystemPromptPreset: "custom",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
-    mainDisallowedTools: "",
-    mainMcpServers: "",
-    mainMcpTools: "",
-    mainBashCommandAllowlist: "",
-    mainBashCommandDenylist: "",
-    mainFilesystemRead: "workspace",
-    mainFilesystemWrite: "workspace",
+    ...mainCapabilityToProfileFormFields(mainCapability),
     builtinExploreProviderId: provider?.id ?? "",
     builtinExploreModelId: provider?.defaultModel ?? "",
     builtinExploreThinkingEffort: "",
@@ -134,6 +200,10 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
 }
 
 export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileFormState {
+  const mainCapability = toolPolicyToCapabilityFields(profile.mainAgent.tools, {
+    allowDelegation: true,
+    mcpServers: profile.mainAgent.tools.mcp?.allowedServers,
+  });
   return {
     id: profile.id,
     name: profile.name,
@@ -149,8 +219,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
-    mainDisallowedTools: formatList(normalizeDisallowedTools(profile.mainAgent.tools)),
-    ...mainToolPolicyFormFields(profile.mainAgent.tools),
+    ...mainCapabilityToProfileFormFields(mainCapability),
     builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
     builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
     builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
@@ -173,8 +242,11 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
       manualContextTokens: formatManualContextTokens(agent.modelRef.manualSpec?.contextTokens),
       enabled: agent.enabled,
-      disallowedTools: formatList(normalizeDisallowedTools(agent.tools)),
-      ...toolPolicyFormFields(agent.tools, agent.mcpServers),
+      ...agentCapabilityToAgentForm(
+        toolPolicyToCapabilityFields(agent.tools, {
+          mcpServers: agent.mcpServers,
+        }),
+      ),
     })),
   };
 }
@@ -196,6 +268,9 @@ export function createProfileAgentFormFromTemplate(
   template: AgentTemplate,
   options: { provider?: ProviderConfigView; existingAgentKeys?: readonly string[] } = {},
 ): AgentProfileAgentFormState {
+  const capability = toolPolicyToCapabilityFields(template.defaultTools, {
+    mcpServers: template.mcpServers,
+  });
   return {
     agentKey: createUniqueAgentKey(defaultAgentKeyFromTemplate(template), options.existingAgentKeys ?? []),
     templateId: template.id,
@@ -207,8 +282,7 @@ export function createProfileAgentFormFromTemplate(
     modelsDevMappingModelId: "",
     manualContextTokens: "",
     enabled: true,
-    disallowedTools: formatList(normalizeDisallowedTools(template.defaultTools)),
-    ...toolPolicyFormFields(template.defaultTools, template.mcpServers),
+    ...agentCapabilityToAgentForm(capability),
   };
 }
 
@@ -271,25 +345,26 @@ export function buildOrchestrationProfileFromForm(
       throw new Error(`找不到 Agent 模板：${agentForm.templateId}`);
     }
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
-    const sourceTools = existingAgent?.tools ?? template.defaultTools;
-    const sourceMcpServers = existingAgent?.mcpServers ?? template.mcpServers;
+    const tools = capabilityFieldsToToolPolicy({
+      ...agentCapabilityFromAgentForm(agentForm),
+      allowDelegation: template.allowDelegation,
+    });
     return {
       agentKey,
       templateId: template.id,
-      displayName: existingAgent?.displayName ?? template.name,
+      displayName: agentForm.displayName.trim() || existingAgent?.displayName || template.name,
       modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef, {
         thinkingEffort: agentForm.thinkingEffort,
         modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
         manualContextTokens: agentForm.manualContextTokens,
       }),
-      tools: cloneToolPolicy(sourceTools),
-      mcpServers: [...sourceMcpServers],
+      tools,
+      mcpServers: parseList(agentForm.mcpServers),
       skills: [],
-      enabled: true,
+      enabled: agentForm.enabled,
     };
   });
-  const sourceMainAgent = options.existing?.mainAgent;
 
   return {
     id,
@@ -302,18 +377,7 @@ export function buildOrchestrationProfileFromForm(
       systemPromptPreset: form.mainSystemPromptPreset,
       prompt: form.mainPrompt.trim() || "Coordinate the task and produce the final answer.",
       modelRef: mainModelRef,
-      tools: buildToolPolicyFromFormFields(
-        sourceMainAgent?.tools ?? emptyToolPolicy(),
-        form.mainDisallowedTools,
-        {
-          mcpServers: form.mainMcpServers,
-          mcpTools: form.mainMcpTools,
-          bashCommandAllowlist: form.mainBashCommandAllowlist,
-          bashCommandDenylist: form.mainBashCommandDenylist,
-          filesystemRead: form.mainFilesystemRead,
-          filesystemWrite: form.mainFilesystemWrite,
-        },
-      ),
+      tools: capabilityFieldsToToolPolicy(mainCapabilityFromProfileForm(form)),
       skills: [],
     },
     builtinAgents: {
@@ -334,10 +398,6 @@ export function buildOrchestrationProfileFromForm(
 
 export function canEditStoredAgentProfile(profile: OrchestrationProfile): boolean {
   return profile.source === "user" || profile.source === "project";
-}
-
-function cloneToolPolicy(policy: ToolPolicy): ToolPolicy {
-  return structuredClone(policy) as ToolPolicy;
 }
 
 function buildStrategyFromForm(
@@ -376,6 +436,63 @@ export function tryParseManualContextTokens(value: string): number | undefined {
   }
   const parsed = Number(trimmed);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function agentCapabilityToAgentForm(
+  capability: ToolCapabilityFieldValues,
+): AgentProfileAgentCapabilityFields {
+  return {
+    readCodebase: capability.readCodebase,
+    readScope: capability.readScope,
+    writeCodebase: capability.writeCodebase,
+    bash: capability.bash,
+    bashCommandAllowlist: capability.bashCommandAllowlist,
+    bashCommandDenylist: capability.bashCommandDenylist,
+    network: capability.network,
+    skill: capability.skill,
+    askUser: capability.askUser,
+    taskProgress: capability.taskProgress,
+    advancedDisallowedTools: capability.advancedDisallowedTools,
+    mcpServers: capability.mcpServers,
+    mcpTools: capability.mcpTools,
+  };
+}
+
+function mainCapabilityToProfileFormFields(
+  capability: ToolCapabilityFieldValues,
+): Pick<
+  AgentProfileFormState,
+  | "mainReadCodebase"
+  | "mainReadScope"
+  | "mainWriteCodebase"
+  | "mainBash"
+  | "mainBashCommandAllowlist"
+  | "mainBashCommandDenylist"
+  | "mainNetwork"
+  | "mainSkill"
+  | "mainAskUser"
+  | "mainTaskProgress"
+  | "mainAllowDelegation"
+  | "mainAdvancedDisallowedTools"
+  | "mainMcpServers"
+  | "mainMcpTools"
+> {
+  return {
+    mainReadCodebase: capability.readCodebase,
+    mainReadScope: capability.readScope,
+    mainWriteCodebase: capability.writeCodebase,
+    mainBash: capability.bash,
+    mainBashCommandAllowlist: capability.bashCommandAllowlist,
+    mainBashCommandDenylist: capability.bashCommandDenylist,
+    mainNetwork: capability.network,
+    mainSkill: capability.skill,
+    mainAskUser: capability.askUser,
+    mainTaskProgress: capability.taskProgress,
+    mainAllowDelegation: capability.allowDelegation,
+    mainAdvancedDisallowedTools: capability.advancedDisallowedTools,
+    mainMcpServers: capability.mcpServers,
+    mainMcpTools: capability.mcpTools,
+  };
 }
 
 function buildModelRef(
@@ -438,60 +555,6 @@ function mergeManualSpec(
     ...(contextTokens !== undefined && { contextTokens }),
   };
   return Object.keys(next).length > 0 ? next : undefined;
-}
-
-function emptyToolPolicy(): ToolPolicy {
-  return { allowed: [], disallowed: [] };
-}
-
-function mainToolPolicyFormFields(
-  policy: ToolPolicy,
-): Pick<
-  AgentProfileFormState,
-  | "mainMcpServers"
-  | "mainMcpTools"
-  | "mainBashCommandAllowlist"
-  | "mainBashCommandDenylist"
-  | "mainFilesystemRead"
-  | "mainFilesystemWrite"
-> {
-  const fields = toolPolicyFormFields(policy);
-  return {
-    mainMcpServers: fields.mcpServers,
-    mainMcpTools: fields.mcpTools,
-    mainBashCommandAllowlist: fields.bashCommandAllowlist,
-    mainBashCommandDenylist: fields.bashCommandDenylist,
-    mainFilesystemRead: fields.filesystemRead,
-    mainFilesystemWrite: fields.filesystemWrite,
-  };
-}
-
-function toolPolicyFormFields(policy: ToolPolicy, mcpServers: readonly string[] = []): ToolPolicyFormFields {
-  return {
-    mcpServers: formatList(mcpServers.length > 0 ? mcpServers : (policy.mcp?.allowedServers ?? [])),
-    mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
-    bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
-    filesystemRead: policy.filesystem?.read ?? "workspace",
-    filesystemWrite: policy.filesystem?.write ?? "none",
-  };
-}
-
-function buildToolPolicyFromFormFields(
-  _base: ToolPolicy,
-  disallowedRaw: string,
-  fields: ToolPolicyFormFields,
-): ToolPolicy {
-  return buildStructuredToolPolicyFromDisallowed(
-    parseList(disallowedRaw),
-    {
-      bashCommandAllowlist: fields.bashCommandAllowlist,
-      bashCommandDenylist: fields.bashCommandDenylist,
-      filesystemRead: fields.filesystemRead,
-      filesystemWrite: fields.filesystemWrite,
-    },
-    { servers: parseList(fields.mcpServers), tools: parseList(fields.mcpTools) },
-  );
 }
 
 function normalizeAgentKey(raw: string): string {
@@ -575,8 +638,4 @@ function selectDefaultProvider(providers: readonly ProviderConfigView[]): Provid
     providers.find((provider) => provider.enabled && provider.defaultModel.trim()) ??
     providers.find((provider) => provider.defaultModel.trim())
   );
-}
-
-function formatList(values: readonly string[] | undefined): string {
-  return (values ?? []).join(", ");
 }

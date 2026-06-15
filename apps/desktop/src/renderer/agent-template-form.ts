@@ -5,13 +5,25 @@ import type {
   ToolPolicy,
 } from "../shared/ipc";
 import { parseAllowedToolPatterns, sanitizeMcpServerName } from "../shared/mcp";
+import { formatList, parseList, uniqueValues } from "./agent-template-form-utils";
+import {
+  buildCapabilityPermissionChips,
+  capabilityFieldsToToolPolicy,
+  createDefaultToolCapabilityFields,
+  isDelegationToolName,
+  isGroupedCapabilityToolName,
+  stripGroupedToolsFromDisallowed,
+  toolPolicyToCapabilityFields,
+  type ToolCapabilityFieldValues,
+} from "./tool-capability-groups";
 
-export interface StructuredToolPolicyFields {
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
-  filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
-  filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-}
+export type { ToolCapabilityFieldValues };
+export {
+  DELEGATION_TOOL_NAMES,
+  isDelegationToolName,
+  TOOL_CAPABILITY_PRESETS,
+} from "./tool-capability-groups";
+export { parseList, formatList } from "./agent-template-form-utils";
 
 export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> = [
   { value: "coding", label: "Coding" },
@@ -23,38 +35,7 @@ export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> 
   { value: "custom", label: "Custom" },
 ];
 
-export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;
-
-export function isDelegationToolName(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    trimmed === "Agent" ||
-    trimmed === "Task" ||
-    trimmed === "TaskList" ||
-    trimmed === "TaskOutput" ||
-    trimmed.startsWith("Agent(") ||
-    trimmed.startsWith("Task(")
-  );
-}
-
-export function applyAllowDelegationToDisallowedTools(
-  disallowedTools: string,
-  allowDelegation: boolean,
-): Pick<AgentTemplateFormState, "disallowedTools"> {
-  const withoutDelegation = parseList(disallowedTools).filter((tool) => !isDelegationToolName(tool));
-  if (!allowDelegation) {
-    return {
-      disallowedTools: formatList(uniqueValues([...withoutDelegation, ...DELEGATION_TOOL_NAMES])),
-    };
-  }
-  return { disallowedTools: formatList(withoutDelegation) };
-}
-
-export function stripDelegationToolsFromDisallowedTools(disallowedTools: string): string {
-  return formatList(parseList(disallowedTools).filter((tool) => !isDelegationToolName(tool)));
-}
-
-export interface AgentTemplateFormState {
+export interface AgentTemplateFormState extends ToolCapabilityFieldValues {
   id: string;
   name: string;
   description: string;
@@ -62,14 +43,6 @@ export interface AgentTemplateFormState {
   prompt: string;
   whenToUse: string;
   outputContract: string;
-  disallowedTools: string;
-  mcpServers: string;
-  mcpTools: string;
-  bashCommandAllowlist: string;
-  bashCommandDenylist: string;
-  filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
-  filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
-  allowDelegation: boolean;
 }
 
 export interface AgentTemplateCapabilityOption {
@@ -107,19 +80,15 @@ export function createBlankAgentTemplateForm(
     prompt: "",
     whenToUse: "",
     outputContract: "",
-    disallowedTools: "Bash, Write, Edit, MultiEdit, NotebookEdit",
-    mcpServers: "",
-    mcpTools: "",
-    bashCommandAllowlist: "",
-    bashCommandDenylist: "",
-    filesystemRead: "workspace",
-    filesystemWrite: "none",
-    allowDelegation: false,
+    ...createDefaultToolCapabilityFields(),
   };
 }
 
 export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormState {
-  const toolFields = toolPolicyToFormFields(template.defaultTools);
+  const capability = toolPolicyToCapabilityFields(template.defaultTools, {
+    allowDelegation: template.allowDelegation,
+    mcpServers: template.mcpServers,
+  });
   return {
     id: template.id,
     name: template.name,
@@ -128,10 +97,7 @@ export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormS
     prompt: template.prompt,
     whenToUse: template.whenToUse,
     outputContract: template.outputContract ?? "",
-    ...toolFields,
-    disallowedTools: stripDelegationToolsFromDisallowedTools(toolFields.disallowedTools),
-    mcpServers: formatList(template.mcpServers),
-    allowDelegation: template.allowDelegation,
+    ...capability,
   };
 }
 
@@ -167,7 +133,7 @@ export function buildAgentTemplateFromForm(
   const whenToUse = requireTemplateField(form.whenToUse, "使用时机");
   const prompt = requireTemplateField(form.prompt, "提示词");
   const mcpServers = parseList(form.mcpServers);
-  const defaultTools = buildToolPolicyFromForm(form);
+  const defaultTools = capabilityFieldsToToolPolicy(form);
   return {
     id,
     name,
@@ -212,13 +178,6 @@ export function formatAgentSource(template: AgentTemplate): string {
   return "用户";
 }
 
-export function parseList(value: string): string[] {
-  return value
-    .split(/[\n,，]/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 export function toggleAgentTemplateListValue(raw: string, value: string, checked: boolean): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -231,30 +190,30 @@ export function toggleAgentTemplateListValue(raw: string, value: string, checked
   return formatList(uniqueValues(values));
 }
 
-export function toggleAgentTemplateDisallowedTool(
-  form: Pick<AgentTemplateFormState, "disallowedTools">,
+export function toggleAgentTemplateAdvancedDisallowedTool(
+  advancedDisallowedTools: string,
   value: string,
   checked: boolean,
-): Pick<AgentTemplateFormState, "disallowedTools"> {
+): string {
   const tool = value.trim();
-  if (!tool || isDelegationToolName(tool)) {
-    return { disallowedTools: stripDelegationToolsFromDisallowedTools(form.disallowedTools) };
+  if (!tool || isGroupedCapabilityToolName(tool)) {
+    return stripGroupedToolsFromDisallowed(advancedDisallowedTools);
   }
-  const disallowed = parseList(form.disallowedTools).filter((entry) => entry !== tool);
+  const disallowed = parseList(advancedDisallowedTools).filter((entry) => entry !== tool);
   if (checked) {
     disallowed.push(tool);
   }
-  return { disallowedTools: formatList(uniqueValues(disallowed)) };
+  return formatList(uniqueValues(disallowed));
 }
 
 export function buildAgentTemplateCapabilityOptions(input: {
   templates: readonly AgentTemplate[];
-  form?: Pick<AgentTemplateFormState, "disallowedTools" | "mcpServers" | "mcpTools">;
+  form?: Pick<ToolCapabilityFieldValues, "advancedDisallowedTools" | "mcpServers" | "mcpTools">;
   mcpServers?: readonly McpServerConfigView[];
 }): AgentTemplateCapabilityOptions {
   const form = input.form;
   return {
-    tools: buildToolOptions(input.templates, form),
+    tools: buildAdvancedToolOptions(input.templates, form?.advancedDisallowedTools),
     mcpServers: buildMcpServerOptions(input.mcpServers ?? [], form),
     mcpTools: buildMcpToolOptions(input.templates, input.mcpServers ?? [], form),
   };
@@ -274,171 +233,33 @@ export function normalizeDisallowedTools(policy: ToolPolicy): string[] {
   return uniqueValues([...disallowed]);
 }
 
-export function buildStructuredToolPolicyFromDisallowed(
-  disallowedRaw: readonly string[],
-  fields: StructuredToolPolicyFields,
-  mcp?: { servers: readonly string[]; tools: readonly string[] },
-): ToolPolicy {
-  const disallowed = uniqueValues(disallowedRaw.map((entry) => entry.trim()).filter(Boolean));
-  const bashAllowed = !disallowed.includes("Bash");
-  const commandAllowlist = parseList(fields.bashCommandAllowlist);
-  const commandDenylist = parseList(fields.bashCommandDenylist);
-  return {
-    allowed: [],
-    disallowed,
-    bash: {
-      enabled: bashAllowed,
-      ...(bashAllowed && commandAllowlist.length > 0 ? { commandAllowlist } : {}),
-      ...(bashAllowed && commandDenylist.length > 0 ? { commandDenylist } : {}),
-    },
-    ...(mcp && (mcp.servers.length > 0 || mcp.tools.length > 0)
-      ? { mcp: { allowedServers: [...mcp.servers], allowedTools: [...mcp.tools] } }
-      : {}),
-    filesystem: {
-      read: fields.filesystemRead,
-      write: fields.filesystemWrite,
-    },
-    network: {
-      webSearch: !disallowed.includes("WebSearch"),
-      webFetch: !disallowed.includes("WebFetch"),
-    },
-  };
-}
-
 export function buildAgentTemplatePermissionChips(
   template: Pick<AgentTemplate, "defaultTools" | "mcpServers" | "allowDelegation">,
 ): AgentTemplatePermissionChip[] {
-  const tools = template.defaultTools;
-  const disallowed = new Set(
-    normalizeDisallowedTools(tools).filter((tool) => !isDelegationToolName(tool)),
-  );
-  const bashEnabled = !disallowed.has("Bash");
-  const readScope = tools.filesystem?.read ?? "workspace";
-  const writeScope = tools.filesystem?.write ?? "none";
-  const webSearch = !disallowed.has("WebSearch");
-  const webFetch = !disallowed.has("WebFetch");
-  const mcpServerCount = new Set([...(tools.mcp?.allowedServers ?? []), ...template.mcpServers]).size;
-  const mcpToolCount = tools.mcp?.allowedTools.length ?? 0;
-  const chips: AgentTemplatePermissionChip[] = [
-    {
-      label: bashEnabled ? "Bash" : "Bash 禁用",
-      tone: bashEnabled ? "allow" : "deny",
-    },
-    {
-      label: `读 ${formatReadScope(readScope)}`,
-      tone: readScope === "none" ? "deny" : "allow",
-    },
-    {
-      label: `写 ${formatWriteScope(writeScope)}`,
-      tone: writeScope === "none" ? "deny" : "allow",
-    },
-    {
-      label:
-        webSearch || webFetch
-          ? `网络 ${[webSearch ? "Search" : "", webFetch ? "Fetch" : ""].filter(Boolean).join("/")}`
-          : "网络关闭",
-      tone: webSearch || webFetch ? "allow" : "deny",
-    },
-    {
-      label:
-        mcpServerCount > 0 || mcpToolCount > 0
-          ? `MCP ${mcpServerCount} 个服务${mcpToolCount > 0 ? `/${mcpToolCount} 个工具` : ""}`
-          : "MCP 关闭",
-      tone: mcpServerCount > 0 || mcpToolCount > 0 ? "allow" : "neutral",
-    },
-    {
-      label: template.allowDelegation ? "可委派" : "委派关闭",
-      tone: template.allowDelegation ? "allow" : "deny",
-    },
-  ];
-
-  if (tools.bash?.commandAllowlist?.length) {
-    chips.push({ label: `命令白名单 ${tools.bash.commandAllowlist.length}`, tone: "allow" });
-  }
-  if (tools.bash?.commandDenylist?.length) {
-    chips.push({ label: `命令黑名单 ${tools.bash.commandDenylist.length}`, tone: "deny" });
-  }
-  if (disallowed.size > 0) {
-    chips.push({ label: `禁用 ${formatShortList([...disallowed])}`, tone: "deny" });
-  }
-  return chips;
+  const values = toolPolicyToCapabilityFields(template.defaultTools, {
+    allowDelegation: template.allowDelegation,
+    mcpServers: template.mcpServers,
+  });
+  return buildCapabilityPermissionChips(values);
 }
 
-const COMMON_CLAUDE_TOOL_OPTIONS: AgentTemplateCapabilityOption[] = [
-  {
-    value: "Skill",
-    label: "Skill",
-    description: "加载已配置的 Claude Skill。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "TaskCreate",
-    label: "TaskCreate",
-    description: "创建用户可见的执行进度任务。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "TaskUpdate",
-    label: "TaskUpdate",
-    description: "更新用户可见的执行进度任务状态。",
-    sourceLabel: "Claude",
-  },
-  { value: "Read", label: "Read", description: "读取文件。", sourceLabel: "Claude" },
-  { value: "Glob", label: "Glob", description: "按模式查找文件。", sourceLabel: "Claude" },
-  { value: "Grep", label: "Grep", description: "搜索文本。", sourceLabel: "Claude" },
-  { value: "LS", label: "LS", description: "列出目录。", sourceLabel: "Claude" },
-  { value: "Bash", label: "Bash", description: "运行命令。", sourceLabel: "Claude" },
-  { value: "Write", label: "Write", description: "写入新文件。", sourceLabel: "Claude" },
-  { value: "Edit", label: "Edit", description: "编辑文件。", sourceLabel: "Claude" },
-  { value: "MultiEdit", label: "MultiEdit", description: "批量编辑文件。", sourceLabel: "Claude" },
-  {
-    value: "NotebookRead",
-    label: "NotebookRead",
-    description: "读取 notebook。",
-    sourceLabel: "Claude",
-  },
-  {
-    value: "NotebookEdit",
-    label: "NotebookEdit",
-    description: "编辑 notebook。",
-    sourceLabel: "Claude",
-  },
-  { value: "WebSearch", label: "WebSearch", description: "网页搜索。", sourceLabel: "Claude" },
-  { value: "WebFetch", label: "WebFetch", description: "抓取网页。", sourceLabel: "Claude" },
-  { value: "TodoWrite", label: "TodoWrite", description: "维护任务列表。", sourceLabel: "Claude" },
-  {
-    value: "AskUserQuestion",
-    label: "AskUserQuestion",
-    description: "请求用户选择或补充信息。",
-    sourceLabel: "Eco",
-  },
-
-];
-
-function buildToolOptions(
+function buildAdvancedToolOptions(
   templates: readonly AgentTemplate[],
-  form: Pick<AgentTemplateFormState, "disallowedTools"> | undefined,
+  advancedDisallowedTools: string | undefined,
 ): AgentTemplateCapabilityOption[] {
-  const common = new Map(COMMON_CLAUDE_TOOL_OPTIONS.map((option) => [option.value, option]));
   const templateTools = new Set<string>();
   for (const template of templates) {
-    for (const tool of template.defaultTools.disallowed) {
-      if (tool.trim()) {
+    for (const tool of normalizeDisallowedTools(template.defaultTools)) {
+      if (tool.trim() && !isGroupedCapabilityToolName(tool)) {
         templateTools.add(tool.trim());
       }
     }
   }
-  const currentTools = new Set(parseList(form?.disallowedTools ?? ""));
-  const values = uniqueValues([
-    ...COMMON_CLAUDE_TOOL_OPTIONS.map((option) => option.value),
-    ...templateTools,
-    ...currentTools,
-  ]).filter((value) => !isDelegationToolName(value));
+  const currentTools = new Set(
+    parseList(advancedDisallowedTools ?? "").filter((tool) => !isGroupedCapabilityToolName(tool)),
+  );
+  const values = uniqueValues([...templateTools, ...currentTools]);
   return values.map((value) => {
-    const commonOption = common.get(value);
-    if (commonOption) {
-      return commonOption;
-    }
     if (templateTools.has(value)) {
       return {
         value,
@@ -458,7 +279,7 @@ function buildToolOptions(
 
 function buildMcpServerOptions(
   servers: readonly McpServerConfigView[],
-  form: Pick<AgentTemplateFormState, "mcpServers"> | undefined,
+  form: Pick<ToolCapabilityFieldValues, "mcpServers"> | undefined,
 ): AgentTemplateCapabilityOption[] {
   const current = new Set(parseList(form?.mcpServers ?? ""));
   const configuredByKey = new Map<string, McpServerConfigView>();
@@ -499,7 +320,7 @@ function buildMcpServerOptions(
 function buildMcpToolOptions(
   templates: readonly AgentTemplate[],
   servers: readonly McpServerConfigView[],
-  form: Pick<AgentTemplateFormState, "mcpTools"> | undefined,
+  form: Pick<ToolCapabilityFieldValues, "mcpTools"> | undefined,
 ): AgentTemplateCapabilityOption[] {
   const templateTools = new Set(
     templates.flatMap((template) => template.defaultTools.mcp?.allowedTools ?? []).filter(Boolean),
@@ -552,65 +373,6 @@ function formatMcpServerDescription(server: McpServerConfigView): string {
   return "该服务器未声明具体工具，运行时只能按服务器级 wildcard 授权。";
 }
 
-function buildToolPolicyFromForm(form: AgentTemplateFormState): ToolPolicy {
-  const { disallowedTools } = applyAllowDelegationToDisallowedTools(
-    form.disallowedTools,
-    form.allowDelegation,
-  );
-  return buildStructuredToolPolicyFromDisallowed(
-    parseList(disallowedTools),
-    {
-      bashCommandAllowlist: form.bashCommandAllowlist,
-      bashCommandDenylist: form.bashCommandDenylist,
-      filesystemRead: form.filesystemRead,
-      filesystemWrite: form.filesystemWrite,
-    },
-    { servers: parseList(form.mcpServers), tools: parseList(form.mcpTools) },
-  );
-}
-
-function toolPolicyToFormFields(policy: ToolPolicy): Pick<
-  AgentTemplateFormState,
-  | "disallowedTools"
-  | "mcpTools"
-  | "bashCommandAllowlist"
-  | "bashCommandDenylist"
-  | "filesystemRead"
-  | "filesystemWrite"
-> {
-  return {
-    disallowedTools: formatList(normalizeDisallowedTools(policy)),
-    mcpTools: formatList(policy.mcp?.allowedTools ?? []),
-    bashCommandAllowlist: formatList(policy.bash?.commandAllowlist ?? []),
-    bashCommandDenylist: formatList(policy.bash?.commandDenylist ?? []),
-    filesystemRead: policy.filesystem?.read ?? "workspace",
-    filesystemWrite: policy.filesystem?.write ?? "none",
-  };
-}
-
-function formatReadScope(value: NonNullable<ToolPolicy["filesystem"]>["read"]): string {
-  if (value === "none") {
-    return "禁用";
-  }
-  if (value === "extra_dirs") {
-    return "工作区+扩展";
-  }
-  return "工作区";
-}
-
-function formatWriteScope(value: NonNullable<ToolPolicy["filesystem"]>["write"]): string {
-  return value === "workspace" ? "工作区" : "禁用";
-}
-
-function formatShortList(values: readonly string[]): string {
-  const visible = values.slice(0, 3).join("/");
-  return values.length > 3 ? `${visible}+${values.length - 3}` : visible;
-}
-
-function formatList(values: readonly string[]): string {
-  return values.join(", ");
-}
-
 function requireTemplateField(value: string, label: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -625,18 +387,4 @@ function slugifyTemplateId(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
-}
-
-function uniqueValues(values: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      continue;
-    }
-    seen.add(trimmed);
-    result.push(trimmed);
-  }
-  return result;
 }
