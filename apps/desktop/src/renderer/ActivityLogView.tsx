@@ -63,6 +63,11 @@ import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 import {
+  shouldScheduleThinkingAutoCollapse,
+  THINKING_AUTO_COLLAPSE_READ_MS,
+  THINKING_COLLAPSE_MS,
+} from "./thinking-auto-collapse";
+import {
   useStreamRequestTiming,
   type StreamRequestTimingAnchor,
 } from "./useStreamRequestTiming";
@@ -1308,9 +1313,6 @@ function RequestTimingBadge({ timing }: { timing: ReturnType<typeof useStreamReq
   );
 }
 
-const THINKING_READ_DELAY_MS = 2500;
-const THINKING_COLLAPSE_MS = 320;
-
 function ThinkingBlock({
   text,
   streaming,
@@ -1324,10 +1326,12 @@ function ThinkingBlock({
   const [isCollapsing, setIsCollapsing] = useState(false);
   const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoCollapseScheduledRef = useRef(false);
-  const wasStreamingRef = useRef(false);
+  const autoCollapseEligibleRef = useRef(false);
+  const autoCollapseSuppressedRef = useRef(false);
   const hasBody = text.trim().length > 0;
-  const expanded = !collapsed;
+  const autoCollapseReadKey = hasBody ? text : "";
+  const latestRenderStateRef = useRef({ streaming: false, hasBody: false, readKey: "" });
+  const expanded = Boolean(streaming && hasBody) || !collapsed;
   const preview = hasBody ? thinkingPreviewLine(text) : "";
   const showPreview = hasBody && collapsed && !streaming && !isCollapsing;
   const showBodyShell = hasBody && (expanded || isCollapsing);
@@ -1337,6 +1341,11 @@ function ThinkingBlock({
     hasBody,
     toStreamRequestTimingAnchor(requestSpan),
   );
+  latestRenderStateRef.current = {
+    streaming: Boolean(streaming),
+    hasBody,
+    readKey: autoCollapseReadKey,
+  };
 
   const clearCollapseTimers = useCallback(() => {
     if (collapseDelayRef.current) {
@@ -1350,6 +1359,9 @@ function ThinkingBlock({
   }, []);
 
   const startCollapseAnimation = useCallback(() => {
+    if (latestRenderStateRef.current.streaming || !latestRenderStateRef.current.hasBody) {
+      return;
+    }
     clearCollapseTimers();
     setIsCollapsing(true);
     collapseAnimRef.current = setTimeout(() => {
@@ -1361,8 +1373,8 @@ function ThinkingBlock({
 
   useEffect(() => {
     if (streaming) {
-      wasStreamingRef.current = true;
-      autoCollapseScheduledRef.current = false;
+      autoCollapseEligibleRef.current = true;
+      autoCollapseSuppressedRef.current = false;
     }
   }, [streaming]);
 
@@ -1376,16 +1388,36 @@ function ThinkingBlock({
   }, [streaming, hasBody, clearCollapseTimers]);
 
   useEffect(() => {
-    if (streaming || !hasBody || collapsed || autoCollapseScheduledRef.current || !wasStreamingRef.current) {
+    if (
+      !shouldScheduleThinkingAutoCollapse({
+        streaming,
+        hasBody,
+        collapsed,
+        autoCollapseEligible: autoCollapseEligibleRef.current,
+        autoCollapseSuppressed: autoCollapseSuppressedRef.current,
+      })
+    ) {
       return;
     }
 
-    autoCollapseScheduledRef.current = true;
-    wasStreamingRef.current = false;
+    const scheduledReadKey = autoCollapseReadKey;
     collapseDelayRef.current = setTimeout(() => {
       collapseDelayRef.current = null;
+      if (
+        latestRenderStateRef.current.readKey !== scheduledReadKey ||
+        !shouldScheduleThinkingAutoCollapse({
+          streaming: latestRenderStateRef.current.streaming,
+          hasBody: latestRenderStateRef.current.hasBody,
+          collapsed,
+          autoCollapseEligible: autoCollapseEligibleRef.current,
+          autoCollapseSuppressed: autoCollapseSuppressedRef.current,
+        })
+      ) {
+        return;
+      }
+      autoCollapseEligibleRef.current = false;
       startCollapseAnimation();
-    }, THINKING_READ_DELAY_MS);
+    }, THINKING_AUTO_COLLAPSE_READ_MS);
 
     return () => {
       if (collapseDelayRef.current) {
@@ -1393,7 +1425,7 @@ function ThinkingBlock({
         collapseDelayRef.current = null;
       }
     };
-  }, [streaming, hasBody, collapsed, startCollapseAnimation]);
+  }, [streaming, hasBody, collapsed, autoCollapseReadKey, startCollapseAnimation]);
 
   useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
 
@@ -1410,8 +1442,8 @@ function ThinkingBlock({
           if (streaming || isCollapsing) {
             return;
           }
-          autoCollapseScheduledRef.current = true;
-          wasStreamingRef.current = false;
+          autoCollapseEligibleRef.current = false;
+          autoCollapseSuppressedRef.current = true;
           if (expanded) {
             startCollapseAnimation();
             return;
