@@ -132,7 +132,6 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete }: McpSetting
           >
             了解更多
           </a>
-          。项目根目录的 <code>.mcp.json</code> 也会自动加载。
         </p>
       </header>
 

@@ -9,6 +9,7 @@ import {
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
+  Monitor,
   Plug,
   RefreshCw,
   RotateCcw,
@@ -31,6 +32,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -141,8 +143,10 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
+import { type AppTheme, persistAppTheme, readStoredAppTheme } from "./theme";
+import "./themes.css";
 import "./styles.css";
-import "./settings-theme.css";
+import "./theme-overrides.css";
 
 const emptySettings: ModelSettingsSnapshot = {
   providers: [],
@@ -173,6 +177,10 @@ interface RecentProject {
 }
 
 const settingsNavGroups = [
+  {
+    label: "个人",
+    sections: [{ id: "general", label: "外观", icon: Monitor }],
+  },
   {
     label: "集成",
     sections: [
@@ -214,8 +222,13 @@ interface ComposerRewindTarget extends ThreadActivityRewindTarget {
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("models");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
+  const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
+
+  useEffect(() => {
+    persistAppTheme(appTheme);
+  }, [appTheme]);
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
@@ -2843,6 +2856,13 @@ function App() {
           </aside>
 
           <div className="settings-content">
+            {settingsSection === "general" && (
+              <GeneralSettingsPanel
+                theme={appTheme}
+                onThemeChange={setAppTheme}
+              />
+            )}
+
             {settingsSection === "skills" && (
               <SkillsSettingsPanel
                 {...(skillsSnapshot && { snapshot: skillsSnapshot })}

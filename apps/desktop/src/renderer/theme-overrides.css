@@ -1,0 +1,798 @@
+/* Theme-aware component overrides (settings + main app) */
+
+.settings-page .mcp-page-desc code,
+.settings-page .settings-page-desc code {
+  color: var(--text-primary);
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.settings-page .mcp-learn-more {
+  color: var(--accent-text);
+}
+
+.settings-page .settings-form-error {
+  color: var(--danger);
+}
+
+.settings-page .settings-page-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .settings-icon-button {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.settings-page .settings-icon-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.settings-page .settings-section-subtitle {
+  color: var(--text-muted);
+}
+
+.settings-page .settings-count-badge {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary);
+}
+
+.settings-page .settings-empty-hint {
+  background: var(--bg-elevated-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.settings-page .settings-danger-button {
+  border-color: rgba(215, 0, 21, 0.35);
+  color: var(--danger);
+}
+
+.settings-page .settings-danger-button:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+/* MCP list */
+.settings-page .mcp-list-toolbar-label {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-page .mcp-add-button {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-add-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .mcp-list-empty {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+}
+
+.settings-page .mcp-server-list {
+  gap: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.settings-page .mcp-server-row {
+  padding: 12px 16px;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-page .mcp-server-row:last-child {
+  border-bottom: none;
+}
+
+.settings-page .mcp-server-row:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .mcp-server-name {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.settings-page .mcp-icon-button {
+  color: var(--text-muted);
+}
+
+.settings-page .mcp-icon-button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-toggle-track {
+  background: var(--toggle-off);
+}
+
+.settings-page .mcp-toggle input:checked + .mcp-toggle-track {
+  background: var(--accent);
+}
+
+.settings-page .mcp-toggle-track::after {
+  background: var(--toggle-thumb);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* MCP editor */
+.settings-page .mcp-back-button {
+  color: var(--text-secondary);
+}
+
+.settings-page .mcp-back-button:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-editor-title-block h1 {
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-editor-hint,
+.settings-page .mcp-field-label,
+.settings-page .mcp-field-hint,
+.settings-page .mcp-advanced,
+.settings-page .mcp-inline-add {
+  color: var(--text-muted);
+}
+
+.settings-page .mcp-inline-add:hover {
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-field-input {
+  border-color: var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.settings-page .mcp-field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--search-focus-ring);
+}
+
+.settings-page .mcp-row-delete {
+  color: var(--text-muted);
+}
+
+.settings-page .mcp-row-delete:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.settings-page .mcp-save-button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.settings-page .mcp-save-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.settings-page .mcp-uninstall-button {
+  border-color: rgba(215, 0, 21, 0.35);
+  color: var(--danger);
+}
+
+/* Models tabs — segmented control */
+.settings-page .models-settings-tabs {
+  display: inline-flex;
+  gap: 0;
+  margin: 0 0 24px;
+  padding: 2px;
+  border: none;
+  border-radius: 8px;
+  background: var(--nav-hover);
+}
+
+.settings-page .models-settings-tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-page .models-settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-page .models-settings-tab.active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Models sections */
+.settings-page .models-section-header {
+  border-bottom-color: var(--border-subtle);
+}
+
+.settings-page .models-section-title {
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.settings-page .models-section-desc,
+.settings-page .models-section-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .models-section-button {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-page .models-section-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-section-button-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.settings-page .models-section-button-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.settings-page .models-provider-row-main small {
+  color: var(--text-muted);
+}
+
+.settings-page .models-provider-badge {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-muted);
+}
+
+.settings-page .models-provider-badge.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.settings-page .models-route-pricing-key {
+  color: var(--text-muted);
+}
+
+.settings-page .models-route-pricing-val {
+  color: var(--text-primary);
+}
+
+.settings-page .models-route-pricing-chip {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-secondary);
+}
+
+.settings-page .models-route-capability-badge {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-secondary);
+}
+
+.settings-page .models-route-capability-badge-unresolved,
+.settings-page .models-route-pricing-badge-unresolved {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+/* Provider / agent rows in card groups */
+.settings-page .settings-rows .settings-row,
+.settings-page .models-provider-list .settings-row {
+  border-radius: 0;
+}
+
+.settings-page .mcp-list-section {
+  margin-top: 0;
+}
+
+.settings-page .models-subagent-section,
+.settings-page .mcp-list-section {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+/* Skills */
+.settings-page .settings-skills-link-block {
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.settings-page .composer-skills-link-hint-message {
+  color: var(--text-muted);
+}
+
+.settings-page .composer-skills-link-action {
+  color: var(--accent-text);
+  text-decoration-color: rgba(0, 122, 255, 0.4);
+}
+
+.settings-page .composer-skills-link-action:hover:not(:disabled) {
+  color: #0066d6;
+}
+
+.settings-page .composer-skills-link-hint-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .composer-skill-pill.is-pending {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+.settings-page .skill-list {
+  gap: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.settings-page .skill-card {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.settings-page .skill-card:last-child {
+  border-bottom: none;
+}
+
+.settings-page .skill-card:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .skill-card-title-row strong {
+  color: var(--text-primary);
+}
+
+.settings-page .skill-card-description {
+  color: var(--text-secondary);
+}
+
+.settings-page .skill-card-path {
+  color: var(--text-muted);
+}
+
+.settings-page .skill-source-badge.claude,
+.settings-page .skill-source-badge.user {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.settings-page .skill-source-badge.agents {
+  background: rgba(255, 149, 0, 0.12);
+  color: #c93400;
+}
+
+.settings-page .skill-source-badge.project {
+  background: rgba(52, 199, 89, 0.12);
+  color: #248a3d;
+}
+
+/* Telemetry */
+.settings-page .telemetry-hint {
+  color: var(--text-muted);
+}
+
+.settings-page .telemetry-hint code {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+}
+
+/* Modals opened from settings */
+.settings-page .settings-modal {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+}
+
+.settings-page .settings-modal-header h2,
+.settings-page .settings-modal-title {
+  color: var(--text-primary);
+}
+
+.settings-page .settings-modal-desc {
+  color: var(--text-muted);
+}
+
+.settings-page .settings-modal-route-profile .settings-modal-header,
+.settings-page .settings-modal-route-profile .settings-modal-footer {
+  border-color: var(--border-subtle);
+}
+
+.settings-page .models-agent-template-policy-panel {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-template-policy-head p {
+  color: var(--text-muted);
+}
+
+.settings-page .models-agent-template-preset {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.settings-page .models-agent-template-preset:hover:not(:disabled) {
+  border-color: #c7c7cc;
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-template-preset.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-page .models-agent-template-preset span {
+  color: var(--text-primary);
+}
+
+.settings-page .models-agent-template-preset small {
+  color: var(--text-muted);
+}
+
+/* Agent profile cards */
+.settings-page .models-agent-profile-card {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.settings-page .models-agent-profile-card:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-page .models-agent-profile-card-title {
+  color: var(--text-primary);
+}
+
+.settings-page .models-agent-profile-card-desc {
+  color: var(--text-muted);
+}
+
+/* Proxy bridge section */
+.settings-page .models-proxy-bridge-section .mcp-field-input {
+  max-width: 480px;
+}
+
+/* Agent profile list cards */
+.settings-page .models-agent-profile-stack .settings-row,
+.settings-page .models-agent-library .settings-row {
+  border-radius: 0;
+}
+
+.settings-page .models-route-toolbar-actions .models-section-button {
+  font-size: 13px;
+}
+
+.settings-page .models-agent-version-row {
+  border-color: var(--border-subtle);
+}
+
+.settings-page .models-agent-version-main .models-route-role {
+  color: var(--text-primary);
+}
+
+.settings-page .models-agent-source-badge {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.settings-page .models-route-role-id,
+.settings-page .models-subagent-card-desc {
+  color: var(--text-muted);
+}
+
+/* Modal internals */
+.settings-page .settings-modal-cancel {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-page .settings-modal-cancel:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-form-section {
+  border-top-color: var(--border-subtle);
+}
+
+.settings-page .models-agent-profile-modal-heading p,
+.settings-page .models-agent-profile-builder-subtitle {
+  color: var(--text-muted);
+}
+
+.settings-page .models-agent-profile-palette,
+.settings-page .models-agent-profile-canvas {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-palette-card {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-page .models-agent-profile-palette-card:hover:not(:disabled),
+.settings-page .models-agent-profile-node:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated-hover);
+}
+
+.settings-page .models-agent-profile-node-builtin {
+  border-style: dashed;
+}
+
+.settings-page .models-agent-profile-node-title {
+  color: var(--text-primary);
+}
+
+.settings-page .models-agent-profile-node-desc,
+.settings-page .models-agent-profile-node-meta {
+  color: var(--text-muted);
+}
+
+.settings-page .models-agent-profile-node-rail::before,
+.settings-page .models-agent-profile-node-rail::after {
+  background: var(--border-subtle);
+}
+
+.settings-page .model-manual-spec-auto-hint {
+  color: var(--text-muted);
+}
+
+/* —— Theme picker (General settings) —— */
+.settings-section-head-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.theme-picker-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 88px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: inherit;
+  text-align: left;
+}
+
+.theme-picker-card:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.theme-picker-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.theme-picker-card-radio {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.theme-picker-card.active .theme-picker-card-radio {
+  border-color: var(--accent);
+  background: radial-gradient(circle at center, var(--accent) 0 5px, transparent 5px);
+}
+
+.theme-picker-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--nav-hover);
+  color: var(--text-secondary);
+}
+
+.theme-picker-card.active .theme-picker-card-icon {
+  color: var(--accent-text);
+}
+
+.theme-picker-card-body {
+  display: grid;
+  gap: 4px;
+  padding-right: 20px;
+}
+
+.theme-picker-card-body strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-picker-card-body small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* —— Main app: light theme component overrides —— */
+[data-theme="light"] .project-group-main:hover .project-group-toggle,
+[data-theme="light"] .project-group-main:hover .project-group-toggle svg,
+[data-theme="light"] .project-group-main.active .project-group-toggle,
+[data-theme="light"] .project-group-main.active .project-group-toggle svg,
+[data-theme="light"] .project-group-main:hover .project-group-header,
+[data-theme="light"] .project-group-main.active .project-group-header {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .codex-sidebar {
+  border-right-color: var(--border-sidebar);
+}
+
+[data-theme="light"] .sidebar-action {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .sidebar-action:hover {
+  background: var(--nav-hover-solid);
+}
+
+[data-theme="light"] .sidebar-action.muted,
+[data-theme="light"] .sidebar-section-label,
+[data-theme="light"] .project-tree-section-label {
+  color: var(--sidebar-label);
+}
+
+[data-theme="light"] .project-group-main:hover,
+[data-theme="light"] .chat-item-row:hover {
+  background: var(--nav-hover-solid);
+}
+
+[data-theme="light"] .project-group-main.active,
+[data-theme="light"] .project-group-main.menu-open,
+[data-theme="light"] .chat-item-row.active {
+  background: var(--nav-active-solid);
+}
+
+[data-theme="light"] .chat-item {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .chat-item.active,
+[data-theme="light"] .chat-item:hover {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .project-menu {
+  border-color: var(--border-subtle);
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-menu);
+}
+
+[data-theme="light"] .project-menu-item {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .project-menu-item:hover,
+[data-theme="light"] .project-menu-item:focus-visible {
+  background: var(--nav-hover);
+}
+
+[data-theme="light"] .codex-composer {
+  border-color: var(--border-composer);
+  background: var(--bg-composer);
+  box-shadow: var(--shadow-composer);
+}
+
+[data-theme="light"] .composer-skill-input-control {
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .composer-skill-input-control:empty::before {
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .send-button {
+  background: var(--send-btn-bg);
+  color: var(--send-btn-text);
+}
+
+[data-theme="light"] .send-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+[data-theme="light"] .send-button:disabled {
+  background: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+[data-theme="light"] .model-pill,
+[data-theme="light"] .composer-meta-pill {
+  background: var(--chip-bg);
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .activity-icon-button {
+  border-color: var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .activity-icon-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .thread-info-panel {
+  border-left-color: var(--border-sidebar);
+  background: var(--bg-sidebar);
+}
+
+[data-theme="light"] .codex-hero {
+  color: var(--text-heading);
+}
+
+[data-theme="light"] .composer-context {
+  border-top-color: var(--border-subtle);
+}
+
+[data-theme="light"] .context-chip {
+  background: var(--chip-bg);
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .settings-primary-button {
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
+}
+
+[data-theme="light"] .settings-primary-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+[data-theme="dark"] .settings-primary-button {
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
+}
+
+[data-theme="dark"] .settings-primary-button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
