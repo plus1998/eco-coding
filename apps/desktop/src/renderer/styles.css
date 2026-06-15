@@ -1,6 +1,7 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
+  --sidebar-width: 300px;
 }
 
 * {
@@ -49,13 +50,13 @@ button:not(:disabled) {
 
 .shell {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
   background: var(--bg-main);
 }
 
 .shell.shell-with-info {
-  grid-template-columns: 260px minmax(0, 1fr) min(300px, 30vw);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) min(300px, 30vw);
 }
 
 .shell.shell-with-info > .codex-main {
@@ -73,6 +74,8 @@ button:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
+  width: var(--sidebar-width);
   height: 100vh;
   max-height: 100vh;
   min-height: 0;
@@ -80,6 +83,18 @@ button:not(:disabled) {
   padding: 0 10px 12px;
   border-right: 1px solid var(--border-sidebar);
   background: var(--bg-sidebar);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition:
+    background-color 0.2s ease,
+    backdrop-filter 0.2s ease,
+    -webkit-backdrop-filter 0.2s ease;
+}
+
+html[data-window-focused="true"] .codex-sidebar {
+  background: var(--bg-sidebar-focused);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 .codex-sidebar::before {
@@ -89,7 +104,7 @@ button:not(:disabled) {
   width: calc(100% + 20px);
   height: var(--window-chrome-top);
   margin: 0 -10px;
-  background: var(--bg-sidebar);
+  background: inherit;
   -webkit-app-region: drag;
 }
 
@@ -10160,6 +10175,7 @@ button:not(:disabled) {
   }
 
   .codex-sidebar {
+    width: auto;
     min-height: auto;
     border-right: 0;
     border-bottom: 1px solid #2f2f2f;

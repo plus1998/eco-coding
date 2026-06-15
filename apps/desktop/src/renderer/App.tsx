@@ -144,6 +144,7 @@ import {
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
+import { subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
 import "./styles.css";
 import "./theme-overrides.css";
@@ -238,6 +239,8 @@ function App() {
       persistAppTheme("system");
     });
   }, [appTheme]);
+
+  useEffect(() => subscribeToWindowFocus(), []);
   const [workspace, setWorkspace] = useState<WorkspaceInfo>();
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceInfo>();
   const [selectedProjectPath, setSelectedProjectPath] = useState<string>();
