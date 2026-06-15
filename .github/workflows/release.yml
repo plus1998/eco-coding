@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac-arm64
+            pack: pack:mac-arm64
+          - os: windows-latest
+            platform: win-x64
+            pack: pack:win-x64
+          - os: ubuntu-latest
+            platform: linux-x64
+            pack: pack:linux-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          node --input-type=module -e "
+            import { readFileSync, writeFileSync } from 'node:fs';
+            const path = 'apps/desktop/package.json';
+            const pkg = JSON.parse(readFileSync(path, 'utf8'));
+            pkg.version = '${VERSION}';
+            writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Pack
+        run: bun run --cwd apps/desktop ${{ matrix.pack }}
+
+      - name: Make AppImage executable
+        if: matrix.platform == 'linux-x64'
+        run: chmod +x apps/desktop/release/*.AppImage
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eco-coding-${{ matrix.platform }}
+          path: apps/desktop/release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Eco Coding ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,10 +14,10 @@
     "build:main": "bun build src/main/index.ts --target=node --external electron --external @anthropic-ai/claude-agent-sdk --outdir dist/main",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
     "icons": "node scripts/generate-icons.mjs",
-    "pack": "bun run build && electron-builder",
-    "pack:mac-arm64": "bun run build && node scripts/ensure-native-sdk.mjs darwin-arm64 && electron-builder --mac dmg --arm64",
-    "pack:win-x64": "bun run build && node scripts/ensure-native-sdk.mjs win-x64 && electron-builder --win nsis --x64",
-    "pack:linux-x64": "bun run build && node scripts/ensure-native-sdk.mjs linux-x64 && electron-builder --linux AppImage --x64"
+    "pack": "bun run build && node scripts/pack-local.mjs",
+    "pack:mac-arm64": "bun run build && electron-builder --mac dmg --arm64",
+    "pack:win-x64": "bun run build && electron-builder --win nsis --x64",
+    "pack:linux-x64": "bun run build && electron-builder --linux AppImage --x64"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.168",

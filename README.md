@@ -72,20 +72,35 @@ bun run dev
 # Compile renderer + main + preload
 bun run build
 
-# App icons (from repo-root logo.png → apps/desktop/packaging/)
+# App icons (from repo-root logo.png → apps/desktop/packaging/; icons are committed for CI)
 bun run icons
 
-# Installers (run from repo root)
-bun run pack:mac-arm64   # macOS Apple Silicon → apps/desktop/release/Eco-Coding-*-mac-arm64.dmg
-bun run pack:win-x64     # Windows x64 NSIS → apps/desktop/release/Eco-Coding-*-win-x64.exe
-bun run pack:linux-x64   # Linux x64 AppImage → apps/desktop/release/Eco-Coding-*-linux-x64.AppImage
+# Local installer for the current OS/arch only (run from repo root)
+bun run pack
 ```
+
+| Host | Output |
+|------|--------|
+| macOS Apple Silicon | `apps/desktop/release/Eco-Coding-*-mac-arm64.dmg` |
+| Windows x64 | `apps/desktop/release/Eco-Coding-*-win-x64.exe` |
+| Linux x64 | `apps/desktop/release/Eco-Coding-*-linux-x64.AppImage` |
+
+Explicit platform scripts remain available for CI: `pack:mac-arm64`, `pack:win-x64`, `pack:linux-x64`.
+
+### Release (GitHub Actions)
+
+Pushing a semver tag triggers a matrix build on macOS, Windows, and Linux; artifacts are published to [GitHub Releases](https://github.com/plus1998/eco-coding/releases).
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow reads the tag (e.g. `v0.1.0` → version `0.1.0`) and sets `apps/desktop/package.json` before packing.
 
 macOS packages are unsigned by default (`identity: null` in `apps/desktop/electron-builder.yml`). For distribution, set a valid `CSC_NAME` / Developer ID and adjust signing in that file.
 
-Windows installers can be built on macOS (electron-builder downloads the Windows Electron binary). The Claude Agent SDK native CLI for Windows is included via optional dependency `@anthropic-ai/claude-agent-sdk-win32-x64`.
-
-Linux AppImages are produced as portable `*.AppImage` files. Run `bun run pack:linux-x64` on Linux for the smoothest build; cross-building from macOS is also supported (electron-builder downloads the Linux Electron binary). The pack script installs the Linux x64 Claude Agent SDK native CLI via `ensure-native-sdk.mjs` before bundling. After build, run `chmod +x Eco-Coding-*-linux-x64.AppImage` if needed, then launch the AppImage (some distros need [FUSE](https://github.com/AppImage/AppImageKit/wiki/FUSE) for AppImage).
+Linux AppImages are portable `*.AppImage` files. Some distros need [FUSE](https://github.com/AppImage/AppImageKit/wiki/FUSE) to run AppImages.
 
 ## Repository shape
 
