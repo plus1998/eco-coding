@@ -8,7 +8,7 @@ import {
   parsePackageManagerField,
   readPackageJson,
   resolvePackageManager,
-  runPackageScript,
+  preparePackageScriptRun,
 } from "../src/main/package-scripts";
 
 let tempDir = "";
@@ -96,6 +96,7 @@ test("resolvePackageManager falls back to packageManager field", async () => {
 test("buildRunCommand builds argv for each package manager", () => {
   expect(buildRunCommand("bun", "dev")).toEqual(["bun", "run", "dev"]);
   expect(buildRunCommand("bun", "dev", "-- --watch")).toEqual(["bun", "run", "dev", "--", "--watch"]);
+  expect(buildRunCommand("bun", "publish", "root@xxx")).toEqual(["bun", "run", "publish", "root@xxx"]);
   expect(buildRunCommand("pnpm", "test")).toEqual(["pnpm", "run", "test"]);
   expect(buildRunCommand("pnpm", "test", "-- --coverage")).toEqual([
     "pnpm",
@@ -108,7 +109,7 @@ test("buildRunCommand builds argv for each package manager", () => {
   expect(buildRunCommand("npm", "start")).toEqual(["npm", "run", "start"]);
 });
 
-test("runPackageScript rejects unknown script names", async () => {
+test("preparePackageScriptRun rejects unknown script names", async () => {
   await fs.writeFile(
     path.join(tempDir, "package.json"),
     JSON.stringify({ scripts: { build: "echo build" } }),
@@ -116,6 +117,6 @@ test("runPackageScript rejects unknown script names", async () => {
   );
 
   await expect(
-    runPackageScript({ workspacePath: tempDir, script: "missing" }),
+    preparePackageScriptRun({ workspacePath: tempDir, script: "missing" }),
   ).rejects.toThrow("Unknown script: missing");
 });

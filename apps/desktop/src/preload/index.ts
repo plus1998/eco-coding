@@ -91,7 +91,8 @@ import {
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
   type RunPackageScriptRequest,
-  type RunPackageScriptResult,
+  type StartPackageScriptResult,
+  type PackageScriptStreamEvent,
   type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
@@ -127,8 +128,18 @@ const api = {
   listPackageScripts(workspacePath: string): Promise<PackageScriptsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceListPackageScripts, workspacePath);
   },
-  runPackageScript(request: RunPackageScriptRequest): Promise<RunPackageScriptResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.workspaceRunPackageScript, request);
+  startPackageScript(request: RunPackageScriptRequest): Promise<StartPackageScriptResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceStartPackageScript, request);
+  },
+  stopPackageScript(runId: string): Promise<{ stopped: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceStopPackageScript, runId);
+  },
+  onPackageScriptEvent(callback: (event: PackageScriptStreamEvent) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      callback(payload as PackageScriptStreamEvent);
+    };
+    ipcRenderer.on(IPC_CHANNELS.workspacePackageScriptEvent, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageScriptEvent, listener);
   },
   getModelSettings(): Promise<ModelSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);

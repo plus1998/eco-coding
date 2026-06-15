@@ -50,7 +50,6 @@ import {
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
-  type RunPackageScriptResult,
   type ProxyBridgeSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -127,7 +126,7 @@ import {
 } from "./composer-skills";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { PackageScriptsDialog } from "./PackageScriptsDialog";
+import { PackageScriptsDialog, type PackageScriptRunViewState } from "./PackageScriptsDialog";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import {
@@ -326,7 +325,10 @@ function App() {
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [runningScript, setRunningScript] = useState<string>();
-  const [lastScriptResult, setLastScriptResult] = useState<RunPackageScriptResult>();
+  const [scriptRunState, setScriptRunState] = useState<PackageScriptRunViewState>({
+    output: "",
+    running: false,
+  });
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
@@ -919,33 +921,89 @@ function App() {
     packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
   );
 
-  const runPackageScript = useCallback(
-    async (scriptName: string) => {
+  useEffect(() => {
+    if (!window.eco?.onPackageScriptEvent) {
+      return undefined;
+    }
+    return window.eco.onPackageScriptEvent((event) => {
+      setScriptRunState((current) => {
+        if (event.type === "output") {
+          if (current.runId && event.runId !== current.runId) {
+            return current;
+          }
+          return { ...current, output: current.output + event.data };
+        }
+        if (event.type === "exit") {
+          if (current.runId && event.runId !== current.runId) {
+            return current;
+          }
+          return { ...current, exitCode: event.exitCode, running: false };
+        }
+        if (event.type === "error") {
+          if (current.runId && event.runId !== current.runId) {
+            return current;
+          }
+          return {
+            ...current,
+            output: `${current.output}${event.message}`,
+            exitCode: 1,
+            running: false,
+          };
+        }
+        return current;
+      });
+      if (event.type === "exit" || event.type === "error") {
+        setRunningScript(undefined);
+        setScriptsBusy(false);
+      }
+    });
+  }, []);
+
+  const startPackageScript = useCallback(
+    async (scriptName: string, args?: string) => {
       if (!currentProjectPath || !window.eco) {
         return;
       }
+      const trimmedArgs = args?.trim();
       setScriptsBusy(true);
       setRunningScript(scriptName);
+      setScriptRunState({ output: "", running: true, script: scriptName });
       try {
-        const result = await window.eco.runPackageScript({
+        const result = await window.eco.startPackageScript({
           workspacePath: currentProjectPath,
           script: scriptName,
+          ...(trimmedArgs && { args: trimmedArgs }),
         });
-        setLastScriptResult(result);
+        setScriptRunState((current) => ({
+          ...current,
+          runId: result.runId,
+          command: result.command,
+          script: result.script,
+        }));
       } catch (error) {
-        setLastScriptResult({
+        setScriptRunState({
+          output: error instanceof Error ? error.message : String(error),
+          running: false,
           exitCode: 1,
-          stdout: "",
-          stderr: error instanceof Error ? error.message : String(error),
-          command: [],
+          script: scriptName,
         });
-      } finally {
         setScriptsBusy(false);
         setRunningScript(undefined);
       }
     },
     [currentProjectPath],
   );
+
+  const stopPackageScript = useCallback(async () => {
+    const runId = scriptRunState.runId;
+    if (!runId || !window.eco) {
+      return;
+    }
+    await window.eco.stopPackageScript(runId);
+    setScriptRunState((current) => ({ ...current, running: false }));
+    setScriptsBusy(false);
+    setRunningScript(undefined);
+  }, [scriptRunState.runId]);
 
   useEffect(() => {
     void refreshGitStatus();
@@ -3045,9 +3103,10 @@ function App() {
           scripts={packageScripts?.scripts ?? []}
           busy={scriptsBusy}
           {...(runningScript && { runningScript })}
-          {...(lastScriptResult && { lastResult: lastScriptResult })}
+          runState={scriptRunState}
           onClose={() => setScriptsDialogOpen(false)}
-          onRun={runPackageScript}
+          onRun={startPackageScript}
+          onStop={stopPackageScript}
           onRefresh={refreshPackageScripts}
         />
       ) : null}

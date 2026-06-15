@@ -11733,6 +11733,63 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: flex-start;
 }
 
+.package-scripts-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.package-scripts-args-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.package-scripts-args-button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.package-scripts-args-button.is-active {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.package-scripts-args-button.is-editing {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.package-scripts-args-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.package-scripts-args-input {
+  width: min(180px, 28vw);
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.package-scripts-args-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
 .package-scripts-row-main {
   min-width: 0;
   display: flex;
@@ -11806,6 +11863,28 @@ html[data-window-focused="true"] .codex-sidebar {
 .package-scripts-exit-badge.is-failure {
   background: color-mix(in srgb, var(--status-danger, #dc2626) 18%, transparent);
   color: var(--status-danger, #dc2626);
+}
+
+.package-scripts-exit-badge.is-running {
+  background: color-mix(in srgb, var(--status-info, #2563eb) 18%, transparent);
+  color: var(--status-info, #2563eb);
+}
+
+.package-scripts-stop-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.package-scripts-stop-button:hover {
+  background: var(--bg-elevated-hover);
 }
 
 .package-scripts-output {

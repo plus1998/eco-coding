@@ -1,11 +1,20 @@
-import { Loader2, Play, RefreshCw, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Loader2, Play, RefreshCw, Square, TextCursorInput, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type {
-  PackageManagerKind,
-  PackageScriptInfo,
-  RunPackageScriptResult,
-} from "../shared/ipc";
+import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
+import {
+  readWorkspaceScriptArgs,
+  saveScriptArgs,
+} from "./package-script-args-storage";
+
+export interface PackageScriptRunViewState {
+  runId?: string;
+  script?: string;
+  command?: string[];
+  output: string;
+  exitCode?: number;
+  running: boolean;
+}
 
 interface PackageScriptsDialogProps {
   open: boolean;
@@ -15,9 +24,10 @@ interface PackageScriptsDialogProps {
   scripts: PackageScriptInfo[];
   busy?: boolean;
   runningScript?: string;
-  lastResult?: RunPackageScriptResult;
+  runState?: PackageScriptRunViewState;
   onClose: () => void;
-  onRun: (scriptName: string) => void | Promise<void>;
+  onRun: (scriptName: string, args?: string) => void | Promise<void>;
+  onStop?: () => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
 }
 
@@ -36,18 +46,62 @@ export function PackageScriptsDialog({
   scripts,
   busy,
   runningScript,
-  lastResult,
+  runState,
   onClose,
   onRun,
+  onStop,
   onRefresh,
 }: PackageScriptsDialogProps) {
   const [query, setQuery] = useState("");
+  const [scriptArgsByName, setScriptArgsByName] = useState<Record<string, string>>({});
+  const [editingScript, setEditingScript] = useState<string | null>(null);
+  const [draftArgs, setDraftArgs] = useState("");
+  const outputRef = useRef<HTMLPreElement>(null);
+  const argsInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setEditingScript(null);
+      setDraftArgs("");
+      return;
     }
-  }, [open]);
+    setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
+  }, [open, workspacePath]);
+
+  useEffect(() => {
+    if (!editingScript) {
+      return;
+    }
+    argsInputRef.current?.focus();
+    argsInputRef.current?.select();
+  }, [editingScript]);
+
+  const commitScriptArgs = useCallback(
+    (scriptName: string, nextArgs: string) => {
+      const saved = saveScriptArgs(workspacePath, scriptName, nextArgs);
+      setScriptArgsByName(saved);
+      setEditingScript(null);
+      setDraftArgs("");
+    },
+    [workspacePath],
+  );
+
+  const openArgsEditor = useCallback(
+    (scriptName: string) => {
+      setEditingScript(scriptName);
+      setDraftArgs(scriptArgsByName[scriptName] ?? "");
+    },
+    [scriptArgsByName],
+  );
+
+  useEffect(() => {
+    const node = outputRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTop = node.scrollHeight;
+  }, [runState?.output]);
 
   const filteredScripts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -65,7 +119,7 @@ export function PackageScriptsDialog({
     return null;
   }
 
-  const outputText = [lastResult?.stdout, lastResult?.stderr].filter(Boolean).join("\n").trim();
+  const showOutput = Boolean(runState && (runState.running || runState.output || runState.exitCode !== undefined));
 
   return createPortal(
     <div className="git-commit-dialog-backdrop" onMouseDown={onClose}>
@@ -84,6 +138,17 @@ export function PackageScriptsDialog({
             </p>
           </div>
           <div className="package-scripts-dialog-header-actions">
+            {runState?.running && onStop ? (
+              <button
+                type="button"
+                className="package-scripts-stop-button"
+                aria-label="停止脚本"
+                onClick={() => void onStop()}
+              >
+                <Square size={14} aria-hidden />
+                <span>停止</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="settings-icon-button"
@@ -119,51 +184,117 @@ export function PackageScriptsDialog({
           <ul className="mcp-server-list package-scripts-list">
             {filteredScripts.map((entry) => {
               const isRunning = runningScript === entry.name;
+              const savedArgs = scriptArgsByName[entry.name] ?? "";
+              const isEditingArgs = editingScript === entry.name;
+              const previewCommand = savedArgs
+                ? `${packageManager} run ${entry.name} ${savedArgs}`
+                : undefined;
               return (
                 <li key={entry.name} className="mcp-server-row package-scripts-row">
                   <div className="package-scripts-row-main">
                     <span className="mcp-server-name">{entry.name}</span>
-                    <span className="package-scripts-row-command" title={entry.command}>
-                      {entry.command}
+                    <span
+                      className="package-scripts-row-command"
+                      title={previewCommand ?? entry.command}
+                    >
+                      {previewCommand ?? entry.command}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    className="package-scripts-run-button"
-                    disabled={busy || Boolean(runningScript)}
-                    onClick={() => void onRun(entry.name)}
-                  >
-                    {isRunning ? (
-                      <Loader2 size={14} className="spinning" aria-hidden />
-                    ) : (
-                      <Play size={14} aria-hidden />
-                    )}
-                    <span>{isRunning ? "运行中…" : "运行"}</span>
-                  </button>
+                  <div className="package-scripts-row-actions">
+                    {isEditingArgs ? (
+                      <input
+                        ref={argsInputRef}
+                        type="text"
+                        className="package-scripts-args-input"
+                        value={draftArgs}
+                        placeholder="附加参数，如 root@xxx"
+                        aria-label={`${entry.name} 附加参数`}
+                        disabled={busy || Boolean(runningScript)}
+                        onChange={(event) => setDraftArgs(event.target.value)}
+                        onBlur={() => commitScriptArgs(entry.name, draftArgs)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitScriptArgs(entry.name, draftArgs);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setEditingScript(null);
+                            setDraftArgs("");
+                          }
+                        }}
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      className={[
+                        "package-scripts-args-button",
+                        savedArgs ? "is-active" : "",
+                        isEditingArgs ? "is-editing" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      aria-label={`${entry.name} 附加参数`}
+                      title={savedArgs ? `附加参数：${savedArgs}` : "附加参数"}
+                      disabled={busy || Boolean(runningScript)}
+                      onClick={() => {
+                        if (isEditingArgs) {
+                          commitScriptArgs(entry.name, draftArgs);
+                          return;
+                        }
+                        openArgsEditor(entry.name);
+                      }}
+                    >
+                      <TextCursorInput size={14} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="package-scripts-run-button"
+                      disabled={busy || Boolean(runningScript)}
+                      onClick={() => void onRun(entry.name, savedArgs || undefined)}
+                    >
+                      {isRunning ? (
+                        <Loader2 size={14} className="spinning" aria-hidden />
+                      ) : (
+                        <Play size={14} aria-hidden />
+                      )}
+                      <span>{isRunning ? "运行中…" : "运行"}</span>
+                    </button>
+                  </div>
                 </li>
               );
             })}
           </ul>
         )}
 
-        {lastResult ? (
+        {showOutput && runState ? (
           <section className="package-scripts-output-section" aria-live="polite">
             <div className="package-scripts-output-head">
-              <span className="package-scripts-output-label">最近执行</span>
-              <span
-                className={
-                  lastResult.exitCode === 0
-                    ? "package-scripts-exit-badge is-success"
-                    : "package-scripts-exit-badge is-failure"
-                }
-              >
-                exit {lastResult.exitCode}
+              <span className="package-scripts-output-label">
+                {runState.script ? `${runState.script} 输出` : "输出"}
               </span>
+              {runState.running ? (
+                <span className="package-scripts-exit-badge is-running">运行中</span>
+              ) : runState.exitCode !== undefined ? (
+                <span
+                  className={
+                    runState.exitCode === 0
+                      ? "package-scripts-exit-badge is-success"
+                      : "package-scripts-exit-badge is-failure"
+                  }
+                >
+                  exit {runState.exitCode}
+                </span>
+              ) : null}
             </div>
-            <pre className="package-scripts-output">{outputText || "（无输出）"}</pre>
-            <p className="package-scripts-output-command" title={lastResult.command.join(" ")}>
-              {lastResult.command.join(" ")}
-            </p>
+            <pre ref={outputRef} className="package-scripts-output">
+              {runState.output || (runState.running ? "…" : "（无输出）")}
+            </pre>
+            {runState.command?.length ? (
+              <p className="package-scripts-output-command" title={runState.command.join(" ")}>
+                {runState.command.join(" ")}
+              </p>
+            ) : null}
           </section>
         ) : null}
 

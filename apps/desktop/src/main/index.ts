@@ -41,7 +41,10 @@ import {
   type WorktreePlan,
 } from "@eco/workspace";
 import { evaluateThreadBashPermission } from "./thread-bash-permission";
+import { ensureDesktopPath } from "./fix-desktop-path";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
+
+ensureDesktopPath();
 import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -255,7 +258,8 @@ import {
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
-import { listPackageScripts, runPackageScript } from "./package-scripts";
+import { PackageScriptRunner } from "./package-script-runner";
+import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
@@ -379,6 +383,11 @@ const appIcon = loadAppIcon();
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
+const packageScriptRunner = new PackageScriptRunner((event) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.workspacePackageScriptEvent, event);
+  });
+});
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
 let providerStore: ProviderStore;
@@ -937,11 +946,19 @@ function registerIpcHandlers(): void {
     return listPackageScripts(workspacePath.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceRunPackageScript, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.workspaceStartPackageScript, async (_event, payload: unknown) => {
     if (!isRunPackageScriptRequest(payload)) {
-      throw new Error("Invalid run package script request.");
+      throw new Error("Invalid start package script request.");
     }
-    return runPackageScript(payload);
+    const prepared = await preparePackageScriptRun(payload);
+    return packageScriptRunner.start(prepared.command, prepared.workspacePath, prepared.script);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.workspaceStopPackageScript, async (_event, runId: unknown) => {
+    if (typeof runId !== "string" || !runId.trim()) {
+      throw new Error("Run id is required.");
+    }
+    return { stopped: packageScriptRunner.stop(runId.trim()) };
   });
 
   ipcMain.handle(IPC_CHANNELS.workspacePrepareGit, async (_event, payload: unknown) => {

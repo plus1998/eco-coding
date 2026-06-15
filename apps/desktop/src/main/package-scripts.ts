@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -6,7 +5,6 @@ import type {
   PackageScriptInfo,
   PackageScriptsListResult,
   RunPackageScriptRequest,
-  RunPackageScriptResult,
 } from "../shared/ipc";
 import { detectPackageManager } from "./workspace-inspect";
 
@@ -117,39 +115,9 @@ function splitShellArgs(value: string): string[] {
   return value.split(/\s+/).filter(Boolean);
 }
 
-async function runWorkspaceCommand(
-  command: string[],
-  cwd: string,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const executable = command[0];
-    if (!executable) {
-      resolve({ exitCode: 1, stdout: "", stderr: "Missing executable." });
-      return;
-    }
-    execFile(
-      executable,
-      command.slice(1),
-      { cwd, maxBuffer: 10 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) {
-          const failed = error as NodeJS.ErrnoException & { code?: number };
-          resolve({
-            exitCode: typeof failed.code === "number" ? failed.code : 1,
-            stdout: String(stdout ?? ""),
-            stderr: String(stderr ?? failed.message),
-          });
-          return;
-        }
-        resolve({ exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-  });
-}
-
-export async function runPackageScript(
+export async function preparePackageScriptRun(
   request: RunPackageScriptRequest,
-): Promise<RunPackageScriptResult> {
+): Promise<{ workspacePath: string; script: string; command: string[] }> {
   const resolvedPath = path.resolve(request.workspacePath);
   const listing = await listPackageScripts(resolvedPath);
   const scriptName = request.script.trim();
@@ -159,9 +127,9 @@ export async function runPackageScript(
   }
 
   const command = buildRunCommand(listing.packageManager, scriptName, request.args);
-  const result = await runWorkspaceCommand(command, resolvedPath);
   return {
-    ...result,
+    workspacePath: resolvedPath,
+    script: scriptName,
     command,
   };
 }

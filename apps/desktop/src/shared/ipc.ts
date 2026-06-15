@@ -6,7 +6,9 @@ export const IPC_CHANNELS = {
   workspaceGetCurrent: "workspace:get-current",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
-  workspaceRunPackageScript: "workspace:run-package-script",
+  workspaceStartPackageScript: "workspace:start-package-script",
+  workspaceStopPackageScript: "workspace:stop-package-script",
+  workspacePackageScriptEvent: "workspace:package-script-event",
   workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
@@ -192,12 +194,18 @@ export interface RunPackageScriptRequest {
   args?: string;
 }
 
-export interface RunPackageScriptResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
+export type StartPackageScriptRequest = RunPackageScriptRequest;
+
+export interface StartPackageScriptResult {
+  runId: string;
+  script: string;
   command: string[];
 }
+
+export type PackageScriptStreamEvent =
+  | { type: "output"; runId: string; data: string }
+  | { type: "exit"; runId: string; exitCode: number; signal?: number }
+  | { type: "error"; runId: string; message: string };
 
 export interface WorkspaceOpenResult {
   canceled: boolean;
@@ -1259,4 +1267,21 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
     typeof record.script === "string" &&
     (record.args === undefined || typeof record.args === "string")
   );
+}
+
+export function isPackageScriptStreamEvent(value: unknown): value is PackageScriptStreamEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.type === "output") {
+    return typeof record.runId === "string" && typeof record.data === "string";
+  }
+  if (record.type === "exit") {
+    return typeof record.runId === "string" && typeof record.exitCode === "number";
+  }
+  if (record.type === "error") {
+    return typeof record.runId === "string" && typeof record.message === "string";
+  }
+  return false;
 }
