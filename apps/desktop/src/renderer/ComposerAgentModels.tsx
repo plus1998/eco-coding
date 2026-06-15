@@ -1,14 +1,6 @@
 import { shortenModelId } from "@eco/runtime";
-import { Users } from "lucide-react";
-import {
-  type CSSProperties,
-  type FocusEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { ChevronDown, Users } from "lucide-react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
@@ -76,24 +68,14 @@ export function ComposerAgentModels({
 }: ComposerAgentModelsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hovered, setHovered] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
-  const open = hovered || pinned;
   const subagentLabels = labels.filter((label) => !label.main);
   const enabledSubagents = subagentLabels.filter(
     ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;
   const totalSubagents = subagentLabels.length;
   const summary = totalSubagents > 0 ? `${enabledSubagents}/${totalSubagents}` : String(labels.length);
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  }, []);
 
   const updatePanelPosition = useCallback(() => {
     const anchor = triggerRef.current;
@@ -109,42 +91,9 @@ export function ComposerAgentModels({
     );
   }, []);
 
-  const showPanel = useCallback(() => {
-    clearCloseTimer();
-    updatePanelPosition();
-    setHovered(true);
-  }, [clearCloseTimer, updatePanelPosition]);
-
-  const scheduleClose = useCallback(() => {
-    if (pinned) {
-      return;
-    }
-    clearCloseTimer();
-    closeTimerRef.current = setTimeout(() => {
-      setHovered(false);
-      closeTimerRef.current = null;
-    }, 120);
-  }, [clearCloseTimer, pinned]);
-
   const closePanel = useCallback(() => {
-    clearCloseTimer();
-    setHovered(false);
-    setPinned(false);
-  }, [clearCloseTimer]);
-
-  const handleBlur = useCallback(
-    (event: FocusEvent<HTMLElement>) => {
-      const nextTarget = event.relatedTarget as Node | null;
-      if (
-        nextTarget &&
-        (triggerRef.current?.contains(nextTarget) || panelRef.current?.contains(nextTarget))
-      ) {
-        return;
-      }
-      scheduleClose();
-    },
-    [scheduleClose],
-  );
+    setOpen(false);
+  }, []);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -158,10 +107,6 @@ export function ComposerAgentModels({
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
   }, [open, updatePanelPosition]);
-
-  useEffect(() => {
-    return () => clearCloseTimer();
-  }, [clearCloseTimer]);
 
   useEffect(() => {
     if (!open) {
@@ -192,14 +137,10 @@ export function ComposerAgentModels({
     createPortal(
       <div
         ref={panelRef}
-        className="composer-agents-popover"
+        className="composer-codex-popover composer-agents-popover"
         role="dialog"
         aria-label="子代理编排详情"
         style={panelStyle}
-        onMouseEnter={showPanel}
-        onMouseLeave={scheduleClose}
-        onFocus={showPanel}
-        onBlur={handleBlur}
       >
         <div className="composer-agents-popover-header">
           <span>子代理编排</span>
@@ -268,31 +209,24 @@ export function ComposerAgentModels({
       <button
         ref={triggerRef}
         type="button"
-        className={
-          open
-            ? "composer-meta-pill composer-agents-trigger is-clickable is-active"
-            : "composer-meta-pill composer-agents-trigger is-clickable"
-        }
+        className={["composer-context-trigger", "composer-agents-trigger", open ? "is-active" : ""]
+          .filter(Boolean)
+          .join(" ")}
         aria-label={`查看子代理编排详情，已启用 ${summary}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onMouseEnter={showPanel}
-        onMouseLeave={scheduleClose}
-        onFocus={showPanel}
-        onBlur={handleBlur}
         onClick={() => {
-          if (pinned) {
+          if (open) {
             closePanel();
             return;
           }
           updatePanelPosition();
-          setHovered(true);
-          setPinned(true);
+          setOpen(true);
         }}
       >
-        <Users size={14} aria-hidden className="composer-agents-trigger-icon" />
-        <span>编排</span>
-        <span className="composer-agents-trigger-count">{summary}</span>
+        <Users size={15} aria-hidden className="composer-context-trigger-icon" />
+        <span className="composer-context-trigger-label">编排</span>
+        <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}
     </span>

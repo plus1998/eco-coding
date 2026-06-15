@@ -1,4 +1,4 @@
-import { Check, Hand, Shield, ShieldAlert, Terminal } from "lucide-react";
+import { Check, ChevronDown, Hand, Shield, ShieldAlert, Terminal } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -57,14 +57,7 @@ export function ComposerBashReviewToggle({
 
   const clickable = canEdit && !saving;
   const current = bashReviewUi(bashReviewMode);
-  const className = [
-    "composer-meta-pill",
-    "composer-orchestration-pill",
-    "composer-bash-review-pill",
-    `bash-review-${bashReviewMode}`,
-    clickable ? "is-clickable" : "",
-    open ? "is-active" : "",
-  ]
+  const className = ["composer-toolbar-trigger", clickable ? "is-clickable" : "", open ? "is-active" : ""]
     .filter(Boolean)
     .join(" ");
 
@@ -131,13 +124,18 @@ export function ComposerBashReviewToggle({
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      <Terminal size={12} aria-hidden className="composer-bash-review-pill-icon" />
-      <span className="composer-bash-review-pill-name">{current.title}</span>
+      <span className="composer-toolbar-trigger-icon" aria-hidden>
+        <BashReviewToolbarIcon mode={bashReviewMode} />
+      </span>
+      <span className="composer-toolbar-trigger-label">{current.title}</span>
+      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
     <span className={className} title="Bash 审批模式不可修改">
-      <Terminal size={12} aria-hidden className="composer-bash-review-pill-icon" />
-      <span className="composer-bash-review-pill-name">{current.title}</span>
+      <span className="composer-toolbar-trigger-icon" aria-hidden>
+        <BashReviewToolbarIcon mode={bashReviewMode} />
+      </span>
+      <span className="composer-toolbar-trigger-label">{current.title}</span>
     </span>
   );
 
@@ -173,23 +171,23 @@ function ComposerBashReviewPopover({
   return createPortal(
     <div
       ref={panelRef}
-      className="composer-bash-review-popover"
+      className="composer-codex-popover composer-bash-review-popover"
       role="dialog"
       aria-label="Bash 审批模式"
       style={panelStyle}
     >
-      <header className="composer-bash-review-popover-header">
-        <p className="composer-bash-review-popover-title">应如何批准 Bash 操作？</p>
+      <header className="composer-codex-popover-header">
+        <p className="composer-codex-popover-title">应如何批准 Bash 操作？</p>
       </header>
-      <ul className="composer-bash-review-popover-list">
+      <ul className="composer-codex-popover-list">
         {BASH_REVIEW_UI.map((option) => (
           <li key={option.value}>
             <button
               type="button"
               className={
                 option.value === bashReviewMode
-                  ? "composer-bash-review-popover-item active"
-                  : "composer-bash-review-popover-item"
+                  ? "composer-codex-popover-item active"
+                  : "composer-codex-popover-item"
               }
               disabled={disabled}
               onClick={() => onSelect(option.value)}
@@ -197,12 +195,12 @@ function ComposerBashReviewPopover({
               <span className="composer-bash-review-popover-icon" aria-hidden>
                 <BashReviewModeIcon mode={option.value} />
               </span>
-              <span className="composer-bash-review-popover-body">
-                <span className="composer-bash-review-popover-item-title">{option.title}</span>
-                <span className="composer-bash-review-popover-item-desc">{option.description}</span>
+              <span className="composer-codex-popover-body">
+                <span className="composer-codex-popover-item-title">{option.title}</span>
+                <span className="composer-codex-popover-item-desc">{option.description}</span>
               </span>
               {option.value === bashReviewMode ? (
-                <span className="composer-bash-review-popover-check" aria-hidden>
+                <span className="composer-codex-popover-check" aria-hidden>
                   <Check size={14} strokeWidth={2.25} />
                 </span>
               ) : null}
@@ -213,6 +211,16 @@ function ComposerBashReviewPopover({
     </div>,
     document.body,
   );
+}
+
+function BashReviewToolbarIcon({ mode }: { mode: BashReviewMode }) {
+  if (mode === "always") {
+    return <Hand size={15} strokeWidth={1.75} />;
+  }
+  if (mode === "auto") {
+    return <Shield size={15} strokeWidth={1.75} />;
+  }
+  return <ShieldAlert size={15} strokeWidth={1.75} />;
 }
 
 function BashReviewModeIcon({ mode }: { mode: BashReviewMode }) {

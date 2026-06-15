@@ -1,7 +1,40 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, ClipboardList } from "lucide-react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
-import { planModeUi, togglePlanMode } from "../shared/plan-mode-ui";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { PLAN_MODE_UI, planModeUi } from "../shared/plan-mode-ui";
+
+const POPOVER_WIDTH = 320;
+const VIEWPORT_MARGIN = 8;
+const ANCHOR_GAP = 6;
+const MIN_POPOVER_HEIGHT = 120;
+
+function clampPopoverLeft(anchorLeft: number, width: number): number {
+  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
+  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
+}
+
+function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const spaceAbove = rect.top - VIEWPORT_MARGIN;
+  const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - ANCHOR_GAP);
+  return {
+    position: "fixed",
+    left: clampPopoverLeft(rect.left, width),
+    bottom: window.innerHeight - rect.top + ANCHOR_GAP,
+    width,
+    maxHeight,
+    zIndex: 10000,
+  };
+}
 
 interface ComposerPlanModeToggleProps {
   planModeEnabled: boolean;
@@ -16,107 +49,158 @@ export function ComposerPlanModeToggle({
   saving,
   onToggle,
 }: ComposerPlanModeToggleProps) {
-  const wrapRef = useRef<HTMLSpanElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const [tooltipStyle, setTooltipStyle] = useState<CSSProperties>(() => ({
-    visibility: "hidden",
-  }));
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
 
   const clickable = canEdit && !saving;
   const current = planModeUi(planModeEnabled);
-  const next = planModeUi(togglePlanMode(planModeEnabled));
-  const className = [
-    "composer-meta-pill",
-    "composer-orchestration-pill",
-    planModeEnabled ? "is-manual" : "is-autonomous",
-    clickable ? "is-clickable" : "",
-  ]
+  const className = ["composer-toolbar-trigger", clickable ? "is-clickable" : "", open ? "is-active" : ""]
     .filter(Boolean)
     .join(" ");
 
-  const updateTooltipPosition = useCallback(() => {
-    const el = wrapRef.current;
-    if (!el) {
+  const updatePanelPosition = useCallback(() => {
+    const anchor = buttonRef.current;
+    if (!anchor) {
       return;
     }
-    setTooltipStyle(composerFloatingStyleForAnchor(el, { width: 280, minHeight: 112, prefer: "above" }));
+    setPanelStyle(popoverStyleForAnchor(anchor));
   }, []);
 
-  const showTooltip = useCallback(() => {
-    updateTooltipPosition();
-    setHovered(true);
-  }, [updateTooltipPosition]);
-
-  const hideTooltip = useCallback(() => {
-    setHovered(false);
-  }, []);
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    updatePanelPosition();
+    window.addEventListener("resize", updatePanelPosition);
+    window.addEventListener("scroll", updatePanelPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePanelPosition);
+      window.removeEventListener("scroll", updatePanelPosition, true);
+    };
+  }, [open, updatePanelPosition]);
 
   useEffect(() => {
-    if (!hovered) {
+    if (!open) {
       return;
     }
-    updateTooltipPosition();
-    window.addEventListener("resize", updateTooltipPosition);
-    window.addEventListener("scroll", updateTooltipPosition, true);
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("resize", updateTooltipPosition);
-      window.removeEventListener("scroll", updateTooltipPosition, true);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
     };
-  }, [hovered, updateTooltipPosition]);
+  }, [open]);
 
-  const tooltip =
-    hovered &&
-    createPortal(
-      <span className="composer-meta-tooltip" role="tooltip" style={tooltipStyle}>
-        <span className="composer-meta-tooltip-line">
-          <strong>{current.title}</strong>
-          <span className="composer-meta-tooltip-subtitle">{current.subtitle}</span>
-        </span>
-        <span className="composer-meta-tooltip-line composer-meta-tooltip-desc">{current.description}</span>
-        {clickable ? (
-          <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            点击切换为 {next.title}
-          </span>
-        ) : (
-          <span className="composer-meta-tooltip-line composer-meta-tooltip-action">
-            当前对话进行中，计划模式不可修改
-          </span>
-        )}
-      </span>,
-      document.body,
-    );
-
-  const controlProps = {
-    onMouseEnter: showTooltip,
-    onMouseLeave: hideTooltip,
-    onFocus: showTooltip,
-    onBlur: hideTooltip,
-  };
+  function selectMode(enabled: boolean) {
+    if (enabled !== planModeEnabled) {
+      onToggle(enabled);
+    }
+    setOpen(false);
+  }
 
   const control = clickable ? (
     <button
+      ref={buttonRef}
       type="button"
       className={className}
       disabled={saving}
       aria-pressed={planModeEnabled}
       aria-label={current.title}
-      onClick={() => onToggle(togglePlanMode(planModeEnabled))}
-      {...controlProps}
+      aria-expanded={open}
+      onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      {current.title}
+      <ClipboardList size={15} aria-hidden className="composer-toolbar-trigger-icon" />
+      <span className="composer-toolbar-trigger-label">{current.toolbarTitle}</span>
+      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
-    <span className={className} {...controlProps}>
-      {current.title}
+    <span className={className} title="当前对话进行中，计划模式不可修改">
+      <ClipboardList size={15} aria-hidden className="composer-toolbar-trigger-icon" />
+      <span className="composer-toolbar-trigger-label">{current.toolbarTitle}</span>
     </span>
   );
 
   return (
     <>
-      <span ref={wrapRef} className="composer-orchestration-wrap">
-        {control}
-      </span>
-      {tooltip}
+      <span className="composer-orchestration-wrap">{control}</span>
+      {open && clickable ? (
+        <ComposerPlanModePopover
+          panelRef={panelRef}
+          panelStyle={panelStyle}
+          planModeEnabled={planModeEnabled}
+          disabled={Boolean(saving)}
+          onSelect={selectMode}
+        />
+      ) : null}
     </>
+  );
+}
+
+function ComposerPlanModePopover({
+  panelRef,
+  panelStyle,
+  planModeEnabled,
+  disabled,
+  onSelect,
+}: {
+  panelRef: RefObject<HTMLDivElement | null>;
+  panelStyle: CSSProperties;
+  planModeEnabled: boolean;
+  disabled: boolean;
+  onSelect: (enabled: boolean) => void;
+}) {
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="composer-codex-popover composer-plan-mode-popover"
+      role="dialog"
+      aria-label="计划模式"
+      style={panelStyle}
+    >
+      <header className="composer-codex-popover-header">
+        <p className="composer-codex-popover-title">计划模式</p>
+      </header>
+      <ul className="composer-codex-popover-list">
+        {PLAN_MODE_UI.map((option) => (
+          <li key={String(option.value)}>
+            <button
+              type="button"
+              className={
+                option.value === planModeEnabled
+                  ? "composer-codex-popover-item active"
+                  : "composer-codex-popover-item"
+              }
+              disabled={disabled}
+              onClick={() => onSelect(option.value)}
+            >
+              <span className="composer-codex-popover-body">
+                <span className="composer-codex-popover-item-title">{option.title}</span>
+                <span className="composer-codex-popover-item-desc">{option.description}</span>
+              </span>
+              {option.value === planModeEnabled ? (
+                <span className="composer-codex-popover-check" aria-hidden>
+                  <Check size={14} strokeWidth={2.25} />
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>,
+    document.body,
   );
 }

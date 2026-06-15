@@ -784,10 +784,31 @@
   background: var(--nav-hover);
 }
 
+[data-theme="light"] .composer-context-bar {
+  background: var(--composer-context-bg);
+}
+
+[data-theme="light"] .composer-context-trigger:hover:not(:disabled),
+[data-theme="light"] .composer-context-trigger.is-active {
+  background: var(--composer-context-hover-bg);
+  color: var(--composer-context-hover-text);
+}
+
+[data-theme="light"] .composer-toolbar-trigger.is-clickable:hover:not(:disabled),
+[data-theme="light"] .composer-toolbar-trigger.is-active {
+  background: var(--composer-toolbar-hover-bg);
+  color: var(--composer-toolbar-hover-text);
+}
+
 [data-theme="light"] .codex-composer {
-  border-color: var(--border-composer);
-  background: var(--bg-composer);
+  background: var(--composer-context-bg);
   box-shadow: var(--shadow-composer);
+}
+
+[data-theme="light"] .composer-primary {
+  border-color: var(--composer-primary-border);
+  background: var(--composer-surface-bg);
+  box-shadow: var(--composer-primary-shadow);
 }
 
 [data-theme="light"] .composer-skill-input-control {
@@ -799,18 +820,18 @@
 }
 
 [data-theme="light"] .send-button {
-  background: var(--send-btn-bg);
-  color: var(--send-btn-text);
+  background: var(--composer-send-bg);
+  color: var(--composer-send-text);
 }
 
 [data-theme="light"] .send-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-  color: #fff;
+  background: var(--composer-send-hover-bg);
+  color: var(--composer-send-hover-text);
 }
 
 [data-theme="light"] .send-button:disabled {
-  background: var(--border-subtle);
-  color: var(--text-muted);
+  background: var(--composer-send-disabled-bg);
+  color: var(--composer-send-disabled-text);
 }
 
 [data-theme="light"] .model-pill,

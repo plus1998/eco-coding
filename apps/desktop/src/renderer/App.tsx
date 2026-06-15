@@ -2482,118 +2482,122 @@ function App() {
           onSelect={selectComposerSkill}
           onClose={() => syncComposerCursor()}
         />
-        <ComposerSkillsInput
-          ref={composerRef}
-          value={prompt}
-          onChange={(next) => {
-            setPrompt(next);
-            if (composerRoutePopoverOpen) {
-              setComposerRoutePopoverOpen(false);
-            }
-          }}
-          skillsByName={composerSkillsByName}
-          onCursorChange={setComposerCursor}
-          onKeyDown={handleComposerKeyDown}
-          maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
-          {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
-          placeholder={composerPlaceholder}
-          disabled={composerDisabled}
-        />
-        <div className="composer-footer">
-          <div className="composer-footer-main">
-            <div className="composer-footer-row composer-footer-config-row">
-              <div className="composer-route-control">
-                <ComposerRoutePopoverTrigger
-                  buttonRef={composerRouteButtonRef}
-                  open={composerRoutePopoverOpen}
-                  disabled={!canSwitchRouteProfile || isSavingSettings}
-                  profileName={selectedAgentProfileSummary?.name}
-                  onToggle={() => {
-                    if (!canSwitchRouteProfile) {
-                      return;
-                    }
-                    setComposerRoutePopoverOpen((current) => !current);
-                  }}
-                />
-                <ComposerRoutePopover
-                  open={composerRoutePopoverOpen && canSwitchRouteProfile}
-                  settings={settings}
-                  busy={isSavingSettings}
-                  anchorRef={composerRouteButtonRef}
-                  runtimeConfig={composerRuntimeConfig ?? undefined}
-                  onClose={() => setComposerRoutePopoverOpen(false)}
-                  onSelectProfile={selectComposerRouteProfile}
-                  onSaveCurrentProfile={
-                    selectedRuntimeProfile && composerRuntimeConfig
-                      ? saveComposerSelectionAsProfile
-                      : undefined
-                  }
-                  selectedProfileId={selectedRuntimeProfileId}
-                  onOpenFullSettings={() => openModelsSettings("routes")}
-                />
+        <div className="composer-primary">
+          <ComposerSkillsInput
+            ref={composerRef}
+            value={prompt}
+            onChange={(next) => {
+              setPrompt(next);
+              if (composerRoutePopoverOpen) {
+                setComposerRoutePopoverOpen(false);
+              }
+            }}
+            skillsByName={composerSkillsByName}
+            onCursorChange={setComposerCursor}
+            onKeyDown={handleComposerKeyDown}
+            maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
+            {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
+            placeholder={composerPlaceholder}
+            disabled={composerDisabled}
+          />
+          <div className="composer-footer">
+            <div className="composer-footer-main">
+              <div className="composer-footer-row composer-footer-config-row">
+                {composerRuntimeConfig ? (
+                  <ComposerPlanModeToggle
+                    planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                    canEdit={canEditComposerConfig}
+                    saving={isSavingSettings}
+                    onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                  />
+                ) : null}
+                {composerRuntimeConfig ? (
+                  <ComposerBashReviewToggle
+                    bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                    canEdit={canEditBashReviewMode}
+                    saving={isSavingSettings}
+                    onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                  />
+                ) : null}
               </div>
-              {composerRuntimeConfig ? (
-                <ComposerPlanModeToggle
-                  planModeEnabled={composerRuntimeConfig.planModeEnabled}
-                  canEdit={canEditComposerConfig}
-                  saving={isSavingSettings}
-                  onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
-                />
-              ) : null}
-              {composerRuntimeConfig ? (
-                <ComposerBashReviewToggle
-                  bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                  canEdit={canEditBashReviewMode}
-                  saving={isSavingSettings}
-                  onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                />
-              ) : null}
-              <ComposerAgentModels
-                labels={agentModelLabels}
-                subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-                canEditSubagents={canEditComposerConfig}
-                subagentSaving={isSavingSettings}
-                onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-              />
             </div>
-          </div>
-          {canStopThread ? (
+            {canStopThread ? (
+              <button
+                type="button"
+                className="send-button stop"
+                onClick={() => void requestStopThread()}
+                disabled={cancelBusy}
+                title="停止当前运行"
+                aria-label="停止"
+              >
+                {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
+              </button>
+            ) : null}
             <button
               type="button"
-              className="send-button stop"
-              onClick={() => void requestStopThread()}
-              disabled={cancelBusy}
-              title="停止当前运行"
-              aria-label="停止"
+              className="send-button"
+              onClick={sendComposerMessage}
+              disabled={!canSend}
+              title={composerFollowUpMode ? "排队后续消息" : "发送"}
+              aria-label={composerFollowUpMode ? "排队后续消息" : "发送"}
             >
-              {cancelBusy ? <Activity size={18} /> : <Square size={14} />}
+              {isStarting || followUpBusy ? <Activity size={18} /> : <ArrowUp size={18} />}
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="send-button"
-            onClick={sendComposerMessage}
-            disabled={!canSend}
-            title={composerFollowUpMode ? "排队后续消息" : "发送"}
-            aria-label={composerFollowUpMode ? "排队后续消息" : "发送"}
-          >
-            {isStarting || followUpBusy ? <Activity size={18} /> : <ArrowUp size={18} />}
-          </button>
+          </div>
+          {error && (
+            <p className="composer-error">
+              <AlertCircle size={14} /> {error}
+            </p>
+          )}
+          {!routesReady && !composerFollowUpMode && (
+            <p className="composer-hint">
+              请先在
+              <button type="button" className="link-button" onClick={openProviderSettings}>
+                Provider
+              </button>
+              中配置模型（API Key 可选）
+            </p>
+          )}
         </div>
-        {error && (
-          <p className="composer-error">
-            <AlertCircle size={14} /> {error}
-          </p>
-        )}
-        {!routesReady && !composerFollowUpMode && (
-          <p className="composer-hint">
-            请先在
-            <button type="button" className="link-button" onClick={openProviderSettings}>
-              Provider
-            </button>
-            中配置模型（API Key 可选）
-          </p>
-        )}
+        <div className="composer-context-bar">
+          <div className="composer-route-control">
+            <ComposerRoutePopoverTrigger
+              buttonRef={composerRouteButtonRef}
+              open={composerRoutePopoverOpen}
+              disabled={!canSwitchRouteProfile || isSavingSettings}
+              profileName={selectedAgentProfileSummary?.name}
+              onToggle={() => {
+                if (!canSwitchRouteProfile) {
+                  return;
+                }
+                setComposerRoutePopoverOpen((current) => !current);
+              }}
+            />
+            <ComposerRoutePopover
+              open={composerRoutePopoverOpen && canSwitchRouteProfile}
+              settings={settings}
+              busy={isSavingSettings}
+              anchorRef={composerRouteButtonRef}
+              runtimeConfig={composerRuntimeConfig ?? undefined}
+              onClose={() => setComposerRoutePopoverOpen(false)}
+              onSelectProfile={selectComposerRouteProfile}
+              onSaveCurrentProfile={
+                selectedRuntimeProfile && composerRuntimeConfig
+                  ? saveComposerSelectionAsProfile
+                  : undefined
+              }
+              selectedProfileId={selectedRuntimeProfileId}
+              onOpenFullSettings={() => openModelsSettings("routes")}
+            />
+          </div>
+          <ComposerAgentModels
+            labels={agentModelLabels}
+            subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
+            canEditSubagents={canEditComposerConfig}
+            subagentSaving={isSavingSettings}
+            onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+          />
+        </div>
       </div>
       {showLanding && showProjectSkillsPanel ? (
         <ComposerSkillsBar

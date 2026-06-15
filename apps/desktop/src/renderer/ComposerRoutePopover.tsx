@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Save, Settings2, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, LayoutTemplate, Save, Settings2 } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -118,12 +118,12 @@ export function ComposerRoutePopover({
   return createPortal(
     <div
       ref={panelRef}
-      className="composer-route-popover"
+      className="composer-codex-popover composer-route-popover"
       role="dialog"
       aria-label="切换 Agent Profile"
       style={panelStyle}
     >
-      <p className="composer-route-popover-title">Agent Profile</p>
+      <p className="composer-codex-popover-title">Agent Profile</p>
       <ul className="composer-route-popover-list">
         {profileSummaries.map((summary) => (
           <AgentProfileOption
@@ -191,7 +191,7 @@ function AgentProfileOption({
     <li>
       <button
         type="button"
-        className={selected ? "composer-route-popover-item active" : "composer-route-popover-item"}
+        className={selected ? "composer-codex-popover-item active" : "composer-codex-popover-item"}
         disabled={disabled || selected}
         onClick={onSelect}
       >
@@ -225,9 +225,8 @@ function AgentProfileOption({
           ) : null}
         </span>
         {selected ? (
-          <span className="composer-route-popover-item-check" aria-hidden>
+          <span className="composer-codex-popover-check" aria-hidden>
             <Check size={14} />
-            当前
           </span>
         ) : (
           <span className="composer-route-popover-item-hint">切换</span>
@@ -250,25 +249,30 @@ export function ComposerRoutePopoverTrigger({
   buttonRef: RefObject<HTMLButtonElement | null>;
   onToggle: () => void;
 }) {
-  const label = profileName?.trim() || "选择 Agent Profile";
+  const label = profileName?.trim() || "选择方案";
 
   return (
     <button
       ref={buttonRef}
       type="button"
-      className={
-        open ? "composer-meta-pill composer-route-pill is-active" : "composer-meta-pill composer-route-pill"
-      }
+      className={["composer-context-trigger", "composer-route-trigger", open ? "is-active" : ""]
+        .filter(Boolean)
+        .join(" ")}
       onClick={onToggle}
       disabled={disabled}
-      title={profileName ? `当前 Agent Profile：${profileName}` : "切换 Agent Profile"}
-      aria-label={profileName ? `当前 Agent Profile：${profileName}，点击切换` : "切换 Agent Profile"}
+      title={profileName ? `当前方案：${profileName}` : "切换 Agent Profile"}
+      aria-label={profileName ? `当前方案：${profileName}，点击切换` : "切换 Agent Profile"}
       aria-expanded={open}
     >
-      <SlidersHorizontal size={14} aria-hidden className="composer-route-pill-icon" />
-      <span className={profileName ? "composer-route-pill-name" : "composer-route-pill-name is-placeholder"}>
+      <LayoutTemplate size={15} aria-hidden className="composer-context-trigger-icon" />
+      <span
+        className={
+          profileName ? "composer-context-trigger-label" : "composer-context-trigger-label is-placeholder"
+        }
+      >
         {label}
       </span>
+      <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   );
 }
