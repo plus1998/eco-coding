@@ -4031,6 +4031,26 @@ html[data-window-focused="true"] .codex-sidebar {
   transform: rotate(180deg);
 }
 
+.run-log-thinking-body-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows 0.32s ease,
+    opacity 0.28s ease;
+}
+
+.run-log-thinking-body-shell.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.run-log-thinking-body-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .run-log-thinking-body {
   padding: 0 12px 10px;
 }
@@ -5813,6 +5833,95 @@ html[data-window-focused="true"] .codex-sidebar {
   gap: 6px;
   padding: 4px 6px 2px;
   background: transparent;
+}
+
+.codex-composer.is-compact {
+  padding-bottom: var(--composer-shell-padding-bottom);
+}
+
+.codex-composer.is-compact .composer-primary {
+  margin-bottom: 0;
+  padding: 10px 12px 8px;
+  border-radius: var(--composer-outer-radius);
+}
+
+.codex-composer.is-compact .composer-skill-input-control {
+  min-height: 28px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.codex-composer.is-compact .composer-footer {
+  margin-top: 8px;
+  min-height: 32px;
+  gap: 6px;
+}
+
+.codex-composer.is-compact .composer-footer-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.codex-composer.is-compact .composer-context-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0;
+  max-width: min(280px, 52vw);
+  padding: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.codex-composer.is-compact .composer-context-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.codex-composer.is-compact .composer-context-trigger.is-compact {
+  gap: 4px;
+  max-width: min(140px, 24vw);
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.codex-composer.is-compact .composer-context-trigger.is-compact .composer-context-trigger-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.codex-composer.is-compact .composer-context-trigger.is-compact .composer-trigger-chevron {
+  width: 12px;
+  height: 12px;
+}
+
+.codex-composer.is-compact .composer-footer-config-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.codex-composer.is-compact .composer-toolbar-trigger {
+  gap: 4px;
+  max-width: min(180px, 34vw);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.codex-composer.is-compact .composer-toolbar-trigger-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.codex-composer.is-compact .send-button {
+  width: 32px;
+  height: 32px;
 }
 
 .composer-skill-input {
@@ -10135,8 +10244,11 @@ html[data-window-focused="true"] .codex-sidebar {
   font-weight: 500;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-thinking-body {
+.codex-main:not(.codex-main-landing) .run-log-thinking-body-shell.open .run-log-thinking-body {
   margin-top: 10px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-body {
   padding: 0 0 0 18px;
   border-left: 1px solid #3a3a3a;
 }
@@ -10367,7 +10479,7 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .codex-main:not(.codex-main-landing) .codex-composer-wrap {
-  padding: 10px 48px 18px;
+  padding: 8px 48px 12px;
   background: var(--composer-wrap-fade);
 }
 

@@ -2434,6 +2434,50 @@ function App() {
               ? "当前对话不可发送"
               : "尽管问";
   const composerDisabled = Boolean(activeThread && !threadAcceptsInput && !composerFollowUpMode);
+  const composerCompact = !showLanding;
+
+  const composerRouteControl = (
+    <div className="composer-route-control">
+      <ComposerRoutePopoverTrigger
+        buttonRef={composerRouteButtonRef}
+        open={composerRoutePopoverOpen}
+        disabled={!canSwitchRouteProfile || isSavingSettings}
+        profileName={selectedAgentProfileSummary?.name}
+        compact={composerCompact}
+        onToggle={() => {
+          if (!canSwitchRouteProfile) {
+            return;
+          }
+          setComposerRoutePopoverOpen((current) => !current);
+        }}
+      />
+      <ComposerRoutePopover
+        open={composerRoutePopoverOpen && canSwitchRouteProfile}
+        settings={settings}
+        busy={isSavingSettings}
+        anchorRef={composerRouteButtonRef}
+        runtimeConfig={composerRuntimeConfig ?? undefined}
+        onClose={() => setComposerRoutePopoverOpen(false)}
+        onSelectProfile={selectComposerRouteProfile}
+        onSaveCurrentProfile={
+          selectedRuntimeProfile && composerRuntimeConfig ? saveComposerSelectionAsProfile : undefined
+        }
+        selectedProfileId={selectedRuntimeProfileId}
+        onOpenFullSettings={() => openModelsSettings("routes")}
+      />
+    </div>
+  );
+
+  const composerAgentModelsControl = (
+    <ComposerAgentModels
+      labels={agentModelLabels}
+      subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
+      canEditSubagents={canEditComposerConfig}
+      subagentSaving={isSavingSettings}
+      compact={composerCompact}
+      onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+    />
+  );
 
   const composer = (
     <div className="codex-composer-wrap">
@@ -2470,7 +2514,10 @@ function App() {
           ))}
         </ul>
       )}
-      <div className="codex-composer" ref={composerAnchorRef}>
+      <div
+        className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
+        ref={composerAnchorRef}
+      >
         <ComposerSkillsSlashMenu
           open={composerSkillPopoverOpen}
           query={composerSkillSlash?.query ?? ""}
@@ -2502,24 +2549,52 @@ function App() {
           />
           <div className="composer-footer">
             <div className="composer-footer-main">
-              <div className="composer-footer-row composer-footer-config-row">
-                {composerRuntimeConfig ? (
-                  <ComposerPlanModeToggle
-                    planModeEnabled={composerRuntimeConfig.planModeEnabled}
-                    canEdit={canEditComposerConfig}
-                    saving={isSavingSettings}
-                    onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
-                  />
-                ) : null}
-                {composerRuntimeConfig ? (
-                  <ComposerBashReviewToggle
-                    bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                    canEdit={canEditBashReviewMode}
-                    saving={isSavingSettings}
-                    onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                  />
-                ) : null}
-              </div>
+              {composerCompact ? (
+                <div className="composer-footer-row composer-footer-compact-row">
+                  <div className="composer-context-group" aria-label="当前方案与子代理编排">
+                    {composerRouteControl}
+                    <span className="composer-context-divider" aria-hidden />
+                    {composerAgentModelsControl}
+                  </div>
+                  <div className="composer-footer-row composer-footer-config-row">
+                    {composerRuntimeConfig ? (
+                      <ComposerPlanModeToggle
+                        planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                        canEdit={canEditComposerConfig}
+                        saving={isSavingSettings}
+                        onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                      />
+                    ) : null}
+                    {composerRuntimeConfig ? (
+                      <ComposerBashReviewToggle
+                        bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                        canEdit={canEditBashReviewMode}
+                        saving={isSavingSettings}
+                        onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="composer-footer-row composer-footer-config-row">
+                  {composerRuntimeConfig ? (
+                    <ComposerPlanModeToggle
+                      planModeEnabled={composerRuntimeConfig.planModeEnabled}
+                      canEdit={canEditComposerConfig}
+                      saving={isSavingSettings}
+                      onToggle={(enabled) => void toggleComposerPlanMode(enabled)}
+                    />
+                  ) : null}
+                  {composerRuntimeConfig ? (
+                    <ComposerBashReviewToggle
+                      bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                      canEdit={canEditBashReviewMode}
+                      saving={isSavingSettings}
+                      onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                    />
+                  ) : null}
+                </div>
+              )}
             </div>
             {canStopThread ? (
               <button
@@ -2559,45 +2634,12 @@ function App() {
             </p>
           )}
         </div>
-        <div className="composer-context-bar">
-          <div className="composer-route-control">
-            <ComposerRoutePopoverTrigger
-              buttonRef={composerRouteButtonRef}
-              open={composerRoutePopoverOpen}
-              disabled={!canSwitchRouteProfile || isSavingSettings}
-              profileName={selectedAgentProfileSummary?.name}
-              onToggle={() => {
-                if (!canSwitchRouteProfile) {
-                  return;
-                }
-                setComposerRoutePopoverOpen((current) => !current);
-              }}
-            />
-            <ComposerRoutePopover
-              open={composerRoutePopoverOpen && canSwitchRouteProfile}
-              settings={settings}
-              busy={isSavingSettings}
-              anchorRef={composerRouteButtonRef}
-              runtimeConfig={composerRuntimeConfig ?? undefined}
-              onClose={() => setComposerRoutePopoverOpen(false)}
-              onSelectProfile={selectComposerRouteProfile}
-              onSaveCurrentProfile={
-                selectedRuntimeProfile && composerRuntimeConfig
-                  ? saveComposerSelectionAsProfile
-                  : undefined
-              }
-              selectedProfileId={selectedRuntimeProfileId}
-              onOpenFullSettings={() => openModelsSettings("routes")}
-            />
+        {!composerCompact ? (
+          <div className="composer-context-bar">
+            {composerRouteControl}
+            {composerAgentModelsControl}
           </div>
-          <ComposerAgentModels
-            labels={agentModelLabels}
-            subagentSettings={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-            canEditSubagents={canEditComposerConfig}
-            subagentSaving={isSavingSettings}
-            onToggleSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-          />
-        </div>
+        ) : null}
       </div>
       {showLanding && showProjectSkillsPanel ? (
         <ComposerSkillsBar

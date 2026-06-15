@@ -31,6 +31,7 @@ interface ComposerAgentModelsProps {
   subagentSettings: SubagentEnabledSettings | null;
   canEditSubagents: boolean;
   subagentSaving?: boolean | undefined;
+  compact?: boolean | undefined;
   onToggleSubagent?: (role: SubagentRole, enabled: boolean) => void;
 }
 
@@ -64,6 +65,7 @@ export function ComposerAgentModels({
   subagentSettings,
   canEditSubagents,
   subagentSaving,
+  compact,
   onToggleSubagent,
 }: ComposerAgentModelsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -209,7 +211,12 @@ export function ComposerAgentModels({
       <button
         ref={triggerRef}
         type="button"
-        className={["composer-context-trigger", "composer-agents-trigger", open ? "is-active" : ""]
+        className={[
+          "composer-context-trigger",
+          "composer-agents-trigger",
+          compact ? "is-compact" : "",
+          open ? "is-active" : "",
+        ]
           .filter(Boolean)
           .join(" ")}
         aria-label={`查看子代理编排详情，已启用 ${summary}`}
@@ -225,7 +232,9 @@ export function ComposerAgentModels({
         }}
       >
         <Users size={15} aria-hidden className="composer-context-trigger-icon" />
-        <span className="composer-context-trigger-label">编排</span>
+        <span className="composer-context-trigger-label">
+          {compact ? summary : "编排"}
+        </span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

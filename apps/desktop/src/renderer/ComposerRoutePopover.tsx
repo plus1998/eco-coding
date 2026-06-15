@@ -241,12 +241,14 @@ export function ComposerRoutePopoverTrigger({
   open,
   profileName,
   buttonRef,
+  compact,
   onToggle,
 }: {
   disabled?: boolean | undefined;
   open: boolean;
   profileName?: string | undefined;
   buttonRef: RefObject<HTMLButtonElement | null>;
+  compact?: boolean | undefined;
   onToggle: () => void;
 }) {
   const label = profileName?.trim() || "选择方案";
@@ -255,7 +257,12 @@ export function ComposerRoutePopoverTrigger({
     <button
       ref={buttonRef}
       type="button"
-      className={["composer-context-trigger", "composer-route-trigger", open ? "is-active" : ""]
+      className={[
+        "composer-context-trigger",
+        "composer-route-trigger",
+        compact ? "is-compact" : "",
+        open ? "is-active" : "",
+      ]
         .filter(Boolean)
         .join(" ")}
       onClick={onToggle}

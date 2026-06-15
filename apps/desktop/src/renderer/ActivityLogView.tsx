@@ -10,7 +10,15 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import type {
   ThreadBillingSnapshot,
@@ -1300,6 +1308,9 @@ function RequestTimingBadge({ timing }: { timing: ReturnType<typeof useStreamReq
   );
 }
 
+const THINKING_READ_DELAY_MS = 2500;
+const THINKING_COLLAPSE_MS = 320;
+
 function ThinkingBlock({
   text,
   streaming,
@@ -1310,15 +1321,81 @@ function ThinkingBlock({
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   const [collapsed, setCollapsed] = useState(true);
+  const [isCollapsing, setIsCollapsing] = useState(false);
+  const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoCollapseScheduledRef = useRef(false);
+  const wasStreamingRef = useRef(false);
   const hasBody = text.trim().length > 0;
+  const expanded = !collapsed;
   const preview = hasBody ? thinkingPreviewLine(text) : "";
-  const showPreview = hasBody && collapsed && !streaming;
-  const showFullBody = hasBody && (streaming || !collapsed);
+  const showPreview = hasBody && collapsed && !streaming && !isCollapsing;
+  const showBodyShell = hasBody && (expanded || isCollapsing);
+  const bodyOpen = expanded && !isCollapsing;
   const timing = useStreamRequestTiming(
     Boolean(streaming) && !hasBody,
     hasBody,
     toStreamRequestTimingAnchor(requestSpan),
   );
+
+  const clearCollapseTimers = useCallback(() => {
+    if (collapseDelayRef.current) {
+      clearTimeout(collapseDelayRef.current);
+      collapseDelayRef.current = null;
+    }
+    if (collapseAnimRef.current) {
+      clearTimeout(collapseAnimRef.current);
+      collapseAnimRef.current = null;
+    }
+  }, []);
+
+  const startCollapseAnimation = useCallback(() => {
+    clearCollapseTimers();
+    setIsCollapsing(true);
+    collapseAnimRef.current = setTimeout(() => {
+      collapseAnimRef.current = null;
+      setCollapsed(true);
+      setIsCollapsing(false);
+    }, THINKING_COLLAPSE_MS);
+  }, [clearCollapseTimers]);
+
+  useEffect(() => {
+    if (streaming) {
+      wasStreamingRef.current = true;
+      autoCollapseScheduledRef.current = false;
+    }
+  }, [streaming]);
+
+  useEffect(() => {
+    if (!streaming || !hasBody) {
+      return;
+    }
+    clearCollapseTimers();
+    setIsCollapsing(false);
+    setCollapsed(false);
+  }, [streaming, hasBody, clearCollapseTimers]);
+
+  useEffect(() => {
+    if (streaming || !hasBody || collapsed || autoCollapseScheduledRef.current || !wasStreamingRef.current) {
+      return;
+    }
+
+    autoCollapseScheduledRef.current = true;
+    wasStreamingRef.current = false;
+    collapseDelayRef.current = setTimeout(() => {
+      collapseDelayRef.current = null;
+      startCollapseAnimation();
+    }, THINKING_READ_DELAY_MS);
+
+    return () => {
+      if (collapseDelayRef.current) {
+        clearTimeout(collapseDelayRef.current);
+        collapseDelayRef.current = null;
+      }
+    };
+  }, [streaming, hasBody, collapsed, startCollapseAnimation]);
+
+  useEffect(() => () => clearCollapseTimers(), [clearCollapseTimers]);
 
   return (
     <div
@@ -1330,11 +1407,20 @@ function ThinkingBlock({
         type="button"
         className="run-log-thinking-header"
         onClick={() => {
-          if (!streaming) {
-            setCollapsed((value) => !value);
+          if (streaming || isCollapsing) {
+            return;
           }
+          autoCollapseScheduledRef.current = true;
+          wasStreamingRef.current = false;
+          if (expanded) {
+            startCollapseAnimation();
+            return;
+          }
+          clearCollapseTimers();
+          setIsCollapsing(false);
+          setCollapsed(false);
         }}
-        aria-expanded={showFullBody}
+        aria-expanded={bodyOpen || Boolean(streaming)}
         disabled={streaming && !hasBody}
       >
         <span className="run-log-thinking-label">
@@ -1355,10 +1441,16 @@ function ThinkingBlock({
           />
         ) : null}
       </button>
-      {showFullBody ? (
-        <div className="run-log-thinking-body">
-          <MarkdownContent text={text} />
-          {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
+      {showBodyShell ? (
+        <div
+          className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}
+        >
+          <div className="run-log-thinking-body-inner">
+            <div className="run-log-thinking-body">
+              <MarkdownContent text={text} />
+              {streaming ? <span className="run-log-cursor" aria-hidden /> : null}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
