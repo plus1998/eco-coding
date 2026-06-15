@@ -1,9 +1,24 @@
 import { ecoSubagentKeyForRole } from "./subagent-availability.js";
 import {
+  SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  SDK_FILESYSTEM_READ_TOOL_NAMES,
+  SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  SDK_SKILL_TOOL_NAME,
+  SDK_TASK_PROGRESS_TOOL_NAMES,
+} from "./sdk-tool-names.js";
+import {
   capEcoToolPolicyForPhase,
   materializeEcoToolPolicy,
   resolveMainAgentHandsOnFromPolicy,
 } from "./tool-permission-policy.js";
+
+export {
+  SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  SDK_FILESYSTEM_READ_TOOL_NAMES,
+  SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  SDK_SKILL_TOOL_NAME,
+  SDK_TASK_PROGRESS_TOOL_NAMES,
+} from "./sdk-tool-names.js";
 
 export type EcoAgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type EcoAgentConfigSource = "built_in" | "user" | "project" | "derived";
@@ -216,12 +231,6 @@ export interface EcoRuntimeToolPermissionPolicy {
   agents: Record<string, EcoRuntimeToolPermissionEntry>;
 }
 
-export const SDK_SKILL_TOOL_NAME = "Skill";
-export const SDK_FILESYSTEM_READ_TOOL_NAMES = ["Read", "Glob", "Grep", "LS", "NotebookRead"] as const;
-export const SDK_FILESYSTEM_WRITE_TOOL_NAMES = ["Write", "Edit", "MultiEdit", "NotebookEdit"] as const;
-export const SDK_DELEGATION_SUPPORT_TOOL_NAMES = ["TaskList", "TaskOutput"] as const;
-export const SDK_TASK_PROGRESS_TOOL_NAMES = ["TaskCreate", "TaskUpdate", "TodoWrite"] as const;
-
 const EXPLORE_DISALLOWED_TOOLS = [
   "Agent",
   "Task",
@@ -359,15 +368,23 @@ export function buildToolPermissionPolicyFromProfile(
   return {
     main: normalizeToolPermissionEntry(
       mainToolPolicy,
-      [
-        ...(phaseCapTools ? [] : (options.mainAllowedTools ?? [])),
-        SDK_SKILL_TOOL_NAME,
-        ...SDK_TASK_PROGRESS_TOOL_NAMES,
-      ],
+      resolveMainToolPermissionExtraAllowed(phaseCapTools, options.mainAllowedTools),
       resolveAssignedMcpServers(mainToolPolicy),
     ),
     agents,
   };
+}
+
+function resolveMainToolPermissionExtraAllowed(
+  phaseAllowedTools: readonly string[] | undefined,
+  mainAllowedTools: readonly string[] | undefined,
+): string[] {
+  const extras = [SDK_SKILL_TOOL_NAME, ...SDK_TASK_PROGRESS_TOOL_NAMES];
+  if (!phaseAllowedTools) {
+    return [...(mainAllowedTools ?? []), ...extras];
+  }
+  const phaseAllowed = new Set(phaseAllowedTools);
+  return extras.filter((tool) => phaseAllowed.has(tool));
 }
 
 export function buildMainAgentRoster(

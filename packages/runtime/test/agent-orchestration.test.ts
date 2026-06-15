@@ -456,9 +456,10 @@ test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools
     ],
   });
 
-  expect(policy.main.allowed).toEqual(
-    expect.arrayContaining(["Skill", "TaskCreate", "TaskUpdate", "TodoWrite"]),
-  );
+  expect(policy.main.allowed).toContain("Skill");
+  expect(policy.main.allowed).not.toContain("TaskCreate");
+  expect(policy.main.allowed).not.toContain("TaskUpdate");
+  expect(policy.main.allowed).not.toContain("TodoWrite");
   expect(policy.main.mcpServers).toEqual(["browser", "sources"]);
   expect(policy.main.disallowed).toEqual(
     expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),

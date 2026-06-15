@@ -4,8 +4,10 @@ import {
   expandHomeInPolicyPath,
   filesystemReadScopeAskReason,
   isPathInsidePolicyScope,
+  readFilesystemPath,
   resolveFilesystemScopeRoot,
   resolvePolicyPath,
+  resolvePolicySearchBase,
 } from "../src/filesystem-scope-policy.js";
 
 test("expandHomeInPolicyPath expands tilde and $HOME prefixes", () => {
@@ -19,6 +21,18 @@ test("resolvePolicyPath expands tilde before resolving against cwd", () => {
   expect(resolvePolicyPath("~/.claude/skills/foo/SKILL.md", "/repo")).toBe(
     `${homedir}/.claude/skills/foo/SKILL.md`,
   );
+});
+
+test("readFilesystemPath treats Glob pattern as a filesystem path", () => {
+  expect(readFilesystemPath({ pattern: "/tmp/**/*.ts" }, "Glob")).toBe("/tmp/**/*.ts");
+  expect(readFilesystemPath({ pattern: "secret", path: "/repo/src" }, "Grep")).toBe("/repo/src");
+});
+
+test("resolvePolicySearchBase strips glob meta to static search root", () => {
+  expect(resolvePolicySearchBase("/tmp/**/*.ts", "/repo")).toBe("/tmp");
+  expect(resolvePolicySearchBase("../**/*.ts", "/repo/app")).toBe("/repo");
+  expect(resolvePolicySearchBase("src/**/*.ts", "/repo/app")).toBe("/repo/app/src");
+  expect(resolvePolicySearchBase("**/*.ts", "/repo/app")).toBe("/repo/app");
 });
 
 test("resolveFilesystemScopeRoot expands to parent cwd for subdirectory workspaces", () => {

@@ -50,6 +50,7 @@ import {
   readFilesystemPath,
   resolveFilesystemScopeRoot,
   resolvePolicyPath,
+  resolvePolicySearchBase,
 } from "./filesystem-scope-policy.js";
 import {
   isSubagentEnabled,
@@ -850,7 +851,7 @@ function evaluateFilesystemToolPolicy(
   }
   const scopeRoot = resolveFilesystemScopeRoot(workspacePath, input.cwd);
   const implicitRoots = options.implicitReadAllowRoots ?? [];
-  const filePath = readFilesystemPath(input.tool_input);
+  const filePath = readFilesystemPath(input.tool_input, input.tool_name);
   if (!filePath) {
     if (
       isDiscoveryFilesystemTool(input.tool_name) &&
@@ -875,7 +876,7 @@ function evaluateFilesystemToolPolicy(
     isReadTool &&
     pathContainsGlobMeta(filePath)
   ) {
-    const searchRoot = resolvePolicyPath(filePath, input.cwd);
+    const searchRoot = resolvePolicySearchBase(filePath, input.cwd);
     if (
       isReadTool &&
       implicitRoots.length > 0 &&
@@ -883,7 +884,7 @@ function evaluateFilesystemToolPolicy(
     ) {
       return undefined;
     }
-    if (filesystem.read !== "none" && !isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot)) {
+    if (filesystem.read !== "none" && !isPathInsidePolicyScope(searchRoot, scopeRoot)) {
       return askFilesystemScope(input.tool_name, filePath, scopeRoot);
     }
     return undefined;
@@ -954,21 +955,6 @@ function readBashCommand(input: unknown): string | undefined {
     }
   }
   return undefined;
-}
-
-function matchesAnyCommandPattern(command: string, patterns: readonly string[]): boolean {
-  return patterns.some((pattern) => matchesCommandPattern(command, pattern));
-}
-
-function matchesCommandPattern(command: string, pattern: string): boolean {
-  const trimmedPattern = pattern.trim();
-  if (!trimmedPattern) {
-    return false;
-  }
-  if (trimmedPattern.includes("*")) {
-    return matchesToolPattern(command, trimmedPattern);
-  }
-  return command === trimmedPattern || command.startsWith(`${trimmedPattern} `);
 }
 
 function askTool(toolName: string, reason: string): HookJSONOutput {

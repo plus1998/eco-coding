@@ -1112,6 +1112,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         ? {
             hooks: buildEcoSdkHooks({
               ...(this.options.hookContext ?? {}),
+              ...(input.sdkSession?.implicitReadAllowRoots?.length
+                ? { implicitReadAllowRoots: input.sdkSession.implicitReadAllowRoots }
+                : {}),
               ...(onExitPlanMode ? { onExitPlanMode } : {}),
               ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
               ...(approveDeferredExitPlanMode ? { approveDeferredExitPlanMode: true } : {}),

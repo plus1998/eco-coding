@@ -6,6 +6,7 @@ import {
   listSdkReadyProjectSkills,
   mergeSkillNames,
   parseExplicitSkillNames,
+  resolveImplicitSkillReadRoots,
   resolveSdkSessionSkillConfig,
   promptIncludesSkillName,
   type SkillInfo,
@@ -34,23 +35,20 @@ test("promptIncludesSkillName detects explicit tokens", () => {
   expect(promptIncludesSkillName("use $vue-best", "other")).toBe(false);
 });
 
-test("resolveSdkSessionSkillConfig keeps only project skills during planning", () => {
+test("resolveSdkSessionSkillConfig keeps discovered user skills out of planning unless explicit", () => {
   expect(
     resolveSdkSessionSkillConfig("planning", {
       projectNames: ["project-skill"],
-      explicitUser: ["user-skill"],
+      explicitUser: [],
     }),
   ).toEqual({
     settingSources: ["project"],
     skills: ["project-skill"],
   });
-});
 
-test("resolveSdkSessionSkillConfig uses project skills and explicit user prompt skills during execution", () => {
   expect(
-    resolveSdkSessionSkillConfig("default", {
+    resolveSdkSessionSkillConfig("planning", {
       projectNames: ["project-skill"],
-      userSkillNames: ["user-skill"],
       explicitUser: ["user-skill"],
     }),
   ).toEqual({
@@ -59,17 +57,40 @@ test("resolveSdkSessionSkillConfig uses project skills and explicit user prompt 
   });
 });
 
-test("resolveSdkSessionSkillConfig enables user source when user skills are discovered", () => {
+test("resolveSdkSessionSkillConfig uses project skills and explicit user prompt skills during execution", () => {
   expect(
     resolveSdkSessionSkillConfig("default", {
       projectNames: ["project-skill"],
-      userSkillNames: ["vue-best-practices"],
-      explicitUser: [],
+      explicitUser: ["user-skill"],
     }),
   ).toEqual({
     settingSources: ["project", "user"],
-    skills: ["project-skill", "vue-best-practices"],
+    skills: ["project-skill", "user-skill"],
   });
+});
+
+test("resolveSdkSessionSkillConfig does not enable discovered user skills implicitly", () => {
+  expect(
+    resolveSdkSessionSkillConfig("default", {
+      projectNames: ["project-skill"],
+      explicitUser: [],
+    }),
+  ).toEqual({
+    settingSources: ["project"],
+    skills: ["project-skill"],
+  });
+});
+
+test("resolveImplicitSkillReadRoots includes project roots and explicit skill directories only", () => {
+  expect(
+    resolveImplicitSkillReadRoots("/Users/alice", "/repo/app", [
+      { directory: "/Users/alice/.claude/skills/vue-best-practices" },
+    ]),
+  ).toEqual([
+    "/repo/app/.claude/skills",
+    "/repo/app/.agents/skills",
+    "/Users/alice/.claude/skills/vue-best-practices",
+  ]);
 });
 
 test("mergeSkillNames dedupes and sorts", () => {

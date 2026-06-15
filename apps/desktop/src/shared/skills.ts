@@ -109,16 +109,17 @@ export function filterExplicitUserSkillNames(
 
 export type SdkSessionSkillsScope = "planning" | "default";
 
-/** Execution uses project settings only so ~/.claude user defaults (e.g. gpt-5.4) do not override Eco proxy aliases on subagent LLM calls. */
+/**
+ * Read roots Eco may allow without a separate outside-workspace prompt.
+ * Project skills are scoped to the opened project/repo. User-level skills must be
+ * supplied explicitly in `skills`; Eco never opens the whole user skills tree.
+ */
 export function resolveImplicitSkillReadRoots(
-  homedir: string,
+  _homedir: string,
   workspacePath?: string,
   skills: readonly Pick<SkillInfo, "directory">[] = [],
 ): string[] {
   const roots = new Set<string>();
-  for (const rel of USER_SKILL_ROOTS) {
-    roots.add(path.join(homedir, rel));
-  }
   if (workspacePath?.trim()) {
     const resolvedWorkspace = path.resolve(workspacePath.trim());
     for (const rel of PROJECT_SKILL_ROOTS) {
@@ -138,19 +139,17 @@ export function resolveSdkSessionSkillConfig(
   input: {
     projectNames: readonly string[];
     explicitUser: readonly string[];
-    userSkillNames?: readonly string[];
   },
 ): { settingSources: Array<"user" | "project">; skills: string[] } {
+  const usesUserSource = input.explicitUser.length > 0;
   if (scope === "planning") {
-    const skills = mergeSkillNames(input.projectNames);
+    const skills = mergeSkillNames(input.projectNames, input.explicitUser);
     return {
-      settingSources: ["project"],
+      settingSources: usesUserSource ? (["project", "user"] as const) : (["project"] as const),
       skills,
     };
   }
-  const userSkillNames = input.userSkillNames ?? [];
-  const skills = mergeSkillNames(input.projectNames, userSkillNames, input.explicitUser);
-  const usesUserSource = userSkillNames.length > 0 || input.explicitUser.length > 0;
+  const skills = mergeSkillNames(input.projectNames, input.explicitUser);
   return {
     settingSources: usesUserSource ? (["project", "user"] as const) : (["project"] as const),
     skills,

@@ -27,10 +27,15 @@ import {
   type SessionCapturedPayload,
   type SdkToolPermissionDecision,
   type SdkToolPermissionRequest,
+  filesystemReadScopeAskReason,
+  isDiscoveryFilesystemTool,
   isReadFilesystemTool,
-  isPathInsideAnyPolicyScope,
+  isPathInsidePolicyScope,
+  pathContainsGlobMeta,
   readFilesystemPath,
+  resolveFilesystemScopeRoot,
   resolvePolicyPath,
+  resolvePolicySearchBase,
   type SubagentRunPhase,
 } from "@eco/runtime";
 import {
@@ -3884,8 +3889,6 @@ function createSdkDriver(
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
   const planModeEnabled = threadConfig?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
-  const homedir = os.homedir();
-  const implicitReadAllowRoots = resolveImplicitSkillReadRoots(homedir, storedThread.workspacePath);
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
@@ -3901,7 +3904,6 @@ function createSdkDriver(
         return ensureThreadRuntimeConfig(current).runtimeConfig?.bashReviewMode ?? "always";
       },
       workspacePath: storedThread.workspacePath,
-      implicitReadAllowRoots,
     },
     toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
     onContextProbe: onContextProbe
@@ -5074,17 +5076,25 @@ async function buildSdkSessionOptions(
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);
   const discovered = await listDiscoveredSkills(workspacePath);
   const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
-  const userSkillNames = discovered.userSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
+  const explicitUserNames = new Set(explicitUser);
+  const explicitUserSkills = discovered.userSkills.filter(
+    (skill) => skill.sdkReady && explicitUserNames.has(skill.name),
+  );
+  const projectReadRootSkills = discovered.projectSkills.filter((skill) => skill.sdkReady);
+  const implicitReadAllowRoots = resolveImplicitSkillReadRoots(os.homedir(), workspacePath, [
+    ...projectReadRootSkills,
+    ...explicitUserSkills,
+  ]);
   const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
     projectNames,
-    userSkillNames,
     explicitUser,
   });
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
   return {
     settingSources: skillConfig.settingSources,
     ...(skillConfig.skills.length > 0 ? { skills: skillConfig.skills } : {}),
+    ...(implicitReadAllowRoots.length > 0 ? { implicitReadAllowRoots } : {}),
     agentSkills,
     enabledSubagents,
     ...(Object.keys(filteredMcp.mcpServers).length > 0 ? { mcpServers: filteredMcp.mcpServers } : {}),
@@ -5645,11 +5655,6 @@ function createThreadToolPermissionHandler(
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   return async (request) => {
     if (isReadFilesystemTool(request.toolName)) {
-      const needsApproval = request.decisionReason?.includes("outside Eco workspace") === true;
-      if (!needsApproval) {
-        return { behavior: "allow", updatedInput: request.input };
-      }
-
       const thread = conversationStore.getThread(threadId);
       if (!thread) {
         return {
@@ -5659,21 +5664,26 @@ function createThreadToolPermissionHandler(
         };
       }
 
-      const filesystemPath = readFilesystemPath(request.input) ?? ".";
       const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
       const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
-      const implicitRoots = resolveImplicitSkillReadRoots(os.homedir(), thread.workspacePath);
-      const absolutePath = resolvePolicyPath(filesystemPath, cwd ?? thread.workspacePath ?? ".");
-      if (isPathInsideAnyPolicyScope(absolutePath, implicitRoots)) {
+      const readApproval = resolveFilesystemReadApprovalRequest({
+        toolName: request.toolName,
+        input: request.input,
+        cwd: cwd ?? thread.workspacePath ?? ".",
+        workspacePath: thread.workspacePath,
+        ...(request.decisionReason ? { fallbackReason: request.decisionReason } : {}),
+      });
+      if (!readApproval) {
         return { behavior: "allow", updatedInput: request.input };
       }
+      const filesystemPath = readApproval.filesystemPath;
 
       const approvalRequest: BashApprovalRequest = {
         toolUseId: request.toolUseId,
         threadId,
         command: `${request.toolName} ${filesystemPath}`,
         cwd,
-        reason: request.decisionReason ?? `Allow ${request.toolName} outside the workspace?`,
+        reason: readApproval.reason,
         riskScore: 40,
         riskLevel: "medium",
         filesystemTool: request.toolName,
@@ -5802,6 +5812,40 @@ function createThreadToolPermissionHandler(
       message: "User denied this Bash command.",
       interrupt: false,
     };
+  };
+}
+
+function resolveFilesystemReadApprovalRequest(input: {
+  toolName: string;
+  input: Record<string, unknown>;
+  cwd: string;
+  workspacePath: string;
+  fallbackReason?: string;
+}): { filesystemPath: string; reason: string } | undefined {
+  const scopeRoot = resolveFilesystemScopeRoot(input.workspacePath, input.cwd);
+  const filesystemPath = readFilesystemPath(input.input, input.toolName) ?? ".";
+  if (filesystemPath === ".") {
+    const cwdInsideScope = isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot);
+    if (isDiscoveryFilesystemTool(input.toolName) && !cwdInsideScope) {
+      return {
+        filesystemPath,
+        reason: input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
+      };
+    }
+    return undefined;
+  }
+
+  const candidatePath =
+    isDiscoveryFilesystemTool(input.toolName) && pathContainsGlobMeta(filesystemPath)
+      ? resolvePolicySearchBase(filesystemPath, input.cwd)
+      : resolvePolicyPath(filesystemPath, input.cwd);
+  if (isPathInsidePolicyScope(candidatePath, scopeRoot)) {
+    return undefined;
+  }
+
+  return {
+    filesystemPath,
+    reason: input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
   };
 }
 

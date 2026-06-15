@@ -57,7 +57,16 @@ test("capEcoToolPolicyForPhase adds phase disallows without implicit bash infere
     ["Agent", "Read", "Glob", "Grep", "WebSearch", "AskUserQuestion"],
   );
   expect(capped.disallowed).toEqual(
-    expect.arrayContaining(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"]),
+    expect.arrayContaining([
+      "Bash",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "TaskCreate",
+      "TaskUpdate",
+      "TodoWrite",
+    ]),
   );
   expect(capped.filesystem).toEqual({ read: "workspace", write: "workspace" });
 });

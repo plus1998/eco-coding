@@ -23,6 +23,8 @@ export interface EcoSdkSessionOptions {
   skills?: string[];
   /** Per-agent skill directories for subagent definitions. Keys may be built-in roles, profile agentKeys, or SDK eco_* keys. */
   agentSkills?: Partial<Record<RuntimeAgentRole, string[]>>;
+  /** File read roots for project skills and explicitly referenced user skills in this SDK run. */
+  implicitReadAllowRoots?: string[];
   /** Subagent on/off. */
   enabledSubagents?: Partial<Record<SubagentRole, boolean>>;
   mcpServers?: Record<string, unknown>;

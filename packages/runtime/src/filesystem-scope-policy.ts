@@ -14,7 +14,7 @@ export function pathContainsGlobMeta(value: string): boolean {
   return /[*?[\]{}]/.test(value);
 }
 
-export function readFilesystemPath(input: unknown): string | undefined {
+export function readFilesystemPath(input: unknown, toolName?: string): string | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return undefined;
   }
@@ -23,6 +23,12 @@ export function readFilesystemPath(input: unknown): string | undefined {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+  }
+  if (toolName === "Glob") {
+    const pattern = record.pattern;
+    if (typeof pattern === "string" && pattern.trim()) {
+      return pattern.trim();
     }
   }
   return undefined;
@@ -48,6 +54,24 @@ export function resolvePolicyPath(filePath: string, cwd: string): string {
     return normalizePolicyPath(normalizedPath);
   }
   return normalizePolicyPath(`${cwd}/${normalizedPath}`);
+}
+
+export function resolvePolicySearchBase(filePathPattern: string, cwd: string): string {
+  const expanded = expandHomeInPolicyPath(filePathPattern);
+  const normalizedPath = normalizePolicyPathSeparators(expanded);
+  const firstGlobIndex = normalizedPath.search(/[*?[\]{}]/);
+  if (firstGlobIndex < 0) {
+    return resolvePolicyPath(normalizedPath, cwd);
+  }
+
+  const staticPrefix = normalizedPath.slice(0, firstGlobIndex);
+  const slashIndex = staticPrefix.lastIndexOf("/");
+  if (slashIndex < 0) {
+    return resolvePolicyPath(".", cwd);
+  }
+
+  const base = staticPrefix.slice(0, slashIndex) || "/";
+  return resolvePolicyPath(base, cwd);
 }
 
 /** Expand `~` / `$HOME` prefixes so skill paths like `~/.claude/skills/foo` match allow roots. */

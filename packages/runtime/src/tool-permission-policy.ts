@@ -1,16 +1,30 @@
 import type { EcoToolPolicy } from "./agent-orchestration.js";
 import {
+  SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
   SDK_FILESYSTEM_WRITE_TOOL_NAMES,
-} from "./agent-orchestration.js";
+  SDK_SKILL_TOOL_NAME,
+  SDK_TASK_PROGRESS_TOOL_NAMES,
+} from "./sdk-tool-names.js";
 
 function uniqueToolPatterns(patterns: readonly string[]): string[] {
   return [...new Set(patterns.map((pattern) => pattern.trim()).filter(Boolean))];
 }
 
-function hasAnyToolPattern(allowed: ReadonlySet<string>, tools: readonly string[]): boolean {
-  return tools.some((tool) => allowed.has(tool));
-}
+const ECO_PHASE_CAPPED_TOOL_NAMES = [
+  "Agent",
+  "Task",
+  ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
+  SDK_SKILL_TOOL_NAME,
+  ...SDK_FILESYSTEM_READ_TOOL_NAMES,
+  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "Bash",
+  "WebSearch",
+  "WebFetch",
+  "AskUserQuestion",
+  "Workflow",
+  ...SDK_TASK_PROGRESS_TOOL_NAMES,
+] as const;
 
 /**
  * Expands explicit Eco structured flags into bare `disallowed` tool names.
@@ -75,19 +89,10 @@ export function capEcoToolPolicyForPhase(
   const allowedSet = new Set(phaseAllowedTools);
   const phaseDisallowed: string[] = [];
 
-  if (!allowedSet.has("Bash")) {
-    phaseDisallowed.push("Bash");
-  }
-  for (const tool of SDK_FILESYSTEM_WRITE_TOOL_NAMES) {
-    if (!hasAnyToolPattern(allowedSet, [tool])) {
+  for (const tool of ECO_PHASE_CAPPED_TOOL_NAMES) {
+    if (!allowedSet.has(tool)) {
       phaseDisallowed.push(tool);
     }
-  }
-  if (materialized.network?.webSearch !== false && !allowedSet.has("WebSearch")) {
-    phaseDisallowed.push("WebSearch");
-  }
-  if (materialized.network?.webFetch !== false && !allowedSet.has("WebFetch")) {
-    phaseDisallowed.push("WebFetch");
   }
 
   return materializeEcoToolPolicy({

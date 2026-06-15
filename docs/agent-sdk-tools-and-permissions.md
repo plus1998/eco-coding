@@ -237,7 +237,20 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 
 ---
 
-## 6. 调试清单
+## 6. Skills 与外部读取边界
+
+Skill 可加载性和 Agent 文件读取权限是两件事：
+
+- 项目级 SDK-ready skills（`.claude/skills`，或 `.agents/skills` 已链接到 `.claude/skills`）默认注入 session。
+- 用户级 skills 只在 prompt 中显式 `$skill-name` 引用时注入；仅本次显式引用到的用户 skill 目录会进入隐式读白名单。
+- Eco 不把整个 `~/.claude/skills` / `~/.agents/skills` 作为默认读白名单。
+- Agent 用 `Read` / `Glob` / `Grep` 读取工作区外代码或非显式 skill 目录时，必须走手动确认。
+
+对 `.agents/skills` 的兼容方式：Eco 可以在同一 baseDir 下创建 `.claude/skills/<name> -> ../../.agents/skills/<name>` 的符号链接；发现阶段会把这种 skill 标记为 SDK-ready。运行时读白名单使用发现到的具体 skill 目录，而不是扩大到整个父目录。
+
+---
+
+## 7. 调试清单
 
 遇到「工具被拒绝」时，按顺序排查：
 
@@ -257,11 +270,12 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 
 ---
 
-## 7. 实现索引
+## 8. 实现索引
 
 | 主题 | 文件 |
 |------|------|
 | **工具权限统一模块**（物化、阶段 cap、SDK deny 合并） | `packages/runtime/src/tool-permission-policy.ts` |
+| SDK 内置工具名全集 | `packages/runtime/src/sdk-tool-names.ts` |
 | SDK query 选项（phase、allowedTools、disallowedTools） | `packages/runtime/src/claude-agent-sdk.ts` |
 | ExitPlanMode / 两层模型注释 | `packages/runtime/src/eco-sdk-hooks.ts` |
 | Profile → SDK policy | `packages/runtime/src/agent-orchestration.ts` |
@@ -269,13 +283,15 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 | Bash 风险评估 | `apps/desktop/src/main/thread-bash-permission.ts` |
 | Composer Bash 审批模式 UI | `apps/desktop/src/shared/bash-review-ui.ts` |
 | Profile 工具能力表单 | `apps/desktop/src/renderer/tool-capability-groups.ts` |
+| Skills 注入和隐式读根 | `apps/desktop/src/shared/skills.ts` |
 
 ---
 
-## 8. 变更时注意
+## 9. 变更时注意
 
 1. 改工具行为前，先分清是 **可用性** 还是 **权限** 问题。
 2. 新增阶段限制时，优先往 `disallowed` 加裸工具名，不要加隐式推断。
 3. 文档和注释里写 `allowedTools` 时，注明是 **auto-approve**，不是 **tool registry**。
 4. Plan / Execute 必须保持**两个 turn**；不要假设 `ExitPlanMode` 后还能在同 turn 执行。
 5. 单测里区分：`disallowed` 含工具名 vs `bash.enabled: false` vs `permissionMode`。
+6. 外部读路径判断必须基于结构化路径解析，不要依赖错误文案字符串。

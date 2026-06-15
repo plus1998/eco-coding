@@ -932,7 +932,7 @@ test("createToolPermissionPreToolHook denies only explicitly disallowed tools in
   expect(grep.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook allows reads under implicit skill roots", async () => {
+test("createToolPermissionPreToolHook allows reads under explicitly allowed skill roots", async () => {
   const skillRoot = `${os.homedir()}/.claude/skills/my-skill`;
   const hook = createToolPermissionPreToolHook(
     {
@@ -965,7 +965,7 @@ test("createToolPermissionPreToolHook allows reads under implicit skill roots", 
   expect(skillRead.hookSpecificOutput).toBeUndefined();
 });
 
-test("createToolPermissionPreToolHook allows tilde paths under implicit skill roots", async () => {
+test("createToolPermissionPreToolHook allows tilde paths under explicitly allowed skill roots", async () => {
   const skillRoot = `${os.homedir()}/.claude/skills/my-skill`;
   const hook = createToolPermissionPreToolHook(
     {
@@ -996,6 +996,74 @@ test("createToolPermissionPreToolHook allows tilde paths under implicit skill ro
     { signal: new AbortController().signal },
   );
   expect(skillRead.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook asks before reading user skills that were not explicitly allowed", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    {
+      workspacePath: "/repo/apps/desktop",
+    },
+  );
+  expect(hook).toBeDefined();
+
+  const skillRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "~/.claude/skills/my-skill/references/guide.md" },
+      tool_use_id: "tool_skill_read_requires_approval",
+      session_id: "s1",
+      cwd: "/repo/apps/desktop",
+    } satisfies PreToolUseHookInput,
+    "tool_skill_read_requires_approval",
+    { signal: new AbortController().signal },
+  );
+  expect(skillRead.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
+});
+
+test("createToolPermissionPreToolHook asks for Glob patterns outside the workspace", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Glob"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    {
+      workspacePath: "/repo/apps/desktop",
+    },
+  );
+  expect(hook).toBeDefined();
+
+  const glob = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Glob",
+      tool_input: { pattern: "/tmp/external/**/*.ts" },
+      tool_use_id: "tool_glob_external",
+      session_id: "s1",
+      cwd: "/repo/apps/desktop",
+    } satisfies PreToolUseHookInput,
+    "tool_glob_external",
+    { signal: new AbortController().signal },
+  );
+  expect(glob.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "ask",
+  });
 });
 
 test("createToolPermissionPreToolHook allows Glob from explore cwd when workspace is a subdirectory", async () => {
