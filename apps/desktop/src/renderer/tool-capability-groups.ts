@@ -1,4 +1,5 @@
 import type { ToolPolicy } from "../shared/ipc";
+import { materializeEcoToolPolicy } from "@eco/runtime";
 import { parseList, uniqueValues } from "./agent-template-form-utils";
 
 export const DELEGATION_TOOL_NAMES = ["Agent", "Task", "TaskList", "TaskOutput"] as const;
@@ -156,14 +157,15 @@ export function toolPolicyToCapabilityFields(
     mcpServers?: readonly string[];
   } = {},
 ): ToolCapabilityFieldValues {
-  const disallowed = new Set(normalizeDisallowedTools(policy));
-  const readScope = policy.filesystem?.read ?? "workspace";
+  const materialized = materializeEcoToolPolicy(policy);
+  const disallowed = new Set(normalizeDisallowedTools(materialized));
+  const readScope = materialized.filesystem?.read ?? "workspace";
   const readCodebase = readScope !== "none";
-  const writeCodebase = (policy.filesystem?.write ?? "none") === "workspace";
-  const bash = policy.bash?.enabled !== false && !disallowed.has("Bash");
+  const writeCodebase = !FILESYSTEM_WRITE_TOOL_NAMES.every((tool) => disallowed.has(tool));
+  const bash = !disallowed.has("Bash");
   const webSearchAllowed =
-    policy.network?.webSearch !== false && !disallowed.has("WebSearch");
-  const webFetchAllowed = policy.network?.webFetch !== false && !disallowed.has("WebFetch");
+    materialized.network?.webSearch !== false && !disallowed.has("WebSearch");
+  const webFetchAllowed = materialized.network?.webFetch !== false && !disallowed.has("WebFetch");
   const network = webSearchAllowed || webFetchAllowed;
   const skill = !disallowed.has("Skill");
   const askUser = !disallowed.has("AskUserQuestion");

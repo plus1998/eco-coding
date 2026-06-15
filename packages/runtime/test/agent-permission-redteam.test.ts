@@ -197,7 +197,7 @@ test("Agent profile tool permission red-team suite covers main and subagent acto
       name: "researcher cannot read local files",
       input: preTool("Read", { file_path: "/workspace/project/private.md" }, { agentType: "researcher" }),
       expected: "deny",
-      reasonIncludes: "reads are disabled",
+      reasonIncludes: 'Tool "Read" is disallowed',
     },
     {
       name: "researcher can call explicit browser MCP tool",

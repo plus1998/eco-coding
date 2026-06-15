@@ -23,6 +23,7 @@ import {
   SDK_SKILL_TOOL_NAME,
   SDK_TASK_PROGRESS_TOOL_NAMES,
 } from "./agent-orchestration.js";
+import { mergeSdkDisallowedTools } from "./tool-permission-policy.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
   buildEcoSdkHooks,
@@ -165,9 +166,14 @@ const planningAllowedTools = [
   ...networkAllowedTools,
   "AskUserQuestion",
 ] as const;
-/** SDK `disallowedTools` removes write tools from the model context during planning. */
+/**
+ * SDK `disallowedTools` bare names remove tools from model context (availability layer).
+ * Plan phase keeps read tools; write tools and Bash are stripped so the model does not attempt shell commands.
+ * See docs/agent-sdk-tools-and-permissions.md
+ */
 const planningDisallowedSdkTools = [
   ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
+  "Bash",
 ] as const;
 const questionAllowedTools = [
   "Agent",
@@ -1010,10 +1016,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const mainAllowedTools = input.agentRegistry
       ? resolveMainAgentAllowedTools(input.agentRegistry.profile, phase.allowedTools)
       : phase.allowedTools;
+    const applyPhaseToolCap =
+      phase.planningPhase === true ||
+      phase.permissionMode === "plan" ||
+      phase.permissionMode === "dontAsk";
     let toolPermissions = input.agentRegistry
       ? buildToolPermissionPolicyFromProfile(input.agentRegistry.profile, input.agentRegistry.templates, {
           ...(dynamicAgentKeys ? { agentKeys: dynamicAgentKeys } : {}),
-          mainAllowedTools,
+          ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
         })
       : undefined;
     if (toolPermissions && phase.planningPhase) {
@@ -1060,6 +1070,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const allowedTools = this.options.toolPermissionHandler
       ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
       : mergeAllowedTools(mainAllowedTools, input.sdkSession);
+    const sdkDisallowedTools = mergeSdkDisallowedTools(
+      toolPermissions?.main.disallowed,
+      phase.planningPhase ? planningDisallowedSdkTools : [],
+    );
     // Prefer the planner route's model id (the proxy role alias) so main-agent usage is
     // attributed to the planner role; raw profile model ids are ambiguous when multiple
     // roles share the same upstream model.
@@ -1088,7 +1102,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(session.skills && session.skills.length > 0 ? { skills: session.skills } : {}),
       permissionMode: phase.permissionMode,
       allowedTools,
-      ...(phase.planningPhase ? { disallowedTools: [...planningDisallowedSdkTools] } : {}),
+      ...(sdkDisallowedTools.length > 0 ? { disallowedTools: sdkDisallowedTools } : {}),
       ...(this.options.toolPermissionHandler
         ? { canUseTool: createCanUseTool(this.options.toolPermissionHandler) }
         : {}),

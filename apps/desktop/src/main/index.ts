@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
@@ -26,6 +27,10 @@ import {
   type SessionCapturedPayload,
   type SdkToolPermissionDecision,
   type SdkToolPermissionRequest,
+  isReadFilesystemTool,
+  isPathInsideAnyPolicyScope,
+  readFilesystemPath,
+  resolvePolicyPath,
   type SubagentRunPhase,
 } from "@eco/runtime";
 import {
@@ -136,6 +141,7 @@ import {
   filterExplicitUserSkillNames,
   type LinkAgentsSkillsRequest,
   listSdkReadyProjectSkills,
+  resolveImplicitSkillReadRoots,
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
 } from "../shared/skills";
@@ -3878,6 +3884,8 @@ function createSdkDriver(
   }
   const threadConfig = ensureThreadRuntimeConfig(storedThread).runtimeConfig;
   const planModeEnabled = threadConfig?.planModeEnabled ?? workflowSettingsStore.get().planModeEnabled;
+  const homedir = os.homedir();
+  const implicitReadAllowRoots = resolveImplicitSkillReadRoots(homedir, storedThread.workspacePath);
   return new ClaudeAgentSdkDriver({
     apiKey: proxy.apiKey,
     baseUrl: proxy.baseUrl,
@@ -3893,6 +3901,7 @@ function createSdkDriver(
         return ensureThreadRuntimeConfig(current).runtimeConfig?.bashReviewMode ?? "always";
       },
       workspacePath: storedThread.workspacePath,
+      implicitReadAllowRoots,
     },
     toolPermissionHandler: createThreadToolPermissionHandler(threadId, runPhase),
     onContextProbe: onContextProbe
@@ -5065,9 +5074,11 @@ async function buildSdkSessionOptions(
     (currentWorkspace?.path && currentWorkspace.path.trim() ? currentWorkspace.path : undefined);
   const discovered = await listDiscoveredSkills(workspacePath);
   const projectNames = listSdkReadyProjectSkills(discovered.projectSkills).map((skill) => skill.name);
+  const userSkillNames = discovered.userSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name);
   const explicitUser = filterExplicitUserSkillNames(prompt, discovered.userSkills);
   const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
     projectNames,
+    userSkillNames,
     explicitUser,
   });
   const agentSkills = buildRuntimeAgentSkillAssignments(skillConfig.skills, profile);
@@ -5633,6 +5644,83 @@ function createThreadToolPermissionHandler(
   runPhase: SubagentRunPhase = "execution",
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   return async (request) => {
+    if (isReadFilesystemTool(request.toolName)) {
+      const needsApproval = request.decisionReason?.includes("outside Eco workspace") === true;
+      if (!needsApproval) {
+        return { behavior: "allow", updatedInput: request.input };
+      }
+
+      const thread = conversationStore.getThread(threadId);
+      if (!thread) {
+        return {
+          behavior: "deny",
+          message: "Thread was not found; Eco could not request filesystem read approval.",
+          interrupt: true,
+        };
+      }
+
+      const filesystemPath = readFilesystemPath(request.input) ?? ".";
+      const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
+      const cwd = request.cwd?.trim() || worktreePlan?.worktreePath || thread.sdkCwd || thread.workspacePath;
+      const implicitRoots = resolveImplicitSkillReadRoots(os.homedir(), thread.workspacePath);
+      const absolutePath = resolvePolicyPath(filesystemPath, cwd ?? thread.workspacePath ?? ".");
+      if (isPathInsideAnyPolicyScope(absolutePath, implicitRoots)) {
+        return { behavior: "allow", updatedInput: request.input };
+      }
+
+      const approvalRequest: BashApprovalRequest = {
+        toolUseId: request.toolUseId,
+        threadId,
+        command: `${request.toolName} ${filesystemPath}`,
+        cwd,
+        reason: request.decisionReason ?? `Allow ${request.toolName} outside the workspace?`,
+        riskScore: 40,
+        riskLevel: "medium",
+        filesystemTool: request.toolName,
+        filesystemPath,
+        ...(request.agentId ? { agentId: request.agentId } : {}),
+        ...(request.agentType ? { agentType: request.agentType } : {}),
+        description: `允许在工作区外执行 ${request.toolName}？`,
+      };
+
+      updateThread(threadId, { status: "running", message: "等待工具读取确认…" });
+      emitThreadEvent(
+        threadId,
+        "bash_approval.requested",
+        `等待确认 ${request.toolName}：${filesystemPath}`,
+        "tool",
+        false,
+        { bashApproval: approvalRequest },
+      );
+
+      const decision = await registerPendingBashApproval(threadId, approvalRequest);
+      if (decision === "approved") {
+        emitThreadEvent(
+          threadId,
+          "bash_approval.approved",
+          `已允许本次 ${request.toolName}：${filesystemPath}`,
+          "tool",
+          false,
+        );
+        updateThread(threadId, { status: "running", message: "读取已确认，继续执行…" });
+        return { behavior: "allow", updatedInput: request.input };
+      }
+
+      emitThreadEvent(
+        threadId,
+        "bash_approval.rejected",
+        `已拒绝 ${request.toolName}：${filesystemPath}`,
+        "tool",
+        false,
+      );
+      updateThread(threadId, { status: "running", message: "读取已拒绝，等待 Agent 调整…" });
+      return {
+        behavior: "deny",
+        message: `User denied this ${request.toolName} call.`,
+        interrupt: false,
+      };
+    }
+
     if (request.toolName !== "Bash") {
       return { behavior: "allow", updatedInput: request.input };
     }

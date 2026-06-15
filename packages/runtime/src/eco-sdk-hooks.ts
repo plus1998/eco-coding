@@ -40,6 +40,17 @@ import { evaluateBashPolicy, type BashReviewMode } from "../../bash-policy/src";
 import type { RuntimeAgentRole } from "../../shared/src";
 import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
+import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
+import {
+  filesystemReadScopeAskReason,
+  isDiscoveryFilesystemTool,
+  isPathInsideAnyPolicyScope,
+  isPathInsidePolicyScope,
+  pathContainsGlobMeta,
+  readFilesystemPath,
+  resolveFilesystemScopeRoot,
+  resolvePolicyPath,
+} from "./filesystem-scope-policy.js";
 import {
   isSubagentEnabled,
   isSubagentRole,
@@ -108,6 +119,7 @@ export interface EcoHookContext {
   bashReviewMode?: BashReviewMode;
   resolveBashReviewMode?: () => BashReviewMode;
   workspacePath?: string;
+  implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
   getPhaseTranscript?: () => string;
   onToolPermissionDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
@@ -285,6 +297,7 @@ async function delegateExitPlanModeCapture(
  * - `allowedTools` = allow-rules (auto-approve listed tools at evaluation step 5), NOT tool visibility.
  * - `disallowedTools` bare names = remove tools from model context.
  * - `canUseTool` = runtime approval gate for unresolved tools.
+ * See docs/agent-sdk-tools-and-permissions.md
  * Do not list ExitPlanMode in `allowedTools` (would add an allow-rule). Eco ends phase 1 via `defer`, not PermissionRequest `allow`.
  */
 export function createExitPlanModePreToolHook(
@@ -635,6 +648,7 @@ export function createToolPermissionPreToolHook(
   policy?: EcoRuntimeToolPermissionPolicy,
   options: {
     workspacePath?: string;
+    implicitReadAllowRoots?: readonly string[];
     bashReviewMode?: BashReviewMode;
     resolveBashReviewMode?: () => BashReviewMode;
     onDecision?: (decision: EcoToolPermissionDecisionAudit) => void;
@@ -652,7 +666,9 @@ export function createToolPermissionPreToolHook(
       return {};
     }
     const actor = resolveToolPermissionActor(preInput);
-    const entry = resolveToolPermissionEntry(policy, actor);
+    const entry = materializeRuntimeToolPermissionEntry(
+      resolveToolPermissionEntry(policy, actor),
+    );
     if (!entry) {
       return recordToolPermissionDecision(
         preInput,
@@ -662,10 +678,16 @@ export function createToolPermissionPreToolHook(
       );
     }
     if (matchesAnyToolPattern(preInput.tool_name, entry.disallowed)) {
+      const handsOnDenial =
+        actor === "main" &&
+        (WRITE_FILESYSTEM_TOOLS.has(preInput.tool_name) || preInput.tool_name === "Bash");
       return recordToolPermissionDecision(
         preInput,
         actor,
-        denyTool(preInput.tool_name, `Tool "${preInput.tool_name}" is disallowed for ${actor}.`),
+        denyTool(
+          preInput.tool_name,
+          `Tool "${preInput.tool_name}" is disallowed for ${actor}.${handsOnDenial ? mainAgentDelegationHint(actor) : ""}`,
+        ),
         options,
       );
     }
@@ -711,6 +733,26 @@ function resolveToolPermissionEntry(
   return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
 }
 
+function materializeRuntimeToolPermissionEntry(
+  entry: EcoRuntimeToolPermissionEntry | undefined,
+): EcoRuntimeToolPermissionEntry | undefined {
+  if (!entry) {
+    return undefined;
+  }
+  const materialized = materializeEcoToolPolicy({
+    allowed: entry.allowed,
+    disallowed: entry.disallowed,
+    ...(entry.bash ? { bash: entry.bash } : {}),
+    ...(entry.filesystem ? { filesystem: entry.filesystem } : {}),
+    ...(entry.network ? { network: entry.network } : {}),
+  });
+  return {
+    ...entry,
+    disallowed: materialized.disallowed,
+    ...(materialized.bash ? { bash: materialized.bash } : {}),
+  };
+}
+
 /**
  * Delegation guidance appended to main-agent policy denials, so the orchestrator
  * immediately knows the sanctioned alternative instead of retrying denied tools.
@@ -752,12 +794,6 @@ function evaluateBashToolPolicy(
   },
 ): HookJSONOutput | undefined {
   const bash = entry.bash;
-  if (bash?.enabled === false) {
-    return denyTool(
-      "Bash",
-      `Bash is disabled for this Eco agent.${mainAgentDelegationHint(options.actor)}`,
-    );
-  }
   const command = readBashCommand(input.tool_input);
   const mode = options.resolveBashReviewMode?.() ?? options.bashReviewMode ?? "always";
   if (!command) {
@@ -790,7 +826,11 @@ function evaluateBashToolPolicy(
 function evaluateFilesystemToolPolicy(
   input: PreToolUseHookInput,
   entry: EcoRuntimeToolPermissionEntry,
-  options: { workspacePath?: string; actor?: "main" | string },
+  options: {
+    workspacePath?: string;
+    implicitReadAllowRoots?: readonly string[];
+    actor?: "main" | string;
+  },
 ): HookJSONOutput | undefined {
   const filesystem = entry.filesystem;
   if (!filesystem) {
@@ -801,51 +841,78 @@ function evaluateFilesystemToolPolicy(
   if (!isReadTool && !isWriteTool) {
     return undefined;
   }
-  if (isReadTool && filesystem.read === "none") {
-    return denyTool(input.tool_name, "Filesystem reads are disabled for this Eco agent.");
-  }
-  if (isWriteTool && filesystem.write === "none") {
-    return denyTool(
-      input.tool_name,
-      `Filesystem writes are disabled for this Eco agent.${mainAgentDelegationHint(options.actor)}`,
-    );
-  }
-  const filePath = readFilesystemPath(input.tool_input);
-  if (!filePath) {
+  if (isReadTool && filesystem.read === "extra_dirs") {
     return undefined;
   }
   const workspacePath = options.workspacePath?.trim();
   if (!workspacePath) {
     return undefined;
   }
+  const scopeRoot = resolveFilesystemScopeRoot(workspacePath, input.cwd);
+  const implicitRoots = options.implicitReadAllowRoots ?? [];
+  const filePath = readFilesystemPath(input.tool_input);
+  if (!filePath) {
+    if (
+      isDiscoveryFilesystemTool(input.tool_name) &&
+      isReadTool &&
+      filesystem.read !== "none" &&
+      !isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot)
+    ) {
+      return askFilesystemScope(input.tool_name, ".", scopeRoot);
+    }
+    return undefined;
+  }
   const absolutePath = resolvePolicyPath(filePath, input.cwd);
-  const insideScope = isPathInsidePolicyScope(absolutePath, workspacePath);
+  if (
+    isReadTool &&
+    implicitRoots.length > 0 &&
+    isPathInsideAnyPolicyScope(absolutePath, implicitRoots)
+  ) {
+    return undefined;
+  }
+  if (
+    isDiscoveryFilesystemTool(input.tool_name) &&
+    isReadTool &&
+    pathContainsGlobMeta(filePath)
+  ) {
+    const searchRoot = resolvePolicyPath(filePath, input.cwd);
+    if (
+      isReadTool &&
+      implicitRoots.length > 0 &&
+      isPathInsideAnyPolicyScope(searchRoot, implicitRoots)
+    ) {
+      return undefined;
+    }
+    if (filesystem.read !== "none" && !isPathInsidePolicyScope(resolvePolicyPath(".", input.cwd), scopeRoot)) {
+      return askFilesystemScope(input.tool_name, filePath, scopeRoot);
+    }
+    return undefined;
+  }
+  const insideScope = isPathInsidePolicyScope(absolutePath, scopeRoot);
   if (isReadTool && filesystem.read !== "none" && !insideScope) {
-    return denyTool(input.tool_name, "Filesystem read path is outside this Eco agent workspace scope.");
+    return askFilesystemScope(input.tool_name, filePath, scopeRoot);
   }
   if (
     isWriteTool &&
     filesystem.write === "workspace" &&
     !insideScope
   ) {
-    return denyTool(input.tool_name, "Filesystem write path is outside this Eco agent workspace scope.");
+    return denyTool(
+      input.tool_name,
+      `Filesystem write path "${filePath}" is outside Eco workspace "${scopeRoot}".`,
+    );
   }
   return undefined;
 }
 
+function askFilesystemScope(toolName: string, filePath: string, scopeRoot: string): HookJSONOutput {
+  return askTool(toolName, filesystemReadScopeAskReason(toolName, filePath, scopeRoot));
+}
+
 function evaluateNetworkToolPolicy(
-  input: PreToolUseHookInput,
-  entry: EcoRuntimeToolPermissionEntry,
+  _input: PreToolUseHookInput,
+  _entry: EcoRuntimeToolPermissionEntry,
 ): HookJSONOutput | undefined {
-  if (!entry.network) {
-    return undefined;
-  }
-  if (input.tool_name === "WebSearch" && !entry.network.webSearch) {
-    return denyTool("WebSearch", "WebSearch is disabled for this Eco agent.");
-  }
-  if (input.tool_name === "WebFetch" && !entry.network.webFetch) {
-    return denyTool("WebFetch", "WebFetch is disabled for this Eco agent.");
-  }
   return undefined;
 }
 
@@ -876,75 +943,11 @@ function evaluateMcpToolPolicy(
   return undefined;
 }
 
-function resolvePolicyPath(filePath: string, cwd: string): string {
-  const normalizedPath = normalizePolicyPathSeparators(filePath);
-  if (isAbsolutePolicyPath(normalizedPath)) {
-    return normalizePolicyPath(normalizedPath);
-  }
-  return normalizePolicyPath(`${cwd}/${normalizedPath}`);
-}
-
-function isPathInsidePolicyScope(candidatePath: string, parentPath: string): boolean {
-  const candidate = normalizePolicyPath(candidatePath);
-  const parent = normalizePolicyPath(parentPath);
-  if (candidate === parent) {
-    return true;
-  }
-  const parentPrefix = parent.endsWith("/") ? parent : `${parent}/`;
-  return candidate.startsWith(parentPrefix);
-}
-
-function normalizePolicyPath(value: string): string {
-  const normalized = normalizePolicyPathSeparators(value.trim());
-  const driveMatch = /^([A-Za-z]:)(?:\/(.*))?$/.exec(normalized);
-  const prefix = driveMatch ? driveMatch[1] : normalized.startsWith("/") ? "/" : "";
-  const body = driveMatch ? (driveMatch[2] ?? "") : normalized.replace(/^\/+/, "");
-  const parts: string[] = [];
-  for (const part of body.split("/")) {
-    if (!part || part === ".") {
-      continue;
-    }
-    if (part === "..") {
-      parts.pop();
-      continue;
-    }
-    parts.push(part);
-  }
-  if (prefix === "/") {
-    return `/${parts.join("/")}`.replace(/\/+$/u, "") || "/";
-  }
-  if (prefix) {
-    return `${prefix}/${parts.join("/")}`.replace(/\/+$/u, "");
-  }
-  return parts.join("/");
-}
-
-function normalizePolicyPathSeparators(value: string): string {
-  return value.replace(/\\/g, "/");
-}
-
-function isAbsolutePolicyPath(value: string): boolean {
-  return value.startsWith("/") || /^[A-Za-z]:\//.test(value);
-}
-
 function readBashCommand(input: unknown): string | undefined {
   if (!isRecord(input)) {
     return undefined;
   }
   for (const key of ["command", "bash_command", "full_command"]) {
-    const value = input[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
-}
-
-function readFilesystemPath(input: unknown): string | undefined {
-  if (!isRecord(input)) {
-    return undefined;
-  }
-  for (const key of ["file_path", "filePath", "path", "notebook_path", "notebookPath"]) {
     const value = input[key];
     if (typeof value === "string" && value.trim()) {
       return value.trim();
@@ -1316,6 +1319,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     "PreToolUse",
     createToolPermissionPreToolHook(ctx.toolPermissions, {
       ...(ctx.workspacePath && { workspacePath: ctx.workspacePath }),
+      ...(ctx.implicitReadAllowRoots?.length ? { implicitReadAllowRoots: ctx.implicitReadAllowRoots } : {}),
       bashReviewMode: ctx.bashReviewMode ?? "always",
       ...(ctx.resolveBashReviewMode && { resolveBashReviewMode: ctx.resolveBashReviewMode }),
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),

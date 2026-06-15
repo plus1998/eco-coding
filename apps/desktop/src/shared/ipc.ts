@@ -797,6 +797,9 @@ export interface BashApprovalRequest {
   agentId?: string;
   agentType?: string;
   description?: string;
+  /** When set, this approval is for Read/Glob/Grep outside the workspace. */
+  filesystemTool?: string;
+  filesystemPath?: string;
 }
 
 export type BashApprovalDecision = "approved" | "denied";

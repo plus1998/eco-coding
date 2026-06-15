@@ -248,6 +248,8 @@ export {
 } from "./subagent-resume.js";
 export * from "./subagent-availability";
 export * from "./agent-orchestration";
+export * from "./tool-permission-policy.js";
+export * from "./filesystem-scope-policy.js";
 export { formatPlanExecutionSummary } from "./prompts/subagent-pipeline.js";
 export {
   buildBuiltinOtelEnv,

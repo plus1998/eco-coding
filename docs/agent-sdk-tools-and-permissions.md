@@ -90,11 +90,9 @@ Plan 阶段当前配置：
 
 - `permissionMode: "plan"`
 - `allowedTools`: Read / Glob / Grep / WebSearch / WebFetch / Agent / AskUserQuestion 等
-- `disallowedTools`: 仅写工具（Write / Edit / MultiEdit / NotebookEdit）
+- `disallowedTools`: 写工具（Write / Edit / MultiEdit / NotebookEdit）+ **Bash**
 
-Bash 在 Plan 阶段**没有**放进 SDK `disallowedTools`，因此模型上下文里仍可能看到 Bash；实际拒绝靠 `permissionMode: "plan"`、`canUseTool` 和 Eco PreToolUse hook。若 Agent 反复试 Bash 会产生噪音。
-
-**待改进（可选）**：Plan 阶段把 `"Bash"` 也加入 `planningDisallowedSdkTools`，与「禁止 = 显式 disallow」原则完全对齐。
+Bash 与写工具通过 SDK `disallowedTools` 从模型上下文移除；读工具（Read / Grep / Glob）保持可见。Eco PreToolUse hook 与 Profile `disallowed`（经物化）作为第二层执行校验。
 
 ---
 
@@ -162,7 +160,7 @@ Eco 不把 Plan 和 Execute 塞在同一 SDK turn 里：
 
 | 阶段 | permissionMode | 典型 allowedTools | SDK disallowedTools |
 |------|----------------|-------------------|---------------------|
-| Plan | `plan` | Read, Glob, Grep, WebSearch, Agent, AskUserQuestion… | 写工具 |
+| Plan | `plan` | Read, Glob, Grep, WebSearch, Agent, AskUserQuestion… | 写工具 + Bash |
 | Execute | `acceptEdits` | 含 Bash, Write, Edit… | — |
 
 Plan 结束后用户批准，Eco 发起**新的 execution query**（可 resume 同一 SDK session）。这是正确做法，不是 workaround。
@@ -190,7 +188,33 @@ Eco 通过 `createExitPlanModePreToolHook` 捕获计划并以 `defer` 结束 Pla
 
 ---
 
-## 4. Eco Profile 工具策略映射
+## 4. Eco 工具权限模块（`tool-permission-policy.ts`）
+
+统一入口：`packages/runtime/src/tool-permission-policy.ts`
+
+```
+Profile 结构化开关 (bash / filesystem / network)
+        ↓ materializeEcoToolPolicy()
+   disallowed 裸工具名列表（唯一执行真相）
+        ↓ capEcoToolPolicyForPhase()   （阶段 cap）
+   运行时 EcoToolPolicy
+        ├→ mergeSdkDisallowedTools() → SDK disallowedTools（可用性）
+        └→ PreToolUse hook（物化后再检查 disallowed + bash 命令策略 + 路径 scope）
+```
+
+| 函数 | 作用 |
+|------|------|
+| `materializeEcoToolPolicy()` | 把 `bash.enabled: false`、`filesystem.read/write: "none"`、`network.*: false` **物化**进 `disallowed` |
+| `isToolDisallowed()` | 判断某工具是否在物化后的 `disallowed` 中 |
+| `capEcoToolPolicyForPhase()` | 阶段不允许的工具并入 `disallowed`（不隐式改 `bash.enabled`） |
+| `mergeSdkDisallowedTools()` | 合并 Profile + 阶段 denylist，传给 SDK |
+| `resolveMainAgentHandsOnFromPolicy()` | 从物化后的 `disallowed` 推导 `canEditFiles` / `canRunBash` |
+
+**产品原则**：禁止只通过 `disallowed`（及物化）表达；hook 不再对 `filesystem.write: "none"` 单独拒绝写工具（已由物化处理），但仍保留**路径 scope**（工作区外读写）和 **bash 命令 allowlist/denylist** 检查。
+
+---
+
+## 5. Eco Profile 工具策略映射
 
 Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 
@@ -199,21 +223,21 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 | 关闭某类工具 | 加入 `disallowed`（裸工具名） |
 | 允许 Bash | 不设 `bash.enabled: false`，且 `disallowed` 不含 `Bash` |
 | 禁止写文件 | `filesystem.write: "none"` 和/或 `disallowed` 含写工具名 |
-| Plan 阶段额外限制 | `capMainAgentToolPolicyForPhase()` 把阶段不允许的工具并入 `disallowed` |
+| Plan 阶段额外限制 | `capEcoToolPolicyForPhase()` 把阶段不允许的工具并入 `disallowed` |
 
 `resolveEffectiveBashPolicy()` 规则（`packages/runtime/src/agent-orchestration.ts`）：
 
-- `disallowed` 含 `Bash` → 禁用
-- `bash.enabled === false` → 禁用
+- 物化后 `disallowed` 含 `Bash` → 禁用
+- `bash.enabled === false` → 禁用（物化时也会加入 `disallowed`）
 - 否则 → 启用
 
 **不要**再根据 `filesystem.write` 推断 Bash 是否可用。
 
-阶段 cap 实现：`capMainAgentToolPolicyForPhase()` 把当前阶段 `mainAllowedTools` 中未包含的工具名加入 `disallowed`，而不是隐式改 `bash.enabled` 或 `filesystem.write`。
+阶段 cap：`capEcoToolPolicyForPhase()` 在 `tool-permission-policy.ts` 中实现。
 
 ---
 
-## 5. 调试清单
+## 6. 调试清单
 
 遇到「工具被拒绝」时，按顺序排查：
 
@@ -221,25 +245,26 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 2. **SDK 权限**：是否在 `allowedTools` 里（仅影响 auto-approve）？`permissionMode` 是什么？
 3. **canUseTool**：Desktop Bash 审批 / `bashReviewMode` 是否拒绝？
 4. **Eco PreToolUse**：Profile `disallowed`、filesystem、network、bash 策略是否拒绝？
-5. **阶段**：当前是 `planning` / `question` / `execution`？Plan 阶段 `phaseAllowsBash: false` 会在 Desktop handler 拒绝 Bash。
+5. **阶段**：当前是 `planning` / `question` / `execution`？Plan 阶段 Bash 应在 SDK `disallowedTools` 与物化后的 Profile `disallowed` 中。
 
 错误信息对照：
 
 | 消息 | 通常来源 |
 |------|----------|
-| `Tool "Bash" is disallowed for main.` | Eco/SDK disallow 列表（显式禁止，符合预期） |
-| `Bash is disabled for this Eco agent.` | Eco bash 策略或 Plan 阶段 handler |
+| `Tool "Bash" is disallowed for main.` | Eco Profile 物化后的 `disallowed`（显式禁止，符合预期） |
+| `Tool "Write" is disallowed for main.` | `filesystem.write: "none"` 物化进 `disallowed` |
 | `Permission denied for Bash: …` | SDK 汇总拒绝（上游为 hook 或 canUseTool） |
 
 ---
 
-## 6. 实现索引
+## 7. 实现索引
 
 | 主题 | 文件 |
 |------|------|
+| **工具权限统一模块**（物化、阶段 cap、SDK deny 合并） | `packages/runtime/src/tool-permission-policy.ts` |
 | SDK query 选项（phase、allowedTools、disallowedTools） | `packages/runtime/src/claude-agent-sdk.ts` |
 | ExitPlanMode / 两层模型注释 | `packages/runtime/src/eco-sdk-hooks.ts` |
-| Profile → SDK policy、阶段 cap | `packages/runtime/src/agent-orchestration.ts` |
+| Profile → SDK policy | `packages/runtime/src/agent-orchestration.ts` |
 | Desktop Bash 审批 | `apps/desktop/src/main/index.ts` → `createThreadToolPermissionHandler` |
 | Bash 风险评估 | `apps/desktop/src/main/thread-bash-permission.ts` |
 | Composer Bash 审批模式 UI | `apps/desktop/src/shared/bash-review-ui.ts` |
@@ -247,7 +272,7 @@ Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
 
 ---
 
-## 7. 变更时注意
+## 8. 变更时注意
 
 1. 改工具行为前，先分清是 **可用性** 还是 **权限** 问题。
 2. 新增阶段限制时，优先往 `disallowed` 加裸工具名，不要加隐式推断。

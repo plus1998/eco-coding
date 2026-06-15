@@ -1,4 +1,9 @@
 import { ecoSubagentKeyForRole } from "./subagent-availability.js";
+import {
+  capEcoToolPolicyForPhase,
+  materializeEcoToolPolicy,
+  resolveMainAgentHandsOnFromPolicy,
+} from "./tool-permission-policy.js";
 
 export type EcoAgentDomain = "coding" | "research" | "writing" | "product" | "data" | "ops" | "custom";
 export type EcoAgentConfigSource = "built_in" | "user" | "project" | "derived";
@@ -163,9 +168,7 @@ export function resolveAssignedMcpServers(
 
 export function resolveEffectiveBashPolicy(
   policy: EcoToolPolicy,
-  options: { phaseAllowsBash?: boolean } = {},
 ): NonNullable<EcoToolPolicy["bash"]> {
-  const phaseAllowsBash = options.phaseAllowsBash !== false;
   const disallowed = new Set(policy.disallowed.map((entry) => entry.trim()));
   const bashLists = {
     ...(policy.bash?.commandAllowlist && { commandAllowlist: [...policy.bash.commandAllowlist] }),
@@ -173,15 +176,6 @@ export function resolveEffectiveBashPolicy(
   };
 
   if (disallowed.has("Bash") || policy.bash?.enabled === false) {
-    return { enabled: false, ...bashLists };
-  }
-
-  const structurallyEnabled =
-    policy.bash?.enabled === true ||
-    policy.allowed.some((pattern) => pattern.trim() === "Bash") ||
-    (policy.filesystem?.write ?? "none") !== "none";
-
-  if (!structurallyEnabled || !phaseAllowsBash) {
     return { enabled: false, ...bashLists };
   }
 
@@ -277,10 +271,8 @@ export interface MainAgentHandsOnCapability {
 }
 
 /**
- * What the main orchestrator can do hands-on under the active profile policy.
- * Mirrors the runtime PreToolUse enforcement: `filesystem.write === "none"` denies write
- * tools, a missing/disabled `bash` entry denies Bash, and bare-name disallow rules deny both.
- * No profile means no Eco policy hook, so the SDK permission mode alone governs.
+ * What the main orchestrator can do hands-on under the active profile tool policy.
+ * Mirrors PreToolUse enforcement: only explicit disallow rules or structured flags apply.
  */
 export function resolveMainAgentHandsOnCapability(
   profile?: EcoOrchestrationProfileConfig,
@@ -288,14 +280,7 @@ export function resolveMainAgentHandsOnCapability(
   if (!profile) {
     return { canEditFiles: true, canRunBash: true };
   }
-  const tools = profile.mainAgent.tools;
-  const disallowed = new Set(tools.disallowed.map((pattern) => pattern.trim()));
-  const writeDisallowed = SDK_FILESYSTEM_WRITE_TOOL_NAMES.every((tool) => disallowed.has(tool));
-  return {
-    canEditFiles:
-      !writeDisallowed && (tools.filesystem ? tools.filesystem.write !== "none" : true),
-    canRunBash: resolveEffectiveBashPolicy(tools).enabled,
-  };
+  return resolveMainAgentHandsOnFromPolicy(profile.mainAgent.tools);
 }
 
 export function createAgentDefinitionsFromProfile(
@@ -336,7 +321,12 @@ export function createAgentDefinitionsFromProfile(
 export function buildToolPermissionPolicyFromProfile(
   profile: EcoOrchestrationProfileConfig,
   templates: readonly EcoAgentTemplateConfig[],
-  options: { agentKeys?: readonly string[]; mainAllowedTools?: readonly string[] } = {},
+  options: {
+    agentKeys?: readonly string[];
+    /** Phase read-only cap list (plan/question). Not the merged SDK auto-approve list. */
+    phaseAllowedTools?: readonly string[];
+    mainAllowedTools?: readonly string[];
+  } = {},
 ): EcoRuntimeToolPermissionPolicy {
   const explicitAgentKeys = options.agentKeys ? new Set(options.agentKeys) : undefined;
   const templateById = new Map(templates.map((template) => [template.id, template]));
@@ -359,16 +349,18 @@ export function buildToolPermissionPolicyFromProfile(
     }
     agents[sdkKey] = resolveAgentToolPermission(agent, template);
   }
-  const cappedMainAllowedTools =
-    options.mainAllowedTools && options.mainAllowedTools.length > 0 ? options.mainAllowedTools : undefined;
-  const mainToolPolicy = cappedMainAllowedTools
-    ? capMainAgentToolPolicyForPhase(profile.mainAgent.tools, cappedMainAllowedTools)
-    : profile.mainAgent.tools;
+  const phaseCapTools =
+    options.phaseAllowedTools && options.phaseAllowedTools.length > 0
+      ? options.phaseAllowedTools
+      : undefined;
+  const mainToolPolicy = phaseCapTools
+    ? capEcoToolPolicyForPhase(profile.mainAgent.tools, phaseCapTools)
+    : materializeEcoToolPolicy(profile.mainAgent.tools);
   return {
     main: normalizeToolPermissionEntry(
       mainToolPolicy,
       [
-        ...(cappedMainAllowedTools ? [] : (options.mainAllowedTools ?? [])),
+        ...(phaseCapTools ? [] : (options.mainAllowedTools ?? [])),
         SDK_SKILL_TOOL_NAME,
         ...SDK_TASK_PROGRESS_TOOL_NAMES,
       ],
@@ -498,9 +490,8 @@ function buildSdkAgentDefinition(
   sessionSkills: readonly string[] = [],
   resolveModelId?: (agentKey: string, modelId: string) => string,
 ): Record<string, unknown> {
-  const toolPolicy = applyDelegationToolPolicy(
-    resolveAgentToolPolicy(agent, template),
-    template.allowDelegation,
+  const toolPolicy = materializeEcoToolPolicy(
+    applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation),
   );
   const mcpServers = resolveAssignedMcpServers(toolPolicy, [...template.mcpServers, ...agent.mcpServers]);
   const tools =
@@ -555,10 +546,11 @@ function normalizeToolPermissionEntry(
   extraAllowed: readonly string[] = [],
   assignedMcpServers: readonly string[] = [],
 ): EcoRuntimeToolPermissionEntry {
-  const effectiveBash = resolveEffectiveBashPolicy(policy);
+  const materialized = materializeEcoToolPolicy(policy);
+  const effectiveBash = resolveEffectiveBashPolicy(materialized);
   return {
-    allowed: allowedToolPatternsFromPolicy(policy, extraAllowed),
-    disallowed: uniqueToolPatterns(policy.disallowed),
+    allowed: allowedToolPatternsFromPolicy(materialized, extraAllowed),
+    disallowed: uniqueToolPatterns(materialized.disallowed),
     mcpServers: resolveAssignedMcpServers(policy, assignedMcpServers),
     bash: {
       ...effectiveBash,
@@ -569,8 +561,8 @@ function normalizeToolPermissionEntry(
         commandDenylist: uniqueToolPatterns(effectiveBash.commandDenylist),
       }),
     },
-    ...(policy.filesystem && { filesystem: { ...policy.filesystem } }),
-    ...(policy.network && { network: { ...policy.network } }),
+    ...(materialized.filesystem && { filesystem: { ...materialized.filesystem } }),
+    ...(materialized.network && { network: { ...materialized.network } }),
   };
 }
 
@@ -638,32 +630,6 @@ function relatedClaudeToolPatterns(patterns: readonly string[]): string[] {
 
 function hasAnyToolPattern(allowed: ReadonlySet<string>, tools: readonly string[]): boolean {
   return tools.some((tool) => allowed.has(tool));
-}
-
-function capMainAgentToolPolicyForPhase(
-  base: EcoToolPolicy,
-  mainAllowedTools: readonly string[],
-): EcoToolPolicy {
-  const allowedSet = new Set(mainAllowedTools);
-  const phaseAllowsBash = allowedSet.has("Bash");
-  const filesystem = base.filesystem ?? { read: "workspace" as const, write: "workspace" as const };
-  const effectiveBash = resolveEffectiveBashPolicy(base, { phaseAllowsBash });
-  return {
-    ...base,
-    allowed: [],
-    bash: effectiveBash,
-    ...(hasAnyToolPattern(allowedSet, SDK_FILESYSTEM_WRITE_TOOL_NAMES)
-      ? { filesystem }
-      : { filesystem: { ...filesystem, write: "none" as const } }),
-    ...(base.network
-      ? {
-          network: {
-            webSearch: allowedSet.has("WebSearch") && base.network.webSearch,
-            webFetch: allowedSet.has("WebFetch") && base.network.webFetch,
-          },
-        }
-      : {}),
-  };
 }
 
 function isDelegationToolPattern(pattern: string): boolean {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import os from "node:os";
 import type {
   PreCompactHookInput,
   PreToolUseHookInput,
@@ -839,7 +840,7 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
     { signal: new AbortController().signal },
   );
   expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Filesystem writes are disabled for this Eco agent.",
+    'Tool "Edit" is disallowed for main.',
   );
   expect(mainEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
     "Delegate the work to an enabled subagent via the Agent tool",
@@ -858,7 +859,7 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
     { signal: new AbortController().signal },
   );
   expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Bash is disabled for this Eco agent.",
+    'Tool "Bash" is disallowed for main.',
   );
   expect(mainBash.hookSpecificOutput?.permissionDecisionReason).toContain(
     "Delegate the work to an enabled subagent via the Agent tool",
@@ -879,11 +880,210 @@ test("createToolPermissionPreToolHook adds delegation guidance only to main agen
     { signal: new AbortController().signal },
   );
   expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).toContain(
-    "Filesystem writes are disabled for this Eco agent.",
+    'Tool "Edit" is disallowed for eco_coder.',
   );
   expect(subagentEdit.hookSpecificOutput?.permissionDecisionReason).not.toContain(
     "Delegate the work",
   );
+});
+
+test("createToolPermissionPreToolHook denies only explicitly disallowed tools in plan phase", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read", "Glob", "Grep"],
+        disallowed: ["Write", "Edit", "Bash"],
+        bash: { enabled: false },
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo" },
+  );
+  expect(hook).toBeDefined();
+
+  const bash = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "grep -R foo src" },
+      tool_use_id: "tool_plan_bash",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_plan_bash",
+    { signal: new AbortController().signal },
+  );
+  expect(bash.hookSpecificOutput?.permissionDecision).toBe("deny");
+  expect(bash.hookSpecificOutput?.permissionDecisionReason).toContain('Tool "Bash" is disallowed for main.');
+
+  const grep = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Grep",
+      tool_input: { pattern: "foo", path: "/repo/src" },
+      tool_use_id: "tool_plan_grep",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_plan_grep",
+    { signal: new AbortController().signal },
+  );
+  expect(grep.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook allows reads under implicit skill roots", async () => {
+  const skillRoot = `${os.homedir()}/.claude/skills/my-skill`;
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    {
+      workspacePath: "/repo/apps/desktop",
+      implicitReadAllowRoots: [skillRoot],
+    },
+  );
+  expect(hook).toBeDefined();
+
+  const skillRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: `${skillRoot}/references/guide.md` },
+      tool_use_id: "tool_skill_read",
+      session_id: "s1",
+      cwd: "/repo/apps/desktop",
+    } satisfies PreToolUseHookInput,
+    "tool_skill_read",
+    { signal: new AbortController().signal },
+  );
+  expect(skillRead.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook allows tilde paths under implicit skill roots", async () => {
+  const skillRoot = `${os.homedir()}/.claude/skills/my-skill`;
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    {
+      workspacePath: "/repo/apps/desktop",
+      implicitReadAllowRoots: [skillRoot],
+    },
+  );
+  expect(hook).toBeDefined();
+
+  const skillRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "~/.claude/skills/my-skill/references/guide.md" },
+      tool_use_id: "tool_skill_read_tilde",
+      session_id: "s1",
+      cwd: "/repo/apps/desktop",
+    } satisfies PreToolUseHookInput,
+    "tool_skill_read_tilde",
+    { signal: new AbortController().signal },
+  );
+  expect(skillRead.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook allows Glob from explore cwd when workspace is a subdirectory", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read", "Glob", "Grep"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo/apps/desktop" },
+  );
+  expect(hook).toBeDefined();
+
+  const exploreGlob = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Glob",
+      tool_input: { pattern: "**/*.ts", path: "/repo" },
+      tool_use_id: "tool_explore_glob",
+      session_id: "s1",
+      cwd: "/repo",
+      agent_type: "eco_explore",
+    } satisfies PreToolUseHookInput,
+    "tool_explore_glob",
+    { signal: new AbortController().signal },
+  );
+  expect(exploreGlob.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook allows Glob patterns when cwd is inside workspace", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Glob"],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "none" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo" },
+  );
+  expect(hook).toBeDefined();
+
+  const patternGlob = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Glob",
+      tool_input: { pattern: "src/**/*.ts", path: "**/*.ts" },
+      tool_use_id: "tool_pattern_glob",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_pattern_glob",
+    { signal: new AbortController().signal },
+  );
+  expect(patternGlob.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook skips path scope for extra_dirs read mode", async () => {
+  const hook = createToolPermissionPreToolHook(
+    {
+      main: {
+        allowed: ["Read"],
+        disallowed: [],
+        filesystem: { read: "extra_dirs", write: "none" },
+      },
+      agents: {},
+    },
+    { workspacePath: "/repo" },
+  );
+  expect(hook).toBeDefined();
+
+  const outsideRead = await hook!(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "/tmp/secret.txt" },
+      tool_use_id: "tool_extra_dirs",
+      session_id: "s1",
+      cwd: "/repo",
+    } satisfies PreToolUseHookInput,
+    "tool_extra_dirs",
+    { signal: new AbortController().signal },
+  );
+  expect(outsideRead.hookSpecificOutput).toBeUndefined();
 });
 
 test("createToolPermissionPreToolHook enforces structured bash filesystem and network policies", async () => {
@@ -950,7 +1150,9 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
-  expect(deniedWrite.hookSpecificOutput?.permissionDecisionReason).toContain("writes are disabled");
+  expect(deniedWrite.hookSpecificOutput?.permissionDecisionReason).toContain(
+    'Tool "Write" is disallowed for main.',
+  );
 
   const outsideRead = await hook!(
     {
@@ -966,7 +1168,7 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
   );
   expect(outsideRead.hookSpecificOutput).toMatchObject({
     hookEventName: "PreToolUse",
-    permissionDecision: "deny",
+    permissionDecision: "ask",
   });
   expect(outsideRead.hookSpecificOutput?.permissionDecisionReason).toContain("outside");
 
@@ -986,7 +1188,9 @@ test("createToolPermissionPreToolHook enforces structured bash filesystem and ne
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
   });
-  expect(disabledSearch.hookSpecificOutput?.permissionDecisionReason).toContain("WebSearch is disabled");
+  expect(disabledSearch.hookSpecificOutput?.permissionDecisionReason).toContain(
+    'Tool "WebSearch" is disallowed for main.',
+  );
 
   const allowedFetch = await hook!(
     {
@@ -1151,7 +1355,8 @@ test("createToolPermissionPreToolHook reports denied permissions for audit", asy
     {
       toolName: "Bash",
       toolUseId: "tool_audit",
-      reason: 'Tool "Bash" is disallowed for main.',
+      reason:
+        'Tool "Bash" is disallowed for main. This is the active Eco profile policy for the main orchestrator, not a transient error. Delegate the work to an enabled subagent via the Agent tool instead of retrying.',
       actor: "main",
     },
   ]);

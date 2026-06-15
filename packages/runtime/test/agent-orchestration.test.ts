@@ -178,7 +178,7 @@ test("resolveMainAgentHandsOnCapability mirrors the main agent tool policy enfor
   };
   expect(resolveMainAgentHandsOnCapability(restricted)).toEqual({
     canEditFiles: false,
-    canRunBash: false,
+    canRunBash: true,
   });
 
   const handsOn: EcoOrchestrationProfileConfig = {
@@ -345,20 +345,7 @@ test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles wi
       },
     },
   };
-  const mainAllowedTools = resolveMainAgentAllowedTools(handsOnProfile, [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "Write",
-    "Edit",
-    "Bash",
-    "WebSearch",
-    "WebFetch",
-  ]);
-  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate], {
-    mainAllowedTools,
-  });
+  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate]);
   expect(policy.main.bash?.enabled).toBe(true);
 });
 
@@ -376,20 +363,7 @@ test("buildToolPermissionPolicyFromProfile enables bash for legacy allowed Bash 
       },
     },
   };
-  const mainAllowedTools = resolveMainAgentAllowedTools(legacyCodingProfile, [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "Write",
-    "Edit",
-    "Bash",
-    "WebSearch",
-    "WebFetch",
-  ]);
-  const policy = buildToolPermissionPolicyFromProfile(legacyCodingProfile, [researchTemplate], {
-    mainAllowedTools,
-  });
+  const policy = buildToolPermissionPolicyFromProfile(legacyCodingProfile, [researchTemplate]);
   expect(policy.main.bash?.enabled).toBe(true);
 });
 
@@ -408,69 +382,87 @@ test("buildToolPermissionPolicyFromProfile disables main writes during planning 
       },
     },
   };
-  const mainAllowedTools = resolveMainAgentAllowedTools(codingProfile, [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "AskUserQuestion",
-  ]);
   const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
-    mainAllowedTools,
+    phaseAllowedTools: [
+      "Agent",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "AskUserQuestion",
+    ],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
   expect(policy.main.allowed).not.toContain("Write");
-  expect(policy.main.filesystem).toEqual({ read: "workspace", write: "none" });
+  expect(policy.main.disallowed).toEqual(
+    expect.arrayContaining(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"]),
+  );
+  expect(policy.main.filesystem).toEqual({ read: "workspace", write: "workspace" });
   expect(policy.main.bash?.enabled).toBe(false);
 });
 
 test("buildToolPermissionPolicyFromProfile caps universal profile tools during planning phase", () => {
-  const mainAllowedTools = resolveMainAgentAllowedTools(profile, [
-    "Agent",
-    "Read",
-    "Glob",
-    "Grep",
-    "WebSearch",
-    "WebFetch",
-    "AskUserQuestion",
-  ]);
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
-    mainAllowedTools,
+    phaseAllowedTools: [
+      "Agent",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "AskUserQuestion",
+    ],
   });
   expect(policy.main.allowed).not.toContain("ExitPlanMode");
   expect(policy.main.allowed).not.toContain("Write");
 });
 
+test("buildToolPermissionPolicyFromProfile does not phase-cap network during execution", () => {
+  const handsOnProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: [],
+        disallowed: [],
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const policy = buildToolPermissionPolicyFromProfile(handsOnProfile, [researchTemplate]);
+  expect(policy.main.disallowed).not.toContain("WebSearch");
+  expect(policy.main.disallowed).not.toContain("WebFetch");
+  expect(policy.main.bash?.enabled).toBe(true);
+});
+
 test("buildToolPermissionPolicyFromProfile resolves main and dynamic agent tools", () => {
-  const mainAllowedTools = resolveMainAgentAllowedTools(profile, [
-    "Agent",
-    "TaskList",
-    "TaskOutput",
-    "Skill",
-    "Read",
-    "Glob",
-    "Grep",
-    "LS",
-    "NotebookRead",
-    "WebSearch",
-    "WebFetch",
-    "AskUserQuestion",
-  ]);
   const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate], {
     agentKeys: ["eco_researcher"],
-    mainAllowedTools,
+    phaseAllowedTools: [
+      "Agent",
+      "TaskList",
+      "TaskOutput",
+      "Skill",
+      "Read",
+      "Glob",
+      "Grep",
+      "LS",
+      "NotebookRead",
+      "WebSearch",
+      "WebFetch",
+      "AskUserQuestion",
+    ],
   });
 
   expect(policy.main.allowed).toEqual(
     expect.arrayContaining(["Skill", "TaskCreate", "TaskUpdate", "TodoWrite"]),
   );
   expect(policy.main.mcpServers).toEqual(["browser", "sources"]);
-  expect(policy.main).toMatchObject({
-    disallowed: ["Write"],
-    filesystem: { read: "workspace", write: "none" },
-  });
+  expect(policy.main.disallowed).toEqual(
+    expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),
+  );
   expect(policy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "WebSearch", "Skill", "LS", "NotebookRead"],
     disallowed: ["Bash", "Agent", "Task", "TaskList", "TaskOutput"],

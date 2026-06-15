@@ -68,7 +68,17 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [busy, highlightIndex, onApprove, onDeny, options]);
 
-  const title = request.description?.trim() || request.reason;
+  const title =
+    request.description?.trim() ||
+    request.reason ||
+    (request.filesystemTool
+      ? `允许在工作区外执行 ${request.filesystemTool}？`
+      : "需要确认工具权限");
+  const runningLabel = request.filesystemTool
+    ? `正在请求 ${request.filesystemTool}`
+    : `正在运行 ${request.command}`;
+  const panelLabel = request.filesystemTool ? "工具读取确认" : "Bash 执行确认";
+  const detail = request.filesystemPath ?? request.command;
 
   return (
     <div className="bash-approval-shell">
@@ -76,18 +86,20 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
         <span className="bash-approval-mini-icon">
           <Terminal size={16} />
         </span>
-        <span className="bash-approval-running-label">正在运行 {request.command}</span>
+        <span className="bash-approval-running-label">{runningLabel}</span>
       </div>
 
-      <section className="bash-approval-panel codex-style" aria-label="Bash 执行确认">
+      <section className="bash-approval-panel codex-style" aria-label={panelLabel}>
         <header className="bash-approval-top">
           <p className="bash-approval-title">{title}</p>
-          <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
-            {formatRiskLevel(request.riskLevel)} · {request.riskScore}
-          </span>
+          {!request.filesystemTool ? (
+            <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
+              {formatRiskLevel(request.riskLevel)} · {request.riskScore}
+            </span>
+          ) : null}
         </header>
 
-        <pre className="bash-approval-command">{request.command}</pre>
+        <pre className="bash-approval-command">{detail}</pre>
 
         <ul className="bash-approval-option-list" role="listbox" aria-label="Bash 执行选项">
           {options.map((option, optionIndex) => {

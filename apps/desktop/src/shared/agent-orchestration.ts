@@ -153,6 +153,7 @@ const CODER_TOOLS: ToolPolicy = {
 const REVIEW_TOOLS: ToolPolicy = {
   allowed: [],
   disallowed: [...CLAUDE_WRITE_TOOLS, ...CLAUDE_TASK_PROGRESS_TOOLS],
+  bash: { enabled: true },
   filesystem: { read: "workspace", write: "none" },
   network: { webSearch: false, webFetch: false },
 };

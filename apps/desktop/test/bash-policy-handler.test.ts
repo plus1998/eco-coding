@@ -33,3 +33,15 @@ test("allow_all mode still denies rm -rf /", () => {
   });
   expect(decision.action).toBe("deny");
 });
+
+test("plan phase denies bash when phaseAllowsBash is false", () => {
+  const decision = evaluateThreadBashPermission({
+    command: "grep -R foo .",
+    cwd,
+    workspacePath: workspace,
+    bashReviewMode: "allow_all",
+    phaseAllowsBash: false,
+  });
+  expect(decision.action).toBe("deny");
+  expect(decision.matchedRule).toBe("phase_bash_disabled");
+});

@@ -50,11 +50,25 @@ test("resolveSdkSessionSkillConfig uses project skills and explicit user prompt 
   expect(
     resolveSdkSessionSkillConfig("default", {
       projectNames: ["project-skill"],
+      userSkillNames: ["user-skill"],
       explicitUser: ["user-skill"],
     }),
   ).toEqual({
-    settingSources: ["project"],
+    settingSources: ["project", "user"],
     skills: ["project-skill", "user-skill"],
+  });
+});
+
+test("resolveSdkSessionSkillConfig enables user source when user skills are discovered", () => {
+  expect(
+    resolveSdkSessionSkillConfig("default", {
+      projectNames: ["project-skill"],
+      userSkillNames: ["vue-best-practices"],
+      explicitUser: [],
+    }),
+  ).toEqual({
+    settingSources: ["project", "user"],
+    skills: ["project-skill", "vue-best-practices"],
   });
 });
 

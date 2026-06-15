@@ -2009,7 +2009,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(capturedOptions[0]?.allowedTools).not.toContain("Write");
   expect(capturedOptions[0]?.permissionMode).toBe("plan");
   expect(capturedOptions[0]?.disallowedTools).toEqual(
-    expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit"]),
+    expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]),
   );
   expect(capturedOptions[0]?.planModeInstructions).toBeUndefined();
   expect(capturedOptions[0]?.allowedTools).toContain("WebSearch");

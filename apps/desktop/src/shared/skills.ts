@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { OrchestrationProfile } from "./agent-orchestration";
 
 export type SkillSource = "user" | "project";
@@ -109,11 +110,35 @@ export function filterExplicitUserSkillNames(
 export type SdkSessionSkillsScope = "planning" | "default";
 
 /** Execution uses project settings only so ~/.claude user defaults (e.g. gpt-5.4) do not override Eco proxy aliases on subagent LLM calls. */
+export function resolveImplicitSkillReadRoots(
+  homedir: string,
+  workspacePath?: string,
+  skills: readonly Pick<SkillInfo, "directory">[] = [],
+): string[] {
+  const roots = new Set<string>();
+  for (const rel of USER_SKILL_ROOTS) {
+    roots.add(path.join(homedir, rel));
+  }
+  if (workspacePath?.trim()) {
+    const resolvedWorkspace = path.resolve(workspacePath.trim());
+    for (const rel of PROJECT_SKILL_ROOTS) {
+      roots.add(path.join(resolvedWorkspace, rel));
+    }
+  }
+  for (const skill of skills) {
+    if (skill.directory.trim()) {
+      roots.add(path.resolve(skill.directory.trim()));
+    }
+  }
+  return [...roots];
+}
+
 export function resolveSdkSessionSkillConfig(
   scope: SdkSessionSkillsScope,
   input: {
     projectNames: readonly string[];
     explicitUser: readonly string[];
+    userSkillNames?: readonly string[];
   },
 ): { settingSources: Array<"user" | "project">; skills: string[] } {
   if (scope === "planning") {
@@ -123,9 +148,12 @@ export function resolveSdkSessionSkillConfig(
       skills,
     };
   }
+  const userSkillNames = input.userSkillNames ?? [];
+  const skills = mergeSkillNames(input.projectNames, userSkillNames, input.explicitUser);
+  const usesUserSource = userSkillNames.length > 0 || input.explicitUser.length > 0;
   return {
-    settingSources: ["project"],
-    skills: mergeSkillNames(input.projectNames, input.explicitUser),
+    settingSources: usesUserSource ? (["project", "user"] as const) : (["project"] as const),
+    skills,
   };
 }
 
