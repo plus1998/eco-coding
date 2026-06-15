@@ -1,4 +1,4 @@
-import { AlertTriangle, DollarSign, Folder, GitBranch, HardDrive, ListTodo, Package, X } from "lucide-react";
+import { AlertTriangle, DollarSign, HardDrive, ListTodo, X } from "lucide-react";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import {
   type CSSProperties,
@@ -32,6 +32,16 @@ import {
 import { ContextCard } from "./ContextCard";
 import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { WorkspaceGitSection } from "./WorkspaceGitSection";
+import type {
+  GitSettingsSnapshot,
+  GitWorkingTreeStatus,
+  RoutePricingHint,
+  RuntimeAgentRole,
+  RuntimeRoleRouteConfig,
+  SubagentEnabledSettings,
+} from "../shared/ipc";
+import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -43,8 +53,20 @@ interface ThreadInfoPanelProps {
   threadId?: string;
   workspace?: WorkspaceInfo;
   workspacePath?: string;
-  gitBranch?: string;
-  dirtyFileCount?: number;
+  workspaceLabel?: string;
+  gitStatus?: GitWorkingTreeStatus;
+  gitBusy?: boolean;
+  commitDisabled?: boolean;
+  profileId?: string;
+  agentModelLabels?: ComposerAgentModelLabel[];
+  routes?: readonly RuntimeRoleRouteConfig[];
+  routePricingHints?: RoutePricingHint[];
+  subagentEnabled?: SubagentEnabledSettings;
+  gitSettings?: GitSettingsSnapshot;
+  onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
+  onOpenGitSettings?: () => void;
+  onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
+  onCommitSuccess?: () => void | Promise<void>;
   todos: CoderTodoItem[];
   workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
@@ -679,19 +701,44 @@ function ThreadInfoFloatStack({
   );
 }
 
+function hasProgressInfo(todos: CoderTodoItem[], workspaceDirtyFiles?: string[]): boolean {
+  if ((workspaceDirtyFiles?.length ?? 0) > 0) {
+    return true;
+  }
+  return todos.some(
+    (todo) => todo.status === "pending" || todo.status === "running" || todo.status === "blocked",
+  );
+}
+
 export function ThreadInfoPanel({
   threadId,
   workspace,
   workspacePath,
-  gitBranch,
-  dirtyFileCount,
+  workspaceLabel,
+  gitStatus,
+  gitBusy,
+  commitDisabled,
+  profileId,
+  agentModelLabels,
+  routes,
+  routePricingHints,
+  subagentEnabled,
+  gitSettings,
+  onCheckoutGitBranch,
+  onOpenGitSettings,
+  onSaveCommitRolePreference,
+  onCommitSuccess,
   todos,
   workspaceDirtyFiles,
   threadStatus,
   usageSummary,
   agentDisplayNames,
 }: ThreadInfoPanelProps) {
-  const projectLabel = workspacePath?.split("/").filter(Boolean).pop() ?? workspace?.name ?? "未打开项目";
+  const projectLabel =
+    workspaceLabel?.trim() ||
+    workspacePath?.split("/").filter(Boolean).pop() ||
+    workspace?.name ||
+    "未打开项目";
   const billing = usageSummary?.billing;
   const tokenBadge = billing
     ? formatUsageBadge({
@@ -706,8 +753,7 @@ export function ThreadInfoPanel({
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
-  const showProgress =
-    todos.length > 0 || (workspaceDirtyFiles?.length ?? 0) > 0;
+  const showProgress = hasProgressInfo(todos, workspaceDirtyFiles);
 
   return (
     <aside className="thread-info-panel" aria-label="会话信息">
@@ -718,37 +764,25 @@ export function ThreadInfoPanel({
             : "thread-info-panel-scroll"
         }
       >
-        <section className="thread-info-section">
+        <section className="thread-info-section thread-info-workspace-section">
           <h3 className="thread-info-heading">工作区</h3>
-          <ul className="thread-info-list">
-            <li>
-              <Folder size={14} aria-hidden />
-              <span className="thread-info-value" title={workspacePath}>
-                {projectLabel}
-              </span>
-            </li>
-            {workspace === undefined ? (
-              <li className="thread-info-muted">正在检测 Git…</li>
-            ) : workspace.isGitRepository ? (
-              <li>
-                <GitBranch size={14} aria-hidden />
-                <span className="thread-info-value">
-                  {gitBranch ?? workspace.branch ?? "detached"}
-                  {typeof dirtyFileCount === "number" && dirtyFileCount > 0
-                    ? ` · ${dirtyFileCount} 处未提交`
-                    : ""}
-                </span>
-              </li>
-            ) : (
-              <li className="thread-info-muted">非 Git 仓库</li>
-            )}
-            {threadStatus ? (
-              <li>
-                <Package size={14} aria-hidden />
-                <span className="thread-info-value">状态：{threadStatus}</span>
-              </li>
-            ) : null}
-          </ul>
+          <WorkspaceGitSection
+            {...(workspacePath && { workspacePath })}
+            workspaceLabel={projectLabel}
+            {...(gitStatus && { gitStatus })}
+            {...(gitBusy !== undefined && { gitBusy })}
+            {...(commitDisabled !== undefined && { commitDisabled })}
+            {...(profileId && { profileId })}
+            {...(agentModelLabels && { agentModelLabels })}
+            {...(routes && { routes })}
+            {...(routePricingHints && { routePricingHints })}
+            {...(subagentEnabled && { subagentEnabled })}
+            {...(gitSettings && { gitSettings })}
+            {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
+            {...(onOpenGitSettings && { onOpenGitSettings })}
+            {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
+            {...(onCommitSuccess && { onCommitSuccess })}
+          />
         </section>
 
         {showProgress ? (

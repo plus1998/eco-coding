@@ -1,6 +1,5 @@
-import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2 } from "lucide-react";
 import {
-  type FormEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -18,10 +17,12 @@ import type {
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import {
-  resolveCommitMessageRoute,
-  resolveDefaultCommitMessageRole,
-} from "../shared/resolve-commit-message-route";
+  buildCommitModelOptions,
+  findCommitModelOptionForRole,
+} from "../shared/commit-model-options";
+import { resolveCommitMessageRoute } from "../shared/resolve-commit-message-route";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
+import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
 
 export type CommitDialogAction = "commit" | "commit-push" | "push";
 
@@ -36,13 +37,11 @@ interface GitCommitDialogProps {
   subagentEnabled: SubagentEnabledSettings;
   gitSettings: GitSettingsSnapshot;
   busy?: boolean;
+  disabled?: boolean;
+  onCheckoutBranch?: (branch: string) => void | Promise<void>;
   onClose: () => void;
-  onSaveRolePreference: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
+  onSaveRolePreference: (role: RuntimeAgentRole) => void | Promise<void>;
   onSuccess: () => void | Promise<void>;
-}
-
-function subagentLabels(labels: ComposerAgentModelLabel[]): ComposerAgentModelLabel[] {
-  return labels.filter((label) => label.subagentRole);
 }
 
 export function GitCommitDialog({
@@ -56,84 +55,79 @@ export function GitCommitDialog({
   subagentEnabled,
   gitSettings,
   busy,
+  disabled,
+  onCheckoutBranch,
   onClose,
   onSaveRolePreference,
   onSuccess,
 }: GitCommitDialogProps) {
   const [message, setMessage] = useState("");
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<RuntimeAgentRole | "auto">("auto");
+  const [selectedRole, setSelectedRole] = useState<RuntimeAgentRole | undefined>();
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const enabledRoles = useMemo(
-    () => new Set<SubagentRole>(SUBAGENT_ROLES.filter((role) => subagentEnabled[role])),
-    [subagentEnabled],
+  const configuredSubagentRoles = useMemo(() => {
+    const roles = new Set<SubagentRole>();
+    for (const route of routes) {
+      if (route.role !== "planner" && (SUBAGENT_ROLES as readonly string[]).includes(route.role)) {
+        roles.add(route.role as SubagentRole);
+      }
+    }
+    return roles;
+  }, [routes]);
+
+  const modelOptions = useMemo(
+    () => buildCommitModelOptions(routes, routePricingHints, configuredSubagentRoles),
+    [routes, routePricingHints, configuredSubagentRoles],
   );
 
-  const subagentRoutes = useMemo(
-    () => routes.filter((route) => route.role !== "planner" && enabledRoles.has(route.role as SubagentRole)),
-    [routes, enabledRoles],
+  const selectedOption = useMemo(
+    () => findCommitModelOptionForRole(modelOptions, selectedRole, routes, routePricingHints),
+    [modelOptions, selectedRole, routes, routePricingHints],
   );
+
+  const modelLabel = selectedOption?.modelLabel ?? "未配置模型";
 
   const savedRole = gitSettings.commitMessageRoleByProfileId[profileId] ?? "auto";
 
   useEffect(() => {
     if (!open) {
+      setModelMenuOpen(false);
       return;
     }
     setMessage("");
     setIncludeUnstaged(true);
     setError(undefined);
     setModelMenuOpen(false);
-    const resolved =
-      savedRole !== "auto"
-        ? savedRole
-        : resolveDefaultCommitMessageRole(routes, routePricingHints, enabledRoles) ?? "auto";
-    setSelectedRole(resolved);
-  }, [open, profileId, savedRole, routes, routePricingHints, enabledRoles]);
-
-  const selectedRoute = useMemo(
-    () => resolveCommitMessageRoute(routes, routePricingHints, enabledRoles, selectedRole),
-    [routes, routePricingHints, enabledRoles, selectedRole],
-  );
-
-  const modelLabel = useMemo(() => {
-    const labels = subagentLabels(agentModelLabels);
-    const match = labels.find((label) => label.role === selectedRoute?.role);
-    if (match) {
-      return match.title;
-    }
-    if (selectedRoute) {
-      return `${selectedRoute.role} · ${selectedRoute.modelId}`;
-    }
-    return "未配置子代理";
-  }, [agentModelLabels, selectedRoute]);
-
-  const pricingLabel = useMemo(() => {
-    const hint = routePricingHints.find((entry) => entry.role === selectedRoute?.role);
-    return hint?.pricingLabel ?? (hint?.pricingResolved ? undefined : "定价未知");
-  }, [routePricingHints, selectedRoute]);
+    const resolved = resolveCommitMessageRoute(
+      routes,
+      routePricingHints,
+      configuredSubagentRoles,
+      savedRole,
+    );
+    const matched = findCommitModelOptionForRole(modelOptions, resolved?.role, routes, routePricingHints);
+    setSelectedRole(matched?.role ?? resolved?.role);
+  }, [open]);
 
   const handleSelectRole = useCallback(
-    async (role: RuntimeAgentRole | "auto") => {
+    (role: RuntimeAgentRole) => {
       setSelectedRole(role);
       setModelMenuOpen(false);
-      await onSaveRolePreference(role);
+      void onSaveRolePreference(role);
     },
     [onSaveRolePreference],
   );
 
   const runAction = useCallback(
     async (action: CommitDialogAction) => {
-      if (!window.eco || submitting) {
+      if (!window.eco || submitting || disabled) {
         return;
       }
       setSubmitting(true);
       setError(undefined);
       try {
-        const rolePreference = selectedRole === "auto" ? undefined : selectedRole;
         if (action === "push") {
           await window.eco.pushGitChanges({
             workspacePath,
@@ -146,7 +140,7 @@ export function GitCommitDialog({
             profileId,
             includeUnstaged,
             ...(trimmed && { message: trimmed }),
-            ...(rolePreference && { role: rolePreference }),
+            ...(!trimmed && selectedRole && { role: selectedRole }),
           });
           if (!trimmed && result.generated) {
             setMessage(result.message);
@@ -168,6 +162,7 @@ export function GitCommitDialog({
     },
     [
       submitting,
+      disabled,
       selectedRole,
       message,
       workspacePath,
@@ -186,15 +181,19 @@ export function GitCommitDialog({
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault();
-        void runAction("commit-push");
+        void runAction("commit");
       }
       if (event.key === "Escape") {
+        if (modelMenuOpen) {
+          setModelMenuOpen(false);
+          return;
+        }
         onClose();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, runAction]);
+  }, [open, onClose, runAction, modelMenuOpen]);
 
   if (!open) {
     return null;
@@ -203,134 +202,175 @@ export function GitCommitDialog({
   const insertions = gitStatus?.insertions ?? 0;
   const deletions = gitStatus?.deletions ?? 0;
   const canPush = Boolean(gitStatus?.isGitRepository);
-  const canCommit = Boolean(gitStatus?.canCommit);
+  const canCommit = Boolean(gitStatus?.canCommit) && !disabled;
+  const canPushOnly = canPush && (gitStatus?.aheadCount ?? 0) > 0;
+  const branchLabel = gitStatus?.branch ?? "detached";
+  const modelPickerDisabled = submitting || busy || disabled || modelOptions.length === 0;
+  const showModelPicker = message.trim().length === 0;
 
   return createPortal(
     <div className="git-commit-dialog-backdrop" onMouseDown={onClose}>
       <div
-        className="git-commit-dialog"
+        className="git-commit-popover"
         role="dialog"
         aria-label="提交或推送"
-        onMouseDown={(event) => event.stopPropagation()}
-        onSubmit={(event: FormEvent) => event.preventDefault()}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+          if (!(event.target as HTMLElement).closest(".git-commit-model-select-wrap")) {
+            setModelMenuOpen(false);
+          }
+        }}
       >
-        <header className="git-commit-dialog-header">
-          <div className="git-commit-dialog-branch">
-            <GitBranch size={14} aria-hidden />
-            <span>{gitStatus?.branch ?? "detached"}</span>
-            <ChevronDown size={12} aria-hidden />
+        <header className="git-commit-popover-header">
+          <div className="git-commit-popover-header-pickers">
+            {gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch ? (
+              <label className="git-commit-popover-branch">
+                <GitBranch size={14} strokeWidth={1.75} aria-hidden />
+                <select
+                  className="git-commit-popover-branch-select"
+                  value={gitStatus.branch ?? ""}
+                  disabled={submitting || busy}
+                  aria-label="切换分支"
+                  onChange={(event) => void onCheckoutBranch(event.target.value)}
+                >
+                  {gitStatus.branches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+                <span className="git-commit-popover-branch-label">{branchLabel}</span>
+                <ChevronDown size={12} strokeWidth={2} aria-hidden />
+              </label>
+            ) : (
+              <div className="git-commit-popover-branch">
+                <GitBranch size={14} strokeWidth={1.75} aria-hidden />
+                <span>{branchLabel}</span>
+                <ChevronDown size={12} strokeWidth={2} aria-hidden />
+              </div>
+            )}
+
+            {showModelPicker ? (
+              <div className="git-commit-model-select-wrap">
+                <button
+                  type="button"
+                  className="git-commit-popover-branch git-commit-popover-model-trigger"
+                  disabled={modelPickerDisabled}
+                  aria-expanded={modelMenuOpen}
+                  aria-haspopup="listbox"
+                  aria-label="生成模型"
+                  onClick={() => setModelMenuOpen((current) => !current)}
+                >
+                  {selectedOption ? (
+                    <CommitModelProviderDot color={selectedOption.providerColor} label={selectedOption.providerName} />
+                  ) : (
+                    <span className="git-commit-model-provider-dot is-empty" aria-hidden />
+                  )}
+                  <span className="git-commit-popover-branch-label">{modelLabel}</span>
+                  <ChevronDown
+                    size={12}
+                    strokeWidth={2}
+                    className={modelMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
+                    aria-hidden
+                  />
+                </button>
+                {modelMenuOpen ? (
+                  <ul className="git-commit-model-menu" role="listbox" aria-label="生成模型">
+                    {modelOptions.map((option) => {
+                      const isActive = option.role === selectedRole;
+                      return (
+                        <li key={option.id}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={isActive}
+                            className={isActive ? "is-active" : undefined}
+                            title={option.hint?.pricingLabel ?? `${option.providerName} · ${option.modelId}`}
+                            onClick={() => handleSelectRole(option.role)}
+                          >
+                            <CommitModelProviderDot color={option.providerColor} label={option.providerName} />
+                            <span className="git-commit-model-menu-label">{option.modelLabel}</span>
+                            <CommitModelPricingCompact hint={option.hint} />
+                            {isActive ? <Check size={14} aria-hidden /> : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          <div className="git-commit-dialog-stats" aria-label="变更行数">
+
+          <div className="git-commit-popover-stats" aria-label="变更行数">
             <span className="git-commit-stat-add">+{insertions}</span>
             <span className="git-commit-stat-del">-{deletions}</span>
           </div>
-          <button type="button" className="git-commit-dialog-close" aria-label="关闭" onClick={onClose}>
-            <X size={14} />
-          </button>
         </header>
 
-        <textarea
-          className="git-commit-dialog-message"
-          value={message}
-          placeholder="提交信息（留空将自动生成）…"
-          rows={4}
-          disabled={submitting || busy}
-          onChange={(event) => setMessage(event.target.value)}
-        />
+        <div className="git-commit-popover-body">
+          <textarea
+            className="git-commit-popover-message"
+            value={message}
+            placeholder="提交信息（留空将自动生成）…"
+            rows={3}
+            disabled={submitting || busy || disabled}
+            onChange={(event) => {
+              const next = event.target.value;
+              setMessage(next);
+              if (next.trim().length > 0) {
+                setModelMenuOpen(false);
+              }
+            }}
+            autoFocus
+          />
 
-        <div className="git-commit-dialog-model-row">
-          <span className="git-commit-dialog-model-label">生成模型</span>
-          <div className="git-commit-model-select-wrap">
-            <button
-              type="button"
-              className="git-commit-model-select"
-              disabled={submitting || busy || subagentRoutes.length === 0}
-              aria-expanded={modelMenuOpen}
-              onClick={() => setModelMenuOpen((current) => !current)}
-            >
-              <span>{modelLabel}</span>
-              {pricingLabel ? <span className="git-commit-model-pricing">{pricingLabel}</span> : null}
-              <ChevronDown size={12} aria-hidden />
-            </button>
-            {modelMenuOpen ? (
-              <ul className="git-commit-model-menu" role="listbox">
-                <li>
-                  <button
-                    type="button"
-                    className={selectedRole === "auto" ? "is-active" : undefined}
-                    onClick={() => void handleSelectRole("auto")}
-                  >
-                    <span>自动（最便宜子代理）</span>
-                    {selectedRole === "auto" ? <Check size={14} /> : null}
-                  </button>
-                </li>
-                {subagentRoutes.map((route) => {
-                  const label = subagentLabels(agentModelLabels).find((entry) => entry.role === route.role);
-                  const hint = routePricingHints.find((entry) => entry.role === route.role);
-                  return (
-                    <li key={route.role}>
-                      <button
-                        type="button"
-                        className={selectedRole === route.role ? "is-active" : undefined}
-                        onClick={() => void handleSelectRole(route.role)}
-                      >
-                        <span>{label?.title ?? `${route.role} · ${route.modelId}`}</span>
-                        {hint?.pricingLabel ? (
-                          <span className="git-commit-model-pricing">{hint.pricingLabel}</span>
-                        ) : null}
-                        {selectedRole === route.role ? <Check size={14} /> : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-          </div>
+          <label className="git-commit-popover-checkbox">
+            <input
+              type="checkbox"
+              checked={includeUnstaged}
+              disabled={submitting || busy || disabled}
+              onChange={(event) => setIncludeUnstaged(event.target.checked)}
+            />
+            <span>包含未暂存的更改</span>
+          </label>
+
+          {error ? <p className="git-commit-popover-error">{error}</p> : null}
         </div>
 
-        <label className="git-commit-dialog-checkbox">
-          <input
-            type="checkbox"
-            checked={includeUnstaged}
-            disabled={submitting || busy}
-            onChange={(event) => setIncludeUnstaged(event.target.checked)}
-          />
-          <span>包含未暂存的更改</span>
-        </label>
-
-        {error ? <p className="git-commit-dialog-error">{error}</p> : null}
-
-        <ul className="git-commit-dialog-actions">
+        <ul className="git-commit-popover-actions">
           <li>
             <button
               type="button"
+              className="git-commit-popover-action"
               disabled={!canCommit || submitting || busy}
               onClick={() => void runAction("commit")}
             >
-              <GitCommitHorizontal size={14} aria-hidden />
+              <GitCommitHorizontal size={15} strokeWidth={1.75} aria-hidden />
               <span>提交</span>
-              {submitting ? <Loader2 size={14} className="spinning" aria-hidden /> : null}
+              <kbd className="git-commit-popover-shortcut">⌘↩</kbd>
+              {submitting ? <Loader2 size={14} className="spinning git-commit-popover-spinner" aria-hidden /> : null}
             </button>
           </li>
           <li>
             <button
               type="button"
-              className="is-primary"
+              className="git-commit-popover-action"
               disabled={!canCommit || submitting || busy}
               onClick={() => void runAction("commit-push")}
             >
-              <CloudUpload size={14} aria-hidden />
+              <CloudUpload size={15} strokeWidth={1.75} aria-hidden />
               <span>提交并推送</span>
-              <kbd>⌘↩</kbd>
             </button>
           </li>
           <li>
             <button
               type="button"
-              disabled={!canPush || submitting || busy || (gitStatus?.aheadCount ?? 0) <= 0}
+              className="git-commit-popover-action"
+              disabled={!canPushOnly || submitting || busy}
               onClick={() => void runAction("push")}
             >
-              <CloudUpload size={14} aria-hidden />
+              <CloudUpload size={15} strokeWidth={1.75} aria-hidden />
               <span>推送</span>
             </button>
           </li>

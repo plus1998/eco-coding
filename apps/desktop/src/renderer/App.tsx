@@ -32,9 +32,7 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { ComposerEnvironmentPopover } from "./ComposerEnvironmentPopover";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
-import { GitCommitDialog } from "./GitCommitDialog";
 import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -316,14 +314,12 @@ function App() {
   const [workspaceDirtyFiles, setWorkspaceDirtyFiles] = useState<string[]>([]);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
-  const [rollbackBusy, setRollbackBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
   const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
-  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!window.eco) {
@@ -882,14 +878,11 @@ function App() {
       setGitStatus(undefined);
       return;
     }
-    setGitStatusBusy(true);
     try {
       const status = await window.eco.getGitStatus(currentProjectPath);
       setGitStatus(status);
     } catch {
       setGitStatus(undefined);
-    } finally {
-      setGitStatusBusy(false);
     }
   }, [currentProjectPath]);
 
@@ -1140,7 +1133,6 @@ function App() {
     activeThread?.status === "running" ||
     activeThread?.status === "queued" ||
     activeThread?.status === "awaiting_plan";
-  const canRollbackThread = activeThread?.status === "completed" || activeThread?.status === "idle";
 
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
@@ -1800,23 +1792,6 @@ function App() {
       await performCancel();
     } catch (caught) {
       setError(errorMessage(caught));
-    }
-  }
-
-  async function rollbackToActiveThread() {
-    if (!activeThread || !window.eco) {
-      return;
-    }
-    setError(undefined);
-    setRollbackBusy(true);
-    try {
-      await window.eco.rollbackToThread(activeThread.id);
-      setThreads(await window.eco.listThreads());
-      setWorkspaceDirtyFiles([]);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setRollbackBusy(false);
     }
   }
 
@@ -2574,20 +2549,6 @@ function App() {
     />
   );
 
-  const composerEnvironmentControl = currentProjectPath ? (
-    <ComposerEnvironmentPopover
-      workspacePath={currentProjectPath}
-      workspaceLabel={currentProjectName}
-      {...(gitStatus && { gitStatus })}
-      gitBusy={gitStatusBusy}
-      commitDisabled={activeThread?.status === "running" || activeThread?.status === "queued"}
-      onRefresh={() => void refreshGitStatus()}
-      onCheckoutBranch={handleGitCheckoutBranch}
-      onOpenCommitDialog={() => setCommitDialogOpen(true)}
-      onOpenGitSettings={openGitSettings}
-    />
-  ) : null;
-
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
@@ -2666,7 +2627,6 @@ function App() {
                     {composerAgentModelsControl}
                   </div>
                   <div className="composer-footer-row composer-footer-config-row">
-                    {composerEnvironmentControl}
                     {composerRuntimeConfig ? (
                       <ComposerPlanModeToggle
                         planModeEnabled={composerRuntimeConfig.planModeEnabled}
@@ -2687,7 +2647,6 @@ function App() {
                 </div>
               ) : (
                 <div className="composer-footer-row composer-footer-config-row">
-                  {composerEnvironmentControl}
                   {composerRuntimeConfig ? (
                     <ComposerPlanModeToggle
                       planModeEnabled={composerRuntimeConfig.planModeEnabled}
@@ -2749,7 +2708,6 @@ function App() {
           <div className="composer-context-bar">
             {composerRouteControl}
             {composerAgentModelsControl}
-            {composerEnvironmentControl}
           </div>
         ) : null}
       </div>
@@ -2832,18 +2790,6 @@ function App() {
                         aria-label="重试此次请求"
                       >
                         <RefreshCw size={15} className={retryBusy ? "spinning" : undefined} />
-                      </button>
-                    ) : null}
-                    {canRollbackThread ? (
-                      <button
-                        type="button"
-                        className="activity-icon-button"
-                        onClick={() => void rollbackToActiveThread()}
-                        disabled={rollbackBusy}
-                        title="撤销此对话之后的已应用变更"
-                        aria-label="回滚到此对话"
-                      >
-                        <RotateCcw size={15} className={rollbackBusy ? "spinning" : undefined} />
                       </button>
                     ) : null}
                   </div>
@@ -2988,10 +2934,20 @@ function App() {
           threadStatus={activeThread.status}
           {...(projectWorkspace && { workspace: projectWorkspace })}
           {...(currentProjectPath && { workspacePath: currentProjectPath })}
-          {...(projectWorkspace?.branch && { gitBranch: projectWorkspace.branch })}
-          {...(projectWorkspace?.dirtyFileCount !== undefined && {
-            dirtyFileCount: projectWorkspace.dirtyFileCount,
-          })}
+          workspaceLabel={currentProjectName}
+          {...(gitStatus && { gitStatus })}
+          gitBusy={gitStatusBusy}
+          commitDisabled={activeThread.status === "running" || activeThread.status === "queued"}
+          onCheckoutGitBranch={handleGitCheckoutBranch}
+          onOpenGitSettings={openGitSettings}
+          {...(selectedRuntimeProfileId && { profileId: selectedRuntimeProfileId })}
+          agentModelLabels={agentModelLabels}
+          routes={activeRoutes}
+          routePricingHints={routePricingHints}
+          subagentEnabled={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
+          gitSettings={gitSettings}
+          onSaveCommitRolePreference={saveCommitMessageRolePreference}
+          onCommitSuccess={() => void handleGitCommitSuccess()}
           {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
@@ -3008,24 +2964,6 @@ function App() {
               setStopConfirm(undefined);
             }
           }}
-        />
-      ) : null}
-
-      {commitDialogOpen && currentProjectPath && selectedRuntimeProfileId ? (
-        <GitCommitDialog
-          open={commitDialogOpen}
-          workspacePath={currentProjectPath}
-          profileId={selectedRuntimeProfileId}
-          {...(gitStatus && { gitStatus })}
-          agentModelLabels={agentModelLabels}
-          routes={activeRoutes}
-          routePricingHints={routePricingHints}
-          subagentEnabled={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
-          gitSettings={gitSettings}
-          busy={gitStatusBusy}
-          onClose={() => setCommitDialogOpen(false)}
-          onSaveRolePreference={saveCommitMessageRolePreference}
-          onSuccess={() => void handleGitCommitSuccess()}
         />
       ) : null}
 
