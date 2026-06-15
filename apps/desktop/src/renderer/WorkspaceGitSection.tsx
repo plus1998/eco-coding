@@ -1,4 +1,4 @@
-import { ChevronDown, GitBranch, GitCommitHorizontal, Laptop, PlusSquare } from "lucide-react";
+import { ChevronDown, GitBranch, GitCommitHorizontal, Laptop, Play, PlusSquare } from "lucide-react";
 import { useState } from "react";
 import type {
   GitSettingsSnapshot,
@@ -28,6 +28,8 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  scriptsDisabled?: boolean;
+  onOpenScriptsDialog?: () => void;
 }
 
 export function WorkspaceGitSection({
@@ -45,6 +47,8 @@ export function WorkspaceGitSection({
   onCheckoutGitBranch,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  scriptsDisabled,
+  onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
@@ -133,6 +137,20 @@ export function WorkspaceGitSection({
             >
               <GitCommitHorizontal size={14} aria-hidden />
               <span>提交或推送</span>
+            </button>
+          </li>
+        ) : null}
+
+        {onOpenScriptsDialog ? (
+          <li>
+            <button
+              type="button"
+              className="thread-info-workspace-git-action"
+              disabled={scriptsDisabled}
+              onClick={onOpenScriptsDialog}
+            >
+              <Play size={14} aria-hidden />
+              <span>npm scripts</span>
             </button>
           </li>
         ) : null}

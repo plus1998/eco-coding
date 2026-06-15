@@ -67,6 +67,8 @@ interface ThreadInfoPanelProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  scriptsDisabled?: boolean;
+  onOpenScriptsDialog?: () => void;
   todos: CoderTodoItem[];
   workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
@@ -728,6 +730,8 @@ export function ThreadInfoPanel({
   onOpenGitSettings,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  scriptsDisabled,
+  onOpenScriptsDialog,
   todos,
   workspaceDirtyFiles,
   threadStatus,
@@ -782,6 +786,8 @@ export function ThreadInfoPanel({
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
             {...(onCommitSuccess && { onCommitSuccess })}
+            {...(scriptsDisabled !== undefined && { scriptsDisabled })}
+            {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
           />
         </section>
 

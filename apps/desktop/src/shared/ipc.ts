@@ -5,6 +5,8 @@ export const IPC_CHANNELS = {
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
   workspaceInspect: "workspace:inspect",
+  workspaceListPackageScripts: "workspace:list-package-scripts",
+  workspaceRunPackageScript: "workspace:run-package-script",
   workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
   modelProviderSave: "model-provider:save",
@@ -167,6 +169,34 @@ export interface WorkspaceInfo {
   branch?: string;
   dirtyFileCount: number;
   packageManager?: "bun" | "pnpm" | "yarn" | "npm";
+}
+
+export type PackageManagerKind = "bun" | "pnpm" | "yarn" | "npm";
+
+export interface PackageScriptInfo {
+  name: string;
+  command: string;
+}
+
+export interface PackageScriptsListResult {
+  workspacePath: string;
+  hasPackageJson: boolean;
+  packageName?: string;
+  packageManager: PackageManagerKind;
+  scripts: PackageScriptInfo[];
+}
+
+export interface RunPackageScriptRequest {
+  workspacePath: string;
+  script: string;
+  args?: string;
+}
+
+export interface RunPackageScriptResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  command: string[];
 }
 
 export interface WorkspaceOpenResult {
@@ -1217,4 +1247,16 @@ export function isGitPushRequest(value: unknown): value is GitPushRequest {
   }
   const record = value as Record<string, unknown>;
   return typeof record.workspacePath === "string";
+}
+
+export function isRunPackageScriptRequest(value: unknown): value is RunPackageScriptRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.script === "string" &&
+    (record.args === undefined || typeof record.args === "string")
+  );
 }

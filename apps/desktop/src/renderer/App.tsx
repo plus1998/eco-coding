@@ -49,6 +49,8 @@ import {
   type OrchestrationProfile,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
+  type PackageScriptsListResult,
+  type RunPackageScriptResult,
   type ProxyBridgeSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -125,6 +127,7 @@ import {
 } from "./composer-skills";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
+import { PackageScriptsDialog } from "./PackageScriptsDialog";
 import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import {
@@ -319,6 +322,11 @@ function App() {
   const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
+  const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
+  const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
+  const [scriptsBusy, setScriptsBusy] = useState(false);
+  const [runningScript, setRunningScript] = useState<string>();
+  const [lastScriptResult, setLastScriptResult] = useState<RunPackageScriptResult>();
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
   useEffect(() => {
@@ -885,6 +893,59 @@ function App() {
       setGitStatus(undefined);
     }
   }, [currentProjectPath]);
+
+  const refreshPackageScripts = useCallback(async () => {
+    if (!currentProjectPath || !window.eco) {
+      setPackageScripts(undefined);
+      return;
+    }
+    setScriptsBusy(true);
+    try {
+      const result = await window.eco.listPackageScripts(currentProjectPath);
+      setPackageScripts(result);
+    } catch {
+      setPackageScripts(undefined);
+    } finally {
+      setScriptsBusy(false);
+    }
+  }, [currentProjectPath]);
+
+  useEffect(() => {
+    setPackageScripts(undefined);
+    void refreshPackageScripts();
+  }, [refreshPackageScripts]);
+
+  const showPackageScriptsEntry = Boolean(
+    packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
+  );
+
+  const runPackageScript = useCallback(
+    async (scriptName: string) => {
+      if (!currentProjectPath || !window.eco) {
+        return;
+      }
+      setScriptsBusy(true);
+      setRunningScript(scriptName);
+      try {
+        const result = await window.eco.runPackageScript({
+          workspacePath: currentProjectPath,
+          script: scriptName,
+        });
+        setLastScriptResult(result);
+      } catch (error) {
+        setLastScriptResult({
+          exitCode: 1,
+          stdout: "",
+          stderr: error instanceof Error ? error.message : String(error),
+          command: [],
+        });
+      } finally {
+        setScriptsBusy(false);
+        setRunningScript(undefined);
+      }
+    },
+    [currentProjectPath],
+  );
 
   useEffect(() => {
     void refreshGitStatus();
@@ -2948,6 +3009,14 @@ function App() {
           gitSettings={gitSettings}
           onSaveCommitRolePreference={saveCommitMessageRolePreference}
           onCommitSuccess={() => void handleGitCommitSuccess()}
+          {...(showPackageScriptsEntry && {
+            scriptsDisabled:
+              activeThread.status === "running" || activeThread.status === "queued",
+            onOpenScriptsDialog: () => {
+              void refreshPackageScripts();
+              setScriptsDialogOpen(true);
+            },
+          })}
           {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
@@ -2964,6 +3033,22 @@ function App() {
               setStopConfirm(undefined);
             }
           }}
+        />
+      ) : null}
+
+      {scriptsDialogOpen && currentProjectPath ? (
+        <PackageScriptsDialog
+          open={scriptsDialogOpen}
+          workspacePath={currentProjectPath}
+          {...(packageScripts?.packageName && { packageName: packageScripts.packageName })}
+          packageManager={packageScripts?.packageManager ?? projectWorkspace?.packageManager ?? "npm"}
+          scripts={packageScripts?.scripts ?? []}
+          busy={scriptsBusy}
+          {...(runningScript && { runningScript })}
+          {...(lastScriptResult && { lastResult: lastScriptResult })}
+          onClose={() => setScriptsDialogOpen(false)}
+          onRun={runPackageScript}
+          onRefresh={refreshPackageScripts}
         />
       ) : null}
 

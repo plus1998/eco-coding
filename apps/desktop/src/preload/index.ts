@@ -89,6 +89,9 @@ import {
   type GitPushResult,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
+  type PackageScriptsListResult,
+  type RunPackageScriptRequest,
+  type RunPackageScriptResult,
   type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
@@ -120,6 +123,12 @@ const api = {
   },
   prepareWorkspaceGit(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspacePrepareGit, { workspacePath });
+  },
+  listPackageScripts(workspacePath: string): Promise<PackageScriptsListResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceListPackageScripts, workspacePath);
+  },
+  runPackageScript(request: RunPackageScriptRequest): Promise<RunPackageScriptResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceRunPackageScript, request);
   },
   getModelSettings(): Promise<ModelSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);

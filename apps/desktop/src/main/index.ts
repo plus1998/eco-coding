@@ -64,6 +64,7 @@ import {
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
   isGitPushRequest,
+  isRunPackageScriptRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
   type McpServerConfigInput,
@@ -254,6 +255,7 @@ import {
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
+import { listPackageScripts, runPackageScript } from "./package-scripts";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
@@ -926,6 +928,20 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path is required.");
     }
     return inspectWorkspace(workspacePath.trim());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.workspaceListPackageScripts, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    return listPackageScripts(workspacePath.trim());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.workspaceRunPackageScript, async (_event, payload: unknown) => {
+    if (!isRunPackageScriptRequest(payload)) {
+      throw new Error("Invalid run package script request.");
+    }
+    return runPackageScript(payload);
   });
 
   ipcMain.handle(IPC_CHANNELS.workspacePrepareGit, async (_event, payload: unknown) => {

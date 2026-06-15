@@ -131,7 +131,7 @@ export async function inspectWorkspace(workspacePath: string): Promise<Workspace
   return workspace;
 }
 
-async function detectPackageManager(workspacePath: string): Promise<WorkspaceInfo["packageManager"]> {
+export async function detectPackageManager(workspacePath: string): Promise<WorkspaceInfo["packageManager"]> {
   const candidates: Array<[WorkspaceInfo["packageManager"], string]> = [
     ["bun", "bun.lock"],
     ["pnpm", "pnpm-lock.yaml"],
