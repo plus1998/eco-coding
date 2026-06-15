@@ -270,7 +270,7 @@ function ContextOccupancyRing({
         cy={center}
         r={radius}
         fill="none"
-        stroke="#3a3a3a"
+        stroke="currentColor"
         strokeWidth={strokeWidth}
       />
       {clampedPct > 0 ? (

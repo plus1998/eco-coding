@@ -851,9 +851,10 @@
   color: var(--text-primary);
 }
 
-[data-theme="light"] .thread-info-panel {
-  border-left-color: var(--border-sidebar);
-  background: var(--bg-sidebar);
+[data-theme="light"] .thread-info-billing-diagnostics.error {
+  color: var(--danger);
+  border-color: rgba(215, 0, 21, 0.28);
+  background: var(--danger-soft);
 }
 
 [data-theme="light"] .codex-hero {
