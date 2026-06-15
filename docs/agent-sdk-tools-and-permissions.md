@@ -1,0 +1,256 @@
+# Claude Agent SDK：工具可见性与权限
+
+本文档记录 Eco 集成 Claude Agent SDK 时的工具模型、常见踩坑，以及 Eco 自己的映射方式。目的是避免把「工具可见」「自动批准」「Profile 禁止」混为一谈。
+
+官方入口：
+
+- [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)
+- [Configure permissions](https://code.claude.com/docs/en/agent-sdk/permissions)
+- [Custom tools (availability vs permission)](https://code.claude.com/docs/en/agent-sdk/custom-tools)
+- [Handle approvals and user input](https://code.claude.com/docs/en/agent-sdk/user-input)
+
+相关 GitHub issue（别人踩过的坑）：
+
+- [anthropics/claude-code#17577](https://github.com/anthropics/claude-code/issues/17577) — CLI 与 SDK 对 `allowedTools` 语义不一致
+- [anthropics/claude-code#20242](https://github.com/anthropics/claude-code/issues/20242) — `tools` vs `allowedTools` 文档澄清
+- [anthropics/claude-agent-sdk-python#774](https://github.com/anthropics/claude-agent-sdk-python/issues/774) — `ExitPlanMode` 会终止当前 turn
+- [anthropics/claude-code#40671](https://github.com/anthropics/claude-code/issues/40671) — Plan 结束后不能在同一 turn 继续执行
+
+---
+
+## 核心原则
+
+### SDK 侧：两层模型
+
+| 层级 | 回答的问题 | 主要 API |
+|------|------------|----------|
+| **可用性（Availability）** | Claude **能不能看到/尝试**这个工具 | `tools`、`disallowedTools`（裸工具名） |
+| **权限（Permission）** | 调用时要不要弹窗 / 走回调 | `allowedTools`、`permissionMode`、`canUseTool` |
+
+官方 permissions 文档中的评估顺序（简化）：
+
+```
+Hooks → deny rules → ask rules → permissionMode → allow rules → canUseTool
+```
+
+### Eco 侧：一条产品原则
+
+**未显式禁止 = 允许。**
+
+Eco Profile 的工具策略只应通过显式规则表达：
+
+- `disallowed` 列表（裸工具名 = 禁止）
+- 明确的结构化开关（例如 `bash.enabled: false`、`filesystem.write: "none"`）
+
+不要在 Eco 里再做「结构性推断」（例如「没有写权限就推断 Bash 也禁用」）。这与 SDK 两层模型冲突，也会导致 UI 显示与运行时行为不一致。
+
+---
+
+## 1. 怎么携带 / 不携带内置工具
+
+我们不知道 Claude Code preset 里未来会有多少内置工具，也不需要枚举全部。控制方式只有三种：
+
+### A. 默认全开（Eco 主路径）
+
+```typescript
+tools: { type: "preset", preset: "claude_code" }
+```
+
+所有 Claude Code 内置工具进入模型上下文，除非后续显式拿掉。
+
+实现位置：`packages/runtime/src/claude-agent-sdk.ts` → `runSingleSession()`。
+
+### B. 白名单（只给这些）
+
+```typescript
+tools: ["Read", "Glob", "Grep"]
+```
+
+只有列出的内置工具可见。MCP 工具不受 `tools` 数组影响。
+
+### C. 从上下文中移除（推荐用于「禁止」）
+
+```typescript
+disallowedTools: ["Bash", "Write", "Edit"]
+```
+
+**裸工具名**（如 `"Bash"`）会把工具从模型上下文里拿掉，Claude 不会尝试调用。
+
+**带 pattern 的规则**（如 `"Bash(rm *)"`）工具仍可见，只拒绝匹配的调用（属于 permission 层）。
+
+| 写法 | 层级 | 效果 |
+|------|------|------|
+| `tools: ["Read", "Grep"]` | 可用性 | 只有这些内置工具可见 |
+| `disallowedTools: ["Bash"]` | 可用性 | Bash 从上下文移除 |
+| `disallowedTools: ["Bash(rm *)"]` | 权限 | Bash 仍可见，匹配命令被拒绝 |
+
+### Eco Plan 阶段现状
+
+Plan 阶段当前配置：
+
+- `permissionMode: "plan"`
+- `allowedTools`: Read / Glob / Grep / WebSearch / WebFetch / Agent / AskUserQuestion 等
+- `disallowedTools`: 仅写工具（Write / Edit / MultiEdit / NotebookEdit）
+
+Bash 在 Plan 阶段**没有**放进 SDK `disallowedTools`，因此模型上下文里仍可能看到 Bash；实际拒绝靠 `permissionMode: "plan"`、`canUseTool` 和 Eco PreToolUse hook。若 Agent 反复试 Bash 会产生噪音。
+
+**待改进（可选）**：Plan 阶段把 `"Bash"` 也加入 `planningDisallowedSdkTools`，与「禁止 = 显式 disallow」原则完全对齐。
+
+---
+
+## 2. 「开启工具」≠「自动同意工具」
+
+这是最多人踩的坑。官方 overview 的部分示例仍写 `allowedTools: ["Read", "Glob", "Grep"]` 表示只读 agent，容易误导——在 SDK 里，`allowedTools` 主要是 **auto-approve 列表**，不是可见性白名单。
+
+### 正确理解
+
+| 你以为 | 实际 |
+|--------|------|
+| `allowedTools` 里有 Bash = **开启** Bash | ❌ 只是**自动批准**；preset 下 Bash 默认可见 |
+| `bashReviewMode: allow_all` = **开启** Bash | ❌ 只是**跳过 Bash 审批**；Profile / disallow 仍可禁用 |
+| `permissionMode: bypassPermissions` + 少量 `allowedTools` | ❌ 仍会批准**所有**到达 permission 步骤的工具 |
+| `permissionMode: dontAsk` + `allowedTools` | ✅ 列表内自动批准，其余**直接拒绝**（不弹窗） |
+
+### `permissionMode` 速查
+
+| Mode | 行为 |
+|------|------|
+| `default` | 无自动批准；未匹配的工具走 `canUseTool` |
+| `dontAsk` | 未预批准的直接拒绝，不调用 `canUseTool` |
+| `acceptEdits` | 自动批准文件编辑和文件系统操作 |
+| `bypassPermissions` | 自动批准（deny rules 和 hooks 仍可拦截） |
+| `plan` | 只读探索；写操作和 shell 写操作不走 auto-approve，必须走 `canUseTool` |
+
+### Eco 的三层叠加
+
+Eco 在 SDK 之上还有自己的产品层：
+
+```
+SDK disallowedTools     → 从模型上下文移除（可用性）
+SDK allowedTools        → 自动批准列表（权限）
+SDK permissionMode      → 全局审批策略
+SDK canUseTool          → Desktop 运行时审批（含 Bash 面板）
+Eco PreToolUse hook     → Profile 工具策略（disallowed / filesystem / network / bash）
+```
+
+**Bash 审批模式**（Composer 里的「请求批准 / 替我审批 / 完全访问权限」）只影响 `canUseTool` / bash policy 的风险评估，**不等于**给 Agent 开启 Bash 工具。
+
+执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash **不会**通过 `allowedTools` 被 SDK 自动批准，必须走 Desktop 的 Bash 审批流。
+
+只读 Question 阶段使用 `permissionMode: "dontAsk"` + `allowedTools` 白名单式自动批准，未列出的工具直接拒绝。
+
+代码注释（权威简述）见 `packages/runtime/src/eco-sdk-hooks.ts` 中 `createExitPlanModePreToolHook` 上方的 block comment。
+
+---
+
+## 3. Plan 模式用法
+
+### SDK 官方语义
+
+```typescript
+permissionMode: "plan"
+```
+
+- Read / Glob / Grep 等**只读工具**应正常可用
+- 写工具不应被 auto-approve；即使出现在 `allowedTools` 里也需走 `canUseTool`
+- 可用 `AskUserQuestion` 澄清需求
+- 通过 `ExitPlanMode` 提交计划
+
+### Eco 两段式
+
+Eco 不把 Plan 和 Execute 塞在同一 SDK turn 里：
+
+| 阶段 | permissionMode | 典型 allowedTools | SDK disallowedTools |
+|------|----------------|-------------------|---------------------|
+| Plan | `plan` | Read, Glob, Grep, WebSearch, Agent, AskUserQuestion… | 写工具 |
+| Execute | `acceptEdits` | 含 Bash, Write, Edit… | — |
+
+Plan 结束后用户批准，Eco 发起**新的 execution query**（可 resume 同一 SDK session）。这是正确做法，不是 workaround。
+
+### `ExitPlanMode` 坑
+
+**`ExitPlanMode` 会终止当前 SDK turn。** 不能在同一个 `query()` 里 Plan 完立刻 Bash / Write / 派子代理。
+
+```
+EnterPlanMode → Read → AskUserQuestion → ExitPlanMode → Bash   ❌ Bash 不会执行
+Plan turn 结束 → 新开 execution turn → Bash                    ✅
+```
+
+Eco 通过 `createExitPlanModePreToolHook` 捕获计划并以 `defer` 结束 Plan session，再在 phase 2 执行。
+
+### Plan 阶段 Bash vs 读工具
+
+- **Bash 应禁止**：Plan 是只读探索 + 出方案，不应跑 shell
+- **Grep / Glob / Read 必须保留**：代码探索靠这些工具，不靠 `grep` / `find` 等 Bash 命令
+
+若 Agent 在 Plan 里反复试 Bash，优先检查：
+
+1. Bash 是否在 SDK `disallowedTools` 或 Eco Profile `disallowed` 里
+2. 是否误把「Bash 完全访问」审批模式当成了「开启 Bash」
+
+---
+
+## 4. Eco Profile 工具策略映射
+
+Profile 表单的「工具能力」最终翻译为 `EcoToolPolicy`：
+
+| UI / 能力 | 存储方式 |
+|-----------|----------|
+| 关闭某类工具 | 加入 `disallowed`（裸工具名） |
+| 允许 Bash | 不设 `bash.enabled: false`，且 `disallowed` 不含 `Bash` |
+| 禁止写文件 | `filesystem.write: "none"` 和/或 `disallowed` 含写工具名 |
+| Plan 阶段额外限制 | `capMainAgentToolPolicyForPhase()` 把阶段不允许的工具并入 `disallowed` |
+
+`resolveEffectiveBashPolicy()` 规则（`packages/runtime/src/agent-orchestration.ts`）：
+
+- `disallowed` 含 `Bash` → 禁用
+- `bash.enabled === false` → 禁用
+- 否则 → 启用
+
+**不要**再根据 `filesystem.write` 推断 Bash 是否可用。
+
+阶段 cap 实现：`capMainAgentToolPolicyForPhase()` 把当前阶段 `mainAllowedTools` 中未包含的工具名加入 `disallowed`，而不是隐式改 `bash.enabled` 或 `filesystem.write`。
+
+---
+
+## 5. 调试清单
+
+遇到「工具被拒绝」时，按顺序排查：
+
+1. **SDK 可用性**：工具是否在 `disallowedTools`（裸名）里？Plan 阶段写工具应在此列。
+2. **SDK 权限**：是否在 `allowedTools` 里（仅影响 auto-approve）？`permissionMode` 是什么？
+3. **canUseTool**：Desktop Bash 审批 / `bashReviewMode` 是否拒绝？
+4. **Eco PreToolUse**：Profile `disallowed`、filesystem、network、bash 策略是否拒绝？
+5. **阶段**：当前是 `planning` / `question` / `execution`？Plan 阶段 `phaseAllowsBash: false` 会在 Desktop handler 拒绝 Bash。
+
+错误信息对照：
+
+| 消息 | 通常来源 |
+|------|----------|
+| `Tool "Bash" is disallowed for main.` | Eco/SDK disallow 列表（显式禁止，符合预期） |
+| `Bash is disabled for this Eco agent.` | Eco bash 策略或 Plan 阶段 handler |
+| `Permission denied for Bash: …` | SDK 汇总拒绝（上游为 hook 或 canUseTool） |
+
+---
+
+## 6. 实现索引
+
+| 主题 | 文件 |
+|------|------|
+| SDK query 选项（phase、allowedTools、disallowedTools） | `packages/runtime/src/claude-agent-sdk.ts` |
+| ExitPlanMode / 两层模型注释 | `packages/runtime/src/eco-sdk-hooks.ts` |
+| Profile → SDK policy、阶段 cap | `packages/runtime/src/agent-orchestration.ts` |
+| Desktop Bash 审批 | `apps/desktop/src/main/index.ts` → `createThreadToolPermissionHandler` |
+| Bash 风险评估 | `apps/desktop/src/main/thread-bash-permission.ts` |
+| Composer Bash 审批模式 UI | `apps/desktop/src/shared/bash-review-ui.ts` |
+| Profile 工具能力表单 | `apps/desktop/src/renderer/tool-capability-groups.ts` |
+
+---
+
+## 7. 变更时注意
+
+1. 改工具行为前，先分清是 **可用性** 还是 **权限** 问题。
+2. 新增阶段限制时，优先往 `disallowed` 加裸工具名，不要加隐式推断。
+3. 文档和注释里写 `allowedTools` 时，注明是 **auto-approve**，不是 **tool registry**。
+4. Plan / Execute 必须保持**两个 turn**；不要假设 `ExitPlanMode` 后还能在同 turn 执行。
+5. 单测里区分：`disallowed` 含工具名 vs `bash.enabled: false` vs `permissionMode`。

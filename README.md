@@ -63,6 +63,17 @@ Eco persists each subagent’s SDK `agentId` when it finishes (`SubagentStop`) a
 
 Subagent resume state is cleared when the SDK session is reset, routes change, or you start a **fresh plan**.
 
+## Agent SDK tools and permissions
+
+Eco sits on top of the Claude Agent SDK’s two-layer tool model (availability vs permission). Profile tool policy, Bash review mode, Plan mode, and `allowedTools` are easy to confuse.
+
+See **[docs/agent-sdk-tools-and-permissions.md](docs/agent-sdk-tools-and-permissions.md)** for:
+
+- How Eco maps `tools` / `disallowedTools` / `allowedTools` / `permissionMode` / `canUseTool`
+- Plan mode two-turn workflow and `ExitPlanMode` pitfalls
+- Product rule: **if a tool is not explicitly disallowed, it is allowed**
+- Debugging checklist when tools are rejected
+
 ## Build & package
 
 ```bash
