@@ -8,7 +8,6 @@ import type {
 } from "../shared/ipc";
 import {
   AGENT_DOMAIN_OPTIONS,
-  AGENT_SOURCE_OPTIONS,
   type AgentTemplateCapabilityOption,
   type AgentTemplateFormState,
   agentTemplateToForm,
@@ -582,23 +581,6 @@ function AgentTemplateEditorModal({
                     ))}
                   </select>
                 </label>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">作用域</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.source}
-                    disabled={busy}
-                    onChange={(event) =>
-                      patchForm({ source: event.target.value as AgentTemplateFormState["source"] })
-                    }
-                  >
-                    {AGENT_SOURCE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
 
               <label className="mcp-field">
@@ -975,8 +957,5 @@ function sourceRank(template: AgentTemplate): number {
   if (template.builtIn || template.source === "built_in") {
     return 0;
   }
-  if (template.source === "project") {
-    return 1;
-  }
-  return 2;
+  return 1;
 }

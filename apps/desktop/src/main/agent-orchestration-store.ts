@@ -272,7 +272,7 @@ export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemp
     description: template.description.trim(),
     prompt: template.prompt.trim(),
     whenToUse: template.whenToUse.trim(),
-    source: template.source === "project" ? "project" : "user",
+    source: "user",
     builtIn: false,
     updatedAt: template.updatedAt || now,
   };

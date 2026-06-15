@@ -42,7 +42,6 @@ test("copied built-in template becomes a user template form with unique id", () 
 
   expect(form.id).toBe("user.research.researcher_2");
   expect(form.name).toBe("Researcher Copy");
-  expect(form.source).toBe("user");
 });
 
 test("blank template form avoids existing default ids", () => {
@@ -76,7 +75,6 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
       filesystemRead: "workspace",
       filesystemWrite: "none",
       allowDelegation: true,
-      source: "project",
     },
     { nowIso: "2026-06-07T00:00:00.000Z" },
   );
@@ -84,7 +82,7 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
   expect(template).toMatchObject({
     id: "user.research.custom",
     builtIn: false,
-    source: "project",
+    source: "user",
     mcpServers: ["docs"],
     skills: [],
     allowDelegation: true,

@@ -593,7 +593,7 @@ function prepareImportedAgentTemplate(template: AgentTemplate, existingIds: Set<
     ...template,
     id,
     builtIn: false,
-    source: template.source === "project" ? "project" : "user",
+    source: "user",
     updatedAt: now,
   };
 }

@@ -75,7 +75,7 @@ function uniquePresetTemplateIds(preset: BuiltInPresetDefinition): string[] {
 }
 
 function isReusablePresetTemplateCopy(template: AgentTemplate): boolean {
-  return !template.builtIn && (template.source === "user" || template.source === "project");
+  return !template.builtIn && template.source !== "built_in" && template.source !== "derived";
 }
 
 function findReusablePresetTemplateCopy(

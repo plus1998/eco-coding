@@ -99,7 +99,7 @@ test("preset import reuses numbered user copies after base id conflicts", () => 
     id: `${baseId}.2`,
     name: "Custom Researcher",
     builtIn: false,
-    source: "project" as const,
+    source: "user" as const,
     version: 4,
     updatedAt: "2026-06-01T00:00:00.000Z",
   };

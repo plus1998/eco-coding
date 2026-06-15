@@ -23,13 +23,6 @@ export const AGENT_DOMAIN_OPTIONS: Array<{ value: AgentDomain; label: string }> 
   { value: "custom", label: "Custom" },
 ];
 
-export const AGENT_SOURCE_OPTIONS = [
-  { value: "user", label: "用户" },
-  { value: "project", label: "项目" },
-] as const;
-
-export type EditableAgentSource = (typeof AGENT_SOURCE_OPTIONS)[number]["value"];
-
 export interface AgentTemplateFormState {
   id: string;
   name: string;
@@ -46,7 +39,6 @@ export interface AgentTemplateFormState {
   filesystemRead: NonNullable<ToolPolicy["filesystem"]>["read"];
   filesystemWrite: NonNullable<ToolPolicy["filesystem"]>["write"];
   allowDelegation: boolean;
-  source: EditableAgentSource;
 }
 
 export interface AgentTemplateCapabilityOption {
@@ -92,7 +84,6 @@ export function createBlankAgentTemplateForm(
     filesystemRead: "workspace",
     filesystemWrite: "none",
     allowDelegation: false,
-    source: "user",
   };
 }
 
@@ -108,7 +99,6 @@ export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormS
     ...toolPolicyToFormFields(template.defaultTools),
     mcpServers: formatList(template.mcpServers),
     allowDelegation: template.allowDelegation,
-    source: template.source === "project" ? "project" : "user",
   };
 }
 
@@ -125,7 +115,6 @@ export function createCopiedAgentTemplateForm(
       existingTemplates.map((entry) => entry.id),
     ),
     name: `${template.name} Copy`,
-    source: "user",
   };
 }
 
@@ -159,7 +148,7 @@ export function buildAgentTemplateFromForm(
     skills: [],
     allowDelegation: form.allowDelegation,
     builtIn: false,
-    source: form.source,
+    source: "user",
     version: (options.existing?.version ?? 0) + 1,
     updatedAt: options.nowIso ?? new Date().toISOString(),
   };
@@ -183,9 +172,6 @@ export function formatAgentDomain(domain: AgentDomain): string {
 export function formatAgentSource(template: AgentTemplate): string {
   if (template.builtIn || template.source === "built_in") {
     return "内置";
-  }
-  if (template.source === "project") {
-    return "项目";
   }
   if (template.source === "derived") {
     return "派生";
