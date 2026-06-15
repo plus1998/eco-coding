@@ -86,6 +86,13 @@ export const IPC_CHANNELS = {
   billingRoutePricing: "billing:route-pricing",
   billingRouteCapabilities: "billing:route-capabilities",
   billingModelsDevList: "billing:models-dev-list",
+  gitGetStatus: "git:get-status",
+  gitCheckoutBranch: "git:checkout-branch",
+  gitGenerateCommitMessage: "git:generate-commit-message",
+  gitCommit: "git:commit",
+  gitPush: "git:push",
+  gitSettingsGet: "git-settings:get",
+  gitSettingsSave: "git-settings:save",
 } as const;
 
 export type {
@@ -185,6 +192,77 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 
 export interface WorkflowSettingsSnapshot {
   planModeEnabled: boolean;
+}
+
+export interface GhAvailabilityView {
+  available: boolean;
+  authenticated: boolean;
+  reason?: string;
+}
+
+export interface GitWorkingTreeStatus {
+  workspacePath: string;
+  isGitRepository: boolean;
+  hasGitCommits: boolean;
+  branch?: string;
+  branches: string[];
+  dirtyFileCount: number;
+  insertions: number;
+  deletions: number;
+  canCommit: boolean;
+  aheadCount: number;
+  behindCount: number;
+  remoteOriginUrl?: string;
+  gh: GhAvailabilityView;
+}
+
+export interface GitCheckoutBranchRequest {
+  workspacePath: string;
+  branch: string;
+}
+
+export interface GitGenerateCommitMessageRequest {
+  workspacePath: string;
+  profileId: string;
+  includeUnstaged: boolean;
+  role?: RuntimeAgentRole | "auto";
+}
+
+export interface GitGenerateCommitMessageResult {
+  message: string;
+  role: RuntimeAgentRole;
+  modelId: string;
+  providerName: string;
+}
+
+export interface GitCommitRequest {
+  workspacePath: string;
+  profileId: string;
+  includeUnstaged: boolean;
+  message?: string;
+  role?: RuntimeAgentRole | "auto";
+}
+
+export interface GitCommitResult {
+  commitSha: string;
+  message: string;
+  generated: boolean;
+  role?: RuntimeAgentRole;
+  modelId?: string;
+}
+
+export interface GitPushRequest {
+  workspacePath: string;
+  branch?: string;
+}
+
+export interface GitPushResult {
+  method: "git" | "gh";
+  output: string;
+}
+
+export interface GitSettingsSnapshot {
+  commitMessageRoleByProfileId: Record<string, RuntimeAgentRole | "auto">;
 }
 
 export interface ProxyBridgeSettingsSnapshot {
@@ -1071,4 +1149,36 @@ export interface ThreadUsageLedgerEventView {
 export interface ThreadActivityRewindTarget {
   activityLineId: string;
   userMessageId: string;
+}
+
+export function isGitGenerateCommitMessageRequest(value: unknown): value is GitGenerateCommitMessageRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.profileId === "string" &&
+    typeof record.includeUnstaged === "boolean"
+  );
+}
+
+export function isGitCommitRequest(value: unknown): value is GitCommitRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.workspacePath === "string" &&
+    typeof record.profileId === "string" &&
+    typeof record.includeUnstaged === "boolean"
+  );
+}
+
+export function isGitPushRequest(value: unknown): value is GitPushRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.workspacePath === "string";
 }

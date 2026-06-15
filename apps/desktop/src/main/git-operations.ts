@@ -1,0 +1,349 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
+import { resolveGitExecutable } from "./workspace-inspect";
+
+const execFileAsync = promisify(execFile);
+
+export const COMMIT_DIFF_MAX_CHARS = 100_000;
+
+export interface GitCommandResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export type GitRunner = (args: string[], cwd: string) => Promise<GitCommandResult>;
+
+export interface GhAvailability {
+  available: boolean;
+  authenticated: boolean;
+  reason?: string;
+}
+
+export interface GitWorkingTreeStatus {
+  workspacePath: string;
+  isGitRepository: boolean;
+  hasGitCommits: boolean;
+  branch?: string;
+  branches: string[];
+  dirtyFileCount: number;
+  insertions: number;
+  deletions: number;
+  canCommit: boolean;
+  aheadCount: number;
+  behindCount: number;
+  remoteOriginUrl?: string;
+  gh: GhAvailability;
+}
+
+export interface CommitDiffContext {
+  stagedNameStatus: string;
+  stagedStat: string;
+  stagedPatch: string;
+  stagedPatchTruncated: boolean;
+  unstagedNameStatus?: string;
+  unstagedPatch?: string;
+  unstagedPatchTruncated?: boolean;
+  recentCommits: string;
+}
+
+function stripGitPrefix(args: string[]): string[] {
+  return args[0] === "git" ? args.slice(1) : args;
+}
+
+export function createGitRunner(runCommand: GitRunner): GitRunner {
+  return async (args, cwd) => runCommand(stripGitPrefix(args), cwd);
+}
+
+export async function defaultGitRunner(args: string[], cwd: string): Promise<GitCommandResult> {
+  try {
+    const { stdout, stderr } = await execFileAsync(resolveGitExecutable(), stripGitPrefix(args), {
+      cwd,
+      maxBuffer: 12 * 1024 * 1024,
+    });
+    return { exitCode: 0, stdout: String(stdout), stderr: String(stderr) };
+  } catch (error) {
+    const failed = error as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    return {
+      exitCode: typeof failed.code === "number" ? failed.code : 1,
+      stdout: String(failed.stdout ?? ""),
+      stderr: String(failed.stderr ?? (failed.message ?? "git command failed")),
+    };
+  }
+}
+
+async function runGitOk(run: GitRunner, cwd: string, args: string[]): Promise<string> {
+  const result = await run(args, cwd);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
+  }
+  return result.stdout.trim();
+}
+
+function parseNumstat(stdout: string): { insertions: number; deletions: number } {
+  let insertions = 0;
+  let deletions = 0;
+  for (const line of stdout.split("\n")) {
+    const parts = line.trim().split("\t");
+    if (parts.length < 3) {
+      continue;
+    }
+    const added = parts[0] === "-" ? 0 : Number.parseInt(parts[0] ?? "0", 10);
+    const removed = parts[1] === "-" ? 0 : Number.parseInt(parts[1] ?? "0", 10);
+    if (!Number.isNaN(added)) {
+      insertions += added;
+    }
+    if (!Number.isNaN(removed)) {
+      deletions += removed;
+    }
+  }
+  return { insertions, deletions };
+}
+
+function truncatePatch(patch: string, maxChars: number): { text: string; truncated: boolean } {
+  if (patch.length <= maxChars) {
+    return { text: patch, truncated: false };
+  }
+  return {
+    text: `${patch.slice(0, maxChars)}\n\n…（diff 已截断，共 ${patch.length} 字符）`,
+    truncated: true,
+  };
+}
+
+let cachedGhExecutable: string | undefined;
+
+function resolveGhExecutable(): string | undefined {
+  if (cachedGhExecutable !== undefined) {
+    return cachedGhExecutable || undefined;
+  }
+  for (const candidate of ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh", "gh"]) {
+    if (candidate === "gh" || existsSync(candidate)) {
+      cachedGhExecutable = candidate;
+      return candidate;
+    }
+  }
+  cachedGhExecutable = "";
+  return undefined;
+}
+
+export async function checkGhAvailability(): Promise<GhAvailability> {
+  const gh = resolveGhExecutable();
+  if (!gh) {
+    return { available: false, authenticated: false, reason: "未找到 gh 命令" };
+  }
+  try {
+    const version = await execFileAsync(gh, ["--version"], { maxBuffer: 1024 * 1024 });
+    if (!String(version.stdout).trim()) {
+      return { available: false, authenticated: false, reason: "gh 不可用" };
+    }
+  } catch {
+    return { available: false, authenticated: false, reason: "gh 不可用" };
+  }
+  try {
+    await execFileAsync(gh, ["auth", "status"], { maxBuffer: 1024 * 1024 });
+    return { available: true, authenticated: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { available: true, authenticated: false, reason: message.trim() || "未登录 GitHub CLI" };
+  }
+}
+
+export async function getGitWorkingTreeStatus(
+  workspacePath: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<GitWorkingTreeStatus> {
+  const resolvedPath = path.resolve(workspacePath);
+  const gh = await checkGhAvailability();
+  const revParse = await run(["git", "rev-parse", "--show-toplevel"], resolvedPath);
+  if (revParse.exitCode !== 0) {
+    return {
+      workspacePath: resolvedPath,
+      isGitRepository: false,
+      hasGitCommits: false,
+      branches: [],
+      dirtyFileCount: 0,
+      insertions: 0,
+      deletions: 0,
+      canCommit: false,
+      aheadCount: 0,
+      behindCount: 0,
+      gh,
+    };
+  }
+
+  const hasGitCommits = (await run(["git", "rev-parse", "--verify", "HEAD"], resolvedPath)).exitCode === 0;
+  const branchResult = await run(["git", "branch", "--show-current"], resolvedPath);
+  const branch = branchResult.exitCode === 0 ? branchResult.stdout.trim() || "detached" : undefined;
+
+  const branchesRaw = await run(["git", "branch", "--format=%(refname:short)"], resolvedPath);
+  const branches =
+    branchesRaw.exitCode === 0
+      ? branchesRaw.stdout
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : branch
+        ? [branch]
+        : [];
+
+  const status = await run(["git", "status", "--short"], resolvedPath);
+  const dirtyFileCount =
+    status.exitCode === 0 ? status.stdout.split("\n").filter((line) => line.trim()).length : 0;
+
+  const numstat = await run(["git", "diff", "--numstat", "HEAD"], resolvedPath);
+  const { insertions, deletions } =
+    numstat.exitCode === 0 ? parseNumstat(numstat.stdout) : { insertions: 0, deletions: 0 };
+
+  let aheadCount = 0;
+  let behindCount = 0;
+  if (branch && branch !== "detached") {
+    const counts = await run(["git", "rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], resolvedPath);
+    if (counts.exitCode === 0) {
+      const parts = counts.stdout.trim().split(/\s+/);
+      behindCount = Number.parseInt(parts[0] ?? "0", 10) || 0;
+      aheadCount = Number.parseInt(parts[1] ?? "0", 10) || 0;
+    }
+  }
+
+  const remote = await run(["git", "remote", "get-url", "origin"], resolvedPath);
+  const remoteOriginUrl = remote.exitCode === 0 ? remote.stdout.trim() : undefined;
+
+  return {
+    workspacePath: resolvedPath,
+    isGitRepository: true,
+    hasGitCommits,
+    ...(branch && { branch }),
+    branches,
+    dirtyFileCount,
+    insertions,
+    deletions,
+    canCommit: dirtyFileCount > 0,
+    aheadCount,
+    behindCount,
+    ...(remoteOriginUrl && { remoteOriginUrl }),
+    gh,
+  };
+}
+
+export async function checkoutGitBranch(
+  workspacePath: string,
+  branch: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<void> {
+  const trimmed = branch.trim();
+  if (!trimmed) {
+    throw new Error("分支名不能为空");
+  }
+  await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", trimmed]);
+}
+
+export async function collectCommitDiffContext(
+  workspacePath: string,
+  includeUnstaged: boolean,
+  run: GitRunner = defaultGitRunner,
+): Promise<CommitDiffContext> {
+  const cwd = path.resolve(workspacePath);
+
+  const stagedNameStatus = await runGitOk(run, cwd, ["git", "diff", "--cached", "--name-status"]);
+  const stagedStat = await runGitOk(run, cwd, ["git", "diff", "--cached", "--stat"]);
+  const stagedPatchRaw = await runGitOk(run, cwd, ["git", "diff", "--cached"]);
+  const stagedPatch = truncatePatch(stagedPatchRaw, COMMIT_DIFF_MAX_CHARS);
+
+  let unstagedNameStatus: string | undefined;
+  let unstagedPatch: { text: string; truncated: boolean } | undefined;
+  if (includeUnstaged) {
+    const unstagedName = await run(["git", "diff", "--name-status"], cwd);
+    if (unstagedName.exitCode === 0 && unstagedName.stdout.trim()) {
+      unstagedNameStatus = unstagedName.stdout.trim();
+      const unstagedPatchRaw = unstagedName.stdout.trim()
+        ? await runGitOk(run, cwd, ["git", "diff"])
+        : "";
+      unstagedPatch = truncatePatch(unstagedPatchRaw, COMMIT_DIFF_MAX_CHARS);
+    }
+  }
+
+  const recent = await run(["git", "log", "-8", "--oneline"], cwd);
+  const recentCommits = recent.exitCode === 0 ? recent.stdout.trim() : "";
+
+  return {
+    stagedNameStatus,
+    stagedStat,
+    stagedPatch: stagedPatch.text,
+    stagedPatchTruncated: stagedPatch.truncated,
+    ...(unstagedNameStatus && { unstagedNameStatus }),
+    ...(unstagedPatch && {
+      unstagedPatch: unstagedPatch.text,
+      unstagedPatchTruncated: unstagedPatch.truncated,
+    }),
+    recentCommits,
+  };
+}
+
+export async function stageChanges(
+  workspacePath: string,
+  options: { includeUnstaged: boolean },
+  run: GitRunner = defaultGitRunner,
+): Promise<void> {
+  if (!options.includeUnstaged) {
+    return;
+  }
+  const cwd = path.resolve(workspacePath);
+  await runGitOk(run, cwd, ["git", "add", "-A"]);
+}
+
+export async function createCommit(
+  workspacePath: string,
+  message: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<string> {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    throw new Error("提交信息不能为空");
+  }
+  const cwd = path.resolve(workspacePath);
+  await runGitOk(run, cwd, ["git", "commit", "-m", trimmed]);
+  const sha = await runGitOk(run, cwd, ["git", "rev-parse", "--short", "HEAD"]);
+  return sha;
+}
+
+export async function pushChanges(
+  workspacePath: string,
+  options: { branch?: string } = {},
+  run: GitRunner = defaultGitRunner,
+): Promise<{ method: "git" | "gh"; output: string }> {
+  const cwd = path.resolve(workspacePath);
+  const branch =
+    options.branch?.trim() ||
+    (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
+  if (!branch || branch === "detached") {
+    throw new Error("无法确定当前分支，无法推送");
+  }
+
+  const gh = await checkGhAvailability();
+  if (gh.available && gh.authenticated) {
+    const ghExe = resolveGhExecutable();
+    if (ghExe) {
+      try {
+        const { stdout, stderr } = await execFileAsync(ghExe, ["repo", "sync", "--source", branch], {
+          cwd,
+          maxBuffer: 4 * 1024 * 1024,
+        });
+        return { method: "gh", output: String(stdout || stderr).trim() };
+      } catch {
+        // fall through to git push
+      }
+    }
+  }
+
+  const push = await run(["git", "push", "-u", "origin", branch], cwd);
+  if (push.exitCode !== 0) {
+    const fallback = await run(["git", "push"], cwd);
+    if (fallback.exitCode !== 0) {
+      throw new Error(fallback.stderr.trim() || fallback.stdout.trim() || "git push 失败");
+    }
+    return { method: "git", output: fallback.stdout.trim() || fallback.stderr.trim() };
+  }
+  return { method: "git", output: push.stdout.trim() || push.stderr.trim() };
+}

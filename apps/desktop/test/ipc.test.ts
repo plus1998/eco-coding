@@ -58,6 +58,9 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.modelRouteProfileTest).toBe("model-route-profile:test");
   expect(IPC_CHANNELS.billingRefreshPricing).toBe("billing:refresh-pricing");
   expect(IPC_CHANNELS.billingRoutePricing).toBe("billing:route-pricing");
+  expect(IPC_CHANNELS.gitGetStatus).toBe("git:get-status");
+  expect(IPC_CHANNELS.gitCommit).toBe("git:commit");
+  expect(IPC_CHANNELS.gitSettingsGet).toBe("git-settings:get");
   expect(IPC_CHANNELS.billingRouteCapabilities).toBe("billing:route-capabilities");
   expect(IPC_CHANNELS.billingModelsDevList).toBe("billing:models-dev-list");
   expect(IPC_CHANNELS.approvalResolve).toBe("approval:resolve");

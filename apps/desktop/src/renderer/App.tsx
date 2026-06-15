@@ -32,7 +32,9 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { ComposerEnvironmentPopover } from "./ComposerEnvironmentPopover";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
+import { GitCommitDialog } from "./GitCommitDialog";
 import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -47,8 +49,11 @@ import {
   type McpSettingsSnapshot,
   type ModelSettingsSnapshot,
   type OrchestrationProfile,
+  type GitSettingsSnapshot,
+  type GitWorkingTreeStatus,
   type ProxyBridgeSettingsSnapshot,
   type RouteCapabilityHint,
+  type RoutePricingHint,
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
   type SessionSyncSettingsInput,
@@ -217,6 +222,8 @@ const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
+const emptyGitSettings: GitSettingsSnapshot = { commitMessageRoleByProfileId: {} };
+
 type ActivityLine = ThreadActivityLine;
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
@@ -312,6 +319,11 @@ function App() {
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [retryBusy, setRetryBusy] = useState(false);
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
+  const [gitStatus, setGitStatus] = useState<GitWorkingTreeStatus>();
+  const [gitStatusBusy, setGitStatusBusy] = useState(false);
+  const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
+  const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
+  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!window.eco) {
@@ -865,6 +877,33 @@ function App() {
     };
   }, [currentProjectPath]);
 
+  const refreshGitStatus = useCallback(async () => {
+    if (!currentProjectPath || !window.eco) {
+      setGitStatus(undefined);
+      return;
+    }
+    setGitStatusBusy(true);
+    try {
+      const status = await window.eco.getGitStatus(currentProjectPath);
+      setGitStatus(status);
+    } catch {
+      setGitStatus(undefined);
+    } finally {
+      setGitStatusBusy(false);
+    }
+  }, [currentProjectPath]);
+
+  useEffect(() => {
+    void refreshGitStatus();
+  }, [refreshGitStatus]);
+
+  useEffect(() => {
+    if (!window.eco) {
+      return;
+    }
+    void window.eco.getGitSettings().then(setGitSettings);
+  }, []);
+
   useEffect(() => {
     if (!activeThread?.id || !window.eco) {
       setWorkspaceDirtyFiles([]);
@@ -1002,6 +1041,14 @@ function App() {
   const activeRoutes = useMemo(() => {
     return selectedRuntimeProfile ? runtimeRoleRoutesFromAgentProfile(selectedRuntimeProfile) : [];
   }, [selectedRuntimeProfile]);
+
+  useEffect(() => {
+    if (!window.eco || activeRoutes.length === 0) {
+      setRoutePricingHints([]);
+      return;
+    }
+    void window.eco.getRoutePricing(activeRoutes).then(setRoutePricingHints);
+  }, [activeRoutes, settings.providers]);
 
   useEffect(() => {
     if (!window.eco?.getRouteCapabilities || activeRoutes.length === 0) {
@@ -1836,6 +1883,54 @@ function App() {
     setSettingsOpen(true);
   }
 
+  function openGitSettings() {
+    setSettingsSection("git");
+    setSettingsOpen(true);
+  }
+
+  async function saveCommitMessageRolePreference(role: string | "auto") {
+    if (!window.eco || !selectedRuntimeProfileId) {
+      return;
+    }
+    const next = {
+      commitMessageRoleByProfileId: {
+        ...gitSettings.commitMessageRoleByProfileId,
+        [selectedRuntimeProfileId]: role,
+      },
+    };
+    const saved = await window.eco.saveGitSettings(next);
+    setGitSettings(saved);
+  }
+
+  async function handleGitCheckoutBranch(branch: string) {
+    if (!currentProjectPath || !window.eco) {
+      return;
+    }
+    setGitStatusBusy(true);
+    try {
+      const status = await window.eco.checkoutGitBranch({
+        workspacePath: currentProjectPath,
+        branch,
+      });
+      setGitStatus(status);
+      const workspace = await window.eco.inspectWorkspace(currentProjectPath);
+      setProjectWorkspace(workspace);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setGitStatusBusy(false);
+    }
+  }
+
+  async function handleGitCommitSuccess() {
+    if (!currentProjectPath || !window.eco) {
+      return;
+    }
+    await refreshGitStatus();
+    const workspace = await window.eco.inspectWorkspace(currentProjectPath);
+    setProjectWorkspace(workspace);
+  }
+
   async function persistComposerRuntimeConfig(
     next: ThreadRuntimeConfig,
     options?: { persistWhileRunning?: boolean },
@@ -2479,6 +2574,20 @@ function App() {
     />
   );
 
+  const composerEnvironmentControl = currentProjectPath ? (
+    <ComposerEnvironmentPopover
+      workspacePath={currentProjectPath}
+      workspaceLabel={currentProjectName}
+      {...(gitStatus && { gitStatus })}
+      gitBusy={gitStatusBusy}
+      commitDisabled={activeThread?.status === "running" || activeThread?.status === "queued"}
+      onRefresh={() => void refreshGitStatus()}
+      onCheckoutBranch={handleGitCheckoutBranch}
+      onOpenCommitDialog={() => setCommitDialogOpen(true)}
+      onOpenGitSettings={openGitSettings}
+    />
+  ) : null;
+
   const composer = (
     <div className="codex-composer-wrap">
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
@@ -2557,6 +2666,7 @@ function App() {
                     {composerAgentModelsControl}
                   </div>
                   <div className="composer-footer-row composer-footer-config-row">
+                    {composerEnvironmentControl}
                     {composerRuntimeConfig ? (
                       <ComposerPlanModeToggle
                         planModeEnabled={composerRuntimeConfig.planModeEnabled}
@@ -2577,6 +2687,7 @@ function App() {
                 </div>
               ) : (
                 <div className="composer-footer-row composer-footer-config-row">
+                  {composerEnvironmentControl}
                   {composerRuntimeConfig ? (
                     <ComposerPlanModeToggle
                       planModeEnabled={composerRuntimeConfig.planModeEnabled}
@@ -2638,6 +2749,7 @@ function App() {
           <div className="composer-context-bar">
             {composerRouteControl}
             {composerAgentModelsControl}
+            {composerEnvironmentControl}
           </div>
         ) : null}
       </div>
@@ -2896,6 +3008,24 @@ function App() {
               setStopConfirm(undefined);
             }
           }}
+        />
+      ) : null}
+
+      {commitDialogOpen && currentProjectPath && selectedRuntimeProfileId ? (
+        <GitCommitDialog
+          open={commitDialogOpen}
+          workspacePath={currentProjectPath}
+          profileId={selectedRuntimeProfileId}
+          {...(gitStatus && { gitStatus })}
+          agentModelLabels={agentModelLabels}
+          routes={activeRoutes}
+          routePricingHints={routePricingHints}
+          subagentEnabled={composerRuntimeConfig?.subagentEnabled ?? defaultSubagentAvailability()}
+          gitSettings={gitSettings}
+          busy={gitStatusBusy}
+          onClose={() => setCommitDialogOpen(false)}
+          onSaveRolePreference={saveCommitMessageRolePreference}
+          onSuccess={() => void handleGitCommitSuccess()}
         />
       ) : null}
 

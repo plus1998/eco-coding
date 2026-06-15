@@ -60,6 +60,9 @@ import {
   IPC_CHANNELS,
   isKnownIpcChannel,
   isBashReviewModeOnlyRuntimeConfigUpdate,
+  isGitCommitRequest,
+  isGitGenerateCommitMessageRequest,
+  isGitPushRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
   type McpServerConfigInput,
@@ -321,6 +324,19 @@ import {
   orchestrationModeFromSnapshot,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
+import {
+  checkoutGitBranch,
+  getGitWorkingTreeStatus,
+  handleGitCommit,
+  handleGitGenerateCommitMessage,
+  handleGitPush,
+} from "./git-service";
+import {
+  createGitSettingsStore,
+  isGitSettingsSnapshot,
+  normalizeGitSettingsSnapshot,
+  type GitSettingsStore,
+} from "./git-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
@@ -366,6 +382,7 @@ let agentOrchestrationStore: AgentOrchestrationStore;
 let mcpStore: McpStore;
 let conversationStore: ConversationStore;
 let workflowSettingsStore: WorkflowSettingsStore;
+let gitSettingsStore: GitSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let sessionSyncStore: SessionSyncStore;
 let sdkSessionStore: SessionStore | undefined;
@@ -449,6 +466,7 @@ app.whenReady().then(async () => {
     },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+  gitSettingsStore = await createGitSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
   agentLifecycle = new AgentLifecycleService(conversationStore);
@@ -1474,6 +1492,71 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid workflow settings.");
     }
     return workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitSettingsGet, async () => gitSettingsStore.get());
+
+  ipcMain.handle(IPC_CHANNELS.gitSettingsSave, async (_event, payload: unknown) => {
+    if (!isGitSettingsSnapshot(payload)) {
+      throw new Error("Invalid git settings.");
+    }
+    return gitSettingsStore.save(normalizeGitSettingsSnapshot(payload));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitGetStatus, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    return getGitWorkingTreeStatus(workspacePath.trim(), runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitCheckoutBranch, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid git checkout request.");
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.workspacePath !== "string" || typeof record.branch !== "string") {
+      throw new Error("Invalid git checkout request.");
+    }
+    await checkoutGitBranch(record.workspacePath, record.branch, runGitCommand);
+    return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitGenerateCommitMessage, async (_event, payload: unknown) => {
+    if (!isGitGenerateCommitMessageRequest(payload)) {
+      throw new Error("Invalid git generate commit message request.");
+    }
+    return handleGitGenerateCommitMessage(payload, {
+      providerStore,
+      agentOrchestrationStore,
+      gitSettingsStore,
+      pricingCache,
+      run: runGitCommand,
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitCommit, async (_event, payload: unknown) => {
+    if (!isGitCommitRequest(payload)) {
+      throw new Error("Invalid git commit request.");
+    }
+    const result = await handleGitCommit(payload, {
+      providerStore,
+      agentOrchestrationStore,
+      gitSettingsStore,
+      pricingCache,
+      run: runGitCommand,
+    });
+    if (currentWorkspace?.path === payload.workspacePath.trim()) {
+      currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
+    }
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitPush, async (_event, payload: unknown) => {
+    if (!isGitPushRequest(payload)) {
+      throw new Error("Invalid git push request.");
+    }
+    return handleGitPush(payload, runGitCommand);
   });
 
   ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());

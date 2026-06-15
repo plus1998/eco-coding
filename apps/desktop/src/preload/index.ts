@@ -78,6 +78,15 @@ import {
   type ThreadUpdateRuntimeConfigRequest,
   type ThreadUsageSnapshotResult,
   type ThreadUsageLedgerEventView,
+  type GitCheckoutBranchRequest,
+  type GitCommitRequest,
+  type GitCommitResult,
+  type GitGenerateCommitMessageRequest,
+  type GitGenerateCommitMessageResult,
+  type GitPushRequest,
+  type GitPushResult,
+  type GitSettingsSnapshot,
+  type GitWorkingTreeStatus,
   type WorkflowSettingsSnapshot,
   type WorkspaceInfo,
   type WorkspaceOpenResult,
@@ -215,6 +224,27 @@ const api = {
   },
   saveWorkflowSettings(settings: WorkflowSettingsSnapshot): Promise<WorkflowSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.workflowSettingsSave, settings);
+  },
+  getGitSettings(): Promise<GitSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitSettingsGet);
+  },
+  saveGitSettings(settings: GitSettingsSnapshot): Promise<GitSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitSettingsSave, settings);
+  },
+  getGitStatus(workspacePath: string): Promise<GitWorkingTreeStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitGetStatus, workspacePath);
+  },
+  checkoutGitBranch(request: GitCheckoutBranchRequest): Promise<GitWorkingTreeStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitCheckoutBranch, request);
+  },
+  generateGitCommitMessage(request: GitGenerateCommitMessageRequest): Promise<GitGenerateCommitMessageResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitGenerateCommitMessage, request);
+  },
+  commitGitChanges(request: GitCommitRequest): Promise<GitCommitResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitCommit, request);
+  },
+  pushGitChanges(request: GitPushRequest): Promise<GitPushResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitPush, request);
   },
   getProxyBridgeSettings(): Promise<ProxyBridgeSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsGet);
