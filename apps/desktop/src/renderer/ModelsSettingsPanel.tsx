@@ -1550,6 +1550,7 @@ function AgentProfileEditorModal({
         key: "explore",
         providerId: form.builtinExploreProviderId,
         modelId: form.builtinExploreModelId,
+        ...(form.builtinExploreApiCompat ? { apiCompat: form.builtinExploreApiCompat } : {}),
         modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
         modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
         manualSpec: form.builtinExploreManualSpec,
@@ -1558,6 +1559,7 @@ function AgentProfileEditorModal({
         key: agent.agentKey,
         providerId: agent.providerId,
         modelId: agent.modelId,
+        ...(agent.apiCompat ? { apiCompat: agent.apiCompat } : {}),
         modelsDevMappingProviderKey: agent.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agent.modelsDevMappingModelId,
         manualSpec: agent.manualSpec,
@@ -1577,6 +1579,7 @@ function AgentProfileEditorModal({
     form.builtinExploreModelsDevMappingProviderKey,
     form.builtinExploreModelsDevMappingModelId,
     form.builtinExploreManualSpec,
+    form.builtinExploreApiCompat,
     form.agents,
     onLookupCapabilities,
     onLookupPricing,
@@ -2448,6 +2451,22 @@ function AgentProfileNodeConfigModal({
                     <option value="max">最大</option>
                   </select>
                 </label>
+                <label className="mcp-field">
+                  <span className="mcp-field-label">API 兼容模式</span>
+                  <select
+                    className="mcp-field-input"
+                    value={form.builtinExploreApiCompat}
+                    disabled={busy}
+                    onChange={(event) => onPatchProfile({ builtinExploreApiCompat: event.target.value })}
+                  >
+                    <option value="">默认</option>
+                    {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <div className="models-agent-template-form-grid">
                 <div className="mcp-field">
@@ -2566,6 +2585,22 @@ function AgentProfileNodeConfigModal({
                     <option value="high">高</option>
                     <option value="xhigh">极高</option>
                     <option value="max">最大</option>
+                  </select>
+                </label>
+                <label className="mcp-field">
+                  <span className="mcp-field-label">API 兼容模式</span>
+                  <select
+                    className="mcp-field-input"
+                    value={agent?.apiCompat ?? ""}
+                    disabled={busy}
+                    onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
+                  >
+                    <option value="">默认</option>
+                    {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>

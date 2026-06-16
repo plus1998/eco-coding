@@ -8,6 +8,7 @@ import {
 } from "../src/renderer/agent-profile-form";
 import { emptyManualSpecForm } from "../src/renderer/agent-profile-manual-spec-form";
 import type { AgentTemplate, OrchestrationProfile, ProviderConfigView } from "../src/shared/ipc";
+import { runtimeRoleRoutesFromAgentProfile } from "../src/shared/thread-runtime-config";
 
 const provider: ProviderConfigView = {
   id: "provider_1",
@@ -298,4 +299,47 @@ test("buildOrchestrationProfileFromForm persists full manual spec fields", () =>
     cacheReadPerM: 0.3,
     cacheWritePerM: 3.75,
   });
+});
+
+test("agentProfileToForm round-trips apiCompat for main, explore, and subagents", () => {
+  const source = profile();
+  source.mainAgent.modelRef.apiCompat = "anthropic";
+  source.builtinAgents.explore.modelRef.apiCompat = "openai_chat_completions";
+  source.agents[0]!.modelRef.apiCompat = "openai_responses";
+
+  const form = agentProfileToForm(source);
+  expect(form.mainApiCompat).toBe("anthropic");
+  expect(form.builtinExploreApiCompat).toBe("openai_chat_completions");
+  expect(form.agents[0]?.apiCompat).toBe("openai_responses");
+
+  form.name = "Research Profile Updated";
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: source,
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.modelRef.apiCompat).toBe("anthropic");
+  expect(built.builtinAgents.explore.modelRef.apiCompat).toBe("openai_chat_completions");
+  expect(built.agents[0]?.modelRef.apiCompat).toBe("openai_responses");
+
+  const routes = runtimeRoleRoutesFromAgentProfile(built);
+  expect(routes.find((route) => route.role === "planner")?.apiCompat).toBe("anthropic");
+  expect(routes.find((route) => route.role === "explore")?.apiCompat).toBe("openai_chat_completions");
+  expect(routes.find((route) => route.role === "researcher")?.apiCompat).toBe("openai_responses");
+});
+
+test("buildOrchestrationProfileFromForm omits apiCompat when left at default", () => {
+  const form = agentProfileToForm(profile());
+  form.mainApiCompat = "";
+  form.builtinExploreApiCompat = "";
+  form.agents[0]!.apiCompat = "";
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.modelRef.apiCompat).toBeUndefined();
+  expect(built.builtinAgents.explore.modelRef.apiCompat).toBeUndefined();
+  expect(built.agents[0]?.modelRef.apiCompat).toBeUndefined();
 });

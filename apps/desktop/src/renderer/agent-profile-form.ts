@@ -36,6 +36,7 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   modelsDevMappingProviderKey: string;
   modelsDevMappingModelId: string;
   manualSpec: ManualSpecFormFields;
+  apiCompat: string;
   enabled: boolean;
 }
 
@@ -74,6 +75,7 @@ export interface AgentProfileFormState {
   builtinExploreModelsDevMappingProviderKey: string;
   builtinExploreModelsDevMappingModelId: string;
   builtinExploreManualSpec: ManualSpecFormFields;
+  builtinExploreApiCompat: string;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -199,6 +201,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreModelsDevMappingProviderKey: "",
     builtinExploreModelsDevMappingModelId: "",
     builtinExploreManualSpec: emptyManualSpecForm(),
+    builtinExploreApiCompat: "",
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -233,6 +236,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     builtinExploreModelsDevMappingModelId:
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
     builtinExploreManualSpec: manualSpecToForm(profile.builtinAgents.explore.modelRef.manualSpec),
+    builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -244,6 +248,7 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
       modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
       manualSpec: manualSpecToForm(agent.modelRef.manualSpec),
+      apiCompat: agent.modelRef.apiCompat ?? "",
       enabled: agent.enabled,
       ...agentCapabilityToAgentForm(
         toolPolicyToCapabilityFields(agent.tools, {
@@ -284,6 +289,7 @@ export function createProfileAgentFormFromTemplate(
     modelsDevMappingProviderKey: "",
     modelsDevMappingModelId: "",
     manualSpec: emptyManualSpecForm(),
+    apiCompat: "",
     enabled: true,
     ...agentCapabilityToAgentForm(capability),
   };
@@ -332,6 +338,7 @@ export function buildOrchestrationProfileFromForm(
       modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
       modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
       manualSpec: form.builtinExploreManualSpec,
+      apiCompat: form.builtinExploreApiCompat,
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -361,6 +368,7 @@ export function buildOrchestrationProfileFromForm(
         modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
         manualSpec: agentForm.manualSpec,
+        apiCompat: agentForm.apiCompat,
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
