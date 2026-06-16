@@ -60,6 +60,7 @@ import {
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
+  type ThreadFollowUpUpdateRequest,
   type ThreadFollowUpListResult,
   type ThreadFollowUpMutationResult,
   type ThreadPendingPlan,
@@ -330,6 +331,9 @@ const api = {
   },
   cancelThreadFollowUp(request: ThreadFollowUpCancelRequest): Promise<ThreadFollowUpMutationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpCancel, request);
+  },
+  updateThreadFollowUp(request: ThreadFollowUpUpdateRequest): Promise<ThreadFollowUpMutationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpUpdate, request);
   },
   retryThread(request: ThreadRetryRequest | string): Promise<ThreadRetryResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRetry, request);

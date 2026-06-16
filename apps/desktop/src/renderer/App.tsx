@@ -11,6 +11,7 @@ import {
   MessageSquarePlus,
   Monitor,
   PanelRight,
+  Pencil,
   Plug,
   RefreshCw,
   RotateCcw,
@@ -115,6 +116,7 @@ import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
 import {
   COMPOSER_MAX_IMAGES,
   type ComposerImageAttachment,
+  fromPromptImageAttachments,
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
@@ -300,6 +302,7 @@ function App() {
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
   const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
+  const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [error, setError] = useState<string>();
   const [activityByThread, setActivityByThread] = useState<Record<string, ActivityLine[]>>({});
@@ -1290,6 +1293,12 @@ function App() {
     setRetryAgentProfileId("");
   }, [activeThread?.id]);
 
+  useEffect(() => {
+    setEditingFollowUpId(undefined);
+    setPrompt("");
+    setComposerAttachments([]);
+  }, [activeThread?.id]);
+
   const canRetryThread = Boolean(
     activeThread &&
       routesReady &&
@@ -1314,6 +1323,10 @@ function App() {
   const activityLines = activeThread ? (activityByThread[activeThread.id] ?? []) : [];
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
   const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
+  const displayedQueuedFollowUps = useMemo(
+    () => queuedFollowUps.filter((followUp) => followUp.id !== editingFollowUpId),
+    [queuedFollowUps, editingFollowUpId],
+  );
   const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
@@ -1680,6 +1693,23 @@ function App() {
     });
   }
 
+  function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
+    setEditingFollowUpId(followUp.id);
+    setPrompt(followUp.prompt);
+    setComposerAttachments(fromPromptImageAttachments(followUp.attachments ?? []));
+    setComposerImageNotice(undefined);
+    setComposerRewindTarget(undefined);
+    setError(undefined);
+    composerRef.current?.focus();
+  }
+
+  function cancelEditingFollowUp() {
+    setEditingFollowUpId(undefined);
+    setPrompt("");
+    setComposerAttachments([]);
+    setComposerImageNotice(undefined);
+  }
+
   async function sendComposerMessage() {
     if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
       return;
@@ -1690,6 +1720,32 @@ function App() {
     const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
 
     if (composerFollowUpMode && activeThread) {
+      if (editingFollowUpId) {
+        if (typeof window.eco.updateThreadFollowUp !== "function") {
+          setError("当前桌面预加载 API 不包含编辑后续消息入口，请重启应用后再试。");
+          return;
+        }
+        setFollowUpBusy(true);
+        try {
+          const result = await window.eco.updateThreadFollowUp({
+            threadId: activeThread.id,
+            followUpId: editingFollowUpId,
+            prompt: messagePrompt,
+            ...(attachments && { attachments }),
+          });
+          setFollowUpsByThread((current) => ({
+            ...current,
+            [activeThread.id]: sortThreadFollowUps(result.followUps),
+          }));
+          cancelEditingFollowUp();
+        } catch (caught) {
+          setError(errorMessage(caught));
+        } finally {
+          setFollowUpBusy(false);
+        }
+        return;
+      }
+
       if (typeof window.eco.enqueueThreadFollowUp !== "function") {
         setError("当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。");
         return;
@@ -1795,6 +1851,9 @@ function App() {
         ...current,
         [followUp.threadId]: sortThreadFollowUps(result.followUps),
       }));
+      if (editingFollowUpId === followUp.id) {
+        cancelEditingFollowUp();
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -1818,6 +1877,9 @@ function App() {
         ...current,
         [followUp.threadId]: sortThreadFollowUps(result.followUps),
       }));
+      if (editingFollowUpId === followUp.id) {
+        cancelEditingFollowUp();
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2616,6 +2678,7 @@ function App() {
     setComposerRoutePopoverOpen(false);
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
+    setEditingFollowUpId(undefined);
     setPrompt("");
     setComposerRewindTarget(undefined);
     setComposerAttachments([]);
@@ -2780,7 +2843,9 @@ function App() {
         : activeThread && isContinuableThreadStatus(activeThread.status)
           ? "继续对话；若需改计划请说明，将重新生成完整计划…"
           : composerFollowUpMode
-            ? "要求后续变更"
+            ? editingFollowUpId
+              ? "编辑引导消息…"
+              : "要求后续变更"
             : activeThread
               ? "当前对话不可发送"
               : "尽管问";
@@ -2832,16 +2897,32 @@ function App() {
 
   const composer = (
     <div className="codex-composer-wrap">
-      {queuedFollowUps.length > 0 ? (
+      {displayedQueuedFollowUps.length > 0 ? (
         <FollowUpQueuePanel
-          followUps={queuedFollowUps}
+          followUps={displayedQueuedFollowUps}
           cancelBusyId={followUpCancelBusyId}
           escalateBusyId={followUpEscalateBusyId}
           onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
           onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
+          onEdit={startEditingFollowUp}
         />
       ) : null}
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
+      {editingFollowUpId && composerFollowUpMode ? (
+        <div className="composer-rewind-banner">
+          <Pencil size={14} aria-hidden />
+          <span>正在重新编辑引导消息</span>
+          <button
+            type="button"
+            className="composer-rewind-clear"
+            onClick={cancelEditingFollowUp}
+            aria-label="取消编辑引导消息"
+            title="取消"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      ) : null}
       {activeComposerRewindTarget && !composerFollowUpMode ? (
         <div className="composer-rewind-banner">
           <RotateCcw size={14} aria-hidden />
@@ -2973,8 +3054,8 @@ function App() {
               className="send-button"
               onClick={sendComposerMessage}
               disabled={!canSend}
-              title={composerFollowUpMode ? "排队后续消息" : "发送"}
-              aria-label={composerFollowUpMode ? "排队后续消息" : "发送"}
+              title={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
+              aria-label={composerFollowUpMode ? (editingFollowUpId ? "保存引导消息" : "排队后续消息") : "发送"}
             >
               {isStarting || followUpBusy ? <Activity size={18} /> : <ArrowUp size={18} />}
             </button>
@@ -3521,12 +3602,14 @@ function FollowUpQueuePanel({
   escalateBusyId,
   onCancel,
   onEscalate,
+  onEdit,
 }: {
   followUps: ThreadPendingFollowUp[];
   cancelBusyId: string | undefined;
   escalateBusyId: string | undefined;
   onCancel: (followUp: ThreadPendingFollowUp) => void;
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
+  onEdit: (followUp: ThreadPendingFollowUp) => void;
 }) {
   return (
     <div className="follow-up-queue" aria-label="已排队的引导消息">
@@ -3537,23 +3620,53 @@ function FollowUpQueuePanel({
 
         return (
           <article key={followUp.id} className="follow-up-card">
-            <div className="follow-up-card-main">
+            <div
+              className="follow-up-card-main follow-up-card-main-editable"
+              role="button"
+              tabIndex={actionBusy ? -1 : 0}
+              aria-label="重新编辑引导消息"
+              title="重新编辑"
+              onClick={() => {
+                if (!actionBusy) {
+                  onEdit(followUp);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                  return;
+                }
+                event.preventDefault();
+                onEdit(followUp);
+              }}
+            >
               <CornerDownRight className="follow-up-card-icon" size={14} aria-hidden />
               <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
             </div>
             <div className="follow-up-card-actions">
               {canEscalate ? (
-                <button
-                  type="button"
+                <span
                   className="follow-up-card-type follow-up-card-type-action"
-                  onClick={() => onEscalate(followUp)}
-                  disabled={actionBusy}
-                  title="立即处理"
+                  role="button"
+                  tabIndex={actionBusy ? -1 : 0}
+                  aria-disabled={actionBusy}
                   aria-label="立即处理引导消息"
+                  title="立即处理"
+                  onClick={() => {
+                    if (!actionBusy) {
+                      onEscalate(followUp);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                      return;
+                    }
+                    event.preventDefault();
+                    onEscalate(followUp);
+                  }}
                 >
                   <CornerDownRight size={12} aria-hidden />
                   {isEscalating ? "正在处理…" : "引导"}
-                </button>
+                </span>
               ) : (
                 <span className="follow-up-card-type">
                   <CornerDownRight size={12} aria-hidden />

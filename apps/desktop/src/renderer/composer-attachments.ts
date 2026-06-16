@@ -52,6 +52,17 @@ export function toPromptImageAttachments(
   }));
 }
 
+export function fromPromptImageAttachments(
+  attachments: readonly PromptImageAttachment[],
+): ComposerImageAttachment[] {
+  return attachments.map((attachment, index) => ({
+    id: `img_edit_${index}_${Math.random().toString(36).slice(2, 8)}`,
+    mediaType: attachment.mediaType,
+    data: attachment.data,
+    previewUrl: `data:${attachment.mediaType};base64,${attachment.data}`,
+  }));
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";

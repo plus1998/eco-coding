@@ -120,6 +120,28 @@ test.skipIf(!sqliteAvailable)("cancels only queued follow-ups", async () => {
   expect(store.cancelThreadFollowUp("thr_followup", delivered.id)).toBeUndefined();
 });
 
+test.skipIf(!sqliteAvailable)("updates queued follow-up prompt and attachments", async () => {
+  const store = await createStore();
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "原始引导",
+    attachments: [{ mediaType: "image/png", data: "abc" }],
+  });
+
+  const updated = store.updateThreadFollowUp("thr_followup", queued.id, {
+    prompt: "修改后的引导",
+    attachments: [{ mediaType: "image/jpeg", data: "def" }],
+  });
+
+  expect(updated).toMatchObject({
+    id: queued.id,
+    prompt: "修改后的引导",
+    status: "queued",
+  });
+  expect(updated?.attachments?.[0]?.mediaType).toBe("image/jpeg");
+  expect(store.updateThreadFollowUp("thr_followup", queued.id, { prompt: "" })).toBeUndefined();
+});
+
 test.skipIf(!sqliteAvailable)("claims queued follow-ups for later delivery", async () => {
   const store = await createStore();
   const first = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "第一条" });

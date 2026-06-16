@@ -109,6 +109,7 @@ import {
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
+  type ThreadFollowUpUpdateRequest,
   type ThreadFollowUpMutationResult,
   type ThreadFollowUpRunPhase,
   type ThreadPendingFollowUp,
@@ -2048,6 +2049,26 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
+  ipcMain.handle(IPC_CHANNELS.threadFollowUpUpdate, async (_event, payload: unknown) => {
+    const request = parseThreadFollowUpUpdateRequest(payload);
+    const thread = conversationStore.getThread(request.threadId);
+    if (!thread) {
+      throw new Error("Thread was not found.");
+    }
+    if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
+      throw new Error("Thread is not accepting queued follow-up messages.");
+    }
+    const followUp = conversationStore.updateThreadFollowUp(request.threadId, request.followUpId, {
+      prompt: request.prompt,
+      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+    });
+    if (!followUp) {
+      throw new Error("Pending follow-up was not found or cannot be updated.");
+    }
+    emitThreadFollowUpEvent(followUp, "thread.follow_up.updated", "");
+    return buildThreadFollowUpMutationResult(followUp);
+  });
+
   ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, payload: unknown) => {
     const request = parseThreadRetryRequest(payload);
     return retryThread(request);
@@ -3253,6 +3274,25 @@ function parseThreadFollowUpCancelRequest(payload: unknown): ThreadFollowUpCance
   return {
     threadId: readRequiredString(payload.threadId, "Thread id is required."),
     followUpId: readRequiredString(payload.followUpId, "Follow-up id is required."),
+  };
+}
+
+function parseThreadFollowUpUpdateRequest(payload: unknown): ThreadFollowUpUpdateRequest {
+  if (!isRecord(payload)) {
+    throw new Error("Invalid follow-up update payload.");
+  }
+  const threadId = readRequiredString(payload.threadId, "Thread id is required.");
+  const followUpId = readRequiredString(payload.followUpId, "Follow-up id is required.");
+  const attachments = parsePromptImageAttachments(payload.attachments);
+  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  if (!prompt && attachments.length === 0) {
+    throw new Error("Follow-up message is required.");
+  }
+  return {
+    threadId,
+    followUpId,
+    prompt,
+    ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
 

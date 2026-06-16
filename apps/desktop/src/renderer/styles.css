@@ -1366,6 +1366,20 @@ html[data-window-focused="true"] .codex-sidebar {
   color: var(--follow-up-card-text);
 }
 
+.follow-up-card-main-editable {
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.follow-up-card-main-editable:hover {
+  color: var(--follow-up-card-action-hover-text);
+}
+
+.follow-up-card-main-editable:focus-visible {
+  outline: 2px solid var(--focus-ring, rgba(59, 130, 246, 0.55));
+  outline-offset: 2px;
+}
+
 .follow-up-card-icon {
   flex-shrink: 0;
   color: var(--follow-up-card-label);
@@ -1399,20 +1413,16 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .follow-up-card-type-action {
-  padding: 6px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  font: inherit;
   cursor: pointer;
+  border-radius: 6px;
 }
 
-.follow-up-card-type-action:hover:not(:disabled) {
+.follow-up-card-type-action:hover:not([aria-disabled="true"]) {
   background: var(--follow-up-card-action-hover-bg);
   color: var(--follow-up-card-action-hover-text);
 }
 
-.follow-up-card-type-action:disabled {
+.follow-up-card-type-action[aria-disabled="true"] {
   cursor: wait;
   opacity: 0.55;
 }

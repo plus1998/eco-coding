@@ -1115,6 +1115,38 @@ export class ConversationStore {
     return this.updateThreadFollowUpStatus(threadId, followUpId, { status: "cancelled" });
   }
 
+  updateThreadFollowUp(
+    threadId: string,
+    followUpId: string,
+    input: {
+      prompt: string;
+      attachments?: readonly PromptImageAttachment[];
+    },
+  ): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing || existing.status !== "queued") {
+      return undefined;
+    }
+    const attachments = input.attachments?.length ? [...input.attachments] : undefined;
+    const prompt =
+      input.prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
+    if (!prompt && !attachments?.length) {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET prompt = ?,
+             attachments_json = ?,
+             updated_at = ?
+         WHERE thread_id = ? AND id = ?`,
+      )
+      .run(prompt, attachments ? JSON.stringify(attachments) : null, now, threadId, followUpId);
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
   escalateThreadFollowUp(threadId: string, followUpId: string): ThreadPendingFollowUp | undefined {
     const existing = this.getThreadFollowUp(threadId, followUpId);
     if (!existing || existing.status !== "queued") {
