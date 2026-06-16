@@ -2046,6 +2046,24 @@ function App() {
     }
   }
 
+  async function handleGitCreateBranch(branch: string) {
+    if (!currentProjectPath || !window.eco) {
+      return;
+    }
+    setGitStatusBusy(true);
+    try {
+      const status = await window.eco.createGitBranch({
+        workspacePath: currentProjectPath,
+        branch,
+      });
+      setGitStatus(status);
+      const workspace = await window.eco.inspectWorkspace(currentProjectPath);
+      setProjectWorkspace(workspace);
+    } finally {
+      setGitStatusBusy(false);
+    }
+  }
+
   async function handleGitCommitSuccess() {
     if (!currentProjectPath || !window.eco) {
       return;
@@ -3121,6 +3139,7 @@ function App() {
           gitBusy={gitStatusBusy}
           commitDisabled={activeThread.status === "running" || activeThread.status === "queued"}
           onCheckoutGitBranch={handleGitCheckoutBranch}
+          onCreateGitBranch={handleGitCreateBranch}
           onOpenGitSettings={openGitSettings}
           {...(selectedRuntimeProfileId && { profileId: selectedRuntimeProfileId })}
           agentModelLabels={agentModelLabels}

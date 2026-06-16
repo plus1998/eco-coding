@@ -79,6 +79,7 @@ import {
   type ThreadUsageSnapshotResult,
   type ThreadUsageLedgerEventView,
   type GitCheckoutBranchRequest,
+  type GitCreateBranchRequest,
   type GitCommitRequest,
   type GitCommitResult,
   type GitGenerateCommitMessageRequest,
@@ -261,6 +262,9 @@ const api = {
   },
   checkoutGitBranch(request: GitCheckoutBranchRequest): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitCheckoutBranch, request);
+  },
+  createGitBranch(request: GitCreateBranchRequest): Promise<GitWorkingTreeStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitCreateBranch, request);
   },
   generateGitCommitMessage(request: GitGenerateCommitMessageRequest): Promise<GitGenerateCommitMessageResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGenerateCommitMessage, request);

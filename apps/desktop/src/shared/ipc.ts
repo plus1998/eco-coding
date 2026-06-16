@@ -93,6 +93,7 @@ export const IPC_CHANNELS = {
   gitGetStatus: "git:get-status",
   gitListCommits: "git:list-commits",
   gitCheckoutBranch: "git:checkout-branch",
+  gitCreateBranch: "git:create-branch",
   gitGenerateCommitMessage: "git:generate-commit-message",
   gitCommit: "git:commit",
   gitPush: "git:push",
@@ -256,6 +257,11 @@ export interface GitWorkingTreeStatus {
 }
 
 export interface GitCheckoutBranchRequest {
+  workspacePath: string;
+  branch: string;
+}
+
+export interface GitCreateBranchRequest {
   workspacePath: string;
   branch: string;
 }

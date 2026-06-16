@@ -343,6 +343,7 @@ import {
 } from "./workflow-settings-store";
 import {
   checkoutGitBranch,
+  createGitBranch,
   getGitWorkingTreeStatus,
   handleGitCommit,
   handleGitGenerateCommitMessage,
@@ -1576,6 +1577,18 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid git checkout request.");
     }
     await checkoutGitBranch(record.workspacePath, record.branch, runGitCommand);
+    return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitCreateBranch, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid git create branch request.");
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.workspacePath !== "string" || typeof record.branch !== "string") {
+      throw new Error("Invalid git create branch request.");
+    }
+    await createGitBranch(record.workspacePath, record.branch, runGitCommand);
     return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
   });
 

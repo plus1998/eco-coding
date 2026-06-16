@@ -64,6 +64,7 @@ interface ThreadInfoPanelProps {
   subagentEnabled?: SubagentEnabledSettings;
   gitSettings?: GitSettingsSnapshot;
   onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
+  onCreateGitBranch?: (branch: string) => void | Promise<void>;
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
@@ -727,6 +728,7 @@ export function ThreadInfoPanel({
   subagentEnabled,
   gitSettings,
   onCheckoutGitBranch,
+  onCreateGitBranch,
   onOpenGitSettings,
   onSaveCommitRolePreference,
   onCommitSuccess,
@@ -783,6 +785,7 @@ export function ThreadInfoPanel({
             {...(subagentEnabled && { subagentEnabled })}
             {...(gitSettings && { gitSettings })}
             {...(onCheckoutGitBranch && { onCheckoutGitBranch })}
+            {...(onCreateGitBranch && { onCreateGitBranch })}
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
             {...(onCommitSuccess && { onCommitSuccess })}

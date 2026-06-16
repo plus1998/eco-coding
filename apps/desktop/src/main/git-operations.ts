@@ -331,6 +331,18 @@ export async function checkoutGitBranch(
   await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", trimmed]);
 }
 
+export async function createGitBranch(
+  workspacePath: string,
+  branch: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<void> {
+  const trimmed = branch.trim();
+  if (!trimmed) {
+    throw new Error("分支名不能为空");
+  }
+  await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", "-b", trimmed]);
+}
+
 export async function collectCommitDiffContext(
   workspacePath: string,
   includeUnstaged: boolean,

@@ -1,5 +1,20 @@
 import { expect, test } from "bun:test";
-import { collectCommitDiffContext, COMMIT_DIFF_MAX_CHARS, listGitCommits } from "../src/main/git-operations";
+import { collectCommitDiffContext, COMMIT_DIFF_MAX_CHARS, createGitBranch, listGitCommits } from "../src/main/git-operations";
+
+test("createGitBranch runs git checkout -b", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+  await createGitBranch("/tmp/repo", "feature/new", run);
+  expect(calls).toEqual([["git", "checkout", "-b", "feature/new"]]);
+});
+
+test("createGitBranch rejects empty branch name", async () => {
+  const run = async (_args: string[], _cwd: string) => ({ exitCode: 0, stdout: "", stderr: "" });
+  await expect(createGitBranch("/tmp/repo", "   ", run)).rejects.toThrow("分支名不能为空");
+});
 
 test("collectCommitDiffContext gathers staged diff via runner", async () => {
   const calls: string[][] = [];

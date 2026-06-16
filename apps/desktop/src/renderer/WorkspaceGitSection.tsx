@@ -25,6 +25,7 @@ export interface WorkspaceGitSectionProps {
   subagentEnabled?: SubagentEnabledSettings;
   gitSettings?: GitSettingsSnapshot;
   onCheckoutGitBranch?: (branch: string) => void | Promise<void>;
+  onCreateGitBranch?: (branch: string) => void | Promise<void>;
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
@@ -45,6 +46,7 @@ export function WorkspaceGitSection({
   subagentEnabled,
   gitSettings,
   onCheckoutGitBranch,
+  onCreateGitBranch,
   onSaveCommitRolePreference,
   onCommitSuccess,
   scriptsDisabled,
@@ -177,6 +179,7 @@ export function WorkspaceGitSection({
           {...(gitBusy !== undefined && { busy: gitBusy })}
           {...(commitDisabled !== undefined && { disabled: commitDisabled })}
           {...(onCheckoutGitBranch && { onCheckoutBranch: onCheckoutGitBranch })}
+          {...(onCreateGitBranch && { onCreateBranch: onCreateGitBranch })}
           onClose={() => setCommitDialogOpen(false)}
           onSaveRolePreference={onSaveCommitRolePreference!}
           onSuccess={handleCommitSuccess}

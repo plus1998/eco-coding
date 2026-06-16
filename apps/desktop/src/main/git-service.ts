@@ -8,6 +8,7 @@ import {
 import { summarizeCommitMessage } from "./git-commit-message";
 import {
   checkoutGitBranch,
+  createGitBranch,
   collectCommitDiffContext,
   createCommit,
   defaultGitRunner,
@@ -174,6 +175,7 @@ export async function handleGitPush(
 
 export {
   checkoutGitBranch,
+  createGitBranch,
   getGitWorkingTreeStatus,
   listGitCommits,
 };

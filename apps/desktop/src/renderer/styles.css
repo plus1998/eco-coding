@@ -11598,6 +11598,11 @@ html[data-window-focused="true"] .settings-nav {
   cursor: not-allowed;
 }
 
+.git-commit-popover-branch-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .git-commit-popover-branch svg:last-child,
 .git-commit-popover-model-trigger .git-commit-model-chevron {
   flex-shrink: 0;
@@ -11683,6 +11688,122 @@ html[data-window-focused="true"] .settings-nav {
   position: relative;
   display: inline-flex;
   min-width: 0;
+}
+
+.git-commit-branch-select-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.git-commit-branch-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--popover-border);
+  border-radius: 14px;
+  background: var(--popover-bg);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.03),
+    0 10px 28px rgba(0, 0, 0, 0.12);
+}
+
+.git-commit-branch-menu-header {
+  padding: 8px 12px 4px;
+  color: var(--popover-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.git-commit-branch-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.git-commit-branch-menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-commit-branch-menu-list button svg:first-child {
+  flex-shrink: 0;
+}
+
+.git-commit-branch-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-commit-branch-menu-list button.is-active,
+.git-commit-branch-menu-list button:hover:not(:disabled) {
+  background: var(--popover-hover);
+}
+
+.git-commit-branch-menu-list button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.git-commit-branch-create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.git-commit-branch-create-input {
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--popover-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.git-commit-branch-create-input::placeholder {
+  color: var(--popover-muted);
+}
+
+.git-commit-branch-create-input:focus {
+  outline: none;
+  border-color: var(--popover-text);
+}
+
+.git-commit-branch-create-error {
+  margin: 0 12px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .git-commit-model-provider-dot {

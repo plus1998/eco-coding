@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2 } from "lucide-react";
+import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2, Plus } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -39,6 +39,7 @@ interface GitCommitDialogProps {
   busy?: boolean;
   disabled?: boolean;
   onCheckoutBranch?: (branch: string) => void | Promise<void>;
+  onCreateBranch?: (branch: string) => void | Promise<void>;
   onClose: () => void;
   onSaveRolePreference: (role: RuntimeAgentRole) => void | Promise<void>;
   onSuccess: () => void | Promise<void>;
@@ -57,6 +58,7 @@ export function GitCommitDialog({
   busy,
   disabled,
   onCheckoutBranch,
+  onCreateBranch,
   onClose,
   onSaveRolePreference,
   onSuccess,
@@ -65,6 +67,11 @@ export function GitCommitDialog({
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const [selectedRole, setSelectedRole] = useState<RuntimeAgentRole | undefined>();
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchCreateMode, setBranchCreateMode] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchError, setBranchError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -95,12 +102,20 @@ export function GitCommitDialog({
   useEffect(() => {
     if (!open) {
       setModelMenuOpen(false);
+      setBranchMenuOpen(false);
+      setBranchCreateMode(false);
+      setNewBranchName("");
+      setBranchError(undefined);
       return;
     }
     setMessage("");
     setIncludeUnstaged(true);
     setError(undefined);
     setModelMenuOpen(false);
+    setBranchMenuOpen(false);
+    setBranchCreateMode(false);
+    setNewBranchName("");
+    setBranchError(undefined);
     const resolved = resolveCommitMessageRoute(
       routes,
       routePricingHints,
@@ -119,6 +134,48 @@ export function GitCommitDialog({
     },
     [onSaveRolePreference],
   );
+
+  const closeBranchMenu = useCallback(() => {
+    setBranchMenuOpen(false);
+    setBranchCreateMode(false);
+    setNewBranchName("");
+    setBranchError(undefined);
+  }, []);
+
+  const handleSelectBranch = useCallback(
+    async (branch: string) => {
+      if (!onCheckoutBranch || branchBusy) {
+        return;
+      }
+      closeBranchMenu();
+      setBranchBusy(true);
+      try {
+        await onCheckoutBranch(branch);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        setBranchBusy(false);
+      }
+    },
+    [onCheckoutBranch, branchBusy, closeBranchMenu],
+  );
+
+  const handleCreateBranch = useCallback(async () => {
+    const trimmed = newBranchName.trim();
+    if (!onCreateBranch || !trimmed || branchBusy) {
+      return;
+    }
+    setBranchBusy(true);
+    setBranchError(undefined);
+    try {
+      await onCreateBranch(trimmed);
+      closeBranchMenu();
+    } catch (caught) {
+      setBranchError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBranchBusy(false);
+    }
+  }, [onCreateBranch, newBranchName, branchBusy, closeBranchMenu]);
 
   const runAction = useCallback(
     async (action: CommitDialogAction) => {
@@ -184,6 +241,16 @@ export function GitCommitDialog({
         void runAction("commit");
       }
       if (event.key === "Escape") {
+        if (branchCreateMode) {
+          setBranchCreateMode(false);
+          setNewBranchName("");
+          setBranchError(undefined);
+          return;
+        }
+        if (branchMenuOpen) {
+          closeBranchMenu();
+          return;
+        }
         if (modelMenuOpen) {
           setModelMenuOpen(false);
           return;
@@ -193,7 +260,7 @@ export function GitCommitDialog({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, runAction, modelMenuOpen]);
+  }, [open, onClose, runAction, modelMenuOpen, branchMenuOpen, branchCreateMode, closeBranchMenu]);
 
   if (!open) {
     return null;
@@ -205,6 +272,9 @@ export function GitCommitDialog({
   const canCommit = Boolean(gitStatus?.canCommit) && !disabled;
   const canPushOnly = canPush && (gitStatus?.aheadCount ?? 0) > 0;
   const branchLabel = gitStatus?.branch ?? "detached";
+  const branchPickerDisabled = submitting || busy || branchBusy;
+  const showBranchPicker =
+    Boolean(gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch);
   const modelPickerDisabled = submitting || busy || disabled || modelOptions.length === 0;
   const showModelPicker = message.trim().length === 0;
 
@@ -219,29 +289,121 @@ export function GitCommitDialog({
           if (!(event.target as HTMLElement).closest(".git-commit-model-select-wrap")) {
             setModelMenuOpen(false);
           }
+          if (!(event.target as HTMLElement).closest(".git-commit-branch-select-wrap")) {
+            closeBranchMenu();
+          }
         }}
       >
         <header className="git-commit-popover-header">
           <div className="git-commit-popover-header-pickers">
-            {gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutBranch ? (
-              <label className="git-commit-popover-branch">
-                <GitBranch size={14} strokeWidth={1.75} aria-hidden />
-                <select
-                  className="git-commit-popover-branch-select"
-                  value={gitStatus.branch ?? ""}
-                  disabled={submitting || busy}
+            {showBranchPicker ? (
+              <div className="git-commit-branch-select-wrap">
+                <button
+                  type="button"
+                  className="git-commit-popover-branch git-commit-popover-branch-trigger"
+                  disabled={branchPickerDisabled}
+                  aria-expanded={branchMenuOpen}
+                  aria-haspopup="listbox"
                   aria-label="切换分支"
-                  onChange={(event) => void onCheckoutBranch(event.target.value)}
+                  onClick={() => {
+                    setModelMenuOpen(false);
+                    setBranchMenuOpen((current) => {
+                      const next = !current;
+                      if (!next) {
+                        setBranchCreateMode(false);
+                        setNewBranchName("");
+                        setBranchError(undefined);
+                      }
+                      return next;
+                    });
+                  }}
                 >
-                  {gitStatus.branches.map((branch) => (
-                    <option key={branch} value={branch}>
-                      {branch}
-                    </option>
-                  ))}
-                </select>
-                <span className="git-commit-popover-branch-label">{branchLabel}</span>
-                <ChevronDown size={12} strokeWidth={2} aria-hidden />
-              </label>
+                  <GitBranch size={14} strokeWidth={1.75} aria-hidden />
+                  <span className="git-commit-popover-branch-label">{branchLabel}</span>
+                  <ChevronDown
+                    size={12}
+                    strokeWidth={2}
+                    className={branchMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
+                    aria-hidden
+                  />
+                </button>
+                {branchMenuOpen ? (
+                  <div className="git-commit-branch-menu" role="listbox" aria-label="提交到">
+                    {branchCreateMode ? (
+                      <div className="git-commit-branch-create">
+                        <div className="git-commit-branch-menu-header">新分支</div>
+                        <input
+                          className="git-commit-branch-create-input"
+                          value={newBranchName}
+                          placeholder="分支名称…"
+                          disabled={branchBusy}
+                          autoFocus
+                          onChange={(event) => {
+                            setNewBranchName(event.target.value);
+                            setBranchError(undefined);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void handleCreateBranch();
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setBranchCreateMode(false);
+                              setNewBranchName("");
+                              setBranchError(undefined);
+                            }
+                          }}
+                        />
+                        {branchError ? <p className="git-commit-branch-create-error">{branchError}</p> : null}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="git-commit-branch-menu-header">提交到</div>
+                        <ul className="git-commit-branch-menu-list">
+                          {gitStatus!.branches.map((branch) => {
+                            const isActive = branch === gitStatus?.branch;
+                            return (
+                              <li key={branch}>
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={isActive}
+                                  className={isActive ? "is-active" : undefined}
+                                  disabled={branchBusy}
+                                  onClick={() => void handleSelectBranch(branch)}
+                                >
+                                  <GitBranch size={14} strokeWidth={1.75} aria-hidden />
+                                  <span className="git-commit-branch-menu-label">{branch}</span>
+                                  {isActive ? <Check size={14} aria-hidden /> : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                          {onCreateBranch ? (
+                            <li>
+                              <button
+                                type="button"
+                                className="git-commit-branch-menu-create"
+                                disabled={branchBusy}
+                                onClick={() => {
+                                  setBranchCreateMode(true);
+                                  setNewBranchName("");
+                                  setBranchError(undefined);
+                                }}
+                              >
+                                <Plus size={14} strokeWidth={2} aria-hidden />
+                                <span className="git-commit-branch-menu-label">新分支</span>
+                              </button>
+                            </li>
+                          ) : null}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <div className="git-commit-popover-branch">
                 <GitBranch size={14} strokeWidth={1.75} aria-hidden />
@@ -259,7 +421,10 @@ export function GitCommitDialog({
                   aria-expanded={modelMenuOpen}
                   aria-haspopup="listbox"
                   aria-label="生成模型"
-                  onClick={() => setModelMenuOpen((current) => !current)}
+                  onClick={() => {
+                    closeBranchMenu();
+                    setModelMenuOpen((current) => !current);
+                  }}
                 >
                   {selectedOption ? (
                     <CommitModelProviderDot color={selectedOption.providerColor} label={selectedOption.providerName} />
