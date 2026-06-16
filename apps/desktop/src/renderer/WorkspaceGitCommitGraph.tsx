@@ -16,6 +16,7 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const sentinelRef = useRef<HTMLLIElement>(null);
+  const graphBodyRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
   const loadPage = useCallback(
@@ -61,7 +62,8 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
       return;
     }
     const sentinel = sentinelRef.current;
-    if (!sentinel) {
+    const root = graphBodyRef.current;
+    if (!sentinel || !root) {
       return;
     }
     const observer = new IntersectionObserver(
@@ -70,14 +72,14 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
           void loadPage(commits.length, false);
         }
       },
-      { rootMargin: "48px" },
+      { root, rootMargin: "24px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [commits.length, expanded, hasMore, loadPage, loading]);
 
   return (
-    <div className="thread-info-workspace-git-graph">
+    <div className={expanded ? "thread-info-workspace-git-graph is-expanded" : "thread-info-workspace-git-graph"}>
       <button
         type="button"
         className="thread-info-workspace-git-graph-trigger"
@@ -93,7 +95,7 @@ export function WorkspaceGitCommitGraph({ workspacePath, refreshToken = "" }: Wo
       </button>
 
       {expanded ? (
-        <div className="thread-info-workspace-git-graph-body">
+        <div ref={graphBodyRef} className="thread-info-workspace-git-graph-body">
           {error ? <p className="thread-info-workspace-git-graph-error">{error}</p> : null}
           {commits.length === 0 && !loading && !error ? (
             <p className="thread-info-workspace-git-graph-empty">暂无提交记录</p>

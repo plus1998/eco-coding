@@ -21,7 +21,6 @@ import type {
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { GitCommitDialog } from "./GitCommitDialog";
 import { WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
-import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 
 export interface WorkspaceGitSectionProps {
   workspacePath?: string;
@@ -64,7 +63,6 @@ export function WorkspaceGitSection({
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
-  const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchCreateMode, setBranchCreateMode] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
@@ -92,7 +90,6 @@ export function WorkspaceGitSection({
   const insertions = gitStatus?.insertions ?? 0;
   const deletions = gitStatus?.deletions ?? 0;
   const branchLabel = gitStatus?.isGitRepository ? gitStatus.branch ?? "detached" : "非 Git 仓库";
-  const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
   const showBranchPicker = Boolean(
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
   );
@@ -192,7 +189,6 @@ export function WorkspaceGitSection({
   }, [branchMenuOpen, closeBranchMenu]);
 
   async function handleCommitSuccess() {
-    setCommitsRefreshKey((current) => current + 1);
     await onCommitSuccess?.();
   }
 
@@ -455,13 +451,6 @@ export function WorkspaceGitSection({
         onSelectPath={setSelectedChangePath}
         onClose={closeChangesDrawer}
       />
-
-      {showCommitGraph ? (
-        <WorkspaceGitCommitGraph
-          workspacePath={workspacePath!}
-          refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
-        />
-      ) : null}
     </div>
   );
 }

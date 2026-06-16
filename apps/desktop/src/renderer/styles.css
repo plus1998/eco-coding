@@ -4721,8 +4721,16 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .thread-info-panel-scroll > *,
-.thread-info-float-stack {
+.thread-info-float-stack,
+.thread-info-git-graph-footer {
   -webkit-app-region: no-drag;
+}
+
+.thread-info-git-graph-footer {
+  flex-shrink: 0;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
 }
 
 .thread-info-panel-scroll-with-float {
@@ -5195,9 +5203,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .thread-info-workspace-git-graph {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .thread-info-workspace-git-graph-trigger {
@@ -5205,26 +5213,40 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 0;
+  padding: 6px 8px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
-.thread-info-workspace-git-graph-trigger:hover .thread-info-workspace-git-graph-title {
+.thread-info-workspace-git-graph-trigger:hover,
+.thread-info-workspace-git-graph.is-expanded .thread-info-workspace-git-graph-trigger {
+  background: var(--nav-hover-solid);
+}
+
+.thread-info-workspace-git-graph-trigger:hover .thread-info-workspace-git-graph-title,
+.thread-info-workspace-git-graph.is-expanded .thread-info-workspace-git-graph-title {
   color: var(--text-primary);
 }
 
 .thread-info-workspace-git-graph-title {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .thread-info-workspace-git-graph-body {
-  padding: 4px 0 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 8px;
+  min-height: 0;
 }
 
 .thread-info-workspace-git-graph-list {

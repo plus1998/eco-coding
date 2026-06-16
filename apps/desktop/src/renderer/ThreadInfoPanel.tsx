@@ -33,6 +33,7 @@ import { ContextCard } from "./ContextCard";
 import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
+import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import type {
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
@@ -755,6 +756,15 @@ export function ThreadInfoPanel({
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
   const showProgress = hasProgressInfo(todos);
+  const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
+  const showCommitGraph = Boolean(
+    workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits,
+  );
+
+  async function handleCommitSuccess() {
+    setCommitsRefreshKey((current) => current + 1);
+    await onCommitSuccess?.();
+  }
 
   return (
     <aside
@@ -787,7 +797,7 @@ export function ThreadInfoPanel({
             {...(onCreateGitBranch && { onCreateGitBranch })}
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
-            {...(onCommitSuccess && { onCommitSuccess })}
+            onCommitSuccess={() => void handleCommitSuccess()}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}
             {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
           />
@@ -818,6 +828,15 @@ export function ThreadInfoPanel({
           contextPlaceholder={contextCardPlaceholder(threadStatus)}
           {...(agentDisplayNames && { agentDisplayNames })}
         />
+      ) : null}
+
+      {showCommitGraph ? (
+        <div className="thread-info-git-graph-footer">
+          <WorkspaceGitCommitGraph
+            workspacePath={workspacePath!}
+            refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
+          />
+        </div>
       ) : null}
     </aside>
   );
