@@ -10736,6 +10736,58 @@ html[data-window-focused="true"] .settings-nav {
   justify-content: flex-end;
 }
 
+.git-pull-conflict-modal {
+  max-width: 480px;
+}
+
+.git-pull-conflict-lead {
+  margin: 0 0 12px;
+  color: #c8c8c8;
+  line-height: 1.5;
+}
+
+.git-pull-conflict-files {
+  margin: 0;
+  padding-left: 18px;
+  color: #ddd;
+  font-size: 13px;
+}
+
+.git-pull-conflict-files li {
+  margin: 4px 0;
+  word-break: break-all;
+}
+
+.git-pull-conflict-files code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.git-pull-conflict-more {
+  color: #888;
+  font-style: italic;
+}
+
+.git-pull-conflict-footer {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.git-pull-conflict-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.thread-info-workspace-git-error-row {
+  padding: 0 10px 6px;
+}
+
+.thread-info-workspace-git-error {
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .settings-modal-cancel {
   padding: 8px 14px;
   border: none;

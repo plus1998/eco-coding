@@ -88,6 +88,8 @@ import {
   type GitListCommitsResult,
   type GitPushRequest,
   type GitPushResult,
+  type GitPullRequest,
+  type GitPullResult,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   type WorkspaceDiffResult,
@@ -290,6 +292,9 @@ const api = {
   },
   pushGitChanges(request: GitPushRequest): Promise<GitPushResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitPush, request);
+  },
+  pullGitChanges(request: GitPullRequest): Promise<GitPullResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitPull, request);
   },
   getProxyBridgeSettings(): Promise<ProxyBridgeSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.proxyBridgeSettingsGet);

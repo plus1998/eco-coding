@@ -77,6 +77,7 @@ import {
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
   isGitPushRequest,
+  isGitPullRequest,
   isRunPackageScriptRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
@@ -353,6 +354,7 @@ import {
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitPush,
+  handleGitPull,
   listGitCommits,
 } from "./git-service";
 import {
@@ -1652,6 +1654,17 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid git push request.");
     }
     return handleGitPush(payload, runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitPull, async (_event, payload: unknown) => {
+    if (!isGitPullRequest(payload)) {
+      throw new Error("Invalid git pull request.");
+    }
+    const result = await handleGitPull(payload, runGitCommand);
+    if (currentWorkspace?.path === payload.workspacePath.trim()) {
+      currentWorkspace = await inspectWorkspace(payload.workspacePath.trim());
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());

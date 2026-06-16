@@ -69,6 +69,8 @@ interface ThreadInfoPanelProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onPullSuccess?: () => void | Promise<void>;
+  onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
   todos?: CoderTodoItem[];
@@ -729,6 +731,8 @@ export function ThreadInfoPanel({
   onOpenGitSettings,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  onPullSuccess,
+  onResolveConflictsWithAgent,
   scriptsDisabled,
   onOpenScriptsDialog,
   todos = [],
@@ -766,6 +770,11 @@ export function ThreadInfoPanel({
     await onCommitSuccess?.();
   }
 
+  async function handlePullSuccess() {
+    setCommitsRefreshKey((current) => current + 1);
+    await onPullSuccess?.();
+  }
+
   return (
     <aside
       id="thread-info-panel"
@@ -798,6 +807,8 @@ export function ThreadInfoPanel({
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
             onCommitSuccess={() => void handleCommitSuccess()}
+            onPullSuccess={() => void handlePullSuccess()}
+            {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}
             {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
           />

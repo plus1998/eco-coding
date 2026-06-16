@@ -15,6 +15,7 @@ import {
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
   listGitCommits,
+  pullChanges,
   pushChanges,
   stageChanges,
   type GitRunner,
@@ -37,6 +38,8 @@ import type {
   GitCommitResult,
   GitGenerateCommitMessageRequest,
   GitGenerateCommitMessageResult,
+  GitPullRequest,
+  GitPullResult,
   GitPushRequest,
   GitPushResult,
   RuntimeAgentRole,
@@ -168,6 +171,17 @@ export async function handleGitPush(
   run: GitRunner = defaultGitRunner,
 ): Promise<GitPushResult> {
   return pushChanges(
+    request.workspacePath,
+    request.branch ? { branch: request.branch } : {},
+    run,
+  );
+}
+
+export async function handleGitPull(
+  request: GitPullRequest,
+  run: GitRunner = defaultGitRunner,
+): Promise<GitPullResult> {
+  return pullChanges(
     request.workspacePath,
     request.branch ? { branch: request.branch } : {},
     run,

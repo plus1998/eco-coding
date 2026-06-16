@@ -100,6 +100,7 @@ export const IPC_CHANNELS = {
   gitGenerateCommitMessage: "git:generate-commit-message",
   gitCommit: "git:commit",
   gitPush: "git:push",
+  gitPull: "git:pull",
   gitSettingsGet: "git-settings:get",
   gitSettingsSave: "git-settings:save",
 } as const;
@@ -337,6 +338,18 @@ export interface GitPushRequest {
 export interface GitPushResult {
   method: "git" | "gh";
   output: string;
+}
+
+export interface GitPullRequest {
+  workspacePath: string;
+  branch?: string;
+}
+
+export interface GitPullResult {
+  output: string;
+  pulled: boolean;
+  conflicted: boolean;
+  conflictFiles: string[];
 }
 
 export interface GitSettingsSnapshot {
@@ -1272,6 +1285,14 @@ export function isGitCommitRequest(value: unknown): value is GitCommitRequest {
 }
 
 export function isGitPushRequest(value: unknown): value is GitPushRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.workspacePath === "string";
+}
+
+export function isGitPullRequest(value: unknown): value is GitPullRequest {
   if (!value || typeof value !== "object") {
     return false;
   }

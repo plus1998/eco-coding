@@ -2096,6 +2096,87 @@ function App() {
     setProjectWorkspace(workspace);
   }
 
+  async function handleGitPullSuccess() {
+    await handleGitCommitSuccess();
+  }
+
+  async function handleGitPullConflictsWithAgent(conflictFiles: string[]) {
+    if (!currentProjectPath || !window.eco || conflictFiles.length === 0) {
+      return;
+    }
+    if (!composerRuntimeConfig) {
+      setError("请先配置子代理编排方案。");
+      return;
+    }
+    const fileList = conflictFiles.map((file) => `- ${file}`).join("\n");
+    const prompt = `Git pull 产生了合并冲突，请解决以下文件的冲突并完成合并：\n${fileList}\n\n请查看冲突标记（<<<<<<< / ======= / >>>>>>>），保留正确代码，然后 git add 相关文件并完成合并提交。`;
+    setError(undefined);
+
+    if (activeThread) {
+      if (activeThread.status === "running" || activeThread.status === "queued") {
+        if (typeof window.eco.enqueueThreadFollowUp !== "function") {
+          setError("当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。");
+          return;
+        }
+        setFollowUpBusy(true);
+        try {
+          const result = await window.eco.enqueueThreadFollowUp({
+            threadId: activeThread.id,
+            prompt,
+          });
+          setFollowUpsByThread((current) => ({
+            ...current,
+            [activeThread.id]: sortThreadFollowUps(result.followUps),
+          }));
+        } catch (caught) {
+          setError(errorMessage(caught));
+        } finally {
+          setFollowUpBusy(false);
+        }
+        return;
+      }
+      if (isContinuableThreadStatus(activeThread.status)) {
+        setIsStarting(true);
+        try {
+          const result = await window.eco.continueThread({
+            threadId: activeThread.id,
+            prompt,
+            runtimeConfig: composerRuntimeConfig,
+          });
+          setThreads((current) =>
+            current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+          );
+          await refreshThreadState(result.thread.id);
+        } catch (caught) {
+          setError(errorMessage(caught));
+        } finally {
+          setIsStarting(false);
+        }
+        return;
+      }
+    }
+
+    setIsStarting(true);
+    try {
+      const result = await window.eco.startThread({
+        workspacePath: currentProjectPath,
+        prompt,
+        runtimeConfig: composerRuntimeConfig,
+      });
+      setThreads((current) => [
+        result.thread,
+        ...current.filter((thread) => thread.id !== result.thread.id),
+      ]);
+      setSelectedThreadId(result.thread.id);
+      setPendingPlan(undefined);
+      await refreshThreadState(result.thread.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
   async function persistComposerRuntimeConfig(
     next: ThreadRuntimeConfig,
     options?: { persistWhileRunning?: boolean },
@@ -3179,6 +3260,10 @@ function App() {
           gitSettings={gitSettings}
           onSaveCommitRolePreference={saveCommitMessageRolePreference}
           onCommitSuccess={() => void handleGitCommitSuccess()}
+          onPullSuccess={() => void handleGitPullSuccess()}
+          onResolveConflictsWithAgent={(conflictFiles) =>
+            void handleGitPullConflictsWithAgent(conflictFiles)
+          }
           {...(showPackageScriptsEntry && {
             scriptsDisabled: activeThread
               ? activeThread.status === "running" || activeThread.status === "queued"

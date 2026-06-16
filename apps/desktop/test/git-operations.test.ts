@@ -5,6 +5,8 @@ import {
   createGitBranch,
   getWorkspaceDiff,
   listGitCommits,
+  listMergeConflictFiles,
+  pullChanges,
 } from "../src/main/git-operations";
 
 test("createGitBranch runs git checkout -b", async () => {
@@ -141,4 +143,75 @@ test("listGitCommits paginates git log output", async () => {
   const secondPage = await listGitCommits("/tmp/repo", { skip: 5, limit: 5 }, run);
   expect(secondPage.commits).toHaveLength(1);
   expect(secondPage.hasMore).toBe(false);
+});
+
+test("pullChanges returns conflict files when merge fails", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key.includes("branch --show-current")) {
+      return { exitCode: 0, stdout: "main\n", stderr: "" };
+    }
+    if (key.includes("git pull")) {
+      return {
+        exitCode: 1,
+        stdout: "Auto-merging src/a.ts\nCONFLICT (content): Merge conflict in src/a.ts\n",
+        stderr: "",
+      };
+    }
+    if (key.includes("diff --name-only --diff-filter=U")) {
+      return { exitCode: 0, stdout: "src/a.ts\n", stderr: "" };
+    }
+    if (key === "git status --porcelain") {
+      return { exitCode: 0, stdout: "UU src/a.ts\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await pullChanges("/tmp/repo", {}, run);
+  expect(result.conflicted).toBe(true);
+  expect(result.conflictFiles).toEqual(["src/a.ts"]);
+  expect(result.pulled).toBe(false);
+  expect(calls.some((args) => args.join(" ").includes("git pull --no-rebase origin main"))).toBe(true);
+});
+
+test("pullChanges succeeds without conflicts", async () => {
+  const run = async (args: string[], _cwd: string) => {
+    const key = args.join(" ");
+    if (key.includes("branch --show-current")) {
+      return { exitCode: 0, stdout: "main\n", stderr: "" };
+    }
+    if (key.includes("git pull")) {
+      return { exitCode: 0, stdout: "Already up to date.\n", stderr: "" };
+    }
+    if (key.includes("diff --name-only --diff-filter=U")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git status --porcelain") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await pullChanges("/tmp/repo", {}, run);
+  expect(result.conflicted).toBe(false);
+  expect(result.pulled).toBe(true);
+  expect(result.conflictFiles).toEqual([]);
+});
+
+test("listMergeConflictFiles reads unmerged paths from porcelain status", async () => {
+  const run = async (args: string[], _cwd: string) => {
+    const key = args.join(" ");
+    if (key.includes("diff --name-only --diff-filter=U")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git status --porcelain") {
+      return { exitCode: 0, stdout: "UU src/conflict.ts\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const files = await listMergeConflictFiles("/tmp/repo", run);
+  expect(files).toEqual(["src/conflict.ts"]);
 });

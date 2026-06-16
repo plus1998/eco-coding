@@ -476,6 +476,89 @@ export async function createCommit(
   return sha;
 }
 
+export interface GitPullResult {
+  output: string;
+  pulled: boolean;
+  conflicted: boolean;
+  conflictFiles: string[];
+}
+
+export async function listMergeConflictFiles(
+  workspacePath: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<string[]> {
+  const cwd = path.resolve(workspacePath);
+  const diff = await run(["git", "diff", "--name-only", "--diff-filter=U"], cwd);
+  if (diff.exitCode === 0 && diff.stdout.trim()) {
+    return diff.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  const status = await run(["git", "status", "--porcelain"], cwd);
+  if (status.exitCode !== 0) {
+    return [];
+  }
+  return status.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^(?:U.|.U|AA|DD)/.test(line))
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean);
+}
+
+function pullOutputIndicatesConflict(output: string): boolean {
+  const text = output.toLowerCase();
+  return text.includes("conflict") || text.includes("冲突");
+}
+
+export async function pullChanges(
+  workspacePath: string,
+  options: { branch?: string } = {},
+  run: GitRunner = defaultGitRunner,
+): Promise<GitPullResult> {
+  const cwd = path.resolve(workspacePath);
+  const branch =
+    options.branch?.trim() ||
+    (await runGitOk(run, cwd, ["git", "branch", "--show-current"])).trim();
+  if (!branch || branch === "detached") {
+    throw new Error("无法确定当前分支，无法拉取");
+  }
+
+  const pull = await run(["git", "pull", "--no-rebase", "origin", branch], cwd);
+  const output = (pull.stdout.trim() || pull.stderr.trim()).trim();
+  let conflictFiles = await listMergeConflictFiles(cwd, run);
+  const conflicted =
+    conflictFiles.length > 0 ||
+    (pull.exitCode !== 0 && pullOutputIndicatesConflict(`${pull.stdout}\n${pull.stderr}`));
+
+  if (pull.exitCode !== 0 && !conflicted) {
+    const fallback = await run(["git", "pull", "--no-rebase"], cwd);
+    const fallbackOutput = (fallback.stdout.trim() || fallback.stderr.trim()).trim();
+    conflictFiles = await listMergeConflictFiles(cwd, run);
+    const fallbackConflicted =
+      conflictFiles.length > 0 ||
+      (fallback.exitCode !== 0 &&
+        pullOutputIndicatesConflict(`${fallback.stdout}\n${fallback.stderr}`));
+    if (fallback.exitCode !== 0 && !fallbackConflicted) {
+      throw new Error(fallbackOutput || output || "git pull 失败");
+    }
+    return {
+      output: fallbackOutput || output,
+      pulled: fallback.exitCode === 0 && conflictFiles.length === 0,
+      conflicted: fallbackConflicted,
+      conflictFiles,
+    };
+  }
+
+  return {
+    output,
+    pulled: pull.exitCode === 0 && conflictFiles.length === 0,
+    conflicted,
+    conflictFiles,
+  };
+}
+
 export async function pushChanges(
   workspacePath: string,
   options: { branch?: string } = {},

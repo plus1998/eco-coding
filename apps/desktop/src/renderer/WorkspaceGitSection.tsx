@@ -1,4 +1,4 @@
-import { Check, ChevronDown, GitBranch, GitCommitHorizontal, Play, Plus, PlusSquare } from "lucide-react";
+import { Check, ChevronDown, CloudDownload, GitBranch, GitCommitHorizontal, Play, Plus, PlusSquare } from "lucide-react";
 import {
   type CSSProperties,
   useCallback,
@@ -20,6 +20,7 @@ import type {
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { GitCommitDialog } from "./GitCommitDialog";
+import { GitPullConflictDialog } from "./GitPullConflictDialog";
 import { WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
 
 export interface WorkspaceGitSectionProps {
@@ -39,6 +40,8 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onPullSuccess?: () => void | Promise<void>;
+  onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
 }
@@ -59,6 +62,8 @@ export function WorkspaceGitSection({
   onCreateGitBranch,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  onPullSuccess,
+  onResolveConflictsWithAgent,
   scriptsDisabled,
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
@@ -76,6 +81,10 @@ export function WorkspaceGitSection({
   const [changesError, setChangesError] = useState<string | undefined>();
   const [changesDiff, setChangesDiff] = useState<WorkspaceDiffResult | undefined>();
   const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
+  const [pullBusy, setPullBusy] = useState(false);
+  const [pullError, setPullError] = useState<string | undefined>();
+  const [pullConflict, setPullConflict] = useState<string[] | undefined>();
+  const [resolveConflictBusy, setResolveConflictBusy] = useState(false);
 
   const showCommitEntry = Boolean(
     workspacePath &&
@@ -94,6 +103,8 @@ export function WorkspaceGitSection({
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
   );
   const branchPickerDisabled = gitBusy || branchBusy;
+  const canPull = Boolean(gitStatus?.isGitRepository && (gitStatus.behindCount ?? 0) > 0);
+  const showPullEntry = Boolean(workspacePath && gitStatus?.isGitRepository);
 
   const closeBranchMenu = useCallback(() => {
     setBranchMenuOpen(false);
@@ -190,6 +201,46 @@ export function WorkspaceGitSection({
 
   async function handleCommitSuccess() {
     await onCommitSuccess?.();
+  }
+
+  async function handlePull() {
+    if (!workspacePath || !window.eco || pullBusy || gitBusy) {
+      return;
+    }
+    setPullBusy(true);
+    setPullError(undefined);
+    try {
+      const result = await window.eco.pullGitChanges({
+        workspacePath,
+        ...(gitStatus?.branch && { branch: gitStatus.branch }),
+      });
+      if (result.conflicted) {
+        setPullConflict(
+          result.conflictFiles.length > 0 ? result.conflictFiles : ["（未能自动识别冲突文件，请查看 git status）"],
+        );
+        await onPullSuccess?.();
+        return;
+      }
+      await onPullSuccess?.();
+    } catch (caught) {
+      setPullError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPullBusy(false);
+    }
+  }
+
+  async function handleConfirmResolveConflicts() {
+    if (!pullConflict?.length || !onResolveConflictsWithAgent) {
+      setPullConflict(undefined);
+      return;
+    }
+    setResolveConflictBusy(true);
+    try {
+      await onResolveConflictsWithAgent(pullConflict);
+      setPullConflict(undefined);
+    } finally {
+      setResolveConflictBusy(false);
+    }
   }
 
   async function openChangesDrawer() {
@@ -406,6 +457,31 @@ export function WorkspaceGitSection({
           </li>
         ) : null}
 
+        {showPullEntry ? (
+          <li className="thread-info-workspace-git-row">
+            <button
+              type="button"
+              className="thread-info-workspace-git-row-button"
+              disabled={!canPull || gitBusy || pullBusy}
+              onClick={() => void handlePull()}
+              title={
+                canPull
+                  ? `落后远程 ${gitStatus?.behindCount ?? 0} 个提交`
+                  : "当前分支已与远程同步"
+              }
+            >
+              <CloudDownload size={14} aria-hidden />
+              <span>{pullBusy ? "拉取中…" : "拉取"}</span>
+            </button>
+          </li>
+        ) : null}
+
+        {pullError ? (
+          <li className="thread-info-workspace-git-row thread-info-workspace-git-error-row">
+            <span className="thread-info-workspace-git-error">{pullError}</span>
+          </li>
+        ) : null}
+
         {onOpenScriptsDialog ? (
           <li className="thread-info-workspace-git-row">
             <button
@@ -451,6 +527,19 @@ export function WorkspaceGitSection({
         onSelectPath={setSelectedChangePath}
         onClose={closeChangesDrawer}
       />
+
+      {pullConflict && pullConflict.length > 0 ? (
+        <GitPullConflictDialog
+          conflictFiles={pullConflict}
+          busy={resolveConflictBusy}
+          onConfirmAgent={() => void handleConfirmResolveConflicts()}
+          onDismiss={() => {
+            if (!resolveConflictBusy) {
+              setPullConflict(undefined);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
