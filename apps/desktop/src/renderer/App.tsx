@@ -2703,12 +2703,15 @@ function App() {
     if (canSend) void sendComposerMessage();
   }
 
-  const showThreadInfo = Boolean(activeThread);
+  const showWorkspacePanel = Boolean(currentProjectPath);
+  const threadInfoPinned = Boolean(activeThread && !threadInfoCompact);
+  const threadInfoDrawerMode = Boolean(showWorkspacePanel && !threadInfoPinned);
   const showLanding = !activeThread;
   const shellClassName = [
     "shell",
-    showThreadInfo ? "shell-with-info" : "",
-    showThreadInfo && threadInfoCompact && threadInfoDrawerOpen ? "shell-thread-info-drawer-open" : "",
+    threadInfoPinned ? "shell-thread-info-pinned" : "",
+    threadInfoDrawerMode ? "shell-thread-info-drawer-mode" : "",
+    threadInfoDrawerMode && threadInfoDrawerOpen ? "shell-thread-info-drawer-open" : "",
     settingsOpen ? "shell-settings-open" : "",
   ]
     .filter(Boolean)
@@ -3145,7 +3148,7 @@ function App() {
 
         {!showLanding ? composer : null}
 
-        {!showLanding && showThreadInfo ? (
+        {threadInfoDrawerMode ? (
           <div className="codex-main-toolbar">
             <button
               type="button"
@@ -3166,7 +3169,7 @@ function App() {
         ) : null}
       </section>
 
-      {showThreadInfo && threadInfoCompact && threadInfoDrawerOpen ? (
+      {threadInfoDrawerMode && threadInfoDrawerOpen ? (
         <button
           type="button"
           className="thread-info-drawer-backdrop"
@@ -3175,17 +3178,21 @@ function App() {
         />
       ) : null}
 
-      {showThreadInfo && activeThread ? (
+      {showWorkspacePanel ? (
         <ThreadInfoPanel
-          threadId={activeThread.id}
-          todos={coderTodos}
-          threadStatus={activeThread.status}
+          {...(activeThread && { threadId: activeThread.id })}
+          todos={activeThread ? coderTodos : []}
+          {...(activeThread && { threadStatus: activeThread.status })}
           {...(projectWorkspace && { workspace: projectWorkspace })}
           {...(currentProjectPath && { workspacePath: currentProjectPath })}
           workspaceLabel={currentProjectName}
           {...(gitStatus && { gitStatus })}
           gitBusy={gitStatusBusy}
-          commitDisabled={activeThread.status === "running" || activeThread.status === "queued"}
+          commitDisabled={
+            activeThread
+              ? activeThread.status === "running" || activeThread.status === "queued"
+              : false
+          }
           onCheckoutGitBranch={handleGitCheckoutBranch}
           onCreateGitBranch={handleGitCreateBranch}
           onOpenGitSettings={openGitSettings}
@@ -3198,16 +3205,18 @@ function App() {
           onSaveCommitRolePreference={saveCommitMessageRolePreference}
           onCommitSuccess={() => void handleGitCommitSuccess()}
           {...(showPackageScriptsEntry && {
-            scriptsDisabled:
-              activeThread.status === "running" || activeThread.status === "queued",
+            scriptsDisabled: activeThread
+              ? activeThread.status === "running" || activeThread.status === "queued"
+              : false,
             onOpenScriptsDialog: () => {
               void refreshPackageScripts();
               setScriptsDialogOpen(true);
             },
           })}
-          {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+          {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
-          {...(workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
+          {...(activeThread &&
+            workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
         />
       ) : null}
 

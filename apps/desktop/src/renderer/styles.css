@@ -84,99 +84,93 @@ button:not(:disabled) {
   background: transparent;
 }
 
-.shell.shell-with-info {
+.shell.shell-thread-info-pinned {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) min(300px, 30vw);
 }
 
-.shell.shell-with-info > .codex-main {
+.shell.shell-thread-info-pinned > .codex-main {
   position: relative;
   z-index: 0;
 }
 
-.shell.shell-with-info > .thread-info-panel {
+.shell.shell-thread-info-pinned > .thread-info-panel {
   position: relative;
   z-index: 20;
 }
 
 .thread-info-drawer-backdrop,
-.codex-main-toolbar {
+.shell .codex-main-toolbar {
   display: none;
 }
 
-@media (max-width: 1100px) {
-  .shell.shell-with-info {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  }
+.shell.shell-thread-info-drawer-mode > .thread-info-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 250;
+  width: min(320px, 88vw);
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  border-top: 0;
+  border-left: 1px solid var(--border-sidebar);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%);
+  transition: transform 0.24s ease, visibility 0.24s ease;
+  pointer-events: none;
+  visibility: hidden;
+}
 
-  .shell.shell-with-info > .thread-info-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    z-index: 250;
-    width: min(320px, 88vw);
-    height: 100vh;
-    max-height: 100vh;
-    min-height: 0;
-    border-top: 0;
-    border-left: 1px solid var(--border-sidebar);
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
-    transform: translateX(100%);
-    transition: transform 0.24s ease, visibility 0.24s ease;
-    pointer-events: none;
-    visibility: hidden;
-  }
+.shell.shell-thread-info-drawer-open > .thread-info-panel {
+  transform: translateX(0);
+  pointer-events: auto;
+  visibility: visible;
+}
 
-  .shell.shell-thread-info-drawer-open > .thread-info-panel {
-    transform: translateX(0);
-    pointer-events: auto;
-    visibility: visible;
-  }
+.shell.shell-thread-info-drawer-open .thread-info-drawer-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.28);
+  cursor: default;
+  animation: thread-info-drawer-fade-in 0.2s ease;
+}
 
-  .thread-info-drawer-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 240;
-    border: 0;
-    padding: 0;
-    margin: 0;
-    background: rgba(0, 0, 0, 0.28);
-    cursor: default;
-    animation: thread-info-drawer-fade-in 0.2s ease;
-  }
+.shell.shell-thread-info-drawer-mode .codex-main-toolbar {
+  position: fixed;
+  top: var(--content-top-inset);
+  right: 15px;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
 
-  .codex-main-toolbar {
-    position: fixed;
-    top: var(--content-top-inset);
-    right: 15px;
-    z-index: 260;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    pointer-events: auto;
-    -webkit-app-region: no-drag;
-  }
+.codex-main-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-log-muted);
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
 
-  .codex-main-toolbar-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--codex-log-muted);
-    pointer-events: auto;
-    -webkit-app-region: no-drag;
-  }
-
-  .codex-main-toolbar-button:hover:not(:disabled),
-  .codex-main-toolbar-button.is-active {
-    background: var(--nav-hover-solid);
-    color: var(--codex-log-text);
-  }
+.codex-main-toolbar-button:hover:not(:disabled),
+.codex-main-toolbar-button.is-active {
+  background: var(--nav-hover-solid);
+  color: var(--codex-log-text);
 }
 
 @keyframes thread-info-drawer-fade-in {
@@ -11346,7 +11340,7 @@ html[data-window-focused="true"] .settings-nav {
 
 @media (max-width: 900px) {
   .shell,
-  .shell.shell-with-info {
+  .shell.shell-thread-info-pinned {
     grid-template-columns: 1fr;
   }
 

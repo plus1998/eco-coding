@@ -70,7 +70,7 @@ interface ThreadInfoPanelProps {
   onCommitSuccess?: () => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
-  todos: CoderTodoItem[];
+  todos?: CoderTodoItem[];
   workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
@@ -734,7 +734,7 @@ export function ThreadInfoPanel({
   onCommitSuccess,
   scriptsDisabled,
   onOpenScriptsDialog,
-  todos,
+  todos = [],
   workspaceDirtyFiles,
   threadStatus,
   usageSummary,
@@ -762,7 +762,11 @@ export function ThreadInfoPanel({
   const showProgress = hasProgressInfo(todos, workspaceDirtyFiles);
 
   return (
-    <aside id="thread-info-panel" className="thread-info-panel" aria-label="会话信息">
+    <aside
+      id="thread-info-panel"
+      className="thread-info-panel"
+      aria-label={threadId ? "会话信息" : "工作区"}
+    >
       <div
         className={
           showUsagePanels
