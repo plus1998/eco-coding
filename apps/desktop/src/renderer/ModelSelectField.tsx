@@ -25,18 +25,25 @@ export function ModelSelectField({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
   const filteredModels = useMemo(() => {
-    const query = value.trim().toLowerCase();
-    if (!query) {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
       return models;
     }
     return models.filter((model) => {
       const id = model.id.toLowerCase();
       const name = model.displayName?.toLowerCase() ?? "";
-      return id.includes(query) || name.includes(query);
+      return id.includes(normalizedQuery) || name.includes(normalizedQuery);
     });
-  }, [models, value]);
+  }, [models, query]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -60,17 +67,26 @@ export function ModelSelectField({
     };
   }, [open]);
 
+  function openModelList() {
+    if (disabled || loading) {
+      return;
+    }
+    setQuery("");
+    setOpen(true);
+    if (models.length === 0 && onRefresh && !error) {
+      onRefresh();
+    }
+  }
+
   function toggleDropdown() {
     if (disabled || loading) {
       return;
     }
-    setOpen((current) => {
-      const next = !current;
-      if (next && models.length === 0 && onRefresh && !error) {
-        onRefresh();
-      }
-      return next;
-    });
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    openModelList();
   }
 
   function selectModel(modelId: string) {
@@ -94,14 +110,17 @@ export function ModelSelectField({
             aria-expanded={open}
             aria-controls={listboxId}
             aria-autocomplete="list"
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              onChange(nextValue);
+              if (open) {
+                setQuery(nextValue);
+              }
+            }}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown" && !open) {
                 event.preventDefault();
-                setOpen(true);
-                if (models.length === 0 && onRefresh && !error) {
-                  onRefresh();
-                }
+                openModelList();
               }
             }}
           />
@@ -114,7 +133,10 @@ export function ModelSelectField({
             disabled={disabled || loading}
             onClick={toggleDropdown}
           >
-            <ChevronDown size={16} className={open ? "model-combobox-chevron is-open" : "model-combobox-chevron"} />
+            <ChevronDown
+              size={16}
+              className={open ? "model-combobox-chevron is-open" : "model-combobox-chevron"}
+            />
           </button>
         </div>
         {onRefresh && (
@@ -131,12 +153,12 @@ export function ModelSelectField({
       </div>
 
       {open && (
-        <ul id={listboxId} className="model-combobox-menu" role="listbox">
+        <div id={listboxId} className="model-combobox-menu" role="listbox">
           {loading ? (
-            <li className="model-combobox-menu-status">加载模型…</li>
+            <div className="model-combobox-menu-status">加载模型…</div>
           ) : filteredModels.length > 0 ? (
             filteredModels.map((model) => (
-              <li key={model.id}>
+              <div key={model.id}>
                 <button
                   type="button"
                   role="option"
@@ -148,16 +170,16 @@ export function ModelSelectField({
                     {model.displayName ? `${model.displayName} · ${model.id}` : model.id}
                   </span>
                 </button>
-              </li>
+              </div>
             ))
           ) : models.length > 0 ? (
-            <li className="model-combobox-menu-status">没有匹配的模型</li>
+            <div className="model-combobox-menu-status">没有匹配的模型</div>
           ) : error ? (
-            <li className="model-combobox-menu-status">列表获取失败，可直接输入模型 ID，或点击刷新重试</li>
+            <div className="model-combobox-menu-status">列表获取失败，可直接输入模型 ID，或点击刷新重试</div>
           ) : (
-            <li className="model-combobox-menu-status">暂无可用模型，请刷新列表或直接输入模型 ID</li>
+            <div className="model-combobox-menu-status">暂无可用模型，请刷新列表或直接输入模型 ID</div>
           )}
-        </ul>
+        </div>
       )}
 
       {error ? (
