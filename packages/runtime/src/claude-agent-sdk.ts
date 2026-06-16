@@ -171,10 +171,9 @@ const planningAllowedTools = [
  * Plan phase keeps read tools; write tools and Bash are stripped so the model does not attempt shell commands.
  * See docs/agent-sdk-tools-and-permissions.md
  */
-const planningDisallowedSdkTools = [
-  ...SDK_FILESYSTEM_WRITE_TOOL_NAMES,
-  "Bash",
-] as const;
+const planningDisallowedSdkTools = [...SDK_FILESYSTEM_WRITE_TOOL_NAMES, "Bash"] as const;
+// Plan submission tools are user-approval boundaries; never let SDK allow-rules auto-approve them.
+const protectedPlanModeToolNames = ["EnterPlanMode", "ExitPlanMode", "mcp__eco_plan__finalize_plan"] as const;
 const questionAllowedTools = [
   "Agent",
   ...SDK_DELEGATION_SUPPORT_TOOL_NAMES,
@@ -1067,9 +1066,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         dynamicAgentKeys ||
         toolPermissions,
     );
-    const allowedTools = this.options.toolPermissionHandler
-      ? stripBashAutoApprovedTools(mergeAllowedTools(mainAllowedTools, input.sdkSession))
-      : mergeAllowedTools(mainAllowedTools, input.sdkSession);
+    const mergedAllowedTools = mergeAllowedTools(mainAllowedTools, input.sdkSession);
+    const allowedTools = stripProtectedPlanModeAutoApprovedTools(
+      this.options.toolPermissionHandler
+        ? stripBashAutoApprovedTools(mergedAllowedTools)
+        : mergedAllowedTools,
+    );
     const sdkDisallowedTools = mergeSdkDisallowedTools(
       toolPermissions?.main.disallowed,
       phase.planningPhase ? planningDisallowedSdkTools : [],
@@ -1569,6 +1571,44 @@ export function getDefaultAllowedTools(): string[] {
 
 export function stripBashAutoApprovedTools(tools: readonly string[]): string[] {
   return tools.filter((tool) => tool.trim() !== "Bash");
+}
+
+export function stripProtectedPlanModeAutoApprovedTools(tools: readonly string[]): string[] {
+  return tools.filter((tool) => !matchesProtectedPlanModeToolPattern(tool));
+}
+
+function matchesProtectedPlanModeToolPattern(pattern: string): boolean {
+  const trimmed = pattern.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return protectedPlanModeToolNames.some((toolName) => matchesSimpleToolPattern(toolName, trimmed));
+}
+
+function matchesSimpleToolPattern(toolName: string, pattern: string): boolean {
+  if (pattern === "*" || pattern === toolName) {
+    return true;
+  }
+  if (!pattern.includes("*")) {
+    return false;
+  }
+  const parts = pattern.split("*");
+  let offset = 0;
+  for (const [index, part] of parts.entries()) {
+    if (!part) {
+      continue;
+    }
+    const found = toolName.indexOf(part, offset);
+    if (found < 0) {
+      return false;
+    }
+    if (index === 0 && found !== 0) {
+      return false;
+    }
+    offset = found + part.length;
+  }
+  const last = parts[parts.length - 1] ?? "";
+  return !last || toolName.endsWith(last);
 }
 
 /** SDK settings shared by every query(): disable Dynamic Workflows and route API credentials. */
@@ -2277,6 +2317,15 @@ export function createCanUseTool(
   options: Record<string, unknown>,
 ) => Promise<Record<string, unknown>> {
   return async (toolName, input, options) => {
+    if (isProtectedPlanModeToolName(toolName)) {
+      return {
+        behavior: "deny",
+        message:
+          "Eco Plan approval is handled by Plan Mode hooks and the Eco approval UI; generic tool auto-approval must not approve this tool.",
+        interrupt: true,
+      };
+    }
+
     const request: SdkToolPermissionRequest = {
       toolName,
       input,
@@ -2306,6 +2355,10 @@ export function createCanUseTool(
       interrupt: decision.interrupt,
     };
   };
+}
+
+function isProtectedPlanModeToolName(toolName: string): boolean {
+  return (protectedPlanModeToolNames as readonly string[]).includes(toolName.trim());
 }
 
 function readStringOption(options: Record<string, unknown>, keys: readonly string[]): string | undefined {

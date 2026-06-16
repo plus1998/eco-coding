@@ -45,6 +45,7 @@ import {
   resolveResumeSessionAtBeforeUserMessage,
   resolveSdkSessionOptions,
   stripBashAutoApprovedTools,
+  stripProtectedPlanModeAutoApprovedTools,
   toSdkAgentModel,
 } from "../src/claude-agent-sdk";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
@@ -416,6 +417,21 @@ test("merges MCP tool allowlist and defaults filesystem session options", () => 
 
 test("removes Bash from SDK auto-approved tools when confirmation is enabled", () => {
   expect(stripBashAutoApprovedTools(["Read", "Bash", "mcp__github__*"])).toEqual(["Read", "mcp__github__*"]);
+});
+
+test("removes Plan Mode submission tools from SDK auto-approved tools", () => {
+  expect(
+    stripProtectedPlanModeAutoApprovedTools([
+      "Read",
+      "ExitPlanMode",
+      "EnterPlanMode",
+      "mcp__eco_plan__finalize_plan",
+      "mcp__eco_plan__*",
+      "mcp__github__*",
+      "Exit*",
+      "*",
+    ]),
+  ).toEqual(["Read", "mcp__github__*"]);
 });
 
 test("creates native SDK subagent definitions", () => {
@@ -1177,6 +1193,27 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
     message: "Approval required",
     interrupt: true,
   });
+});
+
+test("canUseTool refuses Plan Mode tools before generic approval handler", async () => {
+  let handlerCalled = false;
+  const canUseTool = createCanUseTool(async () => {
+    handlerCalled = true;
+    return { behavior: "allow" };
+  });
+
+  const decision = await canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nShip it." },
+    { toolUseID: "tool_plan", signal: new AbortController().signal },
+  );
+
+  expect(handlerCalled).toBe(false);
+  expect(decision).toMatchObject({
+    behavior: "deny",
+    interrupt: true,
+  });
+  expect(String(decision.message)).toContain("Plan approval");
 });
 
 test("maps SDK compact_boundary system messages", () => {
