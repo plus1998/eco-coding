@@ -97,6 +97,97 @@ button:not(:disabled) {
   z-index: 20;
 }
 
+.thread-info-drawer-backdrop,
+.codex-main-toolbar {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .shell.shell-with-info {
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  }
+
+  .shell.shell-with-info > .thread-info-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 250;
+    width: min(320px, 88vw);
+    height: 100vh;
+    max-height: 100vh;
+    min-height: 0;
+    border-top: 0;
+    border-left: 1px solid var(--border-sidebar);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+    transform: translateX(100%);
+    transition: transform 0.24s ease, visibility 0.24s ease;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .shell.shell-thread-info-drawer-open > .thread-info-panel {
+    transform: translateX(0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .thread-info-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 240;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: rgba(0, 0, 0, 0.28);
+    cursor: default;
+    animation: thread-info-drawer-fade-in 0.2s ease;
+  }
+
+  .codex-main-toolbar {
+    position: fixed;
+    top: var(--content-top-inset);
+    right: 15px;
+    z-index: 260;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+  }
+
+  .codex-main-toolbar-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--codex-log-muted);
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+  }
+
+  .codex-main-toolbar-button:hover:not(:disabled),
+  .codex-main-toolbar-button.is-active {
+    background: var(--nav-hover-solid);
+    color: var(--codex-log-text);
+  }
+}
+
+@keyframes thread-info-drawer-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 .shell.shell-settings-open > .codex-sidebar {
   visibility: hidden;
 }
@@ -1217,6 +1308,10 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+.activity-header-divider {
+  display: none;
 }
 
 .activity-icon-button {
@@ -10474,6 +10569,7 @@ html[data-window-focused="true"] .settings-nav {
 
 /* —— Codex app inspired activity surface —— */
 .codex-main:not(.codex-main-landing) {
+  position: relative;
   background: var(--codex-log-bg);
   color: var(--codex-log-text);
 }
@@ -10563,7 +10659,7 @@ html[data-window-focused="true"] .settings-nav {
 @container codex-main-scroll (max-width: 800px) {
   .codex-main:not(.codex-main-landing) .activity-feed {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     column-gap: 0;
   }
 
@@ -10572,14 +10668,24 @@ html[data-window-focused="true"] .settings-nav {
     grid-row: 1;
     width: 100%;
     max-width: none;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     padding-bottom: 14px;
-    border-bottom: 1px solid var(--codex-log-line);
+    border-bottom: 0;
+  }
+
+  .codex-main:not(.codex-main-landing) .activity-header-divider {
+    display: block;
+    grid-column: 1;
+    grid-row: 2;
+    width: calc(100% + var(--content-inline-start) + var(--content-inline-end));
+    height: 1px;
+    margin: 0 calc(-1 * var(--content-inline-end)) 16px calc(-1 * var(--content-inline-start));
+    background: var(--codex-log-line-subtle);
   }
 
   .codex-main:not(.codex-main-landing) .activity-messages {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 3;
     height: 100%;
   }
 }
@@ -11088,6 +11194,12 @@ html[data-window-focused="true"] .settings-nav {
     padding: 0 22px;
   }
 
+  .codex-main:not(.codex-main-landing) .activity-header-divider {
+    width: calc(100% + 44px);
+    margin-left: -22px;
+    margin-right: -22px;
+  }
+
   .codex-main:not(.codex-main-landing) .codex-composer-wrap {
     padding-right: 22px;
     padding-left: 22px;
@@ -11117,18 +11229,6 @@ html[data-window-focused="true"] .settings-nav {
   .shell,
   .shell.shell-with-info {
     grid-template-columns: 1fr;
-  }
-
-  .thread-info-panel {
-    min-height: auto;
-    max-height: none;
-    border-left: 0;
-    border-top: 1px solid #2e2e2e;
-  }
-
-  .thread-info-panel-scroll {
-    max-height: none;
-    flex: 1 1 0%;
   }
 
   .codex-sidebar {

@@ -10,6 +10,7 @@ import {
   GitBranch,
   MessageSquarePlus,
   Monitor,
+  PanelRight,
   Plug,
   RefreshCw,
   RotateCcw,
@@ -224,6 +225,8 @@ type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
 const emptyGitSettings: GitSettingsSnapshot = { commitMessageRoleByProfileId: {} };
 
+const threadInfoCompactQuery = "(max-width: 1100px)";
+
 type ActivityLine = ThreadActivityLine;
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
@@ -324,6 +327,10 @@ function App() {
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [scriptsBusy, setScriptsBusy] = useState(false);
+  const [threadInfoDrawerOpen, setThreadInfoDrawerOpen] = useState(false);
+  const [threadInfoCompact, setThreadInfoCompact] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(threadInfoCompactQuery).matches,
+  );
   const [runningScript, setRunningScript] = useState<string>();
   const [scriptRunState, setScriptRunState] = useState<PackageScriptRunViewState>({
     output: "",
@@ -863,6 +870,34 @@ function App() {
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
   );
+  useEffect(() => {
+    const media = window.matchMedia(threadInfoCompactQuery);
+    const syncCompactLayout = () => {
+      const compact = media.matches;
+      setThreadInfoCompact(compact);
+      if (!compact) {
+        setThreadInfoDrawerOpen(false);
+      }
+    };
+    syncCompactLayout();
+    media.addEventListener("change", syncCompactLayout);
+    return () => media.removeEventListener("change", syncCompactLayout);
+  }, []);
+  useEffect(() => {
+    setThreadInfoDrawerOpen(false);
+  }, [activeThread?.id]);
+  useEffect(() => {
+    if (!threadInfoDrawerOpen || !threadInfoCompact) {
+      return undefined;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setThreadInfoDrawerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [threadInfoDrawerOpen, threadInfoCompact]);
   const activeComposerRewindTarget =
     activeThread && composerRewindTarget?.threadId === activeThread.id ? composerRewindTarget : undefined;
   useEffect(() => {
@@ -2612,6 +2647,7 @@ function App() {
   const shellClassName = [
     "shell",
     showThreadInfo ? "shell-with-info" : "",
+    showThreadInfo && threadInfoCompact && threadInfoDrawerOpen ? "shell-thread-info-drawer-open" : "",
     settingsOpen ? "shell-settings-open" : "",
   ]
     .filter(Boolean)
@@ -2921,6 +2957,7 @@ function App() {
                   </div>
                 </header>
               )}
+              {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
               <div className="activity-messages">
                 <ActivityLogView
                   lines={activityLines}
@@ -3051,7 +3088,36 @@ function App() {
         </div>
 
         {!showLanding ? composer : null}
+
+        {!showLanding && showThreadInfo ? (
+          <div className="codex-main-toolbar">
+            <button
+              type="button"
+              className={
+                threadInfoDrawerOpen
+                  ? "codex-main-toolbar-button is-active"
+                  : "codex-main-toolbar-button"
+              }
+              onClick={() => setThreadInfoDrawerOpen((open) => !open)}
+              title={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
+              aria-label={threadInfoDrawerOpen ? "收起工作面板" : "打开工作面板"}
+              aria-expanded={threadInfoDrawerOpen}
+              aria-controls="thread-info-panel"
+            >
+              <PanelRight size={15} aria-hidden />
+            </button>
+          </div>
+        ) : null}
       </section>
+
+      {showThreadInfo && threadInfoCompact && threadInfoDrawerOpen ? (
+        <button
+          type="button"
+          className="thread-info-drawer-backdrop"
+          aria-label="关闭工作面板"
+          onClick={() => setThreadInfoDrawerOpen(false)}
+        />
+      ) : null}
 
       {showThreadInfo && activeThread ? (
         <ThreadInfoPanel

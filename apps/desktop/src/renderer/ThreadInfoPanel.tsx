@@ -760,7 +760,7 @@ export function ThreadInfoPanel({
   const showProgress = hasProgressInfo(todos, workspaceDirtyFiles);
 
   return (
-    <aside className="thread-info-panel" aria-label="会话信息">
+    <aside id="thread-info-panel" className="thread-info-panel" aria-label="会话信息">
       <div
         className={
           showUsagePanels
