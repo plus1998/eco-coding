@@ -10,7 +10,6 @@ import {
   GitBranch,
   MessageSquarePlus,
   Monitor,
-  MoreHorizontal,
   PanelRight,
   Plug,
   RefreshCw,
@@ -3529,13 +3528,12 @@ function FollowUpQueuePanel({
   onCancel: (followUp: ThreadPendingFollowUp) => void;
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
 }) {
-  const [menuOpenId, setMenuOpenId] = useState<string>();
-
   return (
     <div className="follow-up-queue" aria-label="已排队的引导消息">
       {followUps.map((followUp) => {
-        const menuOpen = menuOpenId === followUp.id;
         const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
+        const isEscalating = escalateBusyId === followUp.id;
+        const canEscalate = followUp.priority !== "escalated";
 
         return (
           <article key={followUp.id} className="follow-up-card">
@@ -3544,10 +3542,24 @@ function FollowUpQueuePanel({
               <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
             </div>
             <div className="follow-up-card-actions">
-              <span className="follow-up-card-type">
-                <CornerDownRight size={12} aria-hidden />
-                引导
-              </span>
+              {canEscalate ? (
+                <button
+                  type="button"
+                  className="follow-up-card-type follow-up-card-type-action"
+                  onClick={() => onEscalate(followUp)}
+                  disabled={actionBusy}
+                  title="立即处理"
+                  aria-label="立即处理引导消息"
+                >
+                  <CornerDownRight size={12} aria-hidden />
+                  {isEscalating ? "正在处理…" : "引导"}
+                </button>
+              ) : (
+                <span className="follow-up-card-type">
+                  <CornerDownRight size={12} aria-hidden />
+                  引导
+                </span>
+              )}
               <button
                 type="button"
                 className="follow-up-card-action"
@@ -3558,37 +3570,6 @@ function FollowUpQueuePanel({
               >
                 {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
               </button>
-              {followUp.priority !== "escalated" ? (
-                <div className="follow-up-card-menu">
-                  <button
-                    type="button"
-                    className="follow-up-card-action"
-                    onClick={() => setMenuOpenId(menuOpen ? undefined : followUp.id)}
-                    disabled={Boolean(escalateBusyId)}
-                    title="更多"
-                    aria-label="更多操作"
-                    aria-expanded={menuOpen}
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
-                  {menuOpen ? (
-                    <div className="follow-up-card-menu-panel" role="menu">
-                      <button
-                        type="button"
-                        className="follow-up-card-menu-item"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpenId(undefined);
-                          onEscalate(followUp);
-                        }}
-                        disabled={Boolean(escalateBusyId)}
-                      >
-                        {escalateBusyId === followUp.id ? "正在立即处理…" : "立即处理"}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           </article>
         );

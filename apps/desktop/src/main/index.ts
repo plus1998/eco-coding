@@ -2025,7 +2025,7 @@ function registerIpcHandlers(): void {
       throw new Error("Pending follow-up was not found or cannot be escalated.");
     }
     const followUp = request.followUpId ? base : conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base;
-    emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "已请求立即处理后续消息。");
+    emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
     const current = await requestEscalatedFollowUpInterrupt(thread, followUp);
     return buildThreadFollowUpMutationResult(current);
   });
@@ -3319,7 +3319,7 @@ function formatFollowUpQueuedMessage(followUp: ThreadPendingFollowUp): string {
   if (followUp.priority === "escalated") {
     return "已记录后续消息，并标记为需要立即处理。";
   }
-  return "已记录后续消息，将在当前步骤结束后处理。";
+  return "";
 }
 
 function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RuntimeRoleRouteConfig[]): void {
@@ -5293,7 +5293,10 @@ function emitThreadEvent(
     return undefined;
   }
 
-  const displayMessage = trimmed || (isThreadStatusEvent ? "状态已更新" : "");
+  const isSilentFollowUpEvent = type.startsWith("thread.follow_up.") && trimmed.length === 0;
+  const displayMessage = isSilentFollowUpEvent
+    ? ""
+    : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
   const persistActivityLine =
     (!isThreadStatusEvent ||
@@ -5340,7 +5343,9 @@ function emitThreadEvent(
   const payload: ThreadLiveEvent = {
     threadId,
     type,
-    message: displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
+    message: isSilentFollowUpEvent
+      ? ""
+      : displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
     role,
     stream,
     ...(persistedActivityLine && { activityLine: persistedActivityLine }),
