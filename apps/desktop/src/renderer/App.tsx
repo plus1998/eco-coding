@@ -4,12 +4,13 @@ import {
   AlertCircle,
   ArrowUp,
   ChevronLeft,
-  Clock3,
+  CornerDownRight,
   Database,
   FolderOpen,
   GitBranch,
   MessageSquarePlus,
   Monitor,
+  MoreHorizontal,
   PanelRight,
   Plug,
   RefreshCw,
@@ -19,8 +20,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
+  Trash2,
   X,
-  Zap,
 } from "lucide-react";
 import {
   type ClipboardEvent,
@@ -1784,12 +1785,6 @@ function App() {
       setError("当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。");
       return;
     }
-    const confirmed = window.confirm(
-      "立即处理会在必要时先停止当前步骤，完成清理后再恢复处理这条后续消息。继续？",
-    );
-    if (!confirmed) {
-      return;
-    }
     setError(undefined);
     setFollowUpEscalateBusyId(followUp.id);
     try {
@@ -2661,7 +2656,7 @@ function App() {
         : activeThread && isContinuableThreadStatus(activeThread.status)
           ? "继续对话；若需改计划请说明，将重新生成完整计划…"
           : composerFollowUpMode
-            ? "追加后续消息；当前步骤结束后处理…"
+            ? "要求后续变更"
             : activeThread
               ? "当前对话不可发送"
               : "尽管问";
@@ -2713,6 +2708,15 @@ function App() {
 
   const composer = (
     <div className="codex-composer-wrap">
+      {queuedFollowUps.length > 0 ? (
+        <FollowUpQueuePanel
+          followUps={queuedFollowUps}
+          cancelBusyId={followUpCancelBusyId}
+          escalateBusyId={followUpEscalateBusyId}
+          onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
+          onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
+        />
+      ) : null}
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
       {activeComposerRewindTarget && !composerFollowUpMode ? (
         <div className="composer-rewind-banner">
@@ -2975,15 +2979,6 @@ function App() {
                   {...(activeThread &&
                     contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] })}
                 />
-                {queuedFollowUps.length > 0 ? (
-                  <FollowUpQueuePanel
-                    followUps={queuedFollowUps}
-                    cancelBusyId={followUpCancelBusyId}
-                    escalateBusyId={followUpEscalateBusyId}
-                    onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
-                    onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
-                  />
-                ) : null}
                 {canRetryThread &&
                 !showPlanApproval &&
                 (planFailureMessage ||
@@ -3405,49 +3400,71 @@ function FollowUpQueuePanel({
   onCancel: (followUp: ThreadPendingFollowUp) => void;
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
 }) {
+  const [menuOpenId, setMenuOpenId] = useState<string>();
+
   return (
-    <section className="follow-up-queue-panel" aria-label="已排队的后续消息">
-      <div className="follow-up-queue-header">
-        <Clock3 size={15} aria-hidden />
-        <span>已排队 {followUps.length} 条后续消息</span>
-      </div>
-      <ul className="follow-up-queue-list">
-        {followUps.map((followUp) => (
-          <li key={followUp.id} className="follow-up-queue-item">
-            <div className="follow-up-queue-item-main">
-              <span className="follow-up-queue-priority">
-                {followUp.priority === "escalated" ? "立即" : "排队"}
-              </span>
-              <span className="follow-up-queue-preview">{formatThreadFollowUpPreview(followUp)}</span>
+    <div className="follow-up-queue" aria-label="已排队的引导消息">
+      {followUps.map((followUp) => {
+        const menuOpen = menuOpenId === followUp.id;
+        const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
+
+        return (
+          <article key={followUp.id} className="follow-up-card">
+            <div className="follow-up-card-main">
+              <CornerDownRight className="follow-up-card-icon" size={14} aria-hidden />
+              <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
             </div>
-            <div className="follow-up-queue-actions">
-              {followUp.priority !== "escalated" ? (
-                <button
-                  type="button"
-                  className="follow-up-queue-action"
-                  onClick={() => onEscalate(followUp)}
-                  disabled={Boolean(escalateBusyId)}
-                  title="立即处理"
-                  aria-label="立即处理"
-                >
-                  {escalateBusyId === followUp.id ? <Activity size={14} /> : <Zap size={14} />}
-                </button>
-              ) : null}
+            <div className="follow-up-card-actions">
+              <span className="follow-up-card-type">
+                <CornerDownRight size={12} aria-hidden />
+                引导
+              </span>
               <button
                 type="button"
-                className="follow-up-queue-action"
+                className="follow-up-card-action"
                 onClick={() => onCancel(followUp)}
-                disabled={cancelBusyId === followUp.id || escalateBusyId === followUp.id}
-                title="取消后续消息"
-                aria-label="取消后续消息"
+                disabled={actionBusy}
+                title="删除"
+                aria-label="删除引导消息"
               >
-                {cancelBusyId === followUp.id ? <Activity size={14} /> : <X size={14} />}
+                {cancelBusyId === followUp.id ? <Activity size={14} /> : <Trash2 size={14} />}
               </button>
+              {followUp.priority !== "escalated" ? (
+                <div className="follow-up-card-menu">
+                  <button
+                    type="button"
+                    className="follow-up-card-action"
+                    onClick={() => setMenuOpenId(menuOpen ? undefined : followUp.id)}
+                    disabled={Boolean(escalateBusyId)}
+                    title="更多"
+                    aria-label="更多操作"
+                    aria-expanded={menuOpen}
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  {menuOpen ? (
+                    <div className="follow-up-card-menu-panel" role="menu">
+                      <button
+                        type="button"
+                        className="follow-up-card-menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpenId(undefined);
+                          onEscalate(followUp);
+                        }}
+                        disabled={Boolean(escalateBusyId)}
+                      >
+                        {escalateBusyId === followUp.id ? "正在立即处理…" : "立即处理"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
