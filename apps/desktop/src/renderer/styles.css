@@ -6793,6 +6793,15 @@ html[data-window-focused="true"] .codex-sidebar {
   text-overflow: ellipsis;
 }
 
+.composer-plan-mode-popover-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--popover-text);
+}
+
 .composer-route-pill.is-active {
   border-color: var(--composer-context-pill-hover-border);
   background: var(--composer-context-pill-hover-bg);

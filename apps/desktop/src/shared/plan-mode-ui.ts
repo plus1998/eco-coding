@@ -1,7 +1,6 @@
 export interface PlanModeUiOption {
   value: boolean;
   title: string;
-  toolbarTitle: string;
   subtitle: string;
   description: string;
 }
@@ -9,17 +8,15 @@ export interface PlanModeUiOption {
 export const PLAN_MODE_UI: PlanModeUiOption[] = [
   {
     value: false,
-    title: "计划模式关",
-    toolbarTitle: "自主执行",
+    title: "Agent",
     subtitle: "off",
-    description: "主代理直接自主处理任务，并按需要调用已启用的子代理。",
+    description: "代理直接处理任务，并按需要调用已启用的子代理。",
   },
   {
     value: true,
-    title: "计划模式开",
-    toolbarTitle: "计划模式",
+    title: "Plan",
     subtitle: "on",
-    description: "先强制生成计划并等待确认，批准后再进入执行。",
+    description: "先生成计划并等待确认，批准后再进入执行。",
   },
 ];
 

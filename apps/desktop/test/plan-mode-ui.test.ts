@@ -3,10 +3,8 @@ import { PLAN_MODE_UI, planModeUi, togglePlanMode } from "../src/shared/plan-mod
 
 test("PLAN_MODE_UI defines plan mode on and off copy", () => {
   expect(PLAN_MODE_UI.map((entry) => entry.value)).toEqual([false, true]);
-  expect(planModeUi(false).title).toBe("计划模式关");
-  expect(planModeUi(false).toolbarTitle).toBe("自主执行");
-  expect(planModeUi(true).title).toBe("计划模式开");
-  expect(planModeUi(true).toolbarTitle).toBe("计划模式");
+  expect(planModeUi(false).title).toBe("Agent");
+  expect(planModeUi(true).title).toBe("Plan");
   expect(planModeUi(true).description).toContain("生成计划");
 });
 

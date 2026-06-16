@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ClipboardList } from "lucide-react";
+import { Check, ChevronDown, Infinity, List } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -123,14 +123,14 @@ export function ComposerPlanModeToggle({
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
-      <ClipboardList size={15} aria-hidden className="composer-toolbar-trigger-icon" />
-      <span className="composer-toolbar-trigger-label">{current.toolbarTitle}</span>
+      <PlanModeIcon planModeEnabled={planModeEnabled} size={15} className="composer-toolbar-trigger-icon" />
+      <span className="composer-toolbar-trigger-label">{current.title}</span>
       <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
     </button>
   ) : (
-    <span className={className} title="当前对话进行中，计划模式不可修改">
-      <ClipboardList size={15} aria-hidden className="composer-toolbar-trigger-icon" />
-      <span className="composer-toolbar-trigger-label">{current.toolbarTitle}</span>
+    <span className={className} title="当前对话进行中，Plan 不可修改">
+      <PlanModeIcon planModeEnabled={planModeEnabled} size={15} className="composer-toolbar-trigger-icon" />
+      <span className="composer-toolbar-trigger-label">{current.title}</span>
     </span>
   );
 
@@ -168,11 +168,11 @@ function ComposerPlanModePopover({
       ref={panelRef}
       className="composer-codex-popover composer-plan-mode-popover"
       role="dialog"
-      aria-label="计划模式"
+      aria-label="想以何种方式工作？"
       style={panelStyle}
     >
       <header className="composer-codex-popover-header">
-        <p className="composer-codex-popover-title">计划模式</p>
+        <p className="composer-codex-popover-title">想以何种方式工作？</p>
       </header>
       <ul className="composer-codex-popover-list">
         {PLAN_MODE_UI.map((option) => (
@@ -187,6 +187,9 @@ function ComposerPlanModePopover({
               disabled={disabled}
               onClick={() => onSelect(option.value)}
             >
+              <span className="composer-plan-mode-popover-icon" aria-hidden>
+                <PlanModeIcon planModeEnabled={option.value} size={16} />
+              </span>
               <span className="composer-codex-popover-body">
                 <span className="composer-codex-popover-item-title">{option.title}</span>
                 <span className="composer-codex-popover-item-desc">{option.description}</span>
@@ -203,4 +206,19 @@ function ComposerPlanModePopover({
     </div>,
     document.body,
   );
+}
+
+function PlanModeIcon({
+  planModeEnabled,
+  size,
+  className,
+}: {
+  planModeEnabled: boolean;
+  size: number;
+  className?: string;
+}) {
+  if (planModeEnabled) {
+    return <List size={size} strokeWidth={1.75} aria-hidden className={className} />;
+  }
+  return <Infinity size={size} strokeWidth={1.75} aria-hidden className={className} />;
 }
