@@ -452,7 +452,8 @@ async function createMainWindow(): Promise<void> {
     minWidth: 1080,
     minHeight: 720,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#212121",
+    transparent: true,
+    backgroundColor: "#00000000",
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),

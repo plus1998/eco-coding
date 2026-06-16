@@ -4,7 +4,7 @@
   color-scheme: dark;
   --bg-main: #212121;
   --bg-sidebar: #1a1a1a;
-  --bg-sidebar-focused: rgba(26, 26, 26, 0.8);
+  --bg-sidebar-focused: rgba(26, 26, 26, 0.95);
   --bg-elevated: #2b2b2b;
   --bg-elevated-hover: #323232;
   --bg-input: #1f1f1f;
@@ -138,7 +138,7 @@
   color-scheme: light;
   --bg-main: #ffffff;
   --bg-sidebar: #fcfbfb;
-  --bg-sidebar-focused: rgba(252, 251, 252, 0.8);
+  --bg-sidebar-focused: rgba(252, 251, 252, 0.95);
   --bg-elevated: #ffffff;
   --bg-elevated-hover: #f5f5f7;
   --bg-input: #ffffff;

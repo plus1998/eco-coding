@@ -2609,6 +2609,13 @@ function App() {
 
   const showThreadInfo = Boolean(activeThread);
   const showLanding = !activeThread;
+  const shellClassName = [
+    "shell",
+    showThreadInfo ? "shell-with-info" : "",
+    settingsOpen ? "shell-settings-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const composerPlaceholder = showClarification
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
@@ -2844,7 +2851,7 @@ function App() {
   );
 
   return (
-    <main className={showThreadInfo ? "shell shell-with-info" : "shell"}>
+    <main className={shellClassName}>
       <aside className="codex-sidebar">
         <button type="button" className="sidebar-action" onClick={startNewChat}>
           <MessageSquarePlus size={18} />

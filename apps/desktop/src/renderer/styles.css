@@ -10,10 +10,15 @@
   box-sizing: border-box;
 }
 
+html[data-theme] {
+  background: transparent;
+}
+
 body {
   margin: 0;
-  background: var(--bg-main);
+  background: transparent;
   color: var(--text-primary);
+  user-select: none;
 }
 
 /* Hidden scrollbars (scroll still works) */
@@ -39,6 +44,22 @@ button {
   background: transparent;
 }
 
+button,
+input,
+textarea,
+select,
+a,
+[role="button"],
+[contenteditable="true"] {
+  -webkit-app-region: no-drag;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+}
+
 button:disabled,
 textarea:disabled,
 input:disabled,
@@ -54,7 +75,7 @@ button:not(:disabled) {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
-  background: var(--bg-main);
+  background: transparent;
 }
 
 .shell.shell-with-info {
@@ -69,6 +90,10 @@ button:not(:disabled) {
 .shell.shell-with-info > .thread-info-panel {
   position: relative;
   z-index: 20;
+}
+
+.shell.shell-settings-open > .codex-sidebar {
+  visibility: hidden;
 }
 
 /* —— Sidebar —— */
@@ -87,6 +112,7 @@ button:not(:disabled) {
   background: var(--bg-sidebar);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  -webkit-app-region: drag;
   transition:
     background-color 0.2s ease,
     backdrop-filter 0.2s ease,
@@ -95,8 +121,8 @@ button:not(:disabled) {
 
 html[data-window-focused="true"] .codex-sidebar {
   background: var(--bg-sidebar-focused);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: saturate(180%) blur(32px);
+  -webkit-backdrop-filter: saturate(180%) blur(32px);
 }
 
 .codex-sidebar::before {
@@ -106,8 +132,16 @@ html[data-window-focused="true"] .codex-sidebar {
   width: calc(100% + 20px);
   height: var(--window-chrome-top);
   margin: 0 -10px;
-  background: inherit;
+  background: transparent;
+  pointer-events: none;
   -webkit-app-region: drag;
+}
+
+.codex-sidebar > *,
+.codex-sidebar button,
+.project-tree,
+.project-tree * {
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-action {
@@ -777,6 +811,7 @@ html[data-window-focused="true"] .codex-sidebar {
   flex-direction: column;
   align-items: stretch;
   padding: var(--content-top-inset) 24px 0;
+  -webkit-app-region: drag;
 }
 
 .codex-main-scroll:has(.codex-landing) {
@@ -792,6 +827,7 @@ html[data-window-focused="true"] .codex-sidebar {
   max-width: 640px;
   margin: auto;
   gap: 28px;
+  -webkit-app-region: no-drag;
 }
 
 .codex-landing .codex-composer-wrap {
@@ -1131,6 +1167,24 @@ html[data-window-focused="true"] .codex-sidebar {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-app-region: no-drag;
+}
+
+.run-log-narrative-body,
+.markdown-content,
+.markdown-content *,
+.markdown-pre,
+.run-log-code,
+.run-log-reconnect-detail,
+.run-log-mission-prompt,
+.run-log-thinking-body,
+.run-log-thinking-body *,
+.run-log-user-prompt-body,
+.run-log-tool-failed-error,
+.run-log-api-error-message,
+.clarification-answer-answer,
+.workspace-changes-file-path {
+  user-select: text;
 }
 
 .activity-scroll-anchor {
@@ -4286,6 +4340,12 @@ html[data-window-focused="true"] .codex-sidebar {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--content-top-inset) 16px 16px;
+  -webkit-app-region: drag;
+}
+
+.thread-info-panel-scroll > *,
+.thread-info-float-stack {
+  -webkit-app-region: no-drag;
 }
 
 .thread-info-panel-scroll-with-float {
@@ -7506,8 +7566,8 @@ html[data-window-focused="true"] .codex-sidebar {
   inset: 0;
   z-index: 200;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  background: var(--bg-main);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -7519,8 +7579,21 @@ html[data-window-focused="true"] .codex-sidebar {
   padding: 0 12px 16px;
   border-right: 1px solid var(--settings-sidebar-border);
   background: var(--bg-sidebar);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  -webkit-app-region: drag;
   color: var(--text-secondary);
   overflow-y: auto;
+  transition:
+    background-color 0.2s ease,
+    backdrop-filter 0.2s ease,
+    -webkit-backdrop-filter 0.2s ease;
+}
+
+html[data-window-focused="true"] .settings-nav {
+  background: var(--bg-sidebar-focused);
+  backdrop-filter: saturate(180%) blur(32px);
+  -webkit-backdrop-filter: saturate(180%) blur(32px);
 }
 
 .settings-nav::before {
@@ -7530,8 +7603,17 @@ html[data-window-focused="true"] .codex-sidebar {
   width: calc(100% + 24px);
   height: var(--window-chrome-top);
   margin: 0 -12px;
-  background: var(--bg-sidebar);
+  background: transparent;
+  pointer-events: none;
   -webkit-app-region: drag;
+}
+
+.settings-nav > *,
+.settings-nav button,
+.settings-nav input,
+.settings-nav nav,
+.settings-nav nav * {
+  -webkit-app-region: no-drag;
 }
 
 .settings-nav-back,
@@ -7633,6 +7715,7 @@ html[data-window-focused="true"] .codex-sidebar {
   min-height: 100vh;
   overflow: auto;
   background: var(--bg-main);
+  -webkit-app-region: drag;
 }
 
 .settings-content {
@@ -7641,6 +7724,10 @@ html[data-window-focused="true"] .codex-sidebar {
   max-width: 680px;
   margin-inline: auto;
   padding: calc(var(--content-top-inset) + 16px) 24px 56px;
+}
+
+.settings-content > * {
+  -webkit-app-region: no-drag;
 }
 
 .settings-page-header {
