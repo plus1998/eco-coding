@@ -11014,8 +11014,7 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {
-  padding: 0 0 0 18px;
-  border-left: 1px solid #3a3a3a;
+  padding: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body p {
