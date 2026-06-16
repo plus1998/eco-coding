@@ -295,7 +295,10 @@ import {
   type ApplyThreadRunDecisionEffectsInput,
   applyThreadRunDecisionEffects,
 } from "./thread-run-decision-effects";
-import { buildThreadRunEventFromLiveEvent } from "./thread-run-event-normalizer";
+import {
+  buildThreadRunEventFromLiveEvent,
+  isMetricsOnlyThreadLiveEvent,
+} from "./thread-run-event-normalizer";
 import {
   resolveAutonomousRunOutcome,
   resolveContinuationRunOutcome,
@@ -5271,15 +5274,17 @@ function emitThreadEvent(
     });
   }
 
-  recordThreadRunEventFromLiveEvent({
-    threadId,
-    type,
-    displayMessage,
-    role: String(role),
-    stream,
-    ...(extras && { extras }),
-    ...(persistedActivityLine && { persistedActivityLine }),
-  });
+  if (!isMetricsOnlyThreadLiveEvent(type)) {
+    recordThreadRunEventFromLiveEvent({
+      threadId,
+      type,
+      displayMessage,
+      role: String(role),
+      stream,
+      ...(extras && { extras }),
+      ...(persistedActivityLine && { persistedActivityLine }),
+    });
+  }
 
   const payload: ThreadLiveEvent = {
     threadId,

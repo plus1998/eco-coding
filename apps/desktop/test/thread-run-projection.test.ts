@@ -531,3 +531,27 @@ test("buildThreadRunProjection closes open request spans for stopped agents", ()
     endedAt: "2026-01-01T00:00:05.000Z",
   });
 });
+
+test("buildThreadRunProjection ignores persisted metrics-only usage events", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [],
+    events: [
+      event({
+        id: "usage-badge",
+        sequence: 1,
+        eventType: "thread.status",
+        scope: "agent",
+        role: "architect",
+        message: "↑565 ↓146",
+        observedAt: "2026-01-01T00:00:02.000Z",
+        metadata: { liveType: "thread.usage_updated" },
+      }),
+    ],
+  });
+
+  expect(projection.diagnostics).toEqual([]);
+  expect(projection.agents).toEqual([]);
+});

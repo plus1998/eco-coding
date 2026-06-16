@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildSubagentLifecycleRunEvent,
   buildThreadRunEventFromLiveEvent,
+  isMetricsOnlyThreadLiveEvent,
 } from "../src/main/thread-run-event-normalizer";
 
 test("buildThreadRunEventFromLiveEvent scopes subagent streams by agent id", () => {
@@ -328,4 +329,27 @@ test("buildSubagentLifecycleRunEvent includes parent and mission metadata", () =
     parentToolUseId: "toolu_1",
     metadata: { lifecycle: "started", missionKey: "implement api", todoId: "todo-1" },
   });
+});
+
+test("buildThreadRunEventFromLiveEvent skips metrics-only thread live events", () => {
+  for (const liveType of [
+    "thread.usage_updated",
+    "thread.context_updated",
+    "thread.subagent_timing_updated",
+    "thread.todos_updated",
+    "thread.title_updated",
+  ]) {
+    expect(isMetricsOnlyThreadLiveEvent(liveType)).toBe(true);
+    expect(
+      buildThreadRunEventFromLiveEvent({
+        threadId: "thr_1",
+        eventId: `metrics_${liveType}`,
+        liveType,
+        role: "architect",
+        stream: false,
+        message: "↑1k ↓2k",
+        observedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBeUndefined();
+  }
 });

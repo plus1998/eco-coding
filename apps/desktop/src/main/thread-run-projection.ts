@@ -15,6 +15,7 @@ import type {
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
+import { isMetricsOnlyThreadRunEvent } from "./thread-run-event-normalizer";
 import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 const subagentRoleSet = new Set<string>(SUBAGENT_ROLES);
@@ -67,6 +68,9 @@ export function buildThreadRunProjection(
   const agentsByRole = buildAgentsByRole(input.agents);
 
   for (const event of events) {
+    if (isMetricsOnlyThreadRunEvent(event)) {
+      continue;
+    }
     const resolvedAgentId = resolveProjectionEventAgentId(event, agentsByRole, diagnostics);
     if ((event.scope === "agent" || event.scope === "both") && resolvedAgentId) {
       const item = eventToTimelineItem(event, resolvedAgentId);

@@ -10,6 +10,24 @@ import { SUBAGENT_ROLES } from "../shared/ipc";
 
 const subagentRoleSet = new Set<string>(SUBAGENT_ROLES);
 
+/** Live events that update billing/context UI but are not narrative run timeline. */
+const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
+  "thread.usage_updated",
+  "thread.context_updated",
+  "thread.subagent_timing_updated",
+  "thread.todos_updated",
+  "thread.title_updated",
+]);
+
+export function isMetricsOnlyThreadLiveEvent(liveType: string): boolean {
+  return METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);
+}
+
+export function isMetricsOnlyThreadRunEvent(event: { metadata?: Record<string, unknown> }): boolean {
+  const liveType = event.metadata?.liveType;
+  return typeof liveType === "string" && METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);
+}
+
 export interface BuildThreadRunEventFromLiveInput {
   threadId: string;
   eventId: string;
@@ -42,6 +60,9 @@ export interface BuildSubagentLifecycleRunEventInput {
 export function buildThreadRunEventFromLiveEvent(
   input: BuildThreadRunEventFromLiveInput,
 ): ThreadRunEventInput | undefined {
+  if (isMetricsOnlyThreadLiveEvent(input.liveType)) {
+    return undefined;
+  }
   const eventType = resolveThreadRunEventType(input);
   if (!eventType) {
     return undefined;
