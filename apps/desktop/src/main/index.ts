@@ -52,7 +52,7 @@ import {
 } from "@eco/workspace";
 import { evaluateThreadBashPermission } from "./thread-bash-permission";
 import { ensureDesktopPath } from "./fix-desktop-path";
-import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage, shell } from "electron";
 
 ensureDesktopPath();
 import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
@@ -475,10 +475,26 @@ async function createMainWindow(): Promise<void> {
     },
   });
 
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
   if (isDev) {
     await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
   } else {
     await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  }
+}
+
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 

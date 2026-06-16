@@ -10314,6 +10314,34 @@ html[data-window-focused="true"] .settings-nav {
   height: 24px;
 }
 
+.models-provider-preset-field select {
+  cursor: pointer;
+}
+
+.models-provider-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.models-provider-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #93c5fd;
+  font-size: 12px;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.models-provider-inline-link:hover,
+.models-provider-inline-link:focus-visible {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+
 .api-compat-toggle-wrap {
   position: relative;
   display: inline-flex;

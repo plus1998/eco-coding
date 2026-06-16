@@ -189,7 +189,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainModelsDevMappingModelId: "",
     mainManualSpec: emptyManualSpecForm(),
     mainApiCompat: "",
-    mainSystemPromptPreset: "custom",
+    mainSystemPromptPreset: "claude_code",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
     ...mainCapabilityToProfileFormFields(mainCapability),

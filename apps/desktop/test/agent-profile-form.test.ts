@@ -101,11 +101,13 @@ test("createBlankAgentProfileForm defaults the main agent to hands-on (write + b
   expect(form.mainBash).toBe(true);
   expect(form.mainAllowDelegation).toBe(true);
   expect(form.mainAdvancedDisallowedTools).toBe("");
+  expect(form.mainSystemPromptPreset).toBe("claude_code");
 
   const built = buildOrchestrationProfileFromForm(form, {
     templates: [],
     nowIso: "2026-06-10T00:00:00.000Z",
   });
+  expect(built.mainAgent.systemPromptPreset).toBe("claude_code");
   expect(built.mainAgent.tools.allowed).toEqual([]);
   expect(built.mainAgent.tools.filesystem).toEqual({ read: "workspace", write: "workspace" });
   expect(built.mainAgent.tools.bash).toMatchObject({ enabled: true });

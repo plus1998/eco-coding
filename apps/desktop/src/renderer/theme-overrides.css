@@ -267,6 +267,15 @@
   color: var(--accent-text);
 }
 
+.settings-page .models-provider-inline-link {
+  color: var(--accent-text);
+}
+
+.settings-page .models-provider-inline-link:hover,
+.settings-page .models-provider-inline-link:focus-visible {
+  color: var(--accent);
+}
+
 .settings-page .models-route-pricing-key {
   color: var(--text-muted);
 }

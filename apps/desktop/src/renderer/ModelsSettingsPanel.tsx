@@ -93,6 +93,12 @@ import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
+import {
+  FREE_TOKEN_PROVIDER_PRESETS,
+  applyProviderPreset,
+  findMatchingProviderPreset,
+  formatProviderPresetSelectLabel,
+} from "./provider-presets";
 import { buildPresetTemplateImportPlan } from "./preset-import";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 
@@ -2667,6 +2673,9 @@ function ProviderEditorModal({
 }) {
   const isEditing = Boolean(form.id);
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
+  const [manualPresetSelected, setManualPresetSelected] = useState(false);
+  const matchingPreset = findMatchingProviderPreset(form);
+  const activePreset = manualPresetSelected ? undefined : matchingPreset;
 
   return (
     <div className="settings-modal-backdrop">
@@ -2696,6 +2705,34 @@ function ProviderEditorModal({
         </header>
 
         <div className="settings-modal-body mcp-editor-form models-editor-form">
+          <div className="mcp-field models-provider-preset-field">
+            <span className="mcp-field-label">供应商预设</span>
+            <select
+              className="mcp-field-input"
+              value={activePreset?.id ?? ""}
+              disabled={busy}
+              onChange={(event) => {
+                if (!event.target.value) {
+                  setManualPresetSelected(true);
+                  return;
+                }
+                const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === event.target.value);
+                if (!preset) {
+                  return;
+                }
+                setManualPresetSelected(false);
+                setForm((current) => applyProviderPreset(current, preset));
+              }}
+            >
+              <option value="">手动配置</option>
+              {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {formatProviderPresetSelectLabel(preset)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <label className="mcp-field">
             <span className="mcp-field-label">名称</span>
             <input
@@ -2747,7 +2784,20 @@ function ProviderEditorModal({
           </div>
 
           <label className="mcp-field">
-            <span className="mcp-field-label">API key</span>
+            <span className="models-provider-label-row">
+              <span className="mcp-field-label">API key</span>
+              {activePreset ? (
+                <a
+                  className="models-provider-inline-link"
+                  href={activePreset.apiKeyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <LinkIcon size={12} />
+                  注册 / 创建 Key
+                </a>
+              ) : null}
+            </span>
             <input
               className="mcp-field-input"
               type="password"
