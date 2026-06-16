@@ -14,6 +14,12 @@ import { formatSkillDisplayName } from "./composer-skills";
 
 const PANEL_GAP = 8;
 const VIEWPORT_MARGIN = 8;
+/** Approximate row height (padding + title + desc + gap). */
+const SKILL_MENU_ROW_HEIGHT = 54;
+const SKILL_MENU_VISIBLE_ROWS = 5;
+const SKILL_MENU_PADDING = 12;
+const SKILL_MENU_PREFERRED_MAX_HEIGHT =
+  SKILL_MENU_VISIBLE_ROWS * SKILL_MENU_ROW_HEIGHT + SKILL_MENU_PADDING;
 
 export function skillScopeLabel(source: SkillSource): string {
   return source === "project" ? "项目" : "个人";
@@ -60,7 +66,8 @@ export function layoutSlashMenu(anchor: HTMLElement): CSSProperties {
   const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
   left = Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft));
   const spaceAbove = rect.top - VIEWPORT_MARGIN;
-  const maxHeight = Math.max(80, spaceAbove - PANEL_GAP);
+  const spaceMaxHeight = Math.max(80, spaceAbove - PANEL_GAP);
+  const maxHeight = Math.min(spaceMaxHeight, SKILL_MENU_PREFERRED_MAX_HEIGHT);
   return {
     position: "fixed",
     left,

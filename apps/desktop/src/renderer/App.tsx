@@ -1,4 +1,4 @@
-import { defaultSubagentAvailability, formatPlanExecutionSummary, mergeStreamText } from "@eco/runtime";
+import { defaultSubagentAvailability, mergeStreamText } from "@eco/runtime";
 import {
   Activity,
   AlertCircle,
@@ -3066,11 +3066,6 @@ function App() {
                   <PlanApprovalPanel
                     plan={pendingPlan}
                     busy={planActionBusy}
-                    executionSummary={formatPlanExecutionSummary(
-                      activeThread?.runtimeConfig?.subagentEnabled ??
-                        composerRuntimeConfig?.subagentEnabled ??
-                        defaultSubagentAvailability(),
-                    )}
                     {...(planFailureMessage && { failureMessage: planFailureMessage })}
                     onApprove={approvePendingPlan}
                     onDismiss={dismissPendingPlan}
