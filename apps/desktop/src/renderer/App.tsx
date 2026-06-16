@@ -2904,7 +2904,7 @@ function App() {
             <div className="activity-feed">
               {activeThread && (
                 <header className="activity-header">
-                  <h2>{activeThread.title}</h2>
+                  <h2 title={activeThread.title}>{activeThread.title}</h2>
                   <div className="activity-header-actions">
                     {canRetryThread ? (
                       <button

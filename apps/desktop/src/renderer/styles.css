@@ -4,6 +4,11 @@
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --content-top-inset: 16px;
   --sidebar-width: 300px;
+  --activity-title-max: 150px;
+  --activity-title-gap: 15px;
+  --activity-stack-below: 800px;
+  --content-inline-start: 24px;
+  --content-inline-end: 48px;
 }
 
 * {
@@ -10474,32 +10479,63 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .codex-main-scroll {
-  padding: var(--content-top-inset) 48px 0;
+  container-type: inline-size;
+  container-name: codex-main-scroll;
+  padding: var(--content-top-inset) var(--content-inline-end) 0 var(--content-inline-start);
 }
 
 .codex-main:not(.codex-main-landing) .activity-feed {
+  display: grid;
+  grid-template-columns: fit-content(var(--activity-title-max)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--activity-title-gap);
+  width: 100%;
+  min-width: 0;
   color: var(--codex-log-text);
 }
 
+.codex-main:not(.codex-main-landing) .activity-feed:not(:has(.activity-header)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .codex-main:not(.codex-main-landing) .activity-header {
-  margin: 0 0 32px;
-  padding: 0 0 14px;
-  border-bottom: 1px solid var(--codex-log-line);
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: var(--activity-title-max);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  align-self: start;
   -webkit-app-region: drag;
 }
 
 .codex-main:not(.codex-main-landing) .activity-header-actions {
+  flex-shrink: 0;
+  margin-left: 0;
   -webkit-app-region: no-drag;
 }
 
 .codex-main:not(.codex-main-landing) .activity-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--codex-log-heading);
   font-size: 16px;
   font-weight: 500;
   line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .codex-main:not(.codex-main-landing) .activity-icon-button {
+  width: 28px;
+  height: 28px;
   border-color: transparent;
   background: transparent;
   color: var(--codex-log-muted);
@@ -10511,7 +10547,41 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .activity-messages {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .activity-feed:not(:has(.activity-header)) .activity-messages {
+  grid-column: 1;
+}
+
+@container codex-main-scroll (max-width: 800px) {
+  .codex-main:not(.codex-main-landing) .activity-feed {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 0;
+  }
+
+  .codex-main:not(.codex-main-landing) .activity-header {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    max-width: none;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--codex-log-line);
+  }
+
+  .codex-main:not(.codex-main-landing) .activity-messages {
+    grid-column: 1;
+    grid-row: 2;
+    height: 100%;
+  }
 }
 
 .codex-main:not(.codex-main-landing) .run-log {
@@ -10962,7 +11032,7 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .codex-composer-wrap {
-  padding: 8px 48px 12px;
+  padding: 8px var(--content-inline-end) 12px var(--content-inline-start);
   background: var(--composer-wrap-fade);
 }
 
