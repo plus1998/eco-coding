@@ -71,7 +71,6 @@ interface ThreadInfoPanelProps {
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
   todos?: CoderTodoItem[];
-  workspaceDirtyFiles?: string[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -704,10 +703,7 @@ function ThreadInfoFloatStack({
   );
 }
 
-function hasProgressInfo(todos: CoderTodoItem[], workspaceDirtyFiles?: string[]): boolean {
-  if ((workspaceDirtyFiles?.length ?? 0) > 0) {
-    return true;
-  }
+function hasProgressInfo(todos: CoderTodoItem[]): boolean {
   return todos.some(
     (todo) => todo.status === "pending" || todo.status === "running" || todo.status === "blocked",
   );
@@ -735,7 +731,6 @@ export function ThreadInfoPanel({
   scriptsDisabled,
   onOpenScriptsDialog,
   todos = [],
-  workspaceDirtyFiles,
   threadStatus,
   usageSummary,
   agentDisplayNames,
@@ -759,7 +754,7 @@ export function ThreadInfoPanel({
   const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
   const showBilling = hasBillingData(billing);
   const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
-  const showProgress = hasProgressInfo(todos, workspaceDirtyFiles);
+  const showProgress = hasProgressInfo(todos);
 
   return (
     <aside
@@ -804,20 +799,6 @@ export function ThreadInfoPanel({
               <ListTodo size={14} aria-hidden />
               进度
             </h3>
-            {workspaceDirtyFiles && workspaceDirtyFiles.length > 0 ? (
-              <div className="thread-info-worktree-embed">
-                <p className="thread-info-worktree-embed-title">
-                  工作区未提交变更 {workspaceDirtyFiles.length} 个文件
-                </p>
-                <ul className="thread-info-file-list">
-                  {workspaceDirtyFiles.map((file) => (
-                    <li key={file}>
-                      <code>{file}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
             {todos.length > 0 ? <CoderTodoPanel todos={todos} embedded compact /> : null}
           </section>
         ) : null}

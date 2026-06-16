@@ -318,7 +318,6 @@ function App() {
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
   const [modelByThread, setModelByThread] = useState<Record<string, Record<string, string>>>({});
   const [todosByThread, setTodosByThread] = useState<Record<string, CoderTodoItem[]>>({});
-  const [workspaceDirtyFiles, setWorkspaceDirtyFiles] = useState<string[]>([]);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [stopConfirm, setStopConfirm] = useState<{ changedFiles: string[] }>();
   const [retryBusy, setRetryBusy] = useState(false);
@@ -1099,30 +1098,6 @@ function App() {
     }
     void window.eco.getGitSettings().then(setGitSettings);
   }, []);
-
-  useEffect(() => {
-    if (!activeThread?.id || !window.eco) {
-      setWorkspaceDirtyFiles([]);
-      return undefined;
-    }
-
-    if (activeThread.status === "running") {
-      setWorkspaceDirtyFiles([]);
-      return undefined;
-    }
-
-    let cancelled = false;
-    void window.eco.getWorktreeStatus(activeThread.id).then((status) => {
-      if (cancelled) {
-        return;
-      }
-      setWorkspaceDirtyFiles(status.exists ? status.changedFiles : []);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeThread?.id, activeThread?.status, activeThread?.message]);
 
   useEffect(() => {
     if (!settingsOpen || settingsSection !== "skills" || !window.eco) {
@@ -3215,8 +3190,6 @@ function App() {
           })}
           {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
-          {...(activeThread &&
-            workspaceDirtyFiles.length > 0 && { workspaceDirtyFiles })}
         />
       ) : null}
 

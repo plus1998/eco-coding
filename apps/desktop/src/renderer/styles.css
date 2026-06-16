@@ -446,7 +446,7 @@ html[data-window-focused="true"] .codex-sidebar {
   padding: 6px 4px;
   border-radius: 8px;
   background: transparent;
-  color: #8a8a8a;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
   text-align: left;
@@ -454,7 +454,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .project-group-toggle svg {
   flex: 0 0 auto;
-  color: #8a8a8a;
+  color: currentColor;
 }
 
 .project-group-header,
@@ -476,7 +476,7 @@ html[data-window-focused="true"] .codex-sidebar {
   flex: 1;
   min-width: 0;
   padding: 4px 0;
-  color: #8a8a8a;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
 }
@@ -487,7 +487,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .project-group-main.active .project-group-toggle svg,
 .project-group-main:hover .project-group-header,
 .project-group-main.active .project-group-header {
-  color: #e8e8e8;
+  color: var(--text-primary);
 }
 
 .project-row-actions {
@@ -531,7 +531,7 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  color: #a3a3a3;
+  color: var(--text-muted);
   transition:
     background 0.12s ease,
     color 0.12s ease;
@@ -541,8 +541,8 @@ html[data-window-focused="true"] .codex-sidebar {
 .project-menu-trigger:focus-visible,
 .project-new-chat:hover,
 .project-new-chat:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f5f5f5;
+  background: var(--nav-hover-solid);
+  color: var(--sidebar-item-active-text);
 }
 
 .project-menu {
@@ -702,7 +702,7 @@ html[data-window-focused="true"] .codex-sidebar {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #a3a3a3;
+  color: var(--text-muted);
   transition:
     background 0.12s ease,
     color 0.12s ease;
@@ -710,8 +710,8 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .chat-item-row-action:hover,
 .chat-item-row-action:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  color: #f5f5f5;
+  background: var(--nav-hover-solid);
+  color: var(--sidebar-item-active-text);
 }
 
 .chat-item-row-action-danger:hover,
@@ -759,7 +759,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .project-group-toggle:hover,
 .project-group-header:hover {
-  color: #fff;
+  color: var(--sidebar-item-active-text);
 }
 
 .project-open:hover,
@@ -2029,6 +2029,248 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.workspace-diff-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 280;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.32);
+  cursor: default;
+}
+
+.workspace-diff-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 290;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 92vw);
+  height: 100vh;
+  max-height: 100vh;
+  border-left: 1px solid var(--border-sidebar);
+  background: var(--bg-sidebar);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.22);
+  animation: workspace-diff-drawer-in 0.24s ease;
+}
+
+@keyframes workspace-diff-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.workspace-diff-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workspace-diff-drawer-header-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workspace-diff-drawer-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workspace-diff-drawer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-diff-drawer-file-count {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.workspace-diff-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.workspace-diff-drawer-close:hover {
+  color: var(--text-primary);
+  background: var(--nav-hover-solid);
+}
+
+.workspace-diff-drawer-state {
+  padding: 24px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.workspace-diff-drawer-error {
+  color: #f87171;
+}
+
+.workspace-diff-drawer-body {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workspace-diff-drawer-files {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.workspace-diff-drawer-files-header {
+  flex-shrink: 0;
+  padding: 10px 12px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.workspace-diff-drawer-files-empty {
+  margin: 0;
+  padding: 8px 12px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.workspace-diff-drawer-file-list {
+  margin: 0;
+  padding: 0 6px 12px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.workspace-diff-drawer-file-list li {
+  margin: 0;
+}
+
+.workspace-diff-drawer-file-list button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-diff-drawer-file-list button.is-active,
+.workspace-diff-drawer-file-list button:hover {
+  color: var(--text-primary);
+  background: var(--nav-hover-solid);
+}
+
+.workspace-diff-drawer-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-diff-drawer-file-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-diff-drawer-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-diff-drawer-truncated {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: #fbbf24;
+  font-size: 12px;
+}
+
+.workspace-diff-empty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.workspace-diff-viewer {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px 16px;
+  font-size: 11px;
+  --diff-background-color: transparent;
+  --diff-text-color: var(--text-primary);
+  --diff-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --diff-gutter-insert-background-color: rgba(62, 207, 142, 0.14);
+  --diff-gutter-delete-background-color: rgba(248, 113, 113, 0.14);
+  --diff-code-insert-background-color: rgba(62, 207, 142, 0.08);
+  --diff-code-delete-background-color: rgba(248, 113, 113, 0.08);
+  --diff-code-insert-edit-background-color: rgba(62, 207, 142, 0.24);
+  --diff-code-delete-edit-background-color: rgba(248, 113, 113, 0.24);
+}
+
+.workspace-diff-viewer .diff-line {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workspace-diff-viewer .diff-gutter-col {
+  width: 5ch;
+}
+
+.workspace-diff-file + .workspace-diff-file {
+  margin-top: 16px;
+}
+
+.workspace-diff-file-path {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
 }
 
 .clarification-answer-header {
@@ -4747,8 +4989,48 @@ html[data-window-focused="true"] .codex-sidebar {
   font-size: 12px;
 }
 
+.thread-info-workspace-git-row {
+  padding: 2px 6px;
+  border-radius: 8px;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.thread-info-workspace-git-row:hover:not(:has(:disabled)),
+.thread-info-workspace-git-row.is-active:not(:has(:disabled)) {
+  color: var(--text-primary);
+  background: var(--nav-hover-solid);
+}
+
+.thread-info-workspace-git-row-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-info-workspace-git-row-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .thread-info-workspace-git-changes-row {
   justify-content: flex-start;
+  cursor: default;
+}
+
+.thread-info-workspace-git-changes-row .thread-info-workspace-git-stats {
+  margin-left: auto;
 }
 
 .thread-info-workspace-git-stats {
@@ -4769,29 +5051,26 @@ html[data-window-focused="true"] .codex-sidebar {
   gap: 8px;
 }
 
-.thread-info-workspace-git-picker {
-  display: inline-flex;
-  align-items: center;
+.thread-info-workspace-git-picker-row .thread-info-workspace-git-row-button {
+  justify-content: space-between;
   gap: 4px;
-  min-width: 0;
-  cursor: pointer;
 }
 
-.thread-info-workspace-git-picker-select {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.thread-info-workspace-git-branch-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .thread-info-workspace-git-picker-label {
-  color: var(--text-secondary);
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .thread-info-workspace-git-chevron {
@@ -4799,31 +5078,116 @@ html[data-window-focused="true"] .codex-sidebar {
   color: var(--text-muted);
 }
 
-.thread-info-workspace-git-action {
-  display: inline-flex;
+.thread-info-workspace-git-branch-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px 0 0;
+  border: 1px solid var(--popover-border);
+  border-radius: 12px;
+  background: var(--popover-bg);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.03),
+    0 10px 28px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.thread-info-workspace-git-branch-menu-body {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 4px 10px;
+}
+
+.thread-info-workspace-git-branch-menu-header {
+  flex-shrink: 0;
+  padding: 4px 12px 4px;
+  color: var(--popover-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.thread-info-workspace-git-branch-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thread-info-workspace-git-branch-menu-list button {
+  display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 0;
+  padding: 8px 10px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--popover-text);
   font: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
-.thread-info-workspace-git-action:hover:not(:disabled),
-.thread-info-workspace-git-action.is-open {
-  color: var(--text-primary);
-  background: var(--nav-hover-solid);
-  border-radius: 8px;
+.thread-info-workspace-git-branch-menu-list button svg:first-child {
+  flex-shrink: 0;
 }
 
-.thread-info-workspace-git-action:disabled {
-  opacity: 0.5;
+.thread-info-workspace-git-branch-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-info-workspace-git-branch-menu-list button.is-active,
+.thread-info-workspace-git-branch-menu-list button:hover:not(:disabled) {
+  background: var(--popover-hover);
+}
+
+.thread-info-workspace-git-branch-menu-list button:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
+}
+
+.thread-info-workspace-git-branch-create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thread-info-workspace-git-branch-create-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--popover-border);
+  border-radius: 8px;
+  background: var(--input-bg, var(--popover-bg));
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.thread-info-workspace-git-branch-create-input::placeholder {
+  color: var(--popover-muted);
+}
+
+.thread-info-workspace-git-branch-create-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.thread-info-workspace-git-branch-create-error {
+  margin: 0;
+  padding: 0 6px;
+  color: #f87171;
+  font-size: 11px;
 }
 
 .thread-info-workspace-git-chevron.open {

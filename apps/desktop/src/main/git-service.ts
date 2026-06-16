@@ -13,6 +13,7 @@ import {
   createCommit,
   defaultGitRunner,
   getGitWorkingTreeStatus,
+  getWorkspaceDiff,
   listGitCommits,
   pushChanges,
   stageChanges,
@@ -177,5 +178,6 @@ export {
   checkoutGitBranch,
   createGitBranch,
   getGitWorkingTreeStatus,
+  getWorkspaceDiff,
   listGitCommits,
 };

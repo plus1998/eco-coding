@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { parseUnifiedDiffStats } from "../shared/worktree-merge";
 import { resolveGitExecutable } from "./workspace-inspect";
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +48,16 @@ export interface GitCommitRecord {
   author: string;
   relativeDate: string;
   decorations: string[];
+}
+
+export interface WorkspaceDiffResult {
+  workspacePath: string;
+  patch: string;
+  patchTruncated: boolean;
+  fileCount: number;
+  files: Array<{ path: string; additions: number; deletions: number }>;
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 export interface CommitDiffContext {
@@ -341,6 +352,59 @@ export async function createGitBranch(
     throw new Error("分支名不能为空");
   }
   await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", "-b", trimmed]);
+}
+
+export async function getWorkspaceDiff(
+  workspacePath: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<WorkspaceDiffResult> {
+  const cwd = path.resolve(workspacePath);
+  const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
+  if (revParse.exitCode !== 0) {
+    return {
+      workspacePath: cwd,
+      patch: "",
+      patchTruncated: false,
+      fileCount: 0,
+      files: [],
+      totalAdditions: 0,
+      totalDeletions: 0,
+    };
+  }
+
+  const patchParts: string[] = [];
+  const headDiff = await run(["git", "diff", "HEAD"], cwd);
+  if (headDiff.exitCode === 0 && headDiff.stdout.trim()) {
+    patchParts.push(headDiff.stdout);
+  }
+
+  const untracked = await run(["git", "ls-files", "--others", "--exclude-standard"], cwd);
+  if (untracked.exitCode === 0 && untracked.stdout.trim()) {
+    for (const file of untracked.stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)) {
+      const fileDiff = await run(["git", "diff", "--no-index", "--", "/dev/null", file], cwd);
+      if (fileDiff.stdout.trim()) {
+        patchParts.push(fileDiff.stdout);
+      }
+    }
+  }
+
+  const fullPatch = patchParts.join("\n");
+  const truncated = truncatePatch(fullPatch, COMMIT_DIFF_MAX_CHARS);
+  const summary = parseUnifiedDiffStats(truncated.text);
+
+  return {
+    workspacePath: cwd,
+    patch: truncated.text,
+    patchTruncated: truncated.truncated,
+    fileCount: summary.fileCount,
+    files: summary.files,
+    totalAdditions: summary.totalAdditions,
+    totalDeletions: summary.totalDeletions,
+  };
 }
 
 export async function collectCommitDiffContext(

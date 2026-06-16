@@ -90,6 +90,7 @@ import {
   type GitPushResult,
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
+  type WorkspaceDiffResult,
   type PackageScriptsListResult,
   type RunPackageScriptRequest,
   type StartPackageScriptResult,
@@ -268,6 +269,9 @@ const api = {
   },
   getGitStatus(workspacePath: string): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetStatus, workspacePath);
+  },
+  getWorkspaceDiff(workspacePath: string): Promise<WorkspaceDiffResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitGetWorkspaceDiff, workspacePath);
   },
   listGitCommits(request: GitListCommitsRequest): Promise<GitListCommitsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitListCommits, request);

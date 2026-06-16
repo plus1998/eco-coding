@@ -349,6 +349,7 @@ import {
   checkoutGitBranch,
   createGitBranch,
   getGitWorkingTreeStatus,
+  getWorkspaceDiff,
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitPush,
@@ -1572,6 +1573,13 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path is required.");
     }
     return getGitWorkingTreeStatus(workspacePath.trim(), runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitGetWorkspaceDiff, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    return getWorkspaceDiff(workspacePath.trim(), runGitCommand);
   });
 
   ipcMain.handle(IPC_CHANNELS.gitListCommits, async (_event, payload: unknown) => {

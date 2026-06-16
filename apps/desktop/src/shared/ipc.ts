@@ -93,6 +93,7 @@ export const IPC_CHANNELS = {
   billingRouteCapabilities: "billing:route-capabilities",
   billingModelsDevList: "billing:models-dev-list",
   gitGetStatus: "git:get-status",
+  gitGetWorkspaceDiff: "git:get-workspace-diff",
   gitListCommits: "git:list-commits",
   gitCheckoutBranch: "git:checkout-branch",
   gitCreateBranch: "git:create-branch",
@@ -275,6 +276,16 @@ export interface GitCommitRecord {
   author: string;
   relativeDate: string;
   decorations: string[];
+}
+
+export interface WorkspaceDiffResult {
+  workspacePath: string;
+  patch: string;
+  patchTruncated: boolean;
+  fileCount: number;
+  files: Array<{ path: string; additions: number; deletions: number }>;
+  totalAdditions: number;
+  totalDeletions: number;
 }
 
 export interface GitListCommitsRequest {

@@ -1,5 +1,14 @@
-import { ChevronDown, GitBranch, GitCommitHorizontal, Laptop, Play, PlusSquare } from "lucide-react";
-import { useState } from "react";
+import { Check, ChevronDown, GitBranch, GitCommitHorizontal, Play, Plus, PlusSquare } from "lucide-react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { composerFloatingStyleForAnchor } from "./composer-floating";
 import type {
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
@@ -7,9 +16,11 @@ import type {
   RuntimeRoleRouteConfig,
   SubagentEnabledSettings,
   RuntimeAgentRole,
+  WorkspaceDiffResult,
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { GitCommitDialog } from "./GitCommitDialog";
+import { WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 
 export interface WorkspaceGitSectionProps {
@@ -35,7 +46,7 @@ export interface WorkspaceGitSectionProps {
 
 export function WorkspaceGitSection({
   workspacePath,
-  workspaceLabel,
+  workspaceLabel: _workspaceLabel,
   gitStatus,
   gitBusy,
   commitDisabled,
@@ -54,6 +65,19 @@ export function WorkspaceGitSection({
 }: WorkspaceGitSectionProps) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitsRefreshKey, setCommitsRefreshKey] = useState(0);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchCreateMode, setBranchCreateMode] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchError, setBranchError] = useState<string | undefined>();
+  const branchWrapRef = useRef<HTMLDivElement>(null);
+  const branchTriggerRef = useRef<HTMLButtonElement>(null);
+  const [branchMenuStyle, setBranchMenuStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
+  const [changesDrawerOpen, setChangesDrawerOpen] = useState(false);
+  const [changesLoading, setChangesLoading] = useState(false);
+  const [changesError, setChangesError] = useState<string | undefined>();
+  const [changesDiff, setChangesDiff] = useState<WorkspaceDiffResult | undefined>();
+  const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
 
   const showCommitEntry = Boolean(
     workspacePath &&
@@ -69,71 +93,314 @@ export function WorkspaceGitSection({
   const deletions = gitStatus?.deletions ?? 0;
   const branchLabel = gitStatus?.isGitRepository ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const showCommitGraph = Boolean(workspacePath && gitStatus?.isGitRepository && gitStatus.hasGitCommits);
+  const showBranchPicker = Boolean(
+    gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
+  );
+  const branchPickerDisabled = gitBusy || branchBusy;
+
+  const closeBranchMenu = useCallback(() => {
+    setBranchMenuOpen(false);
+    setBranchCreateMode(false);
+    setNewBranchName("");
+    setBranchError(undefined);
+  }, []);
+
+  const handleSelectBranch = useCallback(
+    async (branch: string) => {
+      if (!onCheckoutGitBranch || branchBusy || branch === gitStatus?.branch) {
+        closeBranchMenu();
+        return;
+      }
+      closeBranchMenu();
+      setBranchBusy(true);
+      try {
+        await onCheckoutGitBranch(branch);
+      } finally {
+        setBranchBusy(false);
+      }
+    },
+    [onCheckoutGitBranch, branchBusy, closeBranchMenu, gitStatus?.branch],
+  );
+
+  const handleCreateBranch = useCallback(async () => {
+    const trimmed = newBranchName.trim();
+    if (!onCreateGitBranch || !trimmed || branchBusy) {
+      return;
+    }
+    setBranchBusy(true);
+    setBranchError(undefined);
+    try {
+      await onCreateGitBranch(trimmed);
+      closeBranchMenu();
+    } catch (caught) {
+      setBranchError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBranchBusy(false);
+    }
+  }, [onCreateGitBranch, newBranchName, branchBusy, closeBranchMenu]);
+
+  const updateBranchMenuPosition = useCallback(() => {
+    const anchor = branchTriggerRef.current;
+    if (!anchor) {
+      return;
+    }
+    setBranchMenuStyle(
+      composerFloatingStyleForAnchor(anchor, {
+        width: 240,
+        minHeight: 120,
+        prefer: "below",
+        align: "start",
+      }),
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!branchMenuOpen) {
+      return;
+    }
+    updateBranchMenuPosition();
+    window.addEventListener("resize", updateBranchMenuPosition);
+    window.addEventListener("scroll", updateBranchMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateBranchMenuPosition);
+      window.removeEventListener("scroll", updateBranchMenuPosition, true);
+    };
+  }, [branchMenuOpen, updateBranchMenuPosition]);
+
+  useEffect(() => {
+    if (!branchMenuOpen) {
+      return;
+    }
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (branchWrapRef.current?.contains(target) || (event.target as HTMLElement).closest(".thread-info-workspace-git-branch-menu")) {
+        return;
+      }
+      closeBranchMenu();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeBranchMenu();
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [branchMenuOpen, closeBranchMenu]);
 
   async function handleCommitSuccess() {
     setCommitsRefreshKey((current) => current + 1);
     await onCommitSuccess?.();
   }
 
+  async function openChangesDrawer() {
+    if (!workspacePath || !window.eco || changesLoading) {
+      return;
+    }
+    setChangesDrawerOpen(true);
+    setChangesLoading(true);
+    setChangesError(undefined);
+    try {
+      const result = await window.eco.getWorkspaceDiff(workspacePath);
+      setChangesDiff(result);
+      setSelectedChangePath(result.files[0]?.path);
+    } catch (caught) {
+      setChangesError(caught instanceof Error ? caught.message : String(caught));
+      setChangesDiff(undefined);
+      setSelectedChangePath(undefined);
+    } finally {
+      setChangesLoading(false);
+    }
+  }
+
+  function closeChangesDrawer() {
+    setChangesDrawerOpen(false);
+    setChangesError(undefined);
+  }
+
   return (
     <div className="thread-info-workspace-git">
       <ul className="thread-info-workspace-git-list">
-        <li className="thread-info-workspace-git-changes-row">
-          <PlusSquare size={14} aria-hidden />
-          <span>变更</span>
-          <span className="thread-info-workspace-git-stats" aria-label="变更行数">
-            {gitBusy ? (
-              <span className="thread-info-workspace-git-stats-busy">…</span>
-            ) : (
-              <>
-                <span className="git-commit-stat-add">+{insertions}</span>
-                <span className="git-commit-stat-del">-{deletions}</span>
-              </>
-            )}
-          </span>
+        <li
+          className={
+            changesDrawerOpen
+              ? "thread-info-workspace-git-row thread-info-workspace-git-changes-row is-active"
+              : "thread-info-workspace-git-row thread-info-workspace-git-changes-row"
+          }
+        >
+          <button
+            type="button"
+            className="thread-info-workspace-git-row-button"
+            disabled={!workspacePath || gitBusy}
+            aria-expanded={changesDrawerOpen}
+            aria-haspopup="dialog"
+            aria-label="查看工作区变更"
+            onClick={() => void openChangesDrawer()}
+          >
+            <PlusSquare size={14} aria-hidden />
+            <span>变更</span>
+            <span className="thread-info-workspace-git-stats" aria-label="变更行数">
+              {gitBusy ? (
+                <span className="thread-info-workspace-git-stats-busy">…</span>
+              ) : (
+                <>
+                  <span className="git-commit-stat-add">+{insertions}</span>
+                  <span className="git-commit-stat-del">-{deletions}</span>
+                </>
+              )}
+            </span>
+          </button>
         </li>
 
-        <li className="thread-info-workspace-git-picker-row">
-          <Laptop size={14} aria-hidden />
-          <span className="thread-info-workspace-git-picker-label" title={workspacePath ?? workspaceLabel}>
-            本地
-          </span>
-          <ChevronDown size={12} className="thread-info-workspace-git-chevron" aria-hidden />
-        </li>
-
-        <li className="thread-info-workspace-git-picker-row">
+        <li
+          className={
+            branchMenuOpen
+              ? "thread-info-workspace-git-row thread-info-workspace-git-picker-row is-active"
+              : "thread-info-workspace-git-row thread-info-workspace-git-picker-row"
+          }
+        >
           <GitBranch size={14} aria-hidden />
-          {gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch ? (
-            <label className="thread-info-workspace-git-picker">
-              <select
-                className="thread-info-workspace-git-picker-select"
-                value={gitStatus.branch ?? ""}
-                disabled={gitBusy}
+          {showBranchPicker ? (
+            <div ref={branchWrapRef} className="thread-info-workspace-git-branch-wrap">
+              <button
+                ref={branchTriggerRef}
+                type="button"
+                className="thread-info-workspace-git-row-button"
+                disabled={branchPickerDisabled}
+                aria-expanded={branchMenuOpen}
+                aria-haspopup="listbox"
                 aria-label="切换分支"
-                onChange={(event) => void onCheckoutGitBranch(event.target.value)}
+                onClick={() => {
+                  setBranchMenuOpen((current) => {
+                    const next = !current;
+                    if (!next) {
+                      setBranchCreateMode(false);
+                      setNewBranchName("");
+                      setBranchError(undefined);
+                    } else {
+                      updateBranchMenuPosition();
+                    }
+                    return next;
+                  });
+                }}
               >
-                {gitStatus.branches.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </select>
-              <span className="thread-info-workspace-git-picker-label">{branchLabel}</span>
-              <ChevronDown size={12} className="thread-info-workspace-git-chevron" aria-hidden />
-            </label>
+                <span className="thread-info-workspace-git-picker-label">{branchLabel}</span>
+                <ChevronDown
+                  size={12}
+                  className={
+                    branchMenuOpen
+                      ? "thread-info-workspace-git-chevron open"
+                      : "thread-info-workspace-git-chevron"
+                  }
+                  aria-hidden
+                />
+              </button>
+              {branchMenuOpen
+                ? createPortal(
+                    <div
+                      className="thread-info-workspace-git-branch-menu"
+                      role="listbox"
+                      aria-label="切换分支"
+                      style={branchMenuStyle}
+                    >
+                      {branchCreateMode ? (
+                        <div className="thread-info-workspace-git-branch-menu-body">
+                          <div className="thread-info-workspace-git-branch-create">
+                            <div className="thread-info-workspace-git-branch-menu-header">新分支</div>
+                            <input
+                              className="thread-info-workspace-git-branch-create-input"
+                              value={newBranchName}
+                              placeholder="分支名称…"
+                              disabled={branchBusy}
+                              autoFocus
+                              onChange={(event) => {
+                                setNewBranchName(event.target.value);
+                                setBranchError(undefined);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void handleCreateBranch();
+                                }
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setBranchCreateMode(false);
+                                  setNewBranchName("");
+                                  setBranchError(undefined);
+                                }
+                              }}
+                            />
+                            {branchError ? (
+                              <p className="thread-info-workspace-git-branch-create-error">{branchError}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="thread-info-workspace-git-branch-menu-header">分支</div>
+                          <div className="thread-info-workspace-git-branch-menu-body">
+                            <ul className="thread-info-workspace-git-branch-menu-list">
+                              {gitStatus!.branches.map((branch) => {
+                                const isActive = branch === gitStatus?.branch;
+                                return (
+                                  <li key={branch}>
+                                    <button
+                                      type="button"
+                                      role="option"
+                                      aria-selected={isActive}
+                                      className={isActive ? "is-active" : undefined}
+                                      disabled={branchBusy}
+                                      onClick={() => void handleSelectBranch(branch)}
+                                    >
+                                      <GitBranch size={14} aria-hidden />
+                                      <span className="thread-info-workspace-git-branch-menu-label">
+                                        {branch}
+                                      </span>
+                                      {isActive ? <Check size={14} aria-hidden /> : null}
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                              {onCreateGitBranch ? (
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="thread-info-workspace-git-branch-menu-create"
+                                    disabled={branchBusy}
+                                    onClick={() => {
+                                      setBranchCreateMode(true);
+                                      setNewBranchName("");
+                                      setBranchError(undefined);
+                                    }}
+                                  >
+                                    <Plus size={14} aria-hidden />
+                                    <span className="thread-info-workspace-git-branch-menu-label">新分支</span>
+                                  </button>
+                                </li>
+                              ) : null}
+                            </ul>
+                          </div>
+                        </>
+                      )}
+                    </div>,
+                    document.body,
+                  )
+                : null}
+            </div>
           ) : (
-            <>
-              <span className="thread-info-workspace-git-picker-label">{branchLabel}</span>
-              <ChevronDown size={12} className="thread-info-workspace-git-chevron" aria-hidden />
-            </>
+            <span className="thread-info-workspace-git-picker-label">{branchLabel}</span>
           )}
         </li>
 
         {showCommitEntry ? (
-          <li>
+          <li className="thread-info-workspace-git-row">
             <button
               type="button"
-              className="thread-info-workspace-git-action"
+              className="thread-info-workspace-git-row-button"
               disabled={gitBusy || commitDisabled}
               onClick={() => setCommitDialogOpen(true)}
             >
@@ -144,10 +411,10 @@ export function WorkspaceGitSection({
         ) : null}
 
         {onOpenScriptsDialog ? (
-          <li>
+          <li className="thread-info-workspace-git-row">
             <button
               type="button"
-              className="thread-info-workspace-git-action"
+              className="thread-info-workspace-git-row-button"
               disabled={scriptsDisabled}
               onClick={onOpenScriptsDialog}
             >
@@ -157,13 +424,6 @@ export function WorkspaceGitSection({
           </li>
         ) : null}
       </ul>
-
-      {showCommitGraph ? (
-        <WorkspaceGitCommitGraph
-          workspacePath={workspacePath!}
-          refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
-        />
-      ) : null}
 
       {showCommitEntry ? (
         <GitCommitDialog
@@ -183,6 +443,23 @@ export function WorkspaceGitSection({
           onClose={() => setCommitDialogOpen(false)}
           onSaveRolePreference={onSaveCommitRolePreference!}
           onSuccess={handleCommitSuccess}
+        />
+      ) : null}
+
+      <WorkspaceDiffDrawer
+        open={changesDrawerOpen}
+        loading={changesLoading}
+        {...(changesError && { error: changesError })}
+        {...(changesDiff && { diff: changesDiff })}
+        {...(selectedChangePath && { selectedPath: selectedChangePath })}
+        onSelectPath={setSelectedChangePath}
+        onClose={closeChangesDrawer}
+      />
+
+      {showCommitGraph ? (
+        <WorkspaceGitCommitGraph
+          workspacePath={workspacePath!}
+          refreshToken={`${commitsRefreshKey}:${gitStatus?.branch ?? ""}`}
         />
       ) : null}
     </div>

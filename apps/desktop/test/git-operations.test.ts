@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { collectCommitDiffContext, COMMIT_DIFF_MAX_CHARS, createGitBranch, listGitCommits } from "../src/main/git-operations";
+import {
+  collectCommitDiffContext,
+  COMMIT_DIFF_MAX_CHARS,
+  createGitBranch,
+  getWorkspaceDiff,
+  listGitCommits,
+} from "../src/main/git-operations";
 
 test("createGitBranch runs git checkout -b", async () => {
   const calls: string[][] = [];
@@ -43,6 +49,54 @@ test("collectCommitDiffContext gathers staged diff via runner", async () => {
 
 test("COMMIT_DIFF_MAX_CHARS is large enough for real diffs", () => {
   expect(COMMIT_DIFF_MAX_CHARS).toBeGreaterThan(10_000);
+});
+
+test("getWorkspaceDiff combines HEAD diff and untracked files", async () => {
+  const run = async (args: string[], _cwd: string) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git diff HEAD") {
+      return {
+        exitCode: 0,
+        stdout: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+        stderr: "",
+      };
+    }
+    if (key === "git ls-files --others --exclude-standard") {
+      return { exitCode: 0, stdout: "src/new.ts\n", stderr: "" };
+    }
+    if (key.includes("diff --no-index")) {
+      return {
+        exitCode: 1,
+        stdout:
+          "diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+hello\n",
+        stderr: "",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceDiff("/tmp/repo", run);
+  expect(result.fileCount).toBe(2);
+  expect(result.files.map((file) => file.path)).toEqual(["src/a.ts", "src/new.ts"]);
+  expect(result.totalAdditions).toBeGreaterThan(0);
+  expect(result.patch).toContain("src/a.ts");
+  expect(result.patch).toContain("src/new.ts");
+});
+
+test("getWorkspaceDiff returns empty result for non-git workspace", async () => {
+  const run = async (args: string[], _cwd: string) => {
+    if (args.join(" ") === "git rev-parse --show-toplevel") {
+      return { exitCode: 128, stdout: "", stderr: "not a git repository" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceDiff("/tmp/plain", run);
+  expect(result.fileCount).toBe(0);
+  expect(result.patch).toBe("");
 });
 
 test("listGitCommits paginates git log output", async () => {
