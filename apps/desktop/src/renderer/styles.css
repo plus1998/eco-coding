@@ -7377,6 +7377,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .composer-route-popover > .composer-codex-popover-title {
   margin-bottom: 4px;
+  border-bottom: 1px solid var(--popover-divider);
 }
 
 .composer-route-popover-list {
@@ -7384,7 +7385,7 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 0;
   padding: 0;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   gap: 4px;
   min-height: 0;
@@ -7395,89 +7396,134 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .composer-route-popover .composer-codex-popover-item.active {
   background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+
+.composer-route-popover .composer-codex-popover-item.active:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.composer-route-popover .composer-codex-popover-item.active .composer-route-popover-item-name {
+  color: var(--popover-text);
+}
+
+.composer-route-popover .composer-codex-popover-item.active .composer-codex-popover-check {
+  color: var(--accent);
 }
 
 .composer-route-popover .composer-codex-popover-item {
   align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
 }
 
 .composer-route-popover-item-name {
   display: block;
   max-width: 100%;
   overflow: hidden;
+  color: var(--popover-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-agent-profile-main {
+.composer-route-profile-card {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
 }
 
-.composer-agent-profile-meta,
-.composer-agent-profile-model {
+.composer-route-profile-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-route-profile-meta {
   overflow: hidden;
   color: var(--popover-muted);
   font-size: 11px;
-  line-height: 1.25;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-agent-profile-risks,
-.composer-agent-profile-agents {
+.composer-route-profile-models {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--popover-text) 4%, transparent);
+}
+
+.composer-route-profile-model-row {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
   min-width: 0;
 }
 
-.composer-agent-profile-risk {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 2px 6px;
-  border: 1px solid var(--status-warn-border);
-  border-radius: 6px;
-  background: var(--status-warn-bg);
-  color: var(--status-warn-text);
+.composer-route-profile-model-row.is-more .composer-route-profile-model-name {
+  color: var(--popover-muted);
+  font-family: inherit;
   font-size: 10px;
-  line-height: 1.25;
-  white-space: nowrap;
+  text-align: left;
 }
 
-.composer-agent-profile-agent {
-  display: inline-grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px;
-  max-width: 100%;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--code-bg);
-  color: var(--popover-text);
-  font-size: 10px;
-  line-height: 1.25;
-}
-
-.composer-agent-profile-agent span,
-.composer-agent-profile-agent small {
+.composer-route-profile-model-role {
   overflow: hidden;
+  color: var(--popover-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-agent-profile-agent small {
-  color: var(--text-muted);
+.composer-route-profile-model-name {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--popover-text) 88%, var(--popover-muted));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.composer-agent-profile-agent.is-extra {
+.composer-route-profile-risks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.composer-route-profile-risk {
   display: inline-flex;
-  color: var(--text-muted);
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-warn-bg) 72%, transparent);
+  color: var(--status-warn-text);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.composer-route-profile-risk.is-more {
+  background: color-mix(in srgb, var(--popover-text) 6%, transparent);
+  color: var(--popover-muted);
 }
 
 .composer-route-popover-item-check {
@@ -7491,10 +7537,11 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .composer-route-popover-item-hint {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 11px;
   flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--popover-muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
 }
 
 .composer-route-popover-empty {
@@ -7509,11 +7556,11 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 100%;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 0;
   padding: 8px 10px;
   border: none;
-  border-top: 1px solid var(--border-subtle);
-  border-radius: 0 0 8px 8px;
+  border-top: 1px solid var(--popover-divider);
+  border-radius: 0;
   background: transparent;
   color: var(--popover-muted);
   font: inherit;
@@ -7521,8 +7568,26 @@ html[data-window-focused="true"] .codex-sidebar {
   cursor: pointer;
 }
 
+.composer-route-popover > .composer-route-popover-settings:first-of-type {
+  margin-top: 8px;
+}
+
+.composer-route-popover > .composer-route-popover-settings + .composer-route-popover-settings {
+  border-top-color: transparent;
+  padding-top: 4px;
+}
+
 .composer-route-popover-settings:hover:not(:disabled) {
   color: var(--popover-text);
+}
+
+.composer-route-popover > .composer-route-popover-settings svg:last-child {
+  margin-left: auto;
+  opacity: 0.45;
+}
+
+.composer-route-popover-settings:hover:not(:disabled) svg:last-child {
+  opacity: 0.72;
 }
 
 .models-settings-tabs {

@@ -62,6 +62,7 @@
   --popover-text: #f5f5f5;
   --popover-muted: #a3a3a3;
   --popover-hover: rgba(255, 255, 255, 0.05);
+  --popover-divider: rgba(255, 255, 255, 0.06);
   --card-surface-bg: #1a1a1a;
   --card-surface-bg-hover: #222222;
   --card-surface-bg-muted: #161616;
@@ -197,6 +198,7 @@
   --popover-text: #1d1d1f;
   --popover-muted: #6e6e73;
   --popover-hover: #f5f5f7;
+  --popover-divider: rgba(0, 0, 0, 0.06);
   --card-surface-bg: #ffffff;
   --card-surface-bg-hover: #f5f5f7;
   --card-surface-bg-muted: #fafafa;

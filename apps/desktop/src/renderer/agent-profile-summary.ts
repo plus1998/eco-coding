@@ -230,43 +230,17 @@ function dedupeRiskLabels(labels: readonly string[]): string[] {
   return result;
 }
 
-function formatModelLabel(providerId: string, modelId: string, modelRef?: ModelRef): string {
+function formatModelLabel(_providerId: string, modelId: string, modelRef?: ModelRef): string {
   const model = modelId.trim();
-  const provider = providerId.trim();
-  const base =
-    !model && !provider
-      ? "未配置"
-      : !provider
-        ? shortenModelId(model)
-        : `${provider}/${shortenModelId(model || "未配置")}`;
+  const base = model ? shortenModelId(model) : "未配置";
   const suffixes: string[] = [];
-  if (modelRef?.thinkingEffort) {
-    suffixes.push(formatThinkingEffort(modelRef.thinkingEffort));
+  if (modelRef?.thinkingEffort && modelRef.thinkingEffort !== "off") {
+    suffixes.push(modelRef.thinkingEffort);
   }
   if (modelRef?.modelsDevMapping) {
-    const m = modelRef.modelsDevMapping;
-    suffixes.push(`${m.providerKey}/${m.modelId}`);
+    suffixes.push(shortenModelId(modelRef.modelsDevMapping.modelId));
   }
   return suffixes.length > 0 ? `${base} · ${suffixes.join(" · ")}` : base;
-}
-
-function formatThinkingEffort(effort: string): string {
-  switch (effort) {
-    case "off":
-      return "思考:关";
-    case "low":
-      return "思考:低";
-    case "medium":
-      return "思考:中";
-    case "high":
-      return "思考:高";
-    case "xhigh":
-      return "思考:极高";
-    case "max":
-      return "思考:最大";
-    default:
-      return `思考:${effort}`;
-  }
 }
 
 function shortenModelId(modelId: string): string {

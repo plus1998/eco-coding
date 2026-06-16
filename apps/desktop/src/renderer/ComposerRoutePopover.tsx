@@ -63,8 +63,34 @@ export function ComposerRoutePopover({
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({ visibility: "hidden" }));
+  const [listMaxHeight, setListMaxHeight] = useState<number>();
   const profileSummaries = listSelectableAgentProfileSummaries(settings, runtimeConfig);
+
+  const updateListMaxHeight = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      setListMaxHeight(undefined);
+      return;
+    }
+    const items = Array.from(list.children) as HTMLElement[];
+    if (items.length === 0) {
+      setListMaxHeight(undefined);
+      return;
+    }
+    const visibleCount = Math.min(2, items.length);
+    let height = 0;
+    for (let index = 0; index < visibleCount; index += 1) {
+      height += items[index]!.getBoundingClientRect().height;
+    }
+    if (visibleCount > 1) {
+      const styles = getComputedStyle(list);
+      const gap = Number.parseFloat(styles.rowGap || styles.gap || "0") || 0;
+      height += gap * (visibleCount - 1);
+    }
+    setListMaxHeight(Math.ceil(height));
+  }, []);
 
   const updatePanelPosition = useCallback(() => {
     const anchor = anchorRef.current;
@@ -86,6 +112,14 @@ export function ComposerRoutePopover({
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
   }, [open, updatePanelPosition]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setListMaxHeight(undefined);
+      return;
+    }
+    updateListMaxHeight();
+  }, [open, profileSummaries, updateListMaxHeight]);
 
   useEffect(() => {
     if (!open) {
@@ -124,7 +158,11 @@ export function ComposerRoutePopover({
       style={panelStyle}
     >
       <p className="composer-codex-popover-title">Agent Profile</p>
-      <ul className="composer-route-popover-list">
+      <ul
+        ref={listRef}
+        className="composer-route-popover-list"
+        style={listMaxHeight === undefined ? undefined : { maxHeight: listMaxHeight }}
+      >
         {profileSummaries.map((summary) => (
           <AgentProfileOption
             key={summary.selectionId}
@@ -185,8 +223,19 @@ function AgentProfileOption({
   disabled?: boolean | undefined;
   onSelect: () => void;
 }) {
-  const visibleAgents = summary.enabledAgents.slice(0, 3);
-  const extraAgentCount = Math.max(0, summary.enabledAgents.length - visibleAgents.length);
+  const subagentPreview = summary.enabledAgents.slice(0, 2);
+  const hiddenSubagentCount = Math.max(0, summary.enabledAgents.length - subagentPreview.length);
+  const riskPreview = summary.highRiskLabels.slice(0, 2);
+  const hiddenRiskCount = Math.max(0, summary.highRiskLabels.length - riskPreview.length);
+  const modelRows = [
+    { key: "main", role: "主 Agent", model: summary.main.modelLabel },
+    ...subagentPreview.map((agent) => ({
+      key: agent.agentKey,
+      role: agent.name,
+      model: agent.modelLabel,
+    })),
+  ];
+
   return (
     <li>
       <button
@@ -195,42 +244,52 @@ function AgentProfileOption({
         disabled={disabled || selected}
         onClick={onSelect}
       >
-        <span className="composer-agent-profile-main">
-          <span className="composer-route-popover-item-name">{summary.name}</span>
-          <span className="composer-agent-profile-meta">
-            {summary.presetLabel} · {summary.enabledAgents.length} 个子代理
+        <span className="composer-route-profile-card">
+          <span className="composer-route-profile-head">
+            <span className="composer-route-popover-item-name">{summary.name}</span>
+            <span className="composer-route-profile-meta">
+              {summary.presetLabel} · {summary.enabledAgents.length} 个子代理
+            </span>
           </span>
-          <span className="composer-agent-profile-model">主 Agent：{summary.main.modelLabel}</span>
-          {summary.highRiskLabels.length > 0 ? (
-            <span className="composer-agent-profile-risks">
-              {summary.highRiskLabels.map((label) => (
-                <span key={label} className="composer-agent-profile-risk">
+
+          <span className="composer-route-profile-models">
+            {modelRows.map((row) => (
+              <span key={row.key} className="composer-route-profile-model-row">
+                <span className="composer-route-profile-model-role">{row.role}</span>
+                <span className="composer-route-profile-model-name" title={row.model}>
+                  {row.model}
+                </span>
+              </span>
+            ))}
+            {hiddenSubagentCount > 0 ? (
+              <span className="composer-route-profile-model-row is-more">
+                <span className="composer-route-profile-model-role" aria-hidden />
+                <span className="composer-route-profile-model-name">
+                  +{hiddenSubagentCount} 个子代理
+                </span>
+              </span>
+            ) : null}
+          </span>
+
+          {riskPreview.length > 0 ? (
+            <span className="composer-route-profile-risks">
+              {riskPreview.map((label) => (
+                <span key={label} className="composer-route-profile-risk">
                   {label}
                 </span>
               ))}
-            </span>
-          ) : null}
-          {visibleAgents.length > 0 ? (
-            <span className="composer-agent-profile-agents">
-              {visibleAgents.map((agent) => (
-                <span key={agent.agentKey} className="composer-agent-profile-agent">
-                  <span>{agent.name}</span>
-                  <small>{agent.modelLabel}</small>
-                </span>
-              ))}
-              {extraAgentCount > 0 ? (
-                <span className="composer-agent-profile-agent is-extra">+{extraAgentCount}</span>
+              {hiddenRiskCount > 0 ? (
+                <span className="composer-route-profile-risk is-more">+{hiddenRiskCount}</span>
               ) : null}
             </span>
           ) : null}
         </span>
+
         {selected ? (
           <span className="composer-codex-popover-check" aria-hidden>
             <Check size={14} />
           </span>
-        ) : (
-          <span className="composer-route-popover-item-hint">切换</span>
-        )}
+        ) : null}
       </button>
     </li>
   );
