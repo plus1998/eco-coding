@@ -319,7 +319,6 @@ import {
   pendingThreadTitle,
   shouldReplaceAutoThreadTitle,
   summarizeThreadTitle,
-  threadTitleFromPlannerPlan,
 } from "./thread-title";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
@@ -1723,6 +1722,7 @@ function registerIpcHandlers(): void {
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
+      scheduleThreadTitleSummary(thread.id, runtimeConfig);
       const attachments = payload.attachments;
       if (intent === "question") {
         void runQuestionThread(
@@ -2116,24 +2116,14 @@ function applyThreadTitleSummary(threadId: string, title: string | undefined): v
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
 }
 
-function scheduleThreadTitleSummary(
-  threadId: string,
-  runtimeConfig: RuntimeConfig,
-  context?: { plan?: string; analysis?: string },
-): void {
+function scheduleThreadTitleSummary(threadId: string, runtimeConfig: RuntimeConfig): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
 
   const prompt = thread.prompt;
-  const planText = context?.plan?.trim();
-  if (planText) {
-    applyThreadTitleSummary(threadId, threadTitleFromPlannerPlan(planText, prompt));
-    return;
-  }
-
-  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch, context)
+  void summarizeThreadTitle(runtimeConfig.routes, prompt, fetch)
     .then((title) => {
       applyThreadTitleSummary(threadId, title);
     })
@@ -2149,7 +2139,6 @@ function captureThreadPlanReady(input: {
   worktreePath: string;
   routesJson: string;
   awaitingPlanMessage: string;
-  runtimeConfig: RuntimeConfig;
 }): true {
   const result = applyThreadPlanReadyEffects({
     threadId: input.threadId,
@@ -2168,9 +2157,6 @@ function captureThreadPlanReady(input: {
           plan: event.plan,
           ...(runtimeConfig ? { runtimeConfig } : {}),
         });
-      },
-      scheduleTitleSummary: (threadId, context) => {
-        scheduleThreadTitleSummary(threadId, input.runtimeConfig, context);
       },
     },
   });
@@ -2482,7 +2468,6 @@ async function runQuestionThread(
       },
       onCompleted: (message) => {
         updateThread(thread.id, { status: "completed", message: message ?? "回答完成。" });
-        scheduleThreadTitleSummary(thread.id, runtimeConfig);
       },
     });
   } catch (error) {
@@ -2623,7 +2608,6 @@ async function runCodingThreadAutonomous(
                       routesJson: JSON.stringify(routes),
                       payload: event.payload,
                       awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
-                      runtimeConfig,
                     });
                   }
                   taskRuntime.handleEvent(event);
@@ -2671,7 +2655,6 @@ async function runCodingThreadAutonomous(
 
     taskRunHooks.stopIfUnhandled("completed");
     await completeCodingThreadRun(thread.id, worktreePlan);
-    scheduleThreadTitleSummary(thread.id, runtimeConfig);
   } catch (error) {
     taskRunHooks.stopIfUnhandled("blocked");
     cancelClarificationsForThread(thread.id, errorMessage(error));
@@ -2779,7 +2762,6 @@ async function runCodingThreadPlanning(
                       routesJson: JSON.stringify(routes),
                       payload: event.payload,
                       awaitingPlanMessage: "计划已生成，请确认是否执行。",
-                      runtimeConfig,
                     });
                   }
                 },
@@ -4527,7 +4509,6 @@ async function runThreadContinuation(
                       routesJson: JSON.stringify(routes),
                       payload: event.payload,
                       awaitingPlanMessage: "计划已生成，请确认是否执行。",
-                      runtimeConfig,
                     });
                   }
                   taskRuntime?.handleEvent(event);
@@ -4574,7 +4555,6 @@ async function runThreadContinuation(
               status: "completed",
               message: message ?? "回答完成。",
             });
-            scheduleThreadTitleSummary(thread.id, runtimeConfig);
             return;
           }
           updateThread(thread.id, { status: "idle", message: message ?? "续聊已结束。" });

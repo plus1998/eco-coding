@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import {
   buildThreadTitleUserMessage,
+  parseThreadTitleJson,
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
   shouldReplaceAutoThreadTitle,
   summarizeThreadTitle,
-  threadTitleFromPlannerPlan,
 } from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 
@@ -65,51 +65,71 @@ test("resolveThreadTitleRoute prefers explore over planner and coder", () => {
   expect(resolveThreadTitleRoute(routes.filter((r) => r.role !== "explore"))?.role).toBe("planner");
 });
 
-test("threadTitleFromPlannerPlan uses plan heading with colon", () => {
-  const title = threadTitleFromPlannerPlan(
-    "## 实现计划：商品描述支持 Markdown 渲染\n\n- 改组件",
-    "实现商品描述",
+test("parseThreadTitleJson reads title field from JSON", () => {
+  expect(parseThreadTitleJson('{"title":"程序员工作日报 uTools Plugin"}')).toBe(
+    "程序员工作日报 uTools Plugin",
   );
-  expect(title).toBe("商品描述支持 Markdown 渲染");
 });
 
-test("threadTitleFromPlannerPlan uses Summary section", () => {
-  const title = threadTitleFromPlannerPlan(
-    `## Implementation Plan
-
-## Summary
-Add export filters to the orders API.
-
-## Key Changes
-- Update handler`,
-    "实现导出筛选",
-  );
-  expect(title).toBe("Add export filters to the orders API.");
+test("parseThreadTitleJson extracts JSON from fenced markdown", () => {
+  expect(parseThreadTitleJson('```json\n{"title":"任务 TODO 面板"}\n```')).toBe("任务 TODO 面板");
 });
 
-test("threadTitleFromPlannerPlan uses first plan bullet", () => {
-  const title = threadTitleFromPlannerPlan(
-    "## Implementation Plan\n\n1. Read styles.css\n2. Add editor block",
-    "改样式",
-  );
-  expect(title).toBe("Read styles.css");
+test("parseThreadTitleJson returns undefined for missing title field", () => {
+  expect(parseThreadTitleJson('{"name":"missing"}')).toBeUndefined();
 });
 
-test("summarizes thread title through the explore route when no plan", async () => {
-  const calls: Array<{ url: string; body: { model: string } }> = [];
+test("summarizes thread title through the explore route with structured output", async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> =
+    [];
   const title = await summarizeThreadTitle(routes, "实现 TODO 列表", async (url, init) => {
-    const body = JSON.parse(String(init?.body)) as { model: string };
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    const headers = Object.fromEntries(new Headers(init?.headers).entries());
     calls.push({
       url: String(url),
-      body: { model: body.model },
+      body,
+      headers,
     });
-    return new Response(JSON.stringify({ content: [{ type: "text", text: "任务 TODO 面板" }] }), {
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({ content: [{ type: "text", text: '{"title":"任务 TODO 面板"}' }] }),
+      {
+        status: 200,
+      },
+    );
   });
 
   expect(title).toBe("任务 TODO 面板");
-  expect(calls).toEqual([{ url: "https://explore.test/v1/messages", body: { model: "explore-model" } }]);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.url).toBe("https://explore.test/v1/messages");
+  expect(calls[0]?.body.model).toBe("explore-model");
+  expect(calls[0]?.headers["anthropic-beta"]).toBe("structured-outputs-2025-11-13");
+  expect(calls[0]?.body.output_format).toEqual({
+    type: "json_schema",
+    schema: {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    },
+  });
+});
+
+test("summarizeThreadTitle retries without structured output when schema request fails", async () => {
+  let callCount = 0;
+  const title = await summarizeThreadTitle(routes, "实现导出筛选", async (_url, init) => {
+    callCount += 1;
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    if (body.output_format) {
+      return new Response("unsupported", { status: 400 });
+    }
+    return new Response(
+      JSON.stringify({ content: [{ type: "text", text: '{"title":"导出筛选功能"}' }] }),
+      { status: 200 },
+    );
+  });
+
+  expect(title).toBe("导出筛选功能");
+  expect(callCount).toBe(2);
 });
 
 test("rejects empty, copied, refusal, or garbage thread titles", () => {
@@ -124,14 +144,8 @@ test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
   expect(shouldReplaceAutoThreadTitle("已命名会话")).toBe(false);
 });
 
-test("buildThreadTitleUserMessage includes plan context", () => {
-  const message = buildThreadTitleUserMessage("实现导出筛选", {
-    analysis: "需要改 API",
-    plan: "## Implementation Plan\n- 加 query 参数",
-  });
+test("buildThreadTitleUserMessage includes prompt and JSON instruction", () => {
+  const message = buildThreadTitleUserMessage("实现导出筛选");
   expect(message).toContain("实现导出筛选");
-  expect(message).toContain("## 分析摘要");
-  expect(message).toContain("需要改 API");
-  expect(message).toContain("## 实现计划摘要");
-  expect(message).toContain("query 参数");
+  expect(message).toContain('{"title":"..."}');
 });

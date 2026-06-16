@@ -5,10 +5,9 @@ import {
   type ThreadPendingPlanWithRoutes,
 } from "../src/main/thread-plan-ready-effects";
 
-test("applyThreadPlanReadyEffects persists plan, emits awaiting event, and schedules title", () => {
+test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () => {
   const savedPlans: ThreadPendingPlanWithRoutes[] = [];
   const emittedEvents: ThreadPlanReadyAwaitingPlanEvent[] = [];
-  const titleContexts: Array<{ threadId: string; analysis: string; plan: string }> = [];
 
   const result = applyThreadPlanReadyEffects({
     threadId: "thr_plan_ready",
@@ -27,9 +26,6 @@ test("applyThreadPlanReadyEffects persists plan, emits awaiting event, and sched
       },
       emitAwaitingPlan: (event) => {
         emittedEvents.push(event);
-      },
-      scheduleTitleSummary: (threadId, context) => {
-        titleContexts.push({ threadId, ...context });
       },
     },
   });
@@ -58,13 +54,6 @@ test("applyThreadPlanReadyEffects persists plan, emits awaiting event, and sched
       },
     },
   ]);
-  expect(titleContexts).toEqual([
-    {
-      threadId: "thr_plan_ready",
-      analysis: "Need a stable ledger domain.",
-      plan: "1. Capture usage events\n2. Project billing",
-    },
-  ]);
 });
 
 test("applyThreadPlanReadyEffects keeps caller-specific awaiting messages out of persisted plan", () => {
@@ -85,7 +74,6 @@ test("applyThreadPlanReadyEffects keeps caller-specific awaiting messages out of
     effects: {
       savePendingPlan: (plan) => savedPlans.push(plan),
       emitAwaitingPlan: (event) => emittedEvents.push(event),
-      scheduleTitleSummary: () => {},
     },
   });
 
