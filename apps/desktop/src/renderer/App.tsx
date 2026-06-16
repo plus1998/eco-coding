@@ -265,6 +265,7 @@ function App() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
+  const prevThreadStatusByIdRef = useRef(new Map<string, ThreadStatus>());
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
@@ -952,6 +953,53 @@ function App() {
     setPackageScripts(undefined);
     void refreshPackageScripts();
   }, [refreshPackageScripts]);
+
+  useEffect(() => {
+    if (!currentProjectPath || !window.eco?.watchPackageJson) {
+      return undefined;
+    }
+    void window.eco.watchPackageJson(currentProjectPath);
+    if (!window.eco.onPackageJsonChanged) {
+      return undefined;
+    }
+    return window.eco.onPackageJsonChanged((workspacePath) => {
+      if (workspacePath === currentProjectPath) {
+        void refreshPackageScripts();
+      }
+    });
+  }, [currentProjectPath, refreshPackageScripts]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void refreshPackageScripts();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshPackageScripts]);
+
+  useEffect(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    let shouldRefresh = false;
+    for (const thread of threads) {
+      if (thread.workspacePath !== currentProjectPath) {
+        continue;
+      }
+      const previousStatus = prevThreadStatusByIdRef.current.get(thread.id);
+      if (previousStatus === undefined) {
+        prevThreadStatusByIdRef.current.set(thread.id, thread.status);
+        continue;
+      }
+      if (isActiveThreadStatus(previousStatus) && !isActiveThreadStatus(thread.status)) {
+        shouldRefresh = true;
+      }
+      prevThreadStatusByIdRef.current.set(thread.id, thread.status);
+    }
+    if (shouldRefresh) {
+      void refreshPackageScripts();
+    }
+  }, [threads, currentProjectPath, refreshPackageScripts]);
 
   const showPackageScriptsEntry = Boolean(
     packageScripts?.hasPackageJson && packageScripts.scripts.length > 0,
@@ -3480,6 +3528,10 @@ function FollowUpQueuePanel({
       })}
     </div>
   );
+}
+
+function isActiveThreadStatus(status: ThreadStatus): boolean {
+  return status === "running" || status === "queued";
 }
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {

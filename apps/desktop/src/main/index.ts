@@ -270,6 +270,7 @@ import {
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { PackageScriptRunner } from "./package-script-runner";
+import { PackageJsonWatcher } from "./package-json-watcher";
 import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
@@ -400,6 +401,11 @@ const gitRunner: CommandRunner = {
 const packageScriptRunner = new PackageScriptRunner((event) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send(IPC_CHANNELS.workspacePackageScriptEvent, event);
+  });
+});
+const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.workspacePackageJsonChanged, workspacePath);
   });
 });
 const gitWorktrees = new GitWorktreeService(gitRunner);
@@ -959,6 +965,14 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path is required.");
     }
     return listPackageScripts(workspacePath.trim());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.workspaceWatchPackageJson, async (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    packageJsonWatcher.watch(workspacePath.trim());
+    return { ok: true as const };
   });
 
   ipcMain.handle(IPC_CHANNELS.workspaceStartPackageScript, async (_event, payload: unknown) => {

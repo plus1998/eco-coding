@@ -129,6 +129,18 @@ const api = {
   listPackageScripts(workspacePath: string): Promise<PackageScriptsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceListPackageScripts, workspacePath);
   },
+  watchPackageJson(workspacePath: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceWatchPackageJson, workspacePath);
+  },
+  onPackageJsonChanged(callback: (workspacePath: string) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (typeof payload === "string") {
+        callback(payload);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.workspacePackageJsonChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.workspacePackageJsonChanged, listener);
+  },
   startPackageScript(request: RunPackageScriptRequest): Promise<StartPackageScriptResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceStartPackageScript, request);
   },

@@ -9,6 +9,7 @@
   --activity-stack-below: 800px;
   --content-inline-start: 24px;
   --content-inline-end: 48px;
+  --composer-max-width: 760px;
 }
 
 * {
@@ -6388,7 +6389,9 @@ html[data-window-focused="true"] .codex-sidebar {
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: var(--composer-max-width);
   min-width: 0;
+  margin-inline: auto;
   padding: 8px 24px 16px;
 }
 

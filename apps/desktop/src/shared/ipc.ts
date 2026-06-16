@@ -6,6 +6,8 @@ export const IPC_CHANNELS = {
   workspaceGetCurrent: "workspace:get-current",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
+  workspaceWatchPackageJson: "workspace:watch-package-json",
+  workspacePackageJsonChanged: "workspace:package-json-changed",
   workspaceStartPackageScript: "workspace:start-package-script",
   workspaceStopPackageScript: "workspace:stop-package-script",
   workspacePackageScriptEvent: "workspace:package-script-event",
