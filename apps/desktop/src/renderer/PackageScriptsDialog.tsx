@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
 import { formatRunCommand } from "../shared/package-script-run";
+import { AnsiOutput } from "./AnsiOutput";
 import {
   readWorkspaceScriptArgs,
   saveScriptArgs,
@@ -329,9 +330,12 @@ export function PackageScriptsDialog({
                 </span>
               ) : null}
             </div>
-            <pre ref={outputRef} className="package-scripts-output">
-              {runState.output || (runState.running ? "…" : "（无输出）")}
-            </pre>
+            <AnsiOutput
+              ref={outputRef}
+              className="package-scripts-output"
+              text={runState.output}
+              placeholder={runState.running ? "…" : "（无输出）"}
+            />
             {runState.command?.length ? (
               <p className="package-scripts-output-command" title={runState.command.join(" ")}>
                 {runState.command.join(" ")}

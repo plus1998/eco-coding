@@ -12858,6 +12858,217 @@ html[data-window-focused="true"] .settings-nav {
   word-break: break-word;
 }
 
+.package-scripts-output .ansi-bold {
+  font-weight: 700;
+}
+
+.package-scripts-output .ansi-dim {
+  opacity: 0.72;
+}
+
+.package-scripts-output .ansi-italic {
+  font-style: italic;
+}
+
+.package-scripts-output .ansi-underline {
+  text-decoration: underline;
+}
+
+.package-scripts-output .ansi-fg-black {
+  color: #767676;
+}
+
+.package-scripts-output .ansi-fg-red {
+  color: #f85149;
+}
+
+.package-scripts-output .ansi-fg-green {
+  color: #3fb950;
+}
+
+.package-scripts-output .ansi-fg-yellow {
+  color: #d29922;
+}
+
+.package-scripts-output .ansi-fg-blue {
+  color: #58a6ff;
+}
+
+.package-scripts-output .ansi-fg-magenta {
+  color: #bc8cff;
+}
+
+.package-scripts-output .ansi-fg-cyan {
+  color: #39c5cf;
+}
+
+.package-scripts-output .ansi-fg-white {
+  color: #f0f6fc;
+}
+
+.package-scripts-output .ansi-fg-bright-black {
+  color: #8b949e;
+}
+
+.package-scripts-output .ansi-fg-bright-red {
+  color: #ff7b72;
+}
+
+.package-scripts-output .ansi-fg-bright-green {
+  color: #56d364;
+}
+
+.package-scripts-output .ansi-fg-bright-yellow {
+  color: #e3b341;
+}
+
+.package-scripts-output .ansi-fg-bright-blue {
+  color: #79c0ff;
+}
+
+.package-scripts-output .ansi-fg-bright-magenta {
+  color: #d2a8ff;
+}
+
+.package-scripts-output .ansi-fg-bright-cyan {
+  color: #56d4dd;
+}
+
+.package-scripts-output .ansi-fg-bright-white {
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-black {
+  background: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-red {
+  background: #da3633;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-green {
+  background: #238636;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-yellow {
+  background: #9e6a03;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-blue {
+  background: #1f6feb;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-magenta {
+  background: #8957e5;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-cyan {
+  background: #1b7c83;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-white {
+  background: #c9d1d9;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-black {
+  background: #484f58;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-bright-red {
+  background: #f85149;
+  color: #ffffff;
+}
+
+.package-scripts-output .ansi-bg-bright-green {
+  background: #3fb950;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-yellow {
+  background: #d29922;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-blue {
+  background: #58a6ff;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-magenta {
+  background: #bc8cff;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-cyan {
+  background: #39c5cf;
+  color: #0d1117;
+}
+
+.package-scripts-output .ansi-bg-bright-white {
+  background: #f0f6fc;
+  color: #0d1117;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-black {
+  color: #57606a;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-red {
+  color: #cf222e;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-green {
+  color: #116329;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-yellow {
+  color: #9a6700;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-blue {
+  color: #0969da;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-magenta {
+  color: #8250df;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-cyan {
+  color: #1b7c83;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-fg-white {
+  color: #24292f;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-bg-red {
+  background: #cf222e;
+  color: #ffffff;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-bg-green {
+  background: #1a7f37;
+  color: #ffffff;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-bg-yellow {
+  background: #bf8700;
+  color: #ffffff;
+}
+
+[data-theme="light"] .package-scripts-output .ansi-bg-blue {
+  background: #0969da;
+  color: #ffffff;
+}
+
 .package-scripts-output-command {
   margin: 0;
   color: var(--text-muted);

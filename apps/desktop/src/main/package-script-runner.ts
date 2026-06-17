@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
 import type { PackageScriptStreamEvent } from "../shared/ipc";
-import { stripAnsi } from "../shared/strip-ansi";
 import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 
 export type PackageScriptEventEmitter = (event: PackageScriptStreamEvent) => void;
@@ -49,12 +48,7 @@ export class PackageScriptRunner {
       throw new Error(`Executable not found: ${executable}`);
     }
 
-    const env = {
-      ...toSpawnEnv(),
-      NO_COLOR: "1",
-      FORCE_COLOR: "0",
-      npm_config_color: "false",
-    };
+    const env = toSpawnEnv();
     let ptyProcess: IPty;
     try {
       ptyProcess = pty.spawn(executable, args, {
@@ -72,7 +66,7 @@ export class PackageScriptRunner {
     this.runs.set(runId, { runId, script, command: resolvedCommand, pty: ptyProcess });
 
     ptyProcess.onData((data) => {
-      this.emit({ type: "output", runId, data: stripAnsi(data) });
+      this.emit({ type: "output", runId, data });
     });
 
     ptyProcess.onExit(({ exitCode, signal }) => {
