@@ -62,6 +62,30 @@ test("buildThreadRunEventFromLiveEvent drops follow-up operational events", () =
   expect(event).toBeUndefined();
 });
 
+test("buildThreadRunEventFromLiveEvent drops operational thread lifecycle status lines", () => {
+  const stopped = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_idle",
+    liveType: "thread.idle",
+    role: "system",
+    stream: false,
+    message: "已停止。可继续对话；文件可通过检查点回滚。",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const resume = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_running",
+    liveType: "thread.running",
+    role: "system",
+    stream: false,
+    message: "正在继续执行…",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(stopped).toBeUndefined();
+  expect(resume).toBeUndefined();
+});
+
 test("buildThreadRunEventFromLiveEvent maps empty streaming chunks to placeholders", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

@@ -2,12 +2,6 @@ import type { WorktreePlan } from "@eco/workspace";
 
 export interface FinalizeCancelledRunDeps {
   updateThread: (threadId: string, patch: { status: "idle" | "completed"; message: string }) => void;
-  emitThreadEvent: (
-    threadId: string,
-    type: string,
-    message: string,
-    role: "system",
-  ) => void;
 }
 
 /** @deprecated Worktree dispositions removed; cancel always keeps the SDK session checkpoint. */
@@ -34,7 +28,6 @@ export async function finalizeCancelledRun(
     status: "idle",
     message: "已停止。可继续对话；文件可通过检查点回滚。",
   });
-  deps.emitThreadEvent(threadId, "thread.stopped", "已停止，对话检查点已保留。", "system");
 }
 
 export function parseThreadCancelRequest(payload: unknown): {

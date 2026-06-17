@@ -12,15 +12,11 @@ const sessionPlan: WorktreePlan = createSessionPlan("/repo", "thread-1");
 function createDeps() {
   const calls = {
     updates: [] as Array<{ status: string; message: string }>,
-    events: [] as string[],
   };
 
   const deps = {
     updateThread: (_threadId: string, patch: { status: "idle" | "completed"; message: string }) => {
       calls.updates.push(patch);
-    },
-    emitThreadEvent: (_threadId: string, type: string) => {
-      calls.events.push(type);
     },
   };
 
@@ -47,5 +43,4 @@ test("finalizeCancelledRun sets idle and preserves session checkpoint", async ()
   expect(calls.updates).toEqual([
     { status: "idle", message: "已停止。可继续对话；文件可通过检查点回滚。" },
   ]);
-  expect(calls.events).toContain("thread.stopped");
 });

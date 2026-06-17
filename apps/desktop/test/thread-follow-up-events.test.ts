@@ -15,8 +15,12 @@ test("isThreadFollowUpActivityMessage hides operational follow-up status lines",
   expect(isThreadFollowUpActivityMessage("已取消排队的后续消息。")).toBe(true);
   expect(isThreadFollowUpActivityMessage("已记录后续消息，并标记为需要立即处理。")).toBe(true);
   expect(isThreadFollowUpActivityMessage("正在停止当前步骤，随后处理最新后续消息。")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("正在停止当前步骤并处理最新后续消息…")).toBe(true);
   expect(isThreadFollowUpActivityMessage("已开始处理排队的后续消息。")).toBe(true);
   expect(isThreadFollowUpActivityMessage("后续消息处理失败：当前对话没有可中断的 active run。")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("已停止。可继续对话；文件可通过检查点回滚。")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("已停止，对话检查点已保留。")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("正在继续执行…")).toBe(true);
   expect(isThreadFollowUpActivityMessage("请继续实现登录页")).toBe(false);
 });
 

@@ -342,6 +342,56 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
 });
 
+test("buildThreadRunProjectionViewModel hides follow-up interrupt and resume status noise", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "继续实现登录页",
+          metadata: { liveType: "thread.user_prompt" },
+          sequence: 1,
+        }),
+        item({
+          id: "interrupt",
+          eventType: "thread.status",
+          role: "system",
+          text: "正在停止当前步骤，随后处理最新后续消息。",
+          metadata: { liveType: "thread.running" },
+          sequence: 2,
+        }),
+        item({
+          id: "stopped",
+          eventType: "thread.status",
+          role: "system",
+          text: "已停止。可继续对话；文件可通过检查点回滚。",
+          metadata: { liveType: "thread.idle" },
+          sequence: 3,
+        }),
+        item({
+          id: "resume",
+          eventType: "thread.status",
+          role: "system",
+          text: "正在继续执行…",
+          metadata: { liveType: "thread.running" },
+          sequence: 4,
+        }),
+        item({
+          id: "substantive",
+          eventType: "message.final",
+          role: "planner",
+          text: "好的，继续实现。",
+          sequence: 5,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
+});
+
 test("isProjectionUserPromptItem only accepts recorded user prompts", () => {
   const recorded = item({
     id: "prompt",

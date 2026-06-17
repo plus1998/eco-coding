@@ -2106,7 +2106,6 @@ function registerIpcHandlers(): void {
         await handleRunCancelled(threadId, plan);
       } else {
         updateThread(threadId, { status: "idle", message: "已停止。" });
-        emitThreadEvent(threadId, "thread.idle", "已停止。", "system");
       }
     }
   });
@@ -2349,7 +2348,7 @@ async function requestEscalatedFollowUpInterrupt(
     pendingEscalatedFollowUpDrain.add(thread.id);
     updateThread(thread.id, {
       status: "running",
-      message: "正在停止当前步骤并处理最新后续消息…",
+      message: "正在停止当前步骤，随后处理最新后续消息。",
     });
     cancelClarificationsForThread(thread.id, "follow-up escalated");
     cancelBashApprovalsForThread(thread.id, "follow-up escalated");
@@ -3853,7 +3852,6 @@ async function cleanupWorktreeForThread(threadId: string): Promise<void> {
 function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
   return {
     updateThread: (threadId, patch) => updateThread(threadId, patch),
-    emitThreadEvent: (threadId, type, message, role) => emitThreadEvent(threadId, type, message, role),
   };
 }
 

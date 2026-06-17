@@ -39,7 +39,10 @@ import type {
 
 export { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
-import { isUserPromptActivityLine } from "../shared/thread-follow-up-events";
+import {
+  isThreadFollowUpActivityMessage,
+  isUserPromptActivityLine,
+} from "../shared/thread-follow-up-events";
 import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
 
 export type { WorktreeMergeSummary };
@@ -2254,6 +2257,9 @@ function shouldHideSystemLine(line: ThreadActivityLine): boolean {
   }
   if (isPhaseLine(trimmed)) {
     return false;
+  }
+  if (isThreadFollowUpActivityMessage(trimmed)) {
+    return true;
   }
   return systemNoisePatterns.some((pattern) => pattern.test(trimmed));
 }
