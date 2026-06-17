@@ -293,6 +293,7 @@ function clearComposerDraft(store: Record<string, ComposerDraft>, key: string | 
 }
 
 const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
+const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 
 function App() {
@@ -1533,7 +1534,9 @@ function App() {
   }, [activeRoutes, threadModelByRole]);
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
+  const userDetachedFromBottomRef = useRef(false);
+  const activityFeedScrollTopRef = useRef(0);
+  const programmaticActivityFeedScrollRef = useRef(false);
   const forceActivityFeedScrollUntilRef = useRef(0);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
@@ -1565,30 +1568,31 @@ function App() {
     return container.scrollHeight - container.scrollTop - container.clientHeight;
   }, []);
 
-  const scrollActivityFeedToEnd = useCallback(
-    (force = false) => {
-      const container = activityMessagesRef.current;
-      if (!container) {
-        return;
-      }
-      const effectiveForce = force || Date.now() < forceActivityFeedScrollUntilRef.current;
-      if (!effectiveForce && !stickToBottomRef.current) {
-        return;
-      }
-      const distanceFromBottom = distanceFromActivityFeedBottom(container);
-      if (!effectiveForce && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX) {
-        stickToBottomRef.current = false;
-        return;
-      }
-      container.scrollTop = container.scrollHeight;
-      stickToBottomRef.current = true;
-    },
-    [distanceFromActivityFeedBottom],
-  );
+  const scrollActivityFeedToEnd = useCallback((force = false) => {
+    const container = activityMessagesRef.current;
+    if (!container) {
+      return;
+    }
+    const effectiveForce = force || Date.now() < forceActivityFeedScrollUntilRef.current;
+    if (!effectiveForce && userDetachedFromBottomRef.current) {
+      return;
+    }
+    programmaticActivityFeedScrollRef.current = true;
+    container.scrollTop = container.scrollHeight;
+    activityFeedScrollTopRef.current = container.scrollTop;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        programmaticActivityFeedScrollRef.current = false;
+        if (activityMessagesRef.current) {
+          activityFeedScrollTopRef.current = activityMessagesRef.current.scrollTop;
+        }
+      });
+    });
+  }, []);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
-    stickToBottomRef.current = true;
+    userDetachedFromBottomRef.current = false;
     scrollActivityFeedToEnd(true);
     requestAnimationFrame(() => {
       scrollActivityFeedToEnd(true);
@@ -1605,12 +1609,23 @@ function App() {
     if (!container) {
       return;
     }
+    activityFeedScrollTopRef.current = container.scrollTop;
     const onScroll = () => {
-      if (Date.now() < forceActivityFeedScrollUntilRef.current) {
+      if (programmaticActivityFeedScrollRef.current) {
         return;
       }
-      stickToBottomRef.current =
-        distanceFromActivityFeedBottom(container) <= ACTIVITY_FEED_STICK_THRESHOLD_PX;
+      const scrollTop = container.scrollTop;
+      if (Date.now() < forceActivityFeedScrollUntilRef.current) {
+        activityFeedScrollTopRef.current = scrollTop;
+        return;
+      }
+      const distanceFromBottom = distanceFromActivityFeedBottom(container);
+      if (scrollTop < activityFeedScrollTopRef.current - ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
+        userDetachedFromBottomRef.current = true;
+      } else if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+        userDetachedFromBottomRef.current = false;
+      }
+      activityFeedScrollTopRef.current = scrollTop;
     };
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
