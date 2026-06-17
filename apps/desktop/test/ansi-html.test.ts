@@ -20,8 +20,21 @@ test("ansiToHtml escapes html in plain text", () => {
   expect(ansiToHtml("<script>&")).toBe("&lt;script&gt;&amp;");
 });
 
-test("ansiToHtml keeps the latest carriage-return line", () => {
-  expect(ansiToHtml("loading 10%\rloading 50%\rloading 100%\n")).toBe("loading 100%\n");
+test("ansiToHtml preserves output after terminal progress clear", () => {
+  expect(ansiToHtml("Building...\rBuilding done\r\u001b[K")).toBe("Building...Building done");
+  expect(ansiToHtml("error line\n\u001b[31mfailed\u001b[0m\r\u001b[K")).toBe(
+    'error line\n<span class="ansi-fg-red">failed</span>',
+  );
+});
+
+test("ansiToHtml renders 256-color foreground with inline style", () => {
+  expect(ansiToHtml("\u001B[38;5;196mred256\u001B[0m normal")).toBe(
+    '<span style="color: rgb(255, 0, 0)">red256</span> normal',
+  );
+});
+
+test("ansiToHtml parses CSI introduced by ESC and C1", () => {
+  expect(ansiToHtml("\u009b31mred\u001b[0m")).toBe('<span class="ansi-fg-red">red</span>');
 });
 
 test("ansiToHtml strips non-sgr control sequences", () => {

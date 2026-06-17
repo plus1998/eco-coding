@@ -52,6 +52,25 @@ const STANDARD_BG: Record<number, string> = {
   107: "bright-white",
 };
 
+const XTERM_16: readonly string[] = [
+  "#000000",
+  "#cd0000",
+  "#00cd00",
+  "#cdcd00",
+  "#0000ee",
+  "#cd00cd",
+  "#00cdcd",
+  "#e5e5e5",
+  "#7f7f7f",
+  "#ff0000",
+  "#00ff00",
+  "#ffff00",
+  "#5c5cff",
+  "#ff00ff",
+  "#00ffff",
+  "#ffffff",
+];
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -59,18 +78,36 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function normalizeCarriageReturns(value: string): string {
-  return value
-    .split("\n")
-    .map((line) => {
-      const lastCarriageReturn = line.lastIndexOf("\r");
-      return lastCarriageReturn >= 0 ? line.slice(lastCarriageReturn + 1) : line;
-    })
-    .join("\n");
+function escapeAttribute(value: string): string {
+  return value.replace(/"/g, "&quot;");
+}
+
+// Log viewer: keep all emitted lines instead of emulating interactive \r overwrites.
+function normalizeTerminalOutput(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "");
 }
 
 function cloneStyle(style: AnsiStyle): AnsiStyle {
   return { ...style };
+}
+
+function xterm256Color(index: number): string {
+  if (index < 0 || index > 255) {
+    return "inherit";
+  }
+  if (index < 16) {
+    return XTERM_16[index] ?? "inherit";
+  }
+  if (index < 232) {
+    const cubeIndex = index - 16;
+    const red = Math.floor(cubeIndex / 36);
+    const green = Math.floor((cubeIndex % 36) / 6);
+    const blue = cubeIndex % 6;
+    const toComponent = (component: number) => (component === 0 ? 0 : 55 + component * 40);
+    return `rgb(${toComponent(red)}, ${toComponent(green)}, ${toComponent(blue)})`;
+  }
+  const gray = 8 + (index - 232) * 10;
+  return `rgb(${gray}, ${gray}, ${gray})`;
 }
 
 function applySgrCodes(style: AnsiStyle, rawCodes: string): void {
@@ -164,19 +201,33 @@ function applySgrCodes(style: AnsiStyle, rawCodes: string): void {
   }
 }
 
-function stylesEqual(left: AnsiStyle, right: AnsiStyle): boolean {
-  return (
-    left.bold === right.bold &&
-    left.dim === right.dim &&
-    left.italic === right.italic &&
-    left.underline === right.underline &&
-    left.fg === right.fg &&
-    left.bg === right.bg
-  );
+function resolveColorToken(token: string | undefined, kind: "fg" | "bg"): string | undefined {
+  if (!token) {
+    return undefined;
+  }
+  if (token.startsWith("palette-")) {
+    const index = Number(token.slice("palette-".length));
+    if (!Number.isNaN(index)) {
+      return xterm256Color(index);
+    }
+    return undefined;
+  }
+  if (token.startsWith("rgb-")) {
+    const [red, green, blue] = token.slice("rgb-".length).split("-").map(Number);
+    if ([red, green, blue].every((component) => !Number.isNaN(component))) {
+      return `rgb(${red}, ${green}, ${blue})`;
+    }
+    return undefined;
+  }
+
+  const className = `ansi-${kind}-${token}`;
+  return `var(--ansi-${kind}-${token}, inherit)`;
 }
 
-function styleToClasses(style: AnsiStyle): string {
+function styleToAttributes(style: AnsiStyle): { className?: string; style?: string } {
   const classes: string[] = [];
+  const styles: string[] = [];
+
   if (style.bold) {
     classes.push("ansi-bold");
   }
@@ -189,13 +240,29 @@ function styleToClasses(style: AnsiStyle): string {
   if (style.underline) {
     classes.push("ansi-underline");
   }
-  if (style.fg) {
-    classes.push(`ansi-fg-${style.fg}`);
+
+  const foreground = resolveColorToken(style.fg, "fg");
+  if (foreground) {
+    if (style.fg?.startsWith("palette-") || style.fg?.startsWith("rgb-")) {
+      styles.push(`color: ${foreground}`);
+    } else {
+      classes.push(`ansi-fg-${style.fg}`);
+    }
   }
-  if (style.bg) {
-    classes.push(`ansi-bg-${style.bg}`);
+
+  const background = resolveColorToken(style.bg, "bg");
+  if (background) {
+    if (style.bg?.startsWith("palette-") || style.bg?.startsWith("rgb-")) {
+      styles.push(`background-color: ${background}`);
+    } else {
+      classes.push(`ansi-bg-${style.bg}`);
+    }
   }
-  return classes.join(" ");
+
+  return {
+    ...(classes.length > 0 ? { className: classes.join(" ") } : {}),
+    ...(styles.length > 0 ? { style: styles.join("; ") } : {}),
+  };
 }
 
 function renderChunk(chunk: string, style: AnsiStyle): string {
@@ -203,18 +270,48 @@ function renderChunk(chunk: string, style: AnsiStyle): string {
     return "";
   }
   const escaped = escapeHtml(chunk);
-  const classes = styleToClasses(style);
-  return classes ? `<span class="${classes}">${escaped}</span>` : escaped;
+  const attributes = styleToAttributes(style);
+  if (!attributes.className && !attributes.style) {
+    return escaped;
+  }
+  const classAttr = attributes.className ? ` class="${attributes.className}"` : "";
+  const styleAttr = attributes.style ? ` style="${escapeAttribute(attributes.style)}"` : "";
+  return `<span${classAttr}${styleAttr}>${escaped}</span>`;
 }
 
-function findCsiEnd(value: string, start: number): number {
-  for (let index = start + 2; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
+function consumeCsi(
+  value: string,
+  index: number,
+): { nextIndex: number; sgrBody?: string } {
+  if (value[index] === "\u001b") {
+    if (value[index + 1] !== "[") {
+      return { nextIndex: index + 2 };
+    }
+    return readCsiBody(value, index + 2, index);
+  }
+  if (value[index] === "\u009b") {
+    return readCsiBody(value, index + 1, index);
+  }
+  return { nextIndex: index + 1 };
+}
+
+function readCsiBody(
+  value: string,
+  paramStart: number,
+  escapeStart: number,
+): { nextIndex: number; sgrBody?: string } {
+  for (let end = paramStart; end < value.length; end += 1) {
+    const code = value.charCodeAt(end);
     if (code >= 0x40 && code <= 0x7e) {
-      return index;
+      const terminator = value[end];
+      const body = value.slice(paramStart, end);
+      if (terminator === "m" && /^[0-9;]*$/.test(body)) {
+        return { nextIndex: end + 1, sgrBody: body };
+      }
+      return { nextIndex: end + 1 };
     }
   }
-  return -1;
+  return { nextIndex: value.length };
 }
 
 function isEscapeStart(value: string, index: number): boolean {
@@ -223,7 +320,7 @@ function isEscapeStart(value: string, index: number): boolean {
 }
 
 export function ansiToHtml(value: string): string {
-  const normalized = normalizeCarriageReturns(value);
+  const normalized = normalizeTerminalOutput(value);
   let result = "";
   let style = cloneStyle(DEFAULT_STYLE);
   let index = 0;
@@ -237,34 +334,16 @@ export function ansiToHtml(value: string): string {
       continue;
     }
 
-    if (normalized[index] === "\u009b" || normalized[index + 1] === "[") {
-      const bracketIndex = normalized[index] === "\u009b" ? index + 1 : index + 1;
-      if (normalized[bracketIndex] === "[") {
-        const csiEnd = findCsiEnd(normalized, bracketIndex - 1);
-        if (csiEnd !== -1) {
-          const terminator = normalized[csiEnd];
-          const bodyStart = bracketIndex + 1;
-          const body = normalized.slice(bodyStart, csiEnd);
-          if (terminator === "m" && /^[0-9;]*$/.test(body)) {
-            applySgrCodes(style, body);
-          }
-          index = csiEnd + 1;
-          continue;
-        }
-      }
+    const consumed = consumeCsi(normalized, index);
+    if (consumed.sgrBody !== undefined) {
+      applySgrCodes(style, consumed.sgrBody);
     }
-
-    if (normalized[index] === "\u001b" && normalized[index + 1] !== "[") {
-      index += 2;
-      continue;
-    }
-
-    index += 1;
+    index = consumed.nextIndex;
   }
 
   return result;
 }
 
 export function hasAnsi(value: string): boolean {
-  return /\u001b\[[0-9;]*m|\u009b\[[0-9;]*m/.test(value);
+  return /\u001b\[[0-9;]*m|\u009b[0-9;]*m/.test(value);
 }
