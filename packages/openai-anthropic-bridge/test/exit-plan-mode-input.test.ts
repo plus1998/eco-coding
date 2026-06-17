@@ -7,8 +7,8 @@ import {
   sanitizeExitPlanModeInlinePlanJson,
 } from '../src/responses-to-anthropic.js';
 
-describe('ExitPlanMode inline plan stripping', () => {
-  test('sanitizeAnthropicToolUseInput removes inline plan bodies for ExitPlanMode', () => {
+describe('ExitPlanMode inline plan preservation', () => {
+  test('sanitizeAnthropicToolUseInput preserves inline plan bodies for ExitPlanMode', () => {
     expect(
       sanitizeAnthropicToolUseInput(
         'ExitPlanMode',
@@ -19,11 +19,13 @@ describe('ExitPlanMode inline plan stripping', () => {
         }),
       ),
     ).toEqual({
+      plan: '# Big plan\n\n'.repeat(200),
+      planContent: 'ignored',
       allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }],
     });
   });
 
-  test('responsesToAnthropic strips inline plan from ExitPlanMode function_call', () => {
+  test('responsesToAnthropic preserves inline plan from ExitPlanMode function_call', () => {
     const anthropic = responsesToAnthropic(
       {
         id: 'resp_plan',
@@ -48,11 +50,12 @@ describe('ExitPlanMode inline plan stripping', () => {
     const toolUse = anthropic.content.find((block) => block.type === 'tool_use');
     expect(toolUse?.name).toBe('ExitPlanMode');
     expect(toolUse?.input).toEqual({
+      plan: '# Plan body',
       allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }],
     });
   });
 
-  test('stream converter buffers ExitPlanMode args and emits sanitized metadata only', () => {
+  test('stream converter buffers ExitPlanMode args and emits complete tool input', () => {
     const state = newResponsesEventToAnthropicState(['ExitPlanMode']);
     const events: ReturnType<typeof responsesEventToAnthropicEvents> = [];
 
@@ -112,11 +115,15 @@ describe('ExitPlanMode inline plan stripping', () => {
         event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta',
     );
     expect(toolDeltas).toHaveLength(1);
+    expect(JSON.parse(toolDeltas[0]?.delta?.partial_json ?? '{}')).toEqual({
+      plan: '# Plan body',
+      allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }],
+    });
     expect(sanitizeExitPlanModeInlinePlanJson(toolDeltas[0]?.delta?.partial_json ?? '')).toBe(
-      JSON.stringify({ allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }] }),
+      JSON.stringify({
+        plan: '# Plan body',
+        allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }],
+      }),
     );
-    expect(
-      toolDeltas.every((event) => !event.delta?.partial_json?.includes('# Plan body')),
-    ).toBe(true);
   });
 });

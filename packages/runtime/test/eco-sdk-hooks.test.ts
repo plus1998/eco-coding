@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import type {
   PreCompactHookInput,
   PreToolUseHookInput,
@@ -14,8 +16,6 @@ import {
   createExitPlanModePermissionRequestHook,
   createExitPlanModePreToolHook,
   createExitPlanModeResumeApproveHook,
-  parseDeferredExitPlanModeResult,
-  parseExitPlanModeOutput,
   createNonEcoSubagentDenyPreToolHook,
   createNormalizeSubagentPreToolHook,
   createPreCompactHook,
@@ -26,7 +26,9 @@ import {
   createTaskToolPreToolHook,
   createToolPermissionPreToolHook,
   createWorkflowDenyPreToolHook,
+  parseDeferredExitPlanModeResult,
   parseExitPlanModeInput,
+  parseExitPlanModeOutput,
 } from "../src/eco-sdk-hooks";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
@@ -98,6 +100,99 @@ test("createExitPlanModePreToolHook passes through when PreToolUse injection is 
   );
 
   expect(result).toEqual({});
+});
+
+test("createExitPlanModePreToolHook ignores stale latest Claude plan file and captures current transcript", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "eco-plan-stale-"));
+  try {
+    await fs.mkdir(path.join(workspace, ".claude", "plans"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspace, ".claude", "plans", "old.md"),
+      "## 实现计划\n\n旧计划不应被复用。",
+      "utf8",
+    );
+
+    const captured: Array<{ plan: string; toolUseId: string }> = [];
+    const hook = createExitPlanModePreToolHook(
+      (request) => {
+        captured.push({ plan: request.plan, toolUseId: request.toolUseId });
+      },
+      { capturedToolUseIds: new Set<string>() },
+      {
+        workspacePath: workspace,
+        getPhaseTranscript: () => "## 分析结果\n\n本轮需求。\n\n## 实现计划\n\n本轮新计划。",
+      },
+    );
+    if (!hook) {
+      throw new Error("Expected ExitPlanMode hook");
+    }
+
+    const result = await hook(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "ExitPlanMode",
+        tool_input: {},
+        tool_use_id: "tool_exit_current_transcript",
+        session_id: "s1",
+        cwd: workspace,
+      } satisfies PreToolUseHookInput,
+      "tool_exit_current_transcript",
+      { signal: new AbortController().signal },
+    );
+
+    expect(captured).toEqual([
+      {
+        plan: "## 实现计划\n\n本轮新计划。",
+        toolUseId: "tool_exit_current_transcript",
+      },
+    ]);
+    expect(result.hookSpecificOutput).toMatchObject({
+      hookEventName: "PreToolUse",
+      permissionDecision: "defer",
+    });
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createExitPlanModePreToolHook does not submit old Claude plan file without current plan evidence", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "eco-plan-old-only-"));
+  try {
+    await fs.mkdir(path.join(workspace, ".claude", "plans"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspace, ".claude", "plans", "old.md"),
+      "## 实现计划\n\n旧计划不应被提交。",
+      "utf8",
+    );
+
+    const hook = createExitPlanModePreToolHook(
+      () => {
+        throw new Error("delegate should not run for a stale plan file");
+      },
+      { capturedToolUseIds: new Set<string>() },
+      { workspacePath: workspace },
+    );
+    if (!hook) {
+      throw new Error("Expected ExitPlanMode hook");
+    }
+
+    const result = await hook(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "ExitPlanMode",
+        tool_input: {},
+        tool_use_id: "tool_exit_no_current_plan",
+        session_id: "s1",
+        cwd: workspace,
+      } satisfies PreToolUseHookInput,
+      "tool_exit_no_current_plan",
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toEqual({});
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("createExitPlanModePreToolHook defers after capturing injected plan", async () => {

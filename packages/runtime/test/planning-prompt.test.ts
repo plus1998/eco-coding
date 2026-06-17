@@ -49,6 +49,8 @@ test("buildPlanningPhasePrompt preserves native Plan Mode with Eco boundaries", 
   expect(prompt).toContain("WebFetch");
   expect(prompt).toContain("AskUserQuestion");
   expect(prompt).toContain("ExitPlanMode");
+  expect(prompt).toContain("`plan` field");
+  expect(prompt).toContain("only `allowedPrompts`");
   expect(prompt).toContain("Do not use Write/Edit/MultiEdit");
   expect(prompt).not.toContain("turn 1");
   expect(prompt).not.toContain("mcp__eco_plan__finalize_plan");
@@ -65,6 +67,8 @@ test("buildPlanningContinuationPrompt requires full replacement plan", () => {
   expect(prompt).toContain("same Plan Mode session");
   expect(prompt).toContain("complete replacement");
   expect(prompt).toContain("ExitPlanMode");
+  expect(prompt).toContain("complete replacement Markdown plan in the `plan` field");
+  expect(prompt).toContain("only `allowedPrompts`");
   expect(prompt).not.toContain("not turn 1");
   expect(prompt).not.toContain("turn 1");
   // New: follow-up ambiguity handling
@@ -85,6 +89,8 @@ test("orchestrator prompts require eco subagent keys when delegating", () => {
   expect(planning).toContain("Agent(general-purpose)");
   expect(planning).toContain("Agent(Plan)");
   expect(planning).toContain("Plan Mode exception");
+  expect(planning).toContain("complete Markdown plan in the `plan` field");
+  expect(planning).toContain("only `allowedPrompts`");
   expect(planning).not.toContain("Agent(Explore)");
 
   const autonomous = buildAutonomousOrchestratorAppend();

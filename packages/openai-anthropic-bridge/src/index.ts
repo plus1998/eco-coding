@@ -36,6 +36,7 @@ export {
   responsesAnthropicEventToSse,
   responsesEventToAnthropicEvents,
   responsesToAnthropic,
+  preserveExitPlanModeInlinePlanFromObject,
   sanitizeAnthropicToolUseInput,
   sanitizeExitPlanModeInlinePlanJson,
   stripExitPlanModeInlinePlanFromObject,

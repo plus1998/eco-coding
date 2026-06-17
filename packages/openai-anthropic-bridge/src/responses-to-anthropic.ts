@@ -176,24 +176,15 @@ function containsAnthropicToolUseBlock(
   return false;
 }
 
-const EXIT_PLAN_MODE_INLINE_PLAN_KEYS = [
-  'plan',
-  'planContent',
-  'plan_content',
-  'markdown',
-  'content',
-] as const;
-
-/** Strip inline plan bodies so CLI Plan Mode injects from the plan file (native behavior). */
-export function stripExitPlanModeInlinePlanFromObject(
+/** Preserve inline plan bodies; Eco's OpenAI-compatible Plan Mode captures from tool input. */
+export function preserveExitPlanModeInlinePlanFromObject(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
-  const rest = { ...input };
-  for (const key of EXIT_PLAN_MODE_INLINE_PLAN_KEYS) {
-    delete rest[key];
-  }
-  return rest;
+  return { ...input };
 }
+
+/** @deprecated Use preserveExitPlanModeInlinePlanFromObject. */
+export const stripExitPlanModeInlinePlanFromObject = preserveExitPlanModeInlinePlanFromObject;
 
 export function sanitizeExitPlanModeInlinePlanJson(raw: string): string {
   if (raw === '') {
@@ -201,7 +192,7 @@ export function sanitizeExitPlanModeInlinePlanJson(raw: string): string {
   }
   try {
     return jsonMarshal(
-      stripExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>),
+      preserveExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>),
     );
   } catch {
     return '{}';
@@ -217,7 +208,7 @@ export function sanitizeAnthropicToolUseInput(
       return {};
     }
     try {
-      return stripExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>);
+      return preserveExitPlanModeInlinePlanFromObject(jsonParse(raw) as Record<string, unknown>);
     } catch {
       return {};
     }

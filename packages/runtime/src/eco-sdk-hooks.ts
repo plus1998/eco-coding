@@ -15,7 +15,6 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseAskUserQuestionInput, type SdkAskUserQuestionRequest } from "./ask-user-question";
 import {
-  readLatestClaudePlanFile,
   readPlanFileContent,
   readPlanFromPhaseTranscript,
   readPlanFromSdkTranscriptPath,
@@ -36,11 +35,10 @@ export {
   readAgentSubagentType,
 } from "./subagent-resume.js";
 
-import { evaluateBashPolicy, type BashReviewMode } from "../../bash-policy/src";
+import { type BashReviewMode, evaluateBashPolicy } from "../../bash-policy/src";
 import type { RuntimeAgentRole } from "../../shared/src";
 import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
 import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
-import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 import {
   filesystemReadScopeAskReason,
   isDiscoveryFilesystemTool,
@@ -60,6 +58,7 @@ import {
   SDK_PLAN_AGENT_KEY,
   type SubagentAvailability,
 } from "./subagent-availability";
+import { materializeEcoToolPolicy } from "./tool-permission-policy.js";
 
 export interface EcoTaskTrackerHooks {
   onPreToolUse(toolName: string, input: Record<string, unknown>): void;
@@ -253,16 +252,6 @@ async function resolveExitPlanModeSubmission(
       }
     }
   }
-  for (const root of roots) {
-    const latest = await readLatestClaudePlanFile(root);
-    if (latest) {
-      return {
-        ...parsed,
-        plan: latest.content,
-        planFilePath: parsed.planFilePath || latest.planFilePath,
-      };
-    }
-  }
   const transcriptPath = options.transcriptPath?.trim();
   if (transcriptPath) {
     const fromTranscriptFile = await readPlanFromSdkTranscriptPath(transcriptPath);
@@ -323,7 +312,8 @@ export function createExitPlanModePreToolHook(
     const injectedInput = mergeExitPlanModeInjectedFields(toolInput, preInput);
     const hookRecord = preInput as unknown as Record<string, unknown>;
     const transcriptPath = readHookTranscriptPath(hookRecord);
-    const resolved = await resolveExitPlanModeSubmission(parseExitPlanModeInput(injectedInput), {
+    const parsed = parseExitPlanModeInput(injectedInput);
+    const resolved = await resolveExitPlanModeSubmission(parsed, {
       searchRoots: [options.workspacePath, preInput.cwd],
       ...(transcriptPath ? { transcriptPath } : {}),
       ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
@@ -372,7 +362,8 @@ export function createExitPlanModePermissionRequestHook(
     );
     const hookRecord = requestInput as unknown as Record<string, unknown>;
     const transcriptPath = readHookTranscriptPath(hookRecord);
-    const resolved = await resolveExitPlanModeSubmission(parseExitPlanModeInput(injectedInput), {
+    const parsed = parseExitPlanModeInput(injectedInput);
+    const resolved = await resolveExitPlanModeSubmission(parsed, {
       searchRoots: [options.workspacePath, requestInput.cwd],
       ...(transcriptPath ? { transcriptPath } : {}),
       ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),

@@ -97,6 +97,73 @@ export function normalizeToolParameters(schema: unknown): unknown {
   return { ...m, properties: {} };
 }
 
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function normalizeExitPlanModeToolParameters(schema: unknown): unknown {
+  const normalized = normalizeToolParameters(schema);
+  let m: Record<string, JsonValue>;
+  try {
+    const parsed = typeof normalized === 'string' ? jsonParse(normalized) : normalized;
+    if (!isJsonRecord(parsed) || parsed.type !== 'object') {
+      return normalized;
+    }
+    m = parsed;
+  } catch {
+    return normalized;
+  }
+
+  const properties = isJsonRecord(m.properties) ? { ...m.properties } : {};
+  properties.plan = isJsonRecord(properties.plan)
+    ? {
+        ...properties.plan,
+        description:
+          typeof properties.plan.description === 'string'
+            ? properties.plan.description
+            : 'Complete Markdown plan to submit for Eco approval.',
+      }
+    : {
+        type: 'string',
+        description: 'Complete Markdown plan to submit for Eco approval.',
+      };
+  properties.planContent = isJsonRecord(properties.planContent)
+    ? {
+        ...properties.planContent,
+        description:
+          typeof properties.planContent.description === 'string'
+            ? properties.planContent.description
+            : 'Alias for the complete Markdown plan. Prefer plan when possible.',
+      }
+    : {
+        type: 'string',
+        description: 'Alias for the complete Markdown plan. Prefer plan when possible.',
+      };
+
+  const required = Array.isArray(m.required)
+    ? m.required.filter((item): item is string => typeof item === 'string')
+    : [];
+  if (!required.includes('plan')) {
+    required.push('plan');
+  }
+
+  return { ...m, properties, required };
+}
+
+function normalizeToolParametersForTool(name: string, schema: unknown): unknown {
+  return name === 'ExitPlanMode'
+    ? normalizeExitPlanModeToolParameters(schema)
+    : normalizeToolParameters(schema);
+}
+
+function augmentToolDescription(name: string, description: string | undefined): string | undefined {
+  if (name !== 'ExitPlanMode') {
+    return description;
+  }
+  const requirement = 'Eco requirement: include the complete Markdown plan in the `plan` tool input field.';
+  return description?.trim() ? `${description.trim()}\n\n${requirement}` : requirement;
+}
+
 /** Map Anthropic thinking/effort fields to OpenAI Responses reasoning, when enabled. */
 export function resolveAnthropicReasoningForResponses(
   req: AnthropicRequest,
@@ -383,8 +450,8 @@ export function convertAnthropicToolsToResponses(tools: AnthropicTool[]): Respon
     out.push({
       type: 'function',
       name: t.name,
-      description: t.description,
-      parameters: normalizeToolParameters(t.input_schema),
+      description: augmentToolDescription(t.name, t.description),
+      parameters: normalizeToolParametersForTool(t.name, t.input_schema),
       strict: false,
     });
   }

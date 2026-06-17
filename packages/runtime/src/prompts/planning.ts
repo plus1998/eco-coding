@@ -27,7 +27,8 @@ export function buildPlanningPhasePrompt(
     "When asking, include enough context for the user to make an informed decision. Explain the consequence of each option.",
     "",
     "When the spec is decision-complete, present the full Markdown plan and call `ExitPlanMode`.",
-    "Do not use Write/Edit/MultiEdit to create a plan file; Claude Code persists the plan internally and injects it into ExitPlanMode hooks.",
+    "The `ExitPlanMode` tool input must include the same complete Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
+    "Do not use Write/Edit/MultiEdit to create a plan file; Eco captures the submitted plan from `ExitPlanMode`.",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }
@@ -44,6 +45,7 @@ export function buildPlanningContinuationPrompt(
     `Continue using Claude Code native Plan Mode. ${buildPlanningContinuationExploreHint(availability)}`,
     "If the user's follow-up reveals new ambiguity, explore first then ask targeted questions before updating the plan.",
     "When the spec is decision-complete, present a **complete replacement** Markdown plan and call `ExitPlanMode` once (not a delta patch).",
+    "The `ExitPlanMode` tool input must include the same complete replacement Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
     "Do not implement or produce ## Coder Tasks.",
   ].join("\n");
 }

@@ -253,7 +253,8 @@ function buildUniversalPlanningPrompt(userPrompt: string): string {
     "Each question must materially change the plan, confirm an assumption, or choose between meaningful tradeoffs. Include enough context for an informed decision.",
     "",
     "If the next actions are clear, present a decision-complete Markdown plan and call `ExitPlanMode`.",
-    "Do not use Write/Edit/MultiEdit to create a plan file; Claude Code persists the plan internally and injects it into ExitPlanMode hooks.",
+    "The `ExitPlanMode` tool input must include the same complete Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
+    "Do not use Write/Edit/MultiEdit to create a plan file; Eco captures the submitted plan from `ExitPlanMode`.",
     "Do not execute the plan in this phase.",
   ].join("\n");
 }
@@ -266,6 +267,7 @@ function buildUniversalPlanningContinuationPrompt(userPrompt: string): string {
     "Update the analysis and plan as needed.",
     "If the follow-up reveals new ambiguity, explore first then ask targeted questions before updating the plan.",
     "When the spec is decision-complete, present a complete replacement Markdown plan and call `ExitPlanMode` rather than producing a delta.",
+    "The `ExitPlanMode` tool input must include the same complete replacement Markdown plan in the `plan` field. Do not call `ExitPlanMode` with `{}` or only `allowedPrompts`.",
   ].join("\n");
 }
 

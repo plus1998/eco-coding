@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { anthropicToResponses } from '../src/anthropic-to-responses.js';
+import { responsesToChatCompletionsRequest } from '../src/chat-completions-responses-bridge.js';
 import { jsonParse } from '../src/json.js';
 import type { ResponsesContentPart, ResponsesInputItem } from '../src/types.js';
 
@@ -184,5 +185,73 @@ describe('anthropicToResponses', () => {
     });
 
     expect(resp.tool_choice).toEqual({ type: 'function', name: 'get_weather' });
+  });
+
+  test('augments ExitPlanMode schema with required plan input', () => {
+    const resp = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'Draft a plan' }],
+      tools: [
+        {
+          name: 'ExitPlanMode',
+          description: 'Exit plan mode',
+          input_schema: {
+            type: 'object',
+            properties: {
+              allowedPrompts: { type: 'array' },
+            },
+          },
+        },
+      ],
+    });
+
+    const tool = resp.tools?.find((candidate) => candidate.name === 'ExitPlanMode');
+    const params = tool?.parameters as
+      | { properties?: Record<string, unknown>; required?: unknown }
+      | undefined;
+
+    expect(tool?.description).toContain('complete Markdown plan');
+    expect(params?.properties?.allowedPrompts).toEqual({ type: 'array' });
+    expect(params?.properties?.plan).toMatchObject({
+      type: 'string',
+      description: expect.stringContaining('Complete Markdown plan'),
+    });
+    expect(params?.properties?.planContent).toMatchObject({
+      type: 'string',
+    });
+    expect(params?.required).toContain('plan');
+  });
+
+  test('keeps augmented ExitPlanMode schema when targeting chat completions', () => {
+    const responsesReq = anthropicToResponses({
+      model: 'gpt-5.2',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: 'Draft a plan' }],
+      tools: [
+        {
+          name: 'ExitPlanMode',
+          input_schema: {
+            type: 'object',
+            properties: {
+              allowedPrompts: { type: 'array' },
+            },
+          },
+        },
+      ],
+    });
+
+    const chatReq = responsesToChatCompletionsRequest(responsesReq);
+    const exitPlanTool = chatReq.tools?.find(
+      (candidate) => candidate.function.name === 'ExitPlanMode',
+    );
+    const params = exitPlanTool?.function.parameters as
+      | { properties?: Record<string, unknown>; required?: unknown }
+      | undefined;
+
+    expect(params?.properties?.plan).toMatchObject({
+      type: 'string',
+    });
+    expect(params?.required).toContain('plan');
   });
 });

@@ -81,42 +81,6 @@ export async function readPlanFileContent(
   }
 }
 
-/** Read the newest markdown plan Claude Code wrote under `.claude/plans/`. */
-export async function readLatestClaudePlanFile(
-  workspacePath: string,
-): Promise<{ content: string; planFilePath: string } | undefined> {
-  const workspace = workspacePath.trim();
-  if (!workspace) {
-    return undefined;
-  }
-  const plansDir = path.join(workspace, ".claude", "plans");
-  try {
-    const entries = await fs.readdir(plansDir);
-    let latest: { content: string; planFilePath: string; mtimeMs: number } | undefined;
-    for (const entry of entries) {
-      if (!entry.endsWith(".md")) {
-        continue;
-      }
-      const absolute = path.join(plansDir, entry);
-      const stat = await fs.stat(absolute);
-      const content = (await fs.readFile(absolute, "utf8")).trim();
-      if (!content) {
-        continue;
-      }
-      if (!latest || stat.mtimeMs > latest.mtimeMs) {
-        latest = {
-          content,
-          planFilePath: toWorkspaceRelativePlanFile(absolute, workspace),
-          mtimeMs: stat.mtimeMs,
-        };
-      }
-    }
-    return latest ? { content: latest.content, planFilePath: latest.planFilePath } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Parse SDK session transcript JSONL for the latest assistant plan markdown. */
 export async function readPlanFromSdkTranscriptPath(
   transcriptPath: string,
