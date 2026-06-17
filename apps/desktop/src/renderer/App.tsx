@@ -241,6 +241,8 @@ interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
 }
 
+const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
+
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
@@ -1445,7 +1447,9 @@ function App() {
     }
     return merged;
   }, [activeRoutes, threadModelByRole]);
+  const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
   const runProjectionLayoutSignature = useMemo(() => {
@@ -1472,38 +1476,70 @@ function App() {
     [userSkills, projectSdkReadySkills],
   );
 
-  const scrollActivityFeedToEnd = useCallback((force = false) => {
-    const container = activityEndRef.current?.parentElement;
+  const distanceFromActivityFeedBottom = useCallback((container: HTMLElement) => {
+    return container.scrollHeight - container.scrollTop - container.clientHeight;
+  }, []);
+
+  const scrollActivityFeedToEnd = useCallback(
+    (force = false) => {
+      const container = activityMessagesRef.current;
+      if (!container) {
+        return;
+      }
+      if (!force && !stickToBottomRef.current) {
+        return;
+      }
+      const distanceFromBottom = distanceFromActivityFeedBottom(container);
+      if (!force && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+        stickToBottomRef.current = false;
+        return;
+      }
+      container.scrollTop = container.scrollHeight;
+      stickToBottomRef.current = true;
+    },
+    [distanceFromActivityFeedBottom],
+  );
+
+  const handleActivityPlannerLayoutChange = useCallback(() => {
+    scrollActivityFeedToEnd();
+  }, [scrollActivityFeedToEnd]);
+
+  useEffect(() => {
+    const container = activityMessagesRef.current;
     if (!container) {
       return;
     }
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (!force && distanceFromBottom > 120) {
-      return;
-    }
-    container.scrollTop = container.scrollHeight;
-  }, []);
+    const onScroll = () => {
+      stickToBottomRef.current =
+        distanceFromActivityFeedBottom(container) <= ACTIVITY_FEED_STICK_THRESHOLD_PX;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, [activeThread?.id, distanceFromActivityFeedBottom]);
+
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
+    scrollActivityFeedToEnd(true);
+  }, [activeThread?.id, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     const lastLine = activityLines.at(-1);
     if (!shouldScrollMainActivityFeedForLine(lastLine)) {
       return;
     }
-    const isStreaming = lastLine?.stream === true;
-    scrollActivityFeedToEnd(isStreaming);
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(isStreaming));
+    scrollActivityFeedToEnd();
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
     return () => cancelAnimationFrame(frame);
-  }, [activityLines, activeThread?.id, scrollActivityFeedToEnd]);
+  }, [activityLines, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     if (!runProjectionLayoutSignature) {
       return;
     }
-    const force = activeThread?.status === "running" || activeThread?.status === "queued";
-    scrollActivityFeedToEnd(force);
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(force));
+    scrollActivityFeedToEnd();
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
     return () => cancelAnimationFrame(frame);
-  }, [activeThread?.status, runProjectionLayoutSignature, scrollActivityFeedToEnd]);
+  }, [runProjectionLayoutSignature, scrollActivityFeedToEnd]);
 
   useLayoutEffect(() => {
     if (
@@ -1514,8 +1550,8 @@ function App() {
     ) {
       return;
     }
-    scrollActivityFeedToEnd(true);
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+    scrollActivityFeedToEnd();
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
     return () => cancelAnimationFrame(frame);
   }, [
     activeThread?.id,
@@ -1761,6 +1797,7 @@ function App() {
       return;
     }
     setError(undefined);
+    stickToBottomRef.current = true;
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
     const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
@@ -3238,7 +3275,7 @@ function App() {
                 </header>
               )}
               {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
-              <div className="activity-messages">
+              <div ref={activityMessagesRef} className="activity-messages">
                 <ActivityLogView
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
@@ -3246,7 +3283,7 @@ function App() {
                   {...(activeThread &&
                     billingByThread[activeThread.id] && { billing: billingByThread[activeThread.id] })}
                   onRestorePrompt={restorePrompt}
-                  onPlannerLayoutChange={() => scrollActivityFeedToEnd(true)}
+                  onPlannerLayoutChange={handleActivityPlannerLayoutChange}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   agentDisplayNames={activeRuntimeAgentDisplayNames}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}

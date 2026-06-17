@@ -123,6 +123,18 @@ function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIden
   return false;
 }
 
+function usePlannerLayoutChangeEffect(
+  layoutSignature: string,
+  onPlannerLayoutChange?: () => void,
+) {
+  const onPlannerLayoutChangeRef = useRef(onPlannerLayoutChange);
+  onPlannerLayoutChangeRef.current = onPlannerLayoutChange;
+
+  useLayoutEffect(() => {
+    onPlannerLayoutChangeRef.current?.();
+  }, [layoutSignature]);
+}
+
 interface ActivityLogViewProps {
   lines: ThreadActivityLine[];
   thread?: ThreadSummary;
@@ -224,9 +236,7 @@ function LegacyActivityLogView({
     [blocks],
   );
 
-  useLayoutEffect(() => {
-    onPlannerLayoutChange?.();
-  }, [mainFeedLayoutSignature, onPlannerLayoutChange]);
+  usePlannerLayoutChangeEffect(mainFeedLayoutSignature, onPlannerLayoutChange);
 
   return (
     <div className="run-log">
@@ -309,9 +319,7 @@ function ProjectionActivityLogView({
     [showThreadPrompt, thread?.id, thread?.prompt, viewModel.mainFeedEntries],
   );
 
-  useLayoutEffect(() => {
-    onPlannerLayoutChange?.();
-  }, [layoutSignature, onPlannerLayoutChange]);
+  usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
 
   return (
     <div className="run-log">
@@ -1018,13 +1026,15 @@ function WorkSessionBlock({
 }) {
   const requestActive = isThreadRequestActive(block.running, threadStatus);
   const [expanded, setExpanded] = useState(() => !block.defaultCollapsed);
+  const workSessionLayoutSignature = useMemo(
+    () =>
+      block.inlineContent
+        ? [block.awaitingFirstToken ? 1 : 0, block.children.length, block.running ? 1 : 0].join(":")
+        : "",
+    [block.awaitingFirstToken, block.children.length, block.inlineContent, block.running],
+  );
 
-  useLayoutEffect(() => {
-    if (!block.inlineContent) {
-      return;
-    }
-    onPlannerLayoutChange?.();
-  }, [block.awaitingFirstToken, block.children, block.inlineContent, block.running, onPlannerLayoutChange]);
+  usePlannerLayoutChangeEffect(workSessionLayoutSignature, onPlannerLayoutChange);
 
   const activeLabel = block.activeSubagent
     ? formatRoleModelLabel(block.activeSubagent, modelByRole?.[block.activeSubagent])
