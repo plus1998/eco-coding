@@ -39,6 +39,7 @@ import type {
 
 export { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
 import { isUsageNoiseMessage } from "../shared/thread-continuation";
+import { isUserPromptActivityLine } from "../shared/thread-follow-up-events";
 import { parseWorktreeMergeMessage, type WorktreeMergeSummary } from "../shared/worktree-merge";
 
 export type { WorktreeMergeSummary };
@@ -239,7 +240,15 @@ export function buildActivityLogBlocks(
     subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   },
 ): ActivityLogBlock[] {
-  const filteredLines = lines.filter((line) => !isUsageNoiseMessage(line.message));
+  const filteredLines = lines.filter((line) => {
+    if (isUsageNoiseMessage(line.message)) {
+      return false;
+    }
+    if (line.role === "user") {
+      return isUserPromptActivityLine(line);
+    }
+    return true;
+  });
   const segments = splitLinesIntoSegments(filteredLines);
   const isRunning = options.status === "running" || options.status === "queued";
   const isTerminal = options.status ? terminalStatuses.has(options.status) : false;
@@ -699,7 +708,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
   };
 
   for (const line of lines) {
-    if (line.role === "user") {
+    if (isUserPromptActivityLine(line)) {
       flushTextBuffers();
       if (current.details.length > 0 || current.worktreeMerge) {
         pushSegment();

@@ -16,6 +16,11 @@ import {
   type ActivityDetailBlock,
 } from "./activity-log";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
+import {
+  isRecordedUserPromptLiveEvent,
+  isThreadFollowUpActivityMessage,
+  isThreadFollowUpLiveEvent,
+} from "../shared/thread-follow-up-events";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
@@ -227,7 +232,11 @@ function isMainTimelineNoiseItem(item: ThreadRunProjectionTimelineItem): boolean
   if (isProjectionUserPromptItem(item)) {
     return false;
   }
-  if (isProjectionInternalMessageText(item.text)) {
+  if (isProjectionInternalMessageText(item.text) || isThreadFollowUpActivityMessage(item.text)) {
+    return true;
+  }
+  const liveType = projectionLiveType(item);
+  if (liveType && isThreadFollowUpLiveEvent(liveType)) {
     return true;
   }
   if (isProjectionOtelToolDurationSummary(item)) {
@@ -633,7 +642,10 @@ export function isProjectionRequestActive(
 
 export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
   const liveType = projectionLiveType(item);
-  return liveType === "thread.user_prompt" || (item.role === "user" && item.text.trim().length > 0);
+  if (!isRecordedUserPromptLiveEvent(liveType)) {
+    return false;
+  }
+  return item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
 }
 
 export function resolveProjectionAgentStatusText(agent: ThreadRunProjectionAgent): string | undefined {

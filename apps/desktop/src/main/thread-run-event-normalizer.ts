@@ -7,6 +7,7 @@ import type {
   ThreadRunEventType,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
+import { isThreadFollowUpLiveEvent } from "../shared/thread-follow-up-events";
 
 const subagentRoleSet = new Set<string>(SUBAGENT_ROLES);
 
@@ -60,7 +61,7 @@ export interface BuildSubagentLifecycleRunEventInput {
 export function buildThreadRunEventFromLiveEvent(
   input: BuildThreadRunEventFromLiveInput,
 ): ThreadRunEventInput | undefined {
-  if (isMetricsOnlyThreadLiveEvent(input.liveType)) {
+  if (isMetricsOnlyThreadLiveEvent(input.liveType) || isThreadFollowUpLiveEvent(input.liveType)) {
     return undefined;
   }
   const eventType = resolveThreadRunEventType(input);

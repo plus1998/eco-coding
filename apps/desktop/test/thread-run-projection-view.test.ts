@@ -8,6 +8,7 @@ import {
   buildProjectionDisplayTimelineItems,
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
+  isProjectionUserPromptItem,
   projectionItemToDetailBlock,
 } from "../src/renderer/thread-run-projection-view";
 
@@ -339,6 +340,33 @@ test("buildThreadRunProjectionViewModel removes main feed status and usage noise
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:substantive"]);
+});
+
+test("isProjectionUserPromptItem only accepts recorded user prompts", () => {
+  const recorded = item({
+    id: "prompt",
+    eventType: "thread.status",
+    role: "user",
+    text: "请继续实现登录页",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  const followUpCancelled = item({
+    id: "cancelled",
+    eventType: "thread.status",
+    role: "user",
+    text: "已取消排队的后续消息。",
+    metadata: { liveType: "thread.follow_up.cancelled" },
+  });
+  const roleOnly = item({
+    id: "role-only",
+    eventType: "thread.status",
+    role: "user",
+    text: "看起来像用户消息",
+  });
+
+  expect(isProjectionUserPromptItem(recorded)).toBe(true);
+  expect(isProjectionUserPromptItem(followUpCancelled)).toBe(false);
+  expect(isProjectionUserPromptItem(roleOnly)).toBe(false);
 });
 
 test("buildThreadRunProjectionViewModel keeps pre-speech current action on the agent card", () => {

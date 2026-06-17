@@ -5337,7 +5337,7 @@ function emitThreadEvent(
     return undefined;
   }
 
-  const isSilentFollowUpEvent = type.startsWith("thread.follow_up.") && trimmed.length === 0;
+  const isSilentFollowUpEvent = type.startsWith("thread.follow_up.");
   const displayMessage = isSilentFollowUpEvent
     ? ""
     : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
@@ -5347,8 +5347,7 @@ function emitThreadEvent(
       type === "thread.auto_retry" ||
       type === "thread.retry" ||
       type === "thread.user_prompt" ||
-      type === "thread.api_error" ||
-      type.startsWith("thread.follow_up.")) &&
+      type === "thread.api_error") &&
     !isUsageEvent &&
     !isContextEvent &&
     type !== "thread.todos_updated" &&

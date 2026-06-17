@@ -48,6 +48,20 @@ test("buildThreadRunEventFromLiveEvent keeps api errors visible in main and agen
   expect(event?.metadata?.apiError).toEqual({ statusCode: 502, message: "Bad Gateway" });
 });
 
+test("buildThreadRunEventFromLiveEvent drops follow-up operational events", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_cancel",
+    liveType: "thread.follow_up.cancelled",
+    role: "user",
+    stream: false,
+    message: "已取消排队的后续消息。",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toBeUndefined();
+});
+
 test("buildThreadRunEventFromLiveEvent maps empty streaming chunks to placeholders", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",
