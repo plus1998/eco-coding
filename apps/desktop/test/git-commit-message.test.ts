@@ -1,9 +1,25 @@
 import { expect, test } from "bun:test";
 import {
+  buildCommitMessageRequestBody,
   buildCommitMessageUserMessage,
+  extractCommitMessageText,
   sanitizeCommitMessage,
 } from "../src/main/git-commit-message";
 import type { CommitDiffContext } from "../src/main/git-operations";
+import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
+
+const route: AnthropicProxyRoute = {
+  role: "explore",
+  modelId: "qwen3.6-27b",
+  provider: {
+    id: "p1",
+    name: "AI-Studio",
+    baseUrl: "http://example.com",
+    requestPath: "",
+    apiKey: "",
+    enabled: true,
+  },
+};
 
 const context: CommitDiffContext = {
   stagedNameStatus: "M\tREADME.md",
@@ -39,4 +55,27 @@ test("sanitizeCommitMessage keeps valid conventional commit text", () => {
   expect(sanitizeCommitMessage("feat(git): add commit dialog\n\n- stage diff")).toBe(
     "feat(git): add commit dialog\n\n- stage diff",
   );
+});
+
+test("buildCommitMessageRequestBody disables thinking", () => {
+  const body = buildCommitMessageRequestBody(route, context);
+  expect(body.thinking).toEqual({ type: "disabled" });
+  expect(body.max_tokens).toBe(512);
+});
+
+test("extractCommitMessageText ignores thinking-only responses", () => {
+  const text = extractCommitMessageText({
+    content: [{ type: "thinking", thinking: "analyzing diff..." }],
+  });
+  expect(text).toBeUndefined();
+});
+
+test("extractCommitMessageText prefers text blocks", () => {
+  const text = extractCommitMessageText({
+    content: [
+      { type: "thinking", thinking: "analyzing diff..." },
+      { type: "text", text: "feat(ui): add refresh-all toolbar" },
+    ],
+  });
+  expect(text).toBe("feat(ui): add refresh-all toolbar");
 });

@@ -47,6 +47,7 @@ import type {
   SubagentRole,
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
+import { logUpstreamError } from "./upstream-log";
 
 function runtimeRouteToProxyRoute(route: RuntimeRoute): AnthropicProxyRoute {
   return {
@@ -121,6 +122,15 @@ export async function handleGitGenerateCommitMessage(
   });
   const message = await summarizeCommitMessage(route, context);
   if (!message?.trim()) {
+    logUpstreamError("git-commit-message-failed", {
+      profileId: request.profileId,
+      workspacePath: request.workspacePath,
+      role,
+      modelId: route.modelId,
+      provider: route.provider.name,
+      stagedFiles: context.stagedNameStatus,
+      hasUnstaged: Boolean(context.unstagedNameStatus?.trim()),
+    });
     throw new Error("模型未能生成有效的提交信息，请手动填写。");
   }
   return {
