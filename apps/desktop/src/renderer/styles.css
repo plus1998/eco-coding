@@ -457,6 +457,16 @@ html[data-window-focused="true"] .codex-sidebar {
   color: currentColor;
 }
 
+.project-pin-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: #a3a3a3;
+}
+
 .project-group-header,
 .project-open,
 .chat-item {

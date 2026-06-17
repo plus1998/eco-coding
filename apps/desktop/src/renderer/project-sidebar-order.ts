@@ -35,6 +35,25 @@ export function sortProjectsByOrder<T extends OrderedProject>(
   return [...ordered, ...remaining];
 }
 
+export function ensureHomeProjectFirst<T extends OrderedProject>(
+  projects: readonly T[],
+  homeProjectPath: string | undefined,
+): T[] {
+  if (!homeProjectPath) {
+    return [...projects];
+  }
+  const homeIndex = projects.findIndex((project) => project.path === homeProjectPath);
+  if (homeIndex <= 0) {
+    return [...projects];
+  }
+  const next = [...projects];
+  const [homeProject] = next.splice(homeIndex, 1);
+  if (!homeProject) {
+    return [...projects];
+  }
+  return [homeProject, ...next];
+}
+
 export function prependProjectOrder(orderPaths: readonly string[], path: string): string[] {
   const next = orderPaths.filter((item) => item !== path);
   return [path, ...next];

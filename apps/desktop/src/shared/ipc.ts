@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
+  workspaceGetHomePath: "workspace:get-home-path",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceWatchPackageJson: "workspace:watch-package-json",

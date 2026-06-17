@@ -124,6 +124,9 @@ const api = {
   getCurrentWorkspace(): Promise<WorkspaceInfo | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetCurrent);
   },
+  getHomeProjectPath(): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceGetHomePath);
+  },
   inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceInspect, workspacePath);
   },

@@ -365,6 +365,7 @@ import {
   type GitSettingsStore,
 } from "./git-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
+import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   claudePlanFileExists,
@@ -595,6 +596,7 @@ app.whenReady().then(async () => {
   });
   backfillThreadRuntimeConfigs();
   recoverOrphanedRunningThreads();
+  currentWorkspace = await ensureHomeProject();
   registerIpcHandlers();
   await createMainWindow();
 
@@ -972,6 +974,8 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
+
+  ipcMain.handle(IPC_CHANNELS.workspaceGetHomePath, async () => getHomeProjectPath());
 
   ipcMain.handle(IPC_CHANNELS.workspaceInspect, async (_event, workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {

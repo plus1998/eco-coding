@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   buildInitialProjectOrder,
+  ensureHomeProjectFirst,
   prependProjectOrder,
   reorderProjectPaths,
   sortProjectsByOrder,
@@ -47,4 +48,23 @@ test("sortThreadsForSidebar puts pinned threads first then sorts by updatedAt de
   ];
   const sorted = sortThreadsForSidebar(threads, new Set(["c"]));
   expect(sorted.map((thread) => thread.id)).toEqual(["c", "b", "a"]);
+});
+
+test("ensureHomeProjectFirst moves home project to the front", () => {
+  const homePath = "/Users/plus/.eco/projects/home";
+  expect(ensureHomeProjectFirst(projects, homePath).map((project) => project.path)).toEqual([
+    "/a",
+    "/b",
+    "/c",
+  ]);
+  const withHome = [
+    { path: "/a", importedAt: "2026-01-03T00:00:00.000Z" },
+    { path: homePath, importedAt: "1970-01-01T00:00:00.000Z" },
+    { path: "/c", importedAt: "2026-01-01T00:00:00.000Z" },
+  ];
+  expect(ensureHomeProjectFirst(withHome, homePath).map((project) => project.path)).toEqual([
+    homePath,
+    "/a",
+    "/c",
+  ]);
 });

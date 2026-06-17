@@ -1,6 +1,7 @@
 import {
   Folder,
   FolderOpen,
+  Home,
   LoaderCircle,
   MessageSquarePlus,
   MoreHorizontal,
@@ -16,7 +17,7 @@ import { formatRelativeTime } from "./relative-time";
 const PROJECT_DRAG_MIME = "application/x-eco-project-path";
 
 export interface ProjectTreeItem {
-  project: { path: string; name: string; pinned?: boolean };
+  project: { path: string; name: string; pinned?: boolean; isHome?: boolean };
   projectThreads: ThreadSummary[];
   collapsed: boolean;
   visibleThreads: ThreadSummary[];
@@ -168,7 +169,10 @@ export function ProjectSidebarTree({
     }
   }
 
-  function handleProjectDragStart(event: DragEvent<HTMLElement>, projectPath: string) {
+  function handleProjectDragStart(event: DragEvent<HTMLElement>, projectPath: string, isHome?: boolean) {
+    if (isHome) {
+      return;
+    }
     event.dataTransfer.setData(PROJECT_DRAG_MIME, projectPath);
     event.dataTransfer.effectAllowed = "move";
     setDraggingPath(projectPath);
@@ -179,8 +183,12 @@ export function ProjectSidebarTree({
     setDropTarget(undefined);
   }
 
-  function handleProjectRowDragOver(event: DragEvent<HTMLElement>, projectPath: string) {
-    if (!isInternalProjectDrag(event)) {
+  function handleProjectRowDragOver(event: DragEvent<HTMLElement>, projectPath: string, isHome?: boolean) {
+    if (!isInternalProjectDrag(event) || isHome) {
+      return;
+    }
+    const draggedPath = event.dataTransfer.getData(PROJECT_DRAG_MIME);
+    if (draggedPath && projectTree.some(({ project }) => project.isHome && project.path === draggedPath)) {
       return;
     }
     event.preventDefault();
@@ -190,14 +198,19 @@ export function ProjectSidebarTree({
     setDropTarget({ path: projectPath, position });
   }
 
-  function handleProjectRowDrop(event: DragEvent<HTMLElement>, projectPath: string) {
-    if (!isInternalProjectDrag(event)) {
+  function handleProjectRowDrop(event: DragEvent<HTMLElement>, projectPath: string, isHome?: boolean) {
+    if (!isInternalProjectDrag(event) || isHome) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
     const draggedPath = event.dataTransfer.getData(PROJECT_DRAG_MIME);
     if (!draggedPath || draggedPath === projectPath) {
+      setDropTarget(undefined);
+      setDraggingPath(undefined);
+      return;
+    }
+    if (projectTree.some(({ project }) => project.isHome && project.path === draggedPath)) {
       setDropTarget(undefined);
       setDraggingPath(undefined);
       return;
@@ -216,9 +229,11 @@ export function ProjectSidebarTree({
     treeClassNames.push("project-tree-menu-open");
   }
 
-  const pinnedProjectTree = projectTree.filter(({ project }) => project.pinned);
-  const regularProjectTree = projectTree.filter(({ project }) => !project.pinned);
-  const hasPinnedProjects = pinnedProjectTree.length > 0;
+  const displayProjectTree = [
+    ...projectTree.filter(({ project }) => project.isHome),
+    ...projectTree.filter(({ project }) => project.pinned && !project.isHome),
+    ...projectTree.filter(({ project }) => !project.pinned && !project.isHome),
+  ];
 
   function renderProjectItem({
     project,
@@ -252,11 +267,11 @@ export function ProjectSidebarTree({
           <fieldset
             aria-label={`${project.name} 拖拽排序区域`}
             className={projectMainClassNames.join(" ")}
-            draggable
-            onDragStart={(event) => handleProjectDragStart(event, project.path)}
+            draggable={!project.isHome}
+            onDragStart={(event) => handleProjectDragStart(event, project.path, project.isHome)}
             onDragEnd={handleProjectDragEnd}
-            onDragOver={(event) => handleProjectRowDragOver(event, project.path)}
-            onDrop={(event) => handleProjectRowDrop(event, project.path)}
+            onDragOver={(event) => handleProjectRowDragOver(event, project.path, project.isHome)}
+            onDrop={(event) => handleProjectRowDrop(event, project.path, project.isHome)}
           >
             <button
               type="button"
@@ -265,66 +280,79 @@ export function ProjectSidebarTree({
               aria-label={collapsed ? `展开项目 ${project.name}` : `折叠项目 ${project.name}`}
               onClick={() => onToggleProjectCollapsed(project.path)}
             >
-              {collapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
+              {project.pinned && !project.isHome ? (
+                <span className="project-pin-indicator" title="已置顶" aria-hidden>
+                  <Pin size={14} />
+                </span>
+              ) : null}
+              {project.isHome ? (
+                <Home size={16} />
+              ) : collapsed ? (
+                <Folder size={16} />
+              ) : (
+                <FolderOpen size={16} />
+              )}
               <span>{project.name}</span>
             </button>
-            <span
-              className={
-                openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
-              }
-            >
-              <span className="project-menu-wrap sidebar-menu-wrap">
-                <button
-                  type="button"
-                  className="project-menu-trigger"
-                  title={`${project.name} 操作`}
-                  aria-label={`${project.name} 操作`}
-                  aria-haspopup="menu"
-                  aria-expanded={openMenuPath === project.path}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
-                  }}
-                >
-                  <MoreHorizontal size={16} />
-                </button>
-                {openMenuPath === project.path ? (
-                  <div className="project-menu" role="menu">
+              <span
+                className={
+                  openMenuPath === project.path ? "project-row-actions menu-open" : "project-row-actions"
+                }
+              >
+                {!project.isHome ? (
+                  <span className="project-menu-wrap sidebar-menu-wrap">
                     <button
                       type="button"
-                      className="project-menu-item"
-                      role="menuitem"
-                      onClick={() => {
-                        if (project.pinned) {
-                          onUnpinProject(project.path);
-                        } else {
-                          onPinProject(project.path);
-                        }
-                        setOpenMenuPath(undefined);
+                      className="project-menu-trigger"
+                      title={`${project.name} 操作`}
+                      aria-label={`${project.name} 操作`}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuPath === project.path}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
                       }}
                     >
-                      {project.pinned ? (
-                        <PinOff size={16} aria-hidden />
-                      ) : (
-                        <Pin size={16} aria-hidden />
-                      )}
-                      <span>{project.pinned ? "取消置顶" : "置顶"}</span>
+                      <MoreHorizontal size={16} />
                     </button>
-                    <button
-                      type="button"
-                      className="project-menu-item danger"
-                      role="menuitem"
-                      onClick={() => {
-                        onRemoveProject(project.path);
-                        setOpenMenuPath(undefined);
-                      }}
-                    >
-                      <Trash2 size={16} aria-hidden />
-                      <span>移除</span>
-                    </button>
-                  </div>
+                    {openMenuPath === project.path ? (
+                      <div className="project-menu" role="menu">
+                        <button
+                          type="button"
+                          className="project-menu-item"
+                          role="menuitem"
+                          onClick={() => {
+                            if (project.pinned) {
+                              onUnpinProject(project.path);
+                            } else {
+                              onPinProject(project.path);
+                            }
+                            setOpenMenuPath(undefined);
+                          }}
+                        >
+                          {project.pinned ? (
+                            <PinOff size={16} aria-hidden />
+                          ) : (
+                            <Pin size={16} aria-hidden />
+                          )}
+                          <span>{project.pinned ? "取消置顶" : "置顶"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="project-menu-item danger"
+                          role="menuitem"
+                          onClick={() => {
+                            onRemoveProject(project.path);
+                            setOpenMenuPath(undefined);
+                          }}
+                        >
+                          <Trash2 size={16} aria-hidden />
+                          <span>移除</span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </span>
                 ) : null}
-              </span>
               <button
                 type="button"
                 className="project-new-chat"
@@ -470,15 +498,13 @@ export function ProjectSidebarTree({
   }
 
   function renderProjectSection(label: string, items: ProjectTreeItem[]) {
-    if (items.length === 0 && !hasPinnedProjects) {
+    if (items.length === 0) {
       return null;
     }
     return (
       <section className="project-tree-section" aria-label={label}>
         <div className="project-tree-section-label">{label}</div>
-        {items.length > 0 ? (
-          <ul className="project-tree-section-list">{items.map(renderProjectItem)}</ul>
-        ) : null}
+        <ul className="project-tree-section-list">{items.map(renderProjectItem)}</ul>
       </section>
     );
   }
@@ -494,8 +520,7 @@ export function ProjectSidebarTree({
       role="tree"
     >
       {projectTree.length === 0 ? <p className="project-tree-empty-drop">将文件夹拖到此处打开项目</p> : null}
-      {hasPinnedProjects ? renderProjectSection("置顶", pinnedProjectTree) : null}
-      {projectTree.length > 0 ? renderProjectSection("项目", regularProjectTree) : null}
+      {renderProjectSection("项目", displayProjectTree)}
     </div>
   );
 }

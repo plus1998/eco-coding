@@ -77,6 +77,11 @@ import {
   type ThreadUsageSnapshot,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import {
+  HOME_PROJECT_DISPLAY_NAME,
+  HOME_PROJECT_IMPORTED_AT,
+  isHomeProjectPath,
+} from "../shared/home-project";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import {
   dedupeSkillsByName,
@@ -134,6 +139,7 @@ import { PlanApprovalPanel } from "./PlanApprovalPanel";
 import { ProjectSidebarTree } from "./ProjectSidebarTree";
 import {
   buildInitialProjectOrder,
+  ensureHomeProjectFirst,
   type ProjectReorderPosition,
   prependProjectOrder,
   reorderProjectPaths,
@@ -264,6 +270,7 @@ function App() {
   const [pinnedProjectPaths, setPinnedProjectPaths] = useState<Set<string>>(() => new Set());
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [homeProjectPath, setHomeProjectPath] = useState<string>();
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
   const projectOrderInitializedRef = useRef(false);
   const prevThreadStatusByIdRef = useRef(new Map<string, ThreadStatus>());
@@ -349,16 +356,24 @@ function App() {
 
     void Promise.all([
       window.eco.getCurrentWorkspace(),
+      window.eco.getHomeProjectPath(),
       window.eco.listThreads(),
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, currentThreads, modelSettings, mcp, sessionSync, proxyBridge]) => {
+    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, sessionSync, proxyBridge]) => {
+      setHomeProjectPath(resolvedHomeProjectPath);
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
         setSelectedProjectPath(currentWorkspace.path);
-        registerImportedProject(currentWorkspace.path, currentWorkspace.name);
+        registerImportedProject(
+          currentWorkspace.path,
+          isHomeProjectPath(currentWorkspace.path, resolvedHomeProjectPath)
+            ? HOME_PROJECT_DISPLAY_NAME
+            : currentWorkspace.name,
+          resolvedHomeProjectPath,
+        );
       }
       setThreads(currentThreads);
       setSettings(modelSettings);
@@ -788,13 +803,27 @@ function App() {
 
   const mergedProjects = useMemo(() => {
     const merged = new Map<string, RecentProject>();
+    if (homeProjectPath) {
+      merged.set(homeProjectPath, {
+        path: homeProjectPath,
+        name: HOME_PROJECT_DISPLAY_NAME,
+        importedAt: HOME_PROJECT_IMPORTED_AT,
+      });
+    }
     for (const project of recentProjects) {
+      if (homeProjectPath && isHomeProjectPath(project.path, homeProjectPath)) {
+        continue;
+      }
       merged.set(project.path, project);
     }
     if (workspace) {
       const existing = merged.get(workspace.path);
+      const workspaceName =
+        homeProjectPath && isHomeProjectPath(workspace.path, homeProjectPath)
+          ? HOME_PROJECT_DISPLAY_NAME
+          : workspace.name;
       if (existing) {
-        merged.set(workspace.path, { ...existing, name: workspace.name });
+        merged.set(workspace.path, { ...existing, name: workspaceName });
       }
     }
     for (const thread of threads) {
@@ -806,17 +835,24 @@ function App() {
         );
         merged.set(thread.workspacePath, {
           path: thread.workspacePath,
-          name: pathToName(thread.workspacePath),
+          name:
+            homeProjectPath && isHomeProjectPath(thread.workspacePath, homeProjectPath)
+              ? HOME_PROJECT_DISPLAY_NAME
+              : pathToName(thread.workspacePath),
           importedAt,
         });
       }
     }
-    return [...merged.values()].filter((project) => !hiddenProjectPaths.has(project.path));
-  }, [hiddenProjectPaths, recentProjects, threads, workspace]);
+    return [...merged.values()].filter(
+      (project) =>
+        !hiddenProjectPaths.has(project.path) ||
+        (homeProjectPath !== undefined && isHomeProjectPath(project.path, homeProjectPath)),
+    );
+  }, [hiddenProjectPaths, homeProjectPath, recentProjects, threads, workspace]);
 
   const projects = useMemo(
-    () => sortProjectsByOrder(mergedProjects, projectOrder),
-    [mergedProjects, projectOrder],
+    () => ensureHomeProjectFirst(sortProjectsByOrder(mergedProjects, projectOrder), homeProjectPath),
+    [homeProjectPath, mergedProjects, projectOrder],
   );
 
   useEffect(() => {
@@ -849,14 +885,18 @@ function App() {
         const threadsExpanded = expandedProjectThreadPaths.has(project.path);
         const visibleCount = threadsExpanded ? projectThreads.length : sidebarThreadsCollapsed;
         return {
-          project: { ...project, pinned: pinnedProjectPaths.has(project.path) },
+          project: {
+            ...project,
+            pinned: pinnedProjectPaths.has(project.path),
+            isHome: homeProjectPath ? isHomeProjectPath(project.path, homeProjectPath) : false,
+          },
           projectThreads,
           collapsed: collapsedProjectPaths.has(project.path),
           visibleThreads: projectThreads.slice(0, visibleCount),
           hasMore: !threadsExpanded && projectThreads.length > visibleCount,
         };
       }),
-    [collapsedProjectPaths, expandedProjectThreadPaths, pinnedProjectPaths, projects, threadsByProject],
+    [collapsedProjectPaths, expandedProjectThreadPaths, homeProjectPath, pinnedProjectPaths, projects, threadsByProject],
   );
 
   const currentProjectPath = useMemo(() => {
@@ -868,7 +908,13 @@ function App() {
     }
     return projects[0]?.path;
   }, [hiddenProjectPaths, projects, selectedProjectPath, workspace]);
-  const currentProjectName = currentProjectPath ? pathToName(currentProjectPath) : "项目";
+  const currentProjectName = useMemo(() => {
+    if (!currentProjectPath) {
+      return "项目";
+    }
+    const project = projects.find((item) => item.path === currentProjectPath);
+    return project?.name ?? pathToName(currentProjectPath);
+  }, [currentProjectPath, projects]);
   const activeThread = useMemo(
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
@@ -2420,7 +2466,12 @@ function App() {
   function activateWorkspace(nextWorkspace: WorkspaceInfo) {
     setWorkspace(nextWorkspace);
     setSelectedProjectPath(nextWorkspace.path);
-    registerImportedProject(nextWorkspace.path, nextWorkspace.name);
+    registerImportedProject(
+      nextWorkspace.path,
+      homeProjectPath && isHomeProjectPath(nextWorkspace.path, homeProjectPath)
+        ? HOME_PROJECT_DISPLAY_NAME
+        : nextWorkspace.name,
+    );
     setCollapsedProjectPaths((current) => {
       if (!current.has(nextWorkspace.path)) {
         return current;
@@ -2437,7 +2488,11 @@ function App() {
     setFollowUpsByThread({});
   }
 
-  function registerImportedProject(path: string, name: string) {
+  function registerImportedProject(path: string, name: string, resolvedHomeProjectPath?: string) {
+    const homePath = resolvedHomeProjectPath ?? homeProjectPath;
+    const isHome = homePath ? isHomeProjectPath(path, homePath) : false;
+    const displayName = isHome ? HOME_PROJECT_DISPLAY_NAME : name;
+
     setHiddenProjectPaths((current) => {
       if (!current.has(path)) {
         return current;
@@ -2447,14 +2502,19 @@ function App() {
       window.localStorage.setItem(hiddenProjectsStorageKey, JSON.stringify([...next]));
       return next;
     });
-    setRecentProjects((current) => {
-      const existing = current.find((item) => item.path === path);
-      const next = existing
-        ? current.map((item) => (item.path === path ? { ...item, name } : item))
-        : [{ path, name, importedAt: new Date().toISOString() }, ...current].slice(0, 12);
-      window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
-      return next;
-    });
+    if (!isHome) {
+      setRecentProjects((current) => {
+        const withoutHome = homePath
+          ? current.filter((item) => !isHomeProjectPath(item.path, homePath))
+          : current;
+        const existing = withoutHome.find((item) => item.path === path);
+        const next = existing
+          ? withoutHome.map((item) => (item.path === path ? { ...item, name: displayName } : item))
+          : [{ path, name: displayName, importedAt: new Date().toISOString() }, ...withoutHome].slice(0, 12);
+        window.localStorage.setItem(recentProjectsStorageKey, JSON.stringify(next));
+        return next;
+      });
+    }
     setProjectOrder((current) => {
       const next = prependProjectOrder(current, path);
       window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
@@ -2518,6 +2578,9 @@ function App() {
   }
 
   function removeProject(projectPath: string) {
+    if (homeProjectPath && isHomeProjectPath(projectPath, homeProjectPath)) {
+      return;
+    }
     setHiddenProjectPaths((current) => {
       const next = new Set(current);
       next.add(projectPath);
@@ -2569,6 +2632,12 @@ function App() {
   }
 
   function reorderProjects(draggedPath: string, targetPath: string, position: ProjectReorderPosition) {
+    if (
+      homeProjectPath &&
+      (isHomeProjectPath(draggedPath, homeProjectPath) || isHomeProjectPath(targetPath, homeProjectPath))
+    ) {
+      return;
+    }
     setProjectOrder((current) => {
       const next = reorderProjectPaths(current, draggedPath, targetPath, position);
       window.localStorage.setItem(projectOrderStorageKey, JSON.stringify(next));
@@ -3140,7 +3209,9 @@ function App() {
             <div className="codex-landing">
               <h1 className="codex-hero">
                 {currentProjectPath
-                  ? `我们应该在 ${currentProjectName} 中构建什么？`
+                  ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                    ? "你在忙什么？"
+                    : `我们应该在 ${currentProjectName} 中构建什么？`
                   : "打开一个项目开始编码"}
               </h1>
               {composer}
