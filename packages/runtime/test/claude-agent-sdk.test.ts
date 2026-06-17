@@ -1195,7 +1195,7 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   });
 });
 
-test("canUseTool refuses Plan Mode tools before generic approval handler", async () => {
+test("canUseTool delegates ExitPlanMode to the permission handler (hooks own capture/defer)", async () => {
   let handlerCalled = false;
   const canUseTool = createCanUseTool(async () => {
     handlerCalled = true;
@@ -1206,6 +1206,26 @@ test("canUseTool refuses Plan Mode tools before generic approval handler", async
     "ExitPlanMode",
     { plan: "## Plan\n\nShip it." },
     { toolUseID: "tool_plan", signal: new AbortController().signal },
+  );
+
+  expect(handlerCalled).toBe(true);
+  expect(decision).toMatchObject({
+    behavior: "allow",
+    updatedInput: { plan: "## Plan\n\nShip it." },
+  });
+});
+
+test("canUseTool refuses other Plan Mode tools before generic approval handler", async () => {
+  let handlerCalled = false;
+  const canUseTool = createCanUseTool(async () => {
+    handlerCalled = true;
+    return { behavior: "allow" };
+  });
+
+  const decision = await canUseTool(
+    "EnterPlanMode",
+    {},
+    { toolUseID: "tool_enter", signal: new AbortController().signal },
   );
 
   expect(handlerCalled).toBe(false);

@@ -2319,7 +2319,10 @@ export function createCanUseTool(
   options: Record<string, unknown>,
 ) => Promise<Record<string, unknown>> {
   return async (toolName, input, options) => {
-    if (isProtectedPlanModeToolName(toolName)) {
+    const normalizedToolName = toolName.trim();
+    // ExitPlanMode is captured/deferred by Eco hooks; canUseTool must not block the SDK flow.
+    // Other plan-submission tools stay protected so generic auto-approval cannot bypass Eco UI.
+    if (normalizedToolName !== "ExitPlanMode" && isProtectedPlanModeToolName(normalizedToolName)) {
       return {
         behavior: "deny",
         message:
