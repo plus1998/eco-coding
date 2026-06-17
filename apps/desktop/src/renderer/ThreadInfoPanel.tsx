@@ -41,6 +41,7 @@ import type {
   RuntimeAgentRole,
   RuntimeRoleRouteConfig,
   SubagentEnabledSettings,
+  WorkspaceDiffResult,
 } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 
@@ -69,6 +70,7 @@ interface ThreadInfoPanelProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -731,6 +733,7 @@ export function ThreadInfoPanel({
   onOpenGitSettings,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  onChangesDiffLoaded,
   onPullSuccess,
   onResolveConflictsWithAgent,
   scriptsDisabled,
@@ -807,6 +810,7 @@ export function ThreadInfoPanel({
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitRolePreference && { onSaveCommitRolePreference })}
             onCommitSuccess={() => void handleCommitSuccess()}
+            {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
             onPullSuccess={() => void handlePullSuccess()}
             {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}

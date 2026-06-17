@@ -77,6 +77,7 @@ import {
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
 import {
@@ -2455,6 +2456,29 @@ function App() {
     setProjectWorkspace(workspace);
   }
 
+  const handleChangesDiffLoaded = useCallback(
+    async (diff: WorkspaceDiffResult) => {
+      setGitStatus((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          insertions: diff.totalAdditions,
+          deletions: diff.totalDeletions,
+          dirtyFileCount: diff.fileCount,
+          canCommit: diff.fileCount > 0,
+        };
+      });
+      if (!currentProjectPath || !window.eco) {
+        return;
+      }
+      const workspace = await window.eco.inspectWorkspace(currentProjectPath);
+      setProjectWorkspace(workspace);
+    },
+    [currentProjectPath],
+  );
+
   async function handleGitPullSuccess() {
     await handleGitCommitSuccess();
   }
@@ -3681,6 +3705,7 @@ function App() {
           gitSettings={gitSettings}
           onSaveCommitRolePreference={saveCommitMessageRolePreference}
           onCommitSuccess={() => void handleGitCommitSuccess()}
+          onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
           onPullSuccess={() => void handleGitPullSuccess()}
           onResolveConflictsWithAgent={(conflictFiles) =>
             void handleGitPullConflictsWithAgent(conflictFiles)

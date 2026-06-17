@@ -40,6 +40,7 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitRolePreference?: (role: RuntimeAgentRole | "auto") => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onPullSuccess?: () => void | Promise<void>;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -62,6 +63,7 @@ export function WorkspaceGitSection({
   onCreateGitBranch,
   onSaveCommitRolePreference,
   onCommitSuccess,
+  onChangesDiffLoaded,
   onPullSuccess,
   onResolveConflictsWithAgent,
   scriptsDisabled,
@@ -97,8 +99,8 @@ export function WorkspaceGitSection({
       gitStatus?.isGitRepository,
   );
 
-  const insertions = gitStatus?.insertions ?? 0;
-  const deletions = gitStatus?.deletions ?? 0;
+  const insertions = changesDiff?.totalAdditions ?? gitStatus?.insertions ?? 0;
+  const deletions = changesDiff?.totalDeletions ?? gitStatus?.deletions ?? 0;
   const branchLabel = gitStatus?.isGitRepository ? gitStatus.branch ?? "detached" : "非 Git 仓库";
   const showBranchPicker = Boolean(
     gitStatus?.isGitRepository && gitStatus.branches.length > 0 && onCheckoutGitBranch,
@@ -258,6 +260,7 @@ export function WorkspaceGitSection({
           ? preferredPath
           : result.files[0]?.path;
       setSelectedChangePath(nextPath);
+      await onChangesDiffLoaded?.(result);
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
       setChangesDiff(undefined);
