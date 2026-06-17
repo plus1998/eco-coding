@@ -241,7 +241,59 @@ interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
 }
 
+interface ComposerDraft {
+  prompt: string;
+  attachments: ComposerImageAttachment[];
+  rewindTarget?: ComposerRewindTarget;
+}
+
+function composerContextKeyFromParts(threadId?: string, projectPath?: string): string | undefined {
+  if (threadId) {
+    return `thread:${threadId}`;
+  }
+  if (projectPath) {
+    return `landing:${projectPath}`;
+  }
+  return undefined;
+}
+
+function threadIdFromComposerContextKey(key: string): string | undefined {
+  return key.startsWith("thread:") ? key.slice("thread:".length) : undefined;
+}
+
+function persistComposerDraftSnapshot(
+  store: Record<string, ComposerDraft>,
+  key: string,
+  snapshot: {
+    prompt: string;
+    attachments: readonly ComposerImageAttachment[];
+    rewindTarget?: ComposerRewindTarget;
+  },
+) {
+  const threadId = threadIdFromComposerContextKey(key);
+  const rewindTarget =
+    snapshot.rewindTarget && (!threadId || snapshot.rewindTarget.threadId === threadId)
+      ? snapshot.rewindTarget
+      : undefined;
+  if (!snapshot.prompt.trim() && snapshot.attachments.length === 0 && !rewindTarget) {
+    delete store[key];
+    return;
+  }
+  store[key] = {
+    prompt: snapshot.prompt,
+    attachments: [...snapshot.attachments],
+    ...(rewindTarget && { rewindTarget }),
+  };
+}
+
+function clearComposerDraft(store: Record<string, ComposerDraft>, key: string | undefined) {
+  if (key) {
+    delete store[key];
+  }
+}
+
 const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
+const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -921,6 +973,18 @@ function App() {
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
   );
+  const composerContextKey = useMemo(
+    () => composerContextKeyFromParts(activeThread?.id, activeThread ? undefined : currentProjectPath),
+    [activeThread?.id, currentProjectPath],
+  );
+  const composerDraftsByKeyRef = useRef<Record<string, ComposerDraft>>({});
+  const prevComposerContextKeyRef = useRef<string | undefined>();
+  const composerPromptRef = useRef(prompt);
+  const composerAttachmentsRef = useRef(composerAttachments);
+  const composerRewindTargetRef = useRef(composerRewindTarget);
+  composerPromptRef.current = prompt;
+  composerAttachmentsRef.current = composerAttachments;
+  composerRewindTargetRef.current = composerRewindTarget;
   useEffect(() => {
     const media = window.matchMedia(threadInfoCompactQuery);
     const syncCompactLayout = () => {
@@ -1342,10 +1406,30 @@ function App() {
   }, [activeThread?.id]);
 
   useEffect(() => {
-    setEditingFollowUpId(undefined);
-    setPrompt("");
-    setComposerAttachments([]);
-  }, [activeThread?.id]);
+    const prevKey = prevComposerContextKeyRef.current;
+    if (prevKey !== undefined && prevKey !== composerContextKey) {
+      persistComposerDraftSnapshot(composerDraftsByKeyRef.current, prevKey, {
+        prompt: composerPromptRef.current,
+        attachments: composerAttachmentsRef.current,
+        rewindTarget: composerRewindTargetRef.current,
+      });
+    }
+
+    if (prevKey !== composerContextKey) {
+      const draft = composerContextKey ? composerDraftsByKeyRef.current[composerContextKey] : undefined;
+      const threadId = composerContextKey ? threadIdFromComposerContextKey(composerContextKey) : undefined;
+      setEditingFollowUpId(undefined);
+      setPrompt(draft?.prompt ?? "");
+      setComposerAttachments(draft?.attachments ? [...draft.attachments] : []);
+      setComposerRewindTarget(
+        draft?.rewindTarget && (!threadId || draft.rewindTarget.threadId === threadId)
+          ? draft.rewindTarget
+          : undefined,
+      );
+      setComposerImageNotice(undefined);
+      prevComposerContextKeyRef.current = composerContextKey;
+    }
+  }, [composerContextKey]);
 
   const canRetryThread = Boolean(
     activeThread &&
@@ -1450,6 +1534,7 @@ function App() {
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const forceActivityFeedScrollUntilRef = useRef(0);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
   const runProjectionLayoutSignature = useMemo(() => {
@@ -1486,11 +1571,12 @@ function App() {
       if (!container) {
         return;
       }
-      if (!force && !stickToBottomRef.current) {
+      const effectiveForce = force || Date.now() < forceActivityFeedScrollUntilRef.current;
+      if (!effectiveForce && !stickToBottomRef.current) {
         return;
       }
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
-      if (!force && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+      if (!effectiveForce && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX) {
         stickToBottomRef.current = false;
         return;
       }
@@ -1499,6 +1585,16 @@ function App() {
     },
     [distanceFromActivityFeedBottom],
   );
+
+  const requestActivityFeedForceScroll = useCallback(() => {
+    forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
+    stickToBottomRef.current = true;
+    scrollActivityFeedToEnd(true);
+    requestAnimationFrame(() => {
+      scrollActivityFeedToEnd(true);
+      requestAnimationFrame(() => scrollActivityFeedToEnd(true));
+    });
+  }, [scrollActivityFeedToEnd]);
 
   const handleActivityPlannerLayoutChange = useCallback(() => {
     scrollActivityFeedToEnd();
@@ -1510,6 +1606,9 @@ function App() {
       return;
     }
     const onScroll = () => {
+      if (Date.now() < forceActivityFeedScrollUntilRef.current) {
+        return;
+      }
       stickToBottomRef.current =
         distanceFromActivityFeedBottom(container) <= ACTIVITY_FEED_STICK_THRESHOLD_PX;
     };
@@ -1518,17 +1617,17 @@ function App() {
   }, [activeThread?.id, distanceFromActivityFeedBottom]);
 
   useLayoutEffect(() => {
-    stickToBottomRef.current = true;
-    scrollActivityFeedToEnd(true);
-  }, [activeThread?.id, scrollActivityFeedToEnd]);
+    requestActivityFeedForceScroll();
+  }, [activeThread?.id, requestActivityFeedForceScroll]);
 
   useLayoutEffect(() => {
+    const forceScroll = Date.now() < forceActivityFeedScrollUntilRef.current;
     const lastLine = activityLines.at(-1);
-    if (!shouldScrollMainActivityFeedForLine(lastLine)) {
+    if (!forceScroll && !shouldScrollMainActivityFeedForLine(lastLine)) {
       return;
     }
-    scrollActivityFeedToEnd();
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
+    scrollActivityFeedToEnd(forceScroll);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(forceScroll));
     return () => cancelAnimationFrame(frame);
   }, [activityLines, scrollActivityFeedToEnd]);
 
@@ -1536,8 +1635,9 @@ function App() {
     if (!runProjectionLayoutSignature) {
       return;
     }
-    scrollActivityFeedToEnd();
-    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd());
+    const forceScroll = Date.now() < forceActivityFeedScrollUntilRef.current;
+    scrollActivityFeedToEnd(forceScroll);
+    const frame = requestAnimationFrame(() => scrollActivityFeedToEnd(forceScroll));
     return () => cancelAnimationFrame(frame);
   }, [runProjectionLayoutSignature, scrollActivityFeedToEnd]);
 
@@ -1797,7 +1897,7 @@ function App() {
       return;
     }
     setError(undefined);
-    stickToBottomRef.current = true;
+    requestActivityFeedForceScroll();
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
     const messagePrompt = prompt.trim() || (attachments?.length ? "请查看并分析我附上的图片。" : "");
@@ -1844,10 +1944,12 @@ function App() {
           ...current,
           [activeThread.id]: sortThreadFollowUps(result.followUps),
         }));
+        clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
         setPrompt("");
         setComposerRewindTarget(undefined);
         setComposerAttachments([]);
         setComposerImageNotice(undefined);
+        requestActivityFeedForceScroll();
       } catch (caught) {
         setError(errorMessage(caught));
       } finally {
@@ -1907,10 +2009,12 @@ function App() {
           }));
         });
       }
+      clearComposerDraft(composerDraftsByKeyRef.current, composerContextKey);
       setPrompt("");
       setComposerRewindTarget(undefined);
       setComposerAttachments([]);
       setComposerImageNotice(undefined);
+      requestActivityFeedForceScroll();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -2710,6 +2814,7 @@ function App() {
   }
 
   function clearThreadClientState(threadId: string) {
+    clearComposerDraft(composerDraftsByKeyRef.current, `thread:${threadId}`);
     setThreads((current) => current.filter((thread) => thread.id !== threadId));
     setSelectedThreadId((current) => (current === threadId ? undefined : current));
     if (selectedThreadId === threadId) {
@@ -2782,6 +2887,10 @@ function App() {
 
   function startNewChat() {
     setComposerRoutePopoverOpen(false);
+    clearComposerDraft(
+      composerDraftsByKeyRef.current,
+      composerContextKeyFromParts(undefined, currentProjectPath),
+    );
     setSelectedThreadId(undefined);
     resetComposerDefaultConfig();
     setEditingFollowUpId(undefined);
