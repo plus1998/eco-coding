@@ -30,7 +30,7 @@ import {
   parseExitPlanModeInput,
   parseExitPlanModeOutput,
 } from "../src/eco-sdk-hooks";
-import { ecoSubagentKeyForRole } from "../src/subagent-availability";
+import { ecoSubagentKeyForRole, SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "../src/subagent-availability";
 
 test("createAskUserQuestionPreToolHook returns updated input", async () => {
   const hook = createAskUserQuestionPreToolHook(async () => ({
@@ -900,6 +900,106 @@ test("createToolPermissionPreToolHook enforces main and subagent tool policies",
     { signal: new AbortController().signal },
   );
   expect(unprefixedSubagentSearch.hookSpecificOutput).toBeUndefined();
+});
+
+test("createToolPermissionPreToolHook applies main policy to SDK general-purpose subagent", async () => {
+  const hook = createToolPermissionPreToolHook({
+    main: {
+      allowed: ["Agent", "Read"],
+      disallowed: ["Bash"],
+      mcpServers: [],
+    },
+    agents: {
+      eco_researcher: {
+        allowed: ["WebSearch"],
+        disallowed: ["Bash", "Read"],
+        mcpServers: [],
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected tool permission hook");
+  }
+
+  const generalPurposeRead = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: {},
+      tool_use_id: "tool_gp_read",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_gp",
+      agent_type: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    } satisfies PreToolUseHookInput,
+    "tool_gp_read",
+    { signal: new AbortController().signal },
+  );
+  expect(generalPurposeRead.hookSpecificOutput).toBeUndefined();
+
+  const generalPurposeBash = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "echo hi" },
+      tool_use_id: "tool_gp_bash",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_gp",
+      agent_type: SDK_GENERAL_PURPOSE_AGENT_KEY,
+    } satisfies PreToolUseHookInput,
+    "tool_gp_bash",
+    { signal: new AbortController().signal },
+  );
+  expect(generalPurposeBash.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(generalPurposeBash.hookSpecificOutput?.permissionDecisionReason).toContain(
+    SDK_GENERAL_PURPOSE_AGENT_KEY,
+  );
+  expect(generalPurposeBash.hookSpecificOutput?.permissionDecisionReason).not.toContain(
+    "No Eco tool policy is registered",
+  );
+});
+
+test("createToolPermissionPreToolHook enforces read-only policy for SDK Plan subagent", async () => {
+  const hook = createToolPermissionPreToolHook({
+    main: {
+      allowed: ["Agent", "Read", "Write", "Bash"],
+      disallowed: [],
+      mcpServers: [],
+      bash: { enabled: true },
+      filesystem: { read: "workspace", write: "workspace" },
+    },
+    agents: {},
+  });
+  expect(hook).toBeDefined();
+  if (!hook) {
+    throw new Error("Expected tool permission hook");
+  }
+
+  const planWrite = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "plan.md", content: "draft" },
+      tool_use_id: "tool_plan_write",
+      session_id: "s1",
+      cwd: "/tmp",
+      agent_id: "agent_plan",
+      agent_type: SDK_PLAN_AGENT_KEY,
+    } satisfies PreToolUseHookInput,
+    "tool_plan_write",
+    { signal: new AbortController().signal },
+  );
+  expect(planWrite.hookSpecificOutput).toMatchObject({
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+  });
+  expect(planWrite.hookSpecificOutput?.permissionDecisionReason).toContain(SDK_PLAN_AGENT_KEY);
 });
 
 test("createToolPermissionPreToolHook adds delegation guidance only to main agent policy denials", async () => {

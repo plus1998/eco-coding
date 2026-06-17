@@ -9,8 +9,10 @@ import {
   type EcoToolPolicy,
   resolveMainAgentAllowedTools,
   resolveMainAgentHandsOnCapability,
+  resolveToolPermissionEntryForActor,
   sdkAgentKeyForProfileAgent,
 } from "../src/agent-orchestration";
+import { SDK_GENERAL_PURPOSE_AGENT_KEY, SDK_PLAN_AGENT_KEY } from "../src/subagent-availability";
 
 const updatedAt = "2026-06-07T00:00:00.000Z";
 
@@ -329,6 +331,62 @@ test("buildBuiltinPlanToolPermissionEntry keeps plan agent read-only with networ
   expect(entry.allowed).toEqual([]);
   expect(entry.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(entry.network).toEqual({ webSearch: true, webFetch: true });
+});
+
+test("resolveToolPermissionEntryForActor maps SDK general-purpose to main policy", () => {
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+  expect(resolveToolPermissionEntryForActor(policy, SDK_GENERAL_PURPOSE_AGENT_KEY)).toBe(policy.main);
+});
+
+test("resolveToolPermissionEntryForActor maps SDK Plan to read-only policy", () => {
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+  const planEntry = resolveToolPermissionEntryForActor(policy, SDK_PLAN_AGENT_KEY);
+  expect(planEntry?.disallowed).toContain("Write");
+  expect(planEntry?.disallowed).toContain("Bash");
+  expect(planEntry?.filesystem).toEqual({ read: "workspace", write: "none" });
+});
+
+test("resolveToolPermissionEntryForActor inherits planning phase cap for general-purpose", () => {
+  const codingProfile: EcoOrchestrationProfileConfig = {
+    ...profile,
+    preset: "coding",
+    mainAgent: {
+      ...profile.mainAgent,
+      tools: {
+        allowed: ["Agent", "Read", "Write", "Edit", "Bash", "WebSearch", "WebFetch"],
+        disallowed: [],
+        bash: { enabled: true },
+        filesystem: { read: "workspace", write: "workspace" },
+        network: { webSearch: true, webFetch: true },
+      },
+    },
+  };
+  const policy = buildToolPermissionPolicyFromProfile(codingProfile, [researchTemplate], {
+    phaseAllowedTools: [
+      "Agent",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "AskUserQuestion",
+    ],
+  });
+  const generalPurposeEntry = resolveToolPermissionEntryForActor(
+    policy,
+    SDK_GENERAL_PURPOSE_AGENT_KEY,
+  );
+  expect(generalPurposeEntry).toBe(policy.main);
+  expect(generalPurposeEntry?.disallowed).toEqual(
+    expect.arrayContaining(["Write", "Bash", "Edit", "MultiEdit", "NotebookEdit"]),
+  );
+});
+
+test("resolveToolPermissionEntryForActor still resolves eco profile agents", () => {
+  const policy = buildToolPermissionPolicyFromProfile(profile, [researchTemplate]);
+  expect(resolveToolPermissionEntryForActor(policy, "eco_researcher")).toBe(
+    policy.agents.eco_researcher,
+  );
 });
 
 test("buildToolPermissionPolicyFromProfile enables bash for hands-on profiles without explicit bash field", () => {

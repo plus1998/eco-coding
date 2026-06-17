@@ -12,7 +12,6 @@ import {
 import { formatSubagentMissionMessage } from "./agent-mission";
 import {
   buildMainAgentSystemPrompt,
-  buildBuiltinPlanToolPermissionEntry,
   buildToolPermissionPolicyFromProfile,
   createAgentDefinitionsFromProfile,
   resolveMainAgentAllowedTools,
@@ -1027,15 +1026,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           ...(applyPhaseToolCap ? { phaseAllowedTools: phase.allowedTools } : {}),
         })
       : undefined;
-    if (toolPermissions && phase.planningPhase) {
-      toolPermissions = {
-        ...toolPermissions,
-        agents: {
-          ...toolPermissions.agents,
-          [SDK_PLAN_AGENT_KEY]: buildBuiltinPlanToolPermissionEntry(),
-        },
-      };
-    }
     const pendingToolPermissionDecisions: EcoToolPermissionDecisionAudit[] = [];
     const onToolPermissionDecision = (decision: EcoToolPermissionDecisionAudit) => {
       this.options.hookContext?.onToolPermissionDecision?.(decision);

@@ -37,7 +37,11 @@ export {
 
 import { type BashReviewMode, evaluateBashPolicy } from "../../bash-policy/src";
 import type { RuntimeAgentRole } from "../../shared/src";
-import type { EcoRuntimeToolPermissionEntry, EcoRuntimeToolPermissionPolicy } from "./agent-orchestration.js";
+import {
+  type EcoRuntimeToolPermissionEntry,
+  type EcoRuntimeToolPermissionPolicy,
+  resolveToolPermissionEntryForActor,
+} from "./agent-orchestration.js";
 import { parseMcpToolServerName, sanitizeMcpServerName } from "./agent-orchestration.js";
 import {
   filesystemReadScopeAskReason,
@@ -659,7 +663,7 @@ export function createToolPermissionPreToolHook(
     }
     const actor = resolveToolPermissionActor(preInput);
     const entry = materializeRuntimeToolPermissionEntry(
-      resolveToolPermissionEntry(policy, actor),
+      resolveToolPermissionEntryForActor(policy, actor),
     );
     if (!entry) {
       return recordToolPermissionDecision(
@@ -702,27 +706,6 @@ function resolveToolPermissionActor(input: PreToolUseHookInput): "main" | string
       : input.agent_id.trim();
   }
   return "main";
-}
-
-function resolveToolPermissionEntry(
-  policy: EcoRuntimeToolPermissionPolicy,
-  actor: "main" | string,
-): EcoRuntimeToolPermissionEntry | undefined {
-  if (actor === "main") {
-    return policy.main;
-  }
-  const directEntry = policy.agents[actor];
-  if (directEntry) {
-    return directEntry;
-  }
-  if (!actor.startsWith("eco_")) {
-    const dynamicEntry = policy.agents[`eco_${actor}`];
-    if (dynamicEntry) {
-      return dynamicEntry;
-    }
-  }
-  const normalizedRole = normalizeSdkSubagentType(actor);
-  return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
 }
 
 function materializeRuntimeToolPermissionEntry(

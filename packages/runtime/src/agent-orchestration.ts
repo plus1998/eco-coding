@@ -1,4 +1,9 @@
-import { ecoSubagentKeyForRole } from "./subagent-availability.js";
+import {
+  ecoSubagentKeyForRole,
+  SDK_GENERAL_PURPOSE_AGENT_KEY,
+  SDK_PLAN_AGENT_KEY,
+} from "./subagent-availability.js";
+import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import {
   SDK_DELEGATION_SUPPORT_TOOL_NAMES,
   SDK_FILESYSTEM_READ_TOOL_NAMES,
@@ -272,6 +277,56 @@ export const BUILTIN_PLAN_TOOL_POLICY: EcoToolPolicy = {
 
 export function buildBuiltinPlanToolPermissionEntry(): EcoRuntimeToolPermissionEntry {
   return normalizeToolPermissionEntry(BUILTIN_PLAN_TOOL_POLICY);
+}
+
+type SdkBuiltinToolPolicyRule = "inherit_main" | "plan_readonly";
+
+/** Allowed SDK built-in subagents that need explicit tool policy resolution (not Profile-generated). */
+const SDK_BUILTIN_TOOL_POLICY_RULES: Record<string, SdkBuiltinToolPolicyRule> = {
+  [SDK_GENERAL_PURPOSE_AGENT_KEY]: "inherit_main",
+  [SDK_PLAN_AGENT_KEY]: "plan_readonly",
+};
+
+function resolveEcoAgentToolPermissionEntry(
+  policy: EcoRuntimeToolPermissionPolicy,
+  actor: string,
+): EcoRuntimeToolPermissionEntry | undefined {
+  const directEntry = policy.agents[actor];
+  if (directEntry) {
+    return directEntry;
+  }
+  if (!actor.startsWith("eco_")) {
+    const dynamicEntry = policy.agents[`eco_${actor}`];
+    if (dynamicEntry) {
+      return dynamicEntry;
+    }
+  }
+  const normalizedRole = normalizeSdkSubagentType(actor);
+  return normalizedRole ? policy.agents[`eco_${normalizedRole}`] : undefined;
+}
+
+export function resolveToolPermissionEntryForActor(
+  policy: EcoRuntimeToolPermissionPolicy,
+  actor: "main" | string,
+): EcoRuntimeToolPermissionEntry | undefined {
+  if (actor === "main") {
+    return policy.main;
+  }
+
+  const ecoEntry = resolveEcoAgentToolPermissionEntry(policy, actor);
+  if (ecoEntry) {
+    return ecoEntry;
+  }
+
+  const rule = SDK_BUILTIN_TOOL_POLICY_RULES[actor];
+  if (rule === "inherit_main") {
+    return policy.main;
+  }
+  if (rule === "plan_readonly") {
+    return buildBuiltinPlanToolPermissionEntry();
+  }
+
+  return undefined;
 }
 
 export interface MainAgentHandsOnCapability {
