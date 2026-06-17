@@ -36,6 +36,16 @@ function convertGolden(input: unknown[]): ChatMessage[] {
 }
 
 describe('responses → chat request invariants (sub2api parity)', () => {
+  test('streaming requests include usage in the final SSE chunk', () => {
+    const chatReq = responsesToChatCompletionsRequest({
+      model: 'local-model',
+      input: '[]',
+      stream: true,
+    });
+    expect(chatReq.stream).toBe(true);
+    expect(chatReq.stream_options).toEqual({ include_usage: true });
+  });
+
   test('single tool call attaches pending reasoning to assistant message', () => {
     const messages = convertGolden([
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'latest sha?' }] },

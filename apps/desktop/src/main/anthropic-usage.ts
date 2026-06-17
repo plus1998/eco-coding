@@ -29,8 +29,8 @@ export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null 
   }
   const usage = isRecord(body.usage) ? body.usage : body;
   const parsed = {
-    inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens"]),
-    outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens"]),
+    inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens", "prompt_tokens"]),
+    outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens", "completion_tokens"]),
     cacheReadTokens: readTokenCount(usage, [
       "cache_read_input_tokens",
       "cacheReadInputTokens",
@@ -43,6 +43,44 @@ export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null 
     ]),
   };
   return usageTotal(parsed) > 0 ? parsed : null;
+}
+
+export function parsedUsageFromOpenAICompatUsage(
+  usage:
+    | {
+        input_tokens?: number;
+        output_tokens?: number;
+        input_tokens_details?: { cached_tokens?: number };
+      }
+    | null
+    | undefined,
+): ParsedUsage | null {
+  if (!usage) {
+    return null;
+  }
+  const parsed: ParsedUsage = {
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+    cacheReadTokens: usage.input_tokens_details?.cached_tokens ?? 0,
+    cacheCreationTokens: 0,
+  };
+  return usageTotal(parsed) > 0 ? parsed : null;
+}
+
+export function resolveChatCompletionsStreamUsage(
+  trackerUsage: ParsedUsage | null,
+  bridgeUsage:
+    | {
+        input_tokens?: number;
+        output_tokens?: number;
+        input_tokens_details?: { cached_tokens?: number };
+      }
+    | undefined,
+): ParsedUsage | null {
+  if (trackerUsage && usageTotal(trackerUsage) > 0) {
+    return trackerUsage;
+  }
+  return parsedUsageFromOpenAICompatUsage(bridgeUsage);
 }
 
 function extractUsageFromStreamEvent(event: unknown): ParsedUsage | null {

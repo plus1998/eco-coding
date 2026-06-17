@@ -55,6 +55,9 @@ export function responsesToChatCompletionsRequest(
   if (req.stream !== undefined) {
     out.stream = req.stream;
   }
+  if (out.stream === true) {
+    out.stream_options = { include_usage: true };
+  }
   if (req.service_tier !== undefined) {
     out.service_tier = req.service_tier;
   }

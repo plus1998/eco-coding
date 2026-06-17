@@ -41,6 +41,7 @@ import type { ProviderConfigSecret } from "./provider-store";
 import {
   createStreamingUsageTracker,
   extractUsageFromResponseBody,
+  resolveChatCompletionsStreamUsage,
 } from "./anthropic-usage";
 import type { ParsedUsage } from "@eco/runtime";
 import {
@@ -1089,7 +1090,8 @@ async function forwardOpenAIChatCompletionsMessages(
       );
     }
 
-    const usage = usageTracker.finish();
+    const trackerUsage = usageTracker.finish();
+    const usage = resolveChatCompletionsStreamUsage(trackerUsage, ccToResState.usage);
     const billing = usage
       ? await resolveProxyCallBilling(onUsage, buildBridgeUsageInfo(route, usage, requestedModel))
       : null;
