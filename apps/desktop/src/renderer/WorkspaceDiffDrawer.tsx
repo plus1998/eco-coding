@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { WorkspaceDiffResult } from "../shared/ipc";
@@ -7,10 +7,13 @@ import { GitDiffViewer } from "./GitDiffViewer";
 interface WorkspaceDiffDrawerProps {
   open: boolean;
   loading: boolean;
+  discardBusy?: boolean;
   error?: string;
   diff?: WorkspaceDiffResult;
   selectedPath?: string;
   onSelectPath: (path: string) => void;
+  onDiscardPath?: (path: string) => void | Promise<void>;
+  onDiscardAll?: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -21,10 +24,13 @@ function formatDiffStat(value: number): string {
 export function WorkspaceDiffDrawer({
   open,
   loading,
+  discardBusy = false,
   error,
   diff,
   selectedPath,
   onSelectPath,
+  onDiscardPath,
+  onDiscardAll,
   onClose,
 }: WorkspaceDiffDrawerProps) {
   useEffect(() => {
@@ -67,14 +73,26 @@ export function WorkspaceDiffDrawer({
               </span>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="workspace-diff-drawer-close"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            <X size={16} aria-hidden />
-          </button>
+          <div className="workspace-diff-drawer-header-actions">
+            {onDiscardAll ? (
+              <button
+                type="button"
+                className="workspace-diff-drawer-discard-all"
+                disabled={discardBusy || files.length === 0}
+                onClick={() => void onDiscardAll()}
+              >
+                全部撤掉
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="workspace-diff-drawer-close"
+              onClick={onClose}
+              aria-label="关闭"
+            >
+              <X size={14} aria-hidden />
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -94,10 +112,14 @@ export function WorkspaceDiffDrawer({
                   {files.map((file) => {
                     const isActive = file.path === activePath;
                     return (
-                      <li key={file.path}>
+                      <li key={file.path} className="workspace-diff-drawer-file-row">
                         <button
                           type="button"
-                          className={isActive ? "is-active" : undefined}
+                          className={
+                            isActive
+                              ? "workspace-diff-drawer-file-select is-active"
+                              : "workspace-diff-drawer-file-select"
+                          }
                           onClick={() => onSelectPath(file.path)}
                         >
                           <span className="workspace-diff-drawer-file-path" title={file.path}>
@@ -108,6 +130,18 @@ export function WorkspaceDiffDrawer({
                             <span className="diff-stat-del">-{formatDiffStat(file.deletions)}</span>
                           </span>
                         </button>
+                        {onDiscardPath ? (
+                          <button
+                            type="button"
+                            className="workspace-diff-drawer-file-discard"
+                            aria-label={`撤掉 ${file.path}`}
+                            title="撤掉此文件"
+                            disabled={discardBusy}
+                            onClick={() => void onDiscardPath(file.path)}
+                          >
+                            <RotateCcw size={11} aria-hidden />
+                          </button>
+                        ) : null}
                       </li>
                     );
                   })}

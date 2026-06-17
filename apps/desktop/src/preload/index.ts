@@ -81,6 +81,8 @@ import {
   type ThreadUsageLedgerEventView,
   type GitCheckoutBranchRequest,
   type GitCreateBranchRequest,
+  type GitDiscardWorkspaceChangesRequest,
+  type GitDiscardWorkspaceChangesResult,
   type GitCommitRequest,
   type GitCommitResult,
   type GitGenerateCommitMessageRequest,
@@ -278,6 +280,11 @@ const api = {
   },
   getWorkspaceDiff(workspacePath: string): Promise<WorkspaceDiffResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetWorkspaceDiff, workspacePath);
+  },
+  discardWorkspaceChanges(
+    request: GitDiscardWorkspaceChangesRequest,
+  ): Promise<GitDiscardWorkspaceChangesResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitDiscardWorkspaceChanges, request);
   },
   listGitCommits(request: GitListCommitsRequest): Promise<GitListCommitsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitListCommits, request);

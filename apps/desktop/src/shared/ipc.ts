@@ -96,6 +96,7 @@ export const IPC_CHANNELS = {
   billingModelsDevList: "billing:models-dev-list",
   gitGetStatus: "git:get-status",
   gitGetWorkspaceDiff: "git:get-workspace-diff",
+  gitDiscardWorkspaceChanges: "git:discard-workspace-changes",
   gitListCommits: "git:list-commits",
   gitCheckoutBranch: "git:checkout-branch",
   gitCreateBranch: "git:create-branch",
@@ -289,6 +290,15 @@ export interface WorkspaceDiffResult {
   files: Array<{ path: string; additions: number; deletions: number }>;
   totalAdditions: number;
   totalDeletions: number;
+}
+
+export interface GitDiscardWorkspaceChangesRequest {
+  workspacePath: string;
+  path?: string;
+}
+
+export interface GitDiscardWorkspaceChangesResult {
+  discardedPaths: string[];
 }
 
 export interface GitListCommitsRequest {

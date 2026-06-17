@@ -12,6 +12,7 @@ import {
   collectCommitDiffContext,
   createCommit,
   defaultGitRunner,
+  discardWorkspaceChanges,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
   listGitCommits,
@@ -191,6 +192,7 @@ export async function handleGitPull(
 export {
   checkoutGitBranch,
   createGitBranch,
+  discardWorkspaceChanges,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
   listGitCommits,

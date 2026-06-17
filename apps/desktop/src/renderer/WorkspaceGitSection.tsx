@@ -81,6 +81,7 @@ export function WorkspaceGitSection({
   const [changesError, setChangesError] = useState<string | undefined>();
   const [changesDiff, setChangesDiff] = useState<WorkspaceDiffResult | undefined>();
   const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
+  const [discardBusy, setDiscardBusy] = useState(false);
   const [pullBusy, setPullBusy] = useState(false);
   const [pullError, setPullError] = useState<string | undefined>();
   const [pullConflict, setPullConflict] = useState<string[] | undefined>();
@@ -243,17 +244,20 @@ export function WorkspaceGitSection({
     }
   }
 
-  async function openChangesDrawer() {
-    if (!workspacePath || !window.eco || changesLoading) {
+  async function reloadChangesDiff(preferredPath?: string) {
+    if (!workspacePath || !window.eco) {
       return;
     }
-    setChangesDrawerOpen(true);
     setChangesLoading(true);
     setChangesError(undefined);
     try {
       const result = await window.eco.getWorkspaceDiff(workspacePath);
       setChangesDiff(result);
-      setSelectedChangePath(result.files[0]?.path);
+      const nextPath =
+        preferredPath && result.files.some((file) => file.path === preferredPath)
+          ? preferredPath
+          : result.files[0]?.path;
+      setSelectedChangePath(nextPath);
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
       setChangesDiff(undefined);
@@ -263,9 +267,55 @@ export function WorkspaceGitSection({
     }
   }
 
+  async function openChangesDrawer() {
+    if (!workspacePath || !window.eco || changesLoading) {
+      return;
+    }
+    setChangesDrawerOpen(true);
+    await reloadChangesDiff(selectedChangePath);
+  }
+
   function closeChangesDrawer() {
     setChangesDrawerOpen(false);
     setChangesError(undefined);
+  }
+
+  async function handleDiscardChange(path: string) {
+    if (!workspacePath || !window.eco || discardBusy) {
+      return;
+    }
+    setDiscardBusy(true);
+    setChangesError(undefined);
+    try {
+      await window.eco.discardWorkspaceChanges({ workspacePath, path });
+      await onCommitSuccess?.();
+      await reloadChangesDiff();
+    } catch (caught) {
+      setChangesError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setDiscardBusy(false);
+    }
+  }
+
+  async function handleDiscardAllChanges() {
+    if (!workspacePath || !window.eco || discardBusy || !changesDiff?.fileCount) {
+      return;
+    }
+    const confirmed = window.confirm(`确定撤掉全部 ${changesDiff.fileCount} 个文件的未提交变更？此操作不可恢复。`);
+    if (!confirmed) {
+      return;
+    }
+    setDiscardBusy(true);
+    setChangesError(undefined);
+    try {
+      await window.eco.discardWorkspaceChanges({ workspacePath });
+      await onCommitSuccess?.();
+      await reloadChangesDiff();
+    } catch (caught) {
+      setChangesError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setDiscardBusy(false);
+    }
   }
 
   return (
@@ -521,10 +571,13 @@ export function WorkspaceGitSection({
       <WorkspaceDiffDrawer
         open={changesDrawerOpen}
         loading={changesLoading}
+        discardBusy={discardBusy}
         {...(changesError && { error: changesError })}
         {...(changesDiff && { diff: changesDiff })}
         {...(selectedChangePath && { selectedPath: selectedChangePath })}
         onSelectPath={setSelectedChangePath}
+        onDiscardPath={(path) => void handleDiscardChange(path)}
+        onDiscardAll={() => void handleDiscardAllChanges()}
         onClose={closeChangesDrawer}
       />
 

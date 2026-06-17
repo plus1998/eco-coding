@@ -350,6 +350,7 @@ import {
 import {
   checkoutGitBranch,
   createGitBranch,
+  discardWorkspaceChanges,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
   handleGitCommit,
@@ -1603,6 +1604,22 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path is required.");
     }
     return getWorkspaceDiff(workspacePath.trim(), runGitCommand);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitDiscardWorkspaceChanges, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid git discard workspace changes request.");
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.workspacePath !== "string" || !record.workspacePath.trim()) {
+      throw new Error("Invalid git discard workspace changes request.");
+    }
+    const filePath = typeof record.path === "string" ? record.path.trim() : undefined;
+    return discardWorkspaceChanges(
+      record.workspacePath.trim(),
+      filePath ? { path: filePath } : {},
+      runGitCommand,
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.gitListCommits, async (_event, payload: unknown) => {

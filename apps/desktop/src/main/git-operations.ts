@@ -354,6 +354,68 @@ export async function createGitBranch(
   await runGitOk(run, path.resolve(workspacePath), ["git", "checkout", "-b", trimmed]);
 }
 
+async function workspaceHasGitCommits(
+  cwd: string,
+  run: GitRunner,
+): Promise<boolean> {
+  return (await run(["git", "rev-parse", "--verify", "HEAD"], cwd)).exitCode === 0;
+}
+
+async function isUntrackedWorkspaceFile(
+  cwd: string,
+  filePath: string,
+  run: GitRunner,
+): Promise<boolean> {
+  const result = await run(["git", "ls-files", "--others", "--exclude-standard", "--", filePath], cwd);
+  if (result.exitCode !== 0) {
+    return false;
+  }
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .includes(filePath);
+}
+
+export interface DiscardWorkspaceChangesResult {
+  discardedPaths: string[];
+}
+
+export async function discardWorkspaceChanges(
+  workspacePath: string,
+  options: { path?: string } = {},
+  run: GitRunner = defaultGitRunner,
+): Promise<DiscardWorkspaceChangesResult> {
+  const cwd = path.resolve(workspacePath);
+  const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
+  if (revParse.exitCode !== 0) {
+    throw new Error("不是 Git 仓库，无法撤掉变更。");
+  }
+
+  const hasHead = await workspaceHasGitCommits(cwd, run);
+  const targetPath = options.path?.trim();
+
+  if (!targetPath) {
+    if (hasHead) {
+      await runGitOk(run, cwd, ["git", "reset", "--hard", "HEAD"]);
+    }
+    await runGitOk(run, cwd, ["git", "clean", "-fd"]);
+    return { discardedPaths: [] };
+  }
+
+  if (await isUntrackedWorkspaceFile(cwd, targetPath, run)) {
+    await runGitOk(run, cwd, ["git", "clean", "-f", "--", targetPath]);
+    return { discardedPaths: [targetPath] };
+  }
+
+  if (!hasHead) {
+    throw new Error(`文件 ${targetPath} 没有可撤掉的变更。`);
+  }
+
+  await runGitOk(run, cwd, ["git", "restore", "--source=HEAD", "--staged", "--worktree", "--", targetPath]);
+  return { discardedPaths: [targetPath] };
+}
+
 export async function getWorkspaceDiff(
   workspacePath: string,
   run: GitRunner = defaultGitRunner,

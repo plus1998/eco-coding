@@ -3,6 +3,7 @@ import {
   collectCommitDiffContext,
   COMMIT_DIFF_MAX_CHARS,
   createGitBranch,
+  discardWorkspaceChanges,
   getWorkspaceDiff,
   listGitCommits,
   listMergeConflictFiles,
@@ -86,6 +87,78 @@ test("getWorkspaceDiff combines HEAD diff and untracked files", async () => {
   expect(result.totalAdditions).toBeGreaterThan(0);
   expect(result.patch).toContain("src/a.ts");
   expect(result.patch).toContain("src/new.ts");
+});
+
+test("discardWorkspaceChanges resets tracked files and cleans untracked files", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git rev-parse --verify HEAD") {
+      return { exitCode: 0, stdout: "abc\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  await discardWorkspaceChanges("/tmp/repo", {}, run);
+  expect(calls).toEqual([
+    ["git", "rev-parse", "--show-toplevel"],
+    ["git", "rev-parse", "--verify", "HEAD"],
+    ["git", "reset", "--hard", "HEAD"],
+    ["git", "clean", "-fd"],
+  ]);
+});
+
+test("discardWorkspaceChanges restores a tracked file", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git rev-parse --verify HEAD") {
+      return { exitCode: 0, stdout: "abc\n", stderr: "" };
+    }
+    if (key.includes("ls-files --others --exclude-standard -- src/a.ts")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await discardWorkspaceChanges("/tmp/repo", { path: "src/a.ts" }, run);
+  expect(result.discardedPaths).toEqual(["src/a.ts"]);
+  expect(calls).toContainEqual([
+    "git",
+    "restore",
+    "--source=HEAD",
+    "--staged",
+    "--worktree",
+    "--",
+    "src/a.ts",
+  ]);
+});
+
+test("discardWorkspaceChanges removes an untracked file", async () => {
+  const calls: string[][] = [];
+  const run = async (args: string[], _cwd: string) => {
+    calls.push(args);
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key.includes("ls-files --others --exclude-standard -- src/new.ts")) {
+      return { exitCode: 0, stdout: "src/new.ts\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await discardWorkspaceChanges("/tmp/repo", { path: "src/new.ts" }, run);
+  expect(result.discardedPaths).toEqual(["src/new.ts"]);
+  expect(calls).toContainEqual(["git", "clean", "-f", "--", "src/new.ts"]);
 });
 
 test("getWorkspaceDiff returns empty result for non-git workspace", async () => {

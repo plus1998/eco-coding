@@ -3,7 +3,9 @@ import {
   Activity,
   AlertCircle,
   ArrowUp,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   CornerDownRight,
   Database,
   FolderOpen,
@@ -293,8 +295,32 @@ function clearComposerDraft(store: Record<string, ComposerDraft>, key: string | 
 }
 
 const ACTIVITY_FEED_STICK_THRESHOLD_PX = 120;
+const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
+
+type ActivityFeedScrollJump = "bottom" | "top";
+type ActivityFeedUserScrollDirection = "up" | "down";
+
+function resolveActivityFeedScrollJump(
+  scrollTop: number,
+  distanceFromBottom: number,
+  userScrollDirection: ActivityFeedUserScrollDirection | null,
+): ActivityFeedScrollJump | null {
+  if (!userScrollDirection) {
+    return null;
+  }
+  if (userScrollDirection === "up") {
+    if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
+      return null;
+    }
+    return "top";
+  }
+  if (distanceFromBottom <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
+    return null;
+  }
+  return "bottom";
+}
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1538,6 +1564,9 @@ function App() {
   const activityFeedScrollTopRef = useRef(0);
   const programmaticActivityFeedScrollRef = useRef(false);
   const forceActivityFeedScrollUntilRef = useRef(0);
+  const activityFeedUserScrollDirectionRef = useRef<ActivityFeedUserScrollDirection | null>(null);
+  const activityFeedScrollJumpRef = useRef<ActivityFeedScrollJump | null>(null);
+  const [activityFeedScrollJump, setActivityFeedScrollJump] = useState<ActivityFeedScrollJump | null>(null);
   const composerRef = useRef<ComposerSkillsInputHandle>(null);
   const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
   const runProjectionLayoutSignature = useMemo(() => {
@@ -1568,6 +1597,21 @@ function App() {
     return container.scrollHeight - container.scrollTop - container.clientHeight;
   }, []);
 
+  const syncActivityFeedScrollJump = useCallback(
+    (container: HTMLElement) => {
+      const next = resolveActivityFeedScrollJump(
+        container.scrollTop,
+        distanceFromActivityFeedBottom(container),
+        activityFeedUserScrollDirectionRef.current,
+      );
+      if (next !== activityFeedScrollJumpRef.current) {
+        activityFeedScrollJumpRef.current = next;
+        setActivityFeedScrollJump(next);
+      }
+    },
+    [distanceFromActivityFeedBottom],
+  );
+
   const scrollActivityFeedToEnd = useCallback((force = false) => {
     const container = activityMessagesRef.current;
     if (!container) {
@@ -1593,12 +1637,43 @@ function App() {
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
     userDetachedFromBottomRef.current = false;
+    activityFeedUserScrollDirectionRef.current = null;
+    activityFeedScrollJumpRef.current = null;
+    setActivityFeedScrollJump(null);
     scrollActivityFeedToEnd(true);
     requestAnimationFrame(() => {
       scrollActivityFeedToEnd(true);
       requestAnimationFrame(() => scrollActivityFeedToEnd(true));
     });
   }, [scrollActivityFeedToEnd]);
+
+  const jumpActivityFeedToTop = useCallback(() => {
+    const container = activityMessagesRef.current;
+    if (!container) {
+      return;
+    }
+    userDetachedFromBottomRef.current = true;
+    activityFeedUserScrollDirectionRef.current = "up";
+    programmaticActivityFeedScrollRef.current = true;
+    container.scrollTo({ top: 0, behavior: "smooth" });
+    activityFeedScrollTopRef.current = 0;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        programmaticActivityFeedScrollRef.current = false;
+        if (activityMessagesRef.current) {
+          syncActivityFeedScrollJump(activityMessagesRef.current);
+        }
+      });
+    });
+  }, [syncActivityFeedScrollJump]);
+
+  const handleActivityFeedScrollJump = useCallback(() => {
+    if (activityFeedScrollJump === "top") {
+      jumpActivityFeedToTop();
+      return;
+    }
+    requestActivityFeedForceScroll();
+  }, [activityFeedScrollJump, jumpActivityFeedToTop, requestActivityFeedForceScroll]);
 
   const handleActivityPlannerLayoutChange = useCallback(() => {
     scrollActivityFeedToEnd();
@@ -1622,14 +1697,35 @@ function App() {
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       if (scrollTop < activityFeedScrollTopRef.current - ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
         userDetachedFromBottomRef.current = true;
+        activityFeedUserScrollDirectionRef.current = "up";
+      } else if (scrollTop > activityFeedScrollTopRef.current + ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
+        activityFeedUserScrollDirectionRef.current = "down";
+        if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
+          userDetachedFromBottomRef.current = false;
+        }
       } else if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
         userDetachedFromBottomRef.current = false;
       }
       activityFeedScrollTopRef.current = scrollTop;
+      syncActivityFeedScrollJump(container);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
+    syncActivityFeedScrollJump(container);
     return () => container.removeEventListener("scroll", onScroll);
-  }, [activeThread?.id, distanceFromActivityFeedBottom]);
+  }, [activeThread?.id, distanceFromActivityFeedBottom, syncActivityFeedScrollJump]);
+
+  useLayoutEffect(() => {
+    activityFeedUserScrollDirectionRef.current = null;
+    activityFeedScrollJumpRef.current = null;
+    setActivityFeedScrollJump(null);
+  }, [activeThread?.id]);
+
+  useLayoutEffect(() => {
+    const container = activityMessagesRef.current;
+    if (container) {
+      syncActivityFeedScrollJump(container);
+    }
+  }, [activityLines, runProjectionLayoutSignature, syncActivityFeedScrollJump]);
 
   useLayoutEffect(() => {
     requestActivityFeedForceScroll();
@@ -3399,7 +3495,8 @@ function App() {
                 </header>
               )}
               {activeThread ? <div className="activity-header-divider" aria-hidden /> : null}
-              <div ref={activityMessagesRef} className="activity-messages">
+              <div className="activity-messages-shell">
+                <div ref={activityMessagesRef} className="activity-messages">
                 <ActivityLogView
                   lines={activityLines}
                   {...(activeThread && { thread: activeThread })}
@@ -3509,6 +3606,18 @@ function App() {
                   />
                 )}
                 <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                </div>
+                {activityFeedScrollJump ? (
+                  <button
+                    type="button"
+                    className="activity-feed-scroll-jump is-visible"
+                    onClick={handleActivityFeedScrollJump}
+                    aria-label={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                    title={activityFeedScrollJump === "top" ? "回到顶部" : "回到底部"}
+                  >
+                    {activityFeedScrollJump === "top" ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                ) : null}
               </div>
             </div>
           )}
