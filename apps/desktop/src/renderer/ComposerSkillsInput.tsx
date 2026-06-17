@@ -193,6 +193,18 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+      if (
+        isComposingRef.current ||
+        event.nativeEvent.isComposing ||
+        event.key === "Process" ||
+        event.keyCode === 229
+      ) {
+        return;
+      }
+      onKeyDown?.(event);
+    };
+
     const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
       if (onPaste) {
         onPaste(event);
@@ -226,7 +238,7 @@ export const ComposerSkillsInput = forwardRef<ComposerSkillsInputHandle, Compose
           onClick={syncCursor}
           onKeyUp={syncCursor}
           onPaste={handlePaste}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
         />
       </div>
     );
