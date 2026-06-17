@@ -1,7 +1,8 @@
-import { Loader2, Play, RefreshCw, Square, TextCursorInput, X } from "lucide-react";
+import { Copy, Loader2, Play, RefreshCw, Square, TextCursorInput, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
+import { formatRunCommand } from "../shared/package-script-run";
 import {
   readWorkspaceScriptArgs,
   saveScriptArgs,
@@ -56,6 +57,7 @@ export function PackageScriptsDialog({
   const [scriptArgsByName, setScriptArgsByName] = useState<Record<string, string>>({});
   const [editingScript, setEditingScript] = useState<string | null>(null);
   const [draftArgs, setDraftArgs] = useState("");
+  const [copiedScript, setCopiedScript] = useState<string | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const argsInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,6 +66,7 @@ export function PackageScriptsDialog({
       setQuery("");
       setEditingScript(null);
       setDraftArgs("");
+      setCopiedScript(null);
       return;
     }
     setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
@@ -94,6 +97,27 @@ export function PackageScriptsDialog({
     },
     [scriptArgsByName],
   );
+
+  const copyScriptCommand = useCallback(
+    async (scriptName: string, args?: string) => {
+      const command = formatRunCommand(packageManager, scriptName, args);
+      try {
+        await navigator.clipboard.writeText(command);
+        setCopiedScript(scriptName);
+      } catch {
+        return;
+      }
+    },
+    [packageManager],
+  );
+
+  useEffect(() => {
+    if (!copiedScript) {
+      return;
+    }
+    const timer = window.setTimeout(() => setCopiedScript(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copiedScript]);
 
   useEffect(() => {
     const node = outputRef.current;
@@ -186,18 +210,21 @@ export function PackageScriptsDialog({
               const isRunning = runningScript === entry.name;
               const savedArgs = scriptArgsByName[entry.name] ?? "";
               const isEditingArgs = editingScript === entry.name;
-              const previewCommand = savedArgs
-                ? `${packageManager} run ${entry.name} ${savedArgs}`
-                : undefined;
+              const runCommand = formatRunCommand(
+                packageManager,
+                entry.name,
+                savedArgs || undefined,
+              );
+              const isCopied = copiedScript === entry.name;
               return (
                 <li key={entry.name} className="mcp-server-row package-scripts-row">
                   <div className="package-scripts-row-main">
                     <span className="mcp-server-name">{entry.name}</span>
                     <span
                       className="package-scripts-row-command"
-                      title={previewCommand ?? entry.command}
+                      title={savedArgs ? runCommand : entry.command}
                     >
-                      {previewCommand ?? entry.command}
+                      {savedArgs ? runCommand : entry.command}
                     </span>
                   </div>
                   <div className="package-scripts-row-actions">
@@ -246,6 +273,21 @@ export function PackageScriptsDialog({
                       }}
                     >
                       <TextCursorInput size={14} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className={[
+                        "package-scripts-args-button",
+                        isCopied ? "is-active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      aria-label={isCopied ? `已复制 ${entry.name} 命令` : `复制 ${entry.name} 命令`}
+                      title={isCopied ? "已复制" : `复制 ${runCommand}`}
+                      disabled={busy || Boolean(runningScript)}
+                      onClick={() => void copyScriptCommand(entry.name, savedArgs || undefined)}
+                    >
+                      <Copy size={14} aria-hidden />
                     </button>
                     <button
                       type="button"

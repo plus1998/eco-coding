@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildRunCommand,
+  formatRunCommand,
+} from "../src/shared/package-script-run";
+import {
   listPackageScripts,
   parsePackageManagerField,
   readPackageJson,
@@ -107,6 +110,11 @@ test("buildRunCommand builds argv for each package manager", () => {
   ]);
   expect(buildRunCommand("yarn", "lint")).toEqual(["yarn", "run", "lint"]);
   expect(buildRunCommand("npm", "start")).toEqual(["npm", "run", "start"]);
+});
+
+test("formatRunCommand joins argv into a shell command", () => {
+  expect(formatRunCommand("pnpm", "test", "-- --coverage")).toBe("pnpm run test -- --coverage");
+  expect(formatRunCommand("npm", "start")).toBe("npm run start");
 });
 
 test("preparePackageScriptRun rejects unknown script names", async () => {
