@@ -2238,6 +2238,29 @@ function ProviderEditorModal({
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
 
+  useEffect(() => {
+    if (!isEditing || !form.id) {
+      setCandidatesPanelOpen(false);
+      return;
+    }
+    let cancelled = false;
+    void window.eco!
+      .listCandidateModels(form.id)
+      .then((candidates) => {
+        if (!cancelled) {
+          setCandidatesPanelOpen(candidates.length === 0);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCandidatesPanelOpen(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, form.id]);
+
   return (
     <div className="settings-modal-backdrop">
       <button
