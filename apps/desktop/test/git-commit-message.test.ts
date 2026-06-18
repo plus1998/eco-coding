@@ -47,6 +47,20 @@ test("buildCommitMessageUserMessage includes unstaged sections", () => {
   expect(message).toContain("unstaged patch 已在上方截断");
 });
 
+test("buildCommitMessageUserMessage includes custom instructions", () => {
+  const message = buildCommitMessageUserMessage(context, "使用中文，subject 不超过 50 字");
+  expect(message).toContain("## 提交指令");
+  expect(message).toContain("使用中文，subject 不超过 50 字");
+});
+
+test("buildCommitMessageRequestBody includes custom instructions in system prompt", () => {
+  const body = buildCommitMessageRequestBody(route, context, "使用中文");
+  expect(String(body.system)).toContain("遵循以下用户提交指令：使用中文");
+  const userContent = (body.messages as Array<{ content: string }>)[0]?.content;
+  expect(userContent).toContain("## 提交指令");
+  expect(userContent).toContain("使用中文");
+});
+
 test("sanitizeCommitMessage rejects refusal-like output", () => {
   expect(sanitizeCommitMessage("抱歉，我无法生成提交信息")).toBeUndefined();
 });

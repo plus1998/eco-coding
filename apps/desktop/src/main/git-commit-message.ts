@@ -20,11 +20,18 @@ const COMMIT_REFUSAL_PATTERN =
 
 type Fetcher = typeof fetch;
 
-export function buildCommitMessageUserMessage(context: CommitDiffContext): string {
+export function buildCommitMessageUserMessage(
+  context: CommitDiffContext,
+  instructions?: string,
+): string {
+  const trimmedInstructions = instructions?.trim();
   const parts = [
     "请根据以下 Git 变更生成一条提交信息。",
     "使用 Conventional Commits 风格：type(scope): subject，必要时附 2-4 条简短 bullet body。",
     "只输出最终 commit message 正文，不要引号、不要 markdown 代码块、不要解释。",
+    ...(trimmedInstructions
+      ? ["", "## 提交指令", trimmedInstructions]
+      : []),
     "",
     "## Staged files",
     context.stagedNameStatus || "(empty)",
@@ -56,22 +63,26 @@ export function buildCommitMessageUserMessage(context: CommitDiffContext): strin
 export function buildCommitMessageRequestBody(
   route: AnthropicProxyRoute,
   context: CommitDiffContext,
+  instructions?: string,
 ): Record<string, unknown> {
+  const trimmedInstructions = instructions?.trim();
+  const systemParts = [
+    "你是 Git 提交信息生成器。",
+    "根据 diff 概括变更意图，遵循 Conventional Commits。",
+    "第一行是简短 subject；如需 body，用空行分隔后用 - 开头的 bullet。",
+    "不要输出拒绝、道歉或能力限制类语句。",
+    "不要输出思考过程，只输出 commit message 正文。",
+    ...(trimmedInstructions ? [`遵循以下用户提交指令：${trimmedInstructions}`] : []),
+  ];
   const body: Record<string, unknown> = {
     model: route.modelId,
     max_tokens: COMMIT_MESSAGE_MAX_TOKENS,
     temperature: 0,
-    system: [
-      "你是 Git 提交信息生成器。",
-      "根据 diff 概括变更意图，遵循 Conventional Commits。",
-      "第一行是简短 subject；如需 body，用空行分隔后用 - 开头的 bullet。",
-      "不要输出拒绝、道歉或能力限制类语句。",
-      "不要输出思考过程，只输出 commit message 正文。",
-    ].join(" "),
+    system: systemParts.join(" "),
     messages: [
       {
         role: "user",
-        content: buildCommitMessageUserMessage(context),
+        content: buildCommitMessageUserMessage(context, instructions),
       },
     ],
   };
@@ -84,11 +95,12 @@ export async function summarizeCommitMessage(
   route: AnthropicProxyRoute,
   context: CommitDiffContext,
   fetcher: Fetcher = fetch,
+  instructions?: string,
 ): Promise<string | undefined> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), COMMIT_MESSAGE_TIMEOUT_MS);
   const requestUrl = `${buildProviderRequestBaseUrl(route.provider.baseUrl, route.provider.requestPath)}/v1/messages`;
-  const requestBody = buildCommitMessageRequestBody(route, context);
+  const requestBody = buildCommitMessageRequestBody(route, context, instructions);
   try {
     const headers: Record<string, string> = {
       "content-type": "application/json",

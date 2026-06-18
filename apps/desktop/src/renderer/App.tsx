@@ -37,6 +37,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
+import { GitSettingsPanel } from "./GitSettingsPanel";
 import { isReconnectActivityMessage, shouldClearReconnectActivity } from "../shared/activity-display";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
@@ -2416,6 +2417,14 @@ function App() {
     setSettingsOpen(true);
   }
 
+  async function saveGitSettingsSnapshot(snapshot: GitSettingsSnapshot) {
+    if (!window.eco) {
+      return;
+    }
+    const saved = await window.eco.saveGitSettings(snapshot);
+    setGitSettings(saved);
+  }
+
   async function saveCommitMessageRolePreference(role: string | "auto") {
     if (!window.eco || !selectedRuntimeProfileId) {
       return;
@@ -3918,54 +3927,10 @@ function App() {
               ))}
 
             {settingsSection === "git" && (
-              <>
-                <header className="settings-page-header">
-                  <h1>Git</h1>
-                  <p className="settings-page-desc">当前已打开项目的工作区 Git 状态。</p>
-                </header>
-
-                <section className="settings-section">
-                  <div className="settings-section-head">
-                    <span className="settings-section-label">工作区</span>
-                  </div>
-                  <div className="settings-editor-card">
-                    {projectWorkspace ? (
-                      <>
-                        <ul className="settings-kv-list">
-                          <li>
-                            <span>路径</span>
-                            <strong>{projectWorkspace.path}</strong>
-                          </li>
-                          <li>
-                            <span>分支</span>
-                            <strong>
-                              {projectWorkspace.isGitRepository
-                                ? projectWorkspace.hasGitCommits === false
-                                  ? "尚无提交"
-                                  : (projectWorkspace.branch ?? "detached")
-                                : "非 Git 仓库"}
-                            </strong>
-                          </li>
-                          <li>
-                            <span>未提交变更</span>
-                            <strong>{projectWorkspace.dirtyFileCount} 个文件</strong>
-                          </li>
-                          {projectWorkspace.packageManager && (
-                            <li>
-                              <span>包管理器</span>
-                              <strong>{projectWorkspace.packageManager}</strong>
-                            </li>
-                          )}
-                        </ul>
-                      </>
-                    ) : currentProjectPath ? (
-                      <p className="settings-empty">正在读取 Git 状态…</p>
-                    ) : (
-                      <p className="settings-empty">请先在主界面打开一个项目。</p>
-                    )}
-                  </div>
-                </section>
-              </>
+              <GitSettingsPanel
+                settings={gitSettings}
+                onSave={saveGitSettingsSnapshot}
+              />
             )}
             </div>
           </div>

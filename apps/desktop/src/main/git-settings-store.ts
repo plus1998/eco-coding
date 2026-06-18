@@ -4,8 +4,11 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { CommitMessageRolePreference } from "../shared/resolve-commit-message-route";
 import type { RuntimeAgentRole } from "../shared/ipc";
 
+const COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS = 2_000;
+
 export interface GitSettingsSnapshot {
   commitMessageRoleByProfileId: Record<string, CommitMessageRolePreference>;
+  commitMessageInstructions?: string;
 }
 
 export function defaultGitSettings(): GitSettingsSnapshot {
@@ -100,7 +103,25 @@ export function normalizeGitSettingsSnapshot(value: unknown): GitSettingsSnapsho
       commitMessageRoleByProfileId[profileId] = role === "auto" ? "auto" : role.trim();
     }
   }
-  return { commitMessageRoleByProfileId };
+  const instructions = normalizeCommitMessageInstructions(record.commitMessageInstructions);
+  return {
+    commitMessageRoleByProfileId,
+    ...(instructions && { commitMessageInstructions: instructions }),
+  };
+}
+
+function normalizeCommitMessageInstructions(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.length > COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS) {
+    return trimmed.slice(0, COMMIT_MESSAGE_INSTRUCTIONS_MAX_CHARS);
+  }
+  return trimmed;
 }
 
 export function isGitSettingsSnapshot(value: unknown): value is GitSettingsSnapshot {

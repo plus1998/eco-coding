@@ -376,6 +376,8 @@ export interface GitPullResult {
 
 export interface GitSettingsSnapshot {
   commitMessageRoleByProfileId: Record<string, RuntimeAgentRole | "auto">;
+  /** 生成提交信息时附加给大模型的额外指令（格式、语言、长度等） */
+  commitMessageInstructions?: string;
 }
 
 export interface ProxyBridgeSettingsSnapshot {

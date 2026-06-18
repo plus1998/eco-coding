@@ -120,7 +120,8 @@ export async function handleGitGenerateCommitMessage(
     gitSettingsStore: deps.gitSettingsStore,
     pricingCache: deps.pricingCache,
   });
-  const message = await summarizeCommitMessage(route, context);
+  const commitInstructions = deps.gitSettingsStore.get().commitMessageInstructions;
+  const message = await summarizeCommitMessage(route, context, fetch, commitInstructions);
   if (!message?.trim()) {
     logUpstreamError("git-commit-message-failed", {
       profileId: request.profileId,

@@ -3667,6 +3667,36 @@ html[data-window-focused="true"] .codex-sidebar {
   font-size: 12px;
 }
 
+.git-settings-section-head {
+  align-items: flex-start;
+}
+
+.git-settings-instructions-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 160px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.git-settings-instructions-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+.git-settings-instructions-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .settings-count-badge {
   padding: 2px 10px;
   border-radius: 999px;
