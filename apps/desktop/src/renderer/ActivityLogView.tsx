@@ -36,6 +36,10 @@ import type {
   ThreadUsageSnapshot,
 } from "../shared/ipc";
 import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import {
+  activityLabelIncludesAgentRole,
+  isRedundantAgentModelShort,
+} from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
 import {
@@ -421,7 +425,11 @@ function ProjectionAgentEchoEntry({
 
   if (block.kind === "narrative") {
     return (
-      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+      <ProjectionAgentEchoShell
+        label={entry.agentLabel}
+        agentId={entry.agent.agentId}
+        shortAgentId={entry.shortAgentId}
+      >
         <RunLogNarrative
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
@@ -433,7 +441,11 @@ function ProjectionAgentEchoEntry({
   }
   if (block.kind === "thinking") {
     return (
-      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+      <ProjectionAgentEchoShell
+        label={entry.agentLabel}
+        agentId={entry.agent.agentId}
+        shortAgentId={entry.shortAgentId}
+      >
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
@@ -443,7 +455,11 @@ function ProjectionAgentEchoEntry({
     );
   }
   return (
-    <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+    <ProjectionAgentEchoShell
+      label={entry.agentLabel}
+      agentId={entry.agent.agentId}
+      shortAgentId={entry.shortAgentId}
+    >
       <DetailBlock
         block={block}
         requestActive={requestActive}
@@ -457,16 +473,19 @@ function ProjectionAgentEchoEntry({
 function ProjectionAgentEchoShell({
   label,
   agentId,
+  shortAgentId,
   children,
 }: {
   label: string;
   agentId: string;
+  shortAgentId?: string | undefined;
   children: ReactNode;
 }) {
+  const chipLabel = shortAgentId ? `#${shortAgentId}` : label;
   return (
     <div className="run-log-agent-echo" data-agent-id={agentId}>
-      <span className="run-log-subagent-badge run-log-agent-echo-badge" title={agentId}>
-        {label}
+      <span className="run-log-subagent-badge run-log-agent-echo-badge" title={label}>
+        {chipLabel}
       </span>
       {children}
     </div>
@@ -506,7 +525,15 @@ function ProjectionSubagentRunRow({
     resolveRuntimeAgentName(agent.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(agent.role);
   const modelId = agent.usage?.modelId ?? agent.context?.modelId;
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
-  const statusText = resolveProjectionAgentStatusText(agent) ?? (running ? "工作中" : "点击查看执行详情");
+  const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
+  const titleWithModel = formatRoleModelLabel(agent.role, modelId);
+  const rawStatus = resolveProjectionAgentStatusText(agent);
+  const statusText =
+    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
+      ? rawStatus
+      : agent.status === "active" || agent.status === "launching"
+        ? "工作中"
+        : "点击查看执行详情";
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
@@ -521,7 +548,7 @@ function ProjectionSubagentRunRow({
             <span className="subagent-run-title-group">
               <span className="subagent-run-title">
                 <span className="subagent-run-title-role">{roleLabel}</span>
-                {modelShort ? (
+                {showModelShort ? (
                   <>
                     <span className="subagent-run-title-sep" aria-hidden>
                       ·
@@ -878,6 +905,7 @@ function SubagentRunRow({
     resolveRuntimeAgentName(item.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(item.role);
   const modelId = instanceMetrics?.modelId ?? modelByRole?.[item.role];
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
+  const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
   const titleWithModel = formatRoleModelLabel(item.role, modelId);
   const rawStatus = item.statusLine?.trim();
   const statusText =
@@ -908,7 +936,7 @@ function SubagentRunRow({
             <span className="subagent-run-title-group">
               <span className="subagent-run-title">
                 <span className="subagent-run-title-role">{roleLabel}</span>
-                {modelShort ? (
+                {showModelShort ? (
                   <>
                     <span className="subagent-run-title-sep" aria-hidden>
                       ·
@@ -1748,11 +1776,14 @@ function SubagentMissionBlock({
           ?.trim()
           .slice(0, 200) ?? summary)
       : summary;
+  const showRoleLabel =
+    !omitRoleLabel &&
+    !activityLabelIncludesAgentRole(subagent, displaySummary, { modelId: modelByRole?.[subagent] });
 
   return (
     <div className="run-log-mission">
       <div className="run-log-mission-head">
-        {!omitRoleLabel ? (
+        {showRoleLabel ? (
           <span className="run-log-mission-role">
             {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
           </span>
@@ -1844,10 +1875,14 @@ function RunLogAction({
   omitRoleLabel?: boolean;
 }) {
   const Icon = actionIcons[icon];
+  const showRoleLabel =
+    Boolean(subagent) &&
+    !omitRoleLabel &&
+    !activityLabelIncludesAgentRole(subagent!, label, { modelId: modelByRole?.[subagent!] });
   return (
     <div className="run-log-action">
-      {subagent && !omitRoleLabel ? (
-        <span className="run-log-action-role">{formatRoleModelLabel(subagent, modelByRole?.[subagent])}</span>
+      {showRoleLabel ? (
+        <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
       ) : null}
       <Icon size={16} className="run-log-action-icon" aria-hidden />
       <span className="run-log-action-label">{label}</span>

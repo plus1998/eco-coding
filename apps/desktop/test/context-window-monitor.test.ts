@@ -114,8 +114,8 @@ test("resolves context limits per role model", async () => {
     { role: "coder", modelId: "coder-model", providerBaseUrl: "https://api.example" },
   );
   const snapshot = monitor.getSnapshot("t1");
-  expect(snapshot?.roles.find((role) => role.role === "planner")?.limit).toBe(effectiveLimit(100_000));
-  expect(snapshot?.roles.find((role) => role.role === "coder")?.limit).toBe(effectiveLimit(40_000));
+  expect(snapshot?.roles.find((role) => role.role === "planner")?.limit).toBe(100_000);
+  expect(snapshot?.roles.find((role) => role.role === "coder")?.limit).toBe(40_000);
 });
 
 test("shouldCompact ignores high subagent occupancy", async () => {

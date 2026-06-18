@@ -21,8 +21,9 @@ export const DEFAULT_AUTOCOMPACT_BUFFER = 33_000;
 const MAX_OUTPUT_RESERVE_CAP = 20_000;
 
 /**
- * Effective context window for occupancy / compact (Claude Code style).
+ * Effective context window for autocompact threshold (Claude Code style).
  * Deducts autocompact buffer and output reservation from catalog limit.
+ * UI displays the nominal catalog limit; use this for compaction decisions only.
  */
 export function effectiveContextLimit(catalogLimit: number, maxOutputTokens?: number): number {
   const outputReserve = Math.min(maxOutputTokens ?? MAX_OUTPUT_RESERVE_CAP, MAX_OUTPUT_RESERVE_CAP);

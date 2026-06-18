@@ -53,7 +53,10 @@ interface RoleOccupancyState {
   providerBaseUrl?: string;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
+  /** Nominal catalog context window shown in the UI. */
   limit: number;
+  /** Effective limit for autocompact threshold (excludes buffer and output reserve). */
+  compactLimit?: number;
   limitsResolved: boolean;
   maxOutputTokens?: number;
 }
@@ -105,6 +108,7 @@ export class ContextWindowMonitor {
       occupied: occupancy,
       limit: prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
       limitsResolved: prev?.limitsResolved ?? false,
+      ...(prev?.compactLimit !== undefined && { compactLimit: prev.compactLimit }),
       ...(prev?.maxOutputTokens !== undefined && { maxOutputTokens: prev.maxOutputTokens }),
     };
     if (modelId) {
@@ -137,6 +141,11 @@ export class ContextWindowMonitor {
         instance.occupied = occupancy;
         instance.limit = next.limit;
         instance.limitsResolved = next.limitsResolved;
+        if (next.compactLimit !== undefined) {
+          instance.compactLimit = next.compactLimit;
+        } else {
+          delete instance.compactLimit;
+        }
         if (next.maxOutputTokens !== undefined) {
           instance.maxOutputTokens = next.maxOutputTokens;
         } else {
@@ -170,15 +179,22 @@ export class ContextWindowMonitor {
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
     const prev = state.byRole[role];
+    const nominalLimit = options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT;
     const next: RoleOccupancyState = {
       occupied,
-      limit: options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
+      limit: nominalLimit,
       limitsResolved: prev?.limitsResolved ?? false,
       ...(prev?.modelId && { modelId: prev.modelId }),
       ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
       ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
+      ...(prev?.manualSpec && { manualSpec: prev.manualSpec }),
       ...(prev?.maxOutputTokens !== undefined && { maxOutputTokens: prev.maxOutputTokens }),
     };
+    if (options?.limit !== undefined) {
+      next.compactLimit = effectiveContextLimit(nominalLimit, next.maxOutputTokens);
+    } else if (prev?.compactLimit !== undefined) {
+      next.compactLimit = prev.compactLimit;
+    }
     state.byRole[role] = next;
     if (prev?.modelId && prev?.providerBaseUrl && options?.limit === undefined) {
       await this.refreshLimitForRole(next);
@@ -275,7 +291,11 @@ export class ContextWindowMonitor {
     if (!planner) {
       return false;
     }
-    const { atThreshold } = computeOccupancyRatio(planner.occupied, planner.limit, threshold);
+    const { atThreshold } = computeOccupancyRatio(
+      planner.occupied,
+      compactLimitForRole(planner),
+      threshold,
+    );
     return atThreshold;
   }
 
@@ -322,14 +342,18 @@ export class ContextWindowMonitor {
 
     for (const roleSnapshot of roles) {
       const prev = state.byRole[roleSnapshot.role];
+      const maxOutputTokens = roleSnapshot.maxOutputTokens ?? prev?.maxOutputTokens;
       state.byRole[roleSnapshot.role] = {
         occupied: roleSnapshot.occupied,
         limit: roleSnapshot.limit,
+        compactLimit:
+          prev?.compactLimit ?? effectiveContextLimit(roleSnapshot.limit, maxOutputTokens),
         limitsResolved: roleSnapshot.limitsResolved,
         ...(roleSnapshot.modelId && { modelId: roleSnapshot.modelId }),
-        ...(roleSnapshot.maxOutputTokens !== undefined && { maxOutputTokens: roleSnapshot.maxOutputTokens }),
+        ...(maxOutputTokens !== undefined && { maxOutputTokens }),
         ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
         ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
+        ...(prev?.manualSpec && { manualSpec: prev.manualSpec }),
       };
     }
     state.byInstance.clear();
@@ -341,6 +365,7 @@ export class ContextWindowMonitor {
         role: instance.role,
         occupied: instance.occupied,
         limit: instance.limit,
+        compactLimit: effectiveContextLimit(instance.limit, instance.maxOutputTokens),
         limitsResolved: instance.limitsResolved,
         updatedAt: instance.updatedAt,
         ...(instance.modelId && { modelId: instance.modelId }),
@@ -397,7 +422,8 @@ export class ContextWindowMonitor {
       roleState.manualSpec?.contextTokens,
       roleState.manualSpec?.maxOutputTokens,
     );
-    roleState.limit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
+    roleState.limit = resolved.limit;
+    roleState.compactLimit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
     roleState.limitsResolved = resolved.limitsResolved;
     if (resolved.maxOutputTokens !== undefined) {
       roleState.maxOutputTokens = resolved.maxOutputTokens;
@@ -465,6 +491,13 @@ export class ContextWindowMonitor {
       }));
     return instances.sort((left, right) => right.occupied - left.occupied);
   }
+}
+
+function compactLimitForRole(roleState: RoleOccupancyState): number {
+  if (roleState.compactLimit !== undefined && roleState.compactLimit > 0) {
+    return roleState.compactLimit;
+  }
+  return effectiveContextLimit(roleState.limit, roleState.maxOutputTokens);
 }
 
 function sortRuntimeRoles(roles: Iterable<RuntimeAgentRole>): RuntimeAgentRole[] {

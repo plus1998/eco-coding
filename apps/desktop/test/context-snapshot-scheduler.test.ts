@@ -158,16 +158,16 @@ test("applySdkContextUsageBreakdown updates planner segments from getContextUsag
   const emitted: ThreadContextSnapshot[] = [];
   let monitorSnapshot: ContextMonitorSnapshot = {
     occupied: 36_000,
-    limit: 147_000,
-    ratio: 0.24,
-    occupancyPct: 24,
+    limit: 200_000,
+    ratio: 0.18,
+    occupancyPct: 18,
     limitsResolved: true,
     displayRole: "planner",
     roles: [
       {
         role: "planner",
         occupied: 36_000,
-        limit: 147_000,
+        limit: 200_000,
         ratio: 0.24,
         occupancyPct: 24,
         limitsResolved: true,

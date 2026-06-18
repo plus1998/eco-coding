@@ -1,6 +1,7 @@
 /** Normalize activity line text for display (strip redundant subagent prefixes). */
 
-import { parseSubagentMissionMessage } from "@eco/runtime";
+import { parseSubagentMissionMessage, shortenModelId } from "@eco/runtime";
+import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
 
@@ -167,6 +168,53 @@ export function formatMcpToolDisplayName(tool: string): string {
 }
 
 /** Display label for a tool action row (icon conveys the verb; text shows target/detail). */
+export function normalizeAgentLabelToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_]+/g, "-");
+}
+
+export function isRedundantAgentModelShort(roleLabel: string, modelShort: string): boolean {
+  if (!roleLabel.trim() || !modelShort.trim()) {
+    return false;
+  }
+  return normalizeAgentLabelToken(roleLabel) === normalizeAgentLabelToken(modelShort);
+}
+
+export function activityLabelIncludesAgentRole(
+  role: string,
+  label: string,
+  options?: {
+    modelId?: string | undefined;
+    displayName?: string | undefined;
+  },
+): boolean {
+  const normalizedLabel = label.trim().toLowerCase();
+  if (!normalizedLabel || !role.trim()) {
+    return false;
+  }
+  const tokens = new Set<string>();
+  for (const candidate of [
+    role,
+    options?.displayName,
+    options?.modelId ? shortenModelId(options.modelId) : undefined,
+    resolveSubagentRunDisplayTitle(role),
+  ]) {
+    if (!candidate?.trim()) {
+      continue;
+    }
+    tokens.add(normalizeAgentLabelToken(candidate));
+  }
+  for (const token of tokens) {
+    if (
+      normalizedLabel === token ||
+      normalizedLabel.startsWith(`${token} ·`) ||
+      normalizedLabel.startsWith(`${token}·`)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function formatToolDisplayLabel(toolName: string, detail?: string): string {
   const normalizedDetail = detail?.trim() || undefined;
   if (toolName === "Skill" || (normalizedDetail && normalizedDetail.endsWith(" 技能"))) {
