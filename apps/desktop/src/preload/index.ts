@@ -112,6 +112,7 @@ import {
 type InvokePayload = Record<string, unknown> | undefined;
 
 const api = {
+  platform: process.platform,
   channels: IPC_CHANNELS,
   invoke(channel: IpcChannel, payload?: InvokePayload): Promise<unknown> {
     return ipcRenderer.invoke(channel, payload);

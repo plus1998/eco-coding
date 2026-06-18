@@ -1,13 +1,18 @@
 import { Copy, Loader2, Play, RefreshCw, Square, TextCursorInput, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
+import type { PackageManagerKind, PackageScriptInfo, PackageScriptRunTarget } from "../shared/ipc";
+import { listPackageScriptRunTargets } from "../shared/package-script-target";
 import { formatRunCommand } from "../shared/package-script-run";
 import { AnsiOutput } from "./AnsiOutput";
 import {
   readWorkspaceScriptArgs,
   saveScriptArgs,
 } from "./package-script-args-storage";
+import {
+  readPackageScriptRunTarget,
+  savePackageScriptRunTarget,
+} from "./package-script-run-target-storage";
 
 export interface PackageScriptRunViewState {
   runId?: string;
@@ -28,7 +33,7 @@ interface PackageScriptsDialogProps {
   runningScript?: string;
   runState?: PackageScriptRunViewState;
   onClose: () => void;
-  onRun: (scriptName: string, args?: string) => void | Promise<void>;
+  onRun: (scriptName: string, args?: string, target?: PackageScriptRunTarget) => void | Promise<void>;
   onStop?: () => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
 }
@@ -55,12 +60,24 @@ export function PackageScriptsDialog({
   onRefresh,
 }: PackageScriptsDialogProps) {
   const [query, setQuery] = useState("");
+  const [runTarget, setRunTarget] = useState<PackageScriptRunTarget>(() =>
+    readPackageScriptRunTarget(window.eco?.platform),
+  );
   const [scriptArgsByName, setScriptArgsByName] = useState<Record<string, string>>({});
   const [editingScript, setEditingScript] = useState<string | null>(null);
   const [draftArgs, setDraftArgs] = useState("");
   const [copiedScript, setCopiedScript] = useState<string | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const argsInputRef = useRef<HTMLInputElement>(null);
+
+  const platform = window.eco?.platform ?? "darwin";
+  const visibleRunTargets = useMemo(
+    () => listPackageScriptRunTargets(platform),
+    [platform],
+  );
+  const isExternalRunTarget = runTarget !== "embedded";
+  const runActionLabel = isExternalRunTarget ? "打开" : "运行";
+  const runningActionLabel = isExternalRunTarget ? "打开中…" : "运行中…";
 
   useEffect(() => {
     if (!open) {
@@ -71,7 +88,13 @@ export function PackageScriptsDialog({
       return;
     }
     setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
-  }, [open, workspacePath]);
+    setRunTarget(readPackageScriptRunTarget(platform));
+  }, [open, workspacePath, platform]);
+
+  const selectRunTarget = useCallback((target: PackageScriptRunTarget) => {
+    setRunTarget(target);
+    savePackageScriptRunTarget(target);
+  }, []);
 
   useEffect(() => {
     if (!editingScript) {
@@ -189,6 +212,33 @@ export function PackageScriptsDialog({
           </div>
         </header>
 
+        {visibleRunTargets.length > 1 ? (
+          <div
+            className="package-scripts-run-targets"
+            role="tablist"
+            aria-label="脚本运行方式"
+          >
+            {visibleRunTargets.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={runTarget === option.value}
+                className={[
+                  "package-scripts-run-target",
+                  runTarget === option.value ? "is-active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                disabled={busy || Boolean(runningScript)}
+                onClick={() => selectRunTarget(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {scripts.length > 0 ? (
           <input
             type="search"
@@ -294,14 +344,14 @@ export function PackageScriptsDialog({
                       type="button"
                       className="package-scripts-run-button"
                       disabled={busy || Boolean(runningScript)}
-                      onClick={() => void onRun(entry.name, savedArgs || undefined)}
+                      onClick={() => void onRun(entry.name, savedArgs || undefined, runTarget)}
                     >
                       {isRunning ? (
                         <Loader2 size={14} className="spinning" aria-hidden />
                       ) : (
                         <Play size={14} aria-hidden />
                       )}
-                      <span>{isRunning ? "运行中…" : "运行"}</span>
+                      <span>{isRunning ? runningActionLabel : runActionLabel}</span>
                     </button>
                   </div>
                 </li>

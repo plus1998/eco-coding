@@ -54,6 +54,7 @@ import {
   type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
+  type PackageScriptRunTarget,
   type ProxyBridgeSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -80,6 +81,7 @@ import {
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { externalPackageScriptTargetLabel, isExternalPackageScriptTarget } from "../shared/package-script-target";
 import {
   HOME_PROJECT_DISPLAY_NAME,
   HOME_PROJECT_IMPORTED_AT,
@@ -1185,20 +1187,39 @@ function App() {
   }, []);
 
   const startPackageScript = useCallback(
-    async (scriptName: string, args?: string) => {
+    async (scriptName: string, args?: string, target: PackageScriptRunTarget = "embedded") => {
       if (!currentProjectPath || !window.eco) {
         return;
       }
       const trimmedArgs = args?.trim();
+      const isExternal = isExternalPackageScriptTarget(target);
       setScriptsBusy(true);
-      setRunningScript(scriptName);
-      setScriptRunState({ output: "", running: true, script: scriptName });
+      if (!isExternal) {
+        setRunningScript(scriptName);
+        setScriptRunState({ output: "", running: true, script: scriptName });
+      }
       try {
         const result = await window.eco.startPackageScript({
           workspacePath: currentProjectPath,
           script: scriptName,
+          target,
           ...(trimmedArgs && { args: trimmedArgs }),
         });
+        if (result.target !== "embedded") {
+          const terminalLabel = externalPackageScriptTargetLabel(
+            result.target,
+            window.eco.platform,
+            result.externalLauncherName,
+          );
+          setScriptRunState({
+            output: `已在 ${terminalLabel} 中启动。\n\n${result.command.join(" ")}`,
+            running: false,
+            script: scriptName,
+            command: result.command,
+          });
+          setScriptsBusy(false);
+          return;
+        }
         setScriptRunState((current) => ({
           ...current,
           runId: result.runId,

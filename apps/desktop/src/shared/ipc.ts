@@ -201,18 +201,23 @@ export interface PackageScriptsListResult {
   scripts: PackageScriptInfo[];
 }
 
+export type PackageScriptRunTarget = "embedded" | "terminal" | "iterm";
+
 export interface RunPackageScriptRequest {
   workspacePath: string;
   script: string;
   args?: string;
+  target?: PackageScriptRunTarget;
 }
 
 export type StartPackageScriptRequest = RunPackageScriptRequest;
 
 export interface StartPackageScriptResult {
-  runId: string;
+  runId?: string;
   script: string;
   command: string[];
+  target: PackageScriptRunTarget;
+  externalLauncherName?: string;
 }
 
 export type PackageScriptStreamEvent =
@@ -1367,7 +1372,11 @@ export function isRunPackageScriptRequest(value: unknown): value is RunPackageSc
   return (
     typeof record.workspacePath === "string" &&
     typeof record.script === "string" &&
-    (record.args === undefined || typeof record.args === "string")
+    (record.args === undefined || typeof record.args === "string") &&
+    (record.target === undefined ||
+      record.target === "embedded" ||
+      record.target === "terminal" ||
+      record.target === "iterm")
   );
 }
 

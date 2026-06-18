@@ -13195,6 +13195,40 @@ html[data-window-focused="true"] .settings-nav {
   gap: 4px;
 }
 
+.package-scripts-run-targets {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--nav-hover);
+}
+
+.package-scripts-run-target {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.package-scripts-run-target:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.package-scripts-run-target.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.package-scripts-run-target:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .package-scripts-search {
   width: 100%;
   padding: 8px 10px;

@@ -142,6 +142,7 @@ import {
   type WorktreeStatusResult,
 } from "../shared/ipc";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import { isExternalPackageScriptTarget } from "../shared/package-script-target";
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
@@ -275,7 +276,10 @@ import {
 import { listDiscoveredSkills } from "./skills-discovery";
 import { PackageScriptRunner } from "./package-script-runner";
 import { PackageJsonWatcher } from "./package-json-watcher";
+import { launchInExternalTerminal } from "./open-external-terminal";
 import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
+import { ensureDesktopPath } from "./fix-desktop-path";
+import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
@@ -1007,6 +1011,28 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid start package script request.");
     }
     const prepared = await preparePackageScriptRun(payload);
+    const target = payload.target ?? "embedded";
+    if (isExternalPackageScriptTarget(target)) {
+      ensureDesktopPath();
+      const spawnEnv = toSpawnEnv();
+      const executableName = prepared.command[0];
+      if (!executableName) {
+        throw new Error("Missing executable.");
+      }
+      const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
+      const pathValue = spawnEnv.PATH ?? "";
+      const { launcherName } = launchInExternalTerminal(target, {
+        command: resolvedCommand,
+        cwd: prepared.workspacePath,
+        pathValue,
+      });
+      return {
+        script: prepared.script,
+        command: resolvedCommand,
+        target,
+        externalLauncherName: launcherName,
+      };
+    }
     return packageScriptRunner.start(prepared.command, prepared.workspacePath, prepared.script);
   });
 

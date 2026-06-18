@@ -29,7 +29,7 @@ export class PackageScriptRunner {
     command: string[],
     cwd: string,
     script: string,
-  ): { runId: string; command: string[]; script: string } {
+  ): { runId: string; command: string[]; script: string; target: "embedded" } {
     const executableName = command[0];
     if (!executableName) {
       throw new Error("Missing executable.");
@@ -79,7 +79,7 @@ export class PackageScriptRunner {
       });
     });
 
-    return { runId, command: resolvedCommand, script };
+    return { runId, command: resolvedCommand, script, target: "embedded" };
   }
 
   stop(runId: string): boolean {
