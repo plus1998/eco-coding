@@ -7,6 +7,8 @@ import {
   History,
   Image,
   LinkIcon,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -42,7 +44,9 @@ import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compa
 import type {
   AgentProfilePerformanceSnapshot,
   AgentTemplate,
+  CandidateModelView,
   McpServerConfigView,
+  ModelSelectMode,
   ModelsDevModelOption,
   ModelsDevMapping,
   ModelRef,
@@ -93,6 +97,7 @@ import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 import { ModelSelectField } from "./ModelSelectField";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
+import { CandidateModelPanel } from "./CandidateModelListSection";
 import {
   FREE_TOKEN_PROVIDER_PRESETS,
   applyProviderPreset,
@@ -1279,6 +1284,8 @@ export function ModelsSettingsPanel({
           models={modalCache?.models ?? []}
           modelsLoading={loadingForProvider(modalProviderId)}
           modelsError={modalCache?.error}
+          modelsDevOptions={modelsDevOptions}
+          modelsDevLoading={modelsDevLoading}
           error={modalError}
           testing={testingProviderKey === modalProviderId}
           busy={busy}
@@ -2067,6 +2074,149 @@ function ModelsDevCapabilitySummary({
   );
 }
 
+function useCandidateModels(providerId: string): {
+  candidates: CandidateModelView[];
+  loading: boolean;
+} {
+  const [candidates, setCandidates] = useState<CandidateModelView[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!providerId) {
+      setCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    window.eco!
+      .listCandidateModels(providerId)
+      .then((result) => {
+        if (!cancelled) setCandidates(result);
+      })
+      .catch(() => {
+        if (!cancelled) setCandidates([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId]);
+  return { candidates, loading };
+}
+
+function ModelSelectModeToggle({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ModelSelectMode;
+  disabled?: boolean;
+  onChange: (mode: ModelSelectMode) => void;
+}) {
+  return (
+    <div className="model-select-mode-toggle" role="radiogroup" aria-label="模型选择模式">
+      <label className={`model-select-mode-option${value === "candidate" ? " active" : ""}`}>
+        <input
+          type="radio"
+          name="modelSelectMode"
+          value="candidate"
+          checked={value === "candidate"}
+          disabled={disabled}
+          onChange={() => onChange("candidate")}
+        />
+        从候选模型选择
+      </label>
+      <label className={`model-select-mode-option${value === "manual" ? " active" : ""}`}>
+        <input
+          type="radio"
+          name="modelSelectMode"
+          value="manual"
+          checked={value === "manual"}
+          disabled={disabled}
+          onChange={() => onChange("manual")}
+        />
+        手动配置
+      </label>
+    </div>
+  );
+}
+
+function CandidateModelSelectField({
+  value,
+  candidates,
+  loading,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  candidates: CandidateModelView[];
+  loading: boolean;
+  disabled?: boolean;
+  onChange: (candidateId: string) => void;
+}) {
+  return (
+    <div className="mcp-field">
+      <span className="mcp-field-label">候选模型</span>
+      {loading ? (
+        <span className="mcp-field-hint">加载中...</span>
+      ) : candidates.length === 0 ? (
+        <span className="mcp-field-hint candidate-model-empty-hint">
+          请先在 Provider 中添加候选模型
+        </span>
+      ) : (
+        <select
+          className="mcp-field-input"
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">选择候选模型...</option>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.displayName || c.modelId}
+            </option>
+          ))}
+        </select>
+      )}
+      {value ? <CandidateModelResolvedSpecBadge candidateId={value} candidates={candidates} /> : null}
+    </div>
+  );
+}
+
+function CandidateModelResolvedSpecBadge({
+  candidateId,
+  candidates,
+}: {
+  candidateId: string;
+  candidates: CandidateModelView[];
+}) {
+  const candidate = candidates.find((c) => c.id === candidateId);
+  if (!candidate) return null;
+  const parts: string[] = [];
+  if (candidate.resolvedContextTokens) {
+    parts.push(`${(candidate.resolvedContextTokens / 1000).toFixed(0)}k ctx`);
+  }
+  if (candidate.resolvedInputPerM !== undefined) {
+    parts.push(`$${candidate.resolvedInputPerM}/M in`);
+  }
+  if (candidate.resolvedOutputPerM !== undefined) {
+    parts.push(`$${candidate.resolvedOutputPerM}/M out`);
+  }
+  if (candidate.resolvedSupportsImageInput === true) parts.push("图像输入");
+  if (candidate.resolvedSupportsReasoning === true) parts.push("推理");
+  if (parts.length === 0) return null;
+  return (
+    <div className="candidate-model-spec-badges">
+      {parts.map((part, i) => (
+        <span key={i} className="candidate-model-spec-chip">
+          {part}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function AgentProfileNodeConfigModal({
   node,
   form,
@@ -2114,6 +2264,12 @@ function AgentProfileNodeConfigModal({
 }) {
   const isMainNode = node.kind === "main";
   const isBuiltinExploreNode = node.kind === "builtinExplore";
+  const nodeProviderId = isMainNode
+    ? form.mainProviderId
+    : isBuiltinExploreNode
+      ? form.builtinExploreProviderId
+      : agent?.providerId ?? "";
+  const { candidates: nodeCandidates, loading: nodeCandidatesLoading } = useCandidateModels(nodeProviderId);
   const nodeCapKey = isMainNode ? "main" : isBuiltinExploreNode ? "explore" : agent?.agentKey ?? "";
   const capability = capabilityHints[nodeCapKey];
   const pricing = pricingHints[nodeCapKey];
@@ -2395,6 +2551,91 @@ function AgentProfileNodeConfigModal({
                 </p>
               </div>
 
+              <ModelSelectModeToggle
+                value={form.builtinExploreModelSelectMode}
+                {...(busy !== undefined ? { disabled: busy } : {})}
+                onChange={(mode) => onPatchProfile({ builtinExploreModelSelectMode: mode })}
+              />
+
+              {form.builtinExploreModelSelectMode === "candidate" ? (
+                <div className="models-agent-template-form-grid">
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">Provider</span>
+                    <select
+                      className="mcp-field-input"
+                      value={form.builtinExploreProviderId}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const nextProvider = providers.find((entry) => entry.id === event.target.value);
+                        onPatchProfile({
+                          builtinExploreProviderId: event.target.value,
+                          builtinExploreModelId: nextProvider?.defaultModel || form.builtinExploreModelId,
+                          builtinExploreCandidateModelId: "",
+                        });
+                      }}
+                    >
+                      {providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <CandidateModelSelectField
+                    value={form.builtinExploreCandidateModelId}
+                    candidates={nodeCandidates}
+                    loading={nodeCandidatesLoading}
+                    {...(busy !== undefined ? { disabled: busy } : {})}
+                    onChange={(candidateId) => {
+                      const candidate = nodeCandidates.find((c) => c.id === candidateId);
+                      if (candidate) {
+                        onPatchProfile({
+                          builtinExploreCandidateModelId: candidateId,
+                          builtinExploreModelId: candidate.modelId,
+                          builtinExploreModelsDevMappingProviderKey: candidate.modelsDevMapping?.providerKey ?? "",
+                          builtinExploreModelsDevMappingModelId: candidate.modelsDevMapping?.modelId ?? "",
+                        });
+                      }
+                    }}
+                  />
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">思考强度</span>
+                    <select
+                      className="mcp-field-input"
+                      value={form.builtinExploreThinkingEffort}
+                      disabled={busy}
+                      onChange={(event) =>
+                        onPatchProfile({ builtinExploreThinkingEffort: event.target.value })
+                      }
+                    >
+                      <option value="">默认</option>
+                      <option value="off">关闭</option>
+                      <option value="low">低</option>
+                      <option value="medium">中</option>
+                      <option value="high">高</option>
+                      <option value="xhigh">极高</option>
+                      <option value="max">最大</option>
+                    </select>
+                  </label>
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">API 兼容模式</span>
+                    <select
+                      className="mcp-field-input"
+                      value={form.builtinExploreApiCompat}
+                      disabled={busy}
+                      onChange={(event) => onPatchProfile({ builtinExploreApiCompat: event.target.value })}
+                    >
+                      <option value="">默认</option>
+                      {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : (
+              <>
               <div className="models-agent-template-form-grid">
                 <label className="mcp-field">
                   <span className="mcp-field-label">Provider</span>
@@ -2512,6 +2753,8 @@ function AgentProfileNodeConfigModal({
                   }
                 />
               </div>
+              </>
+              )}
             </>
           ) : (
             <>
@@ -2534,121 +2777,208 @@ function AgentProfileNodeConfigModal({
                 </p>
               </div>
 
-              <div className="models-agent-template-form-grid">
-                <label className="mcp-field">
-                  <span className="mcp-field-label">Provider</span>
-                  <select
-                    className="mcp-field-input"
-                    value={agent?.providerId ?? ""}
-                    disabled={busy}
-                    onChange={(event) => {
-                      const nextProvider = providers.find((entry) => entry.id === event.target.value);
-                      onPatchAgent(agentIndex, {
-                        providerId: event.target.value,
-                        modelId: nextProvider?.defaultModel || agent?.modelId || "",
-                      });
-                    }}
-                  >
-                    {providers.map((provider) => (
-                      <option key={provider.id} value={provider.id}>
-                        {provider.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="mcp-field">
-                  <span className="mcp-field-label">模型</span>
-                  <ModelSelectField
-                    value={agent?.modelId ?? ""}
-                    disabled={busy}
-                    models={modelsForProvider(agent?.providerId ?? "")}
-                    loading={loadingForProvider(agent?.providerId ?? "")}
-                    error={modelsErrorForProvider(agent?.providerId ?? "")}
-                    onChange={(modelId) => onPatchAgent(agentIndex, { modelId })}
-                    onRefresh={agentProvider ? () => onFetchModels(agentProvider) : undefined}
-                  />
-                </div>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">思考强度</span>
-                  <select
-                    className="mcp-field-input"
-                    value={agent?.thinkingEffort ?? ""}
-                    disabled={busy}
-                    onChange={(event) =>
-                      onPatchAgent(agentIndex, { thinkingEffort: event.target.value })
-                    }
-                  >
-                    <option value="">默认</option>
-                    <option value="off">关闭</option>
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="xhigh">极高</option>
-                    <option value="max">最大</option>
-                  </select>
-                </label>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">API 兼容模式</span>
-                  <select
-                    className="mcp-field-input"
-                    value={agent?.apiCompat ?? ""}
-                    disabled={busy}
-                    onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
-                  >
-                    <option value="">默认</option>
-                    {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="models-agent-template-form-grid">
-                <div className="mcp-field">
-                  <span className="mcp-field-label">Models.dev 映射</span>
-                  <ModelsDevModelSelectField
-                    value={
-                      agent?.modelsDevMappingProviderKey && agent?.modelsDevMappingModelId
-                        ? {
-                            providerKey: agent.modelsDevMappingProviderKey,
-                            modelId: agent.modelsDevMappingModelId,
-                          }
-                        : undefined
-                    }
-                    options={modelsDevOptions}
-                    loading={modelsDevLoading}
-                    disabled={busy}
-                    autoResolved={autoMatch.autoResolved}
-                    autoResolvedMapping={autoMatch.autoResolved ? autoMatch.autoResolvedMapping : undefined}
-                    autoResolvedLabel={autoMatch.autoResolved ? autoMatch.autoResolvedLabel : undefined}
-                    onChange={(mapping) =>
-                      onPatchAgent(agentIndex, {
-                        modelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                        modelsDevMappingModelId: mapping?.modelId ?? "",
-                      })
-                    }
-                  />
-                  <ModelsDevCapabilitySummary
-                    {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
-                    {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
-                    overriddenFields={effectiveHints.overriddenFields}
-                  />
-                </div>
-                {agent ? (
-                  <ModelManualSpecPanel
-                    value={agent.manualSpec}
-                    {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
-                    {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
+              <ModelSelectModeToggle
+                value={agent?.modelSelectMode ?? "candidate"}
+                {...(busy !== undefined ? { disabled: busy } : {})}
+                onChange={(mode) => onPatchAgent(agentIndex, { modelSelectMode: mode })}
+              />
+
+              {(agent?.modelSelectMode ?? "candidate") === "candidate" ? (
+                <div className="models-agent-template-form-grid">
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">Provider</span>
+                    <select
+                      className="mcp-field-input"
+                      value={agent?.providerId ?? ""}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const nextProvider = providers.find((entry) => entry.id === event.target.value);
+                        onPatchAgent(agentIndex, {
+                          providerId: event.target.value,
+                          modelId: nextProvider?.defaultModel || agent?.modelId || "",
+                          candidateModelId: "",
+                        });
+                      }}
+                    >
+                      {providers.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <CandidateModelSelectField
+                    value={agent?.candidateModelId ?? ""}
+                    candidates={nodeCandidates}
+                    loading={nodeCandidatesLoading}
                     {...(busy !== undefined ? { disabled: busy } : {})}
-                    onChange={(patch) =>
-                      onPatchAgent(agentIndex, {
-                        manualSpec: { ...agent.manualSpec, ...patch },
-                      })
-                    }
+                    onChange={(candidateId) => {
+                      const candidate = nodeCandidates.find((c) => c.id === candidateId);
+                      if (candidate) {
+                        onPatchAgent(agentIndex, {
+                          candidateModelId: candidateId,
+                          modelId: candidate.modelId,
+                          modelsDevMappingProviderKey: candidate.modelsDevMapping?.providerKey ?? "",
+                          modelsDevMappingModelId: candidate.modelsDevMapping?.modelId ?? "",
+                        });
+                      }
+                    }}
                   />
-                ) : null}
-              </div>
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">思考强度</span>
+                    <select
+                      className="mcp-field-input"
+                      value={agent?.thinkingEffort ?? ""}
+                      disabled={busy}
+                      onChange={(event) =>
+                        onPatchAgent(agentIndex, { thinkingEffort: event.target.value })
+                      }
+                    >
+                      <option value="">默认</option>
+                      <option value="off">关闭</option>
+                      <option value="low">低</option>
+                      <option value="medium">中</option>
+                      <option value="high">高</option>
+                      <option value="xhigh">极高</option>
+                      <option value="max">最大</option>
+                    </select>
+                  </label>
+                  <label className="mcp-field">
+                    <span className="mcp-field-label">API 兼容模式</span>
+                    <select
+                      className="mcp-field-input"
+                      value={agent?.apiCompat ?? ""}
+                      disabled={busy}
+                      onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
+                    >
+                      <option value="">默认</option>
+                      {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : (
+                <>
+                  <div className="models-agent-template-form-grid">
+                    <label className="mcp-field">
+                      <span className="mcp-field-label">Provider</span>
+                      <select
+                        className="mcp-field-input"
+                        value={agent?.providerId ?? ""}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const nextProvider = providers.find((entry) => entry.id === event.target.value);
+                          onPatchAgent(agentIndex, {
+                            providerId: event.target.value,
+                            modelId: nextProvider?.defaultModel || agent?.modelId || "",
+                          });
+                        }}
+                      >
+                        {providers.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="mcp-field">
+                      <span className="mcp-field-label">模型</span>
+                      <ModelSelectField
+                        value={agent?.modelId ?? ""}
+                        disabled={busy}
+                        models={modelsForProvider(agent?.providerId ?? "")}
+                        loading={loadingForProvider(agent?.providerId ?? "")}
+                        error={modelsErrorForProvider(agent?.providerId ?? "")}
+                        onChange={(modelId) => onPatchAgent(agentIndex, { modelId })}
+                        onRefresh={agentProvider ? () => onFetchModels(agentProvider) : undefined}
+                      />
+                    </div>
+                    <label className="mcp-field">
+                      <span className="mcp-field-label">思考强度</span>
+                      <select
+                        className="mcp-field-input"
+                        value={agent?.thinkingEffort ?? ""}
+                        disabled={busy}
+                        onChange={(event) =>
+                          onPatchAgent(agentIndex, { thinkingEffort: event.target.value })
+                        }
+                      >
+                        <option value="">默认</option>
+                        <option value="off">关闭</option>
+                        <option value="low">低</option>
+                        <option value="medium">中</option>
+                        <option value="high">高</option>
+                        <option value="xhigh">极高</option>
+                        <option value="max">最大</option>
+                      </select>
+                    </label>
+                    <label className="mcp-field">
+                      <span className="mcp-field-label">API 兼容模式</span>
+                      <select
+                        className="mcp-field-input"
+                        value={agent?.apiCompat ?? ""}
+                        disabled={busy}
+                        onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
+                      >
+                        <option value="">默认</option>
+                        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="models-agent-template-form-grid">
+                    <div className="mcp-field">
+                      <span className="mcp-field-label">Models.dev 映射</span>
+                      <ModelsDevModelSelectField
+                        value={
+                          agent?.modelsDevMappingProviderKey && agent?.modelsDevMappingModelId
+                            ? {
+                                providerKey: agent.modelsDevMappingProviderKey,
+                                modelId: agent.modelsDevMappingModelId,
+                              }
+                            : undefined
+                        }
+                        options={modelsDevOptions}
+                        loading={modelsDevLoading}
+                        disabled={busy}
+                        autoResolved={autoMatch.autoResolved}
+                        autoResolvedMapping={autoMatch.autoResolved ? autoMatch.autoResolvedMapping : undefined}
+                        autoResolvedLabel={autoMatch.autoResolved ? autoMatch.autoResolvedLabel : undefined}
+                        onChange={(mapping) =>
+                          onPatchAgent(agentIndex, {
+                            modelsDevMappingProviderKey: mapping?.providerKey ?? "",
+                            modelsDevMappingModelId: mapping?.modelId ?? "",
+                          })
+                        }
+                      />
+                      <ModelsDevCapabilitySummary
+                        {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
+                        {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
+                        overriddenFields={effectiveHints.overriddenFields}
+                      />
+                    </div>
+                    {agent ? (
+                      <ModelManualSpecPanel
+                        value={agent.manualSpec}
+                        {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
+                        {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
+                        {...(busy !== undefined ? { disabled: busy } : {})}
+                        onChange={(patch) =>
+                          onPatchAgent(agentIndex, {
+                            manualSpec: { ...agent.manualSpec, ...patch },
+                          })
+                        }
+                      />
+                    ) : null}
+                  </div>
+                </>
+              )}
 
               {agent ? (
                 <ToolCapabilityPanel
@@ -2681,6 +3011,8 @@ function ProviderEditorModal({
   models,
   modelsLoading,
   modelsError,
+  modelsDevOptions,
+  modelsDevLoading,
   error,
   testing,
   busy,
@@ -2696,6 +3028,8 @@ function ProviderEditorModal({
   models: UpstreamModelOption[];
   modelsLoading: boolean;
   modelsError?: string | undefined;
+  modelsDevOptions: readonly ModelsDevModelOption[];
+  modelsDevLoading: boolean;
   error?: string | undefined;
   testing?: boolean | undefined;
   busy?: boolean | undefined;
@@ -2709,6 +3043,7 @@ function ProviderEditorModal({
   const isEditing = Boolean(form.id);
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
+  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(isEditing);
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
 
@@ -2722,176 +3057,184 @@ function ProviderEditorModal({
         title="关闭"
         disabled={busy}
       />
-      <div className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="provider-modal-title">
+      <div
+        className={`settings-modal settings-modal-provider-editor${candidatesPanelOpen ? "" : " candidate-panel-closed"}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="provider-modal-title"
+      >
         <header className="settings-modal-header">
           <h2 id="provider-modal-title" className="settings-modal-title">
             {title}
           </h2>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label="关闭"
-            title="关闭"
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="settings-modal-body mcp-editor-form models-editor-form">
-          <div className="mcp-field models-provider-preset-field">
-            <span className="mcp-field-label">供应商预设</span>
-            <select
-              className="mcp-field-input"
-              value={activePreset?.id ?? ""}
-              disabled={busy}
-              onChange={(event) => {
-                if (!event.target.value) {
-                  setManualPresetSelected(true);
-                  return;
-                }
-                const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === event.target.value);
-                if (!preset) {
-                  return;
-                }
-                setManualPresetSelected(false);
-                setForm((current) => applyProviderPreset(current, preset));
-              }}
-            >
-              <option value="">手动配置</option>
-              {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {formatProviderPresetSelectLabel(preset)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <label className="mcp-field">
-            <span className="mcp-field-label">名称</span>
-            <input
-              className="mcp-field-input"
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            />
-          </label>
-
-          <label className="mcp-field">
-            <span className="mcp-field-label">baseURL</span>
-            <input
-              className="mcp-field-input"
-              value={form.baseUrl}
-              placeholder="https://api.deepseek.com"
-              onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-            />
-            <span className="mcp-field-hint">
-              服务根地址，可含路径（如 https://opencode.ai/zen → GET …/zen/v1/models）
-            </span>
-          </label>
-
-          <div className="mcp-field models-provider-endpoint-row">
-            <span className="mcp-field-label">请求端点</span>
-            <div className="models-provider-endpoint-inline">
-              <ApiCompatToggle
-                value={form.apiCompat ?? "anthropic"}
-                onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
-                disabled={busy}
-              />
-              <span className="models-route-title-sep" aria-hidden>
-                ·
-              </span>
-              <input
-                className="mcp-field-input models-provider-request-path-input"
-                value={form.requestPath ?? ""}
-                placeholder={isOpenAICompat(form.apiCompat ?? "anthropic") ? "/zen" : "/anthropic"}
-                disabled={busy}
-                onChange={(event) => setForm((current) => ({ ...current, requestPath: event.target.value }))}
-              />
-            </div>
-            <span className="mcp-field-hint">
-              {isOpenAICompat(form.apiCompat ?? "anthropic")
-                ? "OpenAI 网关的服务路径前缀（如 /zen）；/anthropic 仅用于 Anthropic Messages，OpenAI 模式会自动忽略"
-                : "Anthropic Messages 路径前缀，留空表示根路径"}
-              {" · "}
-              {UPSTREAM_API_COMPAT_OPTIONS.find((o) => o.value === (form.apiCompat ?? "anthropic"))?.hint}
-            </span>
-          </div>
-
-          <label className="mcp-field">
-            <span className="models-provider-label-row">
-              <span className="mcp-field-label">API key</span>
-              {activePreset ? (
-                <a
-                  className="models-provider-inline-link"
-                  href={activePreset.apiKeyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <LinkIcon size={12} />
-                  注册 / 创建 Key
-                </a>
-              ) : null}
-            </span>
-            <input
-              className="mcp-field-input"
-              type="password"
-              value={form.apiKey ?? ""}
-              placeholder={form.id ? "留空则保留已保存的 Key" : "可选，本地 Ollama 等可留空"}
-              onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-            />
-          </label>
-
-          <div className="mcp-field">
-            <div className="model-field-head">
-              <span className="mcp-field-label">默认模型</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            {isEditing ? (
               <button
                 type="button"
-                className="model-inline-refresh"
-                disabled={busy || modelsLoading}
-                onClick={onRefreshModels}
+                className={`candidate-panel-toggle${candidatesPanelOpen ? " active" : ""}`}
+                onClick={() => setCandidatesPanelOpen((v) => !v)}
+                title={candidatesPanelOpen ? "收起候选模型" : "展开候选模型"}
               >
-                <RefreshCw size={14} className={modelsLoading ? "model-refresh-spin" : undefined} />
-                从上游刷新
+                {candidatesPanelOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+                候选模型
               </button>
-            </div>
-            <ModelSelectField
-              value={form.defaultModel}
-              models={models}
-              loading={modelsLoading}
-              error={modelsError}
-              disabled={busy}
-              onRefresh={onRefreshModels}
-              onChange={(modelId) => setForm((current) => ({ ...current, defaultModel: modelId }))}
-            />
-          </div>
-
-          <label className="mcp-field models-toggle-field">
-            <span className="mcp-field-label">启用此 Provider</span>
-            <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                disabled={busy}
-                onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              <span className="mcp-toggle-track" aria-hidden />
-            </label>
-          </label>
-
-          <div className="settings-editor-actions settings-form-actions">
+            ) : null}
             <button
               type="button"
-              className="settings-secondary-button"
-              disabled={busy || testing || !form.baseUrl.trim() || !form.defaultModel.trim()}
-              onClick={onTest}
+              className="mcp-icon-button"
+              onClick={onClose}
+              aria-label="关闭"
+              title="关闭"
+              disabled={busy}
             >
-              <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
-              测试连接
+              <X size={18} />
             </button>
           </div>
+        </header>
 
-          {error && <p className="settings-form-error">{error}</p>}
+        <div className="provider-modal-layout">
+          <div className="provider-modal-form-main settings-modal-body mcp-editor-form models-editor-form">
+            <div className="mcp-field models-provider-preset-field">
+              <span className="mcp-field-label">供应商预设</span>
+              <select
+                className="mcp-field-input"
+                value={activePreset?.id ?? ""}
+                disabled={busy}
+                onChange={(event) => {
+                  if (!event.target.value) {
+                    setManualPresetSelected(true);
+                    return;
+                  }
+                  const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === event.target.value);
+                  if (!preset) {
+                    return;
+                  }
+                  setManualPresetSelected(false);
+                  setForm((current) => applyProviderPreset(current, preset));
+                }}
+              >
+                <option value="">手动配置</option>
+                {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {formatProviderPresetSelectLabel(preset)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <label className="mcp-field">
+              <span className="mcp-field-label">名称</span>
+              <input
+                className="mcp-field-input"
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+              />
+            </label>
+
+            <label className="mcp-field">
+              <span className="mcp-field-label">baseURL</span>
+              <input
+                className="mcp-field-input"
+                value={form.baseUrl}
+                placeholder="https://api.deepseek.com"
+                onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
+              />
+              <span className="mcp-field-hint">
+                服务根地址，可含路径（如 https://opencode.ai/zen → GET …/zen/v1/models）
+              </span>
+            </label>
+
+            <div className="mcp-field models-provider-endpoint-row">
+              <span className="mcp-field-label">请求端点</span>
+              <div className="models-provider-endpoint-inline">
+                <ApiCompatToggle
+                  value={form.apiCompat ?? "anthropic"}
+                  onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
+                  disabled={busy}
+                />
+                <span className="models-route-title-sep" aria-hidden>
+                  ·
+                </span>
+                <input
+                  className="mcp-field-input models-provider-request-path-input"
+                  value={form.requestPath ?? ""}
+                  placeholder={isOpenAICompat(form.apiCompat ?? "anthropic") ? "/zen" : "/anthropic"}
+                  disabled={busy}
+                  onChange={(event) => setForm((current) => ({ ...current, requestPath: event.target.value }))}
+                />
+              </div>
+              <span className="mcp-field-hint">
+                {isOpenAICompat(form.apiCompat ?? "anthropic")
+                  ? "OpenAI 网关的服务路径前缀（如 /zen）；/anthropic 仅用于 Anthropic Messages，OpenAI 模式会自动忽略"
+                  : "Anthropic Messages 路径前缀，留空表示根路径"}
+                {" · "}
+                {UPSTREAM_API_COMPAT_OPTIONS.find((o) => o.value === (form.apiCompat ?? "anthropic"))?.hint}
+              </span>
+            </div>
+
+            <label className="mcp-field">
+              <span className="models-provider-label-row">
+                <span className="mcp-field-label">API key</span>
+                {activePreset ? (
+                  <a
+                    className="models-provider-inline-link"
+                    href={activePreset.apiKeyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <LinkIcon size={12} />
+                    注册 / 创建 Key
+                  </a>
+                ) : null}
+              </span>
+              <input
+                className="mcp-field-input"
+                type="password"
+                value={form.apiKey ?? ""}
+                placeholder={form.id ? "留空则保留已保存的 Key" : "可选，本地 Ollama 等可留空"}
+                onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
+              />
+            </label>
+
+            <label className="mcp-field models-toggle-field">
+              <span className="mcp-field-label">启用此 Provider</span>
+              <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  disabled={busy}
+                  onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+                />
+                <span className="mcp-toggle-track" aria-hidden />
+              </label>
+            </label>
+
+            <div className="settings-editor-actions settings-form-actions">
+              <button
+                type="button"
+                className="settings-secondary-button"
+                disabled={busy || testing || !form.baseUrl.trim()}
+                onClick={onTest}
+              >
+                <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
+                测试连接
+              </button>
+            </div>
+
+            {error && <p className="settings-form-error">{error}</p>}
+          </div>
+
+          {candidatesPanelOpen && isEditing && form.id ? (
+            <CandidateModelPanel
+              providerId={form.id}
+              models={models}
+              modelsLoading={modelsLoading}
+              modelsDevOptions={modelsDevOptions}
+              modelsDevLoading={modelsDevLoading}
+              busy={busy}
+              onRefreshModels={onRefreshModels}
+            />
+          ) : null}
         </div>
 
         <footer className="settings-modal-footer settings-modal-footer-split">

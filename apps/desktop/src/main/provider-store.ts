@@ -6,6 +6,8 @@ import { normalizeUpstreamApiCompat } from "../shared/api-compat";
 import {
   AGENT_ROLES,
   type AgentRole,
+  type CandidateModelInput,
+  type CandidateModelView,
   type ModelSettingsSnapshot,
   type ProviderConfigInput,
   type ProviderConfigView,
@@ -61,6 +63,26 @@ interface LegacyRouteRow {
   thinking_effort: string | null;
 }
 
+interface CandidateModelRow {
+  id: string;
+  provider_id: string;
+  model_id: string;
+  display_name: string | null;
+  models_dev_provider_key: string | null;
+  models_dev_model_id: string | null;
+  manual_context_tokens: number | null;
+  manual_max_output_tokens: number | null;
+  manual_supports_image_input: number | null;
+  manual_supports_reasoning: number | null;
+  manual_input_per_m: number | null;
+  manual_output_per_m: number | null;
+  manual_cache_read_per_m: number | null;
+  manual_cache_write_per_m: number | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProviderConfigSecret extends ProviderConfigView {
   apiKey: string;
 }
@@ -108,6 +130,7 @@ export class ProviderStore {
     this.migrateProviderApiCompat();
     this.migrateRoleRoutesApiCompat();
     this.migrateLegacyOpenaiApiCompatValues();
+    this.migrateCandidateModelsTable();
   }
 
   getSettings(): ModelSettingsSnapshot {
@@ -530,8 +553,172 @@ export class ProviderStore {
       `)
       .get(id) as RouteProfileRow | undefined;
   }
-}
 
+  // ─── Candidate Models ───────────────────────────────────────────────────────
+
+  private migrateCandidateModelsTable(): void {
+    const tables = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'provider_candidate_models'")
+      .all() as Array<{ name: string }>;
+    if (tables.length > 0) return;
+    this.db.exec(`
+      CREATE TABLE provider_candidate_models (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        display_name TEXT,
+        models_dev_provider_key TEXT,
+        models_dev_model_id TEXT,
+        manual_context_tokens INTEGER,
+        manual_max_output_tokens INTEGER,
+        manual_supports_image_input INTEGER,
+        manual_supports_reasoning INTEGER,
+        manual_input_per_m REAL,
+        manual_output_per_m REAL,
+        manual_cache_read_per_m REAL,
+        manual_cache_write_per_m REAL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(provider_id) REFERENCES provider_configs(id) ON DELETE CASCADE,
+        UNIQUE(provider_id, model_id)
+      );
+    `);
+  }
+
+  listCandidateModels(providerId: string): CandidateModelView[] {
+    return this.db
+      .prepare(`
+        SELECT id, provider_id, model_id, display_name,
+               models_dev_provider_key, models_dev_model_id,
+               manual_context_tokens, manual_max_output_tokens,
+               manual_supports_image_input, manual_supports_reasoning,
+               manual_input_per_m, manual_output_per_m,
+               manual_cache_read_per_m, manual_cache_write_per_m,
+               sort_order, created_at, updated_at
+        FROM provider_candidate_models
+        WHERE provider_id = ?
+        ORDER BY sort_order ASC, model_id ASC
+      `)
+      .all(providerId)
+      .map((row) => candidateRowToView(row as unknown as CandidateModelRow));
+  }
+
+  saveCandidateModel(input: CandidateModelInput): CandidateModelView {
+    if (!input.providerId.trim()) throw new Error("Provider ID 不能为空。");
+    if (!input.modelId.trim()) throw new Error("Model ID 不能为空。");
+    if (!this.getProviderRow(input.providerId)) {
+      throw new Error(`找不到 Provider：${input.providerId}`);
+    }
+    const now = new Date().toISOString();
+    const id = input.id ?? createCandidateModelId(input.providerId, input.modelId);
+    const mapping = input.modelsDevMapping;
+    const manual = input.manualSpec;
+    this.db
+      .prepare(`
+        INSERT INTO provider_candidate_models (
+          id, provider_id, model_id, display_name,
+          models_dev_provider_key, models_dev_model_id,
+          manual_context_tokens, manual_max_output_tokens,
+          manual_supports_image_input, manual_supports_reasoning,
+          manual_input_per_m, manual_output_per_m,
+          manual_cache_read_per_m, manual_cache_write_per_m,
+          sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider_id, model_id) DO UPDATE SET
+          display_name = excluded.display_name,
+          models_dev_provider_key = excluded.models_dev_provider_key,
+          models_dev_model_id = excluded.models_dev_model_id,
+          manual_context_tokens = excluded.manual_context_tokens,
+          manual_max_output_tokens = excluded.manual_max_output_tokens,
+          manual_supports_image_input = excluded.manual_supports_image_input,
+          manual_supports_reasoning = excluded.manual_supports_reasoning,
+          manual_input_per_m = excluded.manual_input_per_m,
+          manual_output_per_m = excluded.manual_output_per_m,
+          manual_cache_read_per_m = excluded.manual_cache_read_per_m,
+          manual_cache_write_per_m = excluded.manual_cache_write_per_m,
+          sort_order = excluded.sort_order,
+          updated_at = excluded.updated_at
+      `)
+      .run(
+        id,
+        input.providerId.trim(),
+        input.modelId.trim(),
+        input.displayName?.trim() ?? null,
+        mapping?.providerKey?.trim() ?? null,
+        mapping?.modelId?.trim() ?? null,
+        manual?.contextTokens ?? null,
+        manual?.maxOutputTokens ?? null,
+        triStateToNullableInt(manual?.supportsImageInput),
+        triStateToNullableInt(manual?.supportsReasoning),
+        manual?.inputPerM ?? null,
+        manual?.outputPerM ?? null,
+        manual?.cacheReadPerM ?? null,
+        manual?.cacheWritePerM ?? null,
+        input.sortOrder ?? 0,
+        now,
+        now,
+      );
+    const savedRow = this.db
+      .prepare("SELECT * FROM provider_candidate_models WHERE id = ?")
+      .get(id) as unknown as CandidateModelRow;
+    return candidateRowToView(savedRow);
+  }
+
+  deleteCandidateModel(id: string): void {
+    const result = this.db.prepare("DELETE FROM provider_candidate_models WHERE id = ?").run(id);
+    if (result.changes === 0) {
+      throw new Error(`找不到候选模型：${id}`);
+    }
+  }
+
+  reorderCandidateModels(providerId: string, orderedIds: string[]): void {
+    const stmt = this.db.prepare(
+      "UPDATE provider_candidate_models SET sort_order = ?, updated_at = ? WHERE id = ? AND provider_id = ?",
+    );
+    const now = new Date().toISOString();
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      if (id) stmt.run(i, now, id, providerId);
+    }
+  }
+
+  bulkImportCandidateModels(providerId: string, modelIds: string[]): CandidateModelView[] {
+    if (!this.getProviderRow(providerId)) {
+      throw new Error(`找不到 Provider：${providerId}`);
+    }
+    const results: CandidateModelView[] = [];
+    const now = new Date().toISOString();
+    const maxSortOrder =
+      (this.db
+        .prepare("SELECT MAX(sort_order) as max_sort FROM provider_candidate_models WHERE provider_id = ?")
+        .get(providerId) as { max_sort: number | null } | undefined)?.max_sort ?? -1;
+    let sortOrder = maxSortOrder + 1;
+    for (const modelId of modelIds) {
+      const trimmed = modelId.trim();
+      if (!trimmed) continue;
+      const id = createCandidateModelId(providerId, trimmed);
+      this.db
+        .prepare(`
+          INSERT OR IGNORE INTO provider_candidate_models (
+            id, provider_id, model_id, display_name,
+            models_dev_provider_key, models_dev_model_id,
+            manual_context_tokens, manual_max_output_tokens,
+            manual_supports_image_input, manual_supports_reasoning,
+            manual_input_per_m, manual_output_per_m,
+            manual_cache_read_per_m, manual_cache_write_per_m,
+            sort_order, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)
+        `)
+        .run(id, providerId, trimmed, null, sortOrder++, now, now);
+      const row = this.db
+        .prepare("SELECT * FROM provider_candidate_models WHERE provider_id = ? AND model_id = ?")
+        .get(providerId, trimmed) as unknown as CandidateModelRow;
+      if (row) results.push(candidateRowToView(row));
+    }
+    return results;
+  }
+}
 function providerRowToView(row: ProviderRow): ProviderConfigView {
   const provider: ProviderConfigView = {
     id: row.id,
@@ -706,7 +893,6 @@ function validateProviderInput(input: ProviderConfigInput): void {
   if (requestPath && !requestPath.startsWith("/")) {
     throw new Error("请求端点须以 / 开头，例如 /anthropic。");
   }
-  if (!input.defaultModel.trim()) throw new Error("Default model is required.");
 }
 
 function validateRouteProfileInput(input: RouteProfileInput): void {
@@ -738,6 +924,75 @@ function previewSecret(secret: string): string | undefined {
   if (!secret) return undefined;
   if (secret.length <= 8) return "saved";
   return `${secret.slice(0, 4)}...${secret.slice(-4)}`;
+}
+
+function candidateRowToView(row: CandidateModelRow): CandidateModelView {
+  const modelsDevMapping = parseModelsDevMapping(row.models_dev_provider_key, row.models_dev_model_id);
+  const contextTokens = parsePositiveInt(row.manual_context_tokens);
+  const maxOutputTokens = parsePositiveInt(row.manual_max_output_tokens);
+  const inputPerM = parsePositiveNumber(row.manual_input_per_m);
+  const outputPerM = parsePositiveNumber(row.manual_output_per_m);
+  const cacheReadPerM = parsePositiveNumber(row.manual_cache_read_per_m);
+  const cacheWritePerM = parsePositiveNumber(row.manual_cache_write_per_m);
+  const supportsImageInput =
+    row.manual_supports_image_input === null || row.manual_supports_image_input === undefined
+      ? undefined
+      : row.manual_supports_image_input === 1;
+  const supportsReasoning =
+    row.manual_supports_reasoning === null || row.manual_supports_reasoning === undefined
+      ? undefined
+      : row.manual_supports_reasoning === 1;
+  const hasManualSpec =
+    contextTokens !== undefined ||
+    maxOutputTokens !== undefined ||
+    inputPerM !== undefined ||
+    outputPerM !== undefined ||
+    cacheReadPerM !== undefined ||
+    cacheWritePerM !== undefined ||
+    supportsImageInput !== undefined ||
+    supportsReasoning !== undefined;
+  const manualSpec: RouteManualSpec | undefined = hasManualSpec
+    ? {
+        ...(contextTokens !== undefined && { contextTokens }),
+        ...(maxOutputTokens !== undefined && { maxOutputTokens }),
+        ...(supportsImageInput !== undefined && { supportsImageInput }),
+        ...(supportsReasoning !== undefined && { supportsReasoning }),
+        ...(inputPerM !== undefined && { inputPerM }),
+        ...(outputPerM !== undefined && { outputPerM }),
+        ...(cacheReadPerM !== undefined && { cacheReadPerM }),
+        ...(cacheWritePerM !== undefined && { cacheWritePerM }),
+      }
+    : undefined;
+  const view: CandidateModelView = {
+    id: row.id,
+    providerId: row.provider_id,
+    modelId: row.model_id,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.display_name) view.displayName = row.display_name;
+  if (modelsDevMapping) view.modelsDevMapping = modelsDevMapping;
+  if (manualSpec) view.manualSpec = manualSpec;
+  return view;
+}
+
+function createCandidateModelId(providerId: string, modelId: string): string {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const normalizedProvider = providerId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  const normalizedModel = modelId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return `cand-${normalizedProvider}-${normalizedModel}-${suffix}`;
+}
+
+function triStateToNullableInt(value: boolean | undefined): number | null {
+  if (value === undefined) return null;
+  return value ? 1 : 0;
 }
 
 function fail(message: string): never {

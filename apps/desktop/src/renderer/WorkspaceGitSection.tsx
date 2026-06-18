@@ -202,50 +202,6 @@ export function WorkspaceGitSection({
     };
   }, [branchMenuOpen, closeBranchMenu]);
 
-  async function handleCommitSuccess() {
-    await onCommitSuccess?.();
-  }
-
-  async function handlePull() {
-    if (!workspacePath || !window.eco || pullBusy || gitBusy) {
-      return;
-    }
-    setPullBusy(true);
-    setPullError(undefined);
-    try {
-      const result = await window.eco.pullGitChanges({
-        workspacePath,
-        ...(gitStatus?.branch && { branch: gitStatus.branch }),
-      });
-      if (result.conflicted) {
-        setPullConflict(
-          result.conflictFiles.length > 0 ? result.conflictFiles : ["（未能自动识别冲突文件，请查看 git status）"],
-        );
-        await onPullSuccess?.();
-        return;
-      }
-      await onPullSuccess?.();
-    } catch (caught) {
-      setPullError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setPullBusy(false);
-    }
-  }
-
-  async function handleConfirmResolveConflicts() {
-    if (!pullConflict?.length || !onResolveConflictsWithAgent) {
-      setPullConflict(undefined);
-      return;
-    }
-    setResolveConflictBusy(true);
-    try {
-      await onResolveConflictsWithAgent(pullConflict);
-      setPullConflict(undefined);
-    } finally {
-      setResolveConflictBusy(false);
-    }
-  }
-
   async function reloadChangesDiff(preferredPath?: string) {
     if (!workspacePath || !window.eco) {
       return;
@@ -270,6 +226,62 @@ export function WorkspaceGitSection({
     }
   }
 
+  async function syncWorkspaceChangesState() {
+    if (changesDrawerOpen) {
+      await reloadChangesDiff(selectedChangePath);
+      return;
+    }
+    setChangesDiff(undefined);
+    setSelectedChangePath(undefined);
+  }
+
+  async function handleCommitSuccess() {
+    await onCommitSuccess?.();
+    await syncWorkspaceChangesState();
+  }
+
+  async function handlePull() {
+    if (!workspacePath || !window.eco || pullBusy || gitBusy) {
+      return;
+    }
+    setPullBusy(true);
+    setPullError(undefined);
+    try {
+      const result = await window.eco.pullGitChanges({
+        workspacePath,
+        ...(gitStatus?.branch && { branch: gitStatus.branch }),
+      });
+      if (result.conflicted) {
+        setPullConflict(
+          result.conflictFiles.length > 0 ? result.conflictFiles : ["（未能自动识别冲突文件，请查看 git status）"],
+        );
+        await onPullSuccess?.();
+        await syncWorkspaceChangesState();
+        return;
+      }
+      await onPullSuccess?.();
+      await syncWorkspaceChangesState();
+    } catch (caught) {
+      setPullError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPullBusy(false);
+    }
+  }
+
+  async function handleConfirmResolveConflicts() {
+    if (!pullConflict?.length || !onResolveConflictsWithAgent) {
+      setPullConflict(undefined);
+      return;
+    }
+    setResolveConflictBusy(true);
+    try {
+      await onResolveConflictsWithAgent(pullConflict);
+      setPullConflict(undefined);
+    } finally {
+      setResolveConflictBusy(false);
+    }
+  }
+
   async function openChangesDrawer() {
     if (!workspacePath || !window.eco || changesLoading) {
       return;
@@ -291,8 +303,7 @@ export function WorkspaceGitSection({
     setChangesError(undefined);
     try {
       await window.eco.discardWorkspaceChanges({ workspacePath, path });
-      await onCommitSuccess?.();
-      await reloadChangesDiff();
+      await handleCommitSuccess();
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -312,8 +323,7 @@ export function WorkspaceGitSection({
     setChangesError(undefined);
     try {
       await window.eco.discardWorkspaceChanges({ workspacePath });
-      await onCommitSuccess?.();
-      await reloadChangesDiff();
+      await handleCommitSuccess();
     } catch (caught) {
       setChangesError(caught instanceof Error ? caught.message : String(caught));
     } finally {

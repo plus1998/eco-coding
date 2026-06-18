@@ -3,6 +3,7 @@ import type {
   AgentDomain,
   AgentTemplate,
   ModelRef,
+  ModelSelectMode,
   OrchestrationProfile,
   OrchestrationStrategy,
   ProviderConfigView,
@@ -38,6 +39,8 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   manualSpec: ManualSpecFormFields;
   apiCompat: string;
   enabled: boolean;
+  candidateModelId: string;
+  modelSelectMode: ModelSelectMode;
 }
 
 export interface AgentProfileFormState {
@@ -53,6 +56,8 @@ export interface AgentProfileFormState {
   mainModelsDevMappingModelId: string;
   mainManualSpec: ManualSpecFormFields;
   mainApiCompat: string;
+  mainCandidateModelId: string;
+  mainModelSelectMode: ModelSelectMode;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
   mainReadCodebase: boolean;
@@ -76,6 +81,8 @@ export interface AgentProfileFormState {
   builtinExploreModelsDevMappingModelId: string;
   builtinExploreManualSpec: ManualSpecFormFields;
   builtinExploreApiCompat: string;
+  builtinExploreCandidateModelId: string;
+  builtinExploreModelSelectMode: ModelSelectMode;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -191,6 +198,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainModelsDevMappingModelId: "",
     mainManualSpec: emptyManualSpecForm(),
     mainApiCompat: "",
+    mainCandidateModelId: "",
+    mainModelSelectMode: "candidate" as ModelSelectMode,
     mainSystemPromptPreset: "claude_code",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
@@ -202,6 +211,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreModelsDevMappingModelId: "",
     builtinExploreManualSpec: emptyManualSpecForm(),
     builtinExploreApiCompat: "",
+    builtinExploreCandidateModelId: "",
+    builtinExploreModelSelectMode: "candidate" as ModelSelectMode,
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -225,6 +236,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainModelsDevMappingModelId: profile.mainAgent.modelRef.modelsDevMapping?.modelId ?? "",
     mainManualSpec: manualSpecToForm(profile.mainAgent.modelRef.manualSpec),
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
+    mainCandidateModelId: profile.mainAgent.modelRef.candidateModelId ?? "",
+    mainModelSelectMode: profile.mainAgent.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
     ...mainCapabilityToProfileFormFields(mainCapability),
@@ -237,6 +250,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
     builtinExploreManualSpec: manualSpecToForm(profile.builtinAgents.explore.modelRef.manualSpec),
     builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
+    builtinExploreCandidateModelId: profile.builtinAgents.explore.modelRef.candidateModelId ?? "",
+    builtinExploreModelSelectMode: profile.builtinAgents.explore.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -250,6 +265,8 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       manualSpec: manualSpecToForm(agent.modelRef.manualSpec),
       apiCompat: agent.modelRef.apiCompat ?? "",
       enabled: agent.enabled,
+      candidateModelId: agent.modelRef.candidateModelId ?? "",
+      modelSelectMode: agent.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
       ...agentCapabilityToAgentForm(
         toolPolicyToCapabilityFields(agent.tools, {
           mcpServers: agent.mcpServers,
@@ -291,6 +308,8 @@ export function createProfileAgentFormFromTemplate(
     manualSpec: emptyManualSpecForm(),
     apiCompat: "",
     enabled: true,
+    candidateModelId: "",
+    modelSelectMode: "candidate" as ModelSelectMode,
     ...agentCapabilityToAgentForm(capability),
   };
 }
@@ -327,6 +346,7 @@ export function buildOrchestrationProfileFromForm(
       modelsDevMappingModelId: form.mainModelsDevMappingModelId,
       manualSpec: form.mainManualSpec,
       apiCompat: form.mainApiCompat,
+      candidateModelId: form.mainCandidateModelId,
     },
   );
   const builtinExploreModelRef = buildModelRef(
@@ -339,6 +359,7 @@ export function buildOrchestrationProfileFromForm(
       modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
       manualSpec: form.builtinExploreManualSpec,
       apiCompat: form.builtinExploreApiCompat,
+      candidateModelId: form.builtinExploreCandidateModelId,
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -369,6 +390,7 @@ export function buildOrchestrationProfileFromForm(
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
         manualSpec: agentForm.manualSpec,
         apiCompat: agentForm.apiCompat,
+        candidateModelId: agentForm.candidateModelId,
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
@@ -488,6 +510,7 @@ function buildModelRef(
     modelsDevMappingModelId?: string;
     manualSpec?: ManualSpecFormFields;
     apiCompat?: string;
+    candidateModelId?: string;
   },
 ): ModelRef {
   const provider = providerId.trim();
@@ -500,6 +523,7 @@ function buildModelRef(
   const mappingModelId = options?.modelsDevMappingModelId?.trim();
   const hasMapping = Boolean(mappingProviderKey && mappingModelId);
   const apiCompat = options?.apiCompat?.trim();
+  const candidateModelId = options?.candidateModelId?.trim();
   const modelRef: ModelRef = {
     providerId: provider,
     modelId: model,
@@ -519,6 +543,9 @@ function buildModelRef(
   const manualSpec = formToManualSpec(options?.manualSpec ?? emptyManualSpecForm(), { strict: true });
   if (manualSpec) {
     modelRef.manualSpec = manualSpec;
+  }
+  if (candidateModelId) {
+    modelRef.candidateModelId = candidateModelId;
   }
   return modelRef;
 }

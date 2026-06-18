@@ -66,6 +66,8 @@ import {
   type AgentTemplateVersionRestoreRequest,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
+  type CandidateModelInput,
+  type CandidateModelView,
   buildThreadRuntimeConfigFromDefaults,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -1250,6 +1252,67 @@ function registerIpcHandlers(): void {
     emitSettingsUpdated();
     return { ok: true as const };
   });
+
+  // ─── Candidate Models ─────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC_CHANNELS.candidateModelList, async (_event, providerId: unknown) => {
+    if (typeof providerId !== "string" || !providerId.trim()) {
+      throw new Error("Provider id is required.");
+    }
+    const trimmedProviderId = providerId.trim();
+    const candidates = providerStore.listCandidateModels(trimmedProviderId);
+    const provider = providerStore.listProviders().find((p) => p.id === trimmedProviderId);
+    const baseUrl = provider?.baseUrl ?? "";
+    return resolveCandidateModels(pricingCache, candidates, baseUrl);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.candidateModelSave, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid candidate model input.");
+    }
+    const result = providerStore.saveCandidateModel(payload as CandidateModelInput);
+    emitSettingsUpdated();
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.candidateModelDelete, async (_event, id: unknown) => {
+    if (typeof id !== "string" || !id.trim()) {
+      throw new Error("Candidate model id is required.");
+    }
+    providerStore.deleteCandidateModel(id.trim());
+    emitSettingsUpdated();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.candidateModelReorder,
+    async (_event, providerId: unknown, orderedIds: unknown) => {
+      if (typeof providerId !== "string" || !providerId.trim()) {
+        throw new Error("Provider id is required.");
+      }
+      if (!Array.isArray(orderedIds) || !orderedIds.every((id) => typeof id === "string")) {
+        throw new Error("Ordered ids must be a string array.");
+      }
+      providerStore.reorderCandidateModels(providerId.trim(), orderedIds as string[]);
+      emitSettingsUpdated();
+      return { ok: true as const };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.candidateModelBulkImport,
+    async (_event, providerId: unknown, modelIds: unknown) => {
+      if (typeof providerId !== "string" || !providerId.trim()) {
+        throw new Error("Provider id is required.");
+      }
+      if (!Array.isArray(modelIds) || !modelIds.every((id) => typeof id === "string")) {
+        throw new Error("Model ids must be a string array.");
+      }
+      const results = providerStore.bulkImportCandidateModels(providerId.trim(), modelIds as string[]);
+      emitSettingsUpdated();
+      return results;
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.agentTemplateList, async () => getModelSettingsSnapshot().agentTemplates);
 
@@ -6108,4 +6171,63 @@ function startRuntimeProxy(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function resolveCandidateModels(
+  pricingCache: ModelsDevPricingCache,
+  candidates: CandidateModelView[],
+  baseUrl: string,
+): Promise<CandidateModelView[]> {
+  return Promise.all(
+    candidates.map(async (candidate) => {
+      const lookupInput = {
+        baseUrl,
+        modelId: candidate.modelId,
+        ...(candidate.modelsDevMapping && { mapping: candidate.modelsDevMapping }),
+      };
+      const [pricingLookup, limitsLookup, capabilitiesLookup] = await Promise.all([
+        pricingCache.lookupForRoute(lookupInput),
+        pricingCache.lookupLimitsForRoute(lookupInput),
+        pricingCache.lookupCapabilitiesForRoute(lookupInput),
+      ]);
+      const view: CandidateModelView = { ...candidate };
+      const manual = candidate.manualSpec;
+      if (limitsLookup) {
+        view.resolvedContextTokens = manual?.contextTokens ?? limitsLookup.limits.contextTokens;
+        const maxOut = manual?.maxOutputTokens ?? limitsLookup.limits.maxOutputTokens;
+        if (maxOut !== undefined) view.resolvedMaxOutputTokens = maxOut;
+      } else {
+        if (manual?.contextTokens !== undefined) view.resolvedContextTokens = manual.contextTokens;
+        if (manual?.maxOutputTokens !== undefined) view.resolvedMaxOutputTokens = manual.maxOutputTokens;
+      }
+      if (capabilitiesLookup) {
+        view.resolvedSupportsImageInput = manual?.supportsImageInput ?? capabilitiesLookup.capabilities.supportsImageInput;
+        view.resolvedSupportsReasoning = manual?.supportsReasoning ?? capabilitiesLookup.capabilities.supportsReasoning;
+      } else {
+        if (manual?.supportsImageInput !== undefined) view.resolvedSupportsImageInput = manual.supportsImageInput;
+        if (manual?.supportsReasoning !== undefined) view.resolvedSupportsReasoning = manual.supportsReasoning;
+      }
+      if (pricingLookup) {
+        view.resolvedInputPerM = manual?.inputPerM ?? pricingLookup.rates.input;
+        view.resolvedOutputPerM = manual?.outputPerM ?? pricingLookup.rates.output;
+        if (pricingLookup.rates.cacheRead !== undefined) {
+          view.resolvedCacheReadPerM = manual?.cacheReadPerM ?? pricingLookup.rates.cacheRead;
+        } else if (manual?.cacheReadPerM !== undefined) {
+          view.resolvedCacheReadPerM = manual.cacheReadPerM;
+        }
+        if (pricingLookup.rates.cacheWrite !== undefined) {
+          view.resolvedCacheWritePerM = manual?.cacheWritePerM ?? pricingLookup.rates.cacheWrite;
+        } else if (manual?.cacheWritePerM !== undefined) {
+          view.resolvedCacheWritePerM = manual.cacheWritePerM;
+        }
+        if (pricingLookup.displayName !== undefined) view.modelsDevLabel = pricingLookup.displayName;
+      } else {
+        if (manual?.inputPerM !== undefined) view.resolvedInputPerM = manual.inputPerM;
+        if (manual?.outputPerM !== undefined) view.resolvedOutputPerM = manual.outputPerM;
+        if (manual?.cacheReadPerM !== undefined) view.resolvedCacheReadPerM = manual.cacheReadPerM;
+        if (manual?.cacheWritePerM !== undefined) view.resolvedCacheWritePerM = manual.cacheWritePerM;
+      }
+      return view;
+    }),
+  );
 }

@@ -11,6 +11,8 @@ import {
   type AgentTemplateVersionView,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
+  type CandidateModelInput,
+  type CandidateModelView,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -186,6 +188,21 @@ const api = {
   },
   deleteRouteProfile(profileId: string): Promise<{ ok: true }> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelRouteProfileDelete, profileId);
+  },
+  listCandidateModels(providerId: string): Promise<CandidateModelView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.candidateModelList, providerId);
+  },
+  saveCandidateModel(input: CandidateModelInput): Promise<CandidateModelView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.candidateModelSave, input);
+  },
+  deleteCandidateModel(id: string): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.candidateModelDelete, id);
+  },
+  reorderCandidateModels(providerId: string, orderedIds: string[]): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.candidateModelReorder, providerId, orderedIds);
+  },
+  bulkImportCandidateModels(providerId: string, modelIds: string[]): Promise<CandidateModelView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.candidateModelBulkImport, providerId, modelIds);
   },
   listAgentTemplates(): Promise<AgentTemplate[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.agentTemplateList);

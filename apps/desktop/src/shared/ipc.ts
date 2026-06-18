@@ -94,6 +94,11 @@ export const IPC_CHANNELS = {
   billingRoutePricing: "billing:route-pricing",
   billingRouteCapabilities: "billing:route-capabilities",
   billingModelsDevList: "billing:models-dev-list",
+  candidateModelList: "candidate-model:list",
+  candidateModelSave: "candidate-model:save",
+  candidateModelDelete: "candidate-model:delete",
+  candidateModelReorder: "candidate-model:reorder",
+  candidateModelBulkImport: "candidate-model:bulk-import",
   gitGetStatus: "git:get-status",
   gitGetWorkspaceDiff: "git:get-workspace-diff",
   gitDiscardWorkspaceChanges: "git:discard-workspace-changes",
@@ -445,6 +450,40 @@ export interface RouteManualSpec {
   cacheWritePerM?: number;
 }
 
+export type ModelSelectMode = "candidate" | "manual";
+
+export interface CandidateModelInput {
+  id?: string;
+  providerId: string;
+  modelId: string;
+  displayName?: string;
+  modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
+  sortOrder?: number;
+}
+
+export interface CandidateModelView {
+  id: string;
+  providerId: string;
+  modelId: string;
+  displayName?: string;
+  modelsDevMapping?: ModelsDevMapping;
+  manualSpec?: RouteManualSpec;
+  sortOrder: number;
+  /** models.dev 实时解析后的最终有效值（不持久化） */
+  resolvedContextTokens?: number;
+  resolvedMaxOutputTokens?: number;
+  resolvedSupportsImageInput?: boolean;
+  resolvedSupportsReasoning?: boolean;
+  resolvedInputPerM?: number;
+  resolvedOutputPerM?: number;
+  resolvedCacheReadPerM?: number;
+  resolvedCacheWritePerM?: number;
+  modelsDevLabel?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RuntimeRoleRouteConfig {
   role: RuntimeAgentRole;
   providerId: string;
@@ -454,6 +493,7 @@ export interface RuntimeRoleRouteConfig {
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
+  candidateModelId?: string;
 }
 
 export interface RoleRouteConfig extends RuntimeRoleRouteConfig {

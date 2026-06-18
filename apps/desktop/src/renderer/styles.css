@@ -10810,6 +10810,351 @@ html[data-window-focused="true"] .settings-nav {
   color: #737373;
 }
 
+/* ─── Provider Editor Modal — Two-Column Layout ──────────────────────── */
+
+.settings-modal-provider-editor {
+  width: min(980px, calc(100vw - 48px));
+  max-height: min(92vh, 860px);
+}
+
+.settings-modal-provider-editor.candidate-panel-closed {
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(90vh, 720px);
+}
+
+.provider-modal-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.provider-modal-form-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.candidate-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.candidate-panel-toggle:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--nav-hover);
+  border-color: var(--border-subtle);
+}
+
+.candidate-panel-toggle.active {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* ─── Candidate Panel (Right Sidebar) ────────────────────────────────── */
+
+.candidate-panel {
+  width: 380px;
+  min-width: 380px;
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-main);
+}
+
+.candidate-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.candidate-panel-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-heading);
+}
+
+.candidate-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.candidate-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.candidate-model-add-btn {
+  font-size: 0.78rem;
+}
+
+.candidate-models-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 1.5rem 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.candidate-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.candidate-model-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  transition: border-color 0.15s ease;
+}
+
+.candidate-model-card:hover {
+  border-color: var(--border-strong);
+}
+
+.candidate-model-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 0.5rem;
+}
+
+.candidate-model-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.candidate-model-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-model-dev-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.candidate-model-spec-summary {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.candidate-model-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.candidate-model-edit {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.candidate-model-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.candidate-model-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.candidate-model-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.candidate-models-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.candidate-models-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.candidate-models-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ─── Candidate Model Picker Modal ───────────────────────────────────── */
+
+.candidate-picker-backdrop {
+  z-index: 1100;
+}
+
+.candidate-picker-modal {
+  max-width: 520px;
+  width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.candidate-picker-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.candidate-picker-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.candidate-picker-count {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.candidate-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.candidate-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.candidate-picker-item:hover {
+  background: var(--nav-hover);
+}
+
+.candidate-picker-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-picker-loading,
+.candidate-picker-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 1rem 0;
+  text-align: center;
+}
+
+/* ─── Model Select Mode Toggle ───────────────────────────────────────── */
+
+.model-select-mode-toggle {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.4rem 0;
+}
+
+.model-select-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 5px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+
+.model-select-mode-option input[type="radio"] {
+  display: none;
+}
+
+.model-select-mode-option.active {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.model-select-mode-option:hover:not(.active) {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+  background: var(--nav-hover);
+}
+
+/* ─── Candidate Model Spec Badges ────────────────────────────────────── */
+
+.candidate-model-spec-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.candidate-model-spec-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.candidate-model-empty-hint {
+  color: var(--status-warn-text);
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
 .settings-modal-header {
   display: flex;
   align-items: center;

@@ -18,6 +18,8 @@ export interface ModelRef {
   thinkingEffort?: ThinkingEffort;
   modelsDevMapping?: ModelsDevMapping;
   manualSpec?: RouteManualSpec;
+  /** 引用 Provider 的候选模型 ID（软引用，不存在时降级为手动模式） */
+  candidateModelId?: string;
 }
 
 export type ModelRequirementCapability = "reasoning" | "coding" | "long_context" | "vision" | "tool_use";
@@ -650,6 +652,7 @@ function cloneModelRef(modelRef: ModelRef): ModelRef {
     ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
     ...(modelRef.modelsDevMapping && { modelsDevMapping: { ...modelRef.modelsDevMapping } }),
     ...(modelRef.manualSpec && { manualSpec: { ...modelRef.manualSpec } }),
+    ...(modelRef.candidateModelId && { candidateModelId: modelRef.candidateModelId }),
   };
 }
 

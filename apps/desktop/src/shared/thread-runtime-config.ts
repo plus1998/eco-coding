@@ -63,6 +63,7 @@ function routeFromAgentProfileModelRef(
     ...(modelRef.thinkingEffort && { thinkingEffort: modelRef.thinkingEffort }),
     ...(modelRef.modelsDevMapping && { modelsDevMapping: modelRef.modelsDevMapping }),
     ...(modelRef.manualSpec && { manualSpec: modelRef.manualSpec }),
+    ...(modelRef.candidateModelId && { candidateModelId: modelRef.candidateModelId }),
   };
 }
 
