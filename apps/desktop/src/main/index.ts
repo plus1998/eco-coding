@@ -106,6 +106,7 @@ import {
   type ThreadAppliedDiffResult,
   type ThreadBillingSnapshot,
   type ThreadContextSnapshot,
+  type ThreadCompactContextResult,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadFollowUpCancelRequest,
@@ -1819,6 +1820,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.threadRewindCheckpoint, async (_event, payload: unknown) => {
     return rewindThreadToCheckpoint(payload);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.threadCompactContext, async (_event, threadId: unknown) => {
+    if (typeof threadId !== "string" || !threadId.trim()) {
+      throw new Error("Thread id is required.");
+    }
+    return compactThreadContextManual(threadId.trim());
   });
 
   ipcMain.handle(IPC_CHANNELS.threadListCheckpoints, async (_event, threadId: unknown) => {
@@ -5028,6 +5036,57 @@ async function ensureContextHeadroom(
     const detail = errorMessage(error);
     process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${detail}\n`);
     emitContextCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
+  }
+}
+
+async function compactThreadContextManual(threadId: string): Promise<ThreadCompactContextResult> {
+  const worktreePath = resolveThreadWorktreePath(threadId);
+  if (!worktreePath) {
+    return { ok: false, message: "工作区未就绪，无法压缩上下文。" };
+  }
+
+  const sdkSession = conversationStore.getSdkSession(threadId);
+  if (!sdkSession?.sessionId) {
+    return { ok: false, message: "尚无会话，无法压缩上下文。" };
+  }
+
+  if (contextMonitor.isCompactInFlight(threadId)) {
+    return { ok: false, message: "上下文正在压缩中，请稍候。" };
+  }
+
+  archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
+
+  const roleRoutes = resolveRoleRoutesForThread(threadId);
+  const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
+  if (!runtimeConfig.ok) {
+    return { ok: false, message: runtimeConfig.reason };
+  }
+
+  const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+  const result = await contextScheduler.compactManual(
+    threadId,
+    routes,
+    worktreePath,
+    new AbortController().signal,
+  );
+  if (!result.ok) {
+    return { ok: false, message: formatManualCompactFailureMessage(result.reason) };
+  }
+  return { ok: true, message: "上下文已手动压缩" };
+}
+
+function formatManualCompactFailureMessage(reason: string): string {
+  switch (reason) {
+    case "thread_running":
+      return "线程正在运行，请结束后再压缩上下文。";
+    case "compact_in_flight":
+      return "上下文正在压缩中，请稍候。";
+    case "worktree_not_ready":
+      return "工作区未就绪，无法压缩上下文。";
+    case "no_session":
+      return "尚无会话，无法压缩上下文。";
+    default:
+      return reason ? `上下文压缩失败：${reason}` : "上下文压缩失败";
   }
 }
 

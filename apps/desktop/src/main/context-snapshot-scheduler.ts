@@ -131,9 +131,9 @@ export class ContextSnapshotScheduler {
 
   async ensureHeadroom(
     threadId: string,
-    _routes: readonly ResolvedModelRoute[],
+    routes: readonly ResolvedModelRoute[],
     worktreePath: string,
-    _signal: AbortSignal,
+    signal: AbortSignal,
     options?: { ignoreRunningGuard?: boolean },
   ): Promise<void> {
     if (!this.options.monitor.shouldCompact(threadId)) {
@@ -156,69 +156,109 @@ export class ContextSnapshotScheduler {
     this.options.emitCompactionStatus(threadId, { stage: "started", trigger: "auto" });
 
     try {
-      await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
-        const routes = driverRoutes;
-        if (!driver.compactSession) {
-          return;
-        }
-
-        let slashCommands: string[] = [];
-        let postTokens: number | undefined;
-
-        for await (const event of driver.compactSession({
-          threadId,
-          prompt: "/compact",
-          workspacePath: worktreePath,
-          worktreePath,
-          routes: [...routes],
-          signal: runSignal,
-          resume,
-        })) {
-          if (event.type === "agent.started" && event.payload) {
-            const payload = event.payload as Record<string, unknown>;
-            const commands = readSdkSlashCommands(payload);
-            if (commands.length > 0) {
-              slashCommands = commands;
-            }
-            if (payload.subtype === "compact_boundary") {
-              postTokens = extractCompactPostTokens(payload);
-              this.options.onCompactionBoundary?.(threadId, {
-                payload,
-                ...(typeof event.id === "string" && { sourceEventId: event.id }),
-              });
-            }
-          }
-          if (event.type === "usage.recorded" && isRecord(event.payload)) {
-            if (event.payload.type === "sdk_context_usage") {
-              this.applySdkContextUsageBreakdown(threadId, event.payload.ecoSdkContextUsage);
-              continue;
-            }
-            const usage = parseUsagePayload(event.payload);
-            const planner = routes.find((route) => route.role === "planner") ?? routes[0];
-            if (usage && planner) {
-              await this.options.monitor.updateFromUsage(threadId, usage, {
-                role: "planner",
-                modelId: planner.primary.modelId,
-                providerBaseUrl: planner.primary.baseUrl,
-              });
-            }
-          }
-        }
-
-        if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact")) {
-          return;
-        }
-
-        this.options.monitor.markCompactCompleted(threadId, postTokens);
-        this.emitLiveFromMonitor(threadId);
-      });
+      await this.runCompactSession(threadId, worktreePath, signal, routes, resume);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
-      process.stderr.write(
-        `[eco] context compact failed: ${detail}\n`,
-      );
+      process.stderr.write(`[eco] context compact failed: ${detail}\n`);
     }
+  }
+
+  async compactManual(
+    threadId: string,
+    routes: readonly ResolvedModelRoute[],
+    worktreePath: string,
+    signal: AbortSignal,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    if (this.options.isThreadRunning(threadId)) {
+      return { ok: false, reason: "thread_running" };
+    }
+    if (this.options.monitor.isCompactInFlight(threadId)) {
+      return { ok: false, reason: "compact_in_flight" };
+    }
+    if (this.options.isWorktreePathReady && !(await this.options.isWorktreePathReady(worktreePath))) {
+      return { ok: false, reason: "worktree_not_ready" };
+    }
+
+    const resume = this.options.getResume(threadId, worktreePath);
+    if (!resume?.resumeSessionId) {
+      return { ok: false, reason: "no_session" };
+    }
+
+    try {
+      await this.runCompactSession(threadId, worktreePath, signal, routes, resume);
+      return { ok: true };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "manual", detail });
+      process.stderr.write(`[eco] manual context compact failed: ${detail}\n`);
+      return { ok: false, reason: detail };
+    }
+  }
+
+  private async runCompactSession(
+    threadId: string,
+    worktreePath: string,
+    signal: AbortSignal,
+    routes: readonly ResolvedModelRoute[],
+    resume: EcoSdkResumeOptions,
+  ): Promise<void> {
+    await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
+      const activeRoutes = driverRoutes.length > 0 ? driverRoutes : routes;
+      if (!driver.compactSession) {
+        throw new Error("当前驱动不支持上下文压缩。");
+      }
+
+      let slashCommands: string[] = [];
+      let postTokens: number | undefined;
+
+      for await (const event of driver.compactSession({
+        threadId,
+        prompt: "/compact",
+        workspacePath: worktreePath,
+        worktreePath,
+        routes: [...activeRoutes],
+        signal: runSignal ?? signal,
+        resume,
+      })) {
+        if (event.type === "agent.started" && event.payload) {
+          const payload = event.payload as Record<string, unknown>;
+          const commands = readSdkSlashCommands(payload);
+          if (commands.length > 0) {
+            slashCommands = commands;
+          }
+          if (payload.subtype === "compact_boundary") {
+            postTokens = extractCompactPostTokens(payload);
+            this.options.onCompactionBoundary?.(threadId, {
+              payload,
+              ...(typeof event.id === "string" && { sourceEventId: event.id }),
+            });
+          }
+        }
+        if (event.type === "usage.recorded" && isRecord(event.payload)) {
+          if (event.payload.type === "sdk_context_usage") {
+            this.applySdkContextUsageBreakdown(threadId, event.payload.ecoSdkContextUsage);
+            continue;
+          }
+          const usage = parseUsagePayload(event.payload);
+          const planner = activeRoutes.find((route) => route.role === "planner") ?? activeRoutes[0];
+          if (usage && planner) {
+            await this.options.monitor.updateFromUsage(threadId, usage, {
+              role: "planner",
+              modelId: planner.primary.modelId,
+              providerBaseUrl: planner.primary.baseUrl,
+            });
+          }
+        }
+      }
+
+      if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact")) {
+        throw new Error("当前模型不支持 /compact 命令。");
+      }
+
+      this.options.monitor.markCompactCompleted(threadId, postTokens);
+      this.emitLiveFromMonitor(threadId);
+    });
   }
 
   private buildSnapshot(threadId: string): ThreadContextSnapshot | undefined {

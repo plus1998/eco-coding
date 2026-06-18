@@ -50,6 +50,7 @@ export const IPC_CHANNELS = {
   threadGetAppliedDiff: "thread:get-applied-diff",
   threadRevertAppliedDiff: "thread:revert-applied-diff",
   threadRewindCheckpoint: "thread:rewind-checkpoint",
+  threadCompactContext: "thread:compact-context",
   threadListCheckpoints: "thread:list-checkpoints",
   threadApprovePlan: "thread:approve-plan",
   threadDismissPlan: "thread:dismiss-plan",
@@ -828,6 +829,11 @@ export interface ThreadRewindCheckpointRequest {
 }
 
 export interface ThreadRewindCheckpointResult {
+  ok: boolean;
+  message: string;
+}
+
+export interface ThreadCompactContextResult {
   ok: boolean;
   message: string;
 }

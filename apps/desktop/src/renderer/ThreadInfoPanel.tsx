@@ -697,6 +697,8 @@ function ThreadInfoFloatStack({
                 {...(context !== undefined && { context })}
                 placeholder={contextPlaceholder}
                 showWhenEmpty
+                {...(threadId !== undefined && { threadId })}
+                {...(threadStatus !== undefined && { threadStatus })}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 onDismiss={closePanel}
               />

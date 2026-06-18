@@ -71,6 +71,7 @@ import {
   type ThreadRevertAppliedDiffResult,
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
+  type ThreadCompactContextResult,
   type ThreadRollbackResult,
   type ThreadRunProjectionSnapshot,
   type ThreadStartRequest,
@@ -422,6 +423,9 @@ const api = {
   },
   rewindToCheckpoint(request: ThreadRewindCheckpointRequest): Promise<ThreadRewindCheckpointResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRewindCheckpoint, request);
+  },
+  compactThreadContext(threadId: string): Promise<ThreadCompactContextResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadCompactContext, threadId);
   },
   listThreads(): Promise<ThreadSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadList);

@@ -1,7 +1,7 @@
 import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel, formatTokenCount } from "@eco/runtime";
-import { X } from "lucide-react";
+import { FoldVertical, Loader2, X } from "lucide-react";
 import { useState } from "react";
-import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
+import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
   type RuntimeAgentDisplayNames,
   formatRuntimeRoleModelLabel,
@@ -14,6 +14,8 @@ interface ContextCardProps {
   /** When false, hide the card if there is no snapshot yet. */
   showWhenEmpty?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  threadId?: string;
+  threadStatus?: ThreadStatus;
   onDismiss?: () => void;
 }
 
@@ -291,9 +293,32 @@ export function ContextCard({
   placeholder,
   showWhenEmpty = true,
   agentDisplayNames,
+  threadId,
+  threadStatus,
   onDismiss,
 }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
+  const [compacting, setCompacting] = useState(false);
+  const [compactError, setCompactError] = useState<string | null>(null);
+  const canCompact = Boolean(threadId && context && threadStatus !== "running" && !compacting);
+
+  async function handleCompact() {
+    if (!threadId || !canCompact) {
+      return;
+    }
+    setCompacting(true);
+    setCompactError(null);
+    try {
+      const result = await window.eco.compactThreadContext(threadId);
+      if (!result.ok) {
+        setCompactError(result.message);
+      }
+    } catch (error) {
+      setCompactError(error instanceof Error ? error.message : "上下文压缩失败");
+    } finally {
+      setCompacting(false);
+    }
+  }
 
   if (!context) {
     if (!showWhenEmpty) {
@@ -320,6 +345,29 @@ export function ContextCard({
           <h4 className="context-card-title">Context</h4>
         </div>
         <div className="context-card-header-actions">
+          {context ? (
+            <button
+              type="button"
+              className="context-card-compact"
+              onClick={() => void handleCompact()}
+              disabled={!canCompact}
+              aria-label="手动压缩上下文"
+              title={
+                compactError ??
+                (threadStatus === "running"
+                  ? "线程运行中，暂不可压缩"
+                  : compacting
+                    ? "正在压缩上下文"
+                    : "手动压缩上下文")
+              }
+            >
+              {compacting ? (
+                <Loader2 size={14} aria-hidden className="context-card-compact-spinner" />
+              ) : (
+                <FoldVertical size={14} aria-hidden />
+              )}
+            </button>
+          ) : null}
           {plannerDetailed ? (
             <button
               type="button"
@@ -346,7 +394,6 @@ export function ContextCard({
 
       <section className="context-card-main" aria-label="主 Agent 上下文">
         <div className="context-card-main-head">
-          <span className="context-card-main-badge">主 Agent</span>
           <span className="context-card-main-model">
             {formatRuntimeRoleModelLabel(planner.role, planner.modelId, agentDisplayNames)}
           </span>

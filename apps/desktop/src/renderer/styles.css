@@ -5155,6 +5155,40 @@ html[data-window-focused="true"] .codex-sidebar {
   color: var(--text-primary);
 }
 
+.context-card-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.context-card-compact:hover:not(:disabled) {
+  background: var(--nav-hover);
+  color: var(--text-primary);
+}
+
+.context-card-compact:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.context-card-compact-spinner {
+  animation: context-card-compact-spin 0.8s linear infinite;
+}
+
+@keyframes context-card-compact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .thread-info-section {
   margin-bottom: 20px;
 }
@@ -5757,18 +5791,6 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-}
-
-.context-card-main-badge {
-  flex-shrink: 0;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: rgba(234, 88, 12, 0.18);
-  color: #fdba74;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .context-card-main-model {

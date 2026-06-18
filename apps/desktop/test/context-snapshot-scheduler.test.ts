@@ -357,3 +357,54 @@ test("ensureHeadroom applies sdk_context_usage from compact session events", asy
   const snapshot = emitted.at(-1);
   expect(snapshot?.occupied).toBe(40_000);
 });
+
+test("compactManual runs /compact without shouldCompact threshold", async () => {
+  let compactCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+    isCompactInFlight: () => false,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => ({}),
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async (_threadId, fn) => {
+      const driver = {
+        compactSession: async function* () {
+          compactCalled = true;
+          yield { type: "agent.started", payload: { subtype: "compact_boundary", compact_metadata: { post_tokens: 1000 } } };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, []);
+    },
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: true });
+  expect(compactCalled).toBe(true);
+});
+
+test("compactManual rejects while thread is running", async () => {
+  const monitor = {
+    isCompactInFlight: () => false,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => true,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async () => {},
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: false, reason: "thread_running" });
+});
