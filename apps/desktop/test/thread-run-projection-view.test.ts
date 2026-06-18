@@ -281,6 +281,50 @@ test("buildThreadRunProjectionViewModel does not echo request or lifecycle noise
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
 });
 
+test("buildThreadRunProjectionViewModel hides generic approval transition status lines", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "读取外部配置",
+          metadata: { liveType: "thread.user_prompt" },
+          sequence: 1,
+        }),
+        item({
+          id: "generic-wait",
+          eventType: "thread.status",
+          role: "system",
+          text: "等待工具读取确认…",
+          metadata: { liveType: "thread.running" },
+          sequence: 2,
+        }),
+        item({
+          id: "approval-wait",
+          eventType: "message.final",
+          role: "tool",
+          text: "等待确认 Read：/etc/hosts",
+          metadata: { liveType: "bash_approval.requested" },
+          sequence: 3,
+        }),
+        item({
+          id: "approval-approved",
+          eventType: "message.final",
+          role: "tool",
+          text: "已允许本次 Read：/etc/hosts",
+          metadata: { liveType: "bash_approval.approved" },
+          sequence: 4,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:approval-approved"]);
+  expect(view.mainFeedEntries.some((entry) => entry.key === "main:generic-wait")).toBe(false);
+});
+
 test("buildThreadRunProjectionViewModel removes main feed status and usage noise", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

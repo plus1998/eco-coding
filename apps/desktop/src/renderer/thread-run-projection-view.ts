@@ -290,7 +290,19 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
     /^Working in project directory:/u.test(trimmed) ||
-    /^Local model router ready:/u.test(trimmed)
+    /^Local model router ready:/u.test(trimmed) ||
+    isProjectionApprovalTransitionStatus(trimmed)
+  );
+}
+
+function isProjectionApprovalTransitionStatus(text: string): boolean {
+  return (
+    text === "等待工具读取确认…" ||
+    text === "等待 Bash 执行确认…" ||
+    text === "读取已确认，继续执行…" ||
+    text === "读取已拒绝，等待 Agent 调整…" ||
+    text === "Bash 已确认，继续执行…" ||
+    text === "Bash 已拒绝，等待 Agent 调整…"
   );
 }
 

@@ -5378,6 +5378,15 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
   emitThreadEvent(threadId, `thread.${patch.status}`, message, "system");
 }
 
+function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
+
+  const message = normalizeThreadMessage(patch.status, patch.message);
+  conversationStore.updateThread(threadId, { ...patch, message });
+}
+
 function emitTodoList(threadId: string, todoList: CoderTodoItem[]): void {
   emitThreadEvent(threadId, "thread.todos_updated", "TODO 已更新", "system", false, {
     todoList,
@@ -5485,6 +5494,16 @@ function emitThreadEvent(
       ...(extras && { extras }),
       ...(persistedActivityLine && { persistedActivityLine }),
     });
+  }
+
+  if (type.startsWith("bash_approval.")) {
+    const thread = conversationStore.getThread(threadId);
+    if (thread) {
+      patchThreadSummary(threadId, {
+        message: displayMessage,
+        status: type === "bash_approval.requested" ? "running" : thread.status,
+      });
+    }
   }
 
   const payload: ThreadLiveEvent = {
@@ -5895,7 +5914,6 @@ function createThreadToolPermissionHandler(
         description: `允许在工作区外执行 ${request.toolName}？`,
       };
 
-      updateThread(threadId, { status: "running", message: "等待工具读取确认…" });
       emitThreadEvent(
         threadId,
         "bash_approval.requested",
@@ -5914,7 +5932,6 @@ function createThreadToolPermissionHandler(
           "tool",
           false,
         );
-        updateThread(threadId, { status: "running", message: "读取已确认，继续执行…" });
         return { behavior: "allow", updatedInput: request.input };
       }
 
@@ -5925,7 +5942,6 @@ function createThreadToolPermissionHandler(
         "tool",
         false,
       );
-      updateThread(threadId, { status: "running", message: "读取已拒绝，等待 Agent 调整…" });
       return {
         behavior: "deny",
         message: `User denied this ${request.toolName} call.`,
@@ -5995,7 +6011,6 @@ function createThreadToolPermissionHandler(
       ...(description ? { description } : {}),
     };
 
-    updateThread(threadId, { status: "running", message: "等待 Bash 执行确认…" });
     emitThreadEvent(threadId, "bash_approval.requested", `等待确认 Bash：${command}`, "tool", false, {
       bashApproval: approvalRequest,
     });
@@ -6003,12 +6018,10 @@ function createThreadToolPermissionHandler(
     const decision = await registerPendingBashApproval(threadId, approvalRequest);
     if (decision === "approved") {
       emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false);
-      updateThread(threadId, { status: "running", message: "Bash 已确认，继续执行…" });
       return { behavior: "allow", updatedInput: request.input };
     }
 
     emitThreadEvent(threadId, "bash_approval.rejected", `已拒绝 Bash：${command}`, "tool", false);
-    updateThread(threadId, { status: "running", message: "Bash 已拒绝，等待 Agent 调整…" });
     return {
       behavior: "deny",
       message: "User denied this Bash command.",
