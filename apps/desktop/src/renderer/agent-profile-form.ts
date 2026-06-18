@@ -7,22 +7,21 @@ import type {
   OrchestrationProfile,
   OrchestrationStrategy,
   ProviderConfigView,
-  ToolPolicy,
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
 import {
   emptyManualSpecForm,
   formToManualSpec,
-  manualSpecToForm,
   type ManualSpecFormFields,
+  manualSpecToForm,
 } from "./agent-profile-manual-spec-form";
-import { formatList, parseList } from "./agent-template-form-utils";
+import { parseList } from "./agent-template-form-utils";
 import {
   capabilityFieldsToToolPolicy,
   createDefaultToolCapabilityFields,
-  toolPolicyToCapabilityFields,
   type ToolCapabilityFieldValues,
+  toolPolicyToCapabilityFields,
 } from "./tool-capability-groups";
 
 export type AgentProfileAgentCapabilityFields = Omit<ToolCapabilityFieldValues, "allowDelegation">;
@@ -128,7 +127,9 @@ export function mainCapabilityFromProfileForm(form: AgentProfileFormState): Tool
   };
 }
 
-export function agentCapabilityFromAgentForm(agent: AgentProfileAgentFormState): AgentProfileAgentCapabilityFields {
+export function agentCapabilityFromAgentForm(
+  agent: AgentProfileAgentFormState,
+): AgentProfileAgentCapabilityFields {
   return {
     readCodebase: agent.readCodebase,
     readScope: agent.readScope,
@@ -221,7 +222,9 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
 export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileFormState {
   const mainCapability = toolPolicyToCapabilityFields(profile.mainAgent.tools, {
     allowDelegation: true,
-    mcpServers: profile.mainAgent.tools.mcp?.allowedServers,
+    ...(profile.mainAgent.tools.mcp?.allowedServers
+      ? { mcpServers: profile.mainAgent.tools.mcp.allowedServers }
+      : {}),
   });
   return {
     id: profile.id,
@@ -237,7 +240,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainManualSpec: manualSpecToForm(profile.mainAgent.modelRef.manualSpec),
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainCandidateModelId: profile.mainAgent.modelRef.candidateModelId ?? "",
-    mainModelSelectMode: profile.mainAgent.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
+    mainModelSelectMode: profile.mainAgent.modelRef.candidateModelId
+      ? ("candidate" as ModelSelectMode)
+      : ("manual" as ModelSelectMode),
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
     ...mainCapabilityToProfileFormFields(mainCapability),
@@ -251,7 +256,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     builtinExploreManualSpec: manualSpecToForm(profile.builtinAgents.explore.modelRef.manualSpec),
     builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
     builtinExploreCandidateModelId: profile.builtinAgents.explore.modelRef.candidateModelId ?? "",
-    builtinExploreModelSelectMode: profile.builtinAgents.explore.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
+    builtinExploreModelSelectMode: profile.builtinAgents.explore.modelRef.candidateModelId
+      ? ("candidate" as ModelSelectMode)
+      : ("manual" as ModelSelectMode),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -266,7 +273,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       apiCompat: agent.modelRef.apiCompat ?? "",
       enabled: agent.enabled,
       candidateModelId: agent.modelRef.candidateModelId ?? "",
-      modelSelectMode: agent.modelRef.candidateModelId ? "candidate" as ModelSelectMode : "manual" as ModelSelectMode,
+      modelSelectMode: agent.modelRef.candidateModelId
+        ? ("candidate" as ModelSelectMode)
+        : ("manual" as ModelSelectMode),
       ...agentCapabilityToAgentForm(
         toolPolicyToCapabilityFields(agent.tools, {
           mcpServers: agent.mcpServers,
@@ -346,7 +355,7 @@ export function buildOrchestrationProfileFromForm(
       modelsDevMappingModelId: form.mainModelsDevMappingModelId,
       manualSpec: form.mainManualSpec,
       apiCompat: form.mainApiCompat,
-      candidateModelId: form.mainCandidateModelId,
+      candidateModelId: form.mainModelSelectMode === "candidate" ? form.mainCandidateModelId : "",
     },
   );
   const builtinExploreModelRef = buildModelRef(
@@ -359,7 +368,8 @@ export function buildOrchestrationProfileFromForm(
       modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
       manualSpec: form.builtinExploreManualSpec,
       apiCompat: form.builtinExploreApiCompat,
-      candidateModelId: form.builtinExploreCandidateModelId,
+      candidateModelId:
+        form.builtinExploreModelSelectMode === "candidate" ? form.builtinExploreCandidateModelId : "",
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -390,7 +400,7 @@ export function buildOrchestrationProfileFromForm(
         modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
         manualSpec: agentForm.manualSpec,
         apiCompat: agentForm.apiCompat,
-        candidateModelId: agentForm.candidateModelId,
+        candidateModelId: agentForm.modelSelectMode === "candidate" ? agentForm.candidateModelId : "",
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
@@ -433,15 +443,12 @@ export function canEditStoredAgentProfile(profile: OrchestrationProfile): boolea
   return profile.source === "user" || profile.source === "project";
 }
 
-function buildStrategyFromForm(
-  form: AgentProfileFormState,
-): OrchestrationStrategy {
+function buildStrategyFromForm(form: AgentProfileFormState): OrchestrationStrategy {
   return {
     kind: "autonomous",
     ...(form.guidancePrompt.trim() ? { guidancePrompt: form.guidancePrompt.trim() } : {}),
   };
 }
-
 
 function agentCapabilityToAgentForm(
   capability: ToolCapabilityFieldValues,

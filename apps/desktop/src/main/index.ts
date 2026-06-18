@@ -5,57 +5,50 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedModelRoute } from "@eco/model-router";
-import {
-  createRedisSessionStore,
-  type SessionStore,
-  testRedisConnection,
-} from "@eco/persistence";
+import { createRedisSessionStore, type SessionStore, testRedisConnection } from "@eco/persistence";
 import {
   type AgentEvent,
-  defaultSubagentAvailability,
   collectProfileAssignedMcpServers,
-  type EcoPlanningContext,
+  defaultSubagentAvailability,
   type EcoAgentRuntimeConfig,
+  type EcoPlanningContext,
   type EcoSdkResumeOptions,
   type EcoSdkSessionOptions,
+  filesystemReadScopeAskReason,
+  isDiscoveryFilesystemTool,
+  isPathInsidePolicyScope,
+  isReadFilesystemTool,
   isSubagentRole,
   normalizeSdkSubagentType,
   type OtelActivityLine,
   type OtelUsageUpdate,
   type ParsedUsage,
   type PlanReadyPayload,
-  type SessionCapturedPayload,
-  type SdkToolPermissionDecision,
-  type SdkToolPermissionRequest,
-  filesystemReadScopeAskReason,
-  isDiscoveryFilesystemTool,
-  isReadFilesystemTool,
-  isPathInsidePolicyScope,
   pathContainsGlobMeta,
   readFilesystemPath,
   resolveFilesystemScopeRoot,
   resolvePolicyPath,
   resolvePolicySearchBase,
+  type SdkToolPermissionDecision,
+  type SdkToolPermissionRequest,
+  type SessionCapturedPayload,
   type SubagentRunPhase,
 } from "@eco/runtime";
 import {
   ClaudeAgentSdkDriver,
   deleteClaudeAgentSdkSession,
-  resolveResumeSessionAtBeforeUserMessage,
   type EcoHookContext,
+  resolveResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
-import {
-  type CommandRunner,
-  createSessionPlan,
-  GitWorktreeService,
-  type WorktreePlan,
-} from "@eco/workspace";
-import { evaluateThreadBashPermission } from "./thread-bash-permission";
-import { ensureDesktopPath } from "./fix-desktop-path";
+import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage, shell } from "electron";
+import { ensureDesktopPath } from "./fix-desktop-path";
+import { evaluateThreadBashPermission } from "./thread-bash-permission";
 
 ensureDesktopPath();
-import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
+
+import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
+import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   AGENT_ROLES,
@@ -66,20 +59,20 @@ import {
   type AgentTemplateVersionRestoreRequest,
   type BashApprovalRequest,
   type BashApprovalResolvePayload,
+  buildThreadRuntimeConfigFromDefaults,
   type CandidateModelInput,
   type CandidateModelView,
-  buildThreadRuntimeConfigFromDefaults,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   getAgentProfileById,
   IPC_CHANNELS,
-  isKnownIpcChannel,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
-  isGitPushRequest,
   isGitPullRequest,
+  isGitPushRequest,
+  isKnownIpcChannel,
   isRunPackageScriptRequest,
   isThreadRuntimeConfig,
   type ListUpstreamModelsRequest,
@@ -91,12 +84,13 @@ import {
   type OrchestrationProfileVersionRestoreRequest,
   type PromptImageAttachment,
   type ProviderConfigInput,
-  resolveThreadAgentProfile,
-  runtimeRoleRoutesFromAgentProfile,
   type RoleRouteConfig,
+  type RouteManualSpec,
   type RouteProfileInput,
   type RuntimeAgentRole,
   type RuntimeRoleRouteConfig,
+  resolveThreadAgentProfile,
+  runtimeRoleRoutesFromAgentProfile,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
@@ -105,19 +99,19 @@ import {
   type ThreadActivityRewindTarget,
   type ThreadAppliedDiffResult,
   type ThreadBillingSnapshot,
-  type ThreadContextSnapshot,
   type ThreadCompactContextResult,
+  type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEnqueueRequest,
   type ThreadFollowUpEscalateRequest,
-  type ThreadFollowUpUpdateRequest,
   type ThreadFollowUpMutationResult,
   type ThreadFollowUpRunPhase,
-  type ThreadPendingFollowUp,
+  type ThreadFollowUpUpdateRequest,
   type ThreadLiveEvent,
   type ThreadModelUsageEntry,
+  type ThreadPendingFollowUp,
   type ThreadPendingPlan,
   type ThreadRetryRequest,
   type ThreadRetryResult,
@@ -129,23 +123,22 @@ import {
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
   type ThreadRuntimeConfigInput,
-  withPlanModeDisabled,
   type ThreadStartRequest,
   type ThreadStatus,
   type ThreadSummary,
   type ThreadUpdateRuntimeConfigRequest,
+  type ThreadUsageLedgerEventView,
   type ThreadUsageSnapshot,
   type ThreadUsageSnapshotResult,
-  type ThreadUsageLedgerEventView,
   type WorkspaceInfo,
   type WorktreeApplyResult,
   type WorktreeCancelDisposition,
   type WorktreeStatusResult,
+  withPlanModeDisabled,
 } from "../shared/ipc";
-import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
+import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { isExternalPackageScriptTarget } from "../shared/package-script-target";
-import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
-import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
+import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import {
   buildRuntimeAgentSkillAssignments,
@@ -156,7 +149,6 @@ import {
   resolveSdkSessionSkillConfig,
   type SdkSessionSkillsScope,
 } from "../shared/skills";
-import { filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import {
   buildAgentPromptWithContext,
   continueStatusMessage,
@@ -166,15 +158,15 @@ import {
   threadEnteredExecutionPhase,
 } from "../shared/thread-continuation";
 import {
+  buildPlanExecutionFailureMessage,
+  planExecutionFailurePrefix,
+} from "../shared/thread-failure-message";
+import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
   shouldDrainThreadFollowUps,
 } from "../shared/thread-follow-up-drain";
-import {
-  buildPlanExecutionFailureMessage,
-  planExecutionFailurePrefix,
-} from "../shared/thread-failure-message";
 import {
   buildWorktreeMergeSummary,
   formatWorktreeMergeThreadMessage,
@@ -183,18 +175,11 @@ import {
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { resolveActivityAgentId, resolveOtelActivityAgentId } from "./activity-agent-id";
-import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { buildAgentAuditExportArchive } from "./agent-audit-export";
+import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
-import {
-  cancelBashApprovalsForThread,
-  getPendingBashApprovalByToolUseId,
-  getPendingBashApprovalForThread,
-  registerPendingBashApproval,
-  resolvePendingBashApproval,
-} from "./bash-approval-bridge";
 import {
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
@@ -202,6 +187,13 @@ import {
   estimateInputTokensFromAnthropicBody,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
+import {
+  cancelBashApprovalsForThread,
+  getPendingBashApprovalByToolUseId,
+  getPendingBashApprovalForThread,
+  registerPendingBashApproval,
+  resolvePendingBashApproval,
+} from "./bash-approval-bridge";
 import { isSubagentBillingRole, type UsageBillingObservation } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
@@ -214,6 +206,7 @@ import {
   createBillingRuntimeEnvironment,
   resolveBillingRuntimeContext,
 } from "./billing-runtime-environment";
+import { resolveBillingSnapshotSelectionOptions } from "./billing-snapshot-selection-policy";
 import {
   type FinalizeCancelledRunDeps,
   finalizeCancelledRun,
@@ -237,12 +230,36 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
+import {
+  checkoutGitBranch,
+  createGitBranch,
+  discardWorkspaceChanges,
+  getGitWorkingTreeStatus,
+  getWorkspaceDiff,
+  handleGitCommit,
+  handleGitGenerateCommitMessage,
+  handleGitPull,
+  handleGitPush,
+  listGitCommits,
+} from "./git-service";
+import {
+  createGitSettingsStore,
+  type GitSettingsStore,
+  isGitSettingsSnapshot,
+  normalizeGitSettingsSnapshot,
+} from "./git-settings-store";
+import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
+import { launchInExternalTerminal } from "./open-external-terminal";
 import { localOtelReceiver } from "./otel-receiver";
 import { resolveOtelUsageBilling } from "./otel-usage-billing";
+import { PackageJsonWatcher } from "./package-json-watcher";
+import { PackageScriptRunner } from "./package-script-runner";
+import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
+import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -251,12 +268,12 @@ import {
   resolveUpstreamUserAgentOverride,
 } from "./proxy-bridge-settings-store";
 import { resolveProxyUsageBilling } from "./proxy-usage-billing";
-import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
 import {
   formatUserFacingRequestError,
   REQUEST_AUTO_RETRY_INTERVAL_MS,
   type RequestAttemptResult,
 } from "./request-retry";
+import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
@@ -275,12 +292,6 @@ import {
   type SingleUsageBillingRequest,
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
-import { PackageScriptRunner } from "./package-script-runner";
-import { PackageJsonWatcher } from "./package-json-watcher";
-import { launchInExternalTerminal } from "./open-external-terminal";
-import { listPackageScripts, preparePackageScriptRun } from "./package-scripts";
-import { ensureDesktopPath } from "./fix-desktop-path";
-import { resolveCommandExecutable, toSpawnEnv } from "./resolve-command-executable";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
@@ -328,11 +339,7 @@ import {
   roleRoutesFromRuntime,
 } from "./thread-runtime-routes";
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
-import {
-  pendingThreadTitle,
-  shouldReplaceAutoThreadTitle,
-  summarizeThreadTitle,
-} from "./thread-title";
+import { pendingThreadTitle, shouldReplaceAutoThreadTitle, summarizeThreadTitle } from "./thread-title";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
 import { ThreadUsageAccumulator } from "./thread-usage-accumulator";
 import { getUpstreamLogFilePath } from "./upstream-log";
@@ -354,26 +361,7 @@ import {
   orchestrationModeFromSnapshot,
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
-import {
-  checkoutGitBranch,
-  createGitBranch,
-  discardWorkspaceChanges,
-  getGitWorkingTreeStatus,
-  getWorkspaceDiff,
-  handleGitCommit,
-  handleGitGenerateCommitMessage,
-  handleGitPush,
-  handleGitPull,
-  listGitCommits,
-} from "./git-service";
-import {
-  createGitSettingsStore,
-  isGitSettingsSnapshot,
-  normalizeGitSettingsSnapshot,
-  type GitSettingsStore,
-} from "./git-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
-import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
   claudePlanFileExists,
@@ -692,15 +680,10 @@ function prepareImportedOrchestrationProfile(
     rawId.startsWith("builtin.") ||
     rawId.startsWith("derived.");
   const name =
-    typeof profile.name === "string" && profile.name.trim()
-      ? profile.name.trim()
-      : "Imported Agent Profile";
+    typeof profile.name === "string" && profile.name.trim() ? profile.name.trim() : "Imported Agent Profile";
   const id =
     !rawId || protectedId || existingIds.has(rawId)
-      ? createUniqueImportedProfileId(
-          `user.imported.${slugifyTemplateId(name) || "profile"}`,
-          existingIds,
-        )
+      ? createUniqueImportedProfileId(`user.imported.${slugifyTemplateId(name) || "profile"}`, existingIds)
       : rawId;
   existingIds.add(id);
   return {
@@ -828,7 +811,45 @@ function roleRoutesForThreadConfig(
   if (!profile) {
     throw new Error(`找不到 Agent Profile：${config.agentProfileId ?? config.routeProfileId}`);
   }
-  return runtimeRoleRoutesFromAgentProfile(profile);
+  return resolveCandidateModelDefaults(runtimeRoleRoutesFromAgentProfile(profile));
+}
+
+function resolveCandidateModelDefaults(routes: readonly RuntimeRoleRouteConfig[]): RuntimeRoleRouteConfig[] {
+  return routes.map((route) => {
+    if (!route.candidateModelId) {
+      return route;
+    }
+    const candidate = providerStore
+      .listCandidateModels(route.providerId)
+      .find((entry) => entry.id === route.candidateModelId);
+    if (!candidate) {
+      return route;
+    }
+    const manualSpec = mergeRouteManualSpec(candidate.manualSpec, route.manualSpec);
+    return {
+      ...route,
+      modelId: candidate.modelId || route.modelId,
+      ...(route.modelsDevMapping
+        ? { modelsDevMapping: route.modelsDevMapping }
+        : candidate.modelsDevMapping
+          ? { modelsDevMapping: candidate.modelsDevMapping }
+          : {}),
+      ...(manualSpec ? { manualSpec } : {}),
+    };
+  });
+}
+
+function mergeRouteManualSpec(
+  candidateSpec: RouteManualSpec | undefined,
+  profileSpec: RouteManualSpec | undefined,
+): RouteManualSpec | undefined {
+  if (!candidateSpec && !profileSpec) {
+    return undefined;
+  }
+  return {
+    ...(candidateSpec ?? {}),
+    ...(profileSpec ?? {}),
+  };
 }
 
 function runtimeValidationOptionsForThreadConfig(
@@ -847,7 +868,7 @@ function resolveRuntimeConfigForThreadConfig(
   return resolveThreadRuntimeConfig(
     settings,
     providerStore.listProvidersWithSecrets(),
-    roleRoutes ?? roleRoutesForThreadConfig(settings, config),
+    resolveCandidateModelDefaults(roleRoutes ?? roleRoutesForThreadConfig(settings, config)),
     runtimeValidationOptionsForThreadConfig(settings, config),
   );
 }
@@ -869,19 +890,22 @@ function resolveRuntimeConfigForThreadId(
   return resolveThreadRuntimeConfig(
     settings,
     providerStore.listProvidersWithSecrets(),
-    routesOverride ?? roleRoutesForThreadConfig(settings, config),
+    resolveCandidateModelDefaults(routesOverride ?? roleRoutesForThreadConfig(settings, config)),
     optionsOverride ?? runtimeValidationOptionsForThreadConfig(settings, config),
   );
 }
 
-function resolveRoleRoutesForThread(threadId: string, agentProfileIdOverride?: string): RuntimeRoleRouteConfig[] {
+function resolveRoleRoutesForThread(
+  threadId: string,
+  agentProfileIdOverride?: string,
+): RuntimeRoleRouteConfig[] {
   const settings = getModelSettingsSnapshot();
   if (agentProfileIdOverride) {
     const profile = getAgentProfileById(settings, agentProfileIdOverride);
     if (!profile) {
       throw new Error(`找不到 Agent Profile：${agentProfileIdOverride}`);
     }
-    return runtimeRoleRoutesFromAgentProfile(profile);
+    return resolveCandidateModelDefaults(runtimeRoleRoutesFromAgentProfile(profile));
   }
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
@@ -1610,15 +1634,18 @@ function registerIpcHandlers(): void {
     return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
   });
 
-  ipcMain.handle(IPC_CHANNELS.billingRoutePricing, async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
-    await pricingCatalogReady;
-    return lookupRoutePricingHints(
-      pricingCache,
-      getModelSettingsSnapshot(),
-      providerStore.listProvidersWithSecrets(),
-      routesOverride,
-    );
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.billingRoutePricing,
+    async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
+      await pricingCatalogReady;
+      return lookupRoutePricingHints(
+        pricingCache,
+        getModelSettingsSnapshot(),
+        providerStore.listProvidersWithSecrets(),
+        routesOverride ? resolveCandidateModelDefaults(routesOverride) : routesOverride,
+      );
+    },
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.billingRouteCapabilities,
@@ -1628,7 +1655,7 @@ function registerIpcHandlers(): void {
         pricingCache,
         getModelSettingsSnapshot(),
         providerStore.listProvidersWithSecrets(),
-        routesOverride,
+        routesOverride ? resolveCandidateModelDefaults(routesOverride) : routesOverride,
       );
     },
   );
@@ -2129,21 +2156,22 @@ function registerIpcHandlers(): void {
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
     }
-    const base =
-      request.followUpId
-        ? conversationStore.escalateThreadFollowUp(thread.id, request.followUpId)
-        : conversationStore.enqueueThreadFollowUp({
-            threadId: thread.id,
-            prompt: request.prompt ?? "",
-            ...(request.attachments?.length ? { attachments: request.attachments } : {}),
-            priority: "escalated",
-            deliveryMode: "interrupt_resume",
-            ...resolveThreadFollowUpEnqueueMetadata(thread.id),
-          });
+    const base = request.followUpId
+      ? conversationStore.escalateThreadFollowUp(thread.id, request.followUpId)
+      : conversationStore.enqueueThreadFollowUp({
+          threadId: thread.id,
+          prompt: request.prompt ?? "",
+          ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+          priority: "escalated",
+          deliveryMode: "interrupt_resume",
+          ...resolveThreadFollowUpEnqueueMetadata(thread.id),
+        });
     if (!base) {
       throw new Error("Pending follow-up was not found or cannot be escalated.");
     }
-    const followUp = request.followUpId ? base : conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base;
+    const followUp = request.followUpId
+      ? base
+      : (conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base);
     emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
     const current = await requestEscalatedFollowUpInterrupt(thread, followUp);
     return buildThreadFollowUpMutationResult(current);
@@ -2488,14 +2516,9 @@ async function requestEscalatedFollowUpInterrupt(
       status: "failed",
       error: reason,
     }) ?? followUp;
-  emitThreadEvent(
-    thread.id,
-    "thread.follow_up.failed",
-    `后续消息处理失败：${reason}`,
-    "system",
-    false,
-    { followUp: failed },
-  );
+  emitThreadEvent(thread.id, "thread.follow_up.failed", `后续消息处理失败：${reason}`, "system", false, {
+    followUp: failed,
+  });
   return failed;
 }
 
@@ -3352,7 +3375,8 @@ function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqu
   }
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  const prompt =
+    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
   if (!prompt && attachments.length === 0) {
     throw new Error("Follow-up message is required.");
   }
@@ -3372,7 +3396,8 @@ function parseThreadFollowUpEscalateRequest(payload: unknown): ThreadFollowUpEsc
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const followUpId = readOptionalString(payload.followUpId);
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  const prompt =
+    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
   if (!followUpId && !prompt && attachments.length === 0) {
     throw new Error("Follow-up id or message is required.");
   }
@@ -3401,7 +3426,8 @@ function parseThreadFollowUpUpdateRequest(payload: unknown): ThreadFollowUpUpdat
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const followUpId = readRequiredString(payload.followUpId, "Follow-up id is required.");
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt = readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
+  const prompt =
+    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
   if (!prompt && attachments.length === 0) {
     throw new Error("Follow-up message is required.");
   }
@@ -3444,12 +3470,7 @@ function parsePromptImageAttachments(value: unknown): PromptImageAttachment[] {
 }
 
 function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {
-  return (
-    value === "image/jpeg" ||
-    value === "image/png" ||
-    value === "image/gif" ||
-    value === "image/webp"
-  );
+  return value === "image/jpeg" || value === "image/png" || value === "image/gif" || value === "image/webp";
 }
 
 function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): boolean {
@@ -3459,9 +3480,7 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
   return Boolean(getPendingClarificationForThread(threadId) || getPendingBashApprovalForThread(threadId));
 }
 
-function buildThreadFollowUpMutationResult(
-  followUp: ThreadPendingFollowUp,
-): ThreadFollowUpMutationResult {
+function buildThreadFollowUpMutationResult(followUp: ThreadPendingFollowUp): ThreadFollowUpMutationResult {
   return {
     followUp,
     followUps: conversationStore.listThreadFollowUps(followUp.threadId),
@@ -4169,10 +4188,7 @@ async function prepareThreadRewindForContinue(input: {
   workspace: WorkspaceInfo;
   target: ThreadActivityRewindTarget;
 }): Promise<EcoSdkResumeOptions | undefined> {
-  const storedTarget = conversationStore.getActivityRewindTarget(
-    input.threadId,
-    input.target.activityLineId,
-  );
+  const storedTarget = conversationStore.getActivityRewindTarget(input.threadId, input.target.activityLineId);
   if (!storedTarget || storedTarget.userMessageId !== input.target.userMessageId) {
     throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
   }
@@ -4929,13 +4945,13 @@ async function emitProxyUsage(
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
     resolver: subagentMetricsRegistry,
-    ...(info.stampedAgentId ?? registryStamp?.agentId
+    ...((info.stampedAgentId ?? registryStamp?.agentId)
       ? { stampedAgentId: info.stampedAgentId ?? registryStamp?.agentId }
       : {}),
-    ...(info.stampedBillingRole ?? registryStamp?.billingRole
+    ...((info.stampedBillingRole ?? registryStamp?.billingRole)
       ? { stampedBillingRole: info.stampedBillingRole ?? registryStamp?.billingRole }
       : {}),
-    ...(info.stampedParentToolUseId ?? registryStamp?.parentToolUseId
+    ...((info.stampedParentToolUseId ?? registryStamp?.parentToolUseId)
       ? { stampedParentToolUseId: info.stampedParentToolUseId ?? registryStamp?.parentToolUseId }
       : {}),
   });
@@ -5510,9 +5526,7 @@ function emitThreadEvent(
   }
 
   const isSilentFollowUpEvent = type.startsWith("thread.follow_up.");
-  const displayMessage = isSilentFollowUpEvent
-    ? ""
-    : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
+  const displayMessage = isSilentFollowUpEvent ? "" : trimmed || (isThreadStatusEvent ? "状态已更新" : "");
 
   const persistActivityLine =
     (!isThreadStatusEvent ||
@@ -5568,9 +5582,7 @@ function emitThreadEvent(
   const payload: ThreadLiveEvent = {
     threadId,
     type,
-    message: isSilentFollowUpEvent
-      ? ""
-      : displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
+    message: isSilentFollowUpEvent ? "" : displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
     role,
     stream,
     ...(persistedActivityLine && { activityLine: persistedActivityLine }),
@@ -5753,10 +5765,7 @@ function resolveThreadFollowUpEnqueueMetadata(threadId: string): {
   };
 }
 
-function resolveRunAttemptPhase(
-  threadId: string,
-  attemptId: string,
-): ThreadFollowUpRunPhase | undefined {
+function resolveRunAttemptPhase(threadId: string, attemptId: string): ThreadFollowUpRunPhase | undefined {
   const phase = conversationStore
     .listRunAttempts(threadId)
     .find((attempt) => attempt.attemptId === attemptId)?.phase;
@@ -6103,7 +6112,8 @@ function resolveFilesystemReadApprovalRequest(input: {
     if (isDiscoveryFilesystemTool(input.toolName) && !cwdInsideScope) {
       return {
         filesystemPath,
-        reason: input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
+        reason:
+          input.fallbackReason ?? filesystemReadScopeAskReason(input.toolName, filesystemPath, scopeRoot),
       };
     }
     return undefined;
@@ -6299,11 +6309,15 @@ async function resolveCandidateModels(
         if (manual?.maxOutputTokens !== undefined) view.resolvedMaxOutputTokens = manual.maxOutputTokens;
       }
       if (capabilitiesLookup) {
-        view.resolvedSupportsImageInput = manual?.supportsImageInput ?? capabilitiesLookup.capabilities.supportsImageInput;
-        view.resolvedSupportsReasoning = manual?.supportsReasoning ?? capabilitiesLookup.capabilities.supportsReasoning;
+        view.resolvedSupportsImageInput =
+          manual?.supportsImageInput ?? capabilitiesLookup.capabilities.supportsImageInput;
+        view.resolvedSupportsReasoning =
+          manual?.supportsReasoning ?? capabilitiesLookup.capabilities.supportsReasoning;
       } else {
-        if (manual?.supportsImageInput !== undefined) view.resolvedSupportsImageInput = manual.supportsImageInput;
-        if (manual?.supportsReasoning !== undefined) view.resolvedSupportsReasoning = manual.supportsReasoning;
+        if (manual?.supportsImageInput !== undefined)
+          view.resolvedSupportsImageInput = manual.supportsImageInput;
+        if (manual?.supportsReasoning !== undefined)
+          view.resolvedSupportsReasoning = manual.supportsReasoning;
       }
       if (pricingLookup) {
         view.resolvedInputPerM = manual?.inputPerM ?? pricingLookup.rates.input;

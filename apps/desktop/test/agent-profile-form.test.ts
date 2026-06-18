@@ -301,6 +301,31 @@ test("buildOrchestrationProfileFromForm persists full manual spec fields", () =>
   });
 });
 
+test("buildOrchestrationProfileFromForm only stores candidate references in candidate mode", () => {
+  const form = agentProfileToForm(profile());
+  form.mainModelSelectMode = "candidate";
+  form.mainCandidateModelId = "cand-main";
+  form.mainModelsDevMappingProviderKey = "";
+  form.mainModelsDevMappingModelId = "";
+  form.builtinExploreModelSelectMode = "manual";
+  form.builtinExploreCandidateModelId = "cand-explore-stale";
+  form.agents[0]!.modelSelectMode = "manual";
+  form.agents[0]!.candidateModelId = "cand-agent-stale";
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+  });
+
+  expect(built.mainAgent.modelRef.candidateModelId).toBe("cand-main");
+  expect(built.mainAgent.modelRef.modelsDevMapping).toBeUndefined();
+  expect(built.builtinAgents.explore.modelRef.candidateModelId).toBeUndefined();
+  expect(built.agents[0]?.modelRef.candidateModelId).toBeUndefined();
+
+  const routes = runtimeRoleRoutesFromAgentProfile(built);
+  expect(routes.find((route) => route.role === "planner")?.candidateModelId).toBe("cand-main");
+});
+
 test("agentProfileToForm round-trips apiCompat for main, explore, and subagents", () => {
   const source = profile();
   source.mainAgent.modelRef.apiCompat = "anthropic";
