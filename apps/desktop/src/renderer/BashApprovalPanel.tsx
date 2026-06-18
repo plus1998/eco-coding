@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { BashApprovalRequest } from "../shared/ipc";
 
@@ -94,7 +94,11 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
           <p className="bash-approval-title">{title}</p>
           {!request.filesystemTool ? (
             <span className={`bash-approval-risk bash-approval-risk-${request.riskLevel}`}>
-              {formatRiskLevel(request.riskLevel)} · {request.riskScore}
+              <span className="bash-approval-risk-icon" aria-hidden>
+                <RiskLevelIcon level={request.riskLevel} />
+              </span>
+              <span className="bash-approval-risk-label">{formatRiskLevel(request.riskLevel)}</span>
+              <span className="bash-approval-risk-score">{request.riskScore}</span>
             </span>
           ) : null}
         </header>
@@ -168,4 +172,19 @@ function formatRiskLevel(level: BashApprovalRequest["riskLevel"]): string {
       return "低风险";
   }
   return level;
+}
+
+function RiskLevelIcon({ level }: { level: BashApprovalRequest["riskLevel"] }) {
+  const size = 13;
+  switch (level) {
+    case "critical":
+      return <ShieldAlert size={size} />;
+    case "high":
+      return <AlertTriangle size={size} />;
+    case "medium":
+      return <Shield size={size} />;
+    case "low":
+      return <ShieldCheck size={size} />;
+  }
+  return null;
 }

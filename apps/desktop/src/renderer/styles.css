@@ -2726,29 +2726,76 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .bash-approval-risk {
+  display: inline-flex;
   flex: 0 0 auto;
-  padding: 4px 10px;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
 }
 
+.bash-approval-risk-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.bash-approval-risk-label {
+  letter-spacing: 0.01em;
+}
+
+.bash-approval-risk-score {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
 .bash-approval-risk-low {
-  color: #86efac;
-  background: rgba(22, 101, 52, 0.24);
+  color: var(--status-allow-text);
+  background: var(--status-allow-bg);
+  border-color: var(--status-allow-border);
+}
+
+.bash-approval-risk-low .bash-approval-risk-score {
+  background: var(--status-allow-bg);
 }
 
 .bash-approval-risk-medium {
-  color: #facc15;
-  background: rgba(133, 77, 14, 0.28);
+  color: var(--status-warn-text);
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn-border);
 }
 
-.bash-approval-risk-high,
+.bash-approval-risk-medium .bash-approval-risk-score {
+  background: var(--status-warn-bg);
+}
+
+.bash-approval-risk-high {
+  color: var(--status-deny-text);
+  background: var(--status-deny-bg);
+  border-color: var(--status-deny-border);
+}
+
+.bash-approval-risk-high .bash-approval-risk-score {
+  background: var(--status-deny-bg);
+}
+
 .bash-approval-risk-critical {
-  color: #fca5a5;
-  background: rgba(153, 27, 27, 0.28);
+  color: var(--status-deny-text);
+  background: var(--status-deny-bg);
+  border-color: var(--danger);
+}
+
+.bash-approval-risk-critical .bash-approval-risk-score {
+  background: var(--status-deny-bg);
 }
 
 .bash-approval-command {
