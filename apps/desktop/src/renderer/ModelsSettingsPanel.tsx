@@ -47,9 +47,7 @@ import type {
   CandidateModelView,
   McpServerConfigView,
   ModelRef,
-  ModelSelectMode,
   ModelSettingsSnapshot,
-  ModelsDevMapping,
   ModelsDevModelOption,
   OrchestrationProfile,
   OrchestrationProfileVersionView,
@@ -58,9 +56,7 @@ import type {
   ProxyBridgeSettingsSnapshot,
   RouteCapabilityHint,
   RoutePricingHint,
-  RuntimeRoleRouteConfig,
   SkillsListResult,
-  UpstreamApiCompat,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { runtimeRoleRoutesFromAgentProfile } from "../shared/thread-runtime-config";
@@ -79,14 +75,9 @@ import {
   createProfileAgentFormFromTemplate,
   mainCapabilityFromProfileForm,
   mainCapabilityPatchToProfileForm,
-  tryFormToManualSpec,
 } from "./agent-profile-form";
-import type { ManualSpecFormFields, ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
-import {
-  catalogCapabilityHint,
-  catalogPricingHint,
-  emptyManualSpecForm,
-} from "./agent-profile-manual-spec-form";
+import type { ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
+import { listManualOverrideFields, manualSpecToForm } from "./agent-profile-manual-spec-form";
 import {
   type AgentProfileSummary,
   buildAgentProfileSummary,
@@ -95,9 +86,6 @@ import {
 } from "./agent-profile-summary";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { CandidateModelPanel } from "./CandidateModelListSection";
-import { ModelManualSpecPanel, useEffectiveModelSpecHints } from "./ModelManualSpecPanel";
-import { ModelSelectField } from "./ModelSelectField";
-import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import { buildPresetTemplateImportPlan } from "./preset-import";
 import {
@@ -210,8 +198,6 @@ export function ModelsSettingsPanel({
   }>();
   const [modelsDevOptions, setModelsDevOptions] = useState<ModelsDevModelOption[]>([]);
   const [modelsDevLoading, setModelsDevLoading] = useState(false);
-  const [capabilityHints, setCapabilityHints] = useState<Record<string, RouteCapabilityHint>>({});
-  const [pricingHints, setPricingHints] = useState<Record<string, RoutePricingHint>>({});
   const [profileArchiveMessage, setProfileArchiveMessage] = useState<{
     kind: AppMessageKind;
     message: string;
@@ -428,78 +414,6 @@ export function ModelsSettingsPanel({
       .catch(() => {})
       .finally(() => setModelsDevLoading(false));
   }, [modelsDevOptions.length, modelsDevLoading]);
-
-  const lookupNodeCapabilities = useCallback(
-    async (
-      nodes: Array<{
-        key: string;
-        providerId: string;
-        modelId: string;
-        apiCompat?: string;
-        modelsDevMappingProviderKey?: string;
-        modelsDevMappingModelId?: string;
-        manualSpec?: ManualSpecFormFields;
-        candidateModelId?: string;
-      }>,
-    ) => {
-      if (!window.eco?.getRouteCapabilities || nodes.length === 0) {
-        return;
-      }
-      try {
-        const routes = buildRouteLookupPayload(nodes);
-        if (routes.length === 0) {
-          return;
-        }
-        const hints = await window.eco.getRouteCapabilities(routes);
-        setCapabilityHints((prev) => {
-          const next = { ...prev };
-          for (const hint of hints) {
-            next[hint.role] = hint;
-          }
-          return next;
-        });
-      } catch {
-        // Silently ignore capability lookup failures
-      }
-    },
-    [],
-  );
-
-  const lookupNodePricing = useCallback(
-    async (
-      nodes: Array<{
-        key: string;
-        providerId: string;
-        modelId: string;
-        apiCompat?: string;
-        modelsDevMappingProviderKey?: string;
-        modelsDevMappingModelId?: string;
-        manualSpec?: ManualSpecFormFields;
-        candidateModelId?: string;
-      }>,
-    ) => {
-      if (!window.eco?.getRoutePricing || nodes.length === 0) {
-        return;
-      }
-      try {
-        const routes = buildRouteLookupPayload(nodes);
-        if (routes.length === 0) {
-          return;
-        }
-        const hints = await window.eco.getRoutePricing(routes);
-        setPricingHints((prev) => {
-          const next = { ...prev };
-          for (const hint of hints) {
-            next[hint.role] = hint;
-          }
-          return next;
-        });
-      } catch {
-        // Silently ignore
-      }
-    },
-    [],
-  );
 
   const fetchModels = useCallback(async (target: ProviderConfigInput, options?: { silent?: boolean }) => {
     if (!window.eco) {
@@ -1309,21 +1223,11 @@ export function ModelsSettingsPanel({
           providers={settings.providers}
           templates={settings.agentTemplates}
           mcpServers={mcpServers}
-          modelsForProvider={modelsForProvider}
-          modelsErrorForProvider={modelsErrorForProvider}
-          loadingForProvider={loadingForProvider}
-          modelsDevOptions={modelsDevOptions}
-          modelsDevLoading={modelsDevLoading}
-          capabilityHints={capabilityHints}
-          onLookupCapabilities={lookupNodeCapabilities}
-          pricingHints={pricingHints}
-          onLookupPricing={lookupNodePricing}
           error={agentProfileModalError}
           busy={busy}
           mode={agentProfileEditorMode}
           onClose={closeAgentProfileModal}
           onSave={() => void saveAgentProfile()}
-          onFetchModels={(provider) => void fetchModels(providerToForm(provider))}
         />
       )}
 
@@ -1431,86 +1335,28 @@ type AgentProfileSelectedNode =
   | { kind: "builtinExplore" }
   | { kind: "agent"; agentKey: string };
 
-type AgentProfileRouteLookupNode = {
-  key: string;
-  providerId: string;
-  modelId: string;
-  apiCompat?: string;
-  modelsDevMappingProviderKey?: string;
-  modelsDevMappingModelId?: string;
-  manualSpec?: ManualSpecFormFields;
-  candidateModelId?: string;
-};
-
-function buildRouteLookupPayload(nodes: Array<AgentProfileRouteLookupNode>): RuntimeRoleRouteConfig[] {
-  return nodes
-    .filter((node) => node.providerId.trim() && node.modelId.trim())
-    .map((node) => {
-      const apiCompat = node.apiCompat?.trim();
-      const mappingProviderKey = node.modelsDevMappingProviderKey?.trim();
-      const mappingModelId = node.modelsDevMappingModelId?.trim();
-      const candidateModelId = node.candidateModelId?.trim();
-      const manualSpec = node.manualSpec ? tryFormToManualSpec(node.manualSpec) : undefined;
-      return {
-        role: node.key,
-        providerId: node.providerId.trim(),
-        modelId: node.modelId.trim(),
-        ...(apiCompat ? { apiCompat: apiCompat as UpstreamApiCompat } : {}),
-        ...(mappingProviderKey &&
-          mappingModelId && {
-            modelsDevMapping: {
-              providerKey: mappingProviderKey,
-              modelId: mappingModelId,
-            },
-          }),
-        ...(manualSpec && { manualSpec }),
-        ...(candidateModelId && { candidateModelId }),
-      };
-    });
-}
-
 function AgentProfileEditorModal({
   form,
   setForm,
   providers,
   templates,
   mcpServers,
-  modelsForProvider,
-  modelsErrorForProvider,
-  loadingForProvider,
-  modelsDevOptions,
-  modelsDevLoading,
-  capabilityHints,
-  pricingHints,
-  onLookupCapabilities,
-  onLookupPricing,
   error,
   busy,
   mode,
   onClose,
   onSave,
-  onFetchModels,
 }: {
   form: AgentProfileFormState;
   setForm: Dispatch<SetStateAction<AgentProfileFormState>>;
   providers: ProviderConfigView[];
   templates: AgentTemplate[];
   mcpServers: McpServerConfigView[];
-  modelsForProvider: (providerId: string) => UpstreamModelOption[];
-  modelsErrorForProvider: (providerId: string) => string | undefined;
-  loadingForProvider: (providerId: string) => boolean;
-  modelsDevOptions: readonly ModelsDevModelOption[];
-  modelsDevLoading: boolean;
-  capabilityHints: Record<string, RouteCapabilityHint>;
-  pricingHints: Record<string, RoutePricingHint>;
-  onLookupCapabilities: (nodes: Array<AgentProfileRouteLookupNode>) => Promise<void>;
-  onLookupPricing: (nodes: Array<AgentProfileRouteLookupNode>) => Promise<void>;
   error?: string | undefined;
   busy?: boolean | undefined;
   mode: AgentProfileEditorMode;
   onClose: () => void;
   onSave: () => void;
-  onFetchModels: (provider: ProviderConfigView) => void;
 }) {
   const modalTitle =
     mode === "edit" ? "编辑 Agent Profile" : mode === "copy" ? "复制为 Agent Profile" : "新建 Agent Profile";
@@ -1548,61 +1394,6 @@ function AgentProfileEditorModal({
       setSelectedNode(null);
     }
   }, [selectedAgentIndex, selectedAgentKey]);
-
-  useEffect(() => {
-    const nodes: Array<AgentProfileRouteLookupNode> = [
-      {
-        key: "main",
-        providerId: form.mainProviderId,
-        modelId: form.mainModelId,
-        ...(form.mainApiCompat ? { apiCompat: form.mainApiCompat } : {}),
-        modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
-        modelsDevMappingModelId: form.mainModelsDevMappingModelId,
-        manualSpec: form.mainManualSpec,
-        candidateModelId: form.mainCandidateModelId,
-      },
-      {
-        key: "explore",
-        providerId: form.builtinExploreProviderId,
-        modelId: form.builtinExploreModelId,
-        ...(form.builtinExploreApiCompat ? { apiCompat: form.builtinExploreApiCompat } : {}),
-        modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
-        modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
-        manualSpec: form.builtinExploreManualSpec,
-        candidateModelId: form.builtinExploreCandidateModelId,
-      },
-      ...form.agents.map((agent) => ({
-        key: agent.agentKey,
-        providerId: agent.providerId,
-        modelId: agent.modelId,
-        ...(agent.apiCompat ? { apiCompat: agent.apiCompat } : {}),
-        modelsDevMappingProviderKey: agent.modelsDevMappingProviderKey,
-        modelsDevMappingModelId: agent.modelsDevMappingModelId,
-        manualSpec: agent.manualSpec,
-        candidateModelId: agent.candidateModelId,
-      })),
-    ];
-    void onLookupCapabilities(nodes);
-    void onLookupPricing(nodes);
-  }, [
-    form.mainProviderId,
-    form.mainModelId,
-    form.mainApiCompat,
-    form.mainModelsDevMappingProviderKey,
-    form.mainModelsDevMappingModelId,
-    form.mainManualSpec,
-    form.mainCandidateModelId,
-    form.builtinExploreProviderId,
-    form.builtinExploreModelId,
-    form.builtinExploreModelsDevMappingProviderKey,
-    form.builtinExploreModelsDevMappingModelId,
-    form.builtinExploreManualSpec,
-    form.builtinExploreApiCompat,
-    form.builtinExploreCandidateModelId,
-    form.agents,
-    onLookupCapabilities,
-    onLookupPricing,
-  ]);
 
   function patch(patch: Partial<AgentProfileFormState>) {
     setForm((current) => ({ ...current, ...patch }));
@@ -1912,19 +1703,11 @@ function AgentProfileEditorModal({
             templates={templates}
             mcpServers={mcpServers}
             providers={providers}
-            modelsForProvider={modelsForProvider}
-            modelsErrorForProvider={modelsErrorForProvider}
-            loadingForProvider={loadingForProvider}
-            modelsDevOptions={modelsDevOptions}
-            modelsDevLoading={modelsDevLoading}
-            capabilityHints={capabilityHints}
-            pricingHints={pricingHints}
             busy={busy}
             onClose={() => setSelectedNode(null)}
             onPatchProfile={patch}
             onPatchAgent={patchAgent}
             onPatchMainToolPolicy={patchMainToolPolicy}
-            onFetchModels={onFetchModels}
           />
         ) : null}
 
@@ -1941,21 +1724,53 @@ function AgentProfileEditorModal({
   );
 }
 
-function valueHasManualMapping(
-  isMain: boolean,
-  isExplore: boolean,
-  form: AgentProfileFormState,
-  agent?: AgentProfileAgentFormState,
-): boolean {
-  if (isMain) {
-    return Boolean(form.mainModelsDevMappingProviderKey && form.mainModelsDevMappingModelId);
+function CandidateModelSelectField({
+  value,
+  candidates,
+  loading,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  candidates: CandidateModelView[];
+  loading: boolean;
+  disabled?: boolean;
+  onChange: (candidateId: string) => void;
+}) {
+  return (
+    <div className="mcp-field">
+      <span className="mcp-field-label">候选模型</span>
+      {loading ? (
+        <span className="mcp-field-hint">加载中...</span>
+      ) : candidates.length === 0 ? (
+        <span className="mcp-field-hint candidate-model-empty-hint">请先在 Provider 中添加候选模型</span>
+      ) : (
+        <select
+          className="mcp-field-input"
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">选择候选模型...</option>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.displayName || c.modelId}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+function formatCandidateModelsDevLabel(candidate: CandidateModelView): string | undefined {
+  if (candidate.modelsDevLabel) {
+    return candidate.modelsDevLabel;
   }
-  if (isExplore) {
-    return Boolean(
-      form.builtinExploreModelsDevMappingProviderKey && form.builtinExploreModelsDevMappingModelId,
-    );
+  if (candidate.modelsDevMapping) {
+    return `${candidate.modelsDevMapping.providerKey}/${candidate.modelsDevMapping.modelId}`;
   }
-  return Boolean(agent?.modelsDevMappingProviderKey && agent?.modelsDevMappingModelId);
+  return undefined;
 }
 
 function ModelsDevCapabilitySummary({
@@ -2121,116 +1936,6 @@ function useCandidateModels(providerId: string): {
   return { candidates, loading };
 }
 
-function ModelSelectModeToggle({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: ModelSelectMode;
-  disabled?: boolean;
-  onChange: (mode: ModelSelectMode) => void;
-}) {
-  return (
-    <div className="model-select-mode-toggle" role="radiogroup" aria-label="模型选择模式">
-      <label className={`model-select-mode-option${value === "candidate" ? " active" : ""}`}>
-        <input
-          type="radio"
-          name="modelSelectMode"
-          value="candidate"
-          checked={value === "candidate"}
-          disabled={disabled}
-          onChange={() => onChange("candidate")}
-        />
-        从候选模型选择
-      </label>
-      <label className={`model-select-mode-option${value === "manual" ? " active" : ""}`}>
-        <input
-          type="radio"
-          name="modelSelectMode"
-          value="manual"
-          checked={value === "manual"}
-          disabled={disabled}
-          onChange={() => onChange("manual")}
-        />
-        手动配置
-      </label>
-    </div>
-  );
-}
-
-function CandidateModelSelectField({
-  value,
-  candidates,
-  loading,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  candidates: CandidateModelView[];
-  loading: boolean;
-  disabled?: boolean;
-  onChange: (candidateId: string) => void;
-}) {
-  return (
-    <div className="mcp-field">
-      <span className="mcp-field-label">候选模型</span>
-      {loading ? (
-        <span className="mcp-field-hint">加载中...</span>
-      ) : candidates.length === 0 ? (
-        <span className="mcp-field-hint candidate-model-empty-hint">请先在 Provider 中添加候选模型</span>
-      ) : (
-        <select
-          className="mcp-field-input"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <option value="">选择候选模型...</option>
-          {candidates.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.displayName || c.modelId}
-            </option>
-          ))}
-        </select>
-      )}
-      {value ? <CandidateModelResolvedSpecBadge candidateId={value} candidates={candidates} /> : null}
-    </div>
-  );
-}
-
-function CandidateModelResolvedSpecBadge({
-  candidateId,
-  candidates,
-}: {
-  candidateId: string;
-  candidates: CandidateModelView[];
-}) {
-  const candidate = candidates.find((c) => c.id === candidateId);
-  if (!candidate) return null;
-  const parts: string[] = [];
-  if (candidate.resolvedContextTokens) {
-    parts.push(`${(candidate.resolvedContextTokens / 1000).toFixed(0)}k ctx`);
-  }
-  if (candidate.resolvedInputPerM !== undefined) {
-    parts.push(`$${candidate.resolvedInputPerM}/M in`);
-  }
-  if (candidate.resolvedOutputPerM !== undefined) {
-    parts.push(`$${candidate.resolvedOutputPerM}/M out`);
-  }
-  if (candidate.resolvedSupportsImageInput === true) parts.push("图像输入");
-  if (candidate.resolvedSupportsReasoning === true) parts.push("推理");
-  if (parts.length === 0) return null;
-  return (
-    <div className="candidate-model-spec-badges">
-      {parts.map((part, i) => (
-        <span key={i} className="candidate-model-spec-chip">
-          {part}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function candidateCapabilityHint(candidate: CandidateModelView | undefined): RouteCapabilityHint | undefined {
   if (!candidate) {
     return undefined;
@@ -2302,71 +2007,164 @@ function candidatePricingHint(candidate: CandidateModelView | undefined): RouteP
   };
 }
 
-function ModelSpecOverrideSection({
-  manualSpec,
-  modelsDevMappingProviderKey,
-  modelsDevMappingModelId,
-  modelsDevOptions,
-  modelsDevLoading,
-  disabled,
-  autoCapability,
-  autoPricing,
-  autoMapping,
-  autoMappingLabel,
-  onMappingChange,
-  onManualSpecChange,
-}: {
-  manualSpec: ManualSpecFormFields;
-  modelsDevMappingProviderKey: string;
-  modelsDevMappingModelId: string;
-  modelsDevOptions: readonly ModelsDevModelOption[];
-  modelsDevLoading: boolean;
-  disabled?: boolean;
-  autoCapability?: RouteCapabilityHint;
-  autoPricing?: RoutePricingHint;
-  autoMapping?: ModelsDevMapping;
-  autoMappingLabel?: string;
-  onMappingChange: (mapping: ModelsDevMapping | undefined) => void;
-  onManualSpecChange: (patch: Partial<ManualSpecFormFields>) => void;
-}) {
-  const effectiveHints = useEffectiveModelSpecHints(autoCapability, autoPricing, manualSpec);
-  const catalogCapability = catalogCapabilityHint(autoCapability);
-  const catalogPricing = catalogPricingHint(autoPricing);
+function CandidateModelSpecReadOnlySection({ candidate }: { candidate?: CandidateModelView }) {
+  if (!candidate) {
+    return (
+      <div className="mcp-field candidate-model-spec-readonly">
+        <span className="mcp-field-label">模型规格</span>
+        <p className="mcp-field-hint">请选择候选模型以查看规格信息。</p>
+      </div>
+    );
+  }
+  const capability = candidateCapabilityHint(candidate);
+  const pricing = candidatePricingHint(candidate);
+  const mappingLabel = formatCandidateModelsDevLabel(candidate);
+  const overriddenFields = candidate.manualSpec
+    ? listManualOverrideFields(manualSpecToForm(candidate.manualSpec))
+    : undefined;
+  const hasSummary = Boolean(capability || pricing);
   return (
-    <div className="models-agent-template-form-grid">
-      <div className="mcp-field">
-        <span className="mcp-field-label">Models.dev 映射覆盖</span>
-        <ModelsDevModelSelectField
-          value={
-            modelsDevMappingProviderKey && modelsDevMappingModelId
-              ? {
-                  providerKey: modelsDevMappingProviderKey,
-                  modelId: modelsDevMappingModelId,
-                }
-              : undefined
-          }
-          options={modelsDevOptions}
-          loading={modelsDevLoading}
-          {...(disabled !== undefined ? { disabled } : {})}
-          autoResolved={Boolean(autoMapping)}
-          autoResolvedMapping={autoMapping}
-          autoResolvedLabel={autoMappingLabel}
-          onChange={(mapping) => onMappingChange(mapping ?? undefined)}
-        />
+    <div className="mcp-field candidate-model-spec-readonly">
+      <span className="mcp-field-label">模型规格</span>
+      {mappingLabel ? (
+        <p className="models-dev-select-hint">models.dev：{mappingLabel}</p>
+      ) : (
+        <p className="models-dev-select-hint unresolved">
+          未解析 models.dev 映射，请在 Provider 候选模型中配置。
+        </p>
+      )}
+      {hasSummary ? (
         <ModelsDevCapabilitySummary
-          {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
-          {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
-          overriddenFields={effectiveHints.overriddenFields}
+          {...(capability ? { capability } : {})}
+          {...(pricing ? { pricing } : {})}
+          {...(overriddenFields ? { overriddenFields } : {})}
+        />
+      ) : (
+        <p className="mcp-field-hint">暂无规格数据，请在 Provider 候选模型中配置 models.dev 映射。</p>
+      )}
+    </div>
+  );
+}
+
+function ThinkingEffortSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="mcp-field">
+      <span className="mcp-field-label">思考强度</span>
+      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <option value="">默认</option>
+        <option value="off">关闭</option>
+        <option value="low">低</option>
+        <option value="medium">中</option>
+        <option value="high">高</option>
+        <option value="xhigh">极高</option>
+        <option value="max">最大</option>
+      </select>
+    </label>
+  );
+}
+
+function ApiCompatSelect({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="mcp-field">
+      <span className="mcp-field-label">API 兼容模式</span>
+      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <option value="">默认</option>
+        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ProfileNodeCandidateModelFields({
+  providerId,
+  candidateModelId,
+  thinkingEffort,
+  apiCompat,
+  providers,
+  candidates,
+  candidatesLoading,
+  selectedCandidate,
+  busy,
+  onProviderChange,
+  onCandidateChange,
+  onThinkingEffortChange,
+  onApiCompatChange,
+}: {
+  providerId: string;
+  candidateModelId: string;
+  thinkingEffort: string;
+  apiCompat: string;
+  providers: ProviderConfigView[];
+  candidates: CandidateModelView[];
+  candidatesLoading: boolean;
+  selectedCandidate?: CandidateModelView;
+  busy?: boolean;
+  onProviderChange: (providerId: string) => void;
+  onCandidateChange: (candidateId: string, modelId: string) => void;
+  onThinkingEffortChange: (value: string) => void;
+  onApiCompatChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <div className="models-agent-template-form-grid">
+        <label className="mcp-field">
+          <span className="mcp-field-label">Provider</span>
+          <select
+            className="mcp-field-input"
+            value={providerId}
+            disabled={busy}
+            onChange={(event) => onProviderChange(event.target.value)}
+          >
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <CandidateModelSelectField
+          value={candidateModelId}
+          candidates={candidates}
+          loading={candidatesLoading}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          onChange={(nextCandidateId) => {
+            const candidate = candidates.find((entry) => entry.id === nextCandidateId);
+            onCandidateChange(nextCandidateId, candidate?.modelId ?? "");
+          }}
+        />
+        <ThinkingEffortSelect
+          value={thinkingEffort}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          onChange={onThinkingEffortChange}
+        />
+        <ApiCompatSelect
+          value={apiCompat}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          onChange={onApiCompatChange}
         />
       </div>
-      <ModelManualSpecPanel
-        value={manualSpec}
-        {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
-        {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
-        {...(disabled !== undefined ? { disabled } : {})}
-        onChange={onManualSpecChange}
-      />
-    </div>
+      <CandidateModelSpecReadOnlySection {...(selectedCandidate ? { candidate: selectedCandidate } : {})} />
+    </>
   );
 }
 
@@ -2379,19 +2177,11 @@ function AgentProfileNodeConfigModal({
   templates,
   mcpServers,
   providers,
-  modelsForProvider,
-  modelsErrorForProvider,
-  loadingForProvider,
-  modelsDevOptions,
-  modelsDevLoading,
-  capabilityHints,
-  pricingHints,
   busy,
   onClose,
   onPatchProfile,
   onPatchAgent,
   onPatchMainToolPolicy,
-  onFetchModels,
 }: {
   node: AgentProfileSelectedNode;
   form: AgentProfileFormState;
@@ -2401,19 +2191,11 @@ function AgentProfileNodeConfigModal({
   templates: AgentTemplate[];
   mcpServers: McpServerConfigView[];
   providers: ProviderConfigView[];
-  modelsForProvider: (providerId: string) => UpstreamModelOption[];
-  modelsErrorForProvider: (providerId: string) => string | undefined;
-  loadingForProvider: (providerId: string) => boolean;
-  modelsDevOptions: readonly ModelsDevModelOption[];
-  modelsDevLoading: boolean;
-  capabilityHints: Record<string, RouteCapabilityHint>;
-  pricingHints: Record<string, RoutePricingHint>;
   busy?: boolean | undefined;
   onClose: () => void;
   onPatchProfile: (patch: Partial<AgentProfileFormState>) => void;
   onPatchAgent: (index: number, patch: Partial<AgentProfileAgentFormState>) => void;
   onPatchMainToolPolicy: (patch: Parameters<typeof mainCapabilityPatchToProfileForm>[0]) => void;
-  onFetchModels: (provider: ProviderConfigView) => void;
 }) {
   const isMainNode = node.kind === "main";
   const isBuiltinExploreNode = node.kind === "builtinExplore";
@@ -2423,56 +2205,12 @@ function AgentProfileNodeConfigModal({
       ? form.builtinExploreProviderId
       : (agent?.providerId ?? "");
   const { candidates: nodeCandidates, loading: nodeCandidatesLoading } = useCandidateModels(nodeProviderId);
-  const nodeCapKey = isMainNode ? "main" : isBuiltinExploreNode ? "explore" : (agent?.agentKey ?? "");
-  const rawCapability = capabilityHints[nodeCapKey];
-  const rawPricing = pricingHints[nodeCapKey];
-  const manualSpecForm = isMainNode
-    ? form.mainManualSpec
-    : isBuiltinExploreNode
-      ? form.builtinExploreManualSpec
-      : agent?.manualSpec;
   const selectedCandidateId = isMainNode
     ? form.mainCandidateModelId
     : isBuiltinExploreNode
       ? form.builtinExploreCandidateModelId
       : (agent?.candidateModelId ?? "");
   const selectedCandidate = nodeCandidates.find((candidate) => candidate.id === selectedCandidateId);
-  const selectedCandidateCapability = candidateCapabilityHint(selectedCandidate);
-  const selectedCandidatePricing = candidatePricingHint(selectedCandidate);
-  const hasManualMapping = valueHasManualMapping(isMainNode, isBuiltinExploreNode, form, agent);
-  const isCandidateMode = isMainNode
-    ? form.mainModelSelectMode === "candidate"
-    : isBuiltinExploreNode
-      ? form.builtinExploreModelSelectMode === "candidate"
-      : (agent?.modelSelectMode ?? "candidate") === "candidate";
-  const capability =
-    isCandidateMode && !hasManualMapping ? (selectedCandidateCapability ?? rawCapability) : rawCapability;
-  const pricing =
-    isCandidateMode && !hasManualMapping ? (selectedCandidatePricing ?? rawPricing) : rawPricing;
-  const effectiveHints = useEffectiveModelSpecHints(
-    capability,
-    pricing,
-    manualSpecForm ?? emptyManualSpecForm(),
-  );
-  const catalogCapability = catalogCapabilityHint(capability);
-  const catalogPricing = catalogPricingHint(pricing);
-  const autoMatch =
-    !hasManualMapping && isCandidateMode && selectedCandidate?.modelsDevMapping
-      ? ({
-          autoResolved: true as const,
-          autoResolvedMapping: selectedCandidate.modelsDevMapping,
-          autoResolvedLabel: selectedCandidate.modelsDevLabel,
-        } as const)
-      : !hasManualMapping && capability?.resolvedModelsDevMapping
-        ? ({
-            autoResolved: true as const,
-            autoResolvedMapping: capability.resolvedModelsDevMapping,
-            autoResolvedLabel: capability.resolvedModelsDevLabel,
-          } as const)
-        : { autoResolved: false as const };
-  const mainProvider = providers.find((provider) => provider.id === form.mainProviderId);
-  const builtinExploreProvider = providers.find((provider) => provider.id === form.builtinExploreProviderId);
-  const agentProvider = agent ? providers.find((provider) => provider.id === agent.providerId) : undefined;
   const nodeTitle = isMainNode
     ? "主 Agent 配置"
     : isBuiltinExploreNode
@@ -2509,6 +2247,14 @@ function AgentProfileNodeConfigModal({
 
   if (!isMainNode && !isBuiltinExploreNode && (!agent || agentIndex < 0)) {
     return null;
+  }
+
+  function handleProviderChange(nextProviderId: string, fallbackModelId: string) {
+    return {
+      providerId: nextProviderId,
+      modelId: fallbackModelId,
+      candidateModelId: "",
+    };
   }
 
   return (
@@ -2558,12 +2304,6 @@ function AgentProfileNodeConfigModal({
                 </p>
               </div>
 
-              <ModelSelectModeToggle
-                value={form.mainModelSelectMode}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                onChange={(mode) => onPatchProfile({ mainModelSelectMode: mode })}
-              />
-
               <div className="models-agent-template-form-grid">
                 <label className="mcp-field">
                   <span className="mcp-field-label">名称</span>
@@ -2591,155 +2331,34 @@ function AgentProfileNodeConfigModal({
                     <option value="claude_code">Claude Code 预设</option>
                   </select>
                 </label>
-                {form.mainModelSelectMode === "candidate" ? (
-                  <>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.mainProviderId}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const provider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchProfile({
-                            mainProviderId: event.target.value,
-                            mainModelId: provider?.defaultModel || form.mainModelId,
-                            mainCandidateModelId: "",
-                            mainModelsDevMappingProviderKey: "",
-                            mainModelsDevMappingModelId: "",
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <CandidateModelSelectField
-                      value={form.mainCandidateModelId}
-                      candidates={nodeCandidates}
-                      loading={nodeCandidatesLoading}
-                      {...(busy !== undefined ? { disabled: busy } : {})}
-                      onChange={(candidateId) => {
-                        const candidate = nodeCandidates.find((c) => c.id === candidateId);
-                        if (!candidate) {
-                          onPatchProfile({
-                            mainCandidateModelId: "",
-                            mainModelsDevMappingProviderKey: "",
-                            mainModelsDevMappingModelId: "",
-                          });
-                          return;
-                        }
-                        if (candidate) {
-                          onPatchProfile({
-                            mainCandidateModelId: candidateId,
-                            mainModelId: candidate.modelId,
-                            mainModelsDevMappingProviderKey: "",
-                            mainModelsDevMappingModelId: "",
-                          });
-                        }
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.mainProviderId}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const provider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchProfile({
-                            mainProviderId: event.target.value,
-                            mainModelId: provider?.defaultModel || form.mainModelId,
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="mcp-field">
-                      <span className="mcp-field-label">模型</span>
-                      <ModelSelectField
-                        value={form.mainModelId}
-                        disabled={busy}
-                        models={modelsForProvider(form.mainProviderId)}
-                        loading={loadingForProvider(form.mainProviderId)}
-                        error={modelsErrorForProvider(form.mainProviderId)}
-                        onChange={(modelId) => onPatchProfile({ mainModelId: modelId })}
-                        onRefresh={mainProvider ? () => onFetchModels(mainProvider) : undefined}
-                      />
-                    </div>
-                  </>
-                )}
-                <label className="mcp-field">
-                  <span className="mcp-field-label">思考强度</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.mainThinkingEffort}
-                    disabled={busy}
-                    onChange={(event) => onPatchProfile({ mainThinkingEffort: event.target.value })}
-                  >
-                    <option value="">默认</option>
-                    <option value="off">关闭</option>
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="xhigh">极高</option>
-                    <option value="max">最大</option>
-                  </select>
-                </label>
-                <label className="mcp-field">
-                  <span className="mcp-field-label">API 兼容模式</span>
-                  <select
-                    className="mcp-field-input"
-                    value={form.mainApiCompat}
-                    disabled={busy}
-                    onChange={(event) => onPatchProfile({ mainApiCompat: event.target.value })}
-                  >
-                    <option value="">默认</option>
-                    {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
-              <ModelSpecOverrideSection
-                manualSpec={form.mainManualSpec}
-                modelsDevMappingProviderKey={form.mainModelsDevMappingProviderKey}
-                modelsDevMappingModelId={form.mainModelsDevMappingModelId}
-                modelsDevOptions={modelsDevOptions}
-                modelsDevLoading={modelsDevLoading}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                {...(capability ? { autoCapability: capability } : {})}
-                {...(pricing ? { autoPricing: pricing } : {})}
-                {...(autoMatch.autoResolved
-                  ? {
-                      autoMapping: autoMatch.autoResolvedMapping,
-                      autoMappingLabel: autoMatch.autoResolvedLabel,
-                    }
-                  : {})}
-                onMappingChange={(mapping) =>
+
+              <ProfileNodeCandidateModelFields
+                providerId={form.mainProviderId}
+                candidateModelId={form.mainCandidateModelId}
+                thinkingEffort={form.mainThinkingEffort}
+                apiCompat={form.mainApiCompat}
+                providers={providers}
+                candidates={nodeCandidates}
+                candidatesLoading={nodeCandidatesLoading}
+                {...(selectedCandidate ? { selectedCandidate } : {})}
+                {...(busy !== undefined ? { busy } : {})}
+                onProviderChange={(nextProviderId) => {
+                  const provider = providers.find((entry) => entry.id === nextProviderId);
                   onPatchProfile({
-                    mainModelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                    mainModelsDevMappingModelId: mapping?.modelId ?? "",
+                    mainProviderId: nextProviderId,
+                    mainModelId: provider?.defaultModel || form.mainModelId,
+                    mainCandidateModelId: "",
+                  });
+                }}
+                onCandidateChange={(candidateId, modelId) =>
+                  onPatchProfile({
+                    mainCandidateModelId: candidateId,
+                    mainModelId: modelId,
                   })
                 }
-                onManualSpecChange={(patch) =>
-                  onPatchProfile({
-                    mainManualSpec: { ...form.mainManualSpec, ...patch },
-                  })
-                }
+                onThinkingEffortChange={(value) => onPatchProfile({ mainThinkingEffort: value })}
+                onApiCompatChange={(value) => onPatchProfile({ mainApiCompat: value })}
               />
 
               <label className="mcp-field">
@@ -2771,251 +2390,33 @@ function AgentProfileNodeConfigModal({
                 </p>
               </div>
 
-              <ModelSelectModeToggle
-                value={form.builtinExploreModelSelectMode}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                onChange={(mode) => onPatchProfile({ builtinExploreModelSelectMode: mode })}
+              <ProfileNodeCandidateModelFields
+                providerId={form.builtinExploreProviderId}
+                candidateModelId={form.builtinExploreCandidateModelId}
+                thinkingEffort={form.builtinExploreThinkingEffort}
+                apiCompat={form.builtinExploreApiCompat}
+                providers={providers}
+                candidates={nodeCandidates}
+                candidatesLoading={nodeCandidatesLoading}
+                {...(selectedCandidate ? { selectedCandidate } : {})}
+                {...(busy !== undefined ? { busy } : {})}
+                onProviderChange={(nextProviderId) => {
+                  const provider = providers.find((entry) => entry.id === nextProviderId);
+                  onPatchProfile({
+                    builtinExploreProviderId: nextProviderId,
+                    builtinExploreModelId: provider?.defaultModel || form.builtinExploreModelId,
+                    builtinExploreCandidateModelId: "",
+                  });
+                }}
+                onCandidateChange={(candidateId, modelId) =>
+                  onPatchProfile({
+                    builtinExploreCandidateModelId: candidateId,
+                    builtinExploreModelId: modelId,
+                  })
+                }
+                onThinkingEffortChange={(value) => onPatchProfile({ builtinExploreThinkingEffort: value })}
+                onApiCompatChange={(value) => onPatchProfile({ builtinExploreApiCompat: value })}
               />
-
-              {form.builtinExploreModelSelectMode === "candidate" ? (
-                <>
-                  <div className="models-agent-template-form-grid">
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreProviderId}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextProvider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchProfile({
-                            builtinExploreProviderId: event.target.value,
-                            builtinExploreModelId: nextProvider?.defaultModel || form.builtinExploreModelId,
-                            builtinExploreCandidateModelId: "",
-                            builtinExploreModelsDevMappingProviderKey: "",
-                            builtinExploreModelsDevMappingModelId: "",
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <CandidateModelSelectField
-                      value={form.builtinExploreCandidateModelId}
-                      candidates={nodeCandidates}
-                      loading={nodeCandidatesLoading}
-                      {...(busy !== undefined ? { disabled: busy } : {})}
-                      onChange={(candidateId) => {
-                        const candidate = nodeCandidates.find((c) => c.id === candidateId);
-                        if (!candidate) {
-                          onPatchProfile({
-                            builtinExploreCandidateModelId: "",
-                            builtinExploreModelsDevMappingProviderKey: "",
-                            builtinExploreModelsDevMappingModelId: "",
-                          });
-                          return;
-                        }
-                        if (candidate) {
-                          onPatchProfile({
-                            builtinExploreCandidateModelId: candidateId,
-                            builtinExploreModelId: candidate.modelId,
-                            builtinExploreModelsDevMappingProviderKey: "",
-                            builtinExploreModelsDevMappingModelId: "",
-                          });
-                        }
-                      }}
-                    />
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">思考强度</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreThinkingEffort}
-                        disabled={busy}
-                        onChange={(event) =>
-                          onPatchProfile({ builtinExploreThinkingEffort: event.target.value })
-                        }
-                      >
-                        <option value="">默认</option>
-                        <option value="off">关闭</option>
-                        <option value="low">低</option>
-                        <option value="medium">中</option>
-                        <option value="high">高</option>
-                        <option value="xhigh">极高</option>
-                        <option value="max">最大</option>
-                      </select>
-                    </label>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">API 兼容模式</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreApiCompat}
-                        disabled={busy}
-                        onChange={(event) => onPatchProfile({ builtinExploreApiCompat: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <ModelSpecOverrideSection
-                    manualSpec={form.builtinExploreManualSpec}
-                    modelsDevMappingProviderKey={form.builtinExploreModelsDevMappingProviderKey}
-                    modelsDevMappingModelId={form.builtinExploreModelsDevMappingModelId}
-                    modelsDevOptions={modelsDevOptions}
-                    modelsDevLoading={modelsDevLoading}
-                    {...(busy !== undefined ? { disabled: busy } : {})}
-                    {...(capability ? { autoCapability: capability } : {})}
-                    {...(pricing ? { autoPricing: pricing } : {})}
-                    {...(autoMatch.autoResolved
-                      ? {
-                          autoMapping: autoMatch.autoResolvedMapping,
-                          autoMappingLabel: autoMatch.autoResolvedLabel,
-                        }
-                      : {})}
-                    onMappingChange={(mapping) =>
-                      onPatchProfile({
-                        builtinExploreModelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                        builtinExploreModelsDevMappingModelId: mapping?.modelId ?? "",
-                      })
-                    }
-                    onManualSpecChange={(patch) =>
-                      onPatchProfile({
-                        builtinExploreManualSpec: { ...form.builtinExploreManualSpec, ...patch },
-                      })
-                    }
-                  />
-                </>
-              ) : (
-                <>
-                  <div className="models-agent-template-form-grid">
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreProviderId}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextProvider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchProfile({
-                            builtinExploreProviderId: event.target.value,
-                            builtinExploreModelId:
-                              nextProvider?.defaultModel || form.builtinExploreModelId || "",
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="mcp-field">
-                      <span className="mcp-field-label">模型</span>
-                      <ModelSelectField
-                        value={form.builtinExploreModelId}
-                        disabled={busy}
-                        models={modelsForProvider(form.builtinExploreProviderId)}
-                        loading={loadingForProvider(form.builtinExploreProviderId)}
-                        error={modelsErrorForProvider(form.builtinExploreProviderId)}
-                        onChange={(modelId) => onPatchProfile({ builtinExploreModelId: modelId })}
-                        onRefresh={
-                          builtinExploreProvider ? () => onFetchModels(builtinExploreProvider) : undefined
-                        }
-                      />
-                    </div>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">思考强度</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreThinkingEffort}
-                        disabled={busy}
-                        onChange={(event) =>
-                          onPatchProfile({ builtinExploreThinkingEffort: event.target.value })
-                        }
-                      >
-                        <option value="">默认</option>
-                        <option value="off">关闭</option>
-                        <option value="low">低</option>
-                        <option value="medium">中</option>
-                        <option value="high">高</option>
-                        <option value="xhigh">极高</option>
-                        <option value="max">最大</option>
-                      </select>
-                    </label>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">API 兼容模式</span>
-                      <select
-                        className="mcp-field-input"
-                        value={form.builtinExploreApiCompat}
-                        disabled={busy}
-                        onChange={(event) => onPatchProfile({ builtinExploreApiCompat: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="models-agent-template-form-grid">
-                    <div className="mcp-field">
-                      <span className="mcp-field-label">Models.dev 映射</span>
-                      <ModelsDevModelSelectField
-                        value={
-                          form.builtinExploreModelsDevMappingProviderKey &&
-                          form.builtinExploreModelsDevMappingModelId
-                            ? {
-                                providerKey: form.builtinExploreModelsDevMappingProviderKey,
-                                modelId: form.builtinExploreModelsDevMappingModelId,
-                              }
-                            : undefined
-                        }
-                        options={modelsDevOptions}
-                        loading={modelsDevLoading}
-                        disabled={busy}
-                        autoResolved={autoMatch.autoResolved}
-                        autoResolvedMapping={
-                          autoMatch.autoResolved ? autoMatch.autoResolvedMapping : undefined
-                        }
-                        autoResolvedLabel={autoMatch.autoResolved ? autoMatch.autoResolvedLabel : undefined}
-                        onChange={(mapping) =>
-                          onPatchProfile({
-                            builtinExploreModelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                            builtinExploreModelsDevMappingModelId: mapping?.modelId ?? "",
-                          })
-                        }
-                      />
-                      <ModelsDevCapabilitySummary
-                        {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
-                        {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
-                        overriddenFields={effectiveHints.overriddenFields}
-                      />
-                    </div>
-                    <ModelManualSpecPanel
-                      value={form.builtinExploreManualSpec}
-                      {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
-                      {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
-                      {...(busy !== undefined ? { disabled: busy } : {})}
-                      onChange={(patch) =>
-                        onPatchProfile({
-                          builtinExploreManualSpec: { ...form.builtinExploreManualSpec, ...patch },
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
             </>
           ) : (
             <>
@@ -3038,247 +2439,33 @@ function AgentProfileNodeConfigModal({
                 </p>
               </div>
 
-              <ModelSelectModeToggle
-                value={agent?.modelSelectMode ?? "candidate"}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                onChange={(mode) => onPatchAgent(agentIndex, { modelSelectMode: mode })}
-              />
-
-              {(agent?.modelSelectMode ?? "candidate") === "candidate" ? (
-                <>
-                  <div className="models-agent-template-form-grid">
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.providerId ?? ""}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextProvider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchAgent(agentIndex, {
-                            providerId: event.target.value,
-                            modelId: nextProvider?.defaultModel || agent?.modelId || "",
-                            candidateModelId: "",
-                            modelsDevMappingProviderKey: "",
-                            modelsDevMappingModelId: "",
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <CandidateModelSelectField
-                      value={agent?.candidateModelId ?? ""}
-                      candidates={nodeCandidates}
-                      loading={nodeCandidatesLoading}
-                      {...(busy !== undefined ? { disabled: busy } : {})}
-                      onChange={(candidateId) => {
-                        const candidate = nodeCandidates.find((c) => c.id === candidateId);
-                        if (!candidate) {
-                          onPatchAgent(agentIndex, {
-                            candidateModelId: "",
-                            modelsDevMappingProviderKey: "",
-                            modelsDevMappingModelId: "",
-                          });
-                          return;
-                        }
-                        if (candidate) {
-                          onPatchAgent(agentIndex, {
-                            candidateModelId: candidateId,
-                            modelId: candidate.modelId,
-                            modelsDevMappingProviderKey: "",
-                            modelsDevMappingModelId: "",
-                          });
-                        }
-                      }}
-                    />
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">思考强度</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.thinkingEffort ?? ""}
-                        disabled={busy}
-                        onChange={(event) => onPatchAgent(agentIndex, { thinkingEffort: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        <option value="off">关闭</option>
-                        <option value="low">低</option>
-                        <option value="medium">中</option>
-                        <option value="high">高</option>
-                        <option value="xhigh">极高</option>
-                        <option value="max">最大</option>
-                      </select>
-                    </label>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">API 兼容模式</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.apiCompat ?? ""}
-                        disabled={busy}
-                        onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  {agent ? (
-                    <ModelSpecOverrideSection
-                      manualSpec={agent.manualSpec}
-                      modelsDevMappingProviderKey={agent.modelsDevMappingProviderKey}
-                      modelsDevMappingModelId={agent.modelsDevMappingModelId}
-                      modelsDevOptions={modelsDevOptions}
-                      modelsDevLoading={modelsDevLoading}
-                      {...(busy !== undefined ? { disabled: busy } : {})}
-                      {...(capability ? { autoCapability: capability } : {})}
-                      {...(pricing ? { autoPricing: pricing } : {})}
-                      {...(autoMatch.autoResolved
-                        ? {
-                            autoMapping: autoMatch.autoResolvedMapping,
-                            autoMappingLabel: autoMatch.autoResolvedLabel,
-                          }
-                        : {})}
-                      onMappingChange={(mapping) =>
-                        onPatchAgent(agentIndex, {
-                          modelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                          modelsDevMappingModelId: mapping?.modelId ?? "",
-                        })
-                      }
-                      onManualSpecChange={(patch) =>
-                        onPatchAgent(agentIndex, {
-                          manualSpec: { ...agent.manualSpec, ...patch },
-                        })
-                      }
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <div className="models-agent-template-form-grid">
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">Provider</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.providerId ?? ""}
-                        disabled={busy}
-                        onChange={(event) => {
-                          const nextProvider = providers.find((entry) => entry.id === event.target.value);
-                          onPatchAgent(agentIndex, {
-                            providerId: event.target.value,
-                            modelId: nextProvider?.defaultModel || agent?.modelId || "",
-                          });
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="mcp-field">
-                      <span className="mcp-field-label">模型</span>
-                      <ModelSelectField
-                        value={agent?.modelId ?? ""}
-                        disabled={busy}
-                        models={modelsForProvider(agent?.providerId ?? "")}
-                        loading={loadingForProvider(agent?.providerId ?? "")}
-                        error={modelsErrorForProvider(agent?.providerId ?? "")}
-                        onChange={(modelId) => onPatchAgent(agentIndex, { modelId })}
-                        onRefresh={agentProvider ? () => onFetchModels(agentProvider) : undefined}
-                      />
-                    </div>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">思考强度</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.thinkingEffort ?? ""}
-                        disabled={busy}
-                        onChange={(event) => onPatchAgent(agentIndex, { thinkingEffort: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        <option value="off">关闭</option>
-                        <option value="low">低</option>
-                        <option value="medium">中</option>
-                        <option value="high">高</option>
-                        <option value="xhigh">极高</option>
-                        <option value="max">最大</option>
-                      </select>
-                    </label>
-                    <label className="mcp-field">
-                      <span className="mcp-field-label">API 兼容模式</span>
-                      <select
-                        className="mcp-field-input"
-                        value={agent?.apiCompat ?? ""}
-                        disabled={busy}
-                        onChange={(event) => onPatchAgent(agentIndex, { apiCompat: event.target.value })}
-                      >
-                        <option value="">默认</option>
-                        {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="models-agent-template-form-grid">
-                    <div className="mcp-field">
-                      <span className="mcp-field-label">Models.dev 映射</span>
-                      <ModelsDevModelSelectField
-                        value={
-                          agent?.modelsDevMappingProviderKey && agent?.modelsDevMappingModelId
-                            ? {
-                                providerKey: agent.modelsDevMappingProviderKey,
-                                modelId: agent.modelsDevMappingModelId,
-                              }
-                            : undefined
-                        }
-                        options={modelsDevOptions}
-                        loading={modelsDevLoading}
-                        disabled={busy}
-                        autoResolved={autoMatch.autoResolved}
-                        autoResolvedMapping={
-                          autoMatch.autoResolved ? autoMatch.autoResolvedMapping : undefined
-                        }
-                        autoResolvedLabel={autoMatch.autoResolved ? autoMatch.autoResolvedLabel : undefined}
-                        onChange={(mapping) =>
-                          onPatchAgent(agentIndex, {
-                            modelsDevMappingProviderKey: mapping?.providerKey ?? "",
-                            modelsDevMappingModelId: mapping?.modelId ?? "",
-                          })
-                        }
-                      />
-                      <ModelsDevCapabilitySummary
-                        {...(effectiveHints.capability ? { capability: effectiveHints.capability } : {})}
-                        {...(effectiveHints.pricing ? { pricing: effectiveHints.pricing } : {})}
-                        overriddenFields={effectiveHints.overriddenFields}
-                      />
-                    </div>
-                    {agent ? (
-                      <ModelManualSpecPanel
-                        value={agent.manualSpec}
-                        {...(catalogCapability ? { autoCapability: catalogCapability } : {})}
-                        {...(catalogPricing ? { autoPricing: catalogPricing } : {})}
-                        {...(busy !== undefined ? { disabled: busy } : {})}
-                        onChange={(patch) =>
-                          onPatchAgent(agentIndex, {
-                            manualSpec: { ...agent.manualSpec, ...patch },
-                          })
-                        }
-                      />
-                    ) : null}
-                  </div>
-                </>
-              )}
+              {agent ? (
+                <ProfileNodeCandidateModelFields
+                  providerId={agent.providerId}
+                  candidateModelId={agent.candidateModelId}
+                  thinkingEffort={agent.thinkingEffort}
+                  apiCompat={agent.apiCompat}
+                  providers={providers}
+                  candidates={nodeCandidates}
+                  candidatesLoading={nodeCandidatesLoading}
+                  {...(selectedCandidate ? { selectedCandidate } : {})}
+                  {...(busy !== undefined ? { busy } : {})}
+                  onProviderChange={(nextProviderId) => {
+                    const provider = providers.find((entry) => entry.id === nextProviderId);
+                    onPatchAgent(agentIndex, {
+                      ...handleProviderChange(nextProviderId, provider?.defaultModel || agent.modelId || ""),
+                    });
+                  }}
+                  onCandidateChange={(candidateId, modelId) =>
+                    onPatchAgent(agentIndex, {
+                      candidateModelId: candidateId,
+                      modelId,
+                    })
+                  }
+                  onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
+                  onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
+                />
+              ) : null}
 
               {agent ? (
                 <ToolCapabilityPanel

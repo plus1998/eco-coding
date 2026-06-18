@@ -458,8 +458,6 @@ export interface RouteManualSpec {
   cacheWritePerM?: number;
 }
 
-export type ModelSelectMode = "candidate" | "manual";
-
 export interface CandidateModelInput {
   id?: string;
   providerId: string;

@@ -3,19 +3,12 @@ import type {
   AgentDomain,
   AgentTemplate,
   ModelRef,
-  ModelSelectMode,
   OrchestrationProfile,
   OrchestrationStrategy,
   ProviderConfigView,
   ThinkingEffort,
   UpstreamApiCompat,
 } from "../shared/ipc";
-import {
-  emptyManualSpecForm,
-  formToManualSpec,
-  type ManualSpecFormFields,
-  manualSpecToForm,
-} from "./agent-profile-manual-spec-form";
 import { parseList } from "./agent-template-form-utils";
 import {
   capabilityFieldsToToolPolicy,
@@ -33,13 +26,9 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   providerId: string;
   modelId: string;
   thinkingEffort: string;
-  modelsDevMappingProviderKey: string;
-  modelsDevMappingModelId: string;
-  manualSpec: ManualSpecFormFields;
   apiCompat: string;
   enabled: boolean;
   candidateModelId: string;
-  modelSelectMode: ModelSelectMode;
 }
 
 export interface AgentProfileFormState {
@@ -51,12 +40,8 @@ export interface AgentProfileFormState {
   mainProviderId: string;
   mainModelId: string;
   mainThinkingEffort: string;
-  mainModelsDevMappingProviderKey: string;
-  mainModelsDevMappingModelId: string;
-  mainManualSpec: ManualSpecFormFields;
   mainApiCompat: string;
   mainCandidateModelId: string;
-  mainModelSelectMode: ModelSelectMode;
   mainSystemPromptPreset: "claude_code" | "custom";
   mainPrompt: string;
   mainReadCodebase: boolean;
@@ -76,12 +61,8 @@ export interface AgentProfileFormState {
   builtinExploreProviderId: string;
   builtinExploreModelId: string;
   builtinExploreThinkingEffort: string;
-  builtinExploreModelsDevMappingProviderKey: string;
-  builtinExploreModelsDevMappingModelId: string;
-  builtinExploreManualSpec: ManualSpecFormFields;
   builtinExploreApiCompat: string;
   builtinExploreCandidateModelId: string;
-  builtinExploreModelSelectMode: ModelSelectMode;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -195,12 +176,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     mainProviderId: provider?.id ?? "",
     mainModelId: provider?.defaultModel ?? "",
     mainThinkingEffort: "",
-    mainModelsDevMappingProviderKey: "",
-    mainModelsDevMappingModelId: "",
-    mainManualSpec: emptyManualSpecForm(),
     mainApiCompat: "",
     mainCandidateModelId: "",
-    mainModelSelectMode: "candidate" as ModelSelectMode,
     mainSystemPromptPreset: "claude_code",
     mainPrompt:
       "Coordinate the task and call specialized agents only when they materially improve the result.",
@@ -208,12 +185,8 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreProviderId: provider?.id ?? "",
     builtinExploreModelId: provider?.defaultModel ?? "",
     builtinExploreThinkingEffort: "",
-    builtinExploreModelsDevMappingProviderKey: "",
-    builtinExploreModelsDevMappingModelId: "",
-    builtinExploreManualSpec: emptyManualSpecForm(),
     builtinExploreApiCompat: "",
     builtinExploreCandidateModelId: "",
-    builtinExploreModelSelectMode: "candidate" as ModelSelectMode,
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -235,30 +208,16 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     mainProviderId: profile.mainAgent.modelRef.providerId,
     mainModelId: profile.mainAgent.modelRef.modelId,
     mainThinkingEffort: profile.mainAgent.modelRef.thinkingEffort ?? "",
-    mainModelsDevMappingProviderKey: profile.mainAgent.modelRef.modelsDevMapping?.providerKey ?? "",
-    mainModelsDevMappingModelId: profile.mainAgent.modelRef.modelsDevMapping?.modelId ?? "",
-    mainManualSpec: manualSpecToForm(profile.mainAgent.modelRef.manualSpec),
     mainApiCompat: profile.mainAgent.modelRef.apiCompat ?? "",
     mainCandidateModelId: profile.mainAgent.modelRef.candidateModelId ?? "",
-    mainModelSelectMode: profile.mainAgent.modelRef.candidateModelId
-      ? ("candidate" as ModelSelectMode)
-      : ("manual" as ModelSelectMode),
     mainSystemPromptPreset: profile.mainAgent.systemPromptPreset,
     mainPrompt: profile.mainAgent.prompt,
     ...mainCapabilityToProfileFormFields(mainCapability),
     builtinExploreProviderId: profile.builtinAgents.explore.modelRef.providerId,
     builtinExploreModelId: profile.builtinAgents.explore.modelRef.modelId,
     builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
-    builtinExploreModelsDevMappingProviderKey:
-      profile.builtinAgents.explore.modelRef.modelsDevMapping?.providerKey ?? "",
-    builtinExploreModelsDevMappingModelId:
-      profile.builtinAgents.explore.modelRef.modelsDevMapping?.modelId ?? "",
-    builtinExploreManualSpec: manualSpecToForm(profile.builtinAgents.explore.modelRef.manualSpec),
     builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
     builtinExploreCandidateModelId: profile.builtinAgents.explore.modelRef.candidateModelId ?? "",
-    builtinExploreModelSelectMode: profile.builtinAgents.explore.modelRef.candidateModelId
-      ? ("candidate" as ModelSelectMode)
-      : ("manual" as ModelSelectMode),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
@@ -267,15 +226,9 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
       providerId: agent.modelRef.providerId,
       modelId: agent.modelRef.modelId,
       thinkingEffort: agent.modelRef.thinkingEffort ?? "",
-      modelsDevMappingProviderKey: agent.modelRef.modelsDevMapping?.providerKey ?? "",
-      modelsDevMappingModelId: agent.modelRef.modelsDevMapping?.modelId ?? "",
-      manualSpec: manualSpecToForm(agent.modelRef.manualSpec),
       apiCompat: agent.modelRef.apiCompat ?? "",
       enabled: agent.enabled,
       candidateModelId: agent.modelRef.candidateModelId ?? "",
-      modelSelectMode: agent.modelRef.candidateModelId
-        ? ("candidate" as ModelSelectMode)
-        : ("manual" as ModelSelectMode),
       ...agentCapabilityToAgentForm(
         toolPolicyToCapabilityFields(agent.tools, {
           mcpServers: agent.mcpServers,
@@ -312,13 +265,9 @@ export function createProfileAgentFormFromTemplate(
     providerId: options.provider?.id ?? "",
     modelId: options.provider?.defaultModel ?? "",
     thinkingEffort: "",
-    modelsDevMappingProviderKey: "",
-    modelsDevMappingModelId: "",
-    manualSpec: emptyManualSpecForm(),
     apiCompat: "",
     enabled: true,
     candidateModelId: "",
-    modelSelectMode: "candidate" as ModelSelectMode,
     ...agentCapabilityToAgentForm(capability),
   };
 }
@@ -345,31 +294,21 @@ export function buildOrchestrationProfileFromForm(
   if (!name) {
     throw new Error("Agent Profile 名称不能为空。");
   }
-  const mainModelRef = buildModelRef(
-    form.mainProviderId,
-    form.mainModelId,
-    options.existing?.mainAgent.modelRef,
-    {
-      thinkingEffort: form.mainThinkingEffort,
-      modelsDevMappingProviderKey: form.mainModelsDevMappingProviderKey,
-      modelsDevMappingModelId: form.mainModelsDevMappingModelId,
-      manualSpec: form.mainManualSpec,
-      apiCompat: form.mainApiCompat,
-      candidateModelId: form.mainModelSelectMode === "candidate" ? form.mainCandidateModelId : "",
-    },
-  );
+  assertCandidateModelSelected("主 Agent", form.mainCandidateModelId);
+  assertCandidateModelSelected("Explore", form.builtinExploreCandidateModelId);
+
+  const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, {
+    thinkingEffort: form.mainThinkingEffort,
+    apiCompat: form.mainApiCompat,
+    candidateModelId: form.mainCandidateModelId,
+  });
   const builtinExploreModelRef = buildModelRef(
     form.builtinExploreProviderId,
     form.builtinExploreModelId,
-    options.existing?.builtinAgents.explore.modelRef,
     {
       thinkingEffort: form.builtinExploreThinkingEffort,
-      modelsDevMappingProviderKey: form.builtinExploreModelsDevMappingProviderKey,
-      modelsDevMappingModelId: form.builtinExploreModelsDevMappingModelId,
-      manualSpec: form.builtinExploreManualSpec,
       apiCompat: form.builtinExploreApiCompat,
-      candidateModelId:
-        form.builtinExploreModelSelectMode === "candidate" ? form.builtinExploreCandidateModelId : "",
+      candidateModelId: form.builtinExploreCandidateModelId,
     },
   );
   const templateById = new Map(options.templates.map((template) => [template.id, template]));
@@ -386,6 +325,10 @@ export function buildOrchestrationProfileFromForm(
       throw new Error(`找不到 Agent 模板：${agentForm.templateId}`);
     }
     const existingAgent = existingAgentByKey.get(agentForm.agentKey.trim());
+    const displayName = agentForm.displayName.trim() || existingAgent?.displayName || template.name;
+    if (agentForm.enabled) {
+      assertCandidateModelSelected(displayName, agentForm.candidateModelId);
+    }
     const tools = capabilityFieldsToToolPolicy({
       ...agentCapabilityFromAgentForm(agentForm),
       allowDelegation: template.allowDelegation,
@@ -393,14 +336,11 @@ export function buildOrchestrationProfileFromForm(
     return {
       agentKey,
       templateId: template.id,
-      displayName: agentForm.displayName.trim() || existingAgent?.displayName || template.name,
-      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, existingAgent?.modelRef, {
+      displayName,
+      modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, {
         thinkingEffort: agentForm.thinkingEffort,
-        modelsDevMappingProviderKey: agentForm.modelsDevMappingProviderKey,
-        modelsDevMappingModelId: agentForm.modelsDevMappingModelId,
-        manualSpec: agentForm.manualSpec,
         apiCompat: agentForm.apiCompat,
-        candidateModelId: agentForm.modelSelectMode === "candidate" ? agentForm.candidateModelId : "",
+        candidateModelId: agentForm.candidateModelId,
       }),
       tools,
       mcpServers: parseList(agentForm.mcpServers),
@@ -507,15 +447,17 @@ function mainCapabilityToProfileFormFields(
   };
 }
 
+function assertCandidateModelSelected(label: string, candidateModelId: string): void {
+  if (!candidateModelId.trim()) {
+    throw new Error(`${label} 必须选择候选模型。`);
+  }
+}
+
 function buildModelRef(
   providerId: string,
   modelId: string,
-  _existing?: ModelRef,
   options?: {
     thinkingEffort?: string;
-    modelsDevMappingProviderKey?: string;
-    modelsDevMappingModelId?: string;
-    manualSpec?: ManualSpecFormFields;
     apiCompat?: string;
     candidateModelId?: string;
   },
@@ -526,9 +468,6 @@ function buildModelRef(
     throw new Error("Agent Profile 中的每个 Agent 都必须配置 provider 和模型。");
   }
   const thinkingEffort = options?.thinkingEffort?.trim();
-  const mappingProviderKey = options?.modelsDevMappingProviderKey?.trim();
-  const mappingModelId = options?.modelsDevMappingModelId?.trim();
-  const hasMapping = Boolean(mappingProviderKey && mappingModelId);
   const apiCompat = options?.apiCompat?.trim();
   const candidateModelId = options?.candidateModelId?.trim();
   const modelRef: ModelRef = {
@@ -538,18 +477,8 @@ function buildModelRef(
   if (thinkingEffort) {
     modelRef.thinkingEffort = thinkingEffort as ThinkingEffort;
   }
-  if (hasMapping) {
-    modelRef.modelsDevMapping = {
-      providerKey: mappingProviderKey as string,
-      modelId: mappingModelId as string,
-    };
-  }
   if (apiCompat) {
     modelRef.apiCompat = apiCompat as UpstreamApiCompat;
-  }
-  const manualSpec = formToManualSpec(options?.manualSpec ?? emptyManualSpecForm(), { strict: true });
-  if (manualSpec) {
-    modelRef.manualSpec = manualSpec;
   }
   if (candidateModelId) {
     modelRef.candidateModelId = candidateModelId;
@@ -557,10 +486,7 @@ function buildModelRef(
   return modelRef;
 }
 
-export {
-  formatManualTokenValue as formatManualContextTokens,
-  tryFormToManualSpec,
-} from "./agent-profile-manual-spec-form";
+export { tryFormToManualSpec } from "./agent-profile-manual-spec-form";
 
 function normalizeAgentKey(raw: string): string {
   const agentKey = raw.trim();

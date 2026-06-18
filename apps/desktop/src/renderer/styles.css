@@ -11189,42 +11189,6 @@ html[data-window-focused="true"] .settings-nav {
   text-align: center;
 }
 
-/* ─── Model Select Mode Toggle ───────────────────────────────────────── */
-
-.model-select-mode-toggle {
-  display: flex;
-  gap: 0.4rem;
-  padding: 0.4rem 0;
-}
-
-.model-select-mode-option {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 5px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  transition: all 0.15s ease;
-}
-
-.model-select-mode-option input[type="radio"] {
-  display: none;
-}
-
-.model-select-mode-option.active {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--accent-soft);
-}
-
-.model-select-mode-option:hover:not(.active) {
-  border-color: var(--border-strong);
-  color: var(--text-secondary);
-  background: var(--nav-hover);
-}
 
 /* ─── Candidate Model Spec Badges ────────────────────────────────────── */
 

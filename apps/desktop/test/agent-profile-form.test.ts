@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import {
+  type AgentProfileFormState,
   agentProfileToForm,
   buildOrchestrationProfileFromForm,
   createBlankAgentProfileForm,
   createCopiedAgentProfileForm,
   createProfileAgentFormFromTemplate,
 } from "../src/renderer/agent-profile-form";
-import { emptyManualSpecForm } from "../src/renderer/agent-profile-manual-spec-form";
 import type { AgentTemplate, OrchestrationProfile, ProviderConfigView } from "../src/shared/ipc";
 import { runtimeRoleRoutesFromAgentProfile } from "../src/shared/thread-runtime-config";
 
@@ -56,13 +56,21 @@ function profile(): OrchestrationProfile {
       domain: "research",
       systemPromptPreset: "custom",
       prompt: "Coordinate research.",
-      modelRef: { providerId: provider.id, modelId: "model-main" },
+      modelRef: {
+        providerId: provider.id,
+        modelId: "model-main",
+        candidateModelId: "cand-main",
+      },
       tools: { allowed: ["Agent", "Read"], disallowed: ["Write"] },
       skills: [],
     },
     builtinAgents: {
       explore: {
-        modelRef: { providerId: provider.id, modelId: "model-explore" },
+        modelRef: {
+          providerId: provider.id,
+          modelId: "model-explore",
+          candidateModelId: "cand-explore",
+        },
       },
     },
     agents: [
@@ -70,7 +78,11 @@ function profile(): OrchestrationProfile {
         agentKey: "researcher",
         templateId: researcherTemplate.id,
         displayName: "Researcher",
-        modelRef: { providerId: provider.id, modelId: "model-research" },
+        modelRef: {
+          providerId: provider.id,
+          modelId: "model-research",
+          candidateModelId: "cand-researcher",
+        },
         tools: researcherTemplate.defaultTools,
         mcpServers: ["docs"],
         skills: ["citations"],
@@ -95,8 +107,20 @@ function requireElement<T>(values: readonly T[], index: number, label: string): 
   return value;
 }
 
+function withRequiredCandidateIds(form: AgentProfileFormState): AgentProfileFormState {
+  form.mainCandidateModelId = form.mainCandidateModelId || "cand-main";
+  form.builtinExploreCandidateModelId = form.builtinExploreCandidateModelId || "cand-explore";
+  for (const agent of form.agents) {
+    if (agent.enabled && !agent.candidateModelId) {
+      agent.candidateModelId = `cand-${agent.agentKey}`;
+    }
+  }
+  return form;
+}
+
 test("createBlankAgentProfileForm defaults the main agent to hands-on (write + bash)", () => {
   const form = createBlankAgentProfileForm({ providers: [provider] });
+  withRequiredCandidateIds(form);
 
   expect(form.mainWriteCodebase).toBe(true);
   expect(form.mainBash).toBe(true);
@@ -128,7 +152,7 @@ test("createCopiedAgentProfileForm turns protected profiles into user-editable c
 });
 
 test("buildOrchestrationProfileFromForm binds models and preserves guidance", () => {
-  const form = agentProfileToForm(profile());
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
   form.id = "user.research";
   form.source = "project";
   form.builtinExploreModelId = "model-explore-fast";
@@ -142,6 +166,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
   const sourceVerifier = requireElement(form.agents, 1, "agent");
   sourceVerifier.agentKey = "source_verifier";
   sourceVerifier.displayName = "Source Verifier";
+  sourceVerifier.candidateModelId = "cand-source-verifier";
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -154,12 +179,20 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
     source: "project",
     updatedAt: "2026-06-08T00:00:00.000Z",
     mainAgent: {
-      modelRef: { providerId: provider.id, modelId: "model-main" },
+      modelRef: {
+        providerId: provider.id,
+        modelId: "model-main",
+        candidateModelId: "cand-main",
+      },
       skills: [],
     },
     builtinAgents: {
       explore: {
-        modelRef: { providerId: provider.id, modelId: "model-explore-fast" },
+        modelRef: {
+          providerId: provider.id,
+          modelId: "model-explore-fast",
+          candidateModelId: "cand-explore",
+        },
       },
     },
   });
@@ -173,7 +206,7 @@ test("buildOrchestrationProfileFromForm binds models and preserves guidance", ()
 });
 
 test("buildOrchestrationProfileFromForm saves main and subagent capability policies", () => {
-  const form = agentProfileToForm(profile());
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
   form.id = "user.structured";
   form.mainWriteCodebase = false;
   form.mainNetwork = false;
@@ -206,7 +239,7 @@ test("buildOrchestrationProfileFromForm saves main and subagent capability polic
 });
 
 test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent keys", () => {
-  const form = agentProfileToForm(profile());
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
   form.id = "user.bad";
   const firstAgent = requireElement(form.agents, 0, "agent");
   firstAgent.agentKey = "system";
@@ -222,95 +255,11 @@ test("buildOrchestrationProfileFromForm rejects reserved and duplicate agent key
   ).toThrow("Agent key 重复");
 });
 
-test("buildOrchestrationProfileFromForm persists manual spec for main, explore, and subagents", () => {
-  const source = profile();
-  source.mainAgent.modelRef.manualSpec = { contextTokens: 200_000, inputPerM: 3, outputPerM: 15 };
-  source.builtinAgents.explore.modelRef.manualSpec = { contextTokens: 128_000 };
-  source.agents[0]!.modelRef.manualSpec = { contextTokens: 64_000 };
-
-  const form = agentProfileToForm(source);
-  expect(form.mainManualSpec.contextTokens).toBe("200000");
-  expect(form.mainManualSpec.inputPerM).toBe("3");
-  expect(form.mainManualSpec.outputPerM).toBe("15");
-  expect(form.builtinExploreManualSpec.contextTokens).toBe("128000");
-  expect(form.agents[0]?.manualSpec.contextTokens).toBe("64000");
-
-  form.mainManualSpec = {
-    ...form.mainManualSpec,
-    contextTokens: "256,000",
-  };
-  form.builtinExploreManualSpec = emptyManualSpecForm();
-  form.agents[0]!.manualSpec = {
-    ...form.agents[0]!.manualSpec,
-    contextTokens: "100000",
-  };
-
-  const built = buildOrchestrationProfileFromForm(form, {
-    existing: source,
-    templates: [researcherTemplate],
-  });
-
-  expect(built.mainAgent.modelRef.manualSpec).toEqual({
-    contextTokens: 256_000,
-    inputPerM: 3,
-    outputPerM: 15,
-  });
-  expect(built.builtinAgents.explore.modelRef.manualSpec).toBeUndefined();
-  expect(built.agents[0]?.modelRef.manualSpec).toEqual({ contextTokens: 100_000 });
-});
-
-test("buildOrchestrationProfileFromForm rejects invalid manual context limits", () => {
-  const form = agentProfileToForm(profile());
-  form.mainManualSpec = {
-    ...form.mainManualSpec,
-    contextTokens: "abc",
-  };
-
-  expect(() =>
-    buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
-  ).toThrow("手动上下文上限必须是正整数");
-});
-
-test("buildOrchestrationProfileFromForm persists full manual spec fields", () => {
-  const form = agentProfileToForm(profile());
-  form.mainManualSpec = {
-    contextTokens: "200000",
-    maxOutputTokens: "8192",
-    supportsImageInput: "yes",
-    supportsReasoning: "no",
-    inputPerM: "3",
-    outputPerM: "15",
-    cacheReadPerM: "0.3",
-    cacheWritePerM: "3.75",
-  };
-
-  const built = buildOrchestrationProfileFromForm(form, {
-    existing: profile(),
-    templates: [researcherTemplate],
-  });
-
-  expect(built.mainAgent.modelRef.manualSpec).toEqual({
-    contextTokens: 200_000,
-    maxOutputTokens: 8192,
-    supportsImageInput: true,
-    supportsReasoning: false,
-    inputPerM: 3,
-    outputPerM: 15,
-    cacheReadPerM: 0.3,
-    cacheWritePerM: 3.75,
-  });
-});
-
-test("buildOrchestrationProfileFromForm only stores candidate references in candidate mode", () => {
-  const form = agentProfileToForm(profile());
-  form.mainModelSelectMode = "candidate";
+test("buildOrchestrationProfileFromForm only stores candidate references", () => {
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
   form.mainCandidateModelId = "cand-main";
-  form.mainModelsDevMappingProviderKey = "";
-  form.mainModelsDevMappingModelId = "";
-  form.builtinExploreModelSelectMode = "manual";
-  form.builtinExploreCandidateModelId = "cand-explore-stale";
-  form.agents[0]!.modelSelectMode = "manual";
-  form.agents[0]!.candidateModelId = "cand-agent-stale";
+  form.builtinExploreCandidateModelId = "cand-explore";
+  form.agents[0]!.candidateModelId = "cand-researcher";
 
   const built = buildOrchestrationProfileFromForm(form, {
     existing: profile(),
@@ -319,11 +268,21 @@ test("buildOrchestrationProfileFromForm only stores candidate references in cand
 
   expect(built.mainAgent.modelRef.candidateModelId).toBe("cand-main");
   expect(built.mainAgent.modelRef.modelsDevMapping).toBeUndefined();
-  expect(built.builtinAgents.explore.modelRef.candidateModelId).toBeUndefined();
-  expect(built.agents[0]?.modelRef.candidateModelId).toBeUndefined();
+  expect(built.mainAgent.modelRef.manualSpec).toBeUndefined();
+  expect(built.builtinAgents.explore.modelRef.candidateModelId).toBe("cand-explore");
+  expect(built.agents[0]?.modelRef.candidateModelId).toBe("cand-researcher");
 
   const routes = runtimeRoleRoutesFromAgentProfile(built);
   expect(routes.find((route) => route.role === "planner")?.candidateModelId).toBe("cand-main");
+});
+
+test("buildOrchestrationProfileFromForm requires candidate model selection", () => {
+  const form = agentProfileToForm(profile());
+  form.mainCandidateModelId = "";
+
+  expect(() =>
+    buildOrchestrationProfileFromForm(form, { existing: profile(), templates: [researcherTemplate] }),
+  ).toThrow("主 Agent 必须选择候选模型。");
 });
 
 test("agentProfileToForm round-trips apiCompat for main, explore, and subagents", () => {
@@ -354,7 +313,7 @@ test("agentProfileToForm round-trips apiCompat for main, explore, and subagents"
 });
 
 test("buildOrchestrationProfileFromForm omits apiCompat when left at default", () => {
-  const form = agentProfileToForm(profile());
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
   form.mainApiCompat = "";
   form.builtinExploreApiCompat = "";
   form.agents[0]!.apiCompat = "";
