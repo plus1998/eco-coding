@@ -8,6 +8,12 @@ import type {
   UpstreamModelOption,
 } from "../shared/ipc";
 import { ModelManualSpecPanel } from "./ModelManualSpecPanel";
+import {
+  candidateCapabilityHint,
+  candidateOverrideFields,
+  candidatePricingHint,
+  ModelSpecSummary,
+} from "./ModelSpecSummary";
 import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
 import type { ModelsDevModelOption } from "../shared/ipc";
 import type { ManualSpecFormFields } from "./agent-profile-manual-spec-form";
@@ -62,20 +68,21 @@ function formFieldsToManualSpec(fields: ManualSpecFormFields): RouteManualSpec |
   return Object.keys(spec).length > 0 ? spec : undefined;
 }
 
-function formatResolvedSpec(candidate: CandidateModelView): string {
-  const parts: string[] = [];
-  if (candidate.resolvedContextTokens) {
-    parts.push(`${(candidate.resolvedContextTokens / 1000).toFixed(0)}k ctx`);
+function CandidateModelInlineSpec({ candidate }: { candidate: CandidateModelView }) {
+  const capability = candidateCapabilityHint(candidate);
+  const pricing = candidatePricingHint(candidate);
+  const overriddenFields = candidateOverrideFields(candidate);
+  if (!capability && !pricing) {
+    return <span className="candidate-model-spec-empty">未配置规格</span>;
   }
-  if (candidate.resolvedInputPerM !== undefined) {
-    parts.push(`$${candidate.resolvedInputPerM}/M in`);
-  }
-  if (candidate.resolvedOutputPerM !== undefined) {
-    parts.push(`$${candidate.resolvedOutputPerM}/M out`);
-  }
-  if (candidate.resolvedSupportsImageInput === true) parts.push("🖼️");
-  if (candidate.resolvedSupportsReasoning === true) parts.push("🧠");
-  return parts.join(" · ");
+  return (
+    <ModelSpecSummary
+      compact
+      {...(capability ? { capability } : {})}
+      {...(pricing ? { pricing } : {})}
+      {...(overriddenFields ? { overriddenFields } : {})}
+    />
+  );
 }
 
 export function CandidateModelPanel({
@@ -247,9 +254,7 @@ export function CandidateModelPanel({
                       {candidate.modelsDevLabel ? (
                         <span className="candidate-model-dev-label">{candidate.modelsDevLabel}</span>
                       ) : null}
-                      <span className="candidate-model-spec-summary">
-                        {formatResolvedSpec(candidate) || "未配置规格"}
-                      </span>
+                      <CandidateModelInlineSpec candidate={candidate} />
                     </div>
                     <div className="candidate-model-actions">
                       <button

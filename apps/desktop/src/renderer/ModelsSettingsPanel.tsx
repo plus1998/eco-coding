@@ -1,11 +1,9 @@
-import { formatCostUsd, formatRatePerMillion } from "@eco/runtime";
+import { formatCostUsd } from "@eco/runtime";
 import {
   ArrowUp,
   Copy,
   Download,
-  Eye,
   History,
-  Image,
   LinkIcon,
   PanelRightClose,
   PanelRightOpen,
@@ -16,7 +14,6 @@ import {
   Settings2,
   Trash2,
   X,
-  Zap,
 } from "lucide-react";
 import {
   type Dispatch,
@@ -54,8 +51,6 @@ import type {
   ProviderConfigInput,
   ProviderConfigView,
   ProxyBridgeSettingsSnapshot,
-  RouteCapabilityHint,
-  RoutePricingHint,
   SkillsListResult,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
@@ -76,8 +71,6 @@ import {
   mainCapabilityFromProfileForm,
   mainCapabilityPatchToProfileForm,
 } from "./agent-profile-form";
-import type { ManualSpecOverrideField } from "./agent-profile-manual-spec-form";
-import { listManualOverrideFields, manualSpecToForm } from "./agent-profile-manual-spec-form";
 import {
   type AgentProfileSummary,
   buildAgentProfileSummary,
@@ -86,6 +79,7 @@ import {
 } from "./agent-profile-summary";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { CandidateModelPanel } from "./CandidateModelListSection";
+import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import { buildPresetTemplateImportPlan } from "./preset-import";
 import {
@@ -1763,148 +1757,6 @@ function CandidateModelSelectField({
   );
 }
 
-function formatCandidateModelsDevLabel(candidate: CandidateModelView): string | undefined {
-  if (candidate.modelsDevLabel) {
-    return candidate.modelsDevLabel;
-  }
-  if (candidate.modelsDevMapping) {
-    return `${candidate.modelsDevMapping.providerKey}/${candidate.modelsDevMapping.modelId}`;
-  }
-  return undefined;
-}
-
-function ModelsDevCapabilitySummary({
-  capability,
-  pricing,
-  overriddenFields,
-}: {
-  capability?: RouteCapabilityHint;
-  pricing?: RoutePricingHint;
-  overriddenFields?: Set<ManualSpecOverrideField>;
-}) {
-  if (!capability && !pricing) {
-    return null;
-  }
-  const cap = capability;
-  const overrides = overriddenFields ?? new Set<ManualSpecOverrideField>();
-  const hasContext = cap?.contextLimitResolved && cap.contextTokens !== undefined && cap.contextTokens > 0;
-  const hasOutput = cap?.maxOutputTokens !== undefined && cap.maxOutputTokens > 0;
-  const hasImage = cap?.supportsImageInput;
-  const hasReasoning = cap?.supportsReasoning;
-  const rates = pricing?.rates;
-  const hasPricing = rates && rates.inputPerM > 0 && rates.outputPerM > 0;
-  const hasCache = rates && (rates.cacheReadPerM !== undefined || rates.cacheWritePerM !== undefined);
-
-  if (!hasContext && !hasImage && !hasPricing && !hasOutput && !hasReasoning) {
-    return null;
-  }
-
-  function chipClass(field?: ManualSpecOverrideField): string {
-    const base = "models-dev-capability-chip";
-    if (field && overrides.has(field)) {
-      return `${base} models-dev-capability-chip-manual`;
-    }
-    return base;
-  }
-
-  return (
-    <div className="models-dev-capability-summary">
-      {hasContext ? (
-        <span className={chipClass("contextTokens")} title="上下文窗口">
-          <Eye size={14} />
-          {cap!.contextTokens! >= 1_000_000
-            ? `${(cap!.contextTokens! / 1_000_000).toFixed(1)}M`
-            : `${Math.round(cap!.contextTokens! / 1000)}K`}{" "}
-          上下文
-          {overrides.has("contextTokens") ? (
-            <span className="models-dev-capability-manual-badge">手动</span>
-          ) : null}
-        </span>
-      ) : null}
-      {hasOutput ? (
-        <span className={chipClass("maxOutputTokens")} title="最大输出">
-          <Zap size={14} />
-          {cap!.maxOutputTokens! >= 1_000
-            ? `${(cap!.maxOutputTokens! / 1000).toFixed(0)}K`
-            : cap!.maxOutputTokens}{" "}
-          输出
-          {overrides.has("maxOutputTokens") ? (
-            <span className="models-dev-capability-manual-badge">手动</span>
-          ) : null}
-        </span>
-      ) : null}
-      {hasImage ? (
-        <span className={chipClass("supportsImageInput")} title="支持图像输入">
-          <Image size={14} />
-          多模态
-          {overrides.has("supportsImageInput") ? (
-            <span className="models-dev-capability-manual-badge">手动</span>
-          ) : null}
-        </span>
-      ) : null}
-      {hasReasoning ? (
-        <span className={chipClass("supportsReasoning")} title="支持推理">
-          <Zap size={14} />
-          推理
-          {overrides.has("supportsReasoning") ? (
-            <span className="models-dev-capability-manual-badge">手动</span>
-          ) : null}
-        </span>
-      ) : null}
-      {hasPricing ? (
-        <>
-          <span
-            className={`${chipClass("inputPerM")} models-dev-capability-chip-price`}
-            title="输入价格 /M tokens"
-          >
-            ↑{formatRatePerMillion(rates!.inputPerM)}
-            {overrides.has("inputPerM") ? (
-              <span className="models-dev-capability-manual-badge">手动</span>
-            ) : null}
-          </span>
-          <span
-            className={`${chipClass("outputPerM")} models-dev-capability-chip-price`}
-            title="输出价格 /M tokens"
-          >
-            ↓{formatRatePerMillion(rates!.outputPerM)}
-            {overrides.has("outputPerM") ? (
-              <span className="models-dev-capability-manual-badge">手动</span>
-            ) : null}
-          </span>
-        </>
-      ) : null}
-      {hasCache
-        ? [
-            rates?.cacheReadPerM !== undefined ? (
-              <span
-                key="cache-read"
-                className={`${chipClass("cacheReadPerM")} models-dev-capability-chip-cache`}
-                title="缓存读取价格 /M tokens"
-              >
-                ⊙{formatRatePerMillion(rates!.cacheReadPerM!)}
-                {overrides.has("cacheReadPerM") ? (
-                  <span className="models-dev-capability-manual-badge">手动</span>
-                ) : null}
-              </span>
-            ) : null,
-            rates?.cacheWritePerM !== undefined ? (
-              <span
-                key="cache-write"
-                className={`${chipClass("cacheWritePerM")} models-dev-capability-chip-cache`}
-                title="缓存写入价格 /M tokens"
-              >
-                ⊕{formatRatePerMillion(rates!.cacheWritePerM!)}
-                {overrides.has("cacheWritePerM") ? (
-                  <span className="models-dev-capability-manual-badge">手动</span>
-                ) : null}
-              </span>
-            ) : null,
-          ].filter(Boolean)
-        : null}
-    </div>
-  );
-}
-
 function useCandidateModels(providerId: string): {
   candidates: CandidateModelView[];
   loading: boolean;
@@ -1934,116 +1786,6 @@ function useCandidateModels(providerId: string): {
     };
   }, [providerId]);
   return { candidates, loading };
-}
-
-function candidateCapabilityHint(candidate: CandidateModelView | undefined): RouteCapabilityHint | undefined {
-  if (!candidate) {
-    return undefined;
-  }
-  const hasCapability =
-    candidate.resolvedContextTokens !== undefined ||
-    candidate.resolvedMaxOutputTokens !== undefined ||
-    candidate.resolvedSupportsImageInput !== undefined ||
-    candidate.resolvedSupportsReasoning !== undefined;
-  if (!hasCapability) {
-    return undefined;
-  }
-  return {
-    role: "planner",
-    providerName: "",
-    modelId: candidate.modelId,
-    supportsImageInput: candidate.resolvedSupportsImageInput ?? false,
-    supportsReasoning: candidate.resolvedSupportsReasoning ?? false,
-    capabilitiesResolved:
-      candidate.resolvedSupportsImageInput !== undefined || candidate.resolvedSupportsReasoning !== undefined,
-    contextLimitResolved: candidate.resolvedContextTokens !== undefined,
-    ...(candidate.resolvedContextTokens !== undefined && {
-      contextTokens: candidate.resolvedContextTokens,
-      catalogContextTokens: candidate.resolvedContextTokens,
-    }),
-    ...(candidate.resolvedMaxOutputTokens !== undefined && {
-      maxOutputTokens: candidate.resolvedMaxOutputTokens,
-      catalogMaxOutputTokens: candidate.resolvedMaxOutputTokens,
-    }),
-    ...(candidate.resolvedSupportsImageInput !== undefined && {
-      catalogSupportsImageInput: candidate.resolvedSupportsImageInput,
-    }),
-    ...(candidate.resolvedSupportsReasoning !== undefined && {
-      catalogSupportsReasoning: candidate.resolvedSupportsReasoning,
-    }),
-    ...(candidate.modelsDevMapping && {
-      modelsDevMapping: candidate.modelsDevMapping,
-      resolvedModelsDevMapping: candidate.modelsDevMapping,
-    }),
-    ...(candidate.modelsDevLabel && {
-      modelsDevLabel: candidate.modelsDevLabel,
-      resolvedModelsDevLabel: candidate.modelsDevLabel,
-    }),
-  };
-}
-
-function candidatePricingHint(candidate: CandidateModelView | undefined): RoutePricingHint | undefined {
-  if (!candidate || candidate.resolvedInputPerM === undefined || candidate.resolvedOutputPerM === undefined) {
-    return undefined;
-  }
-  const rates = {
-    inputPerM: candidate.resolvedInputPerM,
-    outputPerM: candidate.resolvedOutputPerM,
-    ...(candidate.resolvedCacheReadPerM !== undefined && {
-      cacheReadPerM: candidate.resolvedCacheReadPerM,
-    }),
-    ...(candidate.resolvedCacheWritePerM !== undefined && {
-      cacheWritePerM: candidate.resolvedCacheWritePerM,
-    }),
-  };
-  return {
-    role: "planner",
-    providerName: "",
-    modelId: candidate.modelId,
-    rates,
-    catalogRates: rates,
-    pricingResolved: true,
-    ...(candidate.modelsDevLabel && { pricingLabel: candidate.modelsDevLabel }),
-  };
-}
-
-function CandidateModelSpecReadOnlySection({ candidate }: { candidate?: CandidateModelView }) {
-  if (!candidate) {
-    return (
-      <div className="mcp-field candidate-model-spec-readonly">
-        <span className="mcp-field-label">模型规格</span>
-        <p className="mcp-field-hint">请选择候选模型以查看规格信息。</p>
-      </div>
-    );
-  }
-  const capability = candidateCapabilityHint(candidate);
-  const pricing = candidatePricingHint(candidate);
-  const mappingLabel = formatCandidateModelsDevLabel(candidate);
-  const overriddenFields = candidate.manualSpec
-    ? listManualOverrideFields(manualSpecToForm(candidate.manualSpec))
-    : undefined;
-  const hasSummary = Boolean(capability || pricing);
-  return (
-    <div className="mcp-field candidate-model-spec-readonly">
-      <span className="mcp-field-label">模型规格</span>
-      {mappingLabel ? (
-        <p className="models-dev-select-hint">models.dev：{mappingLabel}</p>
-      ) : (
-        <p className="models-dev-select-hint unresolved">
-          未解析 models.dev 映射，请在 Provider 候选模型中配置。
-        </p>
-      )}
-      {hasSummary ? (
-        <ModelsDevCapabilitySummary
-          {...(capability ? { capability } : {})}
-          {...(pricing ? { pricing } : {})}
-          {...(overriddenFields ? { overriddenFields } : {})}
-        />
-      ) : (
-        <p className="mcp-field-hint">暂无规格数据，请在 Provider 候选模型中配置 models.dev 映射。</p>
-      )}
-    </div>
-  );
 }
 
 function ThinkingEffortSelect({
@@ -2125,7 +1867,7 @@ function ProfileNodeCandidateModelFields({
   onApiCompatChange: (value: string) => void;
 }) {
   return (
-    <>
+    <div className="profile-node-model-fields">
       <div className="models-agent-template-form-grid">
         <label className="mcp-field">
           <span className="mcp-field-label">Provider</span>
@@ -2163,8 +1905,8 @@ function ProfileNodeCandidateModelFields({
           onChange={onApiCompatChange}
         />
       </div>
-      <CandidateModelSpecReadOnlySection {...(selectedCandidate ? { candidate: selectedCandidate } : {})} />
-    </>
+      <CandidateModelSpecPanel {...(selectedCandidate ? { candidate: selectedCandidate } : {})} />
+    </div>
   );
 }
 

@@ -300,6 +300,31 @@
   color: #c93400;
 }
 
+.settings-page .model-spec-chip {
+  background: var(--chip-bg);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.settings-page .model-spec-chip-value {
+  color: var(--text-primary);
+}
+
+.settings-page .model-spec-chip-price-in {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-text);
+}
+
+.settings-page .model-spec-chip-price-in .model-spec-chip-value {
+  color: var(--accent-text);
+}
+
+.settings-page .candidate-model-spec-panel {
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+
 /* Provider / agent rows in card groups */
 .settings-page .settings-rows .settings-row,
 .settings-page .models-provider-list .settings-row {
