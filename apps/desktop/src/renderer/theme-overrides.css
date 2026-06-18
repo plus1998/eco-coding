@@ -331,11 +331,11 @@
 
 .settings-page .composer-skills-link-action {
   color: var(--accent-text);
-  text-decoration-color: rgba(0, 122, 255, 0.4);
+  text-decoration-color: var(--accent-soft);
 }
 
 .settings-page .composer-skills-link-action:hover:not(:disabled) {
-  color: #0066d6;
+  color: var(--accent-hover);
 }
 
 .settings-page .composer-skills-link-hint-meta {
@@ -343,8 +343,8 @@
 }
 
 .settings-page .composer-skill-pill.is-pending {
-  background: rgba(255, 149, 0, 0.12);
-  color: #c93400;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
 }
 
 .settings-page .skill-list {
@@ -389,13 +389,13 @@
 }
 
 .settings-page .skill-source-badge.agents {
-  background: rgba(255, 149, 0, 0.12);
-  color: #c93400;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
 }
 
 .settings-page .skill-source-badge.project {
-  background: rgba(52, 199, 89, 0.12);
-  color: #248a3d;
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
 }
 
 /* Telemetry */

@@ -960,7 +960,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .composer-skills-bar-label {
   flex-shrink: 0;
   margin-top: 4px;
-  color: #5c5c5c;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -992,10 +992,10 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: center;
   max-width: 100%;
   padding: 3px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.02);
-  color: #8a8a8a;
+  background: transparent;
+  color: var(--text-muted);
   font: inherit;
   font-size: 11px;
   line-height: 1.35;
@@ -1011,33 +1011,33 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .composer-skill-pill.is-pending {
   border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.1);
-  color: #666;
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
   cursor: help;
 }
 
 .composer-skill-pill.is-pending.is-active,
 .composer-skill-pill.is-pending:hover,
 .composer-skill-pill.is-pending:focus-visible {
-  border-color: rgba(180, 160, 100, 0.4);
-  background: rgba(180, 160, 100, 0.08);
-  color: #b8a88a;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  border-color: var(--accent-text);
+  background: var(--accent-soft);
+  color: var(--popover-text);
+  box-shadow: var(--shadow-menu);
 }
 
 .composer-skill-pill.is-referenced {
-  border-color: rgba(147, 197, 253, 0.22);
-  background: rgba(147, 197, 253, 0.06);
-  color: #9ec5ff;
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .composer-skill-pill.is-active,
 .composer-skill-pill:hover,
 .composer-skill-pill:focus-visible {
-  border-color: rgba(147, 197, 253, 0.38);
-  background: rgba(147, 197, 253, 0.1);
-  color: #c8ddff;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--popover-text);
+  box-shadow: var(--shadow-menu);
   outline: none;
 }
 
@@ -1045,12 +1045,10 @@ html[data-window-focused="true"] .codex-sidebar {
   width: max-content;
   min-width: 200px;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--popover-border);
   border-radius: 10px;
-  background: linear-gradient(165deg, #262626 0%, #1c1c1c 100%);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.35),
-    0 14px 36px rgba(0, 0, 0, 0.48);
+  background: var(--popover-bg);
+  box-shadow: var(--shadow-menu);
 }
 
 .composer-skill-card.is-floating {
@@ -1085,8 +1083,8 @@ html[data-window-focused="true"] .codex-sidebar {
   left: 14px;
   width: 10px;
   height: 10px;
-  background: #222;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--popover-bg);
+  border: 1px solid var(--popover-border);
   transform: rotate(45deg);
 }
 
@@ -1116,8 +1114,8 @@ html[data-window-focused="true"] .codex-sidebar {
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: rgba(147, 197, 253, 0.12);
-  color: #8eb8f5;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .composer-skill-card-text {
@@ -1137,7 +1135,7 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 0;
   min-width: 0;
   flex: 1 1 auto;
-  color: #f0f0f0;
+  color: var(--popover-text);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.35;
@@ -1149,8 +1147,8 @@ html[data-window-focused="true"] .codex-sidebar {
   align-items: center;
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #8a8a8a;
+  background: var(--code-bg);
+  color: var(--text-muted);
   font-size: 10px;
   line-height: 1.3;
   white-space: nowrap;
@@ -1158,7 +1156,7 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .composer-skill-card-desc {
   margin: 0;
-  color: #9a9a9a;
+  color: var(--popover-muted);
   font-size: 11px;
   line-height: 1.5;
   white-space: normal;
@@ -1194,7 +1192,7 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .composer-skills-link-hint-message {
-  color: #9a9a9a;
+  color: var(--text-muted);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -1204,21 +1202,21 @@ html[data-window-focused="true"] .codex-sidebar {
   padding: 0 2px;
   border: none;
   background: transparent;
-  color: #9ec5ff;
+  color: var(--accent-text);
   font: inherit;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.45;
   text-decoration: underline;
-  text-decoration-color: rgba(158, 197, 255, 0.55);
+  text-decoration-color: var(--accent-text);
   text-underline-offset: 2px;
   cursor: pointer;
 }
 
 .composer-skills-link-action:hover:not(:disabled),
 .composer-skills-link-action:focus-visible:not(:disabled) {
-  color: #b8d4ff;
-  text-decoration-color: rgba(184, 212, 255, 0.75);
+  color: var(--accent);
+  text-decoration-color: var(--accent);
   outline: none;
 }
 
@@ -1228,13 +1226,13 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .composer-skills-link-hint-meta {
-  color: #6b6b6b;
+  color: var(--text-muted);
   font-size: 10px;
   line-height: 1.45;
 }
 
 .composer-skills-link-hint-error {
-  color: #c4a0a0;
+  color: var(--danger);
   font-size: 10px;
   line-height: 1.45;
 }
@@ -3618,15 +3616,15 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .settings-section-subtitle {
   margin: 4px 0 0;
-  color: #737373;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .settings-count-badge {
   padding: 2px 10px;
   border-radius: 999px;
-  background: #333;
-  color: #d4d4d4;
+  background: var(--chip-bg);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3635,8 +3633,8 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 0;
   padding: 12px 14px;
   border-radius: 8px;
-  background: #1a1a1a;
-  color: #a3a3a3;
+  background: var(--bg-elevated-hover);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -3653,16 +3651,16 @@ html[data-window-focused="true"] .codex-sidebar {
   display: flex;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid #333;
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: #1a1a1a;
+  background: var(--bg-elevated);
 }
 
 .skill-card-icon {
   display: flex;
   align-items: flex-start;
   padding-top: 2px;
-  color: #a78bfa;
+  color: var(--accent-text);
 }
 
 .skill-card-body {
@@ -3689,35 +3687,35 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .skill-source-badge.user {
-  background: rgba(96, 165, 250, 0.15);
-  color: #60a5fa;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .skill-source-badge.project {
-  background: rgba(74, 222, 128, 0.12);
-  color: #4ade80;
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
 }
 
 .skill-source-badge.claude {
-  background: rgba(96, 165, 250, 0.15);
-  color: #60a5fa;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .skill-source-badge.agents {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
 }
 
 .skill-card-description {
   margin: 6px 0 8px;
-  color: #d4d4d4;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.45;
 }
 
 .skill-card-path {
   display: block;
-  color: #737373;
+  color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   word-break: break-all;
@@ -7070,7 +7068,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .composer-skill-inline {
   display: inline;
   vertical-align: baseline;
-  color: #4d8dff;
+  color: var(--accent-text);
   white-space: pre-wrap;
 }
 
@@ -7078,7 +7076,7 @@ html[data-window-focused="true"] .codex-sidebar {
   display: inline-flex;
   vertical-align: -0.15em;
   margin-right: 3px;
-  color: #4d8dff;
+  color: var(--accent-text);
   line-height: 0;
 }
 
