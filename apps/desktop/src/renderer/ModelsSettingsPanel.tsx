@@ -4,9 +4,8 @@ import {
   Copy,
   Download,
   History,
+  ChevronRight,
   LinkIcon,
-  PanelRightClose,
-  PanelRightOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -887,18 +886,15 @@ export function ModelsSettingsPanel({
         />
       )}
 
-      <header className="mcp-page-header">
-        {mode === "providerSettings" ? (
-          <>
-            <h1>Provider</h1>
-          </>
-        ) : (
-          <>
-            <h1>Agent Builder</h1>
-            <p className="mcp-page-desc">配置 Agent 编排资产与评测。</p>
-          </>
-        )}
-      </header>
+      {mode === "providerSettings" ? (
+        <header className="mcp-page-header">
+          <h1>Provider</h1>
+        </header>
+      ) : (
+        <header className="settings-page-header">
+          <h1>Agent Builder</h1>
+        </header>
+      )}
 
       <div
         className="models-settings-tabs"
@@ -922,23 +918,13 @@ export function ModelsSettingsPanel({
       {panelError && <p className="settings-form-error mcp-list-error">{panelError}</p>}
 
       {activeTab === "subagents" && (
-        <div className="models-subagents-tab">
-          <section className="mcp-list-section models-subagent-section">
-            <header className="models-section-header">
-              <div className="models-section-intro">
-                <h2 className="models-section-title">子代理库</h2>
-                <p className="models-section-desc">维护可复用子代理模板。</p>
-              </div>
-            </header>
-            <SubagentSettingsSection
-              templates={settings.agentTemplates}
-              mcpServers={mcpServers}
-              registryDisabled={busy}
-              onRegistryChange={refreshSettings}
-              onSavingChange={onSavingChange}
-            />
-          </section>
-        </div>
+        <SubagentSettingsSection
+          templates={settings.agentTemplates}
+          mcpServers={mcpServers}
+          registryDisabled={busy}
+          onRegistryChange={refreshSettings}
+          onSavingChange={onSavingChange}
+        />
       )}
 
       {activeTab === "proxyBridge" && (
@@ -976,7 +962,7 @@ export function ModelsSettingsPanel({
                     >
                       <Settings2 size={18} />
                     </button>
-                    <label className="mcp-toggle" title={provider.enabled ? "已启用" : "已禁用"}>
+                    <label className="mcp-toggle mcp-toggle-sm" title={provider.enabled ? "已启用" : "已禁用"}>
                       <input
                         type="checkbox"
                         checked={provider.enabled}
@@ -995,15 +981,7 @@ export function ModelsSettingsPanel({
 
       {activeTab === "routes" && (
         <section className="mcp-list-section models-routes-section">
-          <header className="models-section-header">
-            <div className="models-section-intro">
-              <h2 className="models-section-title">Agent Profile</h2>
-              <p className="models-section-desc">组合主 Agent 与子代理模型。</p>
-            </div>
-          </header>
-
-          <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">Agent Profile</span>
+          <div className="mcp-list-toolbar mcp-list-toolbar--actions-end">
             <div className="models-route-toolbar-actions">
               <button
                 type="button"
@@ -1158,13 +1136,6 @@ export function ModelsSettingsPanel({
 
       {activeTab === "presets" && (
         <section className="mcp-list-section models-presets-section">
-          <header className="models-section-header">
-            <div className="models-section-intro">
-              <h2 className="models-section-title">场景预设</h2>
-              <p className="models-section-desc">从内置场景快速生成 Profile。</p>
-            </div>
-          </header>
-
           <PresetOverview
             presets={presetCatalog}
             templates={settings.agentTemplates}
@@ -1178,13 +1149,6 @@ export function ModelsSettingsPanel({
 
       {activeTab === "evaluation" && (
         <section className="mcp-list-section models-evaluation-section">
-          <header className="models-section-header">
-            <div className="models-section-intro">
-              <h2 className="models-section-title">效果评测</h2>
-              <p className="models-section-desc">检查预设和 Profile 配置质量。</p>
-            </div>
-          </header>
-
           <PresetEvaluationOverview scenarios={presetEvalScenarios} results={presetEvalResults} />
         </section>
       )}
@@ -2270,7 +2234,7 @@ function ProviderEditorModal({
   const isEditing = Boolean(form.id);
   const title = isEditing ? `编辑 ${form.name.trim() || "Provider"}` : "新建 Provider";
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
-  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(isEditing);
+  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(false);
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
 
@@ -2285,7 +2249,7 @@ function ProviderEditorModal({
         disabled={busy}
       />
       <div
-        className={`settings-modal settings-modal-provider-editor${candidatesPanelOpen ? "" : " candidate-panel-closed"}`}
+        className={`settings-modal settings-modal-provider-editor${candidatesPanelOpen ? " is-candidates-open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="provider-modal-title"
@@ -2298,11 +2262,12 @@ function ProviderEditorModal({
             {isEditing ? (
               <button
                 type="button"
-                className={`candidate-panel-toggle${candidatesPanelOpen ? " active" : ""}`}
+                className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
                 onClick={() => setCandidatesPanelOpen((v) => !v)}
+                aria-expanded={candidatesPanelOpen}
                 title={candidatesPanelOpen ? "收起候选模型" : "展开候选模型"}
               >
-                {candidatesPanelOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+                <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
                 候选模型
               </button>
             ) : null}
@@ -2427,7 +2392,7 @@ function ProviderEditorModal({
 
             <label className="mcp-field models-toggle-field">
               <span className="mcp-field-label">启用此 Provider</span>
-              <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
+              <label className="mcp-toggle mcp-toggle-sm" title={form.enabled ? "已启用" : "已禁用"}>
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -2453,7 +2418,7 @@ function ProviderEditorModal({
             {error && <p className="settings-form-error">{error}</p>}
           </div>
 
-          {candidatesPanelOpen && isEditing && form.id ? (
+          {isEditing && form.id ? (
             <CandidateModelPanel
               providerId={form.id}
               models={models}

@@ -455,6 +455,10 @@
   border-color: var(--border-subtle);
 }
 
+.settings-page .settings-modal-provider-editor .settings-modal-footer {
+  border-color: var(--border-subtle);
+}
+
 .settings-page .models-agent-template-policy-panel {
   border-color: var(--border-subtle);
   background: var(--bg-elevated-hover);

@@ -3197,6 +3197,10 @@ html[data-window-focused="true"] .codex-sidebar {
   margin-bottom: 12px;
 }
 
+.mcp-list-toolbar--actions-end {
+  justify-content: flex-end;
+}
+
 .mcp-list-toolbar-label {
   color: var(--text-heading);
   font-size: 15px;
@@ -3350,6 +3354,37 @@ html[data-window-focused="true"] .codex-sidebar {
 .mcp-toggle input:disabled + .mcp-toggle-track {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.mcp-toggle-sm .mcp-toggle-track {
+  width: 34px;
+  height: 20px;
+}
+
+.mcp-toggle-sm .mcp-toggle-track::after {
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+}
+
+.mcp-toggle-sm input:checked + .mcp-toggle-track::after {
+  transform: translateX(14px);
+}
+
+.mcp-server-row .mcp-toggle-sm {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.mcp-server-row:hover .mcp-toggle-sm,
+.mcp-server-row .mcp-toggle-sm:has(input:checked),
+.mcp-server-row .mcp-toggle-sm:has(input:focus-visible) {
+  opacity: 1;
+}
+
+.mcp-server-row .mcp-toggle-sm input:checked + .mcp-toggle-track {
+  background: color-mix(in srgb, var(--accent) 65%, var(--toggle-off));
 }
 
 .mcp-toggle-lg {
@@ -8261,6 +8296,7 @@ html[data-window-focused="true"] .codex-sidebar {
   background: var(--nav-hover);
 }
 
+
 .models-settings-tab {
   padding: 5px 14px;
   border: none;
@@ -11015,13 +11051,19 @@ html[data-window-focused="true"] .settings-nav {
 /* ─── Provider Editor Modal — Two-Column Layout ──────────────────────── */
 
 .settings-modal-provider-editor {
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(90vh, 720px);
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.settings-modal-provider-editor.is-candidates-open {
   width: min(980px, calc(100vw - 48px));
   max-height: min(92vh, 860px);
 }
 
-.settings-modal-provider-editor.candidate-panel-closed {
-  width: min(520px, calc(100vw - 48px));
-  max-height: min(90vh, 720px);
+.settings-modal-provider-editor .settings-modal-footer {
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .provider-modal-layout {
@@ -11041,26 +11083,34 @@ html[data-window-focused="true"] .settings-nav {
 .candidate-panel-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
   background: transparent;
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .candidate-panel-toggle:hover:not(:disabled) {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--nav-hover);
-  border-color: var(--border-subtle);
 }
 
-.candidate-panel-toggle.active {
-  color: var(--accent-text);
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+.candidate-panel-toggle.is-open {
+  color: var(--text-primary);
+}
+
+.candidate-panel-toggle-icon {
+  flex-shrink: 0;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.candidate-panel-toggle.is-open .candidate-panel-toggle-icon {
+  transform: rotate(180deg);
 }
 
 /* ─── Candidate Panel (Right Sidebar) ────────────────────────────────── */
@@ -11068,11 +11118,27 @@ html[data-window-focused="true"] .settings-nav {
 .candidate-panel {
   width: 380px;
   min-width: 380px;
+  flex-shrink: 0;
   border-left: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-main);
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    min-width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.22s ease,
+    border-color 0.28s ease;
+}
+
+.settings-modal-provider-editor:not(.is-candidates-open) .candidate-panel {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  border-left-color: transparent;
+  pointer-events: none;
 }
 
 .candidate-panel-header {

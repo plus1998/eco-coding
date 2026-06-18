@@ -235,8 +235,7 @@ export function SubagentSettingsSection({
   return (
     <>
       <section className="models-agent-library">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">模板</span>
+        <div className="mcp-list-toolbar mcp-list-toolbar--actions-end">
           <div className="models-section-actions">
             <button
               type="button"
