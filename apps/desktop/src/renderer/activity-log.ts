@@ -20,9 +20,12 @@ import {
   isMcpToolName,
   isReconnectActivityMessage,
   normalizeActivityActionLabel,
+  parseBashApprovalActivityText,
   parseReconnectActivityMessage,
   shouldClearReconnectActivity,
   stripSubagentBracketPrefix,
+  compareToolActionLifecyclePriority,
+  type ToolActionLifecycle,
 } from "../shared/activity-display";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
 import {
@@ -135,6 +138,8 @@ export function shouldScrollMainActivityFeedForLine(line: Pick<ThreadActivityLin
 
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
+export type { ToolActionLifecycle };
+
 export type ActivityDetailBlock =
   | { kind: "phase"; label: string; reconnecting?: boolean; reconnectDetail?: string }
   | { kind: "subagent-mission"; subagent: string; summary: string; prompt?: string; agentId?: string }
@@ -142,7 +147,14 @@ export type ActivityDetailBlock =
   | { kind: "agent-request"; subagent?: string; agentId?: string }
   | { kind: "thinking"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
-  | { kind: "action"; icon: ActivityActionIcon; label: string; subagent?: string; agentId?: string }
+  | {
+      kind: "action";
+      icon: ActivityActionIcon;
+      label: string;
+      lifecycle?: ToolActionLifecycle;
+      subagent?: string;
+      agentId?: string;
+    }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
   | {
       kind: "api-error";
@@ -632,7 +644,11 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     noteToolContext(line);
     const subagentRaw =
       tool.subagent ?? normalizeAgentDisplayRole(line.role) ?? toolContextSubagent;
-    const subagent = subagentRaw ? normalizeAgentDisplayRole(subagentRaw) ?? subagentRaw : undefined;
+    const subagentRawNormalized = subagentRaw
+      ? normalizeAgentDisplayRole(subagentRaw) ?? subagentRaw
+      : undefined;
+    const subagent =
+      subagentRawNormalized && subagentRawNormalized !== "tool" ? subagentRawNormalized : undefined;
     if (tool.tool === "Agent") {
       if (subagent) {
         toolContextSubagent = subagent;
@@ -685,6 +701,32 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     const last = current.details[current.details.length - 1];
     const icon = iconForToolCategory(tool.category);
     const actionKey = activityActionKey(subagent, label, icon);
+    const lifecycle: ToolActionLifecycle = isToolElapsedDuration(line.message) ? "completed" : "running";
+    const existingIndex = current.details.findIndex(
+      (entry) =>
+        entry.kind === "action" && activityActionKey(entry.subagent, entry.label, entry.icon) === actionKey,
+    );
+    if (existingIndex >= 0) {
+      const existing = current.details[existingIndex];
+      if (existing?.kind === "action") {
+        const nextLifecycle =
+          existing.lifecycle &&
+          compareToolActionLifecyclePriority(lifecycle, existing.lifecycle) < 0
+            ? existing.lifecycle
+            : lifecycle;
+        current.details[existingIndex] = {
+          ...existing,
+          icon,
+          label,
+          lifecycle: nextLifecycle,
+          ...(subagent && { subagent }),
+          ...((line.agentId?.trim() || toolContextAgentId) && {
+            agentId: (line.agentId?.trim() || toolContextAgentId)!,
+          }),
+        };
+        return;
+      }
+    }
     if (
       last?.kind === "action" &&
       activityActionKey(last.subagent, last.label, last.icon) === actionKey &&
@@ -703,11 +745,52 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       kind: "action",
       icon,
       label,
+      lifecycle,
       ...(subagent && { subagent }),
       ...((line.agentId?.trim() || toolContextAgentId) && {
         agentId: (line.agentId?.trim() || toolContextAgentId)!,
       }),
     });
+  };
+
+  const upsertApprovalToolAction = (
+    parsed: NonNullable<ReturnType<typeof parseBashApprovalActivityText>>,
+    line: ThreadActivityLine,
+  ) => {
+    const label = formatToolDisplayLabel(parsed.toolName, parsed.detail);
+    const icon = iconForToolName(parsed.toolName);
+    const actionKey = activityActionKey(undefined, label, icon);
+    const subagentRaw = normalizeAgentDisplayRole(line.role);
+    const subagent = subagentRaw && subagentRaw !== "tool" ? subagentRaw : undefined;
+    const block: Extract<ActivityDetailBlock, { kind: "action" }> = {
+      kind: "action",
+      icon,
+      label,
+      lifecycle: parsed.phase,
+      ...(subagent && { subagent }),
+      ...((line.agentId?.trim() || toolContextAgentId) && {
+        agentId: (line.agentId?.trim() || toolContextAgentId)!,
+      }),
+    };
+    const existingIndex = current.details.findIndex(
+      (entry) =>
+        entry.kind === "action" && activityActionKey(entry.subagent, entry.label, entry.icon) === actionKey,
+    );
+    if (existingIndex >= 0) {
+      const existing = current.details[existingIndex];
+      if (
+        existing?.kind === "action" &&
+        existing.lifecycle &&
+        compareToolActionLifecyclePriority(parsed.phase, existing.lifecycle) >= 0
+      ) {
+        current.details[existingIndex] = {
+          ...existing,
+          ...block,
+        };
+      }
+      return;
+    }
+    current.details.push(block);
   };
 
   for (const line of lines) {
@@ -831,6 +914,14 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
     }
 
     if (isEphemeralToolStatusLine(line.message)) {
+      continue;
+    }
+
+    const parsedApproval = parseBashApprovalActivityText(line.message);
+    if (parsedApproval) {
+      flushTextBuffers();
+      removePendingRequestBlocks();
+      upsertApprovalToolAction(parsedApproval, line);
       continue;
     }
 

@@ -7,6 +7,9 @@ import {
   RefreshCw,
   Reply,
   Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Terminal,
 } from "lucide-react";
@@ -39,6 +42,7 @@ import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/run
 import {
   activityLabelIncludesAgentRole,
   isRedundantAgentModelShort,
+  type ToolActionLifecycle,
 } from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
 import { isGenericMissionSummary } from "@eco/runtime";
@@ -1208,6 +1212,7 @@ function DetailBlock({
       <RunLogAction
         icon={block.icon}
         label={block.label}
+        {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
@@ -1864,17 +1869,20 @@ function ApiErrorBlock({
 function RunLogAction({
   icon,
   label,
+  lifecycle,
   subagent,
   modelByRole,
   omitRoleLabel,
 }: {
   icon: ActivityActionIcon;
   label: string;
+  lifecycle?: ToolActionLifecycle;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
   const Icon = actionIcons[icon];
+  const StatusIcon = lifecycle ? approvalLifecycleStatusIcons[lifecycle] : undefined;
   const showRoleLabel =
     Boolean(subagent) &&
     !omitRoleLabel &&
@@ -1884,11 +1892,43 @@ function RunLogAction({
       {showRoleLabel ? (
         <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
       ) : null}
-      <Icon size={16} className="run-log-action-icon" aria-hidden />
+      <span
+        className={[
+          "run-log-action-icon-wrap",
+          lifecycle === "running" ? "run-log-action-icon-wrap--running" : "",
+          lifecycle === "approval-pending" ? "run-log-action-icon-wrap--pending" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <Icon size={16} className="run-log-action-icon" aria-hidden />
+        {StatusIcon ? (
+          <StatusIcon
+            size={11}
+            className="run-log-action-status-icon"
+            aria-label={lifecycleStatusLabels[lifecycle!]}
+          />
+        ) : null}
+      </span>
       <span className="run-log-action-label">{label}</span>
     </div>
   );
 }
+
+const approvalLifecycleStatusIcons = {
+  "approval-pending": Shield,
+  "approval-approved": ShieldCheck,
+  "approval-rejected": ShieldAlert,
+} as const;
+
+const lifecycleStatusLabels: Record<ToolActionLifecycle, string> = {
+  "approval-pending": "等待确认",
+  "approval-approved": "已允许",
+  "approval-rejected": "已拒绝",
+  running: "执行中",
+  completed: "已完成",
+  failed: "失败",
+};
 
 const actionIcons = {
   search: Search,

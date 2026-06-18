@@ -4903,6 +4903,31 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.45;
 }
 
+.run-log-action-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.run-log-action-icon-wrap--running .run-log-action-icon {
+  opacity: 0.85;
+}
+
+.run-log-action-icon-wrap--pending .run-log-action-icon {
+  opacity: 0.7;
+}
+
+.run-log-action-status-icon {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  color: #a3a3a3;
+  background: #1a1a1a;
+  border-radius: 999px;
+}
+
 .run-log-action-role {
   flex-shrink: 0;
   padding: 1px 6px;

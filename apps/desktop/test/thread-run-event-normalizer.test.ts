@@ -391,3 +391,34 @@ test("buildThreadRunEventFromLiveEvent skips metrics-only thread live events", (
     ).toBeUndefined();
   }
 });
+
+test("buildThreadRunEventFromLiveEvent persists bash approval metadata", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_approval",
+    liveType: "bash_approval.requested",
+    role: "tool",
+    stream: false,
+    message: "等待确认 Grep：/outside/file.txt",
+    observedAt: "2026-01-01T00:00:00.000Z",
+    bashApproval: {
+      toolUseId: "toolu_grep_1",
+      phase: "requested",
+      toolName: "Grep",
+      detail: "/outside/file.txt",
+    },
+  });
+
+  expect(event).toMatchObject({
+    eventType: "message.final",
+    metadata: {
+      liveType: "bash_approval.requested",
+      bashApproval: {
+        toolUseId: "toolu_grep_1",
+        phase: "requested",
+        toolName: "Grep",
+        detail: "/outside/file.txt",
+      },
+    },
+  });
+});

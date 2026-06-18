@@ -5,10 +5,16 @@ import type {
   ThreadRunToolMetadata,
 } from "../shared/ipc";
 import {
+  bashApprovalPhaseToLifecycle,
+  compareToolActionLifecyclePriority,
   formatMcpToolDisplayName,
   formatToolDisplayLabel,
   isMcpToolName,
+  parseBashApprovalActivityText,
   parseToolActionDisplayLabel,
+  readBashApprovalMetadata,
+  toolStatusToLifecycle,
+  type ToolActionLifecycle,
 } from "../shared/activity-display";
 import {
   iconForToolName,
@@ -312,7 +318,16 @@ export function buildProjectionDisplayTimelineItems(
 ): ThreadRunProjectionTimelineItem[] {
   const latestStreamDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   const latestToolDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
+  const latestLifecycleDisplayByKey = new Map<string, ThreadRunProjectionTimelineItem>();
   for (const item of timeline) {
+    const lifecycleKey = projectionToolLifecycleKey(item);
+    if (lifecycleKey) {
+      const current = latestLifecycleDisplayByKey.get(lifecycleKey);
+      if (!current || compareProjectionLifecycleDisplayItems(item, current) > 0) {
+        latestLifecycleDisplayByKey.set(lifecycleKey, item);
+      }
+    }
+
     const streamKey = projectionStreamDisplayKey(item);
     if (streamKey) {
       const current = latestStreamDisplayByKey.get(streamKey);
@@ -332,6 +347,10 @@ export function buildProjectionDisplayTimelineItems(
 
   const displayItems: ThreadRunProjectionTimelineItem[] = [];
   for (const item of timeline) {
+    const lifecycleKey = projectionToolLifecycleKey(item);
+    if (lifecycleKey && latestLifecycleDisplayByKey.get(lifecycleKey)?.id !== item.id) {
+      continue;
+    }
     const streamKey = projectionStreamDisplayKey(item);
     if (streamKey && latestStreamDisplayByKey.get(streamKey)?.id !== item.id) {
       continue;
@@ -454,6 +473,48 @@ function projectionToolDisplayKey(item: ThreadRunProjectionTimelineItem): string
   return `tool:${metadataTool.toolUseId}`;
 }
 
+function projectionToolLifecycleKey(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const bashApproval = readProjectionBashApprovalMetadata(item);
+  if (bashApproval?.toolUseId) {
+    return `lifecycle:${bashApproval.toolUseId}`;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (
+    metadataTool?.toolUseId &&
+    (item.eventType === "tool.started" ||
+      item.eventType === "tool.completed" ||
+      item.eventType === "tool.failed")
+  ) {
+    return `lifecycle:${metadataTool.toolUseId}`;
+  }
+  return undefined;
+}
+
+function resolveProjectionToolLifecycle(item: ThreadRunProjectionTimelineItem): ToolActionLifecycle | undefined {
+  const bashApproval = readProjectionBashApprovalMetadata(item);
+  if (bashApproval) {
+    return bashApprovalPhaseToLifecycle(bashApproval.phase);
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  return toolStatusToLifecycle(metadataTool?.status, item.eventType);
+}
+
+function compareProjectionLifecycleDisplayItems(
+  left: ThreadRunProjectionTimelineItem,
+  right: ThreadRunProjectionTimelineItem,
+): number {
+  const leftLifecycle = resolveProjectionToolLifecycle(left);
+  const rightLifecycle = resolveProjectionToolLifecycle(right);
+  if (leftLifecycle && rightLifecycle && leftLifecycle !== rightLifecycle) {
+    return compareToolActionLifecyclePriority(leftLifecycle, rightLifecycle);
+  }
+  const richnessDiff = projectionToolDisplayRichness(left) - projectionToolDisplayRichness(right);
+  if (richnessDiff !== 0) {
+    return richnessDiff;
+  }
+  return compareTimelineItems(left, right);
+}
+
 function compareProjectionToolDisplayItems(
   left: ThreadRunProjectionTimelineItem,
   right: ThreadRunProjectionTimelineItem,
@@ -547,7 +608,36 @@ export function shortProjectionAgentId(agentId: string): string {
 }
 
 function resolveProjectionSubagent(item: ThreadRunProjectionTimelineItem): string | undefined {
-  return normalizeAgentDisplayRole(item.role);
+  const role = normalizeAgentDisplayRole(item.role);
+  if (!role || role === "tool") {
+    return undefined;
+  }
+  return role;
+}
+
+function readProjectionBashApprovalMetadata(
+  item: ThreadRunProjectionTimelineItem,
+): ReturnType<typeof readBashApprovalMetadata> {
+  return readBashApprovalMetadata(item.metadata);
+}
+
+function buildProjectionToolActionBlock(
+  item: ThreadRunProjectionTimelineItem,
+  input: {
+    toolName: string;
+    label: string;
+    lifecycle?: ToolActionLifecycle;
+  },
+): ActivityDetailBlock {
+  const subagent = resolveProjectionSubagent(item);
+  return {
+    kind: "action",
+    icon: iconForToolName(input.toolName),
+    label: input.label,
+    ...(input.lifecycle && { lifecycle: input.lifecycle }),
+    ...(subagent && { subagent }),
+    ...(item.agentId && { agentId: item.agentId }),
+  };
 }
 
 export function projectionItemToDetailBlock(
@@ -556,25 +646,39 @@ export function projectionItemToDetailBlock(
   const text = item.text.trim();
 
   if (isProjectionTodoToolActionItem(item)) {
-    const subagent = resolveProjectionSubagent(item);
-    return {
-      kind: "action",
-      icon: iconForToolName(resolveProjectionToolName(item)),
+    return buildProjectionToolActionBlock(item, {
+      toolName: resolveProjectionToolName(item),
       label: resolveProjectionToolActionLabel(item),
-      ...(subagent && { subagent }),
-      ...(item.agentId && { agentId: item.agentId }),
-    };
+    });
+  }
+
+  const bashApproval = readProjectionBashApprovalMetadata(item);
+  if (bashApproval) {
+    return buildProjectionToolActionBlock(item, {
+      toolName: bashApproval.toolName,
+      label: formatToolDisplayLabel(bashApproval.toolName, bashApproval.detail),
+      lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
+    });
   }
 
   if (item.eventType === "message.delta" || item.eventType === "message.final") {
+    const parsedApproval = parseBashApprovalActivityText(text);
+    if (parsedApproval) {
+      return buildProjectionToolActionBlock(item, {
+        toolName: parsedApproval.toolName,
+        label: formatToolDisplayLabel(parsedApproval.toolName, parsedApproval.detail),
+        lifecycle: parsedApproval.phase,
+      });
+    }
     if (!text && item.eventType !== "message.delta") {
       return undefined;
     }
+    const subagent = resolveProjectionSubagent(item);
     return {
       kind: "narrative",
       text: item.text,
       streaming: item.eventType === "message.delta",
-      ...(item.role && { subagent: item.role }),
+      ...(subagent && { subagent }),
       ...(item.agentId && { agentId: item.agentId }),
     };
   }
@@ -629,14 +733,13 @@ export function projectionItemToDetailBlock(
   }
 
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
-    const subagent = resolveProjectionSubagent(item);
-    return {
-      kind: "action",
-      icon: iconForToolName(resolveProjectionToolName(item)),
+    const metadataTool = readProjectionToolMetadata(item);
+    const lifecycle = toolStatusToLifecycle(metadataTool?.status, item.eventType);
+    return buildProjectionToolActionBlock(item, {
+      toolName: resolveProjectionToolName(item),
       label: resolveProjectionToolActionLabel(item),
-      ...(subagent && { subagent }),
-      ...(item.agentId && { agentId: item.agentId }),
-    };
+      ...(lifecycle && { lifecycle }),
+    });
   }
 
   const phaseLabel = resolveProjectionPhaseLabel(item);

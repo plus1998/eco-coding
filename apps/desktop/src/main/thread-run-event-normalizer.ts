@@ -1,5 +1,6 @@
 import type {
   ThreadApiErrorInfo,
+  ThreadRunBashApprovalMetadata,
   ThreadRunEventInput,
   ThreadRunEventScope,
   ThreadRunEventStreamState,
@@ -45,6 +46,7 @@ export interface BuildThreadRunEventFromLiveInput {
   streamKey?: string;
   apiError?: ThreadApiErrorInfo;
   tool?: ThreadRunToolMetadata;
+  bashApproval?: ThreadRunBashApprovalMetadata;
   metadata?: Record<string, unknown>;
 }
 
@@ -235,11 +237,31 @@ function resolveRequestId(input: {
 
 function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record<string, unknown> {
   const tool = input.tool ? normalizeThreadRunToolMetadata(input.tool) : undefined;
+  const bashApproval = input.bashApproval
+    ? normalizeThreadRunBashApprovalMetadata(input.bashApproval)
+    : undefined;
   return {
     ...(input.metadata ?? {}),
     liveType: input.liveType,
     ...(input.apiError && { apiError: input.apiError }),
     ...(tool && { tool }),
+    ...(bashApproval && { bashApproval }),
+  };
+}
+
+function normalizeThreadRunBashApprovalMetadata(
+  bashApproval: ThreadRunBashApprovalMetadata,
+): ThreadRunBashApprovalMetadata | undefined {
+  const toolUseId = bashApproval.toolUseId.trim();
+  const toolName = bashApproval.toolName.trim();
+  if (!toolUseId || !toolName) {
+    return undefined;
+  }
+  return {
+    toolUseId,
+    phase: bashApproval.phase,
+    toolName,
+    ...(bashApproval.detail?.trim() && { detail: bashApproval.detail.trim() }),
   };
 }
 

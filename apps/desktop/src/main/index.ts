@@ -120,6 +120,8 @@ import {
   type ThreadRewindCheckpointResult,
   type ThreadRollbackResult,
   type ThreadRunProjectionSnapshot,
+  type ThreadRunBashApprovalMetadata,
+  type ThreadRunBashApprovalPhase,
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
   type ThreadRuntimeConfigInput,
@@ -5719,6 +5721,9 @@ function recordThreadRunEventFromLiveEvent(input: {
     ? `${input.persistedActivityLine.id}:${liveEventId}`
     : liveEventId;
   const runAttemptId = resolveCurrentRunAttemptId(input.threadId);
+  const bashApproval =
+    input.extras?.bashApproval &&
+    buildBashApprovalRunMetadataFromRequest(input.type, input.extras.bashApproval);
   const event = buildThreadRunEventFromLiveEvent({
     threadId: input.threadId,
     eventId,
@@ -5733,6 +5738,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
     ...(input.extras?.tool && { tool: input.extras.tool }),
     ...(input.extras?.metadata && { metadata: input.extras.metadata }),
+    ...(bashApproval && { bashApproval }),
   });
   if (!event) {
     return;
@@ -5938,6 +5944,40 @@ function createThreadHookContext(threadId: string): EcoHookContext {
   };
 }
 
+function resolveBashApprovalPhase(liveType: string): ThreadRunBashApprovalPhase | undefined {
+  if (liveType === "bash_approval.requested") {
+    return "requested";
+  }
+  if (liveType === "bash_approval.approved") {
+    return "approved";
+  }
+  if (liveType === "bash_approval.rejected") {
+    return "rejected";
+  }
+  if (liveType === "bash_approval.denied") {
+    return "denied";
+  }
+  return undefined;
+}
+
+function buildBashApprovalRunMetadataFromRequest(
+  liveType: string,
+  request: BashApprovalRequest,
+): ThreadRunBashApprovalMetadata | undefined {
+  const phase = resolveBashApprovalPhase(liveType);
+  if (!phase) {
+    return undefined;
+  }
+  const toolName = request.filesystemTool ?? "Bash";
+  const detail = request.filesystemPath ?? request.command;
+  return {
+    toolUseId: request.toolUseId,
+    phase,
+    toolName,
+    ...(detail.trim() && { detail: detail.trim() }),
+  };
+}
+
 function createThreadToolPermissionHandler(
   threadId: string,
   runPhase: SubagentRunPhase = "execution",
@@ -5999,6 +6039,7 @@ function createThreadToolPermissionHandler(
           `已允许本次 ${request.toolName}：${filesystemPath}`,
           "tool",
           false,
+          { bashApproval: approvalRequest },
         );
         return { behavior: "allow", updatedInput: request.input };
       }
@@ -6009,6 +6050,7 @@ function createThreadToolPermissionHandler(
         `已拒绝 ${request.toolName}：${filesystemPath}`,
         "tool",
         false,
+        { bashApproval: approvalRequest },
       );
       return {
         behavior: "deny",
@@ -6054,7 +6096,20 @@ function createThreadToolPermissionHandler(
       ...(request.agentType ? { agentType: request.agentType } : {}),
     });
     if (policy.action === "deny") {
-      emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false);
+      const deniedApproval: BashApprovalRequest = {
+        toolUseId: request.toolUseId,
+        threadId,
+        command,
+        cwd: cwd ?? thread.workspacePath ?? ".",
+        reason: policy.reason,
+        riskScore: policy.riskScore,
+        riskLevel: policy.riskLevel,
+        ...(request.agentId ? { agentId: request.agentId } : {}),
+        ...(request.agentType ? { agentType: request.agentType } : {}),
+      };
+      emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false, {
+        bashApproval: deniedApproval,
+      });
       return {
         behavior: "deny",
         message: policy.reason,
@@ -6085,11 +6140,15 @@ function createThreadToolPermissionHandler(
 
     const decision = await registerPendingBashApproval(threadId, approvalRequest);
     if (decision === "approved") {
-      emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false);
+      emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false, {
+        bashApproval: approvalRequest,
+      });
       return { behavior: "allow", updatedInput: request.input };
     }
 
-    emitThreadEvent(threadId, "bash_approval.rejected", `已拒绝 Bash：${command}`, "tool", false);
+    emitThreadEvent(threadId, "bash_approval.rejected", `已拒绝 Bash：${command}`, "tool", false, {
+      bashApproval: approvalRequest,
+    });
     return {
       behavior: "deny",
       message: "User denied this Bash command.",

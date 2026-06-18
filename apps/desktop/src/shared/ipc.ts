@@ -151,6 +151,8 @@ export type {
   ThreadRunEventScope,
   ThreadRunEventStreamState,
   ThreadRunEventType,
+  ThreadRunBashApprovalMetadata,
+  ThreadRunBashApprovalPhase,
   ThreadRunToolMetadata,
 } from "./thread-run-events";
 export type {

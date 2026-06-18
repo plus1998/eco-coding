@@ -42,6 +42,15 @@ export interface ThreadRunToolMetadata {
   status?: "started" | "completed" | "failed";
 }
 
+export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";
+
+export interface ThreadRunBashApprovalMetadata {
+  toolUseId: string;
+  phase: ThreadRunBashApprovalPhase;
+  toolName: string;
+  detail?: string;
+}
+
 export interface ThreadRunEvent {
   id: string;
   threadId: string;

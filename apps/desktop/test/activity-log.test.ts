@@ -1574,3 +1574,29 @@ test("dedupes consecutive identical structured api errors", () => {
   expect(surfacedApiErrors).toHaveLength(1);
   expect(reviewerRun?.children.filter((child) => child.kind === "api-error")).toHaveLength(0);
 });
+
+test("buildActivityLogBlocks merges bash approval lines into one action row", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "Search outside workspace" },
+      { id: "a1", role: "tool", message: "等待确认 Grep：/outside/file.txt" },
+      { id: "a2", role: "tool", message: "已允许本次 Grep：/outside/file.txt" },
+      { id: "t1", role: "tool", message: "Tool: Grep · /outside/file.txt" },
+    ],
+    { status: "running" },
+  );
+
+  const session = blocks.find((block) => block.kind === "work-session");
+  expect(session?.kind).toBe("work-session");
+  if (session?.kind !== "work-session") {
+    return;
+  }
+  const actions = session.children.filter((child) => child.kind === "action");
+  expect(actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({
+    kind: "action",
+    icon: "search",
+    label: "/outside/file.txt",
+    lifecycle: "running",
+  });
+});

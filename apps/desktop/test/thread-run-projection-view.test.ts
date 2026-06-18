@@ -306,7 +306,16 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
           eventType: "message.final",
           role: "tool",
           text: "等待确认 Read：/etc/hosts",
-          metadata: { liveType: "bash_approval.requested" },
+          streamKey: "activity-line-wait",
+          metadata: {
+            liveType: "bash_approval.requested",
+            bashApproval: {
+              toolUseId: "toolu_read_approval",
+              phase: "requested",
+              toolName: "Read",
+              detail: "/etc/hosts",
+            },
+          },
           sequence: 3,
         }),
         item({
@@ -314,7 +323,16 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
           eventType: "message.final",
           role: "tool",
           text: "已允许本次 Read：/etc/hosts",
-          metadata: { liveType: "bash_approval.approved" },
+          streamKey: "activity-line-approved",
+          metadata: {
+            liveType: "bash_approval.approved",
+            bashApproval: {
+              toolUseId: "toolu_read_approval",
+              phase: "approved",
+              toolName: "Read",
+              detail: "/etc/hosts",
+            },
+          },
           sequence: 4,
         }),
       ],
@@ -323,6 +341,65 @@ test("buildThreadRunProjectionViewModel hides generic approval transition status
 
   expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["main:prompt", "main:approval-approved"]);
   expect(view.mainFeedEntries.some((entry) => entry.key === "main:generic-wait")).toBe(false);
+  expect(view.mainFeedEntries.some((entry) => entry.key === "main:approval-wait")).toBe(false);
+});
+
+test("buildProjectionDisplayTimelineItems merges approval and tool execution by toolUseId", () => {
+  const timeline = [
+    item({
+      id: "approval-wait",
+      eventType: "message.final",
+      role: "tool",
+      text: "等待确认 Grep：/outside/secret.txt",
+      streamKey: "activity-line-wait",
+      metadata: {
+        liveType: "bash_approval.requested",
+        bashApproval: {
+          toolUseId: "toolu_grep_1",
+          phase: "requested",
+          toolName: "Grep",
+          detail: "/outside/secret.txt",
+        },
+      },
+      sequence: 1,
+    }),
+    item({
+      id: "approval-approved",
+      eventType: "message.final",
+      role: "tool",
+      text: "已允许本次 Grep：/outside/secret.txt",
+      streamKey: "activity-line-approved",
+      metadata: {
+        liveType: "bash_approval.approved",
+        bashApproval: {
+          toolUseId: "toolu_grep_1",
+          phase: "approved",
+          toolName: "Grep",
+          detail: "/outside/secret.txt",
+        },
+      },
+      sequence: 2,
+    }),
+    item({
+      id: "grep-completed",
+      eventType: "tool.completed",
+      role: "tool",
+      text: "Tool: Grep · /outside/secret.txt",
+      metadata: {
+        liveType: "tool.completed",
+        tool: {
+          name: "Grep",
+          detail: "/outside/secret.txt",
+          toolUseId: "toolu_grep_1",
+          status: "completed",
+        },
+      },
+      sequence: 3,
+    }),
+  ];
+
+  const displayTimeline = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(displayTimeline.map((entry) => entry.id)).toEqual(["grep-completed"]);
 });
 
 test("buildThreadRunProjectionViewModel removes main feed status and usage noise", () => {
@@ -1190,6 +1267,34 @@ test("projectionItemToDetailBlock omits tool role badge and resolves icon from t
     kind: "action",
     icon: "file",
     label: "index.vue",
+    lifecycle: "completed",
+  });
+});
+
+test("projectionItemToDetailBlock maps bash approval to action with lifecycle", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "grep-approval",
+      eventType: "message.final",
+      role: "tool",
+      text: "等待确认 Grep：/path/to/file.txt",
+      metadata: {
+        liveType: "bash_approval.requested",
+        bashApproval: {
+          toolUseId: "toolu_grep_1",
+          phase: "requested",
+          toolName: "Grep",
+          detail: "/path/to/file.txt",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toEqual({
+    kind: "action",
+    icon: "search",
+    label: "/path/to/file.txt",
+    lifecycle: "approval-pending",
   });
 });
 
@@ -1218,6 +1323,7 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
     kind: "action",
     icon: "file",
     label: "https://weather.example/guangzhou (8.3s)",
+    lifecycle: "completed",
     subagent: "explore",
     agentId: "agent_weather",
   });

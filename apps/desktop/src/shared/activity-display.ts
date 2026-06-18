@@ -285,6 +285,126 @@ export function activityActionKey(
   return `${subagent ?? ""}\0${icon ?? ""}\0${normalizeActivityActionLabel(label)}`;
 }
 
+const BASH_APPROVAL_ACTIVITY_PATTERN =
+  /^(?:等待确认|已允许本次|已拒绝|Bash 已拒绝：)\s*([A-Za-z][A-Za-z0-9_]*)(?:[：:]\s*(.+))?$/u;
+
+export interface ParsedBashApprovalActivityText {
+  toolName: string;
+  detail?: string;
+  phase: "approval-pending" | "approval-approved" | "approval-rejected";
+}
+
+export function parseBashApprovalActivityText(text: string): ParsedBashApprovalActivityText | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.startsWith("Bash 已拒绝：")) {
+    return { toolName: "Bash", detail: trimmed.slice("Bash 已拒绝：".length).trim(), phase: "approval-rejected" };
+  }
+  const match = trimmed.match(BASH_APPROVAL_ACTIVITY_PATTERN);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const toolName = match[1];
+  const detail = match[2]?.trim() || undefined;
+  if (trimmed.startsWith("等待确认")) {
+    return { toolName, ...(detail && { detail }), phase: "approval-pending" };
+  }
+  if (trimmed.startsWith("已允许本次")) {
+    return { toolName, ...(detail && { detail }), phase: "approval-approved" };
+  }
+  if (trimmed.startsWith("已拒绝")) {
+    return { toolName, ...(detail && { detail }), phase: "approval-rejected" };
+  }
+  return undefined;
+}
+
+export type ToolActionLifecycle =
+  | "approval-pending"
+  | "approval-approved"
+  | "approval-rejected"
+  | "running"
+  | "completed"
+  | "failed";
+
+export function bashApprovalPhaseToLifecycle(
+  phase: "requested" | "approved" | "rejected" | "denied",
+): ToolActionLifecycle {
+  if (phase === "requested") {
+    return "approval-pending";
+  }
+  if (phase === "approved") {
+    return "approval-approved";
+  }
+  return "approval-rejected";
+}
+
+export function toolStatusToLifecycle(
+  status: "started" | "completed" | "failed" | undefined,
+  eventType?: string,
+): ToolActionLifecycle | undefined {
+  if (status === "failed" || eventType === "tool.failed") {
+    return "failed";
+  }
+  if (status === "completed" || eventType === "tool.completed") {
+    return "completed";
+  }
+  if (status === "started" || eventType === "tool.started") {
+    return "running";
+  }
+  return undefined;
+}
+
+export function compareToolActionLifecyclePriority(
+  left: ToolActionLifecycle,
+  right: ToolActionLifecycle,
+): number {
+  const rank: Record<ToolActionLifecycle, number> = {
+    "approval-rejected": 1,
+    "approval-pending": 2,
+    "approval-approved": 3,
+    running: 4,
+    completed: 5,
+    failed: 5,
+  };
+  return rank[left] - rank[right];
+}
+
+export interface ThreadRunBashApprovalMetadataLike {
+  toolUseId: string;
+  phase: "requested" | "approved" | "rejected" | "denied";
+  toolName: string;
+  detail?: string;
+}
+
+export function readBashApprovalMetadata(
+  metadata: Record<string, unknown> | undefined,
+): ThreadRunBashApprovalMetadataLike | undefined {
+  const raw = metadata?.bashApproval;
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const toolUseId = typeof record.toolUseId === "string" ? record.toolUseId.trim() : "";
+  const toolName = typeof record.toolName === "string" ? record.toolName.trim() : "";
+  const phase = record.phase;
+  if (
+    !toolUseId ||
+    !toolName ||
+    (phase !== "requested" && phase !== "approved" && phase !== "rejected" && phase !== "denied")
+  ) {
+    return undefined;
+  }
+  const detail = typeof record.detail === "string" ? record.detail.trim() : "";
+  return {
+    toolUseId,
+    phase,
+    toolName,
+    ...(detail && { detail }),
+  };
+}
+
 const TOOL_VERB_LABELS: Record<string, string> = {
   Read: "读取",
   Write: "写入",
