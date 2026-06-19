@@ -2150,6 +2150,9 @@ function registerIpcHandlers(): void {
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
     }
+    if (contextMonitor.isCompactInFlight(thread.id)) {
+      throw new Error("上下文正在压缩中，请稍候。");
+    }
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
@@ -2171,6 +2174,9 @@ function registerIpcHandlers(): void {
     }
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
+    }
+    if (contextMonitor.isCompactInFlight(thread.id)) {
+      throw new Error("上下文正在压缩中，请稍候。");
     }
     const base = request.followUpId
       ? conversationStore.escalateThreadFollowUp(thread.id, request.followUpId)
@@ -2219,6 +2225,9 @@ function registerIpcHandlers(): void {
     }
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
+    }
+    if (contextMonitor.isCompactInFlight(thread.id)) {
+      throw new Error("上下文正在压缩中，请稍候。");
     }
     const followUp = conversationStore.updateThreadFollowUp(request.threadId, request.followUpId, {
       prompt: request.prompt,
@@ -3247,6 +3256,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   }
   if (thread.status === "running" || thread.status === "queued") {
     throw new Error("Wait for the current run to finish.");
+  }
+  if (contextMonitor.isCompactInFlight(input.threadId)) {
+    throw new Error("上下文正在压缩中，请稍候。");
   }
 
   const workspace = await ensureWorkspace(thread.workspacePath);
@@ -5079,29 +5091,36 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
     return { ok: false, message: "尚无会话，无法压缩上下文。" };
   }
 
-  if (contextMonitor.isCompactInFlight(threadId)) {
+  if (!contextMonitor.beginCompactIfIdle(threadId)) {
     return { ok: false, message: "上下文正在压缩中，请稍候。" };
   }
 
-  archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
+  try {
+    archiveThreadContextBeforeCompaction(threadId, "manual", sdkSession.sessionId);
 
-  const roleRoutes = resolveRoleRoutesForThread(threadId);
-  const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
-  if (!runtimeConfig.ok) {
-    return { ok: false, message: runtimeConfig.reason };
-  }
+    const roleRoutes = resolveRoleRoutesForThread(threadId);
+    const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
+    if (!runtimeConfig.ok) {
+      contextMonitor.clearCompactInFlight(threadId);
+      return { ok: false, message: runtimeConfig.reason };
+    }
 
-  const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
-  const result = await contextScheduler.compactManual(
-    threadId,
-    routes,
-    worktreePath,
-    new AbortController().signal,
-  );
-  if (!result.ok) {
-    return { ok: false, message: formatManualCompactFailureMessage(result.reason) };
+    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+    const result = await contextScheduler.compactManual(
+      threadId,
+      routes,
+      worktreePath,
+      new AbortController().signal,
+    );
+    if (!result.ok) {
+      contextMonitor.clearCompactInFlight(threadId);
+      return { ok: false, message: formatManualCompactFailureMessage(result.reason) };
+    }
+    return { ok: true, message: "上下文已手动压缩" };
+  } catch (error) {
+    contextMonitor.clearCompactInFlight(threadId);
+    throw error;
   }
-  return { ok: true, message: "上下文已手动压缩" };
 }
 
 function formatManualCompactFailureMessage(reason: string): string {

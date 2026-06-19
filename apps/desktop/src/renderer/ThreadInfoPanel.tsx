@@ -78,6 +78,7 @@ interface ThreadInfoPanelProps {
   todos?: CoderTodoItem[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
+  contextCompactionInFlight?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }
 
@@ -632,6 +633,7 @@ function ThreadInfoFloatStack({
   showBilling,
   context,
   contextPlaceholder,
+  contextCompactionInFlight = false,
   agentDisplayNames,
 }: {
   threadId?: string;
@@ -644,6 +646,7 @@ function ThreadInfoFloatStack({
   showBilling: boolean;
   context?: ThreadContextSnapshot;
   contextPlaceholder: string;
+  contextCompactionInFlight?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
 }) {
   const showBillingFloat = showBillingSection;
@@ -699,6 +702,7 @@ function ThreadInfoFloatStack({
                 showWhenEmpty
                 {...(threadId !== undefined && { threadId })}
                 {...(threadStatus !== undefined && { threadStatus })}
+                contextCompactionInFlight={contextCompactionInFlight}
                 {...(agentDisplayNames && { agentDisplayNames })}
                 onDismiss={closePanel}
               />
@@ -743,6 +747,7 @@ export function ThreadInfoPanel({
   todos = [],
   threadStatus,
   usageSummary,
+  contextCompactionInFlight = false,
   agentDisplayNames,
 }: ThreadInfoPanelProps) {
   const projectLabel =
@@ -843,6 +848,7 @@ export function ThreadInfoPanel({
           showBilling={showBilling}
           {...(usageSummary?.context !== undefined && { context: usageSummary.context })}
           contextPlaceholder={contextCardPlaceholder(threadStatus)}
+          contextCompactionInFlight={contextCompactionInFlight}
           {...(agentDisplayNames && { agentDisplayNames })}
         />
       ) : null}

@@ -408,6 +408,29 @@ function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem
   );
 }
 
+export function isThreadContextCompactionInFlight(
+  projection: ThreadRunProjectionSnapshot | undefined,
+): boolean {
+  if (!projection?.timeline.length) {
+    return false;
+  }
+  let lastStage: "started" | "completed" | "failed" | undefined;
+  for (const item of projection.timeline) {
+    if (item.eventType === "context.compaction.started") {
+      lastStage = "started";
+      continue;
+    }
+    if (item.eventType === "context.compaction.completed") {
+      lastStage = "completed";
+      continue;
+    }
+    if (item.eventType === "context.compaction.failed") {
+      lastStage = "failed";
+    }
+  }
+  return lastStage === "started";
+}
+
 function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {
   if (isProjectionTodoStatusItem(item)) {
     return false;

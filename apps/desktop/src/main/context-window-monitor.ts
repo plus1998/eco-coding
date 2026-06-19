@@ -234,6 +234,22 @@ export class ContextWindowMonitor {
     state.compactInFlight = true;
   }
 
+  beginCompactIfIdle(threadId: string): boolean {
+    const state = this.getOrCreateState(threadId);
+    if (state.compactInFlight) {
+      return false;
+    }
+    state.compactInFlight = true;
+    return true;
+  }
+
+  clearCompactInFlight(threadId: string): void {
+    const state = this.states.get(threadId);
+    if (state) {
+      state.compactInFlight = false;
+    }
+  }
+
   markCompactCompleted(threadId: string, postTokens?: number): ContextMonitorSnapshot {
     const state = this.getOrCreateState(threadId);
     state.compactInFlight = false;

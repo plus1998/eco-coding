@@ -1,6 +1,6 @@
 import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel, formatTokenCount } from "@eco/runtime";
 import { FoldVertical, Loader2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
   type RuntimeAgentDisplayNames,
@@ -16,6 +16,7 @@ interface ContextCardProps {
   agentDisplayNames?: RuntimeAgentDisplayNames;
   threadId?: string;
   threadStatus?: ThreadStatus;
+  contextCompactionInFlight?: boolean;
   onDismiss?: () => void;
 }
 
@@ -295,18 +296,24 @@ export function ContextCard({
   agentDisplayNames,
   threadId,
   threadStatus,
+  contextCompactionInFlight = false,
   onDismiss,
 }: ContextCardProps) {
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
   const [compacting, setCompacting] = useState(false);
   const [compactError, setCompactError] = useState<string | null>(null);
-  const canCompact = Boolean(threadId && context && threadStatus !== "running" && !compacting);
+  const compactRequestRef = useRef(false);
+  const compactionBusy = compacting || contextCompactionInFlight;
+  const canCompact = Boolean(
+    threadId && context && threadStatus !== "running" && !compactionBusy,
+  );
 
   async function handleCompact() {
     const eco = window.eco;
-    if (!threadId || !canCompact || !eco) {
+    if (!threadId || !canCompact || !eco || compactRequestRef.current) {
       return;
     }
+    compactRequestRef.current = true;
     setCompacting(true);
     setCompactError(null);
     try {
@@ -317,6 +324,7 @@ export function ContextCard({
     } catch (error) {
       setCompactError(error instanceof Error ? error.message : "上下文压缩失败");
     } finally {
+      compactRequestRef.current = false;
       setCompacting(false);
     }
   }
@@ -355,14 +363,16 @@ export function ContextCard({
               aria-label="手动压缩上下文"
               title={
                 compactError ??
-                (threadStatus === "running"
-                  ? "线程运行中，暂不可压缩"
-                  : compacting
-                    ? "正在压缩上下文"
-                    : "手动压缩上下文")
+                (contextCompactionInFlight
+                  ? "上下文正在压缩中"
+                  : threadStatus === "running"
+                    ? "线程运行中，暂不可压缩"
+                    : compacting
+                      ? "正在压缩上下文"
+                      : "手动压缩上下文")
               }
             >
-              {compacting ? (
+              {compactionBusy ? (
                 <Loader2 size={14} aria-hidden className="context-card-compact-spinner" />
               ) : (
                 <FoldVertical size={14} aria-hidden />

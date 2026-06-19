@@ -165,6 +165,7 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
+import { isThreadContextCompactionInFlight } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import { subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
@@ -1425,6 +1426,8 @@ function App() {
     !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
   const canPasteComposerImages = plannerSupportsImages;
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
+  const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
+  const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
 
   const canSendFollowUp = Boolean(
     currentProjectPath &&
@@ -1433,7 +1436,8 @@ function App() {
       composerHasContent &&
       !followUpBusy &&
       !isStarting &&
-      !planActionBusy,
+      !planActionBusy &&
+      !contextCompactionInFlight,
   );
   const canSendThreadMessage = Boolean(
     currentProjectPath &&
@@ -1445,6 +1449,7 @@ function App() {
       !bashApprovalBusy &&
       !pendingClarification &&
       !activeBashApproval &&
+      !contextCompactionInFlight &&
       threadAcceptsInput,
   );
   const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
@@ -1527,7 +1532,6 @@ function App() {
     () => queuedFollowUps.filter((followUp) => followUp.id !== editingFollowUpId),
     [queuedFollowUps, editingFollowUpId],
   );
-  const runProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
@@ -2046,6 +2050,10 @@ function App() {
 
   async function sendComposerMessage() {
     if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
+      return;
+    }
+    if (contextCompactionInFlight) {
+      setError("上下文正在压缩中，请稍候。");
       return;
     }
     setError(undefined);
@@ -3236,7 +3244,9 @@ function App() {
     ? "补充消息会排队；回答问题请用上方卡片"
     : showBashApproval
       ? "补充消息会排队；命令审批请用上方卡片"
-      : activeThread?.status === "awaiting_plan"
+      : contextCompactionInFlight
+        ? "上下文压缩中，请稍候…"
+        : activeThread?.status === "awaiting_plan"
         ? "请先确认或忽略上方计划"
         : activeThread && isContinuableThreadStatus(activeThread.status)
           ? "继续对话；若需改计划请说明，将重新生成完整计划…"
@@ -3768,6 +3778,7 @@ function App() {
             },
           })}
           {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
+          contextCompactionInFlight={contextCompactionInFlight}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
         />
       ) : null}

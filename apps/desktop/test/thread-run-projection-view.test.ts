@@ -9,6 +9,7 @@ import {
   buildThreadRunProjectionViewModel,
   isProjectionRequestActive,
   isProjectionUserPromptItem,
+  isThreadContextCompactionInFlight,
   projectionItemToDetailBlock,
 } from "../src/renderer/thread-run-projection-view";
 
@@ -1187,6 +1188,59 @@ test("buildThreadRunProjectionViewModel collapses superseded context compaction 
     }),
   );
   expect(detail).toEqual({ kind: "phase", label: "上下文已自动压缩" });
+});
+
+test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {
+  expect(isThreadContextCompactionInFlight(undefined)).toBe(false);
+  expect(
+    isThreadContextCompactionInFlight(
+      projection({
+        timeline: [
+          item({
+            id: "compact-start",
+            eventType: "context.compaction.started",
+            text: "正在自动压缩上下文",
+          }),
+        ],
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    isThreadContextCompactionInFlight(
+      projection({
+        timeline: [
+          item({
+            id: "compact-start",
+            eventType: "context.compaction.started",
+            text: "正在自动压缩上下文",
+          }),
+          item({
+            id: "compact-done",
+            eventType: "context.compaction.completed",
+            text: "上下文已自动压缩",
+          }),
+        ],
+      }),
+    ),
+  ).toBe(false);
+  expect(
+    isThreadContextCompactionInFlight(
+      projection({
+        timeline: [
+          item({
+            id: "compact-start",
+            eventType: "context.compaction.started",
+            text: "正在手动压缩上下文",
+          }),
+          item({
+            id: "compact-failed",
+            eventType: "context.compaction.failed",
+            text: "上下文压缩失败",
+          }),
+        ],
+      }),
+    ),
+  ).toBe(false);
 });
 
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
