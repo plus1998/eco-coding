@@ -1,4 +1,4 @@
-import type { AnthropicProxyRoute } from "./anthropic-proxy";
+import { runtimeRouteToProxyRoute, type AnthropicProxyRoute } from "./anthropic-proxy";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
 import {
   lookupRoutePricingHints,
@@ -48,16 +48,6 @@ import type {
 } from "../shared/ipc";
 import { SUBAGENT_ROLES } from "../shared/ipc";
 import { logUpstreamError } from "./upstream-log";
-
-function runtimeRouteToProxyRoute(route: RuntimeRoute): AnthropicProxyRoute {
-  return {
-    role: route.role,
-    provider: route.provider,
-    modelId: route.modelId,
-    ...(route.apiCompat && { apiCompat: route.apiCompat }),
-    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-  };
-}
 
 async function resolveCommitProxyRoute(input: {
   profileId: string;

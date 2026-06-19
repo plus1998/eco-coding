@@ -2,7 +2,13 @@ import { createHash, randomInt } from "node:crypto";
 import http from "node:http";
 import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
-import type { AgentRole, PromptImageAttachment, RuntimeAgentRole, ThinkingEffort } from "../shared/ipc";
+import type {
+  AgentRole,
+  PromptImageAttachment,
+  RouteManualSpec,
+  RuntimeAgentRole,
+  ThinkingEffort,
+} from "../shared/ipc";
 import {
   forwardMessagesViaBridge,
   type BridgeForwardContext,
@@ -32,6 +38,45 @@ export interface AnthropicProxyRoute {
   modelId: string;
   apiCompat?: UpstreamApiCompat;
   thinkingEffort?: ThinkingEffort;
+  /** From RouteManualSpec; injected as Anthropic max_tokens on forwarded messages requests. */
+  maxOutputTokens?: number;
+}
+
+export interface RuntimeRouteProxySource {
+  role: RuntimeAgentRole;
+  provider: ProviderConfigSecret;
+  modelId: string;
+  apiCompat?: UpstreamApiCompat;
+  thinkingEffort?: ThinkingEffort;
+  manualSpec?: RouteManualSpec;
+}
+
+export function resolveRouteMaxOutputTokens(manualSpec?: RouteManualSpec): number | undefined {
+  const tokens = manualSpec?.maxOutputTokens;
+  return tokens !== undefined && tokens > 0 ? tokens : undefined;
+}
+
+export function runtimeRouteToProxyRoute(route: RuntimeRouteProxySource): AnthropicProxyRoute {
+  const maxOutputTokens = resolveRouteMaxOutputTokens(route.manualSpec);
+  return {
+    role: route.role,
+    provider: route.provider,
+    modelId: route.modelId,
+    ...(route.apiCompat && { apiCompat: route.apiCompat }),
+    ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+    ...(maxOutputTokens !== undefined && { maxOutputTokens }),
+  };
+}
+
+/** Apply configured per-role output cap before bridge/upstream conversion. */
+export function applyRouteMaxOutputTokens(
+  body: Record<string, unknown>,
+  maxOutputTokens?: number,
+): void {
+  if (maxOutputTokens === undefined || maxOutputTokens <= 0) {
+    return;
+  }
+  body.max_tokens = maxOutputTokens;
 }
 
 export interface AnthropicProxyMessagesRequestInfo {
@@ -116,6 +161,7 @@ export async function startAnthropicModelProxy(
     apiCompat: resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
     aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
+    ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
   }));
   let pendingImages = normalizePendingImages(options?.pendingImages);
   let imagesInjected = false;
@@ -179,6 +225,7 @@ export async function startAnthropicModelProxy(
       if (!countTokensRequest) {
         applyThinkingToMessagesBody(body, route.thinkingEffort);
         normalizeThinkingEffortFields(body);
+        applyRouteMaxOutputTokens(body, route.maxOutputTokens);
       }
 
       const bridgeRoute: BridgeForwardRoute = {

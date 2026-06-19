@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   type AnthropicProxyResolvedRoute,
+  applyRouteMaxOutputTokens,
   buildModelsListResponse,
   canonicalModelFamilyIds,
   createModelAlias,
@@ -10,6 +11,8 @@ import {
   injectImagesIntoMessagesBody,
   normalizeThinkingEffortFields,
   resolveProxyRoute,
+  resolveRouteMaxOutputTokens,
+  runtimeRouteToProxyRoute,
 } from "../src/main/anthropic-proxy";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 
@@ -258,6 +261,35 @@ test("normalizeThinkingEffortFields preserves effort when thinking is enabled", 
     thinking: { type: "adaptive" },
     reasoning_effort: "medium",
   });
+});
+
+test("resolveRouteMaxOutputTokens reads positive manualSpec values only", () => {
+  expect(resolveRouteMaxOutputTokens({ maxOutputTokens: 64_000 })).toBe(64_000);
+  expect(resolveRouteMaxOutputTokens({ maxOutputTokens: 0 })).toBeUndefined();
+  expect(resolveRouteMaxOutputTokens(undefined)).toBeUndefined();
+});
+
+test("runtimeRouteToProxyRoute maps manualSpec maxOutputTokens onto proxy route", () => {
+  const provider = createProvider("anthropic", "Anthropic", "provider-secret");
+  const route = runtimeRouteToProxyRoute({
+    role: "coder",
+    provider,
+    modelId: "claude-sonnet-4-6",
+    manualSpec: { maxOutputTokens: 32_768 },
+  });
+  expect(route.maxOutputTokens).toBe(32_768);
+});
+
+test("applyRouteMaxOutputTokens overrides Anthropic max_tokens when configured", () => {
+  const body: Record<string, unknown> = { max_tokens: 16_000, model: "claude-sonnet-4-6" };
+  applyRouteMaxOutputTokens(body, 64_000);
+  expect(body.max_tokens).toBe(64_000);
+});
+
+test("applyRouteMaxOutputTokens is a no-op without configured cap", () => {
+  const body: Record<string, unknown> = { max_tokens: 16_000 };
+  applyRouteMaxOutputTokens(body, undefined);
+  expect(body.max_tokens).toBe(16_000);
 });
 
 test("extractUsageFromResponseBody reads non-streaming response usage", () => {

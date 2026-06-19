@@ -194,6 +194,7 @@ import {
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
   estimateInputTokensFromAnthropicBody,
+  runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
 import {
@@ -6502,7 +6503,7 @@ function startRuntimeProxy(
       },
     }),
   };
-  return startAnthropicModelProxy(routes, options);
+  return startAnthropicModelProxy(routes.map(runtimeRouteToProxyRoute), options);
 }
 
 function errorMessage(error: unknown): string {
