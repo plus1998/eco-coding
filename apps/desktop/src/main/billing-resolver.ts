@@ -5,7 +5,7 @@ import {
   type ModelCostRates,
   type ModelPricingLookup,
 } from "@eco/runtime";
-import { createModelAlias, resolveProxyRoute, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import { createModelAlias, resolveProxyRoute, stripExtendedContextModelSuffix, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { ProviderConfigSecret } from "./provider-store";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import {
@@ -132,8 +132,13 @@ export function resolveUsageRoute(
   }
 
   const trimmed = requestedModel.trim();
+  const normalizedRequest = stripExtendedContextModelSuffix(trimmed);
 
-  const byAlias = resolved.find((route) => route.aliasModelId === trimmed);
+  const byAlias = resolved.find(
+    (route) =>
+      route.aliasModelId === trimmed ||
+      stripExtendedContextModelSuffix(route.aliasModelId) === normalizedRequest,
+  );
   if (byAlias) {
     return fromProxyRoute(byAlias);
   }

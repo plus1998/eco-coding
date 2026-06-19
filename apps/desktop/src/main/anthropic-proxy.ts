@@ -40,6 +40,8 @@ export interface AnthropicProxyRoute {
   thinkingEffort?: ThinkingEffort;
   /** From RouteManualSpec; injected as Anthropic max_tokens on forwarded messages requests. */
   maxOutputTokens?: number;
+  /** Resolved catalog/manual context window; drives SDK `[1m]` alias suffix when >= 1M. */
+  contextTokens?: number;
 }
 
 export interface RuntimeRouteProxySource {
@@ -159,9 +161,13 @@ export async function startAnthropicModelProxy(
     provider: route.provider,
     modelId: route.modelId,
     apiCompat: resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
-    aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
+    aliasModelId: toSdkModelAlias(
+      createModelAlias(route.role, route.provider.id, route.modelId),
+      route.contextTokens,
+    ),
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
     ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
+    ...(route.contextTokens !== undefined && { contextTokens: route.contextTokens }),
   }));
   let pendingImages = normalizePendingImages(options?.pendingImages);
   let imagesInjected = false;
@@ -360,9 +366,37 @@ export async function startAnthropicModelProxy(
   };
 }
 
+export const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
+
+const EXTENDED_CONTEXT_THRESHOLD_TOKENS = 1_000_000;
+
 export function createModelAlias(role: RuntimeAgentRole, providerId: string, modelId: string): string {
   const digest = createHash("sha256").update(`${role}:${providerId}:${modelId}`).digest("hex").slice(0, 12);
   return `eco-${role}-${digest}`;
+}
+
+/** Claude Code extended-context suffix; stripped before upstream routing. */
+export function stripExtendedContextModelSuffix(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (trimmed.endsWith(EXTENDED_CONTEXT_MODEL_SUFFIX)) {
+    return trimmed.slice(0, -EXTENDED_CONTEXT_MODEL_SUFFIX.length);
+  }
+  return trimmed;
+}
+
+export function supportsExtendedContextModelSuffix(contextTokens?: number): boolean {
+  return contextTokens !== undefined && contextTokens >= EXTENDED_CONTEXT_THRESHOLD_TOKENS;
+}
+
+/** SDK-visible alias: append `[1m]` when the configured model supports >= 1M context. */
+export function toSdkModelAlias(baseAlias: string, contextTokens?: number): string {
+  if (!supportsExtendedContextModelSuffix(contextTokens)) {
+    return baseAlias;
+  }
+  if (baseAlias.endsWith(EXTENDED_CONTEXT_MODEL_SUFFIX)) {
+    return baseAlias;
+  }
+  return `${baseAlias}${EXTENDED_CONTEXT_MODEL_SUFFIX}`;
 }
 
 /** Family ids for configured model variants (e.g. gpt-5.4-mini → gpt-5.4). */
@@ -409,7 +443,12 @@ export function resolveProxyRoute(
 ): AnthropicProxyResolvedRoute | undefined {
   if (!requestedModel) return undefined;
 
-  const byAlias = routes.find((route) => route.aliasModelId === requestedModel);
+  const normalizedRequest = stripExtendedContextModelSuffix(requestedModel);
+  const byAlias = routes.find(
+    (route) =>
+      route.aliasModelId === requestedModel ||
+      stripExtendedContextModelSuffix(route.aliasModelId) === normalizedRequest,
+  );
   if (byAlias) {
     return byAlias;
   }

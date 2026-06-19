@@ -181,6 +181,32 @@ test("resolveProxyRoute does not guess SDK default Claude models", () => {
   expect(resolveProxyRoute([exploreRoute, plannerRoute], "claude-sonnet-4-6")).toBeUndefined();
 });
 
+test("resolveProxyRoute matches alias with [1m] suffix stripped", () => {
+  const provider = createProvider("anthropic", "Anthropic", "provider-secret");
+  const baseAlias = createModelAlias("planner", provider.id, "claude-opus-4-8");
+  const route: AnthropicProxyResolvedRoute = {
+    role: "planner",
+    provider,
+    modelId: "claude-opus-4-8",
+    apiCompat: "anthropic",
+    aliasModelId: `${baseAlias}[1m]`,
+    contextTokens: 1_000_000,
+  };
+
+  expect(resolveProxyRoute([route], `${baseAlias}[1m]`)).toEqual(route);
+  expect(resolveProxyRoute([route], baseAlias)).toEqual(route);
+});
+
+test("toSdkModelAlias appends [1m] when context is at least 1M", async () => {
+  const { toSdkModelAlias, supportsExtendedContextModelSuffix } = await import("../src/main/anthropic-proxy");
+  const base = "eco-planner-abc123";
+  expect(supportsExtendedContextModelSuffix(999_999)).toBe(false);
+  expect(supportsExtendedContextModelSuffix(1_000_000)).toBe(true);
+  expect(toSdkModelAlias(base, 200_000)).toBe(base);
+  expect(toSdkModelAlias(base, 1_000_000)).toBe(`${base}[1m]`);
+  expect(toSdkModelAlias(`${base}[1m]`, 1_000_000)).toBe(`${base}[1m]`);
+});
+
 test("createModelAlias includes explore role", () => {
   const provider = createProvider("qwen", "Qwen Anthropic", "provider-secret");
   const alias = createModelAlias("explore", provider.id, "qwen-explore");

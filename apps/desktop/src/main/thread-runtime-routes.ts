@@ -1,9 +1,10 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
-import { AGENT_ROLES, type ModelSettingsSnapshot, type RuntimeRoleRouteConfig } from "../shared/ipc";
-import { createModelAlias, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import { AGENT_ROLES, type ModelSettingsSnapshot, type RuntimeAgentRole, type RuntimeRoleRouteConfig } from "../shared/ipc";
+import { createModelAlias, toSdkModelAlias, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { ProviderConfigSecret } from "./provider-store";
+import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
 export interface RuntimeConfig {
   routes: RuntimeRoute[];
@@ -99,9 +100,32 @@ export function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]
   }));
 }
 
-export function buildDriverRoutesFromRuntime(routes: readonly RuntimeRoute[]): ResolvedModelRoute[] {
+export async function resolveContextTokensByRole(
+  routes: readonly RuntimeRoute[],
+  pricingCache: ModelsDevPricingCache,
+): Promise<Partial<Record<RuntimeAgentRole, number>>> {
+  const pairs = await Promise.all(
+    routes.map(async (route) => {
+      const resolved = await pricingCache.resolveContextLimit(
+        route.provider.baseUrl,
+        route.modelId,
+        route.modelsDevMapping,
+        route.manualSpec?.contextTokens,
+        route.manualSpec?.maxOutputTokens,
+      );
+      return [route.role, resolved.limit] as const;
+    }),
+  );
+  return Object.fromEntries(pairs);
+}
+
+export function buildDriverRoutesFromRuntime(
+  routes: readonly RuntimeRoute[],
+  contextTokensByRole?: Partial<Record<RuntimeAgentRole, number>>,
+): ResolvedModelRoute[] {
   return routes.map((route) => {
-    const aliasModelId = createModelAlias(route.role, route.provider.id, route.modelId);
+    const baseAlias = createModelAlias(route.role, route.provider.id, route.modelId);
+    const aliasModelId = toSdkModelAlias(baseAlias, contextTokensByRole?.[route.role]);
     return {
       role: route.role,
       upstreamModelId: route.modelId,

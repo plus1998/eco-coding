@@ -190,6 +190,7 @@ import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./a
 import { buildAgentProfilePerformanceSnapshots } from "./agent-profile-performance";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
 import {
+  type AnthropicProxyRoute,
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
@@ -352,6 +353,7 @@ import {
   buildDriverRoutesFromRuntime,
   type RuntimeConfig,
   type RuntimeConfigResolution,
+  resolveContextTokensByRole,
   resolveThreadRuntimeConfig,
   roleRoutesFromRuntime,
 } from "./thread-runtime-routes";
@@ -5217,7 +5219,8 @@ async function ensureContextHeadroom(
       process.stderr.write(`[eco] context headroom skipped for ${threadId}: ${runtimeConfig.reason}\n`);
       return;
     }
-    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+    const contextByRole = await resolveContextTokensByRole(runtimeConfig.routes, pricingCache);
+    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes, contextByRole);
     await contextScheduler.ensureHeadroom(threadId, routes, worktreePath, signal, options);
   } catch (error) {
     const detail = errorMessage(error);
@@ -5251,7 +5254,8 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
       return { ok: false, message: runtimeConfig.reason };
     }
 
-    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes);
+    const contextByRole = await resolveContextTokensByRole(runtimeConfig.routes, pricingCache);
+    const routes = buildDriverRoutesFromRuntime(runtimeConfig.routes, contextByRole);
     const result = await contextScheduler.compactManual(
       threadId,
       routes,
@@ -6441,7 +6445,9 @@ function startRuntimeProxy(
   threadId?: string,
   proxyThreadOptions?: { emitRequestActivity?: boolean },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
-  const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
+  return (async () => {
+    const contextByRole = await resolveContextTokensByRole(routes, pricingCache);
+    const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
   // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
   const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
   const options: AnthropicProxyStartOptions = {
@@ -6503,7 +6509,18 @@ function startRuntimeProxy(
       },
     }),
   };
-  return startAnthropicModelProxy(routes.map(runtimeRouteToProxyRoute), options);
+    return startAnthropicModelProxy(
+      routes.map((route): AnthropicProxyRoute => {
+        const proxyRoute = runtimeRouteToProxyRoute(route);
+        const contextTokens = contextByRole[route.role];
+        if (contextTokens === undefined) {
+          return proxyRoute;
+        }
+        return { ...proxyRoute, contextTokens };
+      }),
+      options,
+    );
+  })();
 }
 
 function errorMessage(error: unknown): string {

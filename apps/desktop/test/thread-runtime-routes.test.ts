@@ -165,5 +165,8 @@ test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases
 
   expect(buildDriverRoutes(proxyRoutes)[0]?.primary.modelId).toBe(expectedAlias);
   expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.primary.modelId).toBe(expectedAlias);
+  expect(buildDriverRoutesFromRuntime(resolved.routes, { planner: 1_000_000 })[0]?.primary.modelId).toBe(
+    `${expectedAlias}[1m]`,
+  );
   expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.upstreamModelId).toBe("planner-model");
 });
