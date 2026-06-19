@@ -53,6 +53,17 @@ test("computeWindowOccupancy uses input and cache only", () => {
   ).toBe(1300);
 });
 
+test("computeWindowOccupancy dedupes OpenAI-compat total plus cache subset", () => {
+  expect(
+    computeWindowOccupancy({
+      inputTokens: 24_748,
+      outputTokens: 20,
+      cacheReadTokens: 24_588,
+      cacheCreationTokens: 0,
+    }),
+  ).toBe(24_748);
+});
+
 test("computeOccupancyRatio at threshold", () => {
   const { atThreshold } = computeOccupancyRatio(170_000, 200_000, 0.85);
   expect(atThreshold).toBe(true);

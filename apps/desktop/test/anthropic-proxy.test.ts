@@ -280,6 +280,23 @@ test("extractUsageFromResponseBody reads non-streaming response usage", () => {
   });
 });
 
+test("extractUsageFromResponseBody dedupes OpenAI-compat total plus cache subset", () => {
+  const usage = extractUsageFromResponseBody({
+    usage: {
+      input_tokens: 24_748,
+      output_tokens: 20,
+      cache_read_input_tokens: 24_588,
+    },
+  });
+
+  expect(usage).toMatchObject({
+    inputTokens: 160,
+    outputTokens: 20,
+    cacheReadTokens: 24_588,
+    cacheCreationTokens: 0,
+  });
+});
+
 test("createStreamingUsageTracker reads streaming response usage", () => {
   const tracker = createStreamingUsageTracker();
   tracker.push(

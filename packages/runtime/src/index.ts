@@ -295,6 +295,7 @@ export {
   formatUsageBadge,
   mergeModelUsages,
   mergeUsageTotals,
+  normalizeOverlappingCacheContextUsage,
   parseModelUsage,
   parseSdkContextUsage,
   parseSdkModelUsageBilling,

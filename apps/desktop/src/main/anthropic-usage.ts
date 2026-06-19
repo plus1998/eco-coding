@@ -1,4 +1,4 @@
-import type { ParsedUsage } from "@eco/runtime";
+import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "@eco/runtime";
 
 export interface StreamingUsageTracker {
   push(chunk: Uint8Array): void;
@@ -28,20 +28,33 @@ export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null 
     return null;
   }
   const usage = isRecord(body.usage) ? body.usage : body;
-  const parsed = {
+  const cachedFromDetails = readTokenCount(usage, [
+    "cached_tokens",
+    "cachedTokens",
+  ]);
+  const details =
+    isRecord(usage.input_tokens_details) ? usage.input_tokens_details
+    : isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details
+    : null;
+  const cachedFromInputDetails =
+    details !== null
+      ? readTokenCount(details, ["cached_tokens", "cachedTokens"])
+      : cachedFromDetails;
+  const parsed = normalizeOverlappingCacheContextUsage({
     inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens", "prompt_tokens"]),
     outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens", "completion_tokens"]),
-    cacheReadTokens: readTokenCount(usage, [
-      "cache_read_input_tokens",
-      "cacheReadInputTokens",
-      "cache_read_tokens",
-    ]),
+    cacheReadTokens:
+      readTokenCount(usage, [
+        "cache_read_input_tokens",
+        "cacheReadInputTokens",
+        "cache_read_tokens",
+      ]) || cachedFromInputDetails,
     cacheCreationTokens: readTokenCount(usage, [
       "cache_creation_input_tokens",
       "cacheCreationInputTokens",
       "cache_creation_tokens",
     ]),
-  };
+  });
   return usageTotal(parsed) > 0 ? parsed : null;
 }
 
@@ -58,12 +71,14 @@ export function parsedUsageFromOpenAICompatUsage(
   if (!usage) {
     return null;
   }
-  const parsed: ParsedUsage = {
-    inputTokens: usage.input_tokens ?? 0,
+  const totalInput = usage.input_tokens ?? 0;
+  const cached = usage.input_tokens_details?.cached_tokens ?? 0;
+  const parsed: ParsedUsage = normalizeOverlappingCacheContextUsage({
+    inputTokens: cached > 0 ? Math.max(0, totalInput - cached) : totalInput,
     outputTokens: usage.output_tokens ?? 0,
-    cacheReadTokens: usage.input_tokens_details?.cached_tokens ?? 0,
+    cacheReadTokens: cached,
     cacheCreationTokens: 0,
-  };
+  });
   return usageTotal(parsed) > 0 ? parsed : null;
 }
 
@@ -78,9 +93,10 @@ export function resolveChatCompletionsStreamUsage(
     | undefined,
 ): ParsedUsage | null {
   if (trackerUsage && usageTotal(trackerUsage) > 0) {
-    return trackerUsage;
+    return normalizeOverlappingCacheContextUsage(trackerUsage);
   }
-  return parsedUsageFromOpenAICompatUsage(bridgeUsage);
+  const bridgeParsed = parsedUsageFromOpenAICompatUsage(bridgeUsage);
+  return bridgeParsed ? normalizeOverlappingCacheContextUsage(bridgeParsed) : null;
 }
 
 function extractUsageFromStreamEvent(event: unknown): ParsedUsage | null {

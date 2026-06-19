@@ -108,7 +108,30 @@ function hasBillableOrContextTokens(usage: ParsedUsage): boolean {
 }
 
 function contextWindowOccupancy(usage: ParsedUsage): number {
-  return usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+  const normalized = normalizeOverlappingCacheContextUsage(usage);
+  return normalized.inputTokens + normalized.cacheReadTokens + normalized.cacheCreationTokens;
+}
+
+/**
+ * OpenAI-compatible providers often put the full prompt in `input_tokens` while also
+ * reporting the cached subset as `cache_read_input_tokens` (Anthropic field names).
+ * Anthropic-native usage keeps uncached input separate, so only the near-equal case
+ * needs correction.
+ */
+export function normalizeOverlappingCacheContextUsage(usage: ParsedUsage): ParsedUsage {
+  const { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens } = usage;
+  if (cacheReadTokens <= 0) {
+    return usage;
+  }
+  if (inputTokens >= cacheReadTokens && inputTokens <= cacheReadTokens * 1.02) {
+    return {
+      inputTokens: Math.max(0, inputTokens - cacheReadTokens),
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+    };
+  }
+  return usage;
 }
 
 function maxModelContextUsage(

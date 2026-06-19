@@ -1,4 +1,4 @@
-import type { ParsedUsage } from "./usage";
+import { normalizeOverlappingCacheContextUsage, type ParsedUsage } from "./usage";
 import {
   type ModelsDevCatalog,
   type ModelsDevModelEntry,
@@ -225,7 +225,8 @@ function findModelEntry(provider: ModelsDevProviderEntry, modelId: string): Mode
  * Uses input + cache tokens only — output does not count toward the context limit.
  */
 export function computeWindowOccupancy(usage: ParsedUsage): number {
-  return usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+  const normalized = normalizeOverlappingCacheContextUsage(usage);
+  return normalized.inputTokens + normalized.cacheReadTokens + normalized.cacheCreationTokens;
 }
 
 export function computeOccupancyRatio(
