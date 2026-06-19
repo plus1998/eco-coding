@@ -223,6 +223,81 @@ export function clampActivityPreviewLine(text: string, max = 56): string {
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
+export interface BashRunCardDisplay {
+  title: string;
+  meta?: string;
+  body?: string;
+}
+
+export function formatBashRunMeta(command: string, durationMs?: number): string {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return durationMs !== undefined && Number.isFinite(durationMs)
+      ? `${(durationMs / 1000).toFixed(1)}s`
+      : "";
+  }
+  const segments = trimmed.split(/\s*(?:&&|\|\||;)\s*/u).filter(Boolean);
+  const firstToken = segments[0]?.trim().split(/\s+/u)[0] ?? "";
+  const parts: string[] = [];
+  if (firstToken) {
+    parts.push(firstToken);
+  }
+  if (segments.length > 1) {
+    parts.push(`${segments.length - 1}+`);
+  }
+  if (durationMs !== undefined && Number.isFinite(durationMs)) {
+    parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+  }
+  return parts.join(", ");
+}
+
+export function resolveBashRunCardDisplay(input: {
+  toolName?: string;
+  command?: string;
+  summaryText?: string;
+  output?: string;
+  durationMs?: number;
+}): BashRunCardDisplay | undefined {
+  if (input.toolName !== "Bash") {
+    return undefined;
+  }
+  const command = input.command?.trim();
+  const output = input.output?.trim();
+  const summaryText = input.summaryText?.trim();
+  const isToolLine = summaryText ? /^Tool:\s*Bash\b/i.test(summaryText) : false;
+  const title =
+    summaryText && !isToolLine && !looksLikeShellCommand(summaryText)
+      ? summaryText
+      : (inferBashCardTitle(command) ?? "运行命令");
+  const meta = command ? formatBashRunMeta(command, input.durationMs) : undefined;
+  const body = output ?? command;
+  return {
+    title,
+    ...(meta && { meta }),
+    ...(body && { body }),
+  };
+}
+
+function looksLikeShellCommand(text: string): boolean {
+  return (
+    /^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\.\/|\/)/u.test(text) ||
+    text.includes("&&") ||
+    text.includes("|") ||
+    text.includes("\n")
+  );
+}
+
+function inferBashCardTitle(command: string | undefined): string | undefined {
+  const firstLine = command?.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine) {
+    return undefined;
+  }
+  if (firstLine.length <= 56) {
+    return firstLine;
+  }
+  return `${firstLine.slice(0, 53)}…`;
+}
+
 /** Compact single-line preview for subagent cards and status rows. */
 export function formatToolStatusPreview(toolName: string, detail?: string, max = 56): string {
   const normalizedDetail = detail?.trim();

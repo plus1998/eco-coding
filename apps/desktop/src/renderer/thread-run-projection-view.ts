@@ -11,6 +11,7 @@ import {
   formatMcpToolDisplayName,
   formatToolDisplayLabel,
   formatToolStatusPreview,
+  resolveBashRunCardDisplay,
   isMcpToolName,
   parseBashApprovalActivityText,
   parseToolActionDisplayLabel,
@@ -655,11 +656,20 @@ function buildProjectionToolActionBlock(
   },
 ): ActivityDetailBlock {
   const subagent = resolveProjectionSubagent(item);
+  const metadataTool = readProjectionToolMetadata(item);
+  const bashRun = resolveBashRunCardDisplay({
+    toolName: input.toolName,
+    ...(metadataTool?.detail && { command: metadataTool.detail }),
+    summaryText: item.text,
+    ...(metadataTool?.output && { output: metadataTool.output }),
+    ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
+  });
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
     label: input.label,
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
+    ...(bashRun && { bashRun }),
     ...(subagent && { subagent }),
     ...(item.agentId && { agentId: item.agentId }),
   };
@@ -905,6 +915,7 @@ function readProjectionToolMetadata(
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
+    ...(typeof record.output === "string" && record.output.trim() && { output: record.output.trim() }),
     ...(typeof record.toolUseId === "string" &&
       record.toolUseId.trim() && { toolUseId: record.toolUseId.trim() }),
     ...(typeof record.durationMs === "number" &&

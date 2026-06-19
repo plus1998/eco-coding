@@ -1383,6 +1383,39 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   });
 });
 
+test("projectionItemToDetailBlock builds bash card display for completed bash tools", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-done",
+      eventType: "tool.completed",
+      scope: "main",
+      role: "planner",
+      text: "Run projection view tests",
+      metadata: {
+        liveType: "tool.completed",
+        tool: {
+          name: "Bash",
+          detail: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+          toolUseId: "toolu_bash_1",
+          durationMs: 716,
+          status: "completed",
+          output: "36 pass\n0 fail",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    icon: "terminal",
+    bashRun: {
+      title: "Run projection view tests",
+      meta: "cd, 1+, 0.7s",
+      body: "36 pass\n0 fail",
+    },
+  });
+});
+
 test("projectionItemToDetailBlock formats MCP tool metadata", () => {
   const detail = projectionItemToDetailBlock(
     item({

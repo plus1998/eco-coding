@@ -294,6 +294,9 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
   if (event.type === "tool.started") {
     return resolveSdkToolUseMetadata(event.payload) ?? resolveSdkToolProgressMetadata(event.payload);
   }
+  if (event.type === "tool.completed") {
+    return resolveSdkToolSummaryMetadata(event.payload);
+  }
   if (event.type === "tool.failed") {
     return resolveSdkToolPermissionDeniedMetadata(event.payload);
   }
@@ -301,6 +304,33 @@ function resolveSdkActivityToolMetadata(event: AgentEventLike): ThreadRunToolMet
     return resolveSdkTaskProgressToolMetadata(event.payload);
   }
   return undefined;
+}
+
+function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.type !== "tool_use_summary") {
+    return undefined;
+  }
+  const name = readString(record.tool_name) ?? "Bash";
+  const command =
+    readString(record.command) ??
+    readString(record.full_command) ??
+    readString(record.bash_command);
+  const output =
+    readString(record.output) ??
+    readString(record.stdout) ??
+    readString(record.result) ??
+    readString(record.content);
+  return {
+    name,
+    ...(command && { detail: command }),
+    ...(output && { output }),
+    ...(readString(record.tool_use_id) && { toolUseId: readString(record.tool_use_id) }),
+    status: "completed",
+  };
 }
 
 function resolveSdkToolPermissionDeniedMetadata(payload: unknown): ThreadRunToolMetadata | undefined {

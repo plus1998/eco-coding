@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import {
+  formatBashRunMeta,
   formatToolStatusPreview,
   parseBashApprovalActivityText,
   readBashApprovalMetadata,
+  resolveBashRunCardDisplay,
 } from "../src/shared/activity-display";
 
 test("parseBashApprovalActivityText parses filesystem approval messages", () => {
@@ -37,6 +39,37 @@ test("formatToolStatusPreview shortens long Bash commands for compact status row
   expect(formatToolStatusPreview("Read", "/src/renderer/ActivityLogView.tsx")).toBe(
     "/src/renderer/ActivityLogView.tsx",
   );
+});
+
+test("resolveBashRunCardDisplay builds card fields for bash summaries and output", () => {
+  expect(
+    resolveBashRunCardDisplay({
+      toolName: "Bash",
+      command: "cd apps/desktop && bun test test/thread-run-projection-view.test.ts",
+      summaryText: "Run projection view tests",
+      output: "36 pass\n0 fail",
+      durationMs: 716,
+    }),
+  ).toEqual({
+    title: "Run projection view tests",
+    meta: "cd, 1+, 0.7s",
+    body: "36 pass\n0 fail",
+  });
+  expect(
+    resolveBashRunCardDisplay({
+      toolName: "Bash",
+      command: "git status",
+      summaryText: "Tool: Bash · git status (0.2s)",
+    }),
+  ).toEqual({
+    title: "git status",
+    meta: "git",
+    body: "git status",
+  });
+});
+
+test("formatBashRunMeta summarizes chained commands", () => {
+  expect(formatBashRunMeta("cd apps/desktop && bun test && echo done")).toBe("cd, 2+");
 });
 
 test("readBashApprovalMetadata reads structured projection metadata", () => {

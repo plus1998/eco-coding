@@ -22,9 +22,11 @@ import {
   normalizeActivityActionLabel,
   parseBashApprovalActivityText,
   parseReconnectActivityMessage,
+  resolveBashRunCardDisplay,
   shouldClearReconnectActivity,
   stripSubagentBracketPrefix,
   compareToolActionLifecyclePriority,
+  type BashRunCardDisplay,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import { computeSubagentSessionDurationMs } from "../shared/subagent-session-timing";
@@ -154,6 +156,7 @@ export type ActivityDetailBlock =
       lifecycle?: ToolActionLifecycle;
       subagent?: string;
       agentId?: string;
+      bashRun?: BashRunCardDisplay;
     }
   | { kind: "tool-failed"; tool: string; error?: string; subagent?: string; agentId?: string }
   | {
@@ -698,6 +701,14 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       return;
     }
     const label = formatToolActionLabel(tool);
+    const bashRun =
+      tool.tool === "Bash"
+        ? resolveBashRunCardDisplay({
+            toolName: "Bash",
+            ...(tool.detail && { command: tool.detail }),
+            summaryText: line.message,
+          })
+        : undefined;
     const last = current.details[current.details.length - 1];
     const icon = iconForToolCategory(tool.category);
     const actionKey = activityActionKey(subagent, label, icon);
@@ -719,6 +730,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
           icon,
           label,
           lifecycle: nextLifecycle,
+          ...(bashRun && { bashRun }),
           ...(subagent && { subagent }),
           ...((line.agentId?.trim() || toolContextAgentId) && {
             agentId: (line.agentId?.trim() || toolContextAgentId)!,
@@ -746,6 +758,7 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       icon,
       label,
       lifecycle,
+      ...(bashRun && { bashRun }),
       ...(subagent && { subagent }),
       ...((line.agentId?.trim() || toolContextAgentId) && {
         agentId: (line.agentId?.trim() || toolContextAgentId)!,

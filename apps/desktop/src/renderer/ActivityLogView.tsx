@@ -357,6 +357,9 @@ function ProjectionActivityLogView({
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
+  if (block.kind === "action" && block.bashRun) {
+    return false;
+  }
   return (
     block.kind === "action" ||
     block.kind === "model-request" ||
@@ -1216,6 +1219,7 @@ function DetailBlock({
       <RunLogAction
         icon={block.icon}
         label={block.label}
+        {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -1369,7 +1373,7 @@ function ThinkingBlock({
   streaming?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [isCollapsing, setIsCollapsing] = useState(false);
   const collapseDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const collapseAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1877,6 +1881,7 @@ function RunLogAction({
   icon,
   label,
   lifecycle,
+  bashRun,
   subagent,
   modelByRole,
   omitRoleLabel,
@@ -1884,6 +1889,7 @@ function RunLogAction({
   icon: ActivityActionIcon;
   label: string;
   lifecycle?: ToolActionLifecycle;
+  bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
@@ -1901,7 +1907,7 @@ function RunLogAction({
     !activityLabelIncludesAgentRole(subagent!, label, { modelId: modelByRole?.[subagent!] });
 
   useLayoutEffect(() => {
-    if (!isTerminal || expanded) {
+    if (bashRun || !isTerminal || expanded) {
       return;
     }
     const measure = () => {
@@ -1920,7 +1926,7 @@ function RunLogAction({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [expanded, isTerminal, label]);
+  }, [bashRun, expanded, isTerminal, label]);
 
   const triggerClassName = [
     "run-log-action-trigger",
@@ -1950,6 +1956,17 @@ function RunLogAction({
     </>
   );
 
+  if (bashRun) {
+    return (
+      <div className="run-log-action run-log-action--bash-card">
+        {showRoleLabel ? (
+          <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+        ) : null}
+        <RunLogBashCard display={bashRun} {...(lifecycle && { lifecycle })} />
+      </div>
+    );
+  }
+
   return (
     <div className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}>
       {showRoleLabel ? (
@@ -1977,6 +1994,38 @@ function RunLogAction({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function RunLogBashCard({
+  display,
+  lifecycle,
+}: {
+  display: import("../shared/activity-display").BashRunCardDisplay;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  return (
+    <div
+      className={[
+        "run-log-bash-card",
+        lifecycle === "running" ? "is-running" : "",
+        lifecycle === "failed" ? "is-failed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className="run-log-bash-card-header">
+        <Terminal size={16} className="run-log-bash-card-icon" aria-hidden />
+        <span className="run-log-bash-card-title">{display.title}</span>
+        {display.meta ? <span className="run-log-bash-card-meta">{display.meta}</span> : null}
+      </div>
+      {display.body ? (
+        <>
+          <div className="run-log-bash-card-divider" aria-hidden />
+          <pre className="run-log-bash-card-output">{display.body}</pre>
+        </>
+      ) : null}
     </div>
   );
 }

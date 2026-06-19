@@ -2803,6 +2803,7 @@ function isRicherThreadRunToolMetadata(
   }
   return Boolean(
     (incoming.detail && incoming.detail !== existing.detail) ||
+      (incoming.output && incoming.output !== existing.output) ||
       (incoming.toolUseId && incoming.toolUseId !== existing.toolUseId) ||
       (incoming.durationMs !== undefined && incoming.durationMs !== existing.durationMs) ||
       (incoming.status && incoming.status !== existing.status),
@@ -2823,6 +2824,7 @@ function readThreadRunToolMetadata(
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
+    ...(typeof raw.output === "string" && raw.output.trim() && { output: raw.output.trim() }),
     ...(typeof raw.toolUseId === "string" && raw.toolUseId.trim() && { toolUseId: raw.toolUseId.trim() }),
     ...(typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),

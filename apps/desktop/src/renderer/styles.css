@@ -5086,6 +5086,79 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #737373;
 }
 
+.run-log-action--bash-card {
+  display: block;
+  width: 100%;
+}
+
+.run-log-bash-card {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.run-log-bash-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.run-log-bash-card-icon {
+  flex-shrink: 0;
+  color: #8a8a8a;
+}
+
+.run-log-bash-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #e5e5e5;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-bash-card-meta {
+  flex-shrink: 0;
+  color: #737373;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.run-log-bash-card-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.run-log-bash-card-output {
+  margin: 0;
+  max-height: 100px;
+  padding: 10px 12px 12px;
+  color: #9a9a9a;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.run-log-bash-card.is-running .run-log-bash-card-title {
+  color: #c8c8c8;
+}
+
 .run-log-subagent-badge {
   flex-wrap: wrap;
   gap: 8px;
@@ -12317,6 +12390,42 @@ html[data-window-focused="true"] .settings-nav {
   margin-left: 22px;
   color: var(--codex-log-faint);
   font-size: 12px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card {
+  border-color: var(--codex-log-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-header {
+  padding: 9px 12px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-icon {
+  color: #8a8a8a;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-title {
+  color: var(--codex-log-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-meta {
+  color: var(--codex-log-faint);
+  font-size: 12px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-divider {
+  background: var(--codex-log-line-subtle);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-bash-card-output {
+  padding: 8px 12px 11px;
+  color: var(--codex-log-muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {

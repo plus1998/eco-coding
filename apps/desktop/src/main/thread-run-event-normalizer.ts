@@ -273,6 +273,7 @@ function normalizeThreadRunToolMetadata(tool: ThreadRunToolMetadata): ThreadRunT
   return {
     name,
     ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
+    ...(tool.output?.trim() && { output: tool.output.trim() }),
     ...(tool.toolUseId?.trim() && { toolUseId: tool.toolUseId.trim() }),
     ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
     ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),

@@ -37,6 +37,7 @@ export type ThreadRunEventType =
 export interface ThreadRunToolMetadata {
   name: string;
   detail?: string;
+  output?: string;
   toolUseId?: string;
   durationMs?: number;
   status?: "started" | "completed" | "failed";
