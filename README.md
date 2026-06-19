@@ -53,6 +53,21 @@ When summarizing this conversation, always preserve:
 
 Before each compaction, Eco’s **PreCompact** hook archives the thread activity log and context snapshot to SQLite (`thread_compaction_archives`) for audit and recovery.
 
+### SDK vs Eco fallback compaction
+
+Eco uses two compaction paths:
+
+1. **SDK `/compact`** — when the upstream model exposes the `compact` slash command (native Claude / Claude Code routes). Behavior is unchanged: the SDK summarizes in-session and emits `compact_boundary`.
+2. **Eco fallback** — when `/compact` is unavailable (typical for OpenAI-compat / llama-server routes). Eco:
+   - archives context (same as PreCompact for manual; explicit archive for auto),
+   - splits `thread_activity` user lines: **LLM summary of older messages** + **last ~20k tokens of user messages kept verbatim**,
+   - stores the result in `thread_compact_handoff`, then **`clearSdkSession`** (including subagent sessions),
+   - on the next continue, injects a handoff prompt and starts a **fresh SDK session**; handoff is cleared after `session.captured`.
+
+v1 Eco fallback summarizes from `thread_activity` only (600-char line cap, no raw tool transcripts), so it is lossier than SDK `/compact` but sufficient for non-Claude routes.
+
+After Eco fallback compaction, **subagent resume is reset** because subagent session state is cleared with the planner SDK session.
+
 ## Subagent resume
 
 Eco persists each subagent’s SDK `agentId` when it finishes (`SubagentStop`) and, on the next `Agent(role)` call in the **same Planner session**, automatically rewrites the tool input to `Resume agent {id} and …` (see [SDK subagent resume](https://code.claude.com/docs/en/agent-sdk/subagents#resuming-subagents)). This avoids re-reading the codebase on a second reviewer pass or after an interrupted explore/architect/coder run.

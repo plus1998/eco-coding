@@ -162,6 +162,14 @@ export interface ThreadCompactionArchiveRecord {
   createdAt: string;
 }
 
+export interface ThreadCompactHandoffRecord {
+  threadId: string;
+  summary: string;
+  recentUserMessages: string[];
+  postTokensEstimate: number;
+  createdAt: string;
+}
+
 interface AppliedDiffRow {
   thread_id: string;
   workspace_path: string;
@@ -242,6 +250,7 @@ const threadOwnedTables = [
   "thread_applied_diffs",
   "thread_metrics_snapshots",
   "thread_compaction_archives",
+  "thread_compact_handoff",
   "thread_subagent_sessions",
   "thread_subagent_metrics",
   "thread_run_attempts",
@@ -374,6 +383,15 @@ export class ConversationStore {
 
       CREATE INDEX IF NOT EXISTS idx_thread_compaction_archives_thread_created
         ON thread_compaction_archives(thread_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS thread_compact_handoff (
+        thread_id TEXT PRIMARY KEY,
+        summary TEXT NOT NULL,
+        recent_user_messages_json TEXT NOT NULL,
+        post_tokens_estimate INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
 
       CREATE TABLE IF NOT EXISTS thread_subagent_sessions (
         thread_id TEXT NOT NULL,
@@ -907,6 +925,86 @@ export class ConversationStore {
         createdAt: row.created_at,
       };
     });
+  }
+
+  getCompactHandoff(threadId: string): ThreadCompactHandoffRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT thread_id, summary, recent_user_messages_json, post_tokens_estimate, created_at
+         FROM thread_compact_handoff
+         WHERE thread_id = ?`,
+      )
+      .get(threadId) as
+      | {
+          thread_id: string;
+          summary: string;
+          recent_user_messages_json: string;
+          post_tokens_estimate: number;
+          created_at: string;
+        }
+      | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    let recentUserMessages: string[] = [];
+    try {
+      const parsed = JSON.parse(row.recent_user_messages_json) as unknown;
+      if (Array.isArray(parsed)) {
+        recentUserMessages = parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+    } catch {
+      recentUserMessages = [];
+    }
+
+    return {
+      threadId: row.thread_id,
+      summary: row.summary,
+      recentUserMessages,
+      postTokensEstimate: row.post_tokens_estimate,
+      createdAt: row.created_at,
+    };
+  }
+
+  saveCompactHandoff(
+    threadId: string,
+    input: {
+      summary: string;
+      recentUserMessages: string[];
+      postTokensEstimate: number;
+    },
+  ): ThreadCompactHandoffRecord {
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO thread_compact_handoff (
+           thread_id, summary, recent_user_messages_json, post_tokens_estimate, created_at
+         ) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           summary = excluded.summary,
+           recent_user_messages_json = excluded.recent_user_messages_json,
+           post_tokens_estimate = excluded.post_tokens_estimate,
+           created_at = excluded.created_at`,
+      )
+      .run(
+        threadId,
+        input.summary,
+        JSON.stringify(input.recentUserMessages),
+        input.postTokensEstimate,
+        createdAt,
+      );
+    return {
+      threadId,
+      summary: input.summary,
+      recentUserMessages: [...input.recentUserMessages],
+      postTokensEstimate: input.postTokensEstimate,
+      createdAt,
+    };
+  }
+
+  clearCompactHandoff(threadId: string): void {
+    this.db.prepare(`DELETE FROM thread_compact_handoff WHERE thread_id = ?`).run(threadId);
   }
 
   listThreadMetrics(): ThreadMetricsRecord[] {

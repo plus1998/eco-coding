@@ -13,6 +13,17 @@ import {
   sdkSupportsSlashCommand,
   type ClaudeAgentSdkDriver,
 } from "@eco/runtime/sdk";
+
+export interface EcoCompactRunRequest {
+  trigger: "auto" | "manual";
+  sessionId?: string;
+  worktreePath: string;
+  signal: AbortSignal;
+}
+
+export interface EcoCompactRunResult {
+  postTokensEstimate: number;
+}
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
 
@@ -47,6 +58,17 @@ export interface ContextSnapshotSchedulerOptions {
   onCompactionBoundary?: (
     threadId: string,
     input: { payload: Record<string, unknown>; sourceEventId?: string },
+  ) => void;
+  shouldPreferEcoCompact?: (threadId: string) => boolean;
+  runEcoCompact?: (threadId: string, input: EcoCompactRunRequest) => Promise<EcoCompactRunResult>;
+  archiveBeforeCompaction?: (
+    threadId: string,
+    trigger: "auto" | "manual",
+    sessionId?: string,
+  ) => void;
+  recordEcoCompactionBoundary?: (
+    threadId: string,
+    input: { trigger: "auto" | "manual"; postTokens: number },
   ) => void;
 }
 
@@ -211,15 +233,22 @@ export class ContextSnapshotScheduler {
     resume: EcoSdkResumeOptions,
     trigger: "auto" | "manual",
   ): Promise<void> {
+    if (this.options.shouldPreferEcoCompact?.(threadId)) {
+      await this.runEcoCompactPath(threadId, worktreePath, signal, resume, trigger);
+      return;
+    }
+
     await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
       const activeRoutes = driverRoutes.length > 0 ? driverRoutes : routes;
       if (!driver.compactSession) {
-        throw new Error("当前驱动不支持上下文压缩。");
+        await this.runEcoCompactPath(threadId, worktreePath, runSignal ?? signal, resume, trigger);
+        return;
       }
 
       let slashCommands: string[] = [];
       let postTokens: number | undefined;
       let boundaryRecorded = false;
+      let shouldFallbackToEco = false;
 
       for await (const event of driver.compactSession({
         threadId,
@@ -235,6 +264,10 @@ export class ContextSnapshotScheduler {
           const commands = readSdkSlashCommands(payload);
           if (commands.length > 0) {
             slashCommands = commands;
+            if (!sdkSupportsSlashCommand(commands, "compact")) {
+              shouldFallbackToEco = true;
+              break;
+            }
           }
           if (payload.subtype === "compact_boundary") {
             boundaryRecorded = true;
@@ -262,8 +295,9 @@ export class ContextSnapshotScheduler {
         }
       }
 
-      if (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact")) {
-        throw new Error("当前模型不支持 /compact 命令。");
+      if (shouldFallbackToEco || (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact"))) {
+        await this.runEcoCompactPath(threadId, worktreePath, runSignal ?? signal, resume, trigger);
+        return;
       }
 
       this.options.monitor.markCompactCompleted(threadId, postTokens);
@@ -275,6 +309,38 @@ export class ContextSnapshotScheduler {
           ...(postTokens !== undefined && { postTokens }),
         });
       }
+    });
+  }
+
+  private async runEcoCompactPath(
+    threadId: string,
+    worktreePath: string,
+    signal: AbortSignal,
+    resume: EcoSdkResumeOptions,
+    trigger: "auto" | "manual",
+  ): Promise<void> {
+    if (!this.options.runEcoCompact) {
+      throw new Error("当前驱动不支持上下文压缩。");
+    }
+    if (trigger === "auto") {
+      this.options.archiveBeforeCompaction?.(threadId, trigger, resume.resumeSessionId);
+    }
+    const result = await this.options.runEcoCompact(threadId, {
+      trigger,
+      sessionId: resume.resumeSessionId,
+      worktreePath,
+      signal,
+    });
+    this.options.recordEcoCompactionBoundary?.(threadId, {
+      trigger,
+      postTokens: result.postTokensEstimate,
+    });
+    this.options.monitor.markCompactCompleted(threadId, result.postTokensEstimate);
+    this.emitLiveFromMonitor(threadId);
+    this.options.emitCompactionStatus(threadId, {
+      stage: "completed",
+      trigger,
+      postTokens: result.postTokensEstimate,
     });
   }
 

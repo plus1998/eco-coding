@@ -482,3 +482,136 @@ test("ensureHeadroom clears compact in flight after failure", async () => {
     { stage: "failed", trigger: "auto", detail: "driver unavailable" },
   ]);
 });
+
+test("compactManual uses eco path when slash commands omit compact", async () => {
+  let ecoCompactCalled = false;
+  let sdkCompactCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+    isCompactInFlight: () => false,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => ({}),
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async (_threadId, fn) => {
+      const driver = {
+        compactSession: async function* () {
+          sdkCompactCalled = true;
+          yield {
+            type: "agent.started",
+            payload: {
+              type: "system",
+              subtype: "init",
+              slash_commands: ["/context", "/help"],
+            },
+          };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, []);
+    },
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+    runEcoCompact: async () => {
+      ecoCompactCalled = true;
+      return { postTokensEstimate: 12_000 };
+    },
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: true });
+  expect(sdkCompactCalled).toBe(true);
+  expect(ecoCompactCalled).toBe(true);
+});
+
+test("compactManual keeps SDK path when slash commands include compact", async () => {
+  let ecoCompactCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+    isCompactInFlight: () => false,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => ({}),
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    withSdkDriver: async (_threadId, fn) => {
+      const driver = {
+        compactSession: async function* () {
+          yield {
+            type: "agent.started",
+            payload: {
+              type: "system",
+              subtype: "init",
+              slash_commands: ["/compact", "/context"],
+            },
+          };
+          yield {
+            type: "agent.started",
+            payload: {
+              subtype: "compact_boundary",
+              compact_metadata: { post_tokens: 4000 },
+            },
+          };
+        },
+      };
+      await fn(driver as never, new AbortController().signal, []);
+    },
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+    runEcoCompact: async () => {
+      ecoCompactCalled = true;
+      return { postTokensEstimate: 12_000 };
+    },
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: true });
+  expect(ecoCompactCalled).toBe(false);
+});
+
+test("compactManual uses eco path when shouldPreferEcoCompact is true", async () => {
+  let ecoCompactCalled = false;
+  let withSdkDriverCalled = false;
+  const monitor = {
+    getSnapshot: () => undefined,
+    restoreFromContextSnapshot: () => {},
+    clearThread: () => {},
+    shouldCompact: () => false,
+    isCompactInFlight: () => false,
+    markCompactInFlight: () => {},
+    markCompactCompleted: () => ({}),
+    updateFromUsage: async () => undefined,
+  } as unknown as ContextWindowMonitor;
+  const scheduler = new ContextSnapshotScheduler({
+    monitor,
+    isThreadRunning: () => false,
+    getResume: () => ({ resumeSessionId: "sess-1", cwd: "/tmp" }),
+    shouldPreferEcoCompact: () => true,
+    withSdkDriver: async () => {
+      withSdkDriverCalled = true;
+    },
+    emitContext: () => {},
+    emitCompactionStatus: () => {},
+    runEcoCompact: async () => {
+      ecoCompactCalled = true;
+      return { postTokensEstimate: 9000 };
+    },
+  });
+
+  const result = await scheduler.compactManual("t1", [], "/tmp", new AbortController().signal);
+  expect(result).toEqual({ ok: true });
+  expect(ecoCompactCalled).toBe(true);
+  expect(withSdkDriverCalled).toBe(false);
+});

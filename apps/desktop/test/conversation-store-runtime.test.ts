@@ -168,6 +168,36 @@ test.skipIf(!sqliteAvailable)("saves and lists compaction archives", async () =>
   expect(archives[0]?.payload.activityLineCount).toBe(2);
 });
 
+test.skipIf(!sqliteAvailable)("saves, reads, and clears compact handoff", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-compact-handoff-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_handoff",
+    title: "Handoff",
+    prompt: "hello",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  store.saveThread(thread);
+
+  store.saveCompactHandoff("thr_handoff", {
+    summary: "summary text",
+    recentUserMessages: ["recent-1", "recent-2"],
+    postTokensEstimate: 1234,
+  });
+
+  const handoff = store.getCompactHandoff("thr_handoff");
+  expect(handoff?.summary).toBe("summary text");
+  expect(handoff?.recentUserMessages).toEqual(["recent-1", "recent-2"]);
+  expect(handoff?.postTokensEstimate).toBe(1234);
+
+  store.clearCompactHandoff("thr_handoff");
+  expect(store.getCompactHandoff("thr_handoff")).toBeUndefined();
+});
+
 test.skipIf(!sqliteAvailable)("deleteThread removes thread-owned records", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-delete-thread-"));
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));

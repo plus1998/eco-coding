@@ -235,6 +235,9 @@ import {
   submitClarification,
 } from "./clarification-bridge";
 import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
+import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
+import { isOpenAICompat } from "../shared/api-compat";
+import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
@@ -458,6 +461,7 @@ let contextMonitor: ContextWindowMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
+let ecoCompactService: EcoCompactService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -558,6 +562,21 @@ app.whenReady().then(async () => {
     lookupPricing: lookupUsageBillingPricing,
   });
   contextMonitor = new ContextWindowMonitor(pricingCache);
+  ecoCompactService = createEcoCompactService({
+    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    getThreadPrompt: (threadId) => conversationStore.getThread(threadId)?.prompt,
+    saveCompactHandoff: (threadId, input) => conversationStore.saveCompactHandoff(threadId, input),
+    clearSdkSession: (threadId) => conversationStore.clearSdkSession(threadId),
+    resolveProxyRoutes: (threadId) => {
+      try {
+        const roleRoutes = resolveRoleRoutesForThread(threadId);
+        const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
+        return runtimeConfig.ok ? runtimeConfig.routes : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+  });
   contextScheduler = new ContextSnapshotScheduler({
     monitor: contextMonitor,
     isThreadRunning: (threadId) => activeRunRuntimeState.hasRun(threadId),
@@ -568,6 +587,36 @@ app.whenReady().then(async () => {
     emitCompactionStatus: emitContextCompactionStatus,
     onCompactionBoundary: (threadId, input) => {
       recordCompactionLedgerBoundary(threadId, input.payload, input.sourceEventId);
+    },
+    shouldPreferEcoCompact: (threadId) => {
+      try {
+        const roleRoutes = resolveRoleRoutesForThread(threadId);
+        const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
+        if (!runtimeConfig.ok) {
+          return true;
+        }
+        const planner =
+          runtimeConfig.routes.find((route) => route.role === "planner") ?? runtimeConfig.routes[0];
+        return planner ? isOpenAICompat(planner.apiCompat) : true;
+      } catch {
+        return true;
+      }
+    },
+    runEcoCompact: (threadId, input) => ecoCompactService.runEcoCompact(threadId, input),
+    archiveBeforeCompaction: archiveThreadContextBeforeCompaction,
+    recordEcoCompactionBoundary: (threadId, input) => {
+      recordCompactionLedgerBoundary(
+        threadId,
+        {
+          subtype: "compact_boundary",
+          compact_metadata: {
+            post_tokens: input.postTokens,
+            trigger: input.trigger,
+            source: "eco",
+          },
+        },
+        `${threadId}:eco-compact:${Date.now()}`,
+      );
     },
   });
   contextLifecycle = createContextLifecycleService({
@@ -3377,11 +3426,14 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   );
   const intent = classifyThreadIntent(prompt);
   const activityLines = conversationStore.listActivityLines(input.threadId);
+  const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
   const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
-  const canResume = Boolean(
-    rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
-  );
+  const canResume = compactHandoff
+    ? false
+    : Boolean(
+        rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
+      );
   if (
     input.requireResumeForInterrupted &&
     (effectiveThread.status === "failed" || effectiveThread.status === "blocked") &&
@@ -3422,8 +3474,9 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
     activityLines,
   });
 
-  const agentPrompt =
-    continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
+  const agentPrompt = compactHandoff
+    ? buildEcoCompactHandoffPrompt(effectiveThread.prompt, prompt, compactHandoff)
+    : continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
       ? prompt
       : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
   const statusMessage = continueStatusMessage(continueAction, intent);
@@ -4425,6 +4478,7 @@ function captureSdkSessionFromEvent(
   }
   if (isSessionCapturedPayload(event.payload)) {
     conversationStore.saveSdkSession(threadId, event.payload.sessionId, worktreePath);
+    conversationStore.clearCompactHandoff(threadId);
   }
 }
 
