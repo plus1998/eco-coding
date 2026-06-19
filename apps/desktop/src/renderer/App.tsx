@@ -4003,10 +4003,7 @@ function App() {
               <SkillsSettingsPanel
                 {...(skillsSnapshot && { snapshot: skillsSnapshot })}
                 loading={isLoadingSkills}
-                linking={skillsLinking}
-                {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
                 onRefresh={() => void refreshSkillsList()}
-                onLinkAgents={linkUserAgentsSkills}
               />
             )}
 
