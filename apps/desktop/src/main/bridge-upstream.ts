@@ -73,6 +73,31 @@ export interface BridgeForwardRoute {
   modelId: string;
   apiCompat: UpstreamApiCompat;
   aliasModelId: string;
+  /** Eco manualSpec output cap; applied on the final upstream wire body. */
+  maxOutputTokens?: number;
+}
+
+/** Force configured output cap onto the upstream wire format (after apiCompat conversion). */
+export function applyUpstreamMaxOutputLimit(
+  body: Record<string, unknown>,
+  apiCompat: UpstreamApiCompat,
+  maxOutputTokens?: number,
+): void {
+  if (maxOutputTokens === undefined || maxOutputTokens <= 0) {
+    return;
+  }
+  if (apiCompat === "openai_responses") {
+    body.max_output_tokens = maxOutputTokens;
+    return;
+  }
+  if (apiCompat === "openai_chat_completions") {
+    // New API → llama.cpp and other legacy OpenAI-compat relays honor max_tokens, not
+    // max_completion_tokens. Drop the latter so intermediaries cannot prefer an ignored field.
+    body.max_tokens = maxOutputTokens;
+    delete body.max_completion_tokens;
+    return;
+  }
+  body.max_tokens = maxOutputTokens;
 }
 
 export interface BridgeUpstreamConnectionErrorInfo {
@@ -218,12 +243,15 @@ export function buildBridgeUpstreamMessagesPayload(
   anthropicRequest: AnthropicRequest,
   modelId: string,
   stream: boolean,
+  maxOutputTokens?: number,
 ): Record<string, unknown> {
   if (apiCompat === "anthropic") {
-    return buildAnthropicPassthroughPayload(
+    const payload = buildAnthropicPassthroughPayload(
       anthropicRequest as unknown as Record<string, unknown>,
       modelId,
     );
+    applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
+    return payload;
   }
 
   const responsesReq = anthropicToResponses(anthropicRequest);
@@ -231,13 +259,17 @@ export function buildBridgeUpstreamMessagesPayload(
   responsesReq.stream = stream;
 
   if (apiCompat === "openai_responses") {
-    return responsesReq as unknown as Record<string, unknown>;
+    const payload = responsesReq as unknown as Record<string, unknown>;
+    applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
+    return payload;
   }
 
   const chatReq = responsesToChatCompletionsRequest(responsesReq);
   chatReq.model = modelId;
   chatReq.stream = stream;
-  return chatReq as unknown as Record<string, unknown>;
+  const payload = chatReq as unknown as Record<string, unknown>;
+  applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
+  return payload;
 }
 
 export function resolveBridgeUpstreamUrl(
@@ -506,6 +538,7 @@ async function forwardAnthropicNativeMessages(
     anthropicRequest,
     route.modelId,
     stream,
+    route.maxOutputTokens,
   );
   const requestPayload = JSON.stringify(upstreamBody);
   const anthropicRequestPayload = JSON.stringify(body);
@@ -683,6 +716,7 @@ async function forwardOpenAIResponsesMessages(
     anthropicRequest,
     route.modelId,
     stream,
+    route.maxOutputTokens,
   );
   const requestPayload = JSON.stringify(upstreamBody);
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);
@@ -901,6 +935,7 @@ async function forwardOpenAIChatCompletionsMessages(
     anthropicRequest,
     route.modelId,
     stream,
+    route.maxOutputTokens,
   );
   const requestPayload = JSON.stringify(upstreamBody);
   const upstreamHeaders = buildBridgeUpstreamHeaders(request, route, ctx.upstreamUserAgent);

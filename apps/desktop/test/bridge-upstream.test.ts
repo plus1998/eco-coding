@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  applyUpstreamMaxOutputLimit,
   buildBridgeUpstreamMessagesPayload,
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
@@ -38,6 +39,49 @@ test("buildBridgeUpstreamMessagesPayload preserves anthropic stream when SDK sen
     stream: true,
     messages: [{ role: "user", content: "hi" }],
   });
+});
+
+test("buildBridgeUpstreamMessagesPayload maps max_tokens for openai chat completions", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_chat_completions",
+    request,
+    "local-model",
+    false,
+  );
+  expect(body.max_tokens).toBe(4096);
+  expect(body.max_completion_tokens).toBe(4096);
+});
+
+test("applyUpstreamMaxOutputLimit keeps only max_tokens for openai chat (New API → llama.cpp)", () => {
+  const body: Record<string, unknown> = {
+    model: "local-model",
+    max_tokens: 8192,
+    max_completion_tokens: 8192,
+  };
+  applyUpstreamMaxOutputLimit(body, "openai_chat_completions", 2048);
+  expect(body.max_tokens).toBe(2048);
+  expect(body.max_completion_tokens).toBeUndefined();
+});
+
+test("buildBridgeUpstreamMessagesPayload applies manual cap on openai responses wire body", () => {
+  const request: AnthropicRequest = {
+    model: "local-model",
+    max_tokens: 8192,
+    messages: [{ role: "user", content: "hi" }],
+  };
+  const body = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "local-model",
+    false,
+    4096,
+  );
+  expect(body.max_output_tokens).toBe(4096);
 });
 
 test("forwardMessagesViaBridge passthrough anthropic json response without sse replay", async () => {

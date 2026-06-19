@@ -44,6 +44,8 @@ export function responsesToChatCompletionsRequest(
     messages,
   };
   if (req.max_output_tokens !== undefined) {
+    // Legacy OpenAI-compat servers (e.g. llama.cpp before max_completion_tokens) read max_tokens only.
+    out.max_tokens = req.max_output_tokens;
     out.max_completion_tokens = req.max_output_tokens;
   }
   if (req.temperature !== undefined) {

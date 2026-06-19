@@ -240,6 +240,7 @@ export async function startAnthropicModelProxy(
         modelId: route.modelId,
         apiCompat: route.apiCompat,
         aliasModelId: route.aliasModelId,
+        ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
       };
       const bridgeCtx: BridgeForwardContext = {
         route: bridgeRoute,

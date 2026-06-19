@@ -73,6 +73,8 @@ describe('roundtrip', () => {
 
     const chatReq = responsesToChatCompletionsRequest(responsesReq);
     expect(chatReq.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(chatReq.max_tokens).toBe(256);
+    expect(chatReq.max_completion_tokens).toBe(256);
   });
 
   test('chat completions response with null usage details converts safely', () => {
