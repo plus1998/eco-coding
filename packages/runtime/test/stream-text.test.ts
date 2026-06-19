@@ -55,6 +55,23 @@ test("merges overlapping phrase deltas without stutter", () => {
   );
 });
 
+test("appends repeated single-char deltas", () => {
+  expect(mergeStreamText("160", "0")).toBe("1600");
+  expect(mergeStreamText("1600x120", "0")).toBe("1600x1200");
+
+  let text = "";
+  for (const chunk of "1600x1200".split("")) {
+    text = mergeStreamText(text, chunk);
+  }
+  expect(text).toBe("1600x1200");
+
+  text = "";
+  for (const chunk of "aaaa".split("")) {
+    text = mergeStreamText(text, chunk);
+  }
+  expect(text).toBe("aaaa");
+});
+
 test("reconstructs a realistic identifier-heavy plan sentence", () => {
   let text = "";
   for (const chunk of [

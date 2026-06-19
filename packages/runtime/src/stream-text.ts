@@ -12,10 +12,14 @@ export function mergeStreamText(previous: string, incoming: string): string {
   if (!previous) {
     return incoming;
   }
-  if (incoming.startsWith(previous)) {
+  if (incoming === previous && incoming.length > 1) {
+    return previous;
+  }
+  if (incoming.startsWith(previous) && incoming.length > previous.length) {
     return incoming;
   }
-  if (previous.endsWith(incoming)) {
+  // Single-char deltas legitimately repeat the previous tail ("160" + "0", "1600x120" + "0").
+  if (incoming.length >= 2 && previous.endsWith(incoming)) {
     return previous;
   }
 
