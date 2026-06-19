@@ -409,16 +409,22 @@ function isProjectionContextCompactionItem(item: ThreadRunProjectionTimelineItem
   );
 }
 
+/** Orphaned compaction.started without a terminal event stops blocking the UI after this long. */
+const COMPACTION_IN_FLIGHT_STALE_MS = 2 * 60 * 1000;
+
 export function isThreadContextCompactionInFlight(
   projection: ThreadRunProjectionSnapshot | undefined,
+  nowMs = Date.now(),
 ): boolean {
   if (!projection?.timeline.length) {
     return false;
   }
   let lastStage: "started" | "completed" | "failed" | undefined;
+  let lastStartedAt: string | undefined;
   for (const item of projection.timeline) {
     if (item.eventType === "context.compaction.started") {
       lastStage = "started";
+      lastStartedAt = item.at;
       continue;
     }
     if (item.eventType === "context.compaction.completed") {
@@ -429,7 +435,19 @@ export function isThreadContextCompactionInFlight(
       lastStage = "failed";
     }
   }
-  return lastStage === "started";
+  if (lastStage !== "started") {
+    return false;
+  }
+  if (lastStartedAt) {
+    const startedAtMs = Date.parse(lastStartedAt);
+    if (
+      Number.isFinite(startedAtMs) &&
+      nowMs - startedAtMs > COMPACTION_IN_FLIGHT_STALE_MS
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function isStreamingRequestDisplayItem(item: ThreadRunProjectionTimelineItem): boolean {

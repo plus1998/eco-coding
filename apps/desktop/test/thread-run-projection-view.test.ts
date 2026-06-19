@@ -1191,7 +1191,8 @@ test("buildThreadRunProjectionViewModel collapses superseded context compaction 
 });
 
 test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {
-  expect(isThreadContextCompactionInFlight(undefined)).toBe(false);
+  const now = Date.parse("2026-06-19T12:00:00.000Z");
+  expect(isThreadContextCompactionInFlight(undefined, now)).toBe(false);
   expect(
     isThreadContextCompactionInFlight(
       projection({
@@ -1200,9 +1201,11 @@ test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {
             id: "compact-start",
             eventType: "context.compaction.started",
             text: "正在自动压缩上下文",
+            at: "2026-06-19T11:59:30.000Z",
           }),
         ],
       }),
+      now,
     ),
   ).toBe(true);
   expect(
@@ -1213,14 +1216,17 @@ test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {
             id: "compact-start",
             eventType: "context.compaction.started",
             text: "正在自动压缩上下文",
+            at: "2026-06-19T11:59:30.000Z",
           }),
           item({
             id: "compact-done",
             eventType: "context.compaction.completed",
             text: "上下文已自动压缩",
+            at: "2026-06-19T12:00:00.000Z",
           }),
         ],
       }),
+      now,
     ),
   ).toBe(false);
   expect(
@@ -1231,14 +1237,36 @@ test("isThreadContextCompactionInFlight tracks latest compaction stage", () => {
             id: "compact-start",
             eventType: "context.compaction.started",
             text: "正在手动压缩上下文",
+            at: "2026-06-19T11:59:30.000Z",
           }),
           item({
             id: "compact-failed",
             eventType: "context.compaction.failed",
             text: "上下文压缩失败",
+            at: "2026-06-19T12:00:00.000Z",
           }),
         ],
       }),
+      now,
+    ),
+  ).toBe(false);
+});
+
+test("isThreadContextCompactionInFlight ignores stale started without terminal event", () => {
+  const now = Date.parse("2026-06-19T12:00:00.000Z");
+  expect(
+    isThreadContextCompactionInFlight(
+      projection({
+        timeline: [
+          item({
+            id: "compact-start",
+            eventType: "context.compaction.started",
+            text: "正在手动压缩上下文",
+            at: "2026-06-19T11:57:00.000Z",
+          }),
+        ],
+      }),
+      now,
     ),
   ).toBe(false);
 });

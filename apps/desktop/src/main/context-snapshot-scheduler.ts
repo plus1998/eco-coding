@@ -37,7 +37,12 @@ export interface ContextSnapshotSchedulerOptions {
   emitContext: (threadId: string, snapshot: ThreadContextSnapshot) => void;
   emitCompactionStatus: (
     threadId: string,
-    status: { stage: "started" | "completed" | "failed"; trigger: "auto" | "manual"; detail?: string },
+    status: {
+      stage: "started" | "completed" | "failed";
+      trigger: "auto" | "manual";
+      detail?: string;
+      postTokens?: number;
+    },
   ) => void;
   onCompactionBoundary?: (
     threadId: string,
@@ -156,9 +161,10 @@ export class ContextSnapshotScheduler {
     this.options.emitCompactionStatus(threadId, { stage: "started", trigger: "auto" });
 
     try {
-      await this.runCompactSession(threadId, worktreePath, signal, routes, resume);
+      await this.runCompactSession(threadId, worktreePath, signal, routes, resume, "auto");
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
+      this.options.monitor.clearCompactInFlight(threadId);
       this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "auto", detail });
       process.stderr.write(`[eco] context compact failed: ${detail}\n`);
     }
@@ -186,10 +192,11 @@ export class ContextSnapshotScheduler {
     }
 
     try {
-      await this.runCompactSession(threadId, worktreePath, signal, routes, resume);
+      await this.runCompactSession(threadId, worktreePath, signal, routes, resume, "manual");
       return { ok: true };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
+      this.options.monitor.clearCompactInFlight(threadId);
       this.options.emitCompactionStatus(threadId, { stage: "failed", trigger: "manual", detail });
       process.stderr.write(`[eco] manual context compact failed: ${detail}\n`);
       return { ok: false, reason: detail };
@@ -202,6 +209,7 @@ export class ContextSnapshotScheduler {
     signal: AbortSignal,
     routes: readonly ResolvedModelRoute[],
     resume: EcoSdkResumeOptions,
+    trigger: "auto" | "manual",
   ): Promise<void> {
     await this.options.withSdkDriver(threadId, async (driver, runSignal, driverRoutes) => {
       const activeRoutes = driverRoutes.length > 0 ? driverRoutes : routes;
@@ -211,6 +219,7 @@ export class ContextSnapshotScheduler {
 
       let slashCommands: string[] = [];
       let postTokens: number | undefined;
+      let boundaryRecorded = false;
 
       for await (const event of driver.compactSession({
         threadId,
@@ -228,6 +237,7 @@ export class ContextSnapshotScheduler {
             slashCommands = commands;
           }
           if (payload.subtype === "compact_boundary") {
+            boundaryRecorded = true;
             postTokens = extractCompactPostTokens(payload);
             this.options.onCompactionBoundary?.(threadId, {
               payload,
@@ -258,6 +268,13 @@ export class ContextSnapshotScheduler {
 
       this.options.monitor.markCompactCompleted(threadId, postTokens);
       this.emitLiveFromMonitor(threadId);
+      if (!boundaryRecorded) {
+        this.options.emitCompactionStatus(threadId, {
+          stage: "completed",
+          trigger,
+          ...(postTokens !== undefined && { postTokens }),
+        });
+      }
     });
   }
 
