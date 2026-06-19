@@ -55,11 +55,11 @@ export function BillingCostCell({
   ecoCostUsd,
   reportedCostUsd,
   className = "usage-breakdown-cost",
-}: {
-  ecoCostUsd: number;
-  reportedCostUsd?: number;
-  className?: string;
-}) {
+	}: {
+	  ecoCostUsd: number;
+	  reportedCostUsd?: number | undefined;
+	  className?: string;
+	}) {
   return (
     <span className={className} title={reportedCostUsd !== undefined ? "经济编程 / 来源报告" : undefined}>
       {formatCostUsd(ecoCostUsd)}

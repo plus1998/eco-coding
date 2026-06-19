@@ -10,7 +10,7 @@ import {
 
 export interface ToolCapabilityPanelProps {
   values: ToolCapabilityFieldValues;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   capabilityOptions: {
     tools: AgentTemplateCapabilityOption[];
     mcpServers: AgentTemplateCapabilityOption[];
@@ -247,13 +247,13 @@ function CapabilityToggle({
   checked,
   disabled,
   onChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
+	}: {
+	  label: string;
+	  description: string;
+	  checked: boolean;
+	  disabled?: boolean | undefined;
+	  onChange: (checked: boolean) => void;
+	}) {
   return (
     <div className="models-agent-template-delegation-card">
       <span>

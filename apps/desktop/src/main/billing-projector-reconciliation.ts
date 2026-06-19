@@ -115,8 +115,10 @@ function comparePrimarySource(
       issues.push({
         type: "synthetic_sdk_primary",
         severity: "info",
-        source: projection.primarySource,
-        projectionValue: projection.primarySource,
+        ...(projection.primarySource && {
+          source: projection.primarySource,
+          projectionValue: projection.primarySource,
+        }),
         legacyValue: "sdk",
       });
     }

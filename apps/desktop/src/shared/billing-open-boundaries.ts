@@ -1,4 +1,4 @@
-import type { ThreadBillingDiagnostic, ThreadBillingSnapshot } from "./ipc";
+import type { BillingUsageSource, ThreadBillingDiagnostic, ThreadBillingSnapshot } from "./ipc";
 
 export interface BillingOpenBoundaryNote {
   id: string;
@@ -6,7 +6,7 @@ export interface BillingOpenBoundaryNote {
 }
 
 function sourceTokenTotal(
-  entry: NonNullable<ThreadBillingSnapshot["sourceBreakdown"]>[string] | undefined,
+  entry: NonNullable<ThreadBillingSnapshot["sourceBreakdown"]>[BillingUsageSource] | undefined,
 ): number {
   if (!entry) {
     return 0;

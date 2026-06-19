@@ -3,8 +3,8 @@ interface AnsiStyle {
   dim: boolean;
   italic: boolean;
   underline: boolean;
-  fg?: string;
-  bg?: string;
+  fg?: string | undefined;
+  bg?: string | undefined;
 }
 
 const DEFAULT_STYLE: AnsiStyle = {
@@ -114,14 +114,14 @@ function applySgrCodes(style: AnsiStyle, rawCodes: string): void {
   const codes = rawCodes.length > 0 ? rawCodes.split(";").map((part) => Number(part)) : [0];
   for (let index = 0; index < codes.length; index += 1) {
     const code = codes[index];
-    if (Number.isNaN(code)) {
+    if (code === undefined || Number.isNaN(code)) {
       continue;
     }
 
     if (code === 0) {
       Object.assign(style, DEFAULT_STYLE);
-      style.fg = undefined;
-      style.bg = undefined;
+      delete style.fg;
+      delete style.bg;
       continue;
     }
     if (code === 1) {
@@ -154,17 +154,17 @@ function applySgrCodes(style: AnsiStyle, rawCodes: string): void {
       continue;
     }
     if (code === 39) {
-      style.fg = undefined;
+      delete style.fg;
       continue;
     }
     if (code === 49) {
-      style.bg = undefined;
+      delete style.bg;
       continue;
     }
     if (code === 38 || code === 48) {
       const mode = codes[index + 1];
-      if (mode === 5 && codes[index + 2] !== undefined) {
-        const paletteIndex = codes[index + 2];
+      const paletteIndex = codes[index + 2];
+      if (mode === 5 && paletteIndex !== undefined) {
         const color = `palette-${paletteIndex}`;
         if (code === 38) {
           style.fg = color;
@@ -174,10 +174,10 @@ function applySgrCodes(style: AnsiStyle, rawCodes: string): void {
         index += 2;
         continue;
       }
-      if (mode === 2 && codes[index + 4] !== undefined) {
-        const red = codes[index + 2];
-        const green = codes[index + 3];
-        const blue = codes[index + 4];
+      const red = codes[index + 2];
+      const green = codes[index + 3];
+      const blue = codes[index + 4];
+      if (mode === 2 && red !== undefined && green !== undefined && blue !== undefined) {
         const color = `rgb-${red}-${green}-${blue}`;
         if (code === 38) {
           style.fg = color;

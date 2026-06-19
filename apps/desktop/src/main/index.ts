@@ -66,6 +66,7 @@ import {
   type CoderTodoItem,
   getAgentProfileById,
   IPC_CHANNELS,
+  type IpcChannel,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitGenerateCommitMessageRequest,
@@ -232,6 +233,7 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
+import { createElectronEventSink, DesktopEventCenter } from "./event-center";
 import {
   checkoutGitBranch,
   createGitBranch,
@@ -401,15 +403,19 @@ const appIcon = loadAppIcon();
 const gitRunner: CommandRunner = {
   run: runGitCommand,
 };
+const desktopEventCenter = new DesktopEventCenter();
+desktopEventCenter.subscribe(
+  createElectronEventSink((channel, payload) => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send(channel, payload);
+    });
+  }),
+);
 const packageScriptRunner = new PackageScriptRunner((event) => {
-  BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.workspacePackageScriptEvent, event);
-  });
+  desktopEventCenter.publishPackageScriptEvent(event);
 });
 const packageJsonWatcher = new PackageJsonWatcher((workspacePath) => {
-  BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.workspacePackageJsonChanged, workspacePath);
-  });
+  desktopEventCenter.publishPackageJsonChanged(workspacePath);
 });
 const gitWorktrees = new GitWorktreeService(gitRunner);
 let currentWorkspace: WorkspaceInfo | undefined;
@@ -978,8 +984,16 @@ function threadUsesManualOrchestration(threadId: string): boolean {
   return threadPlanModeEnabled(threadId);
 }
 
+function registerDesktopCommand<Args extends unknown[], Result>(
+  channel: IpcChannel,
+  handler: (...args: Args) => Result | Promise<Result>,
+): void {
+  desktopEventCenter.registerCommand(channel, (args) => handler(...(args as Args)));
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => handler(...(args as Args)));
+}
+
 function registerIpcHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.workspaceOpen, async () => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpen, async () => {
     const result = await dialog.showOpenDialog({
       title: "Open project folder",
       properties: ["openDirectory"],
@@ -994,7 +1008,7 @@ function registerIpcHandlers(): void {
     return { canceled: false, workspace: currentWorkspace };
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceOpenPath, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpenPath, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
@@ -1007,25 +1021,25 @@ function registerIpcHandlers(): void {
     return currentWorkspace;
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
+  registerDesktopCommand(IPC_CHANNELS.workspaceGetCurrent, async () => currentWorkspace);
 
-  ipcMain.handle(IPC_CHANNELS.workspaceGetHomePath, async () => getHomeProjectPath());
+  registerDesktopCommand(IPC_CHANNELS.workspaceGetHomePath, async () => getHomeProjectPath());
 
-  ipcMain.handle(IPC_CHANNELS.workspaceInspect, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceInspect, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
     return inspectWorkspace(workspacePath.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceListPackageScripts, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceListPackageScripts, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
     return listPackageScripts(workspacePath.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceWatchPackageJson, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceWatchPackageJson, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
@@ -1033,7 +1047,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceStartPackageScript, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceStartPackageScript, async (payload: unknown) => {
     if (!isRunPackageScriptRequest(payload)) {
       throw new Error("Invalid start package script request.");
     }
@@ -1063,14 +1077,14 @@ function registerIpcHandlers(): void {
     return packageScriptRunner.start(prepared.command, prepared.workspacePath, prepared.script);
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspaceStopPackageScript, async (_event, runId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspaceStopPackageScript, async (runId: unknown) => {
     if (typeof runId !== "string" || !runId.trim()) {
       throw new Error("Run id is required.");
     }
     return { stopped: packageScriptRunner.stop(runId.trim()) };
   });
 
-  ipcMain.handle(IPC_CHANNELS.workspacePrepareGit, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workspacePrepareGit, async (payload: unknown) => {
     const workspacePath =
       payload &&
       typeof payload === "object" &&
@@ -1085,9 +1099,9 @@ function registerIpcHandlers(): void {
     return workspace;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadList, async () => hydrateThreads(conversationStore.listThreads()));
+  registerDesktopCommand(IPC_CHANNELS.threadList, async () => hydrateThreads(conversationStore.listThreads()));
 
-  ipcMain.handle(IPC_CHANNELS.threadDelete, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadDelete, async (payload: unknown) => {
     const threadId = typeof payload === "string" ? payload.trim() : "";
     if (!threadId) {
       throw new Error("Thread id is required.");
@@ -1107,7 +1121,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadUpdateRuntimeConfig, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadUpdateRuntimeConfig, async (payload: unknown) => {
     if (
       !payload ||
       typeof payload !== "object" ||
@@ -1142,35 +1156,35 @@ function registerIpcHandlers(): void {
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadActivityList, async (_event, threadId: string) => {
+  registerDesktopCommand(IPC_CHANNELS.threadActivityList, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
     return conversationStore.listActivityLines(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRunProjectionGet, async (_event, threadId: string) => {
+  registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
     }
     return buildCurrentThreadRunProjection(threadId.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadSubagentSessionsList, async (_event, threadId: string) => {
+  registerDesktopCommand(IPC_CHANNELS.threadSubagentSessionsList, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
     return buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId));
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadSubagentMetricsList, async (_event, threadId: string) => {
+  registerDesktopCommand(IPC_CHANNELS.threadSubagentMetricsList, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
     return buildSubagentMetricsSummaries(usageLedgerCoordinator.listSubagentBillingEntries(threadId));
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentProfilePerformanceList, async () =>
+  registerDesktopCommand(IPC_CHANNELS.agentProfilePerformanceList, async () =>
     buildAgentProfilePerformanceSnapshots({
       threads: hydrateThreads(conversationStore.listThreads()),
       profiles: getModelSettingsSnapshot().orchestrationProfiles,
@@ -1178,7 +1192,7 @@ function registerIpcHandlers(): void {
     }),
   );
 
-  ipcMain.handle(IPC_CHANNELS.agentAuditExport, async (_event, payload?: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentAuditExport, async (payload?: unknown) => {
     const request = payload && typeof payload === "object" ? (payload as AgentAuditExportRequest) : {};
     const requestedThreadIds = Array.isArray(request.threadIds)
       ? new Set(request.threadIds.map((id) => id.trim()).filter(Boolean))
@@ -1225,7 +1239,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadTodoList, async (_event, threadId: string) => {
+  registerDesktopCommand(IPC_CHANNELS.threadTodoList, async (threadId: string) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [];
     }
@@ -1239,15 +1253,15 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelSettingsGet, async () => getModelSettingsSnapshot());
+  registerDesktopCommand(IPC_CHANNELS.modelSettingsGet, async () => getModelSettingsSnapshot());
 
-  ipcMain.handle(IPC_CHANNELS.modelProviderSave, async (_event, payload: ProviderConfigInput) => {
+  registerDesktopCommand(IPC_CHANNELS.modelProviderSave, async (payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
     emitSettingsUpdated();
     return provider;
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProviderDelete, async (_event, providerId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.modelProviderDelete, async (providerId: unknown) => {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("Provider id is required.");
     }
@@ -1256,7 +1270,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProviderListModels, async (_event, payload: ListUpstreamModelsRequest) => {
+  registerDesktopCommand(IPC_CHANNELS.modelProviderListModels, async (payload: ListUpstreamModelsRequest) => {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid models list request." } as const;
     }
@@ -1267,7 +1281,7 @@ function registerIpcHandlers(): void {
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProviderTest, async (_event, payload: TestProviderConnectionRequest) => {
+  registerDesktopCommand(IPC_CHANNELS.modelProviderTest, async (payload: TestProviderConnectionRequest) => {
     if (!payload || typeof payload !== "object") {
       return { ok: false, error: "Invalid provider test request." } as const;
     }
@@ -1279,7 +1293,7 @@ function registerIpcHandlers(): void {
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelRouteProfileTest, async (_event, payload: TestRoleRoutesRequest) => {
+  registerDesktopCommand(IPC_CHANNELS.modelRouteProfileTest, async (payload: TestRoleRoutesRequest) => {
     if (!payload || typeof payload !== "object" || !Array.isArray(payload.routes)) {
       return { results: [], passed: 0, failed: 0 };
     }
@@ -1291,13 +1305,13 @@ function registerIpcHandlers(): void {
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelRouteProfileSave, async (_event, payload: RouteProfileInput) => {
+  registerDesktopCommand(IPC_CHANNELS.modelRouteProfileSave, async (payload: RouteProfileInput) => {
     const profile = providerStore.saveRouteProfile(payload);
     emitSettingsUpdated();
     return profile;
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelRouteProfileDelete, async (_event, profileId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.modelRouteProfileDelete, async (profileId: unknown) => {
     if (typeof profileId !== "string" || !profileId.trim()) {
       throw new Error("Route profile id is required.");
     }
@@ -1308,7 +1322,7 @@ function registerIpcHandlers(): void {
 
   // ─── Candidate Models ─────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC_CHANNELS.candidateModelList, async (_event, providerId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.candidateModelList, async (providerId: unknown) => {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("Provider id is required.");
     }
@@ -1319,7 +1333,7 @@ function registerIpcHandlers(): void {
     return resolveCandidateModels(pricingCache, candidates, baseUrl);
   });
 
-  ipcMain.handle(IPC_CHANNELS.candidateModelSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.candidateModelSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid candidate model input.");
     }
@@ -1328,7 +1342,7 @@ function registerIpcHandlers(): void {
     return result;
   });
 
-  ipcMain.handle(IPC_CHANNELS.candidateModelDelete, async (_event, id: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.candidateModelDelete, async (id: unknown) => {
     if (typeof id !== "string" || !id.trim()) {
       throw new Error("Candidate model id is required.");
     }
@@ -1337,9 +1351,9 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.candidateModelReorder,
-    async (_event, providerId: unknown, orderedIds: unknown) => {
+    async (providerId: unknown, orderedIds: unknown) => {
       if (typeof providerId !== "string" || !providerId.trim()) {
         throw new Error("Provider id is required.");
       }
@@ -1352,9 +1366,9 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.candidateModelBulkImport,
-    async (_event, providerId: unknown, modelIds: unknown) => {
+    async (providerId: unknown, modelIds: unknown) => {
       if (typeof providerId !== "string" || !providerId.trim()) {
         throw new Error("Provider id is required.");
       }
@@ -1367,9 +1381,9 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateList, async () => getModelSettingsSnapshot().agentTemplates);
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateList, async () => getModelSettingsSnapshot().agentTemplates);
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("子代理模板配置不能为空。");
     }
@@ -1383,7 +1397,7 @@ function registerIpcHandlers(): void {
     return saved;
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateDelete, async (_event, templateId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateDelete, async (templateId: unknown) => {
     if (typeof templateId !== "string" || !templateId.trim()) {
       throw new Error("子代理模板 id 不能为空。");
     }
@@ -1393,7 +1407,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateExport, async (_event, payload?: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateExport, async (payload?: unknown) => {
     const request = payload && typeof payload === "object" ? (payload as AgentTemplateExportRequest) : {};
     const requestedIds = Array.isArray(request.templateIds)
       ? new Set(request.templateIds.map((id) => id.trim()).filter(Boolean))
@@ -1428,7 +1442,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateImport, async () => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateImport, async () => {
     const result = await dialog.showOpenDialog({
       title: "导入子代理模板",
       properties: ["openFile"],
@@ -1463,14 +1477,14 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateVersionsList, async (_event, templateId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateVersionsList, async (templateId: unknown) => {
     if (typeof templateId !== "string" || !templateId.trim()) {
       throw new Error("子代理模板 id 不能为空。");
     }
     return agentOrchestrationStore.listAgentTemplateVersions(templateId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.agentTemplateVersionRestore, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.agentTemplateVersionRestore, async (payload: unknown) => {
     if (
       !payload ||
       typeof payload !== "object" ||
@@ -1486,12 +1500,12 @@ function registerIpcHandlers(): void {
     return restored;
   });
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.orchestrationProfileList,
     async () => getModelSettingsSnapshot().orchestrationProfiles,
   );
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("编排配置不能为空。");
     }
@@ -1504,7 +1518,7 @@ function registerIpcHandlers(): void {
     return saved;
   });
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileDelete, async (_event, profileId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileDelete, async (profileId: unknown) => {
     if (typeof profileId !== "string" || !profileId.trim()) {
       throw new Error("编排配置 id 不能为空。");
     }
@@ -1513,7 +1527,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileExport, async (_event, payload?: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileExport, async (payload?: unknown) => {
     const request =
       payload && typeof payload === "object" ? (payload as OrchestrationProfileExportRequest) : {};
     const requestedIds = Array.isArray(request.profileIds)
@@ -1551,7 +1565,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileImport, async () => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileImport, async () => {
     const result = await dialog.showOpenDialog({
       title: "导入 Agent Profile",
       properties: ["openFile"],
@@ -1601,14 +1615,14 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileVersionsList, async (_event, profileId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileVersionsList, async (profileId: unknown) => {
     if (typeof profileId !== "string" || !profileId.trim()) {
       throw new Error("Agent Profile id 不能为空。");
     }
     return agentOrchestrationStore.listOrchestrationProfileVersions(profileId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.orchestrationProfileVersionRestore, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.orchestrationProfileVersionRestore, async (payload: unknown) => {
     if (
       !payload ||
       typeof payload !== "object" ||
@@ -1626,19 +1640,19 @@ function registerIpcHandlers(): void {
     return restored;
   });
 
-  ipcMain.handle(IPC_CHANNELS.billingModelsDevList, async () => {
+  registerDesktopCommand(IPC_CHANNELS.billingModelsDevList, async () => {
     await pricingCatalogReady;
     return pricingCache.listModelOptions();
   });
 
-  ipcMain.handle(IPC_CHANNELS.billingRefreshPricing, async () => {
+  registerDesktopCommand(IPC_CHANNELS.billingRefreshPricing, async () => {
     await pricingCache.refresh();
     return { ok: true as const, cachedAt: pricingCache.getCachedAt() };
   });
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.billingRoutePricing,
-    async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
+    async (routesOverride?: RuntimeRoleRouteConfig[]) => {
       await pricingCatalogReady;
       return lookupRoutePricingHints(
         pricingCache,
@@ -1649,9 +1663,9 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.billingRouteCapabilities,
-    async (_event, routesOverride?: RuntimeRoleRouteConfig[]) => {
+    async (routesOverride?: RuntimeRoleRouteConfig[]) => {
       await pricingCatalogReady;
       return lookupRouteCapabilityHints(
         pricingCache,
@@ -1662,15 +1676,15 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
+  registerDesktopCommand(IPC_CHANNELS.mcpSettingsGet, async () => mcpStore.getSettings());
 
-  ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload: McpServerConfigInput) => {
+  registerDesktopCommand(IPC_CHANNELS.mcpServerSave, async (payload: McpServerConfigInput) => {
     const server = mcpStore.saveServer(payload);
     emitSettingsUpdated();
     return server;
   });
 
-  ipcMain.handle(IPC_CHANNELS.skillsList, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.skillsList, async (workspacePath: unknown) => {
     const pathToScan =
       typeof workspacePath === "string" && workspacePath.trim()
         ? workspacePath.trim()
@@ -1678,7 +1692,7 @@ function registerIpcHandlers(): void {
     return listDiscoveredSkills(pathToScan);
   });
 
-  ipcMain.handle(IPC_CHANNELS.skillsLinkAgents, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.skillsLinkAgents, async (payload: unknown) => {
     if (!isLinkAgentsSkillsRequest(payload)) {
       throw new Error("Invalid link agents skills request.");
     }
@@ -1693,39 +1707,39 @@ function registerIpcHandlers(): void {
     return linkResult;
   });
 
-  ipcMain.handle(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
+  registerDesktopCommand(IPC_CHANNELS.workflowSettingsGet, async () => workflowSettingsStore.get());
 
-  ipcMain.handle(IPC_CHANNELS.workflowSettingsSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.workflowSettingsSave, async (payload: unknown) => {
     if (!isWorkflowSettingsSnapshot(payload)) {
       throw new Error("Invalid workflow settings.");
     }
     return workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitSettingsGet, async () => gitSettingsStore.get());
+  registerDesktopCommand(IPC_CHANNELS.gitSettingsGet, async () => gitSettingsStore.get());
 
-  ipcMain.handle(IPC_CHANNELS.gitSettingsSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitSettingsSave, async (payload: unknown) => {
     if (!isGitSettingsSnapshot(payload)) {
       throw new Error("Invalid git settings.");
     }
     return gitSettingsStore.save(normalizeGitSettingsSnapshot(payload));
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitGetStatus, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitGetStatus, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
     return getGitWorkingTreeStatus(workspacePath.trim(), runGitCommand);
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitGetWorkspaceDiff, async (_event, workspacePath: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitGetWorkspaceDiff, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");
     }
     return getWorkspaceDiff(workspacePath.trim(), runGitCommand);
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitDiscardWorkspaceChanges, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitDiscardWorkspaceChanges, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid git discard workspace changes request.");
     }
@@ -1741,7 +1755,7 @@ function registerIpcHandlers(): void {
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitListCommits, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitListCommits, async (payload: unknown) => {
     if (!isGitListCommitsRequest(payload)) {
       throw new Error("Invalid git list commits request.");
     }
@@ -1752,7 +1766,7 @@ function registerIpcHandlers(): void {
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitCheckoutBranch, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitCheckoutBranch, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid git checkout request.");
     }
@@ -1764,7 +1778,7 @@ function registerIpcHandlers(): void {
     return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitCreateBranch, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitCreateBranch, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid git create branch request.");
     }
@@ -1776,7 +1790,7 @@ function registerIpcHandlers(): void {
     return getGitWorkingTreeStatus(record.workspacePath, runGitCommand);
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitGenerateCommitMessage, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitGenerateCommitMessage, async (payload: unknown) => {
     if (!isGitGenerateCommitMessageRequest(payload)) {
       throw new Error("Invalid git generate commit message request.");
     }
@@ -1789,7 +1803,7 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitCommit, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitCommit, async (payload: unknown) => {
     if (!isGitCommitRequest(payload)) {
       throw new Error("Invalid git commit request.");
     }
@@ -1806,14 +1820,14 @@ function registerIpcHandlers(): void {
     return result;
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitPush, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitPush, async (payload: unknown) => {
     if (!isGitPushRequest(payload)) {
       throw new Error("Invalid git push request.");
     }
     return handleGitPush(payload, runGitCommand);
   });
 
-  ipcMain.handle(IPC_CHANNELS.gitPull, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.gitPull, async (payload: unknown) => {
     if (!isGitPullRequest(payload)) {
       throw new Error("Invalid git pull request.");
     }
@@ -1824,48 +1838,48 @@ function registerIpcHandlers(): void {
     return result;
   });
 
-  ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());
+  registerDesktopCommand(IPC_CHANNELS.proxyBridgeSettingsGet, async () => proxyBridgeSettingsStore.get());
 
-  ipcMain.handle(IPC_CHANNELS.proxyBridgeSettingsSave, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.proxyBridgeSettingsSave, async (payload: unknown) => {
     if (!isProxyBridgeSettingsSnapshot(payload)) {
       throw new Error("Invalid proxy bridge settings.");
     }
     return proxyBridgeSettingsStore.save(normalizeProxyBridgeSettingsSnapshot(payload));
   });
 
-  ipcMain.handle(IPC_CHANNELS.worktreeGetStatus, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.worktreeGetStatus, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return getWorkspaceChangeStatus(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.worktreeApply, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.worktreeApply, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return { ok: true, files: [], message: "变更已在项目目录中，无需合并。" } satisfies WorktreeApplyResult;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRewindCheckpoint, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadRewindCheckpoint, async (payload: unknown) => {
     return rewindThreadToCheckpoint(payload);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadCompactContext, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadCompactContext, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return compactThreadContextManual(threadId.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadListCheckpoints, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadListCheckpoints, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return conversationStore.listFileCheckpoints(threadId.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.mcpServerDelete, async (_event, serverId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.mcpServerDelete, async (serverId: unknown) => {
     if (typeof serverId !== "string" || !serverId.trim()) {
       throw new Error("MCP server id is required.");
     }
@@ -1874,18 +1888,18 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
-  ipcMain.handle(IPC_CHANNELS.sessionSyncSettingsGet, async () => sessionSyncStore.getSettings());
+  registerDesktopCommand(IPC_CHANNELS.sessionSyncSettingsGet, async () => sessionSyncStore.getSettings());
 
-  ipcMain.handle(IPC_CHANNELS.sessionSyncSettingsSave, async (_event, payload: SessionSyncSettingsInput) => {
+  registerDesktopCommand(IPC_CHANNELS.sessionSyncSettingsSave, async (payload: SessionSyncSettingsInput) => {
     const settings = sessionSyncStore.saveSettings(payload);
     await rebuildSdkSessionStore(path.join(app.getPath("userData"), "eco-sessions.sqlite"));
     emitSettingsUpdated();
     return settings;
   });
 
-  ipcMain.handle(
+  registerDesktopCommand(
     IPC_CHANNELS.sessionSyncTestConnection,
-    async (_event, payload: SessionSyncTestConnectionRequest) => {
+    async (payload: SessionSyncTestConnectionRequest) => {
       if (!payload || typeof payload.redisUrl !== "string" || !payload.redisUrl.trim()) {
         return { ok: false, error: "Redis URL is required." };
       }
@@ -1901,7 +1915,7 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.threadStart, async (_event, payload: ThreadStartRequest) => {
+  registerDesktopCommand(IPC_CHANNELS.threadStart, async (payload: ThreadStartRequest) => {
     const prompt = payload.prompt.trim();
     const hasAttachments = Boolean(payload.attachments?.length);
     if (!prompt && !hasAttachments) {
@@ -1978,14 +1992,14 @@ function registerIpcHandlers(): void {
     return { thread };
   });
 
-  ipcMain.handle(IPC_CHANNELS.clarificationGetPending, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.clarificationGetPending, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
     }
     return getPendingClarificationForThread(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.clarificationDismiss, async (_event, toolUseId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.clarificationDismiss, async (toolUseId: unknown) => {
     if (typeof toolUseId !== "string" || !toolUseId.trim()) {
       throw new Error("Tool use id is required.");
     }
@@ -2000,7 +2014,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.clarificationSubmit, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.clarificationSubmit, async (payload: unknown) => {
     if (!isClarificationSubmitPayload(payload)) {
       throw new Error("Invalid clarification payload.");
     }
@@ -2017,14 +2031,14 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.bashApprovalGetPending, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.bashApprovalGetPending, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
     }
     return getPendingBashApprovalForThread(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.bashApprovalResolve, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.bashApprovalResolve, async (payload: unknown) => {
     if (!isBashApprovalResolvePayload(payload)) {
       throw new Error("Invalid Bash approval payload.");
     }
@@ -2038,7 +2052,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadGetUsageSnapshot, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadGetUsageSnapshot, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return {} satisfies ThreadUsageSnapshotResult;
     }
@@ -2071,21 +2085,21 @@ function registerIpcHandlers(): void {
     } satisfies ThreadUsageSnapshotResult;
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadUsageLedgerEventsList, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadUsageLedgerEventsList, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return [] as ThreadUsageLedgerEventView[];
     }
     return usageLedgerCoordinator.listUsageLedgerEventViews(threadId.trim());
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadGetPendingPlan, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadGetPendingPlan, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       return undefined;
     }
     return buildThreadPendingPlanView(conversationStore.getPendingPlan(threadId));
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadApprovePlan, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadApprovePlan, async (payload: unknown) => {
     const { threadId } = parseThreadApprovePlanPayload(payload);
     const approval = resolveThreadPlanApprovalRuntime(threadId, {
       getThread: (id) => conversationStore.getThread(id),
@@ -2105,7 +2119,7 @@ function registerIpcHandlers(): void {
     return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadDismissPlan, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadDismissPlan, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
@@ -2116,7 +2130,7 @@ function registerIpcHandlers(): void {
     return { thread: conversationStore.getThread(threadId) };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadContinue, async (_event, payload: ThreadContinueRequest) => {
+  registerDesktopCommand(IPC_CHANNELS.threadContinue, async (payload: ThreadContinueRequest) => {
     const rewindTarget = parseThreadActivityRewindTarget(payload.rewindTarget);
     return startThreadContinuation({
       threadId: payload.threadId,
@@ -2127,7 +2141,7 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadFollowUpEnqueue, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpEnqueue, async (payload: unknown) => {
     const request = parseThreadFollowUpEnqueueRequest(payload);
     const thread = conversationStore.getThread(request.threadId);
     if (!thread) {
@@ -2149,7 +2163,7 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadFollowUpEscalate, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpEscalate, async (payload: unknown) => {
     const request = parseThreadFollowUpEscalateRequest(payload);
     const thread = conversationStore.getThread(request.threadId);
     if (!thread) {
@@ -2179,7 +2193,7 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(current);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadFollowUpList, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpList, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
     if (!id) {
       return { followUps: [] };
@@ -2187,7 +2201,7 @@ function registerIpcHandlers(): void {
     return { followUps: conversationStore.listThreadFollowUps(id) };
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadFollowUpCancel, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpCancel, async (payload: unknown) => {
     const request = parseThreadFollowUpCancelRequest(payload);
     const followUp = conversationStore.cancelThreadFollowUp(request.threadId, request.followUpId);
     if (!followUp) {
@@ -2197,7 +2211,7 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadFollowUpUpdate, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadFollowUpUpdate, async (payload: unknown) => {
     const request = parseThreadFollowUpUpdateRequest(payload);
     const thread = conversationStore.getThread(request.threadId);
     if (!thread) {
@@ -2217,12 +2231,12 @@ function registerIpcHandlers(): void {
     return buildThreadFollowUpMutationResult(followUp);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRetry, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadRetry, async (payload: unknown) => {
     const request = parseThreadRetryRequest(payload);
     return retryThread(request);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadCancel, async (_event, payload: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadCancel, async (payload: unknown) => {
     const request = parseThreadCancelRequest(payload);
     if (!request) {
       return;
@@ -2254,28 +2268,28 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRollbackTo, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadRollbackTo, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return rollbackWorkspaceToThread(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadGetAppliedDiff, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadGetAppliedDiff, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return getThreadAppliedDiff(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.threadRevertAppliedDiff, async (_event, threadId: unknown) => {
+  registerDesktopCommand(IPC_CHANNELS.threadRevertAppliedDiff, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
     }
     return revertThreadAppliedDiff(threadId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.modelProfilesList, async () => getModelSettingsSnapshot().providers);
+  registerDesktopCommand(IPC_CHANNELS.modelProfilesList, async () => getModelSettingsSnapshot().providers);
 
   ipcMain.on("message", (event) => {
     if (!isKnownIpcChannel(event.type)) {
@@ -4941,21 +4955,18 @@ async function emitProxyUsage(
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const currentRequestSeq = activeRunBillingState.proxyRequestSeq(info.threadId);
   const registryStamp = proxyBillingStampRegistry.resolveForRoute(info.threadId, info.role);
+  const stampedAgentId = info.stampedAgentId ?? registryStamp?.agentId;
+  const stampedBillingRole = info.stampedBillingRole ?? registryStamp?.billingRole;
+  const stampedParentToolUseId = info.stampedParentToolUseId ?? registryStamp?.parentToolUseId;
   const resolved = resolveProxyUsageBilling({
     info,
     ...(currentRequestSeq !== undefined && { currentRequestSeq }),
     ...(runAttemptId && { runAttemptId }),
     ...(plannerAgentId && { plannerAgentId }),
     resolver: subagentMetricsRegistry,
-    ...((info.stampedAgentId ?? registryStamp?.agentId)
-      ? { stampedAgentId: info.stampedAgentId ?? registryStamp?.agentId }
-      : {}),
-    ...((info.stampedBillingRole ?? registryStamp?.billingRole)
-      ? { stampedBillingRole: info.stampedBillingRole ?? registryStamp?.billingRole }
-      : {}),
-    ...((info.stampedParentToolUseId ?? registryStamp?.parentToolUseId)
-      ? { stampedParentToolUseId: info.stampedParentToolUseId ?? registryStamp?.parentToolUseId }
-      : {}),
+    ...(stampedAgentId ? { stampedAgentId } : {}),
+    ...(stampedBillingRole ? { stampedBillingRole } : {}),
+    ...(stampedParentToolUseId ? { stampedParentToolUseId } : {}),
   });
   activeRunBillingState.recordProxyRequest(info.threadId, {
     nextRequestSeq: resolved.nextRequestSeq,
@@ -5633,9 +5644,7 @@ function emitThreadEvent(
     payload.runtimeConfig = extras.runtimeConfig;
   }
 
-  BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
-  });
+  desktopEventCenter.publishThreadLiveEvent(payload);
   return persistedActivityLine;
 }
 
@@ -5859,9 +5868,7 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
     stream: false,
     projection,
   };
-  BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, payload);
-  });
+  desktopEventCenter.publishThreadLiveEvent(payload);
 }
 
 function recordUserPrompt(threadId: string, prompt: string): ThreadActivityLine | undefined {
@@ -6232,12 +6239,10 @@ function isBashApprovalResolvePayload(value: unknown): value is BashApprovalReso
 }
 
 function emitSettingsUpdated(): void {
-  BrowserWindow.getAllWindows().forEach((window) => {
-    window.webContents.send(IPC_CHANNELS.threadEventsSubscribe, {
-      threadId: "settings",
-      type: "settings.updated",
-      message: "Model provider settings saved.",
-    });
+  desktopEventCenter.publishSettingsUpdated({
+    threadId: "settings",
+    type: "settings.updated",
+    message: "Model provider settings saved.",
   });
 }
 

@@ -50,7 +50,7 @@ export function parsedUsageFromOpenAICompatUsage(
     | {
         input_tokens?: number;
         output_tokens?: number;
-        input_tokens_details?: { cached_tokens?: number };
+        input_tokens_details?: { cached_tokens?: number | undefined } | undefined;
       }
     | null
     | undefined,
@@ -73,7 +73,7 @@ export function resolveChatCompletionsStreamUsage(
     | {
         input_tokens?: number;
         output_tokens?: number;
-        input_tokens_details?: { cached_tokens?: number };
+        input_tokens_details?: { cached_tokens?: number | undefined } | undefined;
       }
     | undefined,
 ): ParsedUsage | null {

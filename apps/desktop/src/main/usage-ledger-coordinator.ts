@@ -81,10 +81,12 @@ export interface UsageLedgerBillingSnapshotSelectionOptions {
 export class UsageLedgerCoordinator {
   private readonly store: UsageLedgerCoordinatorStore;
   private readonly metrics: UsageLedgerCoordinatorMetrics;
-  private readonly logDiag?: UsageLedgerCoordinatorOptions["logDiag"];
-  private readonly logDiagThrottled?: UsageLedgerCoordinatorOptions["logDiagThrottled"];
+  private readonly logDiag: UsageLedgerCoordinatorOptions["logDiag"] | undefined;
+  private readonly logDiagThrottled: UsageLedgerCoordinatorOptions["logDiagThrottled"] | undefined;
   private readonly writeError: (message: string) => void;
-  private readonly onProxyAttributionSettled?: (threadId: string) => void;
+  private readonly onProxyAttributionSettled:
+    | ((threadId: string) => void)
+    | undefined;
   private readonly proxyPendingRegistry = new ProxyUsagePendingRegistry();
   private readonly pendingInterruptedStreamSettlements = new Map<
     string,

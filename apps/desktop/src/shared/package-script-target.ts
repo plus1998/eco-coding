@@ -1,6 +1,10 @@
 import type { PackageScriptRunTarget } from "./ipc";
 
-export function isExternalPackageScriptTarget(target: PackageScriptRunTarget): boolean {
+export type ExternalPackageScriptRunTarget = Extract<PackageScriptRunTarget, "terminal" | "iterm">;
+
+export function isExternalPackageScriptTarget(
+  target: PackageScriptRunTarget,
+): target is ExternalPackageScriptRunTarget {
   return target === "terminal" || target === "iterm";
 }
 

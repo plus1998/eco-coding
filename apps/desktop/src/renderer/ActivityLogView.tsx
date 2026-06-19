@@ -1882,7 +1882,8 @@ function RunLogAction({
   omitRoleLabel?: boolean;
 }) {
   const Icon = actionIcons[icon];
-  const StatusIcon = lifecycle ? approvalLifecycleStatusIcons[lifecycle] : undefined;
+  const StatusIcon =
+    lifecycle && isApprovalLifecycle(lifecycle) ? approvalLifecycleStatusIcons[lifecycle] : undefined;
   const showRoleLabel =
     Boolean(subagent) &&
     !omitRoleLabel &&
@@ -1920,6 +1921,12 @@ const approvalLifecycleStatusIcons = {
   "approval-approved": ShieldCheck,
   "approval-rejected": ShieldAlert,
 } as const;
+
+type ApprovalLifecycle = keyof typeof approvalLifecycleStatusIcons;
+
+function isApprovalLifecycle(lifecycle: ToolActionLifecycle): lifecycle is ApprovalLifecycle {
+  return lifecycle in approvalLifecycleStatusIcons;
+}
 
 const lifecycleStatusLabels: Record<ToolActionLifecycle, string> = {
   "approval-pending": "等待确认",

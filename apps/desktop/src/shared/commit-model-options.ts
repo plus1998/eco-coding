@@ -83,14 +83,19 @@ function pickRepresentativeRole(
   hints: readonly RoutePricingHint[],
 ): RuntimeRoleRouteConfig {
   const hintByRole = new Map(hints.map((hint) => [hint.role, hint]));
-  return [...routes].sort((left, right) => {
+  const sorted = [...routes].sort((left, right) => {
     const scoreDelta =
       commitRoutePriceScore(hintByRole.get(left.role)) - commitRoutePriceScore(hintByRole.get(right.role));
     if (scoreDelta !== 0) {
       return scoreDelta;
     }
     return SUBAGENT_ROLES.indexOf(left.role as SubagentRole) - SUBAGENT_ROLES.indexOf(right.role as SubagentRole);
-  })[0]!;
+  });
+  const representative = sorted[0];
+  if (!representative) {
+    throw new Error("Commit model option group has no candidate routes.");
+  }
+  return representative;
 }
 
 export function buildCommitModelOptions(
@@ -114,7 +119,11 @@ export function buildCommitModelOptions(
       existing.routes.push(route);
       continue;
     }
-    groups.set(key, { routes: [route], hint, providerName });
+    groups.set(key, {
+      routes: [route],
+      providerName,
+      ...(hint ? { hint } : {}),
+    });
   }
 
   const options = [...groups.entries()].map(([id, group]) => {

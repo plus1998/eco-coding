@@ -303,13 +303,14 @@ export function ContextCard({
   const canCompact = Boolean(threadId && context && threadStatus !== "running" && !compacting);
 
   async function handleCompact() {
-    if (!threadId || !canCompact) {
+    const eco = window.eco;
+    if (!threadId || !canCompact || !eco) {
       return;
     }
     setCompacting(true);
     setCompactError(null);
     try {
-      const result = await window.eco.compactThreadContext(threadId);
+      const result = await eco.compactThreadContext(threadId);
       if (!result.ok) {
         setCompactError(result.message);
       }

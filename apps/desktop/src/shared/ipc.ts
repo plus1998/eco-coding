@@ -115,6 +115,35 @@ export const IPC_CHANNELS = {
 } as const;
 
 export type {
+  EventCenterEnvelope,
+  EventCenterEventKind,
+  EventCenterInvokeParams,
+  EventCenterInvokeResult,
+  EventCenterJsonRpcFailure,
+  EventCenterJsonRpcNotification,
+  EventCenterJsonRpcRequest,
+  EventCenterJsonRpcResponse,
+  EventCenterJsonRpcSuccess,
+  EventCenterPackageJsonChangedPayload,
+  EventCenterPayloadMap,
+  EventCenterSource,
+  ThreadEventCenterEventKind,
+} from "./event-center";
+export {
+  buildEventCenterJsonRpcFailure,
+  buildEventCenterJsonRpcNotification,
+  buildEventCenterJsonRpcSuccess,
+  classifyThreadLiveEventForCenter,
+  EVENT_CENTER_JSON_RPC_ERROR,
+  EVENT_CENTER_JSON_RPC_METHODS,
+  EVENT_CENTER_JSON_RPC_VERSION,
+  EVENT_CENTER_PROTOCOL_VERSION,
+  isEventCenterInvokeParams,
+  isEventCenterJsonRpcRequest,
+  isThreadPlanLiveEvent,
+} from "./event-center";
+
+export type {
   McpServerConfigInput,
   McpServerConfigView,
   McpSettingsSnapshot,

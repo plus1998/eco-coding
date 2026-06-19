@@ -90,6 +90,7 @@ export function buildAgentProfileSummary(
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: profile.mainAgent.tools,
       mcpServers: [],
+      allowDelegation: false,
     }),
   };
   const agents = [
@@ -127,6 +128,7 @@ function buildExploreSummary(profile: OrchestrationProfile): AgentProfileAgentSu
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: EXPLORE_TOOLS,
       mcpServers: [],
+      allowDelegation: false,
     }),
   };
 }
@@ -166,6 +168,7 @@ function buildAgentSummary(
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: agent.tools,
       mcpServers: agent.mcpServers,
+      allowDelegation: false,
     }),
   };
 }

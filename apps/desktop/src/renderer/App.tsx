@@ -23,11 +23,12 @@ import {
   Sparkles,
   Square,
   Trash2,
+  type LucideIcon,
   X,
 } from "lucide-react";
 import {
   type ClipboardEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -199,7 +200,20 @@ interface RecentProject {
   importedAt: string;
 }
 
-const settingsNavGroups = [
+type SettingsSectionId = "general" | "providers" | "mcp" | "sessionSync" | "models" | "skills" | "git";
+
+interface SettingsSection {
+  id: SettingsSectionId;
+  label: string;
+  icon: LucideIcon;
+}
+
+interface SettingsNavGroup {
+  label: string;
+  sections: SettingsSection[];
+}
+
+const settingsNavGroups: SettingsNavGroup[] = [
   {
     label: "个人",
     sections: [{ id: "general", label: "外观", icon: Monitor }],
@@ -220,7 +234,7 @@ const settingsNavGroups = [
       { id: "git", label: "Git", icon: GitBranch },
     ],
   },
-] as const;
+];
 
 const settingsSections = settingsNavGroups.flatMap((group) => group.sections);
 
@@ -234,8 +248,6 @@ const emptySessionSyncSettings: SessionSyncSettingsSnapshot = {
 };
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
-
-type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
 const emptyGitSettings: GitSettingsSnapshot = { commitMessageRoleByProfileId: {} };
 
@@ -1009,7 +1021,7 @@ function App() {
     [activeThread?.id, currentProjectPath],
   );
   const composerDraftsByKeyRef = useRef<Record<string, ComposerDraft>>({});
-  const prevComposerContextKeyRef = useRef<string | undefined>();
+  const prevComposerContextKeyRef = useRef<string | undefined>(undefined);
   const composerPromptRef = useRef(prompt);
   const composerAttachmentsRef = useRef(composerAttachments);
   const composerRewindTargetRef = useRef(composerRewindTarget);
@@ -1036,7 +1048,7 @@ function App() {
     if (!threadInfoDrawerOpen || !threadInfoCompact) {
       return undefined;
     }
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setThreadInfoDrawerOpen(false);
       }
@@ -1221,9 +1233,13 @@ function App() {
           setScriptsBusy(false);
           return;
         }
+        if (!result.runId) {
+          throw new Error("Package script run id is missing.");
+        }
+        const runId = result.runId;
         setScriptRunState((current) => ({
           ...current,
-          runId: result.runId,
+          runId,
           command: result.command,
           script: result.script,
         }));
@@ -1461,7 +1477,9 @@ function App() {
       persistComposerDraftSnapshot(composerDraftsByKeyRef.current, prevKey, {
         prompt: composerPromptRef.current,
         attachments: composerAttachmentsRef.current,
-        rewindTarget: composerRewindTargetRef.current,
+        ...(composerRewindTargetRef.current
+          ? { rewindTarget: composerRewindTargetRef.current }
+          : {}),
       });
     }
 
@@ -3155,7 +3173,7 @@ function App() {
     });
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (composerSkillPopoverOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();

@@ -185,9 +185,10 @@ export class InMemoryUsageLedger {
     if (!existing) {
       return undefined;
     }
+    const { agentId: _existingAgentId, ...existingWithoutAgentId } = existing;
     const updated: UsageLedgerEvent = {
-      ...existing,
-      ...(update.agentId ? { agentId: update.agentId } : { agentId: undefined }),
+      ...(update.agentId ? existing : existingWithoutAgentId),
+      ...(update.agentId ? { agentId: update.agentId } : {}),
       attribution: update.attribution,
     };
     this.eventsByIdempotencyKey.set(updated.idempotencyKey, updated);
