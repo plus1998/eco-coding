@@ -1,5 +1,6 @@
 import { ChevronLeft, Link2, QrCode, RefreshCw, Unplug } from "lucide-react";
 import { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import type {
   CenterServerConnectionStatus,
   CenterServerCreatePairingResult,
@@ -415,7 +416,21 @@ export function CenterServerSettingsPanel({
                 )}
 
                 {pairing && (
-                  <div className="settings-form-field">
+                  <div className="settings-form-field connect-flow-pairing-block">
+                    <span className="settings-form-label">手机扫码配对</span>
+                    <div className="connect-flow-pairing-qr">
+                      <QRCodeSVG
+                        value={pairing.qrPayload}
+                        size={200}
+                        level="M"
+                        includeMargin
+                        role="img"
+                        aria-label={`配对二维码 ${pairing.code}`}
+                      />
+                    </div>
+                    <span className="settings-field-hint connect-flow-pairing-qr-hint">
+                      在 Eco Mobile「PC」页扫码，或手动输入下方配对码
+                    </span>
                     <span className="settings-form-label">配对码</span>
                     <code className="connect-flow-pairing-code">{pairing.code}</code>
                     <span className="settings-field-hint">过期时间：{formatLocalTime(pairing.expiresAt)}</span>

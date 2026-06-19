@@ -1,0 +1,228 @@
+class EcoRpcConstants {
+  static const jsonRpcVersion = '2.0';
+  static const protocolVersion = 1;
+
+  static const methodEvent = 'eco.event';
+  static const methodInvoke = 'eco.invoke';
+  static const methodPing = 'eco.ping';
+
+  static const parseError = -32700;
+  static const invalidRequest = -32600;
+  static const methodNotFound = -32601;
+  static const invalidParams = -32602;
+  static const internalError = -32603;
+  static const unauthorized = -32001;
+  static const forbidden = -32003;
+  static const targetOffline = -32004;
+  static const timeout = -32008;
+}
+
+enum EcoConnectionState { disconnected, connecting, connected, error }
+
+class CenterServerConnectionStatus {
+  const CenterServerConnectionStatus({
+    required this.state,
+    this.connectedAt,
+    this.lastError,
+  });
+
+  final EcoConnectionState state;
+  final String? connectedAt;
+  final String? lastError;
+}
+
+class PublicUser {
+  const PublicUser({
+    required this.id,
+    required this.email,
+    this.displayName,
+    required this.createdAt,
+  });
+
+  factory PublicUser.fromJson(Map<String, dynamic> json) => PublicUser(
+        id: json['id'] as String,
+        email: json['email'] as String,
+        displayName: json['displayName'] as String?,
+        createdAt: json['createdAt'] as String,
+      );
+
+  final String id;
+  final String email;
+  final String? displayName;
+  final String createdAt;
+}
+
+class PublicDevice {
+  const PublicDevice({
+    required this.id,
+    required this.userId,
+    required this.kind,
+    required this.name,
+    required this.createdAt,
+    this.lastSeenAt,
+    this.disabledAt,
+    this.online = false,
+  });
+
+  factory PublicDevice.fromJson(Map<String, dynamic> json) => PublicDevice(
+        id: json['id'] as String,
+        userId: json['userId'] as String,
+        kind: json['kind'] as String,
+        name: json['name'] as String,
+        createdAt: json['createdAt'] as String,
+        lastSeenAt: json['lastSeenAt'] as String?,
+        disabledAt: json['disabledAt'] as String?,
+        online: json['online'] as bool? ?? false,
+      );
+
+  final String id;
+  final String userId;
+  final String kind;
+  final String name;
+  final String createdAt;
+  final String? lastSeenAt;
+  final String? disabledAt;
+  final bool online;
+}
+
+class DeviceBinding {
+  const DeviceBinding({
+    required this.id,
+    required this.userId,
+    required this.desktopDeviceId,
+    required this.mobileDeviceId,
+    required this.capabilities,
+    required this.createdAt,
+    this.revokedAt,
+  });
+
+  factory DeviceBinding.fromJson(Map<String, dynamic> json) => DeviceBinding(
+        id: json['id'] as String,
+        userId: json['userId'] as String,
+        desktopDeviceId: json['desktopDeviceId'] as String,
+        mobileDeviceId: json['mobileDeviceId'] as String,
+        capabilities: (json['capabilities'] as List<dynamic>)
+            .map((e) => e as String)
+            .toList(),
+        createdAt: json['createdAt'] as String,
+        revokedAt: json['revokedAt'] as String?,
+      );
+
+  final String id;
+  final String userId;
+  final String desktopDeviceId;
+  final String mobileDeviceId;
+  final List<String> capabilities;
+  final String createdAt;
+  final String? revokedAt;
+
+  bool get isActive => revokedAt == null;
+}
+
+class TokenBundle {
+  const TokenBundle({
+    required this.accessToken,
+    required this.refreshToken,
+    required this.expiresAt,
+  });
+
+  factory TokenBundle.fromJson(Map<String, dynamic> json) => TokenBundle(
+        accessToken: json['accessToken'] as String,
+        refreshToken: json['refreshToken'] as String,
+        expiresAt: json['expiresAt'] as String,
+      );
+
+  final String accessToken;
+  final String refreshToken;
+  final String expiresAt;
+}
+
+class EcoEventEnvelope {
+  const EcoEventEnvelope({
+    required this.id,
+    required this.kind,
+    required this.source,
+    required this.occurredAt,
+    required this.payload,
+    this.threadId,
+    this.workspacePath,
+  });
+
+  factory EcoEventEnvelope.fromJson(Map<String, dynamic> json) => EcoEventEnvelope(
+        id: json['id'] as String,
+        kind: json['kind'] as String,
+        source: json['source'] as String,
+        occurredAt: json['occurredAt'] as String,
+        payload: json['payload'],
+        threadId: json['threadId'] as String?,
+        workspacePath: json['workspacePath'] as String?,
+      );
+
+  final String id;
+  final String kind;
+  final String source;
+  final String occurredAt;
+  final dynamic payload;
+  final String? threadId;
+  final String? workspacePath;
+}
+
+class EcoCenterException implements Exception {
+  EcoCenterException(this.message, {this.code});
+
+  final String message;
+  final int? code;
+
+  @override
+  String toString() => message;
+}
+
+String normalizeCenterServerHttpUrl(String serverUrl) {
+  final trimmed = serverUrl.trim();
+  final parsed = Uri.parse(trimmed);
+  if (parsed.scheme != 'http' && parsed.scheme != 'https') {
+    throw EcoCenterException('Center server URL must use http or https.');
+  }
+  var path = parsed.path;
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  return Uri(
+    scheme: parsed.scheme,
+    host: parsed.host,
+    port: parsed.hasPort ? parsed.port : null,
+    path: path.isEmpty ? '' : path,
+  ).toString();
+}
+
+String buildCenterServerWebSocketUrl(String serverUrl, String accessToken) {
+  final parsed = Uri.parse(normalizeCenterServerHttpUrl(serverUrl));
+  final wsScheme = parsed.scheme == 'https' ? 'wss' : 'ws';
+  var path = parsed.path;
+  if (path.isEmpty) {
+    path = '/v1/rpc';
+  } else {
+    path = '$path/v1/rpc';
+  }
+  return Uri(
+    scheme: wsScheme,
+    host: parsed.host,
+    port: parsed.hasPort ? parsed.port : null,
+    path: path,
+    queryParameters: {'access_token': accessToken},
+  ).toString();
+}
+
+bool tokenStillValid(String? expiresAt, DateTime now) {
+  if (expiresAt == null || expiresAt.isEmpty) return false;
+  final expiry = DateTime.tryParse(expiresAt);
+  if (expiry == null) return false;
+  return expiry.difference(now).inMilliseconds > 30000;
+}
+
+String workspaceDisplayName(String workspacePath) {
+  final normalized = workspacePath.replaceAll('\\', '/');
+  final segments = normalized.split('/').where((s) => s.isNotEmpty).toList();
+  if (segments.isEmpty) return workspacePath;
+  return segments.last;
+}
