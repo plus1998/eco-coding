@@ -133,3 +133,52 @@ test("createSubagentResumePreToolHook skips fresh requests", async () => {
   );
   expect(result.hookSpecificOutput).toBeUndefined();
 });
+
+test("createSubagentResumePreToolHook uses handoff prompt when threshold is met", async () => {
+  const hook = createSubagentResumePreToolHook(
+    "thr_1",
+    "execution",
+    () => "explore-agent-id",
+    {
+      shouldHandoff: (input) => input.agentId === "explore-agent-id",
+      resolveHandoffPrompt: () => "Handoff prompt for explore",
+    },
+  );
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "explore", prompt: "Continue mapping auth" },
+    } as never,
+    "tool_1",
+  );
+
+  expect(result.hookSpecificOutput?.updatedInput?.prompt).toBe("Handoff prompt for explore");
+  expect(result.hookSpecificOutput?.updatedInput?.prompt).not.toContain("Resume agent");
+});
+
+test("createSubagentResumePreToolHook falls back to resume when handoff prompt is empty", async () => {
+  const hook = createSubagentResumePreToolHook(
+    "thr_1",
+    "execution",
+    () => "explore-agent-id",
+    {
+      shouldHandoff: () => true,
+      resolveHandoffPrompt: () => "   ",
+    },
+  );
+
+  const result = await hook(
+    {
+      hook_event_name: "PreToolUse",
+      tool_name: "Agent",
+      tool_input: { subagent_type: "explore", prompt: "Continue mapping auth" },
+    } as never,
+    "tool_1",
+  );
+
+  expect(result.hookSpecificOutput?.updatedInput?.prompt).toBe(
+    "Resume agent explore-agent-id and Continue mapping auth",
+  );
+});

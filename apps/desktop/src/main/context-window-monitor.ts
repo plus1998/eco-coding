@@ -295,6 +295,64 @@ export class ContextWindowMonitor {
     return this.states.get(threadId)?.byRole[role]?.occupied ?? 0;
   }
 
+  getInstanceOccupancy(
+    threadId: string,
+    agentId: string,
+  ):
+    | {
+        role: RuntimeAgentRole;
+        occupied: number;
+        limit: number;
+        compactLimit: number;
+        limitsResolved: boolean;
+      }
+    | undefined {
+    const state = this.states.get(threadId);
+    if (!state) {
+      return undefined;
+    }
+    const instance = state.byInstance.get(agentId);
+    if (!instance) {
+      return undefined;
+    }
+    return {
+      role: instance.role,
+      occupied: instance.occupied,
+      limit: instance.limit,
+      compactLimit: compactLimitForRole(instance),
+      limitsResolved: instance.limitsResolved,
+    };
+  }
+
+  shouldHandoffSubagentResume(
+    threadId: string,
+    agentId: string,
+    role: RuntimeAgentRole,
+    threshold = DEFAULT_COMPACT_THRESHOLD,
+  ): boolean {
+    const instance = this.getInstanceOccupancy(threadId, agentId);
+    if (instance && instance.limitsResolved) {
+      const { atThreshold } = computeOccupancyRatio(
+        instance.occupied,
+        instance.compactLimit,
+        threshold,
+      );
+      return atThreshold;
+    }
+
+    const state = this.states.get(threadId);
+    const roleState = state?.byRole[role];
+    if (!roleState || !roleState.limitsResolved || roleState.occupied <= 0) {
+      return false;
+    }
+    const { atThreshold } = computeOccupancyRatio(
+      roleState.occupied,
+      compactLimitForRole(roleState),
+      threshold,
+    );
+    return atThreshold;
+  }
+
   shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
     const state = this.states.get(threadId);
     if (!state || state.compactInFlight) {

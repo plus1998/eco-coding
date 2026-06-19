@@ -246,8 +246,20 @@ export {
   formatResumableSubagentsAppend,
   isFreshSubagentRequest,
   readAgentSubagentType,
+  type SubagentResumeHandoffInput,
+  type SubagentResumeHookOptions,
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
+export {
+  buildFallbackSubagentHandoffSummary,
+  buildSubagentCompactionSummaryPrompt,
+  buildSubagentHandoffPrompt,
+  DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,
+  estimateHandoffTokens,
+  shouldHandoffSubagentResume,
+  splitSubagentActivityForHandoff,
+  type SubagentHandoffActivityLine,
+} from "./subagent-handoff.js";
 export * from "./subagent-availability";
 export * from "./agent-orchestration";
 export * from "./tool-permission-policy.js";

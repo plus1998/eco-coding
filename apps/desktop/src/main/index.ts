@@ -311,6 +311,7 @@ import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
+import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
@@ -462,6 +463,7 @@ let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 let ecoCompactService: EcoCompactService;
+let subagentHandoffService: SubagentHandoffService;
 
 type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
 
@@ -562,20 +564,25 @@ app.whenReady().then(async () => {
     lookupPricing: lookupUsageBillingPricing,
   });
   contextMonitor = new ContextWindowMonitor(pricingCache);
+  const resolveProxyRoutesForThread = (threadId: string) => {
+    try {
+      const roleRoutes = resolveRoleRoutesForThread(threadId);
+      const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
+      return runtimeConfig.ok ? runtimeConfig.routes : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   ecoCompactService = createEcoCompactService({
     listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
     getThreadPrompt: (threadId) => conversationStore.getThread(threadId)?.prompt,
     saveCompactHandoff: (threadId, input) => conversationStore.saveCompactHandoff(threadId, input),
     clearSdkSession: (threadId) => conversationStore.clearSdkSession(threadId),
-    resolveProxyRoutes: (threadId) => {
-      try {
-        const roleRoutes = resolveRoleRoutesForThread(threadId);
-        const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
-        return runtimeConfig.ok ? runtimeConfig.routes : undefined;
-      } catch {
-        return undefined;
-      }
-    },
+    resolveProxyRoutes: resolveProxyRoutesForThread,
+  });
+  subagentHandoffService = createSubagentHandoffService({
+    listActivityLines: (threadId) => conversationStore.listActivityLines(threadId),
+    resolveProxyRoutes: resolveProxyRoutesForThread,
   });
   contextScheduler = new ContextSnapshotScheduler({
     monitor: contextMonitor,
@@ -4228,6 +4235,8 @@ function buildSdkHookContextExtras(
         ...(todoId ? { todoId } : {}),
       });
     },
+    contextMonitor,
+    handoffService: subagentHandoffService,
   });
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
   return { ...rest, subagentSessions, subagentAttribution };

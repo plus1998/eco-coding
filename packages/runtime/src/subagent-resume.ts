@@ -134,11 +134,28 @@ export function formatResumableSubagentsAppend(
   ].join("\n");
 }
 
+export interface SubagentResumeHandoffInput {
+  threadId: string;
+  role: RuntimeAgentRole;
+  agentId: string;
+  phase: SubagentResumeResolveInput["phase"];
+  prompt: string;
+  todoIdHint?: string;
+}
+
+export interface SubagentResumeHookOptions {
+  todoIdHint?: () => string | undefined;
+  shouldHandoff?: (input: SubagentResumeHandoffInput) => boolean;
+  resolveHandoffPrompt?: (
+    input: SubagentResumeHandoffInput,
+  ) => Promise<string | undefined> | string | undefined;
+}
+
 export function createSubagentResumePreToolHook(
   threadId: string,
   phase: SubagentResumeResolveInput["phase"],
   resolve: (input: SubagentResumeResolveInput) => string | undefined,
-  options?: { todoIdHint?: () => string | undefined },
+  options?: SubagentResumeHookOptions,
 ): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") {
@@ -178,6 +195,31 @@ export function createSubagentResumePreToolHook(
     });
     if (!agentId) {
       return {};
+    }
+
+    const handoffInput: SubagentResumeHandoffInput = {
+      threadId,
+      role: subagentType,
+      agentId,
+      phase,
+      prompt: originalPrompt,
+      ...(todoIdHint && { todoIdHint }),
+    };
+
+    if (options?.shouldHandoff?.(handoffInput)) {
+      const handoffPrompt = await options.resolveHandoffPrompt?.(handoffInput);
+      if (handoffPrompt?.trim()) {
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: {
+              ...toolInput,
+              prompt: handoffPrompt.trim(),
+            },
+          },
+        };
+      }
     }
 
     return {

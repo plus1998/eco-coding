@@ -6,6 +6,9 @@ import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentLifecycleRunEvent } from "./thread-run-event-normalizer.js";
+import type { ContextWindowMonitor } from "./context-window-monitor.js";
+import type { SubagentHandoffService } from "./subagent-handoff-service.js";
+import { logEcoDiagThrottled } from "./eco-diag-log.js";
 
 export interface PendingSubagentLaunch {
   role: RuntimeAgentRole;
@@ -32,9 +35,11 @@ export function createSubagentSessionHooks(
       runAttemptId?: string;
     }) => void;
     onSubagentBillingStampClear?: (input: { agentId: string }) => void;
+    contextMonitor?: Pick<ContextWindowMonitor, "shouldHandoffSubagentResume" | "getInstanceOccupancy">;
+    handoffService?: SubagentHandoffService;
   },
 ): EcoSubagentSessionHooks {
-  return {
+  const hooks: EcoSubagentSessionHooks = {
     phase,
     threadId,
     onStart(input) {
@@ -121,6 +126,35 @@ export function createSubagentSessionHooks(
     ...(options?.todoIdHint && { todoIdHint: options.todoIdHint }),
     ...(options?.onAgentToolCapture && { onAgentToolCapture: options.onAgentToolCapture }),
   };
+
+  if (options?.contextMonitor && options?.handoffService) {
+    const monitor = options.contextMonitor;
+    const handoffService = options.handoffService;
+    hooks.shouldHandoff = (input) => {
+      const should = monitor.shouldHandoffSubagentResume(threadId, input.agentId, input.role);
+      if (should) {
+        const instance = monitor.getInstanceOccupancy(threadId, input.agentId);
+        logEcoDiagThrottled(`subagent-handoff:${threadId}:${input.agentId}`, "subagent.handoff.threshold", {
+          threadId,
+          role: input.role,
+          agentId: input.agentId,
+          occupied: instance?.occupied ?? null,
+          compactLimit: instance?.compactLimit ?? null,
+          limit: instance?.limit ?? null,
+        });
+      }
+      return should;
+    };
+    hooks.resolveHandoffPrompt = (input) =>
+      handoffService.buildHandoffPrompt({
+        threadId: input.threadId,
+        agentId: input.agentId,
+        role: input.role,
+        originalPrompt: input.prompt,
+      });
+  }
+
+  return hooks;
 }
 
 function appendSubagentLifecycleEvent(

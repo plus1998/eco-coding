@@ -228,6 +228,24 @@ test("tracks concurrent coder instances by agentId", async () => {
   expect(snapshot?.instances?.map((entry) => entry.occupied)).toEqual([31_000, 22_000]);
 });
 
+test("shouldHandoffSubagentResume uses byInstance occupancy when available", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(131_072));
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 110_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    {
+      role: "explore",
+      agentId: "explore-agent-1",
+      modelId: "explore-model",
+      providerBaseUrl: "https://example.test",
+    },
+  );
+
+  expect(monitor.getInstanceOccupancy("t1", "explore-agent-1")?.occupied).toBe(110_000);
+  expect(monitor.shouldHandoffSubagentResume("t1", "explore-agent-1", "explore", 0.85)).toBe(true);
+  expect(monitor.shouldHandoffSubagentResume("t1", "explore-agent-2", "explore", 0.85)).toBe(false);
+});
+
 test("dedupes assistant usage by messageId", async () => {
   const monitor = new ContextWindowMonitor(mockCache());
   await monitor.updateFromUsage(
