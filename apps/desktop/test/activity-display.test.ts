@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   formatBashRunMeta,
+  formatMeaningfulBashTitle,
   formatToolStatusPreview,
   parseBashApprovalActivityText,
   readBashApprovalMetadata,
@@ -66,6 +67,28 @@ test("resolveBashRunCardDisplay builds card fields for bash summaries and output
     meta: "git",
     body: "git status",
   });
+  expect(
+    resolveBashRunCardDisplay({
+      toolName: "Bash",
+      command:
+        "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
+    }),
+  ).toEqual({
+    title: "Run event-center tests",
+    meta: "cd, 1+",
+    body: "cd apps/desktop && bun test test/event-center.test.ts test/event-center-http.test.ts test/thread-run-projection-view.test.ts",
+  });
+});
+
+test("formatMeaningfulBashTitle prefers readable SDK summaries and short command labels", () => {
+  expect(
+    formatMeaningfulBashTitle(
+      "kill -9 $(lsof -t -i:17891) && FLUX_PORT=17890 node server.js",
+      "Restart Flux server on port 17890",
+    ),
+  ).toBe("Restart Flux server on port 17890");
+  expect(formatMeaningfulBashTitle("npm run build:desktop")).toBe("Run build:desktop");
+  expect(formatMeaningfulBashTitle("curl -s https://example.com/api/status")).toBe("Fetch URL");
 });
 
 test("formatBashRunMeta summarizes chained commands", () => {

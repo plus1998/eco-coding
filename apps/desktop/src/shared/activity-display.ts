@@ -264,11 +264,7 @@ export function resolveBashRunCardDisplay(input: {
   const command = input.command?.trim();
   const output = input.output?.trim();
   const summaryText = input.summaryText?.trim();
-  const isToolLine = summaryText ? /^Tool:\s*Bash\b/i.test(summaryText) : false;
-  const title =
-    summaryText && !isToolLine && !looksLikeShellCommand(summaryText)
-      ? summaryText
-      : (inferBashCardTitle(command) ?? "运行命令");
+  const title = formatMeaningfulBashTitle(command, summaryText);
   const meta = command ? formatBashRunMeta(command, input.durationMs) : undefined;
   const body = output ?? command;
   return {
@@ -278,6 +274,127 @@ export function resolveBashRunCardDisplay(input: {
   };
 }
 
+export function formatMeaningfulBashTitle(command: string | undefined, summaryText?: string): string {
+  const summary = normalizeBashSummaryCandidate(summaryText);
+  if (summary && isReadableBashSummaryTitle(summary)) {
+    return clampActivityPreviewLine(summary, 48);
+  }
+  return deriveBashTitleFromCommand(command) ?? "运行命令";
+}
+
+function normalizeBashSummaryCandidate(summaryText: string | undefined): string | undefined {
+  const trimmed = summaryText?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const toolLine = trimmed.match(/^Tool:\s*Bash(?:\s*·\s*([\s\S]+))?$/i);
+  if (toolLine) {
+    const detail = toolLine[1]?.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/u, "").trim();
+    return detail || undefined;
+  }
+  return trimmed;
+}
+
+function isReadableBashSummaryTitle(text: string): boolean {
+  if (!text || looksLikeShellCommand(text)) {
+    return false;
+  }
+  if (/^Tool:\s*/i.test(text)) {
+    return false;
+  }
+  return /[A-Za-z\u4e00-\u9fff]/.test(text);
+}
+
+function deriveBashTitleFromCommand(command: string | undefined): string | undefined {
+  const trimmed = command?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const lastSegment = trimmed
+    .split(/\s*(?:&&|\|\||;)\s*/u)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .pop();
+  if (!lastSegment) {
+    return undefined;
+  }
+
+  const normalized = lastSegment.replace(/\s+/g, " ");
+  const testMatch = normalized.match(/^(?:bun|npm|pnpm|yarn)\s+test(?:\s+(.+))?$/iu);
+  if (testMatch) {
+    const targets = testMatch[1]?.trim();
+    if (!targets) {
+      return "Run tests";
+    }
+    const files = targets
+      .split(/\s+/u)
+      .map((target) => pathBasename(target.replace(/^['"]|['"]$/gu, "")))
+      .filter(Boolean);
+    const primary = files[0];
+    if (primary && /\.(?:test|spec)\.[cm]?[jt]sx?$/iu.test(primary)) {
+      const base = primary.replace(/\.(?:test|spec)\.[cm]?[jt]sx?$/iu, "");
+      return clampActivityPreviewLine(`Run ${base} tests`, 48);
+    }
+    if (files.length === 1 && primary) {
+      return clampActivityPreviewLine(`Run ${primary} tests`, 48);
+    }
+    return files.length > 1 ? `Run ${files.length} test files` : "Run tests";
+  }
+
+  const runMatch = normalized.match(/^(?:npm|bun|pnpm|yarn)\s+run\s+(\S+)/iu);
+  if (runMatch?.[1]) {
+    return clampActivityPreviewLine(`Run ${runMatch[1]}`, 48);
+  }
+
+  const gitMatch = normalized.match(/^git\s+(\S+)(?:\s+(.+))?/iu);
+  if (gitMatch?.[1]) {
+    const subcommand = gitMatch[1];
+    const rest = gitMatch[2]?.trim();
+    if (rest) {
+      const firstArg = rest.split(/\s+/u)[0]?.replace(/^['"]|['"]$/gu, "");
+      if (firstArg && firstArg.length <= 24) {
+        return clampActivityPreviewLine(`git ${subcommand} ${pathBasename(firstArg)}`, 48);
+      }
+    }
+    return clampActivityPreviewLine(`git ${subcommand}`, 48);
+  }
+
+  if (/^kill\b/iu.test(normalized)) {
+    return "Stop process";
+  }
+  if (/^curl\b/iu.test(normalized)) {
+    return "Fetch URL";
+  }
+  if (/^wget\b/iu.test(normalized)) {
+    return "Download file";
+  }
+  if (/^docker\b/iu.test(normalized)) {
+    const dockerMatch = normalized.match(/^docker(?:\s+compose)?\s+(\S+)/iu);
+    return clampActivityPreviewLine(dockerMatch ? `docker ${dockerMatch[1]}` : "docker", 48);
+  }
+  if (/^cd\s+\S+$/iu.test(normalized)) {
+    return clampActivityPreviewLine(`cd ${pathBasename(normalized.slice(3).trim())}`, 48);
+  }
+
+  const tokens = normalized.split(/\s+/u).filter(Boolean);
+  const first = tokens[0] ?? "";
+  if (
+    first.startsWith("./") ||
+    first.startsWith("/") ||
+    /\.(?:sh|py|js|ts|mjs|cjs)$/iu.test(first)
+  ) {
+    return clampActivityPreviewLine(pathBasename(first), 48);
+  }
+  if (normalized.length <= 48) {
+    return normalized;
+  }
+  if (tokens.length >= 2) {
+    return clampActivityPreviewLine(`${tokens[0]} ${tokens[1]}`, 48);
+  }
+  return clampActivityPreviewLine(first, 48);
+}
+
 function looksLikeShellCommand(text: string): boolean {
   return (
     /^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\.\/|\/)/u.test(text) ||
@@ -285,17 +402,6 @@ function looksLikeShellCommand(text: string): boolean {
     text.includes("|") ||
     text.includes("\n")
   );
-}
-
-function inferBashCardTitle(command: string | undefined): string | undefined {
-  const firstLine = command?.split(/\r?\n/u)[0]?.trim();
-  if (!firstLine) {
-    return undefined;
-  }
-  if (firstLine.length <= 56) {
-    return firstLine;
-  }
-  return `${firstLine.slice(0, 53)}…`;
 }
 
 /** Compact single-line preview for subagent cards and status rows. */
