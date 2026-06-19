@@ -40,6 +40,7 @@ import {
   type EcoHookContext,
   resolveResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
+import { isRemoteCommandChannel } from "@eco/shared";
 import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
 import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage, shell } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
@@ -62,6 +63,11 @@ import {
   buildThreadRuntimeConfigFromDefaults,
   type CandidateModelInput,
   type CandidateModelView,
+  type CenterServerRegisterDesktopRequest,
+  type CenterServerSettingsInput,
+  type CenterServerSignInRequest,
+  type CenterServerSignUpRequest,
+  type CenterServerTestConnectionRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
   getAgentProfileById,
@@ -92,11 +98,6 @@ import {
   type RuntimeRoleRouteConfig,
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
-  type CenterServerRegisterDesktopRequest,
-  type CenterServerSettingsInput,
-  type CenterServerSignInRequest,
-  type CenterServerSignUpRequest,
-  type CenterServerTestConnectionRequest,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
@@ -125,9 +126,9 @@ import {
   type ThreadRewindCheckpointRequest,
   type ThreadRewindCheckpointResult,
   type ThreadRollbackResult,
-  type ThreadRunProjectionSnapshot,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
+  type ThreadRunProjectionSnapshot,
   type ThreadRunToolMetadata,
   type ThreadRuntimeConfig,
   type ThreadRuntimeConfigInput,
@@ -221,6 +222,8 @@ import {
   parseThreadCancelRequest,
   takePendingCancelDisposition,
 } from "./cancel-worktree";
+import { CenterServerDesktopClient } from "./center-server-client";
+import { createCenterServerStore } from "./center-server-store";
 import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
@@ -295,8 +298,6 @@ import {
 import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
 import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
-import { CenterServerDesktopClient } from "./center-server-client";
-import { createCenterServerStore } from "./center-server-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
   resolveSingleUsageBillingOrchestration,
@@ -1007,7 +1008,9 @@ function registerDesktopCommand<Args extends unknown[], Result>(
   channel: IpcChannel,
   handler: (...args: Args) => Result | Promise<Result>,
 ): void {
-  desktopEventCenter.registerCommand(channel, (args) => handler(...(args as Args)));
+  if (isRemoteCommandChannel(channel)) {
+    desktopEventCenter.registerCommand(channel, (args) => handler(...(args as Args)));
+  }
   ipcMain.handle(channel, async (_event, ...args: unknown[]) => handler(...(args as Args)));
 }
 
@@ -1118,7 +1121,9 @@ function registerIpcHandlers(): void {
     return workspace;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadList, async () => hydrateThreads(conversationStore.listThreads()));
+  registerDesktopCommand(IPC_CHANNELS.threadList, async () =>
+    hydrateThreads(conversationStore.listThreads()),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.threadDelete, async (payload: unknown) => {
     const threadId = typeof payload === "string" ? payload.trim() : "";
@@ -1400,7 +1405,10 @@ function registerIpcHandlers(): void {
     },
   );
 
-  registerDesktopCommand(IPC_CHANNELS.agentTemplateList, async () => getModelSettingsSnapshot().agentTemplates);
+  registerDesktopCommand(
+    IPC_CHANNELS.agentTemplateList,
+    async () => getModelSettingsSnapshot().agentTemplates,
+  );
 
   registerDesktopCommand(IPC_CHANNELS.agentTemplateSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
@@ -1936,11 +1944,14 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.centerServerSettingsGet, async () => centerServerClient.getSnapshot());
 
-  registerDesktopCommand(IPC_CHANNELS.centerServerSettingsSave, async (payload: CenterServerSettingsInput) => {
-    const snapshot = centerServerClient.saveSettings(payload);
-    emitSettingsUpdated();
-    return snapshot;
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerSettingsSave,
+    async (payload: CenterServerSettingsInput) => {
+      const snapshot = centerServerClient.saveSettings(payload);
+      emitSettingsUpdated();
+      return snapshot;
+    },
+  );
 
   registerDesktopCommand(
     IPC_CHANNELS.centerServerRegisterDesktop,
@@ -1963,7 +1974,9 @@ function registerIpcHandlers(): void {
     return result;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.centerServerCreatePairing, async () => centerServerClient.createPairing());
+  registerDesktopCommand(IPC_CHANNELS.centerServerCreatePairing, async () =>
+    centerServerClient.createPairing(),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.centerServerConnect, async () => {
     await centerServerClient.start();

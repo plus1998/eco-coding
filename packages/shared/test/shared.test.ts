@@ -1,12 +1,15 @@
 import { expect, test } from "bun:test";
 import {
   buildEcoJsonRpcRequest,
-  classifyEcoCommandRisk,
   createAgentEvent,
   ECO_RPC_METHODS,
+  getRemoteCommandDefinition,
   hasCapabilities,
   isEcoInvokeParams,
+  isRemoteCommandChannel,
+  listRemoteCommandDefinitions,
   type ModelProfile,
+  validateRemoteCommandArgs,
 } from "../src";
 
 const model: ModelProfile = {
@@ -37,11 +40,41 @@ test("creates timestamped agent events", () => {
   expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 });
 
-test("classifies mobile command risk for server policy", () => {
-  expect(classifyEcoCommandRisk("thread:list")).toBe("read");
-  expect(classifyEcoCommandRisk("thread:start")).toBe("execute");
-  expect(classifyEcoCommandRisk("agent-template:save")).toBe("write_safe");
-  expect(classifyEcoCommandRisk("bash-approval:resolve")).toBe("privileged");
+test("registers explicit remote command definitions", () => {
+  expect(isRemoteCommandChannel("thread:list")).toBe(true);
+  expect(isRemoteCommandChannel("thread:approve-plan")).toBe(true);
+  expect(isRemoteCommandChannel("center-server:sign-in")).toBe(false);
+  expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(
+    "workflow-settings:save",
+  );
+
+  const approvePlan = getRemoteCommandDefinition("thread:approve-plan");
+  expect(approvePlan).toMatchObject({
+    risk: "privileged",
+    requiresConfirmation: true,
+  });
+  expect(approvePlan?.requiredCapabilities).toContain("approval:decide");
+});
+
+test("validates remote command args", () => {
+  expect(
+    validateRemoteCommandArgs("thread:start", [
+      { workspacePath: "/repo", prompt: "ship it", runtimeConfig: { planModeEnabled: false } },
+    ]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:start", [])).toMatchObject({ ok: false });
+  expect(validateRemoteCommandArgs("thread:start", [{ workspacePath: "/repo" }])).toMatchObject({
+    ok: false,
+  });
+  expect(
+    validateRemoteCommandArgs("thread:follow-up-cancel", [
+      { threadId: "thr_1", followUpId: "fup_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:follow-up-cancel", ["fup_1"])).toMatchObject({
+    ok: false,
+  });
+  expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
 });
 
 test("validates eco.invoke params with desktop target", () => {

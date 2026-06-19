@@ -76,6 +76,97 @@ test("rejects invokes from unbound mobile devices", async () => {
   context.store.close();
 });
 
+test("rejects non remote-enabled commands before forwarding to desktop", async () => {
+  const context = createGatewayContext();
+  await context.gateway.connect(context.desktopPeer);
+  await context.gateway.connect(context.mobilePeer);
+
+  await context.gateway.handleMessage(
+    context.mobilePeer,
+    JSON.stringify(
+      buildEcoJsonRpcRequest("mobile_req_1", ECO_RPC_METHODS.invoke, {
+        desktopDeviceId: context.desktopPeer.deviceId,
+        channel: "center-server:sign-in",
+        args: [],
+      }),
+    ),
+  );
+
+  expect(context.desktopMessages).toHaveLength(0);
+  expect(context.mobileMessages[0]).toMatchObject({
+    jsonrpc: "2.0",
+    id: "mobile_req_1",
+    error: {
+      code: -32003,
+      message: "PC command is not remote-enabled: center-server:sign-in",
+    },
+  });
+  expect(context.store.listAuditLogs()[0]).toMatchObject({
+    status: "rejected",
+    channel: "center-server:sign-in",
+  });
+  context.store.close();
+});
+
+test("rejects remote commands with invalid args before forwarding to desktop", async () => {
+  const context = createGatewayContext();
+  await context.gateway.connect(context.desktopPeer);
+  await context.gateway.connect(context.mobilePeer);
+
+  await context.gateway.handleMessage(
+    context.mobilePeer,
+    JSON.stringify(
+      buildEcoJsonRpcRequest("mobile_req_1", ECO_RPC_METHODS.invoke, {
+        desktopDeviceId: context.desktopPeer.deviceId,
+        channel: "thread:start",
+        args: [],
+      }),
+    ),
+  );
+
+  expect(context.desktopMessages).toHaveLength(0);
+  expect(context.mobileMessages[0]).toMatchObject({
+    jsonrpc: "2.0",
+    id: "mobile_req_1",
+    error: {
+      code: -32003,
+    },
+  });
+  expect(JSON.stringify(context.mobileMessages[0])).toContain("expects 1 args");
+  context.store.close();
+});
+
+test("requires approval capability for privileged remote commands", async () => {
+  const context = createGatewayContext({
+    mobileCapabilities: ["events:read", "rpc:invoke"],
+    bindingCapabilities: ["events:read", "rpc:invoke"],
+  });
+  await context.gateway.connect(context.desktopPeer);
+  await context.gateway.connect(context.mobilePeer);
+
+  await context.gateway.handleMessage(
+    context.mobilePeer,
+    JSON.stringify(
+      buildEcoJsonRpcRequest("mobile_req_1", ECO_RPC_METHODS.invoke, {
+        desktopDeviceId: context.desktopPeer.deviceId,
+        channel: "thread:approve-plan",
+        args: [{ threadId: "thr_1" }],
+      }),
+    ),
+  );
+
+  expect(context.desktopMessages).toHaveLength(0);
+  expect(context.mobileMessages[0]).toMatchObject({
+    jsonrpc: "2.0",
+    id: "mobile_req_1",
+    error: {
+      code: -32003,
+      message: "Mobile device is missing required capability approval:decide.",
+    },
+  });
+  context.store.close();
+});
+
 test("fans out desktop events only to bound online mobiles", async () => {
   const context = createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
@@ -101,7 +192,13 @@ test("fans out desktop events only to bound online mobiles", async () => {
   context.store.close();
 });
 
-function createGatewayContext(options: { bindDevices?: boolean } = {}) {
+function createGatewayContext(
+  options: {
+    bindDevices?: boolean;
+    bindingCapabilities?: Array<"events:read" | "rpc:invoke" | "approval:decide">;
+    mobileCapabilities?: Array<"events:read" | "rpc:invoke" | "approval:decide">;
+  } = {},
+) {
   const store = new SqliteStore({ database: new Database(":memory:") });
   const now = "2026-01-01T00:00:00.000Z";
   const user = store.createUser({
@@ -135,7 +232,7 @@ function createGatewayContext(options: { bindDevices?: boolean } = {}) {
       userId: user.id,
       desktopDeviceId: desktop.id,
       mobileDeviceId: mobile.id,
-      capabilities: ["events:read", "rpc:invoke", "approval:decide"],
+      capabilities: options.bindingCapabilities ?? ["events:read", "rpc:invoke", "approval:decide"],
       now,
     });
   }
@@ -160,7 +257,7 @@ function createGatewayContext(options: { bindDevices?: boolean } = {}) {
     deviceId: mobile.id,
     deviceKind: "mobile",
     sessionId: "sess_mobile",
-    capabilities: ["events:read", "rpc:invoke", "approval:decide"],
+    capabilities: options.mobileCapabilities ?? ["events:read", "rpc:invoke", "approval:decide"],
     messages: mobileMessages,
   });
   return {

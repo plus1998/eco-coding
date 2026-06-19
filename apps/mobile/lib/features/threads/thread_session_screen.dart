@@ -123,7 +123,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             _FollowUpBar(
               followUps: session.followUps,
               onCancel: (id) async {
-                await ref.read(desktopRpcProvider)?.followUpCancel(id);
+                await ref.read(desktopRpcProvider)?.followUpCancel(
+                  threadId: widget.threadId,
+                  followUpId: id,
+                );
                 await ref
                     .read(threadSessionProvider(widget.threadId).notifier)
                     .refreshPending();

@@ -181,6 +181,61 @@ test("handles JSON-RPC invoke requests through registered desktop commands", asy
   });
 });
 
+test("rejects commands that are not remote-enabled", async () => {
+  const center = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+
+  expect(() => center.registerCommand(IPC_CHANNELS.centerServerSignIn, () => undefined)).toThrow(
+    "Event center command is not remote-enabled",
+  );
+
+  const response = await center.handleJsonRpcMessage({
+    jsonrpc: "2.0",
+    id: "req_1",
+    method: EVENT_CENTER_JSON_RPC_METHODS.invoke,
+    params: {
+      channel: IPC_CHANNELS.centerServerSignIn,
+      args: [],
+    },
+  });
+
+  expect(response).toEqual({
+    jsonrpc: "2.0",
+    id: "req_1",
+    error: {
+      code: EVENT_CENTER_JSON_RPC_ERROR.methodNotFound,
+      message: `Desktop command is not remote-enabled: ${IPC_CHANNELS.centerServerSignIn}`,
+    },
+  });
+});
+
+test("validates remote command args before invoking handlers", async () => {
+  const center = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  let called = false;
+  center.registerCommand(IPC_CHANNELS.threadStart, () => {
+    called = true;
+    return { thread: { id: "thr_1" } };
+  });
+
+  const response = await center.handleJsonRpcMessage({
+    jsonrpc: "2.0",
+    id: "req_1",
+    method: EVENT_CENTER_JSON_RPC_METHODS.invoke,
+    params: {
+      channel: IPC_CHANNELS.threadStart,
+      args: [],
+    },
+  });
+
+  expect(called).toBe(false);
+  expect(response).toMatchObject({
+    jsonrpc: "2.0",
+    id: "req_1",
+    error: {
+      code: EVENT_CENTER_JSON_RPC_ERROR.invalidParams,
+    },
+  });
+});
+
 test("reports unregistered JSON-RPC commands explicitly", async () => {
   const center = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
 
@@ -190,7 +245,7 @@ test("reports unregistered JSON-RPC commands explicitly", async () => {
     method: EVENT_CENTER_JSON_RPC_METHODS.invoke,
     params: {
       channel: IPC_CHANNELS.threadStart,
-      args: [],
+      args: [{ workspacePath: "/repo", prompt: "ship it", runtimeConfig: {} }],
     },
   });
 

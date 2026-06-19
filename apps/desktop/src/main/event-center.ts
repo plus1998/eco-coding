@@ -1,3 +1,4 @@
+import { isRemoteCommandChannel, validateRemoteCommandArgs } from "@eco/shared";
 import {
   buildEventCenterJsonRpcFailure,
   buildEventCenterJsonRpcNotification,
@@ -67,6 +68,9 @@ export class DesktopEventCenter {
   }
 
   registerCommand(channel: IpcChannel, handler: EventCenterCommandHandler): void {
+    if (!isRemoteCommandChannel(channel)) {
+      throw new Error(`Event center command is not remote-enabled: ${channel}`);
+    }
     if (this.commandHandlers.has(channel)) {
       throw new Error(`Event center command already registered: ${channel}`);
     }
@@ -170,6 +174,27 @@ export class DesktopEventCenter {
             id,
             EVENT_CENTER_JSON_RPC_ERROR.invalidParams,
             `Unknown desktop command channel: ${request.value.params.channel}`,
+          )
+        : undefined;
+    }
+
+    if (!isRemoteCommandChannel(request.value.params.channel)) {
+      return shouldRespond
+        ? buildEventCenterJsonRpcFailure(
+            id,
+            EVENT_CENTER_JSON_RPC_ERROR.methodNotFound,
+            `Desktop command is not remote-enabled: ${request.value.params.channel}`,
+          )
+        : undefined;
+    }
+
+    const argsValidation = validateRemoteCommandArgs(request.value.params.channel, request.value.params.args);
+    if (!argsValidation.ok) {
+      return shouldRespond
+        ? buildEventCenterJsonRpcFailure(
+            id,
+            EVENT_CENTER_JSON_RPC_ERROR.invalidParams,
+            argsValidation.message ?? "Desktop command args are invalid.",
           )
         : undefined;
     }

@@ -26,7 +26,6 @@ export {
   buildEcoJsonRpcNotification,
   buildEcoJsonRpcRequest,
   buildEcoJsonRpcSuccess,
-  classifyEcoCommandRisk,
   ECO_JSON_RPC_VERSION,
   ECO_RPC_ERROR,
   ECO_RPC_METHODS,
@@ -36,6 +35,14 @@ export {
   isEcoJsonRpcRequest,
   isEcoJsonRpcResponse,
 } from "./event-rpc";
+export type { RemoteCommandArgsValidation, RemoteCommandDefinition } from "./remote-command-registry";
+export {
+  getRemoteCommandDefinition,
+  isRemoteCommandChannel,
+  listRemoteCommandDefinitions,
+  REMOTE_COMMAND_DEFINITIONS,
+  validateRemoteCommandArgs,
+} from "./remote-command-registry";
 
 export type ModelCapability =
   | "messages_api"

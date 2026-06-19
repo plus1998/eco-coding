@@ -54,9 +54,7 @@ export interface EcoJsonRpcFailure {
   error: EcoJsonRpcError;
 }
 
-export type EcoJsonRpcResponse<TResult = unknown> =
-  | EcoJsonRpcSuccess<TResult>
-  | EcoJsonRpcFailure;
+export type EcoJsonRpcResponse<TResult = unknown> = EcoJsonRpcSuccess<TResult> | EcoJsonRpcFailure;
 
 export type EcoJsonRpcMessage<TParams = unknown, TResult = unknown> =
   | EcoJsonRpcRequest<TParams>
@@ -117,34 +115,6 @@ export interface EcoEventEnvelope<TPayload = unknown> {
   aggregateKey?: string;
   metadata?: Record<string, unknown>;
 }
-
-const PRIVILEGED_CHANNEL_PREFIXES = [
-  "approval:",
-  "bash-approval:",
-  "git:",
-  "model-provider:",
-  "model-route-profile:",
-  "proxy-bridge-settings:",
-  "session-sync-settings:",
-  "thread:approve-plan",
-  "thread:rollback-to",
-  "thread:revert-applied-diff",
-  "thread:rewind-checkpoint",
-  "worktree:apply",
-] as const;
-
-const EXECUTE_CHANNEL_PREFIXES = [
-  "thread:start",
-  "thread:continue",
-  "thread:retry",
-  "thread:follow-up-",
-  "workspace:start-package-script",
-  "workspace:stop-package-script",
-  "terminal:",
-  "conformance:",
-] as const;
-
-const WRITE_SAFE_CHANNEL_SUFFIXES = [":save", ":delete", ":import", ":restore", ":reorder"] as const;
 
 export function buildEcoJsonRpcSuccess<TResult>(
   id: EcoJsonRpcId,
@@ -252,19 +222,6 @@ export function isEcoInvokeParams(value: unknown): value is EcoInvokeParams {
     (params.deadlineMs === undefined || isPositiveInteger(params.deadlineMs)) &&
     (params.idempotencyKey === undefined || typeof params.idempotencyKey === "string")
   );
-}
-
-export function classifyEcoCommandRisk(channel: string): EcoCommandRisk {
-  if (PRIVILEGED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix))) {
-    return "privileged";
-  }
-  if (EXECUTE_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix))) {
-    return "execute";
-  }
-  if (WRITE_SAFE_CHANNEL_SUFFIXES.some((suffix) => channel.endsWith(suffix))) {
-    return "write_safe";
-  }
-  return "read";
 }
 
 function isEcoJsonRpcId(value: unknown): value is EcoJsonRpcId | undefined {

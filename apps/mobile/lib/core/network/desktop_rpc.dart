@@ -188,11 +188,16 @@ class DesktopRpc {
     );
   }
 
-  Future<void> followUpCancel(String followUpId) async {
+  Future<void> followUpCancel({
+    required String threadId,
+    required String followUpId,
+  }) async {
     await _client.invoke(
       desktopDeviceId,
       'thread:follow-up-cancel',
-      [followUpId],
+      [
+        {'threadId': threadId, 'followUpId': followUpId},
+      ],
     );
   }
 

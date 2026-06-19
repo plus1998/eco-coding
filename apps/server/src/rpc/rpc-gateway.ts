@@ -18,10 +18,11 @@ import {
   isEcoJsonRpcNotification,
   isEcoJsonRpcRequest,
   isEcoJsonRpcResponse,
+  type RemoteCommandDefinition,
 } from "@eco/shared";
 import type { SqliteStore } from "../db/sqlite-store";
 import type { PresenceStore } from "../presence/presence-store";
-import { PolicyEngine } from "./policy";
+import { type InvokeAuthorization, PolicyEngine } from "./policy";
 
 export interface RpcPeer {
   sessionId: string;
@@ -57,6 +58,7 @@ interface PendingRequest {
   mobileDeviceId: string;
   desktopDeviceId: string;
   channel: string;
+  command: RemoteCommandDefinition;
   timeout: ReturnType<typeof setTimeout>;
 }
 
@@ -155,7 +157,9 @@ export class RpcGateway {
       return;
     }
     if (request.method !== ECO_RPC_METHODS.invoke) {
-      peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.methodNotFound, "Method was not found."));
+      peer.send(
+        buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.methodNotFound, "Method was not found."),
+      );
       return;
     }
     await this.routeMobileInvoke(peer, request as EcoJsonRpcRequest<EcoInvokeParams>);
@@ -193,22 +197,41 @@ export class RpcGateway {
 
   private async routeMobileInvoke(peer: RpcPeer, request: EcoJsonRpcRequest<EcoInvokeParams>): Promise<void> {
     if (peer.deviceKind !== "mobile") {
-      peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.forbidden, "Only mobile devices can invoke PC commands."));
+      peer.send(
+        buildEcoJsonRpcFailure(
+          request.id ?? null,
+          ECO_RPC_ERROR.forbidden,
+          "Only mobile devices can invoke PC commands.",
+        ),
+      );
       return;
     }
     if (!isEcoInvokeParams(request.params)) {
-      peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.invalidParams, "eco.invoke params are invalid."));
+      peer.send(
+        buildEcoJsonRpcFailure(
+          request.id ?? null,
+          ECO_RPC_ERROR.invalidParams,
+          "eco.invoke params are invalid.",
+        ),
+      );
       return;
     }
     const params = request.params;
     const binding = this.store.findActiveBinding(peer.userId, params.desktopDeviceId, peer.deviceId);
     if (!binding) {
       this.auditInvokeRejected(peer, params, "Device is not bound to the target desktop.");
-      peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.forbidden, "Device is not bound to the target desktop."));
+      peer.send(
+        buildEcoJsonRpcFailure(
+          request.id ?? null,
+          ECO_RPC_ERROR.forbidden,
+          "Device is not bound to the target desktop.",
+        ),
+      );
       return;
     }
+    let authorization: InvokeAuthorization;
     try {
-      this.policy.authorizeMobileInvoke({
+      authorization = this.policy.authorizeMobileInvoke({
         params,
         mobileCapabilities: peer.capabilities,
         binding,
@@ -221,8 +244,16 @@ export class RpcGateway {
     }
     const desktop = this.desktops.get(params.desktopDeviceId);
     if (!desktop) {
-      this.auditInvokeRejected(peer, params, "Target desktop is offline.", "target_offline");
-      peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.targetOffline, "Target desktop is offline."));
+      this.auditInvokeRejected(
+        peer,
+        params,
+        "Target desktop is offline.",
+        "target_offline",
+        authorization.command,
+      );
+      peer.send(
+        buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.targetOffline, "Target desktop is offline."),
+      );
       return;
     }
 
@@ -240,6 +271,7 @@ export class RpcGateway {
         targetDeviceId: params.desktopDeviceId,
         rpcMethod: ECO_RPC_METHODS.invoke,
         channel: params.channel,
+        metadata: commandAuditMetadata(authorization.command),
         now: this.clock().toISOString(),
       });
     }, timeoutMs);
@@ -251,6 +283,7 @@ export class RpcGateway {
       mobileDeviceId: peer.deviceId,
       desktopDeviceId: params.desktopDeviceId,
       channel: params.channel,
+      command: authorization.command,
       timeout,
     });
 
@@ -277,6 +310,7 @@ export class RpcGateway {
       rpcMethod: ECO_RPC_METHODS.invoke,
       channel: params.channel,
       metadata: {
+        ...commandAuditMetadata(authorization.command),
         requestId: params.requestId ?? serverId,
       },
       now: this.clock().toISOString(),
@@ -294,7 +328,14 @@ export class RpcGateway {
     clearTimeout(pending.timeout);
     this.pending.delete(response.id);
     if ("error" in response) {
-      pending.mobile.send(buildEcoJsonRpcFailure(pending.originalId, response.error.code, response.error.message, response.error.data));
+      pending.mobile.send(
+        buildEcoJsonRpcFailure(
+          pending.originalId,
+          response.error.code,
+          response.error.message,
+          response.error.data,
+        ),
+      );
       this.store.createAuditLog({
         id: createId("aud"),
         userId: pending.userId,
@@ -306,6 +347,7 @@ export class RpcGateway {
         channel: pending.channel,
         errorCode: response.error.code,
         errorMessage: response.error.message,
+        metadata: commandAuditMetadata(pending.command),
         now: this.clock().toISOString(),
       });
       return;
@@ -320,6 +362,7 @@ export class RpcGateway {
       targetDeviceId: pending.desktopDeviceId,
       rpcMethod: ECO_RPC_METHODS.invoke,
       channel: pending.channel,
+      metadata: commandAuditMetadata(pending.command),
       now: this.clock().toISOString(),
     });
   }
@@ -331,7 +374,13 @@ export class RpcGateway {
       }
       clearTimeout(pending.timeout);
       this.pending.delete(pending.serverId);
-      pending.mobile.send(buildEcoJsonRpcFailure(pending.originalId, ECO_RPC_ERROR.targetOffline, "Target desktop disconnected."));
+      pending.mobile.send(
+        buildEcoJsonRpcFailure(
+          pending.originalId,
+          ECO_RPC_ERROR.targetOffline,
+          "Target desktop disconnected.",
+        ),
+      );
       this.store.createAuditLog({
         id: createId("aud"),
         userId: pending.userId,
@@ -343,6 +392,7 @@ export class RpcGateway {
         channel: pending.channel,
         errorCode: ECO_RPC_ERROR.targetOffline,
         errorMessage: "Target desktop disconnected.",
+        metadata: commandAuditMetadata(pending.command),
         now: this.clock().toISOString(),
       });
     }
@@ -366,6 +416,7 @@ export class RpcGateway {
     params: EcoInvokeParams,
     message: string,
     reason = "forbidden",
+    command?: RemoteCommandDefinition,
   ): void {
     this.store.createAuditLog({
       id: createId("aud"),
@@ -377,13 +428,24 @@ export class RpcGateway {
       rpcMethod: ECO_RPC_METHODS.invoke,
       channel: params.channel,
       errorMessage: message,
-      metadata: { reason },
+      metadata: { reason, ...(command ? commandAuditMetadata(command) : {}) },
       now: this.clock().toISOString(),
     });
   }
 }
 
-function parseJsonRpc(rawMessage: string | Uint8Array): { ok: true; value: unknown } | { ok: false; error: string } {
+function commandAuditMetadata(command: RemoteCommandDefinition): Record<string, unknown> {
+  return {
+    remoteCommand: command.channel,
+    remoteCommandAction: command.auditAction,
+    remoteCommandRisk: command.risk,
+    requiresConfirmation: command.requiresConfirmation,
+  };
+}
+
+function parseJsonRpc(
+  rawMessage: string | Uint8Array,
+): { ok: true; value: unknown } | { ok: false; error: string } {
   try {
     const text = typeof rawMessage === "string" ? rawMessage : new TextDecoder().decode(rawMessage);
     return { ok: true, value: JSON.parse(text) as unknown };
