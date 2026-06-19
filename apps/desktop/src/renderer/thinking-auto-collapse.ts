@@ -1,5 +1,5 @@
 export const THINKING_AUTO_COLLAPSE_READ_MS = 7000;
-export const THINKING_COLLAPSE_MS = 320;
+export const THINKING_COLLAPSE_MS = 420;
 
 export function shouldScheduleThinkingAutoCollapse({
   streaming,

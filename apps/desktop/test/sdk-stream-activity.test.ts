@@ -117,6 +117,36 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("preserves full Bash command detail in structured metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const longCommand =
+    "bun test apps/desktop/test/event-center.test.ts apps/desktop/test/event-center-http.test.ts --filter long";
+  const emitted: Array<{ tool?: { name: string; detail?: string } }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "coder",
+      payload: {
+        type: "tool_use",
+        tool_name: "Bash",
+        tool_use_id: "toolu_bash_long",
+        input: { command: longCommand },
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      emitted.push({ ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted[0]?.tool).toEqual({
+    name: "Bash",
+    detail: longCommand,
+    toolUseId: "toolu_bash_long",
+  });
+});
+
 test("emits permission denied tool failures with structured metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

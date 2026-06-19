@@ -2798,9 +2798,36 @@ html[data-window-focused="true"] .codex-sidebar {
   background: var(--status-deny-bg);
 }
 
-.bash-approval-command {
-  max-height: 160px;
+.bash-approval-command-wrap {
   margin: 0 0 14px;
+}
+
+.bash-approval-command-body-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.bash-approval-command-body-wrap.is-toggleable {
+  cursor: pointer;
+}
+
+.bash-approval-command-body-wrap.is-toggleable:disabled {
+  cursor: default;
+}
+
+.bash-approval-command-body-wrap.collapsed .bash-approval-command {
+  overflow: hidden;
+}
+
+.bash-approval-command {
+  margin: 0;
   overflow: auto;
   color: #a3a3a3;
   background: transparent;
@@ -2810,6 +2837,35 @@ html[data-window-focused="true"] .codex-sidebar {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.bash-approval-command-fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 48px;
+  background: linear-gradient(to bottom, rgba(26, 26, 26, 0), #1a1a1a 72%);
+  pointer-events: none;
+}
+
+.bash-approval-command-hint {
+  margin: 0;
+  padding: 0 0 2px;
+  border: 0;
+  background: transparent;
+  color: #a3a3a3;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.bash-approval-command-hint:hover {
+  color: #d4d4d4;
 }
 
 .bash-approval-option-list {
@@ -2862,16 +2918,6 @@ html[data-window-focused="true"] .codex-sidebar {
   color: #f5f5f5;
   font-size: 14px;
   line-height: 1.4;
-}
-
-.bash-approval-option-nav {
-  display: inline-flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0;
-  margin-left: auto;
-  color: #737373;
 }
 
 .bash-approval-footer {
@@ -4401,7 +4447,9 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .subagent-run-status {
-  margin: 4px 0 0;
+  flex: 1;
+  min-width: 0;
+  margin: 2px 0 0;
   padding-left: 0;
   color: #a3a3a3;
   font-size: 13px;
@@ -4588,7 +4636,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-thinking-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   padding: 8px 12px;
   border: none;
@@ -4607,14 +4655,28 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-thinking-preview {
-  flex: 1;
+  flex: 0 1 0;
   min-width: 0;
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 400;
   color: #8a8a8a;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    flex 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.run-log-thinking-preview.is-visible {
+  flex: 1 1 auto;
+  max-width: 100%;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .run-log-thinking.streaming .run-log-thinking-label {
@@ -4689,7 +4751,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .run-log-thinking-chevron {
   margin-left: auto;
   color: #525252;
-  transition: transform 0.15s ease;
+  transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .run-log-thinking-chevron.open {
@@ -4702,13 +4764,19 @@ html[data-window-focused="true"] .codex-sidebar {
   opacity: 0;
   overflow: hidden;
   transition:
-    grid-template-rows 0.32s ease,
-    opacity 0.28s ease;
+    grid-template-rows 0.42s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.36s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .run-log-thinking-body-shell.open {
   grid-template-rows: 1fr;
   opacity: 1;
+}
+
+.run-log-thinking.is-collapsing .run-log-thinking-body-shell {
+  transition:
+    grid-template-rows 0.42s cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 0.36s cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 .run-log-thinking-body-inner {
@@ -4898,9 +4966,45 @@ html[data-window-focused="true"] .codex-sidebar {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  color: #c8c8c8;
-  font-size: 14px;
+  color: #a3a3a3;
+  font-size: 13px;
   line-height: 1.45;
+}
+
+.run-log-action-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-log-action-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.run-log-action-trigger.is-expandable {
+  cursor: pointer;
+}
+
+.run-log-action-trigger.is-expandable:hover .run-log-action-label {
+  color: #c8c8c8;
+}
+
+.run-log-action-trigger.is-running .run-log-action-icon {
+  opacity: 0.85;
+}
+
+.run-log-action-trigger.is-pending .run-log-action-icon {
+  opacity: 0.72;
 }
 
 .run-log-action-icon-wrap {
@@ -4909,14 +5013,6 @@ html[data-window-focused="true"] .codex-sidebar {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-}
-
-.run-log-action-icon-wrap--running .run-log-action-icon {
-  opacity: 0.85;
-}
-
-.run-log-action-icon-wrap--pending .run-log-action-icon {
-  opacity: 0.7;
 }
 
 .run-log-action-status-icon {
@@ -4940,7 +5036,48 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-action-label {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.run-log-action--terminal .run-log-action-label {
+  font-family: inherit;
+}
+
+.run-log-action-detail-shell {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.run-log-action-detail-shell.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.run-log-action-detail-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.run-log-action-detail {
+  margin: 8px 0 0 22px;
+  padding: 0;
+  color: #8a8a8a;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
@@ -11996,11 +12133,26 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-feed-entry {
-  margin-bottom: 20px;
+  margin: 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-feed-entry--tight {
-  margin-bottom: 2px;
+.codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry + .run-log-feed-entry {
+  margin-top: var(--codex-feed-gap-block);
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry--tight
+  + .run-log-feed-entry--tight,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry--tight
+  + .run-log-feed-entry:not(.run-log-feed-entry--tight),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry:not(.run-log-feed-entry--tight)
+  + .run-log-feed-entry--tight {
+  margin-top: var(--codex-feed-gap-step);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-progress,
@@ -12036,6 +12188,20 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .work-session-preview,
 .codex-main:not(.codex-main-landing) .work-session-details-compact-scroll {
   border-left-color: var(--codex-log-line);
+}
+
+.codex-main:not(.codex-main-landing) .work-session-details-compact-scroll {
+  gap: var(--codex-feed-gap-step);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt {
+  margin: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content p,
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ul,
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ol {
+  margin: 0.5em 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-narrative .run-log-narrative-body,
@@ -12134,11 +12300,27 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-action {
-  gap: 10px;
+  gap: 8px;
+  align-items: center;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action-trigger {
+  gap: 8px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action-trigger.is-expandable:hover .run-log-action-label {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-action-detail {
+  margin-top: 6px;
+  margin-left: 22px;
+  color: var(--codex-log-faint);
+  font-size: 12px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-context-compaction {
-  margin: 20px 0 22px;
+  margin: 0;
   color: var(--codex-log-muted);
   font-size: 12px;
   font-weight: 600;
@@ -12167,11 +12349,11 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-agent-echo {
-  gap: 8px;
+  gap: var(--codex-feed-gap-step);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-agent-echo-badge {
-  margin-bottom: -2px;
+  margin-bottom: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-usage-badge,
@@ -12189,6 +12371,12 @@ html[data-window-focused="true"] .settings-nav {
 .codex-main:not(.codex-main-landing) .run-log-thinking-header {
   gap: 8px;
   padding: 0;
+  cursor: pointer;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-header:hover .run-log-thinking-label,
+.codex-main:not(.codex-main-landing) .run-log-thinking-header:hover .run-log-thinking-preview.is-visible {
+  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-label,
@@ -12200,7 +12388,7 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body-shell.open .run-log-thinking-body {
-  margin-top: 10px;
+  margin-top: var(--codex-feed-gap-step);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {
@@ -12256,7 +12444,7 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-status {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-loading {
@@ -12367,6 +12555,18 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .bash-approval-command {
   color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-command-fade {
+  background: linear-gradient(to bottom, rgba(26, 26, 26, 0), var(--codex-panel-bg, #1a1a1a) 72%);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-command-hint {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .bash-approval-command-hint:hover {
+  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .bash-approval-option-row.is-highlighted,

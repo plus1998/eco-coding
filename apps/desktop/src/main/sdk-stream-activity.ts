@@ -458,7 +458,7 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
     readString(record.full_command) ?? readString(record.bash_command) ?? readString(record.command);
   return (
     (filePath ? pathBasename(filePath) : undefined) ??
-    (command ? truncateText(command, 80) : undefined) ??
+    command ??
     readString(record.pattern) ??
     readString(record.query) ??
     readString(record.url)
@@ -504,10 +504,6 @@ function pathBasename(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
   const parts = normalized.split("/");
   return parts[parts.length - 1] || filePath;
-}
-
-function truncateText(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}…` : value;
 }
 
 interface ParsedOtelToolLine {

@@ -215,6 +215,26 @@ export function activityLabelIncludesAgentRole(
   return false;
 }
 
+export function clampActivityPreviewLine(text: string, max = 56): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  if (!oneLine || oneLine.length <= max) {
+    return oneLine;
+  }
+  return `${oneLine.slice(0, max - 1)}…`;
+}
+
+/** Compact single-line preview for subagent cards and status rows. */
+export function formatToolStatusPreview(toolName: string, detail?: string, max = 56): string {
+  const normalizedDetail = detail?.trim();
+  if (!normalizedDetail) {
+    return TOOL_VERB_LABELS[toolName] ?? toolName;
+  }
+  if (toolName === "Bash") {
+    return clampActivityPreviewLine(normalizedDetail, max);
+  }
+  return clampActivityPreviewLine(formatToolDisplayLabel(toolName, normalizedDetail), max);
+}
+
 export function formatToolDisplayLabel(toolName: string, detail?: string): string {
   const normalizedDetail = detail?.trim() || undefined;
   if (toolName === "Skill" || (normalizedDetail && normalizedDetail.endsWith(" 技能"))) {

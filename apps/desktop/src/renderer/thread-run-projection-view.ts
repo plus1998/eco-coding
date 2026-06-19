@@ -6,9 +6,11 @@ import type {
 } from "../shared/ipc";
 import {
   bashApprovalPhaseToLifecycle,
+  clampActivityPreviewLine,
   compareToolActionLifecyclePriority,
   formatMcpToolDisplayName,
   formatToolDisplayLabel,
+  formatToolStatusPreview,
   isMcpToolName,
   parseBashApprovalActivityText,
   parseToolActionDisplayLabel,
@@ -771,9 +773,9 @@ export function resolveProjectionAgentStatusText(agent: ThreadRunProjectionAgent
   const latest = agent.latestActivity?.trim();
   if (!latest || isProjectionLifecycleText(latest) || latest === "状态已更新") {
     const action = findLatestAgentToolAction(agent.timeline);
-    return action ? resolveProjectionToolActionLabel(action) : undefined;
+    return action ? resolveProjectionToolStatusPreview(action) : undefined;
   }
-  return latest;
+  return clampActivityPreviewLine(latest);
 }
 
 function findLatestAgentSpeechSummary(
@@ -822,12 +824,11 @@ function findLatestAgentToolAction(
 }
 
 function firstReadableLine(text: string): string {
-  return (
+  return clampActivityPreviewLine(
     text
       .split(/\r?\n/u)
       .map((line) => line.trim())
-      .find(Boolean)
-      ?.slice(0, 160) ?? ""
+      .find(Boolean) ?? "",
   );
 }
 
@@ -981,6 +982,19 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
     return base;
   }
   return `${base} (${(tool.durationMs / 1000).toFixed(1)}s)`;
+}
+
+function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineItem): string {
+  const metadataTool = readProjectionToolMetadata(item);
+  if (metadataTool) {
+    const base = formatToolStatusPreview(metadataTool.name, metadataTool.detail);
+    if (metadataTool.durationMs === undefined) {
+      return base;
+    }
+    return `${base} (${(metadataTool.durationMs / 1000).toFixed(1)}s)`;
+  }
+  const label = resolveProjectionToolActionLabel(item);
+  return clampActivityPreviewLine(label.replace(/^Tool:\s*/iu, "").replace(/\s+\(\d+(?:\.\d+)?s\)$/iu, "").trim());
 }
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {

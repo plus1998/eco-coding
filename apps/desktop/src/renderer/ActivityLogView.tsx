@@ -332,7 +332,9 @@ function ProjectionActivityLogView({
   return (
     <div className="run-log">
       {showThreadPrompt && thread?.prompt ? (
-        <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />
+        wrapRunLogFeedEntry(
+          <UserPromptBlock text={thread.prompt} {...(onRestorePrompt && { onRestorePrompt })} />,
+        )
       ) : null}
       {viewModel.mainFeedEntries.map((entry) => (
         <ProjectionMainFeedEntry
@@ -356,7 +358,11 @@ function ProjectionActivityLogView({
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
   return (
-    block.kind === "action" || block.kind === "model-request" || block.kind === "agent-request"
+    block.kind === "action" ||
+    block.kind === "model-request" ||
+    block.kind === "agent-request" ||
+    block.kind === "thinking" ||
+    block.kind === "tool-failed"
   );
 }
 
@@ -410,7 +416,15 @@ function ProjectionMainFeedEntry({
   }
   return wrapRunLogFeedEntry(
     <ProjectionAgentEchoEntry entry={entry} requestSpansById={requestSpansById} />,
+    { tight: isTightAgentEchoEntry(entry) },
   );
+}
+
+function isTightAgentEchoEntry(
+  entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "agent-echo" }>,
+): boolean {
+  const block = projectionItemToDetailBlock(entry.item);
+  return block ? isTightFeedDetailBlock(block) : false;
 }
 
 function ProjectionAgentEchoEntry({
@@ -568,11 +582,6 @@ function ProjectionSubagentRunRow({
             <span className="subagent-run-title-trailing">
               {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
               {running ? <span className="subagent-run-loading" aria-hidden /> : null}
-              <ChevronDown
-                size={16}
-                className={expanded ? "subagent-run-chevron open" : "subagent-run-chevron"}
-                aria-hidden
-              />
             </span>
           </div>
           <p className="subagent-run-status" title={statusText}>
@@ -685,7 +694,7 @@ function ProjectionTimelineEntry({
         {...(block.streaming !== undefined && { streaming: block.streaming })}
         {...(requestSpan && { requestSpan })}
       />,
-      { compact },
+      { compact, tight: true },
     );
   }
   if (block.kind === "phase") {
@@ -958,11 +967,6 @@ function SubagentRunRow({
             <span className="subagent-run-title-trailing">
               {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
               {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
-              <ChevronDown
-                size={16}
-                className={expanded ? "subagent-run-chevron open" : "subagent-run-chevron"}
-                aria-hidden
-              />
             </span>
           </div>
           <p className="subagent-run-status" title={statusText}>
@@ -1377,7 +1381,6 @@ function ThinkingBlock({
   const expanded = Boolean(streaming && hasBody) || !collapsed;
   const preview = hasBody ? thinkingPreviewLine(text) : "";
   const showPreview = hasBody && collapsed && !streaming && !isCollapsing;
-  const showBodyShell = hasBody && (expanded || isCollapsing);
   const bodyOpen = expanded && !isCollapsing;
   const timing = useStreamRequestTiming(
     Boolean(streaming) && !hasBody,
@@ -1474,7 +1477,14 @@ function ThinkingBlock({
 
   return (
     <div
-      className={["run-log-thinking", streaming ? "streaming" : "", !hasBody && streaming ? "empty" : ""]
+      className={[
+        "run-log-thinking",
+        streaming ? "streaming" : "",
+        !hasBody && streaming ? "empty" : "",
+        collapsed && !isCollapsing ? "is-collapsed" : "",
+        isCollapsing ? "is-collapsing" : "",
+        bodyOpen ? "is-expanded" : "",
+      ]
         .filter(Boolean)
         .join(" ")}
     >
@@ -1503,20 +1513,17 @@ function ThinkingBlock({
             ? `思考 ${formatDuration(timing.elapsedMs)}`
             : "思考"}
         </span>
-        {showPreview ? (
-          <span className="run-log-thinking-preview" title={preview}>
+        {hasBody && !streaming ? (
+          <span
+            className={["run-log-thinking-preview", showPreview ? "is-visible" : ""].filter(Boolean).join(" ")}
+            title={preview}
+            aria-hidden={!showPreview}
+          >
             {preview}
           </span>
         ) : null}
-        {!streaming && hasBody ? (
-          <ChevronDown
-            size={14}
-            className={collapsed ? "run-log-thinking-chevron" : "run-log-thinking-chevron open"}
-            aria-hidden
-          />
-        ) : null}
       </button>
-      {showBodyShell ? (
+      {hasBody ? (
         <div
           className={["run-log-thinking-body-shell", bodyOpen ? "open" : ""].filter(Boolean).join(" ")}
         >
@@ -1882,36 +1889,94 @@ function RunLogAction({
   omitRoleLabel?: boolean;
 }) {
   const Icon = actionIcons[icon];
+  const isTerminal = icon === "terminal";
+  const [expanded, setExpanded] = useState(false);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [canExpand, setCanExpand] = useState(false);
   const StatusIcon =
     lifecycle && isApprovalLifecycle(lifecycle) ? approvalLifecycleStatusIcons[lifecycle] : undefined;
   const showRoleLabel =
     Boolean(subagent) &&
     !omitRoleLabel &&
     !activityLabelIncludesAgentRole(subagent!, label, { modelId: modelByRole?.[subagent!] });
-  return (
-    <div className="run-log-action">
-      {showRoleLabel ? (
-        <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
-      ) : null}
-      <span
-        className={[
-          "run-log-action-icon-wrap",
-          lifecycle === "running" ? "run-log-action-icon-wrap--running" : "",
-          lifecycle === "approval-pending" ? "run-log-action-icon-wrap--pending" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        <Icon size={16} className="run-log-action-icon" aria-hidden />
+
+  useLayoutEffect(() => {
+    if (!isTerminal || expanded) {
+      return;
+    }
+    const measure = () => {
+      const node = labelRef.current;
+      const overflows =
+        Boolean(label.includes("\n")) ||
+        label.trim().length > 72 ||
+        Boolean(node && node.scrollWidth > node.clientWidth + 1);
+      setCanExpand(overflows);
+    };
+    measure();
+    const node = labelRef.current;
+    if (!node) {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [expanded, isTerminal, label]);
+
+  const triggerClassName = [
+    "run-log-action-trigger",
+    lifecycle === "running" ? "is-running" : "",
+    lifecycle === "approval-pending" ? "is-pending" : "",
+    canExpand ? "is-expandable" : "",
+    expanded ? "is-expanded" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const row = (
+    <>
+      <span className="run-log-action-icon-wrap" aria-hidden>
+        <Icon size={14} className="run-log-action-icon" />
         {StatusIcon ? (
           <StatusIcon
-            size={11}
+            size={10}
             className="run-log-action-status-icon"
             aria-label={lifecycleStatusLabels[lifecycle!]}
           />
         ) : null}
       </span>
-      <span className="run-log-action-label">{label}</span>
+      <span ref={labelRef} className="run-log-action-label">
+        {label}
+      </span>
+    </>
+  );
+
+  return (
+    <div className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}>
+      {showRoleLabel ? (
+        <span className="run-log-action-role">{formatRoleModelLabel(subagent!, modelByRole?.[subagent!])}</span>
+      ) : null}
+      <div className="run-log-action-main">
+        {isTerminal && canExpand ? (
+          <button
+            type="button"
+            className={triggerClassName}
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            title={expanded ? undefined : label}
+          >
+            {row}
+          </button>
+        ) : (
+          <div className={triggerClassName}>{row}</div>
+        )}
+        {isTerminal && canExpand ? (
+          <div className={["run-log-action-detail-shell", expanded ? "open" : ""].filter(Boolean).join(" ")}>
+            <div className="run-log-action-detail-inner">
+              <pre className="run-log-action-detail">{label}</pre>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

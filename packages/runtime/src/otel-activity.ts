@@ -208,6 +208,7 @@ function logRecordToActivity(
     const durationMs = readAttributeNumber(attrs, "duration_ms");
     const toolUseId = readOtelToolUseId(attrs);
     const suffix = durationMs !== undefined ? ` (${(durationMs / 1000).toFixed(1)}s)` : "";
+    const detailPreview = previewToolDetailForMessage(detail);
     if (success === "false") {
       const error = readAttributeString(attrs, "error") ?? readAttributeString(attrs, "error_type");
       return {
@@ -229,7 +230,9 @@ function logRecordToActivity(
       line: {
         threadId,
         role,
-        message: detail ? `Tool: ${toolName} · ${detail}${suffix}` : `Tool: ${toolName}${suffix}`,
+        message: detailPreview
+          ? `Tool: ${toolName} · ${detailPreview}${suffix}`
+          : `Tool: ${toolName}${suffix}`,
         toolName,
         ...(detail && { toolDetail: detail }),
         ...(toolUseId && { toolUseId }),
@@ -295,6 +298,14 @@ function logRecordToActivity(
   return {};
 }
 
+function previewToolDetailForMessage(detail: string | undefined, maxLength = 80): string | undefined {
+  const trimmed = detail?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 3)}…` : trimmed;
+}
+
 function formatToolDetailFromLog(attrs?: OtlpKeyValue[]): string | undefined {
   const paramsRaw = readAttributeString(attrs, "tool_parameters");
   if (paramsRaw) {
@@ -304,7 +315,7 @@ function formatToolDetailFromLog(attrs?: OtlpKeyValue[]): string | undefined {
         (typeof params.full_command === "string" && params.full_command) ||
         (typeof params.bash_command === "string" && params.bash_command);
       if (command) {
-        return command.length > 80 ? `${command.slice(0, 77)}…` : command;
+        return command;
       }
       const subagent =
         (typeof params.subagent_type === "string" && params.subagent_type) || undefined;

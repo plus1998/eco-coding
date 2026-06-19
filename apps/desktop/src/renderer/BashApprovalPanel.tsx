@@ -1,6 +1,7 @@
-import { AlertTriangle, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
+import { AlertTriangle, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { BashApprovalRequest } from "../shared/ipc";
+import { ExpandablePreBlock } from "./ExpandablePreBlock";
 
 interface BashApprovalPanelProps {
   request: BashApprovalRequest;
@@ -103,7 +104,15 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
           ) : null}
         </header>
 
-        <pre className="bash-approval-command">{detail}</pre>
+        <ExpandablePreBlock
+          text={detail}
+          className="bash-approval-command-wrap"
+          wrapClassName="bash-approval-command-body-wrap"
+          preClassName="bash-approval-command"
+          fadeClassName="bash-approval-command-fade"
+          hintClassName="bash-approval-command-hint"
+          maxCollapsedHeight={160}
+        />
 
         <ul className="bash-approval-option-list" role="listbox" aria-label="Bash 执行选项">
           {options.map((option, optionIndex) => {
@@ -130,12 +139,6 @@ export function BashApprovalPanel({ request, busy, onApprove, onDeny }: BashAppr
                 >
                   <span className="bash-approval-option-index">{optionIndex + 1}.</span>
                   <span className="bash-approval-option-label">{option.label}</span>
-                  {highlighted ? (
-                    <span className="bash-approval-option-nav" aria-hidden>
-                      <ChevronUp size={14} />
-                      <ChevronDown size={14} />
-                    </span>
-                  ) : null}
                 </button>
               </li>
             );

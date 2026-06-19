@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  formatToolStatusPreview,
   parseBashApprovalActivityText,
   readBashApprovalMetadata,
 } from "../src/shared/activity-display";
@@ -25,6 +26,17 @@ test("parseBashApprovalActivityText parses filesystem approval messages", () => 
     detail: "policy blocked",
     phase: "approval-rejected",
   });
+});
+
+test("formatToolStatusPreview shortens long Bash commands for compact status rows", () => {
+  const longCommand =
+    "bun test apps/desktop/test/event-center.test.ts apps/desktop/test/event-center-http.test.ts";
+  expect(formatToolStatusPreview("Bash", longCommand)).toBe(
+    "bun test apps/desktop/test/event-center.test.ts apps/de…",
+  );
+  expect(formatToolStatusPreview("Read", "/src/renderer/ActivityLogView.tsx")).toBe(
+    "/src/renderer/ActivityLogView.tsx",
+  );
 });
 
 test("readBashApprovalMetadata reads structured projection metadata", () => {

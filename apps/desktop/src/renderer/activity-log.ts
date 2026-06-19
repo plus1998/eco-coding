@@ -1250,7 +1250,7 @@ export function resolveSubagentRunStatusLine(
   for (let index = children.length - 1; index >= 0; index -= 1) {
     const block = children[index];
     if (block?.kind === "action" && block.subagent === role) {
-      const line = clampSubagentLogLine(block.label);
+      const line = clampSubagentLogLine(block.label, 56);
       if (line && line !== missionText) {
         return line;
       }
@@ -1926,7 +1926,7 @@ export function resolveLatestSubagentLogLine(
     }
 
     if (block.kind === "action" && block.subagent) {
-      return clampSubagentLogLine(block.label);
+      return clampSubagentLogLine(block.label, 56);
     }
     if (block.kind === "tool-failed" && block.subagent) {
       const detail = block.error?.trim();
