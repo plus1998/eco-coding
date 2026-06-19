@@ -13,6 +13,16 @@ import {
   type BashApprovalResolvePayload,
   type CandidateModelInput,
   type CandidateModelView,
+  type CenterServerAccountAuthResult,
+  type CenterServerCreatePairingResult,
+  type CenterServerRegisterDesktopRequest,
+  type CenterServerRegisterDesktopResult,
+  type CenterServerSettingsInput,
+  type CenterServerSettingsSnapshot,
+  type CenterServerSignInRequest,
+  type CenterServerSignUpRequest,
+  type CenterServerTestConnectionRequest,
+  type CenterServerTestConnectionResult,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -342,6 +352,37 @@ const api = {
     request: SessionSyncTestConnectionRequest,
   ): Promise<SessionSyncTestConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.sessionSyncTestConnection, request);
+  },
+  getCenterServerSettings(): Promise<CenterServerSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSettingsGet);
+  },
+  saveCenterServerSettings(input: CenterServerSettingsInput): Promise<CenterServerSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSettingsSave, input);
+  },
+  registerCenterServerDesktop(
+    request: CenterServerRegisterDesktopRequest,
+  ): Promise<CenterServerRegisterDesktopResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerRegisterDesktop, request);
+  },
+  signUpCenterServer(request: CenterServerSignUpRequest): Promise<CenterServerAccountAuthResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSignUp, request);
+  },
+  signInCenterServer(request: CenterServerSignInRequest): Promise<CenterServerAccountAuthResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSignIn, request);
+  },
+  createCenterServerPairing(): Promise<CenterServerCreatePairingResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerCreatePairing);
+  },
+  connectCenterServer(): Promise<CenterServerSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerConnect);
+  },
+  disconnectCenterServer(): Promise<CenterServerSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerDisconnect);
+  },
+  testCenterServerConnection(
+    request: CenterServerTestConnectionRequest,
+  ): Promise<CenterServerTestConnectionResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerTestConnection, request);
   },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);

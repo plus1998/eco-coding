@@ -9,7 +9,10 @@
   ],
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
+    "dev:server": "bun run --cwd apps/server dev",
+    "start:server": "bun run --cwd apps/server start",
     "build": "bun run --cwd apps/desktop build",
+    "build:server": "bun run --cwd apps/server build",
     "icons": "bun run --cwd apps/desktop icons",
     "pack:mac-arm64": "bun run --cwd apps/desktop pack:mac-arm64",
     "pack:win-x64": "bun run --cwd apps/desktop pack:win-x64",

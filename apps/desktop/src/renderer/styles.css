@@ -9163,11 +9163,10 @@ html[data-window-focused="true"] .settings-nav {
   z-index: 1200;
   max-width: min(420px, calc(100vw - 32px));
   padding: 10px 16px;
-  border: 1px solid #3f6212;
   border-radius: 10px;
+  border: 1px solid transparent;
   background: rgba(23, 23, 23, 0.96);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  color: #d9f99d;
   font-size: 13px;
   line-height: 1.45;
   transform: translateX(-50%);
@@ -9175,9 +9174,20 @@ html[data-window-focused="true"] .settings-nav {
   animation: app-message-in 160ms ease-out;
 }
 
+.app-message--success {
+  border-color: #3f6212;
+  color: #d9f99d;
+}
+
+.app-message--error,
 .app-message-error {
   border-color: #7f1d1d;
   color: #fecaca;
+}
+
+.app-message--info {
+  border-color: #1e3a5f;
+  color: #bfdbfe;
 }
 
 @keyframes app-message-in {
@@ -14266,3 +14276,95 @@ html[data-window-focused="true"] .settings-nav {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* —— Remote connect flow (settings) —— */
+.connect-flow {
+  max-width: 560px;
+}
+
+.connect-flow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.connect-flow-steps li {
+  display: inline-flex;
+  align-items: center;
+}
+
+.connect-flow-steps li + li::before {
+  content: "/";
+  margin: 0 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.connect-flow-steps li.is-current {
+  color: var(--text-primary);
+}
+
+.connect-flow-steps li.is-done {
+  color: var(--text-secondary);
+}
+
+.connect-flow-back {
+  width: fit-content;
+  margin-bottom: 8px;
+}
+
+.connect-flow-header {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.connect-flow-title {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  color: var(--text-heading, var(--text-primary));
+}
+
+.connect-flow-header h1.connect-flow-title {
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 500;
+}
+
+.connect-flow-header .settings-page-desc {
+  margin-inline: auto;
+}
+
+.connect-flow-tabs {
+  margin-top: 0;
+}
+
+.connect-flow-pairing-code {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+
+.connect-flow-badge-error {
+  background: var(--status-deny-bg);
+  color: var(--status-deny-text);
+}
+

@@ -1,6 +1,11 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export type AppMessageKind = "success" | "error";
+export type AppMessageKind = "success" | "error" | "info";
+
+export interface AppMessageState {
+  kind: AppMessageKind;
+  message: string;
+}
 
 interface AppMessageProps {
   message: string;
@@ -9,20 +14,46 @@ interface AppMessageProps {
   durationMs?: number;
 }
 
+const DEFAULT_DURATION_MS: Record<AppMessageKind, number> = {
+  success: 3200,
+  error: 5200,
+  info: 3600,
+};
+
+export function useAppMessage() {
+  const [state, setState] = useState<AppMessageState | undefined>();
+
+  const dismiss = useCallback(() => {
+    setState(undefined);
+  }, []);
+
+  const show = useCallback((kind: AppMessageKind, message: string) => {
+    setState({ kind, message });
+  }, []);
+
+  return {
+    state,
+    dismiss,
+    showSuccess: (message: string) => show("success", message),
+    showError: (message: string) => show("error", message),
+    showInfo: (message: string) => show("info", message),
+  };
+}
+
 export function AppMessage({
   message,
   kind = "success",
   onDismiss,
-  durationMs = kind === "error" ? 4800 : 3200,
+  durationMs = DEFAULT_DURATION_MS[kind],
 }: AppMessageProps) {
   useEffect(() => {
     const timer = setTimeout(onDismiss, durationMs);
     return () => clearTimeout(timer);
-  }, [message, durationMs, onDismiss]);
+  }, [message, durationMs, onDismiss, kind]);
 
   return (
     <div
-      className={kind === "error" ? "app-message app-message-error" : "app-message"}
+      className={`app-message app-message--${kind}`}
       role={kind === "error" ? "alert" : "status"}
       aria-live={kind === "error" ? "assertive" : "polite"}
     >

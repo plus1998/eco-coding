@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { createAgentEvent, hasCapabilities, type ModelProfile } from "../src";
+import {
+  buildEcoJsonRpcRequest,
+  classifyEcoCommandRisk,
+  createAgentEvent,
+  ECO_RPC_METHODS,
+  hasCapabilities,
+  isEcoInvokeParams,
+  type ModelProfile,
+} from "../src";
 
 const model: ModelProfile = {
   id: "sonnet",
@@ -27,4 +35,20 @@ test("creates timestamped agent events", () => {
   });
 
   expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("classifies mobile command risk for server policy", () => {
+  expect(classifyEcoCommandRisk("thread:list")).toBe("read");
+  expect(classifyEcoCommandRisk("thread:start")).toBe("execute");
+  expect(classifyEcoCommandRisk("agent-template:save")).toBe("write_safe");
+  expect(classifyEcoCommandRisk("bash-approval:resolve")).toBe("privileged");
+});
+
+test("validates eco.invoke params with desktop target", () => {
+  const request = buildEcoJsonRpcRequest("req_1", ECO_RPC_METHODS.invoke, {
+    desktopDeviceId: "dev_desktop",
+    channel: "thread:list",
+    args: [],
+  });
+  expect(isEcoInvokeParams(request.params)).toBe(true);
 });

@@ -1,6 +1,42 @@
 export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewer" | "tester";
 export type RuntimeAgentRole = string;
 
+export type {
+  EcoCommandRisk,
+  EcoDeviceCapability,
+  EcoDeviceKind,
+  EcoEventEnvelope,
+  EcoForwardedInvokeParams,
+  EcoInvokeOrigin,
+  EcoInvokeParams,
+  EcoInvokeResult,
+  EcoJsonRpcError,
+  EcoJsonRpcFailure,
+  EcoJsonRpcId,
+  EcoJsonRpcMessage,
+  EcoJsonRpcMethod,
+  EcoJsonRpcNotification,
+  EcoJsonRpcRequest,
+  EcoJsonRpcResponse,
+  EcoJsonRpcSuccess,
+  EcoRpcSource,
+} from "./event-rpc";
+export {
+  buildEcoJsonRpcFailure,
+  buildEcoJsonRpcNotification,
+  buildEcoJsonRpcRequest,
+  buildEcoJsonRpcSuccess,
+  classifyEcoCommandRisk,
+  ECO_JSON_RPC_VERSION,
+  ECO_RPC_ERROR,
+  ECO_RPC_METHODS,
+  ECO_RPC_PROTOCOL_VERSION,
+  isEcoInvokeParams,
+  isEcoJsonRpcNotification,
+  isEcoJsonRpcRequest,
+  isEcoJsonRpcResponse,
+} from "./event-rpc";
+
 export type ModelCapability =
   | "messages_api"
   | "streaming"

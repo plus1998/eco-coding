@@ -324,11 +324,12 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.stdout) ??
     readString(record.result) ??
     readString(record.content);
+  const toolUseId = readString(record.tool_use_id);
   return {
     name,
     ...(command && { detail: command }),
     ...(output && { output }),
-    ...(readString(record.tool_use_id) && { toolUseId: readString(record.tool_use_id) }),
+    ...(toolUseId && { toolUseId }),
     status: "completed",
   };
 }

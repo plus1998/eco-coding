@@ -92,6 +92,11 @@ import {
   type RuntimeRoleRouteConfig,
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
+  type CenterServerRegisterDesktopRequest,
+  type CenterServerSettingsInput,
+  type CenterServerSignInRequest,
+  type CenterServerSignUpRequest,
+  type CenterServerTestConnectionRequest,
   type SessionSyncSettingsInput,
   type SessionSyncTestConnectionRequest,
   type TestProviderConnectionRequest,
@@ -290,6 +295,8 @@ import {
 import type { SdkRunHookContextExtras } from "./sdk-task-run-hooks";
 import { dispatchSdkEventUsageBilling } from "./sdk-usage-billing-dispatch";
 import { handleSdkUsageRecordedEvent } from "./sdk-usage-recorded-event-handler";
+import { CenterServerDesktopClient } from "./center-server-client";
+import { createCenterServerStore } from "./center-server-store";
 import { createSessionSyncStore, type SessionSyncStore } from "./session-sync-store";
 import {
   resolveSingleUsageBillingOrchestration,
@@ -427,6 +434,7 @@ let workflowSettingsStore: WorkflowSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let sessionSyncStore: SessionSyncStore;
+let centerServerClient: CenterServerDesktopClient;
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
@@ -528,6 +536,11 @@ app.whenReady().then(async () => {
   gitSettingsStore = await createGitSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
+  centerServerClient = new CenterServerDesktopClient({
+    store: await createCenterServerStore(dbPath),
+    eventCenter: desktopEventCenter,
+    log: (message) => process.stderr.write(message),
+  });
   agentLifecycle = new AgentLifecycleService(conversationStore);
   pricingCache = new ModelsDevPricingCache({
     cachePath: path.join(app.getPath("userData"), "models-dev-pricing.json"),
@@ -602,6 +615,11 @@ app.whenReady().then(async () => {
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
   registerIpcHandlers();
+  if (centerServerClient.getSnapshot().settings.enabled) {
+    void centerServerClient.start().catch((error) => {
+      process.stderr.write(`[eco] center server auto-connect failed: ${errorMessage(error)}\n`);
+    });
+  }
   await createMainWindow();
 
   app.on("activate", async () => {
@@ -619,6 +637,7 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   flushAllThreadMetrics();
+  centerServerClient?.dispose();
   void closeSdkSessionStore?.();
 });
 
@@ -1913,6 +1932,56 @@ function registerIpcHandlers(): void {
         ...(password ? { password } : {}),
       });
     },
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSettingsGet, async () => centerServerClient.getSnapshot());
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSettingsSave, async (payload: CenterServerSettingsInput) => {
+    const snapshot = centerServerClient.saveSettings(payload);
+    emitSettingsUpdated();
+    return snapshot;
+  });
+
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerRegisterDesktop,
+    async (payload: CenterServerRegisterDesktopRequest) => {
+      const result = await centerServerClient.registerDesktop(payload);
+      emitSettingsUpdated();
+      return result;
+    },
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSignUp, async (payload: CenterServerSignUpRequest) => {
+    const result = await centerServerClient.signUpAndRegisterDesktop(payload);
+    emitSettingsUpdated();
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSignIn, async (payload: CenterServerSignInRequest) => {
+    const result = await centerServerClient.signInAndRegisterDesktop(payload);
+    emitSettingsUpdated();
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerCreatePairing, async () => centerServerClient.createPairing());
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerConnect, async () => {
+    await centerServerClient.start();
+    const snapshot = centerServerClient.getSnapshot();
+    emitSettingsUpdated();
+    return snapshot;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerDisconnect, async () => {
+    centerServerClient.stop();
+    const snapshot = centerServerClient.getSnapshot();
+    emitSettingsUpdated();
+    return snapshot;
+  });
+
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerTestConnection,
+    async (payload: CenterServerTestConnectionRequest) => centerServerClient.testConnection(payload),
   );
 
   registerDesktopCommand(IPC_CHANNELS.threadStart, async (payload: ThreadStartRequest) => {

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  Cloud,
   CornerDownRight,
   Database,
   FolderOpen,
@@ -62,6 +63,10 @@ import {
   type RoutePricingHint,
   resolveThreadAgentProfile,
   runtimeRoleRoutesFromAgentProfile,
+  type CenterServerSettingsInput,
+  type CenterServerSettingsSnapshot,
+  type CenterServerSignInRequest,
+  type CenterServerSignUpRequest,
   type SessionSyncSettingsInput,
   type SessionSyncSettingsSnapshot,
   type SkillsListResult,
@@ -154,6 +159,7 @@ import {
   sortThreadsForSidebar,
 } from "./project-sidebar-order";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
@@ -201,7 +207,7 @@ interface RecentProject {
   importedAt: string;
 }
 
-type SettingsSectionId = "general" | "providers" | "mcp" | "sessionSync" | "models" | "skills" | "git";
+type SettingsSectionId = "general" | "providers" | "mcp" | "sessionSync" | "centerServer" | "models" | "skills" | "git";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -225,6 +231,7 @@ const settingsNavGroups: SettingsNavGroup[] = [
       { id: "providers", label: "Provider", icon: Settings2 },
       { id: "mcp", label: "MCP", icon: Plug },
       { id: "sessionSync", label: "会话同步", icon: Database },
+      { id: "centerServer", label: "连接", icon: Cloud },
     ],
   },
   {
@@ -246,6 +253,17 @@ const emptySessionSyncSettings: SessionSyncSettingsSnapshot = {
     keyPrefix: "eco-sessions",
     hasRedisPassword: false,
   },
+};
+
+const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
+  settings: {
+    enabled: false,
+    serverUrl: "",
+    deviceName: "Eco Desktop",
+    hasDeviceSecret: false,
+    hasRefreshToken: false,
+  },
+  status: { state: "disabled" },
 };
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
@@ -378,6 +396,8 @@ function App() {
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [sessionSyncSettings, setSessionSyncSettings] =
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
+  const [centerServerSettings, setCenterServerSettings] =
+    useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
@@ -459,8 +479,9 @@ function App() {
       window.eco.getModelSettings(),
       window.eco.getMcpSettings(),
       window.eco.getSessionSyncSettings(),
+      window.eco.getCenterServerSettings(),
       window.eco.getProxyBridgeSettings(),
-    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, sessionSync, proxyBridge]) => {
+    ]).then(([currentWorkspace, resolvedHomeProjectPath, currentThreads, modelSettings, mcp, sessionSync, centerServer, proxyBridge]) => {
       setHomeProjectPath(resolvedHomeProjectPath);
       setWorkspace(currentWorkspace);
       if (currentWorkspace) {
@@ -477,6 +498,7 @@ function App() {
       setSettings(modelSettings);
       setMcpSettings(mcp);
       setSessionSyncSettings(sessionSync);
+      setCenterServerSettings(centerServer);
       setProxyBridgeSettings(proxyBridge);
     });
 
@@ -2795,6 +2817,92 @@ function App() {
     return window.eco.testSessionSyncConnection(input);
   }
 
+  async function saveCenterServerSettings(input: CenterServerSettingsInput) {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    setIsSavingSettings(true);
+    try {
+      const snapshot = await window.eco.saveCenterServerSettings(input);
+      setCenterServerSettings(snapshot);
+      return snapshot;
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function applyCenterServerAuthResult(result: {
+    settings: CenterServerSettingsSnapshot["settings"];
+    status: CenterServerSettingsSnapshot["status"];
+  }) {
+    setCenterServerSettings({
+      settings: result.settings,
+      status: result.status,
+    });
+    return {
+      settings: result.settings,
+      status: result.status,
+    };
+  }
+
+  async function signUpCenterServer(request: CenterServerSignUpRequest) {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    setIsSavingSettings(true);
+    try {
+      const result = await window.eco.signUpCenterServer(request);
+      return applyCenterServerAuthResult(result);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function signInCenterServer(request: CenterServerSignInRequest) {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    setIsSavingSettings(true);
+    try {
+      const result = await window.eco.signInCenterServer(request);
+      return applyCenterServerAuthResult(result);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function testCenterServerConnection(serverUrl: string) {
+    if (!window.eco) {
+      return { ok: false, error: "Electron preload API is unavailable." };
+    }
+    return window.eco.testCenterServerConnection({ serverUrl });
+  }
+
+  async function createCenterServerPairing() {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.createCenterServerPairing();
+  }
+
+  async function connectCenterServer() {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    const snapshot = await window.eco.connectCenterServer();
+    setCenterServerSettings(snapshot);
+    return snapshot;
+  }
+
+  async function disconnectCenterServer() {
+    if (!window.eco) {
+      return emptyCenterServerSettings;
+    }
+    const snapshot = await window.eco.disconnectCenterServer();
+    setCenterServerSettings(snapshot);
+    return snapshot;
+  }
+
   function activateWorkspace(nextWorkspace: WorkspaceInfo) {
     setWorkspace(nextWorkspace);
     setSelectedProjectPath(nextWorkspace.path);
@@ -3917,6 +4025,20 @@ function App() {
                 busy={isSavingSettings}
                 onSave={saveSessionSyncSettings}
                 onTestConnection={testSessionSyncConnection}
+              />
+            )}
+
+            {settingsSection === "centerServer" && (
+              <CenterServerSettingsPanel
+                snapshot={centerServerSettings}
+                busy={isSavingSettings}
+                onSave={saveCenterServerSettings}
+                onTestConnection={testCenterServerConnection}
+                onSignUp={signUpCenterServer}
+                onSignIn={signInCenterServer}
+                onCreatePairing={createCenterServerPairing}
+                onConnect={connectCenterServer}
+                onDisconnect={disconnectCenterServer}
               />
             )}
 

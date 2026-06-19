@@ -24,3 +24,8 @@ packages/workspace/test/.git-fixtures/
 .env
 .env.*
 !.env.example
+!**/.env.example
+
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
