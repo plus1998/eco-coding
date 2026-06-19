@@ -47,6 +47,11 @@ test("supports the complete single-instance HTTP management flow", async () => {
       deviceSecret: string;
       tokens: { accessToken: string };
     }>("/v1/devices/register", { kind: "mobile", name: "Phone" }, userAccessToken);
+    const unboundMobile = await client.post<{
+      device: { id: string; kind: "mobile" };
+      deviceSecret: string;
+      tokens: { accessToken: string };
+    }>("/v1/devices/register", { kind: "mobile", name: "Tablet" }, userAccessToken);
 
     const pairingSession = await client.post<{
       pairingId: string;
@@ -79,16 +84,34 @@ test("supports the complete single-instance HTTP management flow", async () => {
       send() {},
     });
 
-    const presence = await client.get<{ devices: Array<{ deviceId: string; deviceKind: string }> }>(
+    const presence = await client.get<{ devices: Array<{ id: string; kind: string; online: boolean }> }>(
       "/v1/presence",
       userAccessToken,
     );
     expect(presence.devices).toContainEqual(
       expect.objectContaining({
-        deviceId: desktop.device.id,
-        deviceKind: "desktop",
+        id: desktop.device.id,
+        kind: "desktop",
+        online: true,
       }),
     );
+
+    const mobilePresence = await client.get<{
+      devices: Array<{ id: string; kind: string; online: boolean }>;
+    }>("/v1/presence", mobile.tokens.accessToken);
+    expect(mobilePresence.devices).toContainEqual(
+      expect.objectContaining({
+        id: desktop.device.id,
+        kind: "desktop",
+        online: true,
+      }),
+    );
+    expect(mobilePresence.devices.some((device) => "deviceId" in device)).toBe(false);
+
+    const unboundMobilePresence = await client.get<{
+      devices: Array<{ id: string; kind: string; online: boolean }>;
+    }>("/v1/presence", unboundMobile.tokens.accessToken);
+    expect(unboundMobilePresence.devices.map((device) => device.id)).not.toContain(desktop.device.id);
 
     const listedDevices = await client.get<{
       devices: Array<{ id: string; online: boolean; disabledAt: string | null }>;
@@ -107,6 +130,23 @@ test("supports the complete single-instance HTTP management flow", async () => {
     );
     expect(listedBindings.bindings).toHaveLength(1);
     expect(listedBindings.bindings[0]?.revokedAt).toBeNull();
+
+    const mobileBindings = await client.get<{ bindings: Array<{ id: string; revokedAt: string | null }> }>(
+      "/v1/bindings",
+      mobile.tokens.accessToken,
+    );
+    expect(mobileBindings.bindings).toEqual([
+      expect.objectContaining({
+        id: claimed.binding.id,
+        revokedAt: null,
+      }),
+    ]);
+
+    const unboundMobileBindings = await client.get<{ bindings: Array<{ id: string }> }>(
+      "/v1/bindings",
+      unboundMobile.tokens.accessToken,
+    );
+    expect(unboundMobileBindings.bindings).toEqual([]);
 
     const revokedBinding = await client.delete<{ binding: { id: string; revokedAt: string } }>(
       `/v1/bindings/${claimed.binding.id}`,

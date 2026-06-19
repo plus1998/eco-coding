@@ -1,23 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { CenterServerDesktopClient } from "../src/main/center-server-client";
-import { createCenterServerStore } from "../src/main/center-server-store";
+import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/center-server-store";
 import { DesktopEventCenter } from "../src/main/event-center";
-import {
-  EVENT_CENTER_JSON_RPC_METHODS,
-  IPC_CHANNELS,
-} from "../src/shared/ipc";
-
-const sqliteAvailable = await (async () => {
-  try {
-    await import("node:sqlite");
-    return true;
-  } catch {
-    return false;
-  }
-})();
+import type { CenterServerConnectionStatus, CenterServerSettingsView } from "../src/shared/center-server";
+import { EVENT_CENTER_JSON_RPC_METHODS, IPC_CHANNELS } from "../src/shared/ipc";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
 
@@ -56,10 +42,8 @@ afterEach(() => {
   FakeWebSocket.instances = [];
 });
 
-test.skipIf(!sqliteAvailable)("center server client refreshes tokens and forwards events over websocket", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-client-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
-  store.saveSettings({
+test("center server client refreshes tokens and forwards events over websocket", async () => {
+  const store = createFakeCenterServerStore({
     enabled: true,
     serverUrl: "http://127.0.0.1:8787",
     deviceId: "dev_1",
@@ -131,10 +115,8 @@ test.skipIf(!sqliteAvailable)("center server client refreshes tokens and forward
   client.dispose();
 });
 
-test.skipIf(!sqliteAvailable)("center server client exchanges device secret when refresh token is absent", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-client-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
-  store.saveSettings({
+test("center server client exchanges device secret when refresh token is absent", async () => {
+  const store = createFakeCenterServerStore({
     enabled: true,
     serverUrl: "http://127.0.0.1:8787",
     deviceId: "dev_1",
@@ -186,10 +168,8 @@ test.skipIf(!sqliteAvailable)("center server client exchanges device secret when
   client.dispose();
 });
 
-test.skipIf(!sqliteAvailable)("start waits for websocket open before reporting connected", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-client-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
-  store.saveSettings({
+test("start waits for websocket open before reporting connected", async () => {
+  const store = createFakeCenterServerStore({
     enabled: true,
     serverUrl: "http://127.0.0.1:8787",
     deviceId: "dev_1",
@@ -243,3 +223,112 @@ test.skipIf(!sqliteAvailable)("start waits for websocket open before reporting c
 
   client.dispose();
 });
+
+test("center server client returns parse errors for malformed json-rpc messages", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 60_000,
+  });
+
+  await client.start();
+  FakeWebSocket.instances[0]?.receive("{");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const lastSent = FakeWebSocket.instances[0]?.sent.at(-1);
+  expect(lastSent).toContain("-32700");
+  expect(lastSent).toContain("Invalid JSON-RPC JSON payload.");
+
+  client.dispose();
+});
+
+function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {
+  let settings: CenterServerSettingsSecret = {
+    enabled: false,
+    serverUrl: "",
+    deviceName: "Eco Desktop",
+    hasDeviceSecret: false,
+    hasRefreshToken: false,
+    deviceSecret: "",
+    accessToken: "",
+    refreshToken: "",
+    ...initial,
+  };
+  settings = normalizeFakeSettings(settings);
+
+  const store = {
+    getSettings(status: CenterServerConnectionStatus = { state: "disconnected" }) {
+      return { settings: toView(settings), status };
+    },
+    getSettingsWithSecrets() {
+      return settings;
+    },
+    saveSettings(input: Partial<CenterServerSettingsSecret>) {
+      settings = normalizeFakeSettings({
+        ...settings,
+        ...input,
+        deviceSecret: input.deviceSecret || settings.deviceSecret,
+        refreshToken: input.refreshToken || settings.refreshToken,
+      });
+      return toView(settings);
+    },
+    saveTokens(input: { accessToken: string; refreshToken?: string; accessTokenExpiresAt: string }) {
+      settings = normalizeFakeSettings({
+        ...settings,
+        accessToken: input.accessToken,
+        refreshToken: input.refreshToken ?? settings.refreshToken,
+        accessTokenExpiresAt: input.accessTokenExpiresAt,
+      });
+      return toView(settings);
+    },
+    markConnected(connectedAt: string) {
+      settings = {
+        ...settings,
+        lastConnectedAt: connectedAt,
+        lastError: undefined,
+      };
+    },
+    markError(message: string) {
+      settings = {
+        ...settings,
+        lastError: message,
+      };
+    },
+  };
+
+  return store as unknown as CenterServerStore;
+}
+
+function normalizeFakeSettings(settings: CenterServerSettingsSecret): CenterServerSettingsSecret {
+  return {
+    ...settings,
+    hasDeviceSecret: Boolean(settings.deviceSecret),
+    hasRefreshToken: Boolean(settings.refreshToken),
+  };
+}
+
+function toView(settings: CenterServerSettingsSecret): CenterServerSettingsView {
+  return {
+    enabled: settings.enabled,
+    serverUrl: settings.serverUrl,
+    deviceName: settings.deviceName,
+    hasDeviceSecret: Boolean(settings.deviceSecret),
+    hasRefreshToken: Boolean(settings.refreshToken),
+    ...(settings.deviceId ? { deviceId: settings.deviceId } : {}),
+    ...(settings.accessTokenExpiresAt ? { accessTokenExpiresAt: settings.accessTokenExpiresAt } : {}),
+    ...(settings.lastConnectedAt ? { lastConnectedAt: settings.lastConnectedAt } : {}),
+    ...(settings.lastError ? { lastError: settings.lastError } : {}),
+  };
+}

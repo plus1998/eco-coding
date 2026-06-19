@@ -45,7 +45,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   }
 
   String? _approvalKey(ThreadSessionState session) {
-    if (session.pendingPlan != null) return 'plan:${session.pendingPlan!.threadId}';
+    if (session.pendingPlan != null) {
+      return 'plan:${session.pendingPlan!.threadId}';
+    }
     if (session.pendingBash != null) {
       return 'bash:${session.pendingBash!.toolUseId}';
     }
@@ -65,7 +67,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(threadSessionProvider(widget.threadId));
-    final runtimeConfig = ref.watch(runtimeConfigProvider) ??
+    final runtimeConfig =
+        ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
         _emptyRuntimeConfig();
 
@@ -83,9 +86,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(session.thread?.title.isNotEmpty == true
-            ? session.thread!.title
-            : '会话'),
+        title: Text(
+          session.thread?.title.isNotEmpty == true
+              ? session.thread!.title
+              : '会话',
+        ),
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) => _handleMenu(value),
@@ -103,16 +108,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             child: session.loading
                 ? const Center(child: CircularProgressIndicator())
                 : session.error != null
-                    ? Center(child: Text(session.error!))
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: session.activities.length,
-                        itemBuilder: (context, index) {
-                          final item = session.activities[index];
-                          return _ActivityBubble(item: item);
-                        },
-                      ),
+                ? Center(child: Text(session.error!))
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: session.activities.length,
+                    itemBuilder: (context, index) {
+                      final item = session.activities[index];
+                      return _ActivityBubble(item: item);
+                    },
+                  ),
           ),
           if (session.followUps.isNotEmpty)
             _FollowUpBar(
@@ -186,9 +191,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
       ref.invalidate(threadListProvider);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -208,9 +213,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -277,9 +282,9 @@ class _ActivityBubble extends StatelessWidget {
           children: [
             Text(
               item.role,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: eco.textMuted,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
             ),
             const SizedBox(height: 4),
             Text(item.message),
@@ -313,7 +318,11 @@ class _FollowUpBar extends StatelessWidget {
             ...followUps.map(
               (item) => ListTile(
                 dense: true,
-                title: Text(item.prompt, maxLines: 2, overflow: TextOverflow.ellipsis),
+                title: Text(
+                  item.prompt,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Text(item.status),
                 trailing: item.status == 'queued'
                     ? IconButton(
@@ -351,55 +360,57 @@ class _ComposerInput extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: EcoColors.bgElevated,
-          border: Border(top: BorderSide(color: ecoThemeExtras(context).borderSubtle)),
+          border: Border(
+            top: BorderSide(color: ecoThemeExtras(context).borderSubtle),
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (attachments.isNotEmpty)
-              SizedBox(
-                height: 48,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: attachments.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) => InputChip(
-                    label: Text('图片 ${index + 1}'),
-                    onDeleted: () => onRemoveAttachment(index),
-                  ),
-                ),
-              ),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: onPickImage,
-                  icon: const Icon(Icons.image_outlined),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    minLines: 1,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      hintText: '发送消息…',
-                      border: OutlineInputBorder(),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (attachments.isNotEmpty)
+                SizedBox(
+                  height: 48,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: attachments.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) => InputChip(
+                      label: Text('图片 ${index + 1}'),
+                      onDeleted: () => onRemoveAttachment(index),
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: onSend,
-                  style: IconButton.styleFrom(
-                    backgroundColor: EcoColors.composerSendBg,
-                    foregroundColor: EcoColors.composerSendText,
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: onPickImage,
+                    icon: const Icon(Icons.image_outlined),
                   ),
-                  icon: const Icon(Icons.arrow_upward, size: 20),
-                ),
-              ],
-            ),
-          ],
-        ),
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: '发送消息…',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onSend,
+                    style: IconButton.styleFrom(
+                      backgroundColor: EcoColors.composerSendBg,
+                      foregroundColor: EcoColors.composerSendText,
+                    ),
+                    icon: const Icon(Icons.arrow_upward, size: 20),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

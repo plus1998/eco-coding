@@ -16,9 +16,9 @@ class EcoCenterClient {
     DateTime Function()? now,
     this.reconnectDelayMs = 3000,
     this.defaultInvokeTimeoutMs = 30000,
-  })  : _store = store,
-        _dio = dio ?? Dio(),
-        _now = now ?? DateTime.now;
+  }) : _store = store,
+       _dio = dio ?? Dio(),
+       _now = now ?? DateTime.now;
 
   final CredentialStore _store;
   final Dio _dio;
@@ -39,8 +39,9 @@ class EcoCenterClient {
 
   final Map<String, Completer<dynamic>> _pendingInvokes = {};
 
-  CenterServerConnectionStatus _status =
-      const CenterServerConnectionStatus(state: EcoConnectionState.disconnected);
+  CenterServerConnectionStatus _status = const CenterServerConnectionStatus(
+    state: EcoConnectionState.disconnected,
+  );
 
   Stream<CenterServerConnectionStatus> get connectionStatus =>
       _connectionController.stream;
@@ -65,18 +66,16 @@ class EcoCenterClient {
   }
 
   Future<void> setSelectedDesktop(String? desktopDeviceId) async {
-    _credentials = _credentials.copyWith(selectedDesktopId: desktopDeviceId);
+    _credentials = desktopDeviceId == null || desktopDeviceId.isEmpty
+        ? _credentials.copyWith(clearSelectedDesktop: true)
+        : _credentials.copyWith(selectedDesktopId: desktopDeviceId);
     await _store.save(_credentials);
   }
 
   Future<bool> testConnection(String serverUrl) async {
     try {
       final normalized = normalizeCenterServerHttpUrl(serverUrl);
-      await _requestJson(
-        serverUrl: normalized,
-        path: '/health',
-        method: 'GET',
-      );
+      await _requestJson(serverUrl: normalized, path: '/health', method: 'GET');
       return true;
     } catch (_) {
       return false;
@@ -102,12 +101,15 @@ class EcoCenterClient {
     );
     final user = PublicUser.fromJson(response['user'] as JsonMap);
     final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
+    final sameAccount = _credentials.userEmail == user.email;
     _credentials = _credentials.copyWith(
       userEmail: user.email,
       userDisplayName: user.displayName,
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
-      accessTokenExpiresAt: tokens.expiresAt,
+      userRefreshToken: tokens.refreshToken,
+      userAccessToken: tokens.accessToken,
+      userAccessTokenExpiresAt: tokens.expiresAt,
+      clearDeviceCredentials: !sameAccount,
+      clearSelectedDesktop: !sameAccount,
     );
     await _store.save(_credentials);
     return user;
@@ -122,19 +124,19 @@ class EcoCenterClient {
       serverUrl: serverUrl,
       path: '/v1/auth/login',
       method: 'POST',
-      body: {
-        'email': email.trim(),
-        'password': password,
-      },
+      body: {'email': email.trim(), 'password': password},
     );
     final user = PublicUser.fromJson(response['user'] as JsonMap);
     final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
+    final sameAccount = _credentials.userEmail == user.email;
     _credentials = _credentials.copyWith(
       userEmail: user.email,
       userDisplayName: user.displayName,
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
-      accessTokenExpiresAt: tokens.expiresAt,
+      userRefreshToken: tokens.refreshToken,
+      userAccessToken: tokens.accessToken,
+      userAccessTokenExpiresAt: tokens.expiresAt,
+      clearDeviceCredentials: !sameAccount,
+      clearSelectedDesktop: !sameAccount,
     );
     await _store.save(_credentials);
     return user;
@@ -160,9 +162,9 @@ class EcoCenterClient {
       deviceId: device.id,
       deviceSecret: deviceSecret,
       deviceName: device.name,
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
-      accessTokenExpiresAt: tokens.expiresAt,
+      deviceRefreshToken: tokens.refreshToken,
+      deviceAccessToken: tokens.accessToken,
+      deviceAccessTokenExpiresAt: tokens.expiresAt,
     );
     await _store.save(_credentials);
     return device;
@@ -186,7 +188,9 @@ class EcoCenterClient {
     return DeviceBinding.fromJson(response['binding'] as JsonMap);
   }
 
-  Future<List<DeviceBinding>> listBindings({bool includeRevoked = false}) async {
+  Future<List<DeviceBinding>> listBindings({
+    bool includeRevoked = false,
+  }) async {
     final serverUrl = _requireServerUrl();
     final accessToken = await _ensureDeviceAccessToken();
     final response = await _requestJson(
@@ -216,7 +220,9 @@ class EcoCenterClient {
 
   Future<JsonMap> getMe() async {
     final serverUrl = _requireServerUrl();
-    final accessToken = await _ensureDeviceAccessToken();
+    final accessToken = _credentials.hasUserSession
+        ? await _ensureUserAccessToken()
+        : await _ensureDeviceAccessToken();
     return _requestJson(
       serverUrl: serverUrl,
       path: '/v1/me',
@@ -238,8 +244,20 @@ class EcoCenterClient {
     _socket?.sink.close();
     _socket = null;
     _emitStatus(
-      const CenterServerConnectionStatus(state: EcoConnectionState.disconnected),
+      const CenterServerConnectionStatus(
+        state: EcoConnectionState.disconnected,
+      ),
     );
+  }
+
+  Future<void> clearSession() async {
+    disconnect();
+    _credentials = _credentials.copyWith(
+      clearUserSession: true,
+      clearDeviceCredentials: true,
+      clearSelectedDesktop: true,
+    );
+    await _store.clearSession();
   }
 
   Future<T> invoke<T>(
@@ -248,7 +266,7 @@ class EcoCenterClient {
     List<dynamic> args, {
     int? deadlineMs,
   }) async {
-    if (_socket == null) {
+    if (_socket == null || _status.state != EcoConnectionState.connected) {
       throw EcoCenterException('WebSocket is not connected.');
     }
     final id = 'mobile_req_${++_rpcCounter}';
@@ -373,7 +391,9 @@ class EcoCenterClient {
     _socket = null;
     if (_intentionallyStopped) {
       _emitStatus(
-        const CenterServerConnectionStatus(state: EcoConnectionState.disconnected),
+        const CenterServerConnectionStatus(
+          state: EcoConnectionState.disconnected,
+        ),
       );
       return;
     }
@@ -443,24 +463,30 @@ class EcoCenterClient {
   }
 
   Future<String> _ensureUserAccessToken() async {
-    if (tokenStillValid(_credentials.accessTokenExpiresAt, _now()) &&
-        _credentials.accessToken != null) {
-      return _credentials.accessToken!;
+    if (tokenStillValid(_credentials.userAccessTokenExpiresAt, _now()) &&
+        _credentials.userAccessToken != null) {
+      return _credentials.userAccessToken!;
     }
-    if (_credentials.refreshToken != null) {
-      final refreshed = await _refreshTokens(_credentials.refreshToken!);
+    if (_credentials.userRefreshToken != null) {
+      final refreshed = await _refreshTokens(
+        _credentials.userRefreshToken!,
+        _TokenScope.user,
+      );
       return refreshed.accessToken;
     }
     throw EcoCenterException('User session expired. Please sign in again.');
   }
 
   Future<String> _ensureDeviceAccessToken() async {
-    if (tokenStillValid(_credentials.accessTokenExpiresAt, _now()) &&
-        _credentials.accessToken != null) {
-      return _credentials.accessToken!;
+    if (tokenStillValid(_credentials.deviceAccessTokenExpiresAt, _now()) &&
+        _credentials.deviceAccessToken != null) {
+      return _credentials.deviceAccessToken!;
     }
-    if (_credentials.refreshToken != null) {
-      final refreshed = await _refreshTokens(_credentials.refreshToken!);
+    if (_credentials.deviceRefreshToken != null) {
+      final refreshed = await _refreshTokens(
+        _credentials.deviceRefreshToken!,
+        _TokenScope.device,
+      );
       return refreshed.accessToken;
     }
     if (_credentials.hasDeviceCredentials) {
@@ -476,9 +502,9 @@ class EcoCenterClient {
       );
       final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
       _credentials = _credentials.copyWith(
-        refreshToken: tokens.refreshToken,
-        accessToken: tokens.accessToken,
-        accessTokenExpiresAt: tokens.expiresAt,
+        deviceRefreshToken: tokens.refreshToken,
+        deviceAccessToken: tokens.accessToken,
+        deviceAccessTokenExpiresAt: tokens.expiresAt,
       );
       await _store.save(_credentials);
       return tokens.accessToken;
@@ -486,7 +512,10 @@ class EcoCenterClient {
     throw EcoCenterException('Device credentials are missing.');
   }
 
-  Future<TokenBundle> _refreshTokens(String refreshToken) async {
+  Future<TokenBundle> _refreshTokens(
+    String refreshToken,
+    _TokenScope scope,
+  ) async {
     final serverUrl = _requireServerUrl();
     final response = await _requestJson(
       serverUrl: serverUrl,
@@ -499,11 +528,17 @@ class EcoCenterClient {
       refreshToken: refreshToken,
       expiresAt: response['expiresAt'] as String,
     );
-    _credentials = _credentials.copyWith(
-      refreshToken: tokens.refreshToken,
-      accessToken: tokens.accessToken,
-      accessTokenExpiresAt: tokens.expiresAt,
-    );
+    _credentials = scope == _TokenScope.user
+        ? _credentials.copyWith(
+            userRefreshToken: tokens.refreshToken,
+            userAccessToken: tokens.accessToken,
+            userAccessTokenExpiresAt: tokens.expiresAt,
+          )
+        : _credentials.copyWith(
+            deviceRefreshToken: tokens.refreshToken,
+            deviceAccessToken: tokens.accessToken,
+            deviceAccessTokenExpiresAt: tokens.expiresAt,
+          );
     await _store.save(_credentials);
     return tokens;
   }
@@ -577,3 +612,5 @@ String parsePairingCodeFromQr(String raw) {
   }
   return trimmed.toUpperCase();
 }
+
+enum _TokenScope { user, device }

@@ -1,12 +1,12 @@
 import type { EcoDeviceKind } from "@eco/shared";
 import { AuthService } from "./auth/auth-service";
+import type { ServerConfig } from "./config";
+import { SqliteStore } from "./db/sqlite-store";
 import { DeviceService } from "./devices/device-service";
 import { PairingService } from "./pairing/pairing-service";
 import { createRedisPresenceStore } from "./presence/presence-store";
-import { RpcGateway, type RpcPeer } from "./rpc/rpc-gateway";
-import { SqliteStore } from "./db/sqlite-store";
-import type { ServerConfig } from "./config";
-import type { AccessTokenClaims, DeviceAccessTokenClaims } from "./types";
+import { type OnlineDeviceSnapshot, RpcGateway, type RpcPeer } from "./rpc/rpc-gateway";
+import type { AccessTokenClaims, DeviceAccessTokenClaims, DeviceBindingRecord, DeviceRecord } from "./types";
 import { toPublicDevice, toPublicDeviceBinding, toPublicUser } from "./types";
 
 interface RpcSocketData {
@@ -304,11 +304,10 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "GET" && url.pathname === "/v1/bindings") {
     const claims = await requireBearer(request, auth);
-    assertCapability(claims, "device:admin");
     return json({
-      bindings: devices
-        .listBindings(claims.userId, { includeRevoked: readBooleanSearchParam(url, "includeRevoked") })
-        .map(toPublicDeviceBinding),
+      bindings: listBindingsVisibleToClaims(devices, claims, {
+        includeRevoked: readBooleanSearchParam(url, "includeRevoked"),
+      }).map(toPublicDeviceBinding),
     });
   }
   const bindingIdFromPath = matchPath(url.pathname, "/v1/bindings/:bindingId")?.bindingId;
@@ -336,7 +335,12 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "GET" && url.pathname === "/v1/presence") {
     const claims = await requireBearer(request, auth);
-    return json({ devices: rpc.listOnlineDevices(claims.userId) });
+    const online = new Map(rpc.listOnlineDevices(claims.userId).map((device) => [device.deviceId, device]));
+    return json({
+      devices: listDevicesVisibleToClaims(devices, claims).map((device) =>
+        toPublicDeviceWithPresence(device, online.get(device.id)),
+      ),
+    });
   }
   if (request.method === "GET" && url.pathname === "/v1/audit-logs") {
     const claims = await requireBearer(request, auth);
@@ -429,10 +433,61 @@ function requireDeviceKind(body: Record<string, unknown>, key: string): EcoDevic
   return value;
 }
 
-function assertCapability(claims: AccessTokenClaims, capability: AccessTokenClaims["capabilities"][number]): void {
+function assertCapability(
+  claims: AccessTokenClaims,
+  capability: AccessTokenClaims["capabilities"][number],
+): void {
   if (!claims.capabilities.includes(capability)) {
     throw new Error(`Missing capability ${capability}.`);
   }
+}
+
+function listBindingsVisibleToClaims(
+  devices: DeviceService,
+  claims: AccessTokenClaims,
+  options: { includeRevoked?: boolean } = {},
+): DeviceBindingRecord[] {
+  const bindings = devices.listBindings(claims.userId, options);
+  if (claims.capabilities.includes("device:admin")) {
+    return bindings;
+  }
+  if (claims.subjectKind !== "device") {
+    throw new Error("Missing capability device:admin.");
+  }
+  return bindings.filter((binding) =>
+    claims.deviceKind === "mobile"
+      ? binding.mobileDeviceId === claims.deviceId
+      : binding.desktopDeviceId === claims.deviceId,
+  );
+}
+
+function listDevicesVisibleToClaims(devices: DeviceService, claims: AccessTokenClaims): DeviceRecord[] {
+  const allDevices = devices.listDevices(claims.userId);
+  if (claims.capabilities.includes("device:admin")) {
+    return allDevices;
+  }
+  if (claims.subjectKind !== "device") {
+    throw new Error("Missing capability device:admin.");
+  }
+
+  const visibleDeviceIds = new Set<string>([claims.deviceId]);
+  for (const binding of listBindingsVisibleToClaims(devices, claims)) {
+    visibleDeviceIds.add(claims.deviceKind === "mobile" ? binding.desktopDeviceId : binding.mobileDeviceId);
+  }
+  return allDevices.filter((device) => visibleDeviceIds.has(device.id));
+}
+
+function toPublicDeviceWithPresence(device: DeviceRecord, onlineDevice?: OnlineDeviceSnapshot) {
+  return {
+    ...toPublicDevice(device),
+    online: Boolean(onlineDevice),
+    ...(onlineDevice
+      ? {
+          connectedAt: onlineDevice.connectedAt,
+          lastSeenAt: onlineDevice.lastSeenAt,
+        }
+      : {}),
+  };
 }
 
 function readBooleanSearchParam(url: URL, key: string): boolean {

@@ -37,7 +37,7 @@ class ThreadsScreen extends ConsumerWidget {
                       ref.read(threadListProvider.notifier).refresh(),
                   child: ListView.separated(
                     itemCount: threads.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final thread = threads[index];
                       return ListTile(
@@ -104,9 +104,9 @@ class ThreadsScreen extends ConsumerWidget {
       workspaceLabel = '${info.name} (${info.branch ?? 'no branch'})';
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取工作区失败: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('获取工作区失败: $error')));
       }
       return;
     }
@@ -116,6 +116,8 @@ class ThreadsScreen extends ConsumerWidget {
     final modelSettings = await ref.read(modelSettingsProvider.future);
     final workflow = await ref.read(workflowSettingsProvider.future);
     runtimeConfig ??= _defaultRuntimeConfig(modelSettings, workflow);
+
+    if (!context.mounted) return;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -159,9 +161,9 @@ class ThreadsScreen extends ConsumerWidget {
                     ref.invalidate(threadListProvider);
                   } catch (error) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error.toString())),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(error.toString())));
                     }
                   }
                 },
@@ -179,8 +181,11 @@ class ThreadsScreen extends ConsumerWidget {
     ModelSettingsSnapshot? modelSettings,
     WorkflowSettingsSnapshot? workflow,
   ) {
-    final profileId = modelSettings?.orchestrationProfiles.firstOrNull?.id ?? '';
-    final subagents = {for (final role in subagentRoles) role: role == 'explore'};
+    final profileId =
+        modelSettings?.orchestrationProfiles.firstOrNull?.id ?? '';
+    final subagents = {
+      for (final role in subagentRoles) role: role == 'explore',
+    };
     return ThreadRuntimeConfig(
       routeProfileId: profileId,
       agentProfileId: profileId.isEmpty ? null : profileId,

@@ -47,7 +47,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   data: (creds) => Card(
                     child: ListTile(
                       title: Text(creds.userEmail ?? '未登录'),
-                      subtitle: Text(creds.userDisplayName ?? creds.deviceName ?? ''),
+                      subtitle: Text(
+                        creds.userDisplayName ?? creds.deviceName ?? '',
+                      ),
                     ),
                   ),
                   loading: () => const LinearProgressIndicator(),
@@ -68,7 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       );
                       ref.invalidate(workflowSettingsProvider);
                     } catch (error) {
-                      if (mounted) {
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(error.toString())),
                         );
@@ -82,14 +84,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   leading: const Icon(Icons.logout),
                   onTap: () async {
                     final client = ref.read(ecoCenterClientProvider);
-                    client.disconnect();
-                    await ref.read(credentialStoreProvider).clearSession();
+                    await client.clearSession();
                     ref.invalidate(credentialsProvider);
                     ref.invalidate(bindingsProvider);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已退出登录')),
-                      );
+                    ref.invalidate(presenceProvider);
+                    ref.read(selectedDesktopIdProvider.notifier).state = null;
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('已退出登录')));
                     }
                   },
                 ),

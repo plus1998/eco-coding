@@ -86,7 +86,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -117,7 +119,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final presenceAsync = ref.watch(presenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
     final credentials = ref.watch(credentialsProvider).valueOrNull;
-    final loggedIn = credentials?.userEmail != null;
+    final loggedIn = credentials?.hasUserSession ?? false;
     final actionBusy = _busy || _refreshing;
 
     return Scaffold(
@@ -153,19 +155,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: actionBusy
                   ? null
                   : () => _run(() async {
-                        final client = ref.read(ecoCenterClientProvider);
-                        final ok = await client.testConnection(
-                          _serverUrlController.text,
-                        );
-                        ref.read(serverReachableProvider.notifier).state = ok;
-                        if (ok) {
-                          await client.setServerUrl(_serverUrlController.text);
-                          ref.invalidate(credentialsProvider);
-                          _showSnack('服务器可达');
-                        } else {
-                          _showSnack('无法访问服务器，请检查地址与网络');
-                        }
-                      }),
+                      final client = ref.read(ecoCenterClientProvider);
+                      final ok = await client.testConnection(
+                        _serverUrlController.text,
+                      );
+                      ref.read(serverReachableProvider.notifier).state = ok;
+                      if (ok) {
+                        await client.setServerUrl(_serverUrlController.text);
+                        ref.invalidate(credentialsProvider);
+                        _showSnack('服务器可达');
+                      } else {
+                        _showSnack('无法访问服务器，请检查地址与网络');
+                      }
+                    }),
               child: const Text('测试服务器可达性'),
             ),
             const SizedBox(height: 24),
@@ -215,29 +217,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onPressed: actionBusy
                     ? null
                     : () => _run(() async {
-                          final client = ref.read(ecoCenterClientProvider);
-                          if (_serverUrlController.text.trim().isEmpty) {
-                            throw Exception('请先填写并测试服务器地址');
-                          }
-                          await client.setServerUrl(_serverUrlController.text);
-                          if (_isRegister) {
-                            await client.register(
-                              email: _emailController.text,
-                              password: _passwordController.text,
-                            );
-                          } else {
-                            await client.login(
-                              email: _emailController.text,
-                              password: _passwordController.text,
-                            );
-                          }
-                          await client.ensureMobileDevice();
-                          await client.connect();
-                          ref.invalidate(credentialsProvider);
-                          ref.invalidate(bindingsProvider);
-                          ref.invalidate(presenceProvider);
-                          _showSnack('登录成功，WebSocket 已连接');
-                        }),
+                        final client = ref.read(ecoCenterClientProvider);
+                        if (_serverUrlController.text.trim().isEmpty) {
+                          throw Exception('请先填写并测试服务器地址');
+                        }
+                        await client.setServerUrl(_serverUrlController.text);
+                        if (_isRegister) {
+                          await client.register(
+                            email: _emailController.text,
+                            password: _passwordController.text,
+                          );
+                        } else {
+                          await client.login(
+                            email: _emailController.text,
+                            password: _passwordController.text,
+                          );
+                        }
+                        await client.ensureMobileDevice();
+                        await client.connect();
+                        ref.invalidate(credentialsProvider);
+                        ref.invalidate(bindingsProvider);
+                        ref.invalidate(presenceProvider);
+                        _showSnack('登录成功，WebSocket 已连接');
+                      }),
                 child: Text(_isRegister ? '注册并登录' : '登录'),
               ),
             ],
@@ -247,9 +249,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onPressed: actionBusy
                     ? null
                     : () => _run(() async {
-                          await ref.read(ecoCenterClientProvider).connect();
-                          _showSnack('已尝试重新连接 WebSocket');
-                        }),
+                        await ref.read(ecoCenterClientProvider).connect();
+                        _showSnack('已尝试重新连接 WebSocket');
+                      }),
                 icon: const Icon(Icons.sync),
                 label: const Text('重新连接 WebSocket'),
               ),
@@ -280,11 +282,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onPressed: actionBusy
                         ? null
                         : () async {
-                            final code = await Navigator.of(context).push<String>(
-                              MaterialPageRoute(
-                                builder: (_) => const PairingScanScreen(),
-                              ),
-                            );
+                            final code = await Navigator.of(context)
+                                .push<String>(
+                                  MaterialPageRoute(
+                                    builder: (_) => const PairingScanScreen(),
+                                  ),
+                                );
                             if (code != null) {
                               _pairCodeController.text = code;
                             }
@@ -299,13 +302,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onPressed: actionBusy
                     ? null
                     : () => _run(() async {
-                          final client = ref.read(ecoCenterClientProvider);
-                          await client.claimPairing(_pairCodeController.text);
-                          ref.invalidate(bindingsProvider);
-                          ref.invalidate(presenceProvider);
-                          _pairCodeController.clear();
-                          _showSnack('绑定成功');
-                        }),
+                        final client = ref.read(ecoCenterClientProvider);
+                        await client.claimPairing(_pairCodeController.text);
+                        ref.invalidate(bindingsProvider);
+                        ref.invalidate(presenceProvider);
+                        _pairCodeController.clear();
+                        _showSnack('绑定成功');
+                      }),
                 child: const Text('绑定 PC'),
               ),
             ],
@@ -325,18 +328,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   return const Text('暂无绑定。请在 Desktop「连接」页生成配对码。');
                 }
                 final presence = presenceAsync.valueOrNull ?? [];
-                final onlineIds =
-                    presence.where((d) => d.online).map((d) => d.id).toSet();
+                final onlineIds = presence
+                    .where((d) => d.online)
+                    .map((d) => d.id)
+                    .toSet();
                 return Column(
                   children: active.map((binding) {
-                    final online =
-                        onlineIds.contains(binding.desktopDeviceId);
+                    final desktopId = binding.desktopDeviceId;
+                    final online = onlineIds.contains(desktopId);
                     final device = presence
-                        .where((d) => d.id == binding.desktopDeviceId)
+                        .where((d) => d.id == desktopId)
                         .firstOrNull;
-                    final name = device?.name ?? binding.desktopDeviceId;
-                    final selected =
-                        selectedDesktop == binding.desktopDeviceId;
+                    final name = device?.name ?? desktopId;
+                    final selected = selectedDesktop == desktopId;
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       color: selected ? eco.accentSoft : eco.cardSurface,
@@ -359,17 +363,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                         trailing: selected
-                            ? Icon(Icons.check_circle, color: EcoColors.accentText)
+                            ? Icon(
+                                Icons.check_circle,
+                                color: EcoColors.accentText,
+                              )
                             : null,
                         onTap: actionBusy
                             ? null
                             : () async {
                                 ref
-                                    .read(selectedDesktopIdProvider.notifier)
-                                    .state = binding.desktopDeviceId;
+                                        .read(
+                                          selectedDesktopIdProvider.notifier,
+                                        )
+                                        .state =
+                                    desktopId;
                                 await ref
                                     .read(ecoCenterClientProvider)
-                                    .setSelectedDesktop(binding.desktopDeviceId);
+                                    .setSelectedDesktop(desktopId);
                                 if (online) {
                                   _showSnack('已选择 $name');
                                 } else {
@@ -412,8 +422,7 @@ class _SectionHeader extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 14,
-            backgroundColor:
-                done ? eco.statusAllowBg : EcoColors.bgElevated,
+            backgroundColor: done ? eco.statusAllowBg : EcoColors.bgElevated,
             child: Text(
               '$number',
               style: TextStyle(
@@ -424,10 +433,7 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
         ],
       ),
     );

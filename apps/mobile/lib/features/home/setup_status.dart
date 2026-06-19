@@ -22,10 +22,7 @@ class SetupStep {
 }
 
 class SetupOverview {
-  const SetupOverview({
-    required this.steps,
-    required this.readyForThreads,
-  });
+  const SetupOverview({required this.steps, required this.readyForThreads});
 
   final List<SetupStep> steps;
   final bool readyForThreads;
@@ -42,8 +39,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final selectedDesktopId = ref.watch(selectedDesktopIdProvider);
 
   final hasServerUrl = (credentials?.serverUrl ?? '').trim().isNotEmpty;
-  final loggedIn =
-      credentials?.userEmail != null && (credentials?.refreshToken?.isNotEmpty ?? false);
+  final loggedIn = credentials?.hasUserSession ?? false;
   final deviceRegistered = credentials?.hasDeviceCredentials ?? false;
   final wsState = connection?.state ?? EcoConnectionState.disconnected;
   final wsError = connection?.lastError;
@@ -112,7 +108,9 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       title: '服务器可达',
       state: serverStepState(),
       subtitle: hasServerUrl ? credentials!.serverUrl : null,
-      hint: serverReachable == false ? '请检查地址、Wi‑Fi 与 Server 是否监听 0.0.0.0' : null,
+      hint: serverReachable == false
+          ? '请检查地址、Wi‑Fi 与 Server 是否监听 0.0.0.0'
+          : null,
     ),
     SetupStep(
       id: 'login',
@@ -125,7 +123,9 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       id: 'websocket',
       title: '实时通道 (WebSocket)',
       state: wsStepState(),
-      subtitle: wsState == EcoConnectionState.connected ? '已连接 Center Server' : null,
+      subtitle: wsState == EcoConnectionState.connected
+          ? '已连接 Center Server'
+          : null,
       hint: wsStepState() == SetupStepState.error
           ? (wsError ?? 'WebSocket 未连接，请重新登录或下拉刷新')
           : null,
@@ -150,7 +150,9 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     ),
   ];
 
-  final readyForThreads = steps.every((step) => step.state == SetupStepState.done);
+  final readyForThreads = steps.every(
+    (step) => step.state == SetupStepState.done,
+  );
 
   return SetupOverview(steps: steps, readyForThreads: readyForThreads);
 });

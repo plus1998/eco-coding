@@ -14,12 +14,10 @@ import {
   type CenterServerTestConnectionResult,
   normalizeCenterServerHttpUrl,
 } from "../shared/center-server";
-import type {
-  EventCenterJsonRpcNotification,
-  EventCenterJsonRpcResponse,
-} from "../shared/event-center";
-import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
+import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
+import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
 import type { CenterServerSettingsSecret, CenterServerStore } from "./center-server-store";
+import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
 
 type FetchLike = typeof fetch;
 
@@ -270,7 +268,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     });
   }
 
-  async testConnection(request: CenterServerTestConnectionRequest): Promise<CenterServerTestConnectionResult> {
+  async testConnection(
+    request: CenterServerTestConnectionRequest,
+  ): Promise<CenterServerTestConnectionResult> {
     try {
       const serverUrl = normalizeCenterServerHttpUrl(request.serverUrl);
       await this.requestJson({
@@ -339,7 +339,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         };
 
         socket.onmessage = (event) => {
-          void this.handleSocketMessage(event.data);
+          void this.handleSocketMessage(event.data).catch((error) => {
+            this.log(`[eco] center server message handling failed: ${errorMessage(error)}\n`);
+          });
         };
 
         socket.onerror = () => {
@@ -455,14 +457,41 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
   private async handleSocketMessage(data: unknown): Promise<void> {
     let message: unknown = data;
-    if (typeof data === "string") {
-      message = JSON.parse(data) as unknown;
-    } else if (data instanceof Uint8Array) {
-      message = JSON.parse(new TextDecoder().decode(data)) as unknown;
+    try {
+      if (typeof data === "string") {
+        message = JSON.parse(data) as unknown;
+      } else if (data instanceof Uint8Array) {
+        message = JSON.parse(new TextDecoder().decode(data)) as unknown;
+      }
+    } catch (error) {
+      this.sendJsonRpcResponse(
+        buildEventCenterJsonRpcFailure(
+          null,
+          EVENT_CENTER_JSON_RPC_ERROR.parseError,
+          "Invalid JSON-RPC JSON payload.",
+          errorMessage(error),
+        ),
+      );
+      return;
     }
-    const response = await this.eventCenter.handleJsonRpcMessage(message);
-    if (response && this.socket?.readyState === WS_OPEN) {
-      this.socket.send(JSON.stringify(response satisfies EventCenterJsonRpcResponse));
+    let response: EventCenterJsonRpcResponse | undefined;
+    try {
+      response = await this.eventCenter.handleJsonRpcMessage(message);
+    } catch (error) {
+      response = buildEventCenterJsonRpcFailure(
+        null,
+        EVENT_CENTER_JSON_RPC_ERROR.internalError,
+        errorMessage(error),
+      );
+    }
+    if (response) {
+      this.sendJsonRpcResponse(response);
+    }
+  }
+
+  private sendJsonRpcResponse(response: EventCenterJsonRpcResponse): void {
+    if (this.socket?.readyState === WS_OPEN) {
+      this.socket.send(JSON.stringify(response));
     }
   }
 
