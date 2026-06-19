@@ -2067,15 +2067,17 @@ function AgentProfileNodeConfigModal({
                 onApiCompatChange={(value) => onPatchProfile({ mainApiCompat: value })}
               />
 
-              <label className="mcp-field">
-                <span className="mcp-field-label">主 Agent 提示词</span>
-                <textarea
-                  className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
-                  value={form.mainPrompt}
-                  disabled={busy}
-                  onChange={(event) => onPatchProfile({ mainPrompt: event.target.value })}
-                />
-              </label>
+              {form.mainSystemPromptPreset === "custom" ? (
+                <label className="mcp-field">
+                  <span className="mcp-field-label">主 Agent 提示词</span>
+                  <textarea
+                    className="mcp-field-input mcp-field-textarea models-agent-prompt-textarea"
+                    value={form.mainPrompt}
+                    disabled={busy}
+                    onChange={(event) => onPatchProfile({ mainPrompt: event.target.value })}
+                  />
+                </label>
+              ) : null}
               <ToolCapabilityPanel
                 values={mainCapabilityFromProfileForm(form)}
                 {...(busy !== undefined ? { disabled: busy } : {})}
