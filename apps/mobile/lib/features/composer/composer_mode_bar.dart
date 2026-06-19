@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_theme.dart';
 import '../threads/thread_providers.dart';
 
 class ComposerModeBar extends ConsumerWidget {
@@ -20,8 +21,11 @@ class ComposerModeBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final modelSettings = ref.watch(modelSettingsProvider);
 
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: EcoColors.cardSurface,
+        border: Border(top: BorderSide(color: ecoThemeExtras(context).borderSubtle)),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(

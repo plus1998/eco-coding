@@ -25,7 +25,10 @@ final credentialsProvider = FutureProvider<AppCredentials>((ref) async {
 
 final connectionStatusProvider = StreamProvider<CenterServerConnectionStatus>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
-  return client.connectionStatus;
+  return () async* {
+    yield client.status;
+    yield* client.connectionStatus;
+  }();
 });
 
 final ecoEventsProvider = StreamProvider<EcoEventEnvelope>((ref) {

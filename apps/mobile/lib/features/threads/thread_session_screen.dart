@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_theme.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/composer_mode_bar.dart';
 import 'thread_providers.dart';
@@ -257,7 +258,7 @@ class _ActivityBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = item.role == 'user';
-    final colorScheme = Theme.of(context).colorScheme;
+    final eco = ecoThemeExtras(context);
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -267,17 +268,18 @@ class _ActivityBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.85,
         ),
         decoration: BoxDecoration(
-          color: isUser
-              ? colorScheme.primaryContainer
-              : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: isUser ? eco.userBubble : eco.assistantBubble,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: eco.borderSubtle),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               item.role,
-              style: Theme.of(context).textTheme.labelSmall,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textMuted,
+                  ),
             ),
             const SizedBox(height: 4),
             Text(item.message),
@@ -296,8 +298,12 @@ class _FollowUpBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+    final eco = ecoThemeExtras(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.cardSurface,
+        border: Border(top: BorderSide(color: eco.borderSubtle)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -342,9 +348,14 @@ class _ComposerInput extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: EcoColors.bgElevated,
+          border: Border(top: BorderSide(color: ecoThemeExtras(context).borderSubtle)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (attachments.isNotEmpty)
@@ -379,11 +390,16 @@ class _ComposerInput extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: onSend,
-                  icon: const Icon(Icons.send),
+                  style: IconButton.styleFrom(
+                    backgroundColor: EcoColors.composerSendBg,
+                    foregroundColor: EcoColors.composerSendText,
+                  ),
+                  icon: const Icon(Icons.arrow_upward, size: 20),
                 ),
               ],
             ),
           ],
+        ),
         ),
       ),
     );

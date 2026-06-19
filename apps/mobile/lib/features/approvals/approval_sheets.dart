@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_theme.dart';
 
 Future<void> showPlanApprovalSheet({
   required BuildContext context,
@@ -96,8 +97,9 @@ Future<void> showBashApprovalSheet({
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: EcoColors.codeBg,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: EcoColors.borderSubtle),
               ),
               child: Text(
                 request.filesystemTool != null
