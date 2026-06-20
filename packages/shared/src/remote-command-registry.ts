@@ -34,6 +34,10 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:retry", "Retry thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:activity-list", "List thread activity", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
+    stringArg(),
+  ]),
   command("thread:get-pending-plan", "Get pending plan", "read", RPC_INVOKE, [stringArg()]),
   command("thread:approve-plan", "Approve pending plan", "privileged", APPROVAL_DECIDE, [
     objectArg(["threadId"]),
@@ -80,9 +84,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("git:commit", "Commit workspace changes", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),
-  command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [
-    objectArg(["workspacePath"]),
-  ]),
+  command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
 ] as const satisfies readonly RemoteCommandDefinition[];
 
 const REMOTE_COMMANDS_BY_CHANNEL = new Map(

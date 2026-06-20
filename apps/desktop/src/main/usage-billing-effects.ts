@@ -1,37 +1,34 @@
-import type { RuntimeAgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { formatUsageBadge, type ParsedUsage } from "@eco/runtime";
+import type { RuntimeAgentRole, ThreadBillingSnapshot, ThreadUsageSnapshot } from "../shared/ipc";
 import { buildUsageSnapshotForRole } from "./billing-orchestration";
+import {
+  type BillingSnapshotSelectionPolicy,
+  resolveBillingSnapshotSelectionOptions,
+} from "./billing-snapshot-selection-policy";
+import { readBillingRole, readRouteRole } from "./proxy-usage-pending-settlement";
 import {
   buildSubagentContextObservationInput,
   resolveSubagentBillingMetricsContext,
 } from "./subagent-billing-metrics-effects";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry";
-import {
-  resolveBillingSnapshotSelectionOptions,
-  type BillingSnapshotSelectionPolicy,
-} from "./billing-snapshot-selection-policy";
-import {
-  applySdkRunSubagentLegacyFallback,
-  applySingleUsageSubagentLegacyFallback,
-} from "./usage-subagent-legacy-fallback";
-import type { UsageContextService } from "./usage-context-effects";
-import {
-  recordLegacySdkRunBilling,
-  recordLegacySingleUsageBilling,
-  type UsageLegacyBillingAccumulator,
-} from "./usage-legacy-billing";
-import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
-import {
-  readBillingRole,
-  readRouteRole,
-} from "./proxy-usage-pending-settlement";
 import type {
   ResolvedSdkRunBillingModel,
   SdkStreamPartialBillingArtifacts,
   SingleUsageBillingArtifacts,
   UsageBillingContextUpdate,
 } from "./usage-billing-artifacts";
+import type { UsageContextService } from "./usage-context-effects";
 import { buildSdkUsageLedgerEvents } from "./usage-ledger-adapters";
+import type { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
+import {
+  recordLegacySdkRunBilling,
+  recordLegacySingleUsageBilling,
+  type UsageLegacyBillingAccumulator,
+} from "./usage-legacy-billing";
+import {
+  applySdkRunSubagentLegacyFallback,
+  applySingleUsageSubagentLegacyFallback,
+} from "./usage-subagent-legacy-fallback";
 
 export interface UsageBillingUpdatedEvent {
   threadId: string;
@@ -86,7 +83,7 @@ export async function applySdkStreamPartialBillingEffects(
   const contextUpdated = await services.context.applyUpdate({
     threadId: input.threadId,
     usage: input.usage,
-    updateContext: input.updateContext,
+    ...(input.updateContext !== undefined ? { updateContext: input.updateContext } : {}),
     ...(input.artifacts.contextUpdate && { contextUpdate: input.artifacts.contextUpdate }),
     ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
   });

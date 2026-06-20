@@ -42,7 +42,16 @@ import {
 } from "@eco/runtime/sdk";
 import { isRemoteCommandChannel } from "@eco/shared";
 import { type CommandRunner, createSessionPlan, GitWorktreeService, type WorktreePlan } from "@eco/workspace";
-import { app, BrowserWindow, dialog, ipcMain, type NativeImage, nativeImage, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type NativeImage,
+  nativeImage,
+  safeStorage,
+  shell,
+} from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
 import { evaluateThreadBashPermission } from "./thread-bash-permission";
 
@@ -50,7 +59,9 @@ ensureDesktopPath();
 
 import { buildAgentProfileArchive, parseAgentProfileArchiveBundle } from "../shared/agent-profile-archive";
 import { buildAgentTemplateArchive, parseAgentTemplateArchive } from "../shared/agent-template-archive";
+import { isOpenAICompat } from "../shared/api-compat";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
+import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
   AGENT_ROLES,
   type AgentAuditExportRequest,
@@ -225,7 +236,10 @@ import {
   takePendingCancelDisposition,
 } from "./cancel-worktree";
 import { CenterServerDesktopClient } from "./center-server-client";
-import { createCenterServerStore } from "./center-server-store";
+import {
+  createCenterServerStore,
+  createElectronSafeStorageCenterServerSecretCodec,
+} from "./center-server-store";
 import {
   buildAskUserQuestionUpdatedInput,
   buildIgnoredClarificationAnswers,
@@ -237,14 +251,12 @@ import {
   submitClarification,
 } from "./clarification-bridge";
 import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
-import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
-import { isOpenAICompat } from "../shared/api-compat";
-import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
+import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
 import {
@@ -310,10 +322,10 @@ import {
 } from "./single-usage-billing-orchestration";
 import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
+import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import { SubagentMetricsRegistry } from "./subagent-metrics-registry";
 import { buildSubagentMetricsSummaries } from "./subagent-metrics-summary";
 import { createSubagentSessionHooks, type PendingSubagentLaunch } from "./subagent-session-hooks.js";
-import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import { normalizeSubagentMissionKey } from "./subagent-session-resolve.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { resolveSubagentUsageAttribution } from "./subagent-usage-attribution";
@@ -552,8 +564,11 @@ app.whenReady().then(async () => {
   gitSettingsStore = await createGitSettingsStore(dbPath);
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   sessionSyncStore = await createSessionSyncStore(dbPath);
+  const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new CenterServerDesktopClient({
-    store: await createCenterServerStore(dbPath),
+    store: await createCenterServerStore(dbPath, {
+      ...(centerServerSecretCodec ? { secretCodec: centerServerSecretCodec } : {}),
+    }),
     eventCenter: desktopEventCenter,
     log: (message) => process.stderr.write(message),
     onStatusChange: emitCenterServerStatus,
@@ -6465,67 +6480,67 @@ function startRuntimeProxy(
   return (async () => {
     const contextByRole = await resolveContextTokensByRole(routes, pricingCache);
     const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
-  // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
-  const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
-  const options: AnthropicProxyStartOptions = {
-    ...(upstreamUserAgent && { upstreamUserAgent }),
-    ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
-    ...(threadId && {
-      ...(emitRequestActivity && {
-        onMessagesRequest: ({ role }) => {
-          emitUpstreamModelRequestActivity(threadId, role);
+    // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
+    const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
+    const options: AnthropicProxyStartOptions = {
+      ...(upstreamUserAgent && { upstreamUserAgent }),
+      ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
+      ...(threadId && {
+        ...(emitRequestActivity && {
+          onMessagesRequest: ({ role }) => {
+            emitUpstreamModelRequestActivity(threadId, role);
+          },
+        }),
+        onUpstreamConnectionError: ({ role, error, statusCode }) => {
+          emitUpstreamConnectionErrorActivity(threadId, role, error, statusCode);
+        },
+        onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
+        resolveCountTokensInput: ({ role, body }) => {
+          const fromProxy = activeRunBillingState.proxyContextOccupied(threadId, role);
+          if (typeof fromProxy === "number" && fromProxy > 0) {
+            logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+              threadId: shortThreadId(threadId),
+              role,
+              source: "proxy_role",
+              tokens: fromProxy,
+            });
+            return fromProxy;
+          }
+          const monitorSnap = contextMonitor.getSnapshot(threadId);
+          const roleSnap = monitorSnap?.roles.find((entry) => entry.role === role);
+          const fromMonitorRole = roleSnap?.occupied;
+          if (typeof fromMonitorRole === "number" && fromMonitorRole > 0) {
+            logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+              threadId: shortThreadId(threadId),
+              role,
+              source: "monitor_role",
+              tokens: fromMonitorRole,
+              displayRole: monitorSnap?.displayRole,
+            });
+            return fromMonitorRole;
+          }
+          const fromMonitorTop = monitorSnap?.occupied;
+          if (typeof fromMonitorTop === "number" && fromMonitorTop > 0) {
+            logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+              threadId: shortThreadId(threadId),
+              role,
+              source: "monitor_display",
+              tokens: fromMonitorTop,
+              displayRole: monitorSnap?.displayRole,
+            });
+            return fromMonitorTop;
+          }
+          const estimated = estimateInputTokensFromAnthropicBody(body);
+          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
+            threadId: shortThreadId(threadId),
+            role,
+            source: "body_estimate",
+            tokens: estimated,
+          });
+          return estimated;
         },
       }),
-      onUpstreamConnectionError: ({ role, error, statusCode }) => {
-        emitUpstreamConnectionErrorActivity(threadId, role, error, statusCode);
-      },
-      onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
-      resolveCountTokensInput: ({ role, body }) => {
-        const fromProxy = activeRunBillingState.proxyContextOccupied(threadId, role);
-        if (typeof fromProxy === "number" && fromProxy > 0) {
-          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
-            threadId: shortThreadId(threadId),
-            role,
-            source: "proxy_role",
-            tokens: fromProxy,
-          });
-          return fromProxy;
-        }
-        const monitorSnap = contextMonitor.getSnapshot(threadId);
-        const roleSnap = monitorSnap?.roles.find((entry) => entry.role === role);
-        const fromMonitorRole = roleSnap?.occupied;
-        if (typeof fromMonitorRole === "number" && fromMonitorRole > 0) {
-          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
-            threadId: shortThreadId(threadId),
-            role,
-            source: "monitor_role",
-            tokens: fromMonitorRole,
-            displayRole: monitorSnap?.displayRole,
-          });
-          return fromMonitorRole;
-        }
-        const fromMonitorTop = monitorSnap?.occupied;
-        if (typeof fromMonitorTop === "number" && fromMonitorTop > 0) {
-          logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
-            threadId: shortThreadId(threadId),
-            role,
-            source: "monitor_display",
-            tokens: fromMonitorTop,
-            displayRole: monitorSnap?.displayRole,
-          });
-          return fromMonitorTop;
-        }
-        const estimated = estimateInputTokensFromAnthropicBody(body);
-        logEcoDiagThrottled(`count-tokens:${threadId}`, "count_tokens.stub", {
-          threadId: shortThreadId(threadId),
-          role,
-          source: "body_estimate",
-          tokens: estimated,
-        });
-        return estimated;
-      },
-    }),
-  };
+    };
     return startAnthropicModelProxy(
       routes.map((route): AnthropicProxyRoute => {
         const proxyRoute = runtimeRouteToProxyRoute(route);

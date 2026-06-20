@@ -130,7 +130,12 @@ export class RedisRpcBus implements RpcBus {
   }
 
   private async handlePayload(payload: string): Promise<void> {
-    const parsed = JSON.parse(payload) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload) as unknown;
+    } catch {
+      return;
+    }
     if (!isRpcBusMessage(parsed)) {
       return;
     }

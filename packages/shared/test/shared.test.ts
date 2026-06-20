@@ -47,6 +47,9 @@ test("registers explicit remote command definitions", () => {
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(
     "workflow-settings:save",
   );
+  expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
+    expect.arrayContaining(["thread:run-projection-get", "thread:subagent-sessions-list"]),
+  );
 
   const approvePlan = getRemoteCommandDefinition("thread:approve-plan");
   expect(approvePlan).toMatchObject({
@@ -67,9 +70,7 @@ test("validates remote command args", () => {
     ok: false,
   });
   expect(
-    validateRemoteCommandArgs("thread:follow-up-cancel", [
-      { threadId: "thr_1", followUpId: "fup_1" },
-    ]),
+    validateRemoteCommandArgs("thread:follow-up-cancel", [{ threadId: "thr_1", followUpId: "fup_1" }]),
   ).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:follow-up-cancel", ["fup_1"])).toMatchObject({
     ok: false,
@@ -91,9 +92,7 @@ test("registers git remote command definitions", () => {
       { workspacePath: "/repo", profileId: "prof_1", includeUnstaged: true },
     ]),
   ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("git:push", [{ workspacePath: "/repo" }]),
-  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("git:push", [{ workspacePath: "/repo" }])).toEqual({ ok: true });
 });
 
 test("validates eco.invoke params with desktop target", () => {

@@ -1051,7 +1051,7 @@ class _ReadyConnectionView extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: busy ? null : onEnterApp,
+              onPressed: busy || !overview.readyForThreads ? null : onEnterApp,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),

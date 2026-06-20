@@ -128,6 +128,25 @@ export const IPC_CHANNELS = {
 } as const;
 
 export type {
+  CenterServerAccountAuthResult,
+  CenterServerAccountView,
+  CenterServerConnectionState,
+  CenterServerConnectionStatus,
+  CenterServerCreatePairingResult,
+  CenterServerDeviceBindingView,
+  CenterServerDevicePresenceView,
+  CenterServerDeviceView,
+  CenterServerRegisterDesktopRequest,
+  CenterServerRegisterDesktopResult,
+  CenterServerSettingsInput,
+  CenterServerSettingsSnapshot,
+  CenterServerSettingsView,
+  CenterServerSignInRequest,
+  CenterServerSignUpRequest,
+  CenterServerTestConnectionRequest,
+  CenterServerTestConnectionResult,
+} from "./center-server";
+export type {
   EventCenterEnvelope,
   EventCenterEventKind,
   EventCenterInvokeParams,
@@ -155,7 +174,6 @@ export {
   isEventCenterJsonRpcRequest,
   isThreadPlanLiveEvent,
 } from "./event-center";
-
 export type {
   McpServerConfigInput,
   McpServerConfigView,
@@ -181,25 +199,6 @@ export type {
   SessionSyncTestConnectionResult,
 } from "./session-sync";
 export type {
-  CenterServerConnectionState,
-  CenterServerConnectionStatus,
-  CenterServerAccountAuthResult,
-  CenterServerAccountView,
-  CenterServerCreatePairingResult,
-  CenterServerDeviceBindingView,
-  CenterServerDevicePresenceView,
-  CenterServerDeviceView,
-  CenterServerRegisterDesktopRequest,
-  CenterServerRegisterDesktopResult,
-  CenterServerSignInRequest,
-  CenterServerSignUpRequest,
-  CenterServerSettingsInput,
-  CenterServerSettingsSnapshot,
-  CenterServerSettingsView,
-  CenterServerTestConnectionRequest,
-  CenterServerTestConnectionResult,
-} from "./center-server";
-export type {
   LinkAgentsSkillsRequest,
   LinkAgentsSkillsResult,
   SkillInfo,
@@ -207,13 +206,13 @@ export type {
   SkillsListResult,
 } from "./skills";
 export type {
+  ThreadRunBashApprovalMetadata,
+  ThreadRunBashApprovalPhase,
   ThreadRunEvent,
   ThreadRunEventInput,
   ThreadRunEventScope,
   ThreadRunEventStreamState,
   ThreadRunEventType,
-  ThreadRunBashApprovalMetadata,
-  ThreadRunBashApprovalPhase,
   ThreadRunToolMetadata,
 } from "./thread-run-events";
 export type {
@@ -750,21 +749,11 @@ export interface ThreadContinueResult {
   thread: ThreadSummary;
 }
 
-export type ThreadFollowUpStatus =
-  | "queued"
-  | "delivered"
-  | "applied"
-  | "superseded"
-  | "cancelled"
-  | "failed";
+export type ThreadFollowUpStatus = "queued" | "delivered" | "applied" | "superseded" | "cancelled" | "failed";
 
 export type ThreadFollowUpPriority = "normal" | "escalated";
 
-export type ThreadFollowUpDeliveryMode =
-  | "queued"
-  | "resume"
-  | "interrupt_resume"
-  | "streaming_push";
+export type ThreadFollowUpDeliveryMode = "queued" | "resume" | "interrupt_resume" | "streaming_push";
 
 export type ThreadFollowUpRunPhase = "planning" | "execution" | "question" | "continuation";
 
@@ -1282,7 +1271,7 @@ export interface ModelsDevModelOption {
 export interface ThreadSubagentSessionTiming {
   agentId: string;
   role: RuntimeAgentRole;
-  status: "active" | "stopped";
+  status: "active" | "stopped" | "handed_off";
   startedAt: string;
   lastActiveAt: string;
   endedAt?: string;

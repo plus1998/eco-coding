@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -44,3 +45,57 @@ test.skipIf(!sqliteAvailable)("center server store saves settings and preserves 
   expect(secrets.deviceSecret).toBe("secret_abc");
   expect(secrets.refreshToken).toBe("refresh_1");
 });
+
+test.skipIf(!sqliteAvailable)(
+  "center server store encrypts local secrets when a codec is configured",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-encrypted-"));
+    const dbPath = path.join(dir, "eco-coding.sqlite");
+    const store = await createCenterServerStore(dbPath, {
+      secretCodec: {
+        encode(value) {
+          return `enc:${Buffer.from(value).toString("base64")}`;
+        },
+        decode(value) {
+          return value.startsWith("enc:") ? Buffer.from(value.slice(4), "base64").toString("utf8") : value;
+        },
+      },
+    });
+
+    const saved = store.saveSettings({
+      enabled: true,
+      serverUrl: "https://center.example.com/",
+      deviceId: "dev_1",
+      deviceName: "My Desktop",
+      deviceSecret: "secret_abc",
+      accessToken: "access_1",
+      refreshToken: "refresh_1",
+      accessTokenExpiresAt: "2030-01-01T00:00:00.000Z",
+    });
+    expect(saved.hasDeviceSecret).toBe(true);
+    expect(saved.deviceSecretPreview?.startsWith("se")).toBe(true);
+    expect(saved.deviceSecretPreview?.endsWith("bc")).toBe(true);
+    expect(store.getSettingsWithSecrets()).toMatchObject({
+      deviceSecret: "secret_abc",
+      accessToken: "access_1",
+      refreshToken: "refresh_1",
+    });
+
+    const sqlite = await import("node:sqlite");
+    const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const row = db
+        .prepare("SELECT device_secret, access_token, refresh_token FROM center_server_config WHERE id = 1")
+        .get() as {
+        device_secret: string;
+        access_token: string;
+        refresh_token: string;
+      };
+      expect(row.device_secret).not.toBe("secret_abc");
+      expect(row.access_token).not.toBe("access_1");
+      expect(row.refresh_token).not.toBe("refresh_1");
+    } finally {
+      db.close();
+    }
+  },
+);

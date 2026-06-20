@@ -36,11 +36,13 @@ class SetupOverview {
   final bool readyForThreads;
   final String? selectedDesktopId;
 
-  /// Stable gate: logged in, device registered, and a PC selected.
+  /// Stable gate: logged in, device registered, bound to a PC, and selected PC is visible.
   bool get setupComplete {
     if (selectedDesktopId == null || selectedDesktopId!.isEmpty) return false;
-    if (steps.length < 2) return false;
-    return steps[1].state == SetupStepState.done;
+    if (steps.length < 5) return false;
+    return steps[1].state == SetupStepState.done &&
+        steps[3].state == SetupStepState.done &&
+        steps[4].state == SetupStepState.done;
   }
 }
 
@@ -117,10 +119,6 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     if (!loggedIn || !deviceRegistered) return SetupStepState.pending;
     if (hasBinding) return SetupStepState.done;
     if (bindingsReloading) return SetupStepState.inProgress;
-    if (effectiveSelectedDesktopId != null &&
-        effectiveSelectedDesktopId.isNotEmpty) {
-      return SetupStepState.done;
-    }
     return SetupStepState.pending;
   }
 
@@ -128,6 +126,9 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     if (effectiveSelectedDesktopId == null) {
       if (!hasBinding && !bindingsReloading) return SetupStepState.pending;
       return SetupStepState.inProgress;
+    }
+    if (!activeBindings.any((binding) => binding.desktopDeviceId == effectiveSelectedDesktopId)) {
+      return bindingsReloading ? SetupStepState.inProgress : SetupStepState.pending;
     }
     if (presenceAsync.isLoading && presence == null) {
       return SetupStepState.inProgress;

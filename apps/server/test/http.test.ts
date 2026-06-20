@@ -187,6 +187,14 @@ test("supports the complete single-instance HTTP management flow", async () => {
     expect(audit.auditLogs.map((log) => log.action)).toContain("binding.revoke");
     expect(audit.auditLogs.map((log) => log.action)).toContain("device.disable");
 
+    const auditLimitTooLarge = await client.raw(
+      "GET",
+      "/v1/audit-logs?limit=501",
+      undefined,
+      userAccessToken,
+    );
+    expect(auditLimitTooLarge.status).toBe(400);
+
     await client.post("/v1/auth/logout", {
       refreshToken: registered.tokens.refreshToken,
     });

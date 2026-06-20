@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
@@ -31,18 +32,44 @@ export interface CenterServerSettingsSecret extends CenterServerSettingsView {
   refreshToken: string;
 }
 
-const DEFAULT_DEVICE_NAME = "Eco Desktop";
+export interface CenterServerSecretCodec {
+  encode(value: string): string;
+  decode(value: string): string;
+}
 
-export async function createCenterServerStore(dbPath: string): Promise<CenterServerStore> {
+export interface ElectronSafeStorageLike {
+  isEncryptionAvailable(): boolean;
+  encryptString(value: string): Buffer;
+  decryptString(encrypted: Buffer): string;
+}
+
+export interface CenterServerStoreOptions {
+  secretCodec?: CenterServerSecretCodec;
+}
+
+const DEFAULT_DEVICE_NAME = "Eco Desktop";
+const SAFE_STORAGE_SECRET_PREFIX = "safe:v1:";
+
+export async function createCenterServerStore(
+  dbPath: string,
+  options: CenterServerStoreOptions = {},
+): Promise<CenterServerStore> {
   await fs.mkdir(path.dirname(dbPath), { recursive: true });
   const sqlite = await import("node:sqlite");
-  const store = new CenterServerStore(new sqlite.DatabaseSync(dbPath));
+  const store = new CenterServerStore(new sqlite.DatabaseSync(dbPath), options);
   store.initialize();
   return store;
 }
 
 export class CenterServerStore {
-  constructor(private readonly db: DatabaseSyncType) {}
+  private readonly secretCodec: CenterServerSecretCodec | undefined;
+
+  constructor(
+    private readonly db: DatabaseSyncType,
+    options: CenterServerStoreOptions = {},
+  ) {
+    this.secretCodec = options.secretCodec;
+  }
 
   initialize(): void {
     this.db.exec(`
@@ -75,9 +102,14 @@ export class CenterServerStore {
     }
   }
 
-  getSettings(status: CenterServerConnectionStatus = { state: "disconnected" }): CenterServerSettingsSnapshot {
+  getSettings(
+    status: CenterServerConnectionStatus = { state: "disconnected" },
+  ): CenterServerSettingsSnapshot {
     return {
-      settings: rowToView(this.getRow() ?? fail("Center server config was not initialized.")),
+      settings: rowToView(
+        this.getRow() ?? fail("Center server config was not initialized."),
+        this.secretCodec,
+      ),
       status,
     };
   }
@@ -85,10 +117,10 @@ export class CenterServerStore {
   getSettingsWithSecrets(): CenterServerSettingsSecret {
     const row = this.getRow() ?? fail("Center server config was not initialized.");
     return {
-      ...rowToView(row),
-      deviceSecret: row.device_secret,
-      accessToken: row.access_token,
-      refreshToken: row.refresh_token,
+      ...rowToView(row, this.secretCodec),
+      deviceSecret: decodeSecret(row.device_secret, this.secretCodec),
+      accessToken: decodeSecret(row.access_token, this.secretCodec),
+      refreshToken: decodeSecret(row.refresh_token, this.secretCodec),
     };
   }
 
@@ -97,10 +129,17 @@ export class CenterServerStore {
     const existing = this.getRow() ?? fail("Center server config was not initialized.");
     const serverUrl = input.serverUrl.trim() ? normalizeCenterServerHttpUrl(input.serverUrl) : "";
     const deviceSecret =
-      input.deviceSecret && input.deviceSecret.length > 0 ? input.deviceSecret : existing.device_secret;
+      input.deviceSecret && input.deviceSecret.length > 0
+        ? encodeSecret(input.deviceSecret, this.secretCodec)
+        : existing.device_secret;
     const refreshToken =
-      input.refreshToken && input.refreshToken.length > 0 ? input.refreshToken : existing.refresh_token;
-    const accessToken = input.accessToken ?? existing.access_token;
+      input.refreshToken && input.refreshToken.length > 0
+        ? encodeSecret(input.refreshToken, this.secretCodec)
+        : existing.refresh_token;
+    const accessToken =
+      input.accessToken !== undefined
+        ? encodeSecret(input.accessToken, this.secretCodec)
+        : existing.access_token;
     const accessTokenExpiresAt = input.accessTokenExpiresAt ?? existing.access_token_expires_at;
 
     this.db
@@ -122,7 +161,7 @@ export class CenterServerStore {
         new Date().toISOString(),
       );
 
-    return rowToView(this.getRow() ?? fail("Center server config was not saved."));
+    return rowToView(this.getRow() ?? fail("Center server config was not saved."), this.secretCodec);
   }
 
   saveTokens(input: {
@@ -138,12 +177,12 @@ export class CenterServerStore {
          WHERE id = 1`,
       )
       .run(
-        input.accessToken,
-        input.refreshToken ?? existing.refresh_token,
+        encodeSecret(input.accessToken, this.secretCodec),
+        input.refreshToken ? encodeSecret(input.refreshToken, this.secretCodec) : existing.refresh_token,
         input.accessTokenExpiresAt,
         new Date().toISOString(),
       );
-    return rowToView(this.getRow() ?? fail("Center server tokens were not saved."));
+    return rowToView(this.getRow() ?? fail("Center server tokens were not saved."), this.secretCodec);
   }
 
   markConnected(connectedAt: string): void {
@@ -178,18 +217,44 @@ export class CenterServerStore {
   }
 }
 
-function rowToView(row: CenterServerConfigRow): CenterServerSettingsView {
+export function createElectronSafeStorageCenterServerSecretCodec(
+  safeStorage: ElectronSafeStorageLike,
+): CenterServerSecretCodec | undefined {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return undefined;
+  }
+  return {
+    encode(value) {
+      if (!value) {
+        return "";
+      }
+      return `${SAFE_STORAGE_SECRET_PREFIX}${safeStorage.encryptString(value).toString("base64")}`;
+    },
+    decode(value) {
+      if (!value?.startsWith(SAFE_STORAGE_SECRET_PREFIX)) {
+        return value;
+      }
+      return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"));
+    },
+  };
+}
+
+function rowToView(
+  row: CenterServerConfigRow,
+  secretCodec: CenterServerSecretCodec | undefined,
+): CenterServerSettingsView {
+  const deviceSecret = decodeSecret(row.device_secret, secretCodec);
   const view: CenterServerSettingsView = {
     enabled: row.enabled === 1,
     serverUrl: row.server_url,
     deviceName: row.device_name || DEFAULT_DEVICE_NAME,
-    hasDeviceSecret: row.device_secret.length > 0,
-    hasRefreshToken: row.refresh_token.length > 0,
+    hasDeviceSecret: deviceSecret.length > 0,
+    hasRefreshToken: decodeSecret(row.refresh_token, secretCodec).length > 0,
   };
   if (row.device_id) {
     view.deviceId = row.device_id;
   }
-  const secretPreview = previewCenterServerSecret(row.device_secret);
+  const secretPreview = previewCenterServerSecret(deviceSecret);
   if (secretPreview) {
     view.deviceSecretPreview = secretPreview;
   }
@@ -203,6 +268,20 @@ function rowToView(row: CenterServerConfigRow): CenterServerSettingsView {
     view.lastError = row.last_error;
   }
   return view;
+}
+
+function encodeSecret(value: string, secretCodec: CenterServerSecretCodec | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return secretCodec?.encode(value) ?? value;
+}
+
+function decodeSecret(value: string, secretCodec: CenterServerSecretCodec | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return secretCodec?.decode(value) ?? value;
 }
 
 function fail(message: string): never {

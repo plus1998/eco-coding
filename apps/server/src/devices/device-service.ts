@@ -39,7 +39,7 @@ export class DeviceService {
       kind: input.kind,
       name,
       secretHash: await sha256Hex(deviceSecret),
-      metadata: input.metadata,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       now: this.clock().toISOString(),
     });
     return { device, deviceSecret };

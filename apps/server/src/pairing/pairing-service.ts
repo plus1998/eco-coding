@@ -1,9 +1,15 @@
 import type { EcoDeviceCapability } from "@eco/shared";
 import type { AuthService } from "../auth/auth-service";
 import { createPairingCode, createRandomToken, sha256Hex } from "../auth/crypto";
-import type { DeviceService } from "../devices/device-service";
 import type { MongoStore } from "../db/mongo-store";
-import type { DeviceBindingRecord, DeviceRecord, PairingSessionRecord, TokenBundle, UserRecord } from "../types";
+import type { DeviceService } from "../devices/device-service";
+import type {
+  DeviceBindingRecord,
+  DeviceRecord,
+  PairingSessionRecord,
+  TokenBundle,
+  UserRecord,
+} from "../types";
 
 export interface PairingServiceOptions {
   store: MongoStore;
@@ -141,7 +147,7 @@ export class PairingService {
       userId: session.userId,
       kind: "mobile",
       name: input.deviceName?.trim() || input.metadata?.model?.trim() || "Eco Mobile",
-      metadata: input.metadata,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     });
     const tokens = await this.auth.issueDeviceTokenBundle(registered.device);
     const binding = await this.store.createDeviceBinding({

@@ -10,6 +10,8 @@ import { type OnlineDeviceSnapshot, RpcGateway, type RpcPeer } from "./rpc/rpc-g
 import type { AccessTokenClaims, DeviceAccessTokenClaims, DeviceBindingRecord, DeviceRecord } from "./types";
 import { toPublicDevice, toPublicDeviceBinding, toPublicUser } from "./types";
 
+const MAX_AUDIT_LOG_LIMIT = 500;
+
 interface RpcSocketData {
   claims: DeviceAccessTokenClaims;
   sessionId: string;
@@ -207,11 +209,12 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     const body = await readJsonObject(request);
+    const metadata = readOptionalDeviceMetadata(body.metadata);
     const registered = await devices.registerDevice({
       userId: claims.userId,
       kind: requireDeviceKind(body, "kind"),
       name: requireString(body, "name"),
-      metadata: readOptionalDeviceMetadata(body.metadata),
+      ...(metadata !== undefined ? { metadata } : {}),
     });
     const tokens = await auth.issueDeviceTokenBundle(registered.device);
     return json(
@@ -253,11 +256,12 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     assertCanUpdateDevice(claims, deviceIdFromPath);
     const body = await readJsonObject(request);
+    const metadata = readOptionalDeviceMetadata(body.metadata);
     const device = await devices.updateDeviceProfile({
       userId: claims.userId,
       deviceId: deviceIdFromPath,
       ...(typeof body.name === "string" ? { name: requireString(body, "name") } : {}),
-      ...(body.metadata !== undefined ? { metadata: readOptionalDeviceMetadata(body.metadata) } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
     });
     return json({ device: toPublicDevice(device) });
   }
@@ -308,11 +312,12 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "POST" && pathname === "/v1/pairing/join") {
     const body = await readJsonObject(request);
+    const metadata = readOptionalDeviceMetadata(body.metadata);
     const joined = await pairing.joinPairingSession({
       code: requireString(body, "code"),
       token: requireString(body, "token"),
       ...(typeof body.deviceName === "string" ? { deviceName: body.deviceName } : {}),
-      metadata: readOptionalDeviceMetadata(body.metadata),
+      ...(metadata !== undefined ? { metadata } : {}),
     });
     return json({
       user: toPublicUser(joined.user),
@@ -621,6 +626,9 @@ function readLimit(url: URL): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error("limit must be a positive integer.");
+  }
+  if (parsed > MAX_AUDIT_LOG_LIMIT) {
+    throw new Error(`limit must be less than or equal to ${MAX_AUDIT_LOG_LIMIT}.`);
   }
   return parsed;
 }

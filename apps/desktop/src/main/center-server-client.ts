@@ -1,6 +1,7 @@
 import { ECO_RPC_METHODS } from "@eco/shared";
 import {
   buildCenterServerWebSocketUrl,
+  buildPairingQrPayload,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
   type CenterServerConnectionStatus,
@@ -16,15 +17,11 @@ import {
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
   normalizeCenterServerHttpUrl,
-  buildPairingQrPayload,
 } from "../shared/center-server";
 import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
 import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
 import type { CenterServerSettingsSecret, CenterServerStore } from "./center-server-store";
-import {
-  collectDesktopDeviceProfile,
-  desktopDeviceMetadata,
-} from "./desktop-device-profile";
+import { collectDesktopDeviceProfile, desktopDeviceMetadata } from "./desktop-device-profile";
 import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
 
 type FetchLike = typeof fetch;
@@ -94,7 +91,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly reconnectDelayMs: number;
   private readonly connectTimeoutMs: number;
   private readonly log: (message: string) => void;
-  private readonly onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
+  private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
   private readonly unsubscribe: () => void;
   private socket: WebSocketLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -280,9 +277,11 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   async createPairing(): Promise<CenterServerCreatePairingResult> {
     const settings = this.store.getSettingsWithSecrets();
     const accessToken = await this.ensureAccessToken(settings);
-    const response = await this.requestJson<Omit<CenterServerCreatePairingResult, "qrPayload"> & {
-      qrPayload: string;
-    }>({
+    const response = await this.requestJson<
+      Omit<CenterServerCreatePairingResult, "qrPayload"> & {
+        qrPayload: string;
+      }
+    >({
       serverUrl: settings.serverUrl,
       path: "/v1/pairing",
       method: "POST",

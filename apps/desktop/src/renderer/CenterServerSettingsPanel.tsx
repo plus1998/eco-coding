@@ -1,6 +1,6 @@
 import { ChevronLeft, Link2, Plus, QrCode, RefreshCw, Settings2, Smartphone, Unlink } from "lucide-react";
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import type {
   CenterServerConnectionStatus,
   CenterServerCreatePairingResult,
@@ -299,9 +299,7 @@ export function CenterServerSettingsPanel({
     <>
       <header className="mcp-page-header">
         <h1>连接</h1>
-        <p className="mcp-page-desc">
-          连接远程 Eco 服务，与手机端同步会话并远程控制本机 Agent。
-        </p>
+        <p className="mcp-page-desc">连接远程 Eco 服务，与手机端同步会话并远程控制本机 Agent。</p>
       </header>
 
       {error && <p className="settings-form-error mcp-list-error">{error}</p>}
@@ -337,10 +335,7 @@ export function CenterServerSettingsPanel({
                 >
                   <Settings2 size={18} />
                 </button>
-                <label
-                  className="mcp-toggle"
-                  title={form.enabled ? "已启用" : "已禁用"}
-                >
+                <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
                   <input
                     type="checkbox"
                     checked={form.enabled}
@@ -402,7 +397,9 @@ export function CenterServerSettingsPanel({
                       {mobileDetail ? (
                         <span className="center-server-bound-mobile-detail">{mobileDetail}</span>
                       ) : null}
-                      <span className={`center-server-bound-mobile-presence ${online ? "is-online" : "is-offline"}`}>
+                      <span
+                        className={`center-server-bound-mobile-presence ${online ? "is-online" : "is-offline"}`}
+                      >
                         {online ? "在线 · 可远程操控本机" : "离线 · 需手机连接 Server"}
                       </span>
                       <span className="center-server-bound-mobile-meta">
@@ -454,8 +451,8 @@ export function CenterServerSettingsPanel({
             <div className="center-server-pairing-card">
               {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
                 <p className="center-server-pairing-hint">
-                  当前地址为 localhost，手机无法访问。请改为局域网 IP（如{" "}
-                  <code>http://192.168.x.x:3128</code>）后重新生成。
+                  当前地址为 localhost，手机无法访问。请改为局域网 IP（如 <code>http://192.168.x.x:3128</code>
+                  ）后重新生成。
                 </p>
               ) : null}
               <div className="center-server-pairing-qr">
@@ -472,9 +469,7 @@ export function CenterServerSettingsPanel({
                 手机 Eco App 点「扫一扫连接」即可自动完成配置与绑定
               </p>
               <code className="center-server-pairing-code">{pairing.code}</code>
-              <p className="center-server-pairing-meta">
-                过期时间：{formatLocalTime(pairing.expiresAt)}
-              </p>
+              <p className="center-server-pairing-meta">过期时间：{formatLocalTime(pairing.expiresAt)}</p>
             </div>
           )}
         </section>
@@ -500,7 +495,7 @@ function ServerEditor({
   setForm: Dispatch<SetStateAction<CenterServerSettingsInput>>;
   registered: boolean;
   serverReachable: boolean;
-  error?: string;
+  error: string | undefined;
   busy?: boolean;
   testing: boolean;
   onBack: () => void;
@@ -536,7 +531,9 @@ function ServerEditor({
               setForm((current) => ({ ...current, serverUrl: event.target.value }));
             }}
           />
-          <span className="mcp-field-hint">本地开发可填 <code>http://127.0.0.1:3128</code></span>
+          <span className="mcp-field-hint">
+            本地开发可填 <code>http://127.0.0.1:3128</code>
+          </span>
         </label>
 
         <label className="mcp-field">
@@ -551,9 +548,7 @@ function ServerEditor({
           />
         </label>
 
-        {serverReachable && !registered && (
-          <p className="settings-form-success">服务可达，可继续下一步。</p>
-        )}
+        {serverReachable && !registered && <p className="settings-form-success">服务可达，可继续下一步。</p>}
 
         {error && <p className="settings-form-error">{error}</p>}
 
@@ -600,7 +595,7 @@ function AccountEditor({
   setPassword: (value: string) => void;
   displayName: string;
   setDisplayName: (value: string) => void;
-  error?: string;
+  error: string | undefined;
   busy?: boolean;
   onBack: () => void;
   onSubmit: () => void;
@@ -625,7 +620,11 @@ function AccountEditor({
         <div className="center-server-auth-tabs">
           <button
             type="button"
-            className={authMode === "signup" ? "mcp-save-button center-server-auth-tab" : "mcp-back-button center-server-auth-tab"}
+            className={
+              authMode === "signup"
+                ? "mcp-save-button center-server-auth-tab"
+                : "mcp-back-button center-server-auth-tab"
+            }
             disabled={busy}
             onClick={() => setAuthMode("signup")}
           >
@@ -633,7 +632,11 @@ function AccountEditor({
           </button>
           <button
             type="button"
-            className={authMode === "signin" ? "mcp-save-button center-server-auth-tab" : "mcp-back-button center-server-auth-tab"}
+            className={
+              authMode === "signin"
+                ? "mcp-save-button center-server-auth-tab"
+                : "mcp-back-button center-server-auth-tab"
+            }
             disabled={busy}
             onClick={() => setAuthMode("signin")}
           >
@@ -702,9 +705,7 @@ function ConnectionStatusLine({ status }: { status: CenterServerConnectionStatus
     <span className={`center-server-status is-${status.state}`}>
       {connectionStatusLabel(status.state)}
       {status.state === "error" && status.lastError ? ` · ${status.lastError}` : ""}
-      {status.state === "connected" && status.connectedAt
-        ? ` · ${formatLocalTime(status.connectedAt)}`
-        : ""}
+      {status.state === "connected" && status.connectedAt ? ` · ${formatLocalTime(status.connectedAt)}` : ""}
     </span>
   );
 }
@@ -762,10 +763,7 @@ function isGenericMobileName(name: string | undefined): boolean {
   return normalized === "eco mobile" || normalized === "ecomobile";
 }
 
-function formatMobileLabel(
-  mobile: CenterServerDevicePresenceView | undefined,
-  deviceId: string,
-): string {
+function formatMobileLabel(mobile: CenterServerDevicePresenceView | undefined, deviceId: string): string {
   const model = mobile?.metadata?.model?.trim();
   if (model) {
     return model;
