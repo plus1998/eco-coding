@@ -57,6 +57,28 @@ void main() {
     });
   });
 
+  group('parsePairingQrPayload', () {
+    test('parses full quick-join uri', () {
+      final payload = parsePairingQrPayload(
+        'eco://pair?server=http%3A%2F%2F192.168.1.2%3A3128&code=abcd1234&token=secret-token',
+      );
+      expect(payload.code, 'ABCD1234');
+      expect(payload.serverUrl, 'http://192.168.1.2:3128');
+      expect(payload.bootstrapToken, 'secret-token');
+      expect(payload.canQuickJoin, isTrue);
+    });
+
+    test('parses legacy eco pair uri', () {
+      final payload = parsePairingQrPayload('eco://pair?code=abcd1234');
+      expect(payload.code, 'ABCD1234');
+      expect(payload.canQuickJoin, isFalse);
+    });
+
+    test('uppercases manual code', () {
+      expect(parsePairingQrPayload('abcd1234').code, 'ABCD1234');
+    });
+  });
+
   group('parsePairingCodeFromQr', () {
     test('parses eco pair uri', () {
       expect(parsePairingCodeFromQr('eco://pair?code=abcd1234'), 'ABCD1234');

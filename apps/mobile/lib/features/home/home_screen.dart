@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart' show EcoConnectionState;
+import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_theme.dart';
 import '../pairing/pairing_scan_screen.dart';
@@ -23,6 +24,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isRegister = false;
   bool _busy = false;
   bool _refreshing = false;
+  bool _showManualSetup = false;
   SetupWizardStep? _wizardStep;
 
   @override
@@ -134,6 +136,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _maybeAutoAdvance(SetupOverview overview, SetupWizardStep completed) {
+    if (!_showManualSetup) return;
     final current = _wizardStep ?? resolveSetupWizardStep(overview);
     if (current == completed && isSetupWizardStepDone(completed, overview)) {
       final nextIndex = completed.index + 1;
@@ -143,6 +146,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _openScanner() async {
+    final payload = await Navigator.of(context).push<PairingQrPayload>(
+      MaterialPageRoute(builder: (_) => const PairingScanScreen()),
+    );
+    if (payload == null || !mounted) return;
+    await _handleScanResult(payload);
+  }
+
+  Future<void> _handleScanResult(PairingQrPayload payload) async {
+    if (payload.canQuickJoin) {
+      await _run(() async {
+        final client = ref.read(ecoCenterClientProvider);
+        await client.quickJoinFromQr(payload);
+        final creds = client.credentials;
+        _serverUrlController.text = creds.serverUrl;
+        _emailController.text = creds.userEmail ?? '';
+        ref.read(selectedDesktopIdProvider.notifier).state =
+            creds.selectedDesktopId;
+        ref.read(serverReachableProvider.notifier).state = true;
+        ref.invalidate(credentialsProvider);
+        ref.invalidate(bindingsProvider);
+        ref.invalidate(presenceProvider);
+        setState(() => _showManualSetup = false);
+        _showSnack('已连接 PC');
+      });
+      return;
+    }
+
+    _pairCodeController.text = payload.code;
+    setState(() {
+      _showManualSetup = true;
+      _wizardStep = SetupWizardStep.bindPc;
+    });
+    _showSnack('旧版二维码，请完成登录后绑定');
   }
 
   @override
@@ -178,43 +217,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SetupWizardProgress(
-                    current: currentStep,
-                    overview: overview,
-                    onStepTap: _goToStep,
-                  ),
-                  const SizedBox(height: 24),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: _buildStepContent(
-                      key: ValueKey(currentStep),
-                      step: currentStep,
-                      overview: overview,
-                      actionBusy: actionBusy,
+      body: overview.readyForThreads
+          ? _ReadyConnectionView(
+              overview: overview,
+              busy: actionBusy,
+              onScan: _openScanner,
+            )
+          : _showManualSetup
+              ? Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SetupWizardProgress(
+                              current: currentStep,
+                              overview: overview,
+                              onStepTap: _goToStep,
+                            ),
+                            const SizedBox(height: 24),
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              child: _buildStepContent(
+                                key: ValueKey(currentStep),
+                                step: currentStep,
+                                overview: overview,
+                                actionBusy: actionBusy,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          _WizardNavBar(
-            showBack: currentStep.index > 0,
-            showNext: isSetupWizardStepDone(currentStep, overview) &&
-                currentStep != SetupWizardStep.selectPc,
-            busy: actionBusy,
-            onBack: _goBack,
-            onNext: () => _goNext(overview),
-          ),
-        ],
-      ),
+                    _WizardNavBar(
+                      showBack: currentStep.index > 0,
+                      showNext: isSetupWizardStepDone(currentStep, overview) &&
+                          currentStep != SetupWizardStep.selectPc,
+                      busy: actionBusy,
+                      onBack: _goBack,
+                      onNext: () => _goNext(overview),
+                    ),
+                  ],
+                )
+              : _ScanFirstView(
+                  busy: actionBusy,
+                  onScan: _openScanner,
+                  onManualSetup: () => setState(() {
+                    _showManualSetup = true;
+                    _wizardStep ??= resolveSetupWizardStep(overview);
+                  }),
+                ),
     );
   }
 
@@ -293,11 +347,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             overview: overview,
             busy: actionBusy,
             onScan: () async {
-              final code = await Navigator.of(context).push<String>(
+              final payload = await Navigator.of(context).push<PairingQrPayload>(
                 MaterialPageRoute(builder: (_) => const PairingScanScreen()),
               );
-              if (code != null) {
-                _pairCodeController.text = code;
+              if (payload != null) {
+                _pairCodeController.text = payload.code;
               }
             },
             onBind: () => _run(() async {
@@ -460,7 +514,7 @@ class _LoginStep extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final credentials = ref.watch(credentialsProvider).valueOrNull;
-    final loggedIn = credentials?.hasUserSession ?? false;
+    final loggedIn = credentials?.isProvisioned ?? false;
     final loginStep = overview.steps[1];
     final wsStep = overview.steps[2];
 
@@ -747,6 +801,139 @@ class _StepDoneBanner extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScanFirstView extends StatelessWidget {
+  const _ScanFirstView({
+    required this.busy,
+    required this.onScan,
+    required this.onManualSetup,
+  });
+
+  final bool busy;
+  final VoidCallback onScan;
+  final VoidCallback onManualSetup;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Spacer(),
+            Icon(Icons.qr_code_scanner, size: 72, color: EcoColors.accentText),
+            const SizedBox(height: 24),
+            Text(
+              '连接 PC',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '在 PC 端生成配对二维码，点击下方按钮扫码即可自动完成配置与绑定。',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: eco.textMuted,
+                  ),
+            ),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: busy ? null : onScan,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('扫一扫连接'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: busy ? null : onManualSetup,
+              child: const Text('手动配置'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadyConnectionView extends ConsumerWidget {
+  const _ReadyConnectionView({
+    required this.overview,
+    required this.busy,
+    required this.onScan,
+  });
+
+  final SetupOverview overview;
+  final bool busy;
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eco = ecoThemeExtras(context);
+    final selectStep = overview.steps[4];
+    final credentials = ref.watch(credentialsProvider).valueOrNull;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: eco.statusAllowBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: EcoColors.statusAllowBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.check_circle, color: eco.statusAllowText),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '一切就绪，可前往「会话」远程操控 PC',
+                        style: TextStyle(
+                          color: eco.statusAllowText,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (selectStep.subtitle != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '当前 PC：${selectStep.subtitle}',
+                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
+                  ),
+                ],
+                if (credentials?.serverUrl.isNotEmpty ?? false) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Server：${credentials!.serverUrl}',
+                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: busy ? null : onScan,
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('重新扫码 / 换绑 PC'),
           ),
         ],
       ),

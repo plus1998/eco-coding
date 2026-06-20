@@ -20,8 +20,8 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
       final raw = barcode.rawValue;
       if (raw == null || raw.isEmpty) continue;
       _handled = true;
-      final code = parsePairingCodeFromQr(raw);
-      Navigator.of(context).pop(code);
+      final payload = parsePairingQrPayload(raw);
+      Navigator.of(context).pop(payload);
       return;
     }
   }

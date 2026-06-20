@@ -13,6 +13,7 @@ import {
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
   normalizeCenterServerHttpUrl,
+  buildPairingQrPayload,
 } from "../shared/center-server";
 import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
 import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
@@ -259,13 +260,23 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   async createPairing(): Promise<CenterServerCreatePairingResult> {
     const settings = this.store.getSettingsWithSecrets();
     const accessToken = await this.ensureAccessToken(settings);
-    return this.requestJson<CenterServerCreatePairingResult>({
+    const response = await this.requestJson<Omit<CenterServerCreatePairingResult, "qrPayload"> & {
+      qrPayload: string;
+    }>({
       serverUrl: settings.serverUrl,
       path: "/v1/pairing",
       method: "POST",
       bearerToken: accessToken,
       body: {},
     });
+    return {
+      ...response,
+      qrPayload: buildPairingQrPayload({
+        serverUrl: settings.serverUrl,
+        code: response.code,
+        bootstrapToken: response.bootstrapToken,
+      }),
+    };
   }
 
   async testConnection(

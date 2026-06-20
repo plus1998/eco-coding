@@ -188,6 +188,50 @@ class EcoCenterClient {
     return DeviceBinding.fromJson(response['binding'] as JsonMap);
   }
 
+  Future<DeviceBinding> quickJoinFromQr(PairingQrPayload payload) async {
+    if (!payload.canQuickJoin) {
+      throw EcoCenterException(
+        'QR 码缺少服务器地址或授权信息，请使用 PC 最新版生成的二维码。',
+      );
+    }
+    final serverUrl = normalizeCenterServerHttpUrl(payload.serverUrl!);
+    final reachable = await testConnection(serverUrl);
+    if (!reachable) {
+      throw EcoCenterException('无法访问服务器，请检查地址与网络');
+    }
+    final response = await _requestJson(
+      serverUrl: serverUrl,
+      path: '/v1/pairing/join',
+      method: 'POST',
+      body: {
+        'code': payload.code,
+        'token': payload.bootstrapToken,
+        'deviceName': (_credentials.deviceName ?? 'Eco Mobile').trim(),
+      },
+    );
+    final user = PublicUser.fromJson(response['user'] as JsonMap);
+    final device = PublicDevice.fromJson(response['device'] as JsonMap);
+    final tokens = TokenBundle.fromJson(response['tokens'] as JsonMap);
+    final binding = DeviceBinding.fromJson(response['binding'] as JsonMap);
+    final desktopDeviceId = response['desktopDeviceId'] as String;
+    _credentials = AppCredentials(
+      serverUrl: serverUrl,
+      userEmail: user.email,
+      userDisplayName: user.displayName,
+      deviceId: device.id,
+      deviceSecret: response['deviceSecret'] as String,
+      deviceName: device.name,
+      deviceRefreshToken: tokens.refreshToken,
+      deviceAccessToken: tokens.accessToken,
+      deviceAccessTokenExpiresAt: tokens.expiresAt,
+      selectedDesktopId: desktopDeviceId,
+    );
+    await _store.save(_credentials);
+    _intentionallyStopped = false;
+    await _connectOnce();
+    return binding;
+  }
+
   Future<List<DeviceBinding>> listBindings({
     bool includeRevoked = false,
   }) async {
@@ -601,16 +645,41 @@ class EcoCenterClient {
   }
 }
 
-String parsePairingCodeFromQr(String raw) {
+String parsePairingCodeFromQr(String raw) => parsePairingQrPayload(raw).code;
+
+class PairingQrPayload {
+  const PairingQrPayload({
+    required this.code,
+    this.serverUrl,
+    this.bootstrapToken,
+  });
+
+  final String code;
+  final String? serverUrl;
+  final String? bootstrapToken;
+
+  bool get canQuickJoin =>
+      serverUrl != null &&
+      serverUrl!.trim().isNotEmpty &&
+      bootstrapToken != null &&
+      bootstrapToken!.trim().isNotEmpty;
+}
+
+PairingQrPayload parsePairingQrPayload(String raw) {
   final trimmed = raw.trim();
   if (trimmed.startsWith('eco://pair')) {
     final uri = Uri.parse(trimmed);
     final code = uri.queryParameters['code'];
-    if (code != null && code.isNotEmpty) {
-      return code.trim().toUpperCase();
+    if (code == null || code.trim().isEmpty) {
+      throw EcoCenterException('无效的配对二维码。');
     }
+    return PairingQrPayload(
+      serverUrl: uri.queryParameters['server'],
+      code: code.trim().toUpperCase(),
+      bootstrapToken: uri.queryParameters['token'],
+    );
   }
-  return trimmed.toUpperCase();
+  return PairingQrPayload(code: trimmed.toUpperCase());
 }
 
 enum _TokenScope { user, device }

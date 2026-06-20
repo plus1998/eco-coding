@@ -32,6 +32,7 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
       uri: dependencies.config.mongoUri,
       ...(dependencies.config.mongoDatabase ? { databaseName: dependencies.config.mongoDatabase } : {}),
     }));
+  const devices = dependencies.devices ?? new DeviceService({ store });
   const auth =
     dependencies.auth ??
     new AuthService({
@@ -40,12 +41,13 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
       accessTokenTtlSeconds: dependencies.config.accessTokenTtlSeconds,
       refreshTokenTtlSeconds: dependencies.config.refreshTokenTtlSeconds,
     });
-  const devices = dependencies.devices ?? new DeviceService({ store });
   const pairing =
     dependencies.pairing ??
     new PairingService({
       store,
       pairingTtlSeconds: dependencies.config.pairingTtlSeconds,
+      devices,
+      auth,
     });
   const presence = createRedisPresenceStore(dependencies.config.redisUrl, dependencies.config.redisPassword);
   const rpcBus =
@@ -285,8 +287,25 @@ export async function handleEcoHttpRoute(input: {
     return json({
       pairingId: created.session.id,
       code: created.code,
+      bootstrapToken: created.bootstrapToken,
       qrPayload: created.qrPayload,
       expiresAt: created.session.expiresAt,
+    });
+  }
+  if (request.method === "POST" && url.pathname === "/v1/pairing/join") {
+    const body = await readJsonObject(request);
+    const joined = await pairing.joinPairingSession({
+      code: requireString(body, "code"),
+      token: requireString(body, "token"),
+      ...(typeof body.deviceName === "string" ? { deviceName: body.deviceName } : {}),
+    });
+    return json({
+      user: toPublicUser(joined.user),
+      device: toPublicDevice(joined.device),
+      deviceSecret: joined.deviceSecret,
+      tokens: joined.tokens,
+      binding: toPublicDeviceBinding(joined.binding),
+      desktopDeviceId: joined.desktopDeviceId,
     });
   }
   const pairingIdFromPath = matchPath(url.pathname, "/v1/pairing/:pairingId")?.pairingId;

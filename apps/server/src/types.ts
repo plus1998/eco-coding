@@ -37,6 +37,7 @@ export interface PairingSessionRecord {
   userId: string;
   desktopDeviceId: string;
   codeHash: string;
+  bootstrapTokenHash: string;
   expiresAt: string;
   claimedAt: string | null;
   createdAt: string;

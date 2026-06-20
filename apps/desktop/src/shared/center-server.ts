@@ -96,6 +96,7 @@ export interface CenterServerAccountAuthResult extends CenterServerRegisterDeskt
 export interface CenterServerCreatePairingResult {
   pairingId: string;
   code: string;
+  bootstrapToken: string;
   qrPayload: string;
   expiresAt: string;
 }
@@ -136,6 +137,28 @@ export function buildCenterServerWebSocketUrl(serverUrl: string, accessToken: st
   parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/v1/rpc`;
   parsed.searchParams.set("access_token", accessToken);
   return parsed.toString();
+}
+
+export function buildPairingQrPayload(input: {
+  serverUrl: string;
+  code: string;
+  bootstrapToken: string;
+}): string {
+  const params = new URLSearchParams({
+    server: normalizeCenterServerHttpUrl(input.serverUrl),
+    code: input.code,
+    token: input.bootstrapToken,
+  });
+  return `eco://pair?${params.toString()}`;
+}
+
+export function isLocalhostCenterServerUrl(serverUrl: string): boolean {
+  try {
+    const hostname = new URL(normalizeCenterServerHttpUrl(serverUrl)).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
 }
 
 export function previewCenterServerSecret(value: string): string | undefined {

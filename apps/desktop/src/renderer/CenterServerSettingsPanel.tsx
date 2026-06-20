@@ -10,6 +10,7 @@ import type {
   CenterServerSignInRequest,
   CenterServerSignUpRequest,
 } from "../shared/center-server";
+import { isLocalhostCenterServerUrl } from "../shared/center-server";
 import { AppMessage, useAppMessage } from "./AppMessage";
 
 interface CenterServerSettingsPanelProps {
@@ -418,6 +419,11 @@ export function CenterServerSettingsPanel({
                 {pairing && (
                   <div className="settings-form-field connect-flow-pairing-block">
                     <span className="settings-form-label">手机扫码配对</span>
+                    {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
+                      <span className="settings-field-hint connect-flow-pairing-qr-hint">
+                        当前 Server 地址为 localhost，手机无法访问。请改为局域网 IP（如 http://192.168.x.x:3128）后重新生成配对码。
+                      </span>
+                    ) : null}
                     <div className="connect-flow-pairing-qr">
                       <QRCodeSVG
                         value={pairing.qrPayload}
@@ -429,7 +435,7 @@ export function CenterServerSettingsPanel({
                       />
                     </div>
                     <span className="settings-field-hint connect-flow-pairing-qr-hint">
-                      在 Eco Mobile「PC」页扫码，或手动输入下方配对码
+                      手机 Eco App 点「扫一扫连接」即可自动完成配置与绑定
                     </span>
                     <span className="settings-form-label">配对码</span>
                     <code className="connect-flow-pairing-code">{pairing.code}</code>

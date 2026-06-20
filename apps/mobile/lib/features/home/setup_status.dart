@@ -39,7 +39,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final selectedDesktopId = ref.watch(selectedDesktopIdProvider);
 
   final hasServerUrl = (credentials?.serverUrl ?? '').trim().isNotEmpty;
-  final loggedIn = credentials?.hasUserSession ?? false;
+  final loggedIn = credentials?.isProvisioned ?? false;
   final deviceRegistered = credentials?.hasDeviceCredentials ?? false;
   final wsState = connection?.state ?? EcoConnectionState.disconnected;
   final wsError = connection?.lastError;

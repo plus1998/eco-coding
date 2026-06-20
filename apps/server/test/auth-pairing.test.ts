@@ -17,7 +17,13 @@ test("registers users, devices, and binds a mobile through one-time pairing", as
     now: clock,
   });
   const devices = new DeviceService({ store, now: clock });
-  const pairing = new PairingService({ store, pairingTtlSeconds: 300, now: clock });
+  const pairing = new PairingService({
+    store,
+    pairingTtlSeconds: 300,
+    devices,
+    auth,
+    now: clock,
+  });
 
   const user = await auth.registerUser({
     email: "owner@example.com",
@@ -46,6 +52,7 @@ test("registers users, devices, and binds a mobile through one-time pairing", as
     userId: user.id,
     desktopDeviceId: desktop.device.id,
   });
+  expect(createdPairing.bootstrapToken).toBeTruthy();
   const binding = await pairing.claimPairingSession({
     userId: user.id,
     mobileDeviceId: mobile.device.id,
@@ -65,6 +72,108 @@ test("registers users, devices, and binds a mobile through one-time pairing", as
   await closeTestMongoStore(store);
 });
 
+test("joins pairing through bootstrap token without prior mobile auth", async () => {
+  const store = await createTestMongoStore("auth_pairing_join");
+  const clock = fixedClock("2026-01-01T00:00:00.000Z");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+    now: clock,
+  });
+  const devices = new DeviceService({ store, now: clock });
+  const pairing = new PairingService({
+    store,
+    pairingTtlSeconds: 300,
+    devices,
+    auth,
+    now: clock,
+  });
+
+  const user = await auth.registerUser({
+    email: "join@example.com",
+    password: "correct horse battery staple",
+  });
+  const desktop = await devices.registerDevice({
+    userId: user.id,
+    kind: "desktop",
+    name: "Studio",
+  });
+  const createdPairing = await pairing.createPairingSession({
+    userId: user.id,
+    desktopDeviceId: desktop.device.id,
+  });
+
+  const joined = await pairing.joinPairingSession({
+    code: createdPairing.code,
+    token: createdPairing.bootstrapToken,
+    deviceName: "Pixel",
+  });
+
+  expect(joined.user.email).toBe("join@example.com");
+  expect(joined.device.kind).toBe("mobile");
+  expect(joined.device.name).toBe("Pixel");
+  expect(joined.deviceSecret).toBeTruthy();
+  expect(joined.tokens.accessToken).toBeTruthy();
+  expect(joined.binding).toMatchObject({
+    desktopDeviceId: desktop.device.id,
+    mobileDeviceId: joined.device.id,
+  });
+  expect(joined.desktopDeviceId).toBe(desktop.device.id);
+
+  await expect(
+    pairing.joinPairingSession({
+      code: createdPairing.code,
+      token: createdPairing.bootstrapToken,
+    }),
+  ).rejects.toThrow("Pairing code is invalid or expired.");
+
+  await closeTestMongoStore(store);
+});
+
+test("rejects join when bootstrap token does not match", async () => {
+  const store = await createTestMongoStore("auth_pairing_join_bad_token");
+  const clock = fixedClock("2026-01-01T00:00:00.000Z");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+    now: clock,
+  });
+  const devices = new DeviceService({ store, now: clock });
+  const pairing = new PairingService({
+    store,
+    pairingTtlSeconds: 300,
+    devices,
+    auth,
+    now: clock,
+  });
+  const user = await auth.registerUser({
+    email: "join2@example.com",
+    password: "correct horse battery staple",
+  });
+  const desktop = await devices.registerDevice({
+    userId: user.id,
+    kind: "desktop",
+    name: "Studio",
+  });
+  const createdPairing = await pairing.createPairingSession({
+    userId: user.id,
+    desktopDeviceId: desktop.device.id,
+  });
+
+  await expect(
+    pairing.joinPairingSession({
+      code: createdPairing.code,
+      token: "wrong-token",
+    }),
+  ).rejects.toThrow("Pairing code is invalid or expired.");
+
+  await closeTestMongoStore(store);
+});
+
 test("rejects expired pairing codes", async () => {
   const store = await createTestMongoStore("auth_pairing_expired");
   const auth = new AuthService({
@@ -78,6 +187,8 @@ test("rejects expired pairing codes", async () => {
   const pairing = new PairingService({
     store,
     pairingTtlSeconds: 1,
+    devices,
+    auth,
     now: fixedClock("2026-01-01T00:00:00.000Z"),
   });
   const user = await auth.registerUser({
@@ -93,6 +204,8 @@ test("rejects expired pairing codes", async () => {
   const expiredPairing = new PairingService({
     store,
     pairingTtlSeconds: 1,
+    devices,
+    auth,
     now: fixedClock("2026-01-01T00:00:02.000Z"),
   });
 
@@ -101,6 +214,13 @@ test("rejects expired pairing codes", async () => {
       userId: user.id,
       mobileDeviceId: mobile.device.id,
       code: createdPairing.code,
+    }),
+  ).rejects.toThrow("Pairing code is invalid or expired.");
+
+  await expect(
+    expiredPairing.joinPairingSession({
+      code: createdPairing.code,
+      token: createdPairing.bootstrapToken,
     }),
   ).rejects.toThrow("Pairing code is invalid or expired.");
 

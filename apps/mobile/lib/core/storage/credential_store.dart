@@ -38,6 +38,11 @@ class AppCredentials {
       userRefreshToken != null &&
       userRefreshToken!.isNotEmpty;
 
+  bool get isProvisioned =>
+      hasDeviceCredentials &&
+      userEmail != null &&
+      userEmail!.isNotEmpty;
+
   bool get hasDeviceCredentials =>
       deviceId != null &&
       deviceId!.isNotEmpty &&

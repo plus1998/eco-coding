@@ -19,7 +19,7 @@ test("supports the complete single-instance HTTP management flow", async () => {
     refreshTokenTtlSeconds: 3600,
   });
   const devices = new DeviceService({ store });
-  const pairing = new PairingService({ store, pairingTtlSeconds: 300 });
+  const pairing = new PairingService({ store, pairingTtlSeconds: 300, devices, auth });
   const rpc = new RpcGateway({
     store,
     presence: new MemoryPresenceStore(),
@@ -56,20 +56,37 @@ test("supports the complete single-instance HTTP management flow", async () => {
     const pairingSession = await client.post<{
       pairingId: string;
       code: string;
+      bootstrapToken: string;
       qrPayload: string;
       expiresAt: string;
     }>("/v1/pairing", {}, desktop.tokens.accessToken);
     expect(pairingSession.qrPayload).toContain(pairingSession.code);
+    expect(pairingSession.bootstrapToken).toBeTruthy();
 
-    const pendingPairing = await client.get<{ status: "pending" }>(
-      `/v1/pairing/${pairingSession.pairingId}`,
-      desktop.tokens.accessToken,
-    );
-    expect(pendingPairing.status).toBe("pending");
+    const joined = await client.post<{
+      user: { email: string };
+      device: { id: string; kind: "mobile" };
+      deviceSecret: string;
+      tokens: { accessToken: string };
+      binding: { desktopDeviceId: string; mobileDeviceId: string };
+      desktopDeviceId: string;
+    }>("/v1/pairing/join", {
+      code: pairingSession.code,
+      token: pairingSession.bootstrapToken,
+      deviceName: "Quick Join Phone",
+    });
+    expect(joined.user.email).toBe("owner@example.com");
+    expect(joined.binding.desktopDeviceId).toBe(desktop.device.id);
+    expect(joined.desktopDeviceId).toBe(desktop.device.id);
+
+    const secondPairing = await client.post<{
+      code: string;
+      bootstrapToken: string;
+    }>("/v1/pairing", {}, desktop.tokens.accessToken);
 
     const claimed = await client.post<{
       binding: { id: string; desktopDeviceId: string; mobileDeviceId: string };
-    }>("/v1/pairing/claim", { code: pairingSession.code }, mobile.tokens.accessToken);
+    }>("/v1/pairing/claim", { code: secondPairing.code }, mobile.tokens.accessToken);
     expect(claimed.binding).toMatchObject({
       desktopDeviceId: desktop.device.id,
       mobileDeviceId: mobile.device.id,

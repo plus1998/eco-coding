@@ -51,6 +51,7 @@ interface PairingSessionDocument {
   userId: string;
   desktopDeviceId: string;
   codeHash: string;
+  bootstrapTokenHash: string;
   expiresAt: Date;
   claimedAt: Date | null;
   createdAt: Date;
@@ -280,6 +281,7 @@ export class MongoStore {
     userId: string;
     desktopDeviceId: string;
     codeHash: string;
+    bootstrapTokenHash: string;
     expiresAt: string;
     now: string;
   }): Promise<PairingSessionRecord> {
@@ -289,6 +291,7 @@ export class MongoStore {
       userId: input.userId,
       desktopDeviceId: input.desktopDeviceId,
       codeHash: input.codeHash,
+      bootstrapTokenHash: input.bootstrapTokenHash,
       expiresAt: toDate(input.expiresAt),
       claimedAt: null,
       createdAt: toDate(input.now),
@@ -309,6 +312,25 @@ export class MongoStore {
     const row = await this.models.PairingSession.findOneAndUpdate(
       {
         codeHash,
+        claimedAt: null,
+        expiresAt: { $gt: nowDate },
+      },
+      { $set: { claimedAt: nowDate } },
+      { new: true },
+    ).lean();
+    return row ? mapPairingSession(row as PairingSessionDocument) : undefined;
+  }
+
+  async claimPairingSessionByCodeAndBootstrapTokenHash(input: {
+    codeHash: string;
+    bootstrapTokenHash: string;
+    now: string;
+  }): Promise<PairingSessionRecord | undefined> {
+    const nowDate = toDate(input.now);
+    const row = await this.models.PairingSession.findOneAndUpdate(
+      {
+        codeHash: input.codeHash,
+        bootstrapTokenHash: input.bootstrapTokenHash,
         claimedAt: null,
         expiresAt: { $gt: nowDate },
       },
@@ -549,6 +571,7 @@ function pairingSessionSchema(): Schema<PairingSessionDocument> {
       userId: { type: String, required: true },
       desktopDeviceId: { type: String, required: true },
       codeHash: { type: String, required: true },
+      bootstrapTokenHash: { type: String, required: true },
       expiresAt: { type: Date, required: true },
       claimedAt: { type: Date, default: null },
       createdAt: { type: Date, required: true },
@@ -667,6 +690,7 @@ function mapPairingSession(row: PairingSessionDocument): PairingSessionRecord {
     userId: row.userId,
     desktopDeviceId: row.desktopDeviceId,
     codeHash: row.codeHash,
+    bootstrapTokenHash: row.bootstrapTokenHash,
     expiresAt: toIso(row.expiresAt),
     claimedAt: toIsoOrNull(row.claimedAt),
     createdAt: toIso(row.createdAt),

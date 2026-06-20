@@ -1,28 +1,46 @@
 import type { EcoDeviceCapability } from "@eco/shared";
-import { createPairingCode, sha256Hex } from "../auth/crypto";
+import type { AuthService } from "../auth/auth-service";
+import { createPairingCode, createRandomToken, sha256Hex } from "../auth/crypto";
+import type { DeviceService } from "../devices/device-service";
 import type { MongoStore } from "../db/mongo-store";
-import type { DeviceBindingRecord, PairingSessionRecord } from "../types";
+import type { DeviceBindingRecord, DeviceRecord, PairingSessionRecord, TokenBundle, UserRecord } from "../types";
 
 export interface PairingServiceOptions {
   store: MongoStore;
   pairingTtlSeconds: number;
+  devices: DeviceService;
+  auth: AuthService;
   now?: () => Date;
 }
 
 export interface CreatedPairingSession {
   session: PairingSessionRecord;
   code: string;
+  bootstrapToken: string;
   qrPayload: string;
+}
+
+export interface JoinPairingSessionResult {
+  user: UserRecord;
+  device: DeviceRecord;
+  deviceSecret: string;
+  tokens: TokenBundle;
+  binding: DeviceBindingRecord;
+  desktopDeviceId: string;
 }
 
 export class PairingService {
   private readonly store: MongoStore;
   private readonly pairingTtlSeconds: number;
+  private readonly devices: DeviceService;
+  private readonly auth: AuthService;
   private readonly clock: () => Date;
 
   constructor(options: PairingServiceOptions) {
     this.store = options.store;
     this.pairingTtlSeconds = options.pairingTtlSeconds;
+    this.devices = options.devices;
+    this.auth = options.auth;
     this.clock = options.now ?? (() => new Date());
   }
 
@@ -36,17 +54,20 @@ export class PairingService {
     }
     const now = this.clock();
     const code = createPairingCode();
+    const bootstrapToken = createRandomToken(48);
     const session = await this.store.createPairingSession({
       id: createId("pair"),
       userId: input.userId,
       desktopDeviceId: input.desktopDeviceId,
       codeHash: await sha256Hex(code),
+      bootstrapTokenHash: await sha256Hex(bootstrapToken),
       expiresAt: new Date(now.getTime() + this.pairingTtlSeconds * 1000).toISOString(),
       now: now.toISOString(),
     });
     return {
       session,
       code,
+      bootstrapToken,
       qrPayload: `eco://pair?code=${encodeURIComponent(code)}`,
     };
   }
@@ -87,6 +108,56 @@ export class PairingService {
       capabilities: defaultBindingCapabilities(),
       now: this.nowIso(),
     });
+  }
+
+  async joinPairingSession(input: {
+    code: string;
+    token: string;
+    deviceName?: string;
+  }): Promise<JoinPairingSessionResult> {
+    const normalizedCode = input.code.trim().toUpperCase();
+    const token = input.token.trim();
+    if (!normalizedCode || !token) {
+      throw new Error("Pairing code and token are required.");
+    }
+    const session = await this.store.claimPairingSessionByCodeAndBootstrapTokenHash({
+      codeHash: await sha256Hex(normalizedCode),
+      bootstrapTokenHash: await sha256Hex(token),
+      now: this.nowIso(),
+    });
+    if (!session) {
+      throw new Error("Pairing code is invalid or expired.");
+    }
+    const desktop = await this.store.findDeviceById(session.desktopDeviceId);
+    if (!desktop || desktop.userId !== session.userId || desktop.kind !== "desktop" || desktop.disabledAt) {
+      throw new Error("Desktop device is not active.");
+    }
+    const user = await this.store.findUserById(session.userId);
+    if (!user || user.disabledAt) {
+      throw new Error("User account is not active.");
+    }
+    const registered = await this.devices.registerDevice({
+      userId: session.userId,
+      kind: "mobile",
+      name: input.deviceName?.trim() || "Eco Mobile",
+    });
+    const tokens = await this.auth.issueDeviceTokenBundle(registered.device);
+    const binding = await this.store.createDeviceBinding({
+      id: createId("bind"),
+      userId: session.userId,
+      desktopDeviceId: desktop.id,
+      mobileDeviceId: registered.device.id,
+      capabilities: defaultBindingCapabilities(),
+      now: this.nowIso(),
+    });
+    return {
+      user,
+      device: registered.device,
+      deviceSecret: registered.deviceSecret,
+      tokens,
+      binding,
+      desktopDeviceId: desktop.id,
+    };
   }
 
   private nowIso(): string {
