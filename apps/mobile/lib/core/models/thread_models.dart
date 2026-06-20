@@ -123,6 +123,29 @@ class ThreadSummary {
             : null,
       );
 
+  ThreadSummary copyWith({
+    String? title,
+    String? prompt,
+    String? workspacePath,
+    String? status,
+    String? createdAt,
+    String? updatedAt,
+    String? message,
+    ThreadRuntimeConfig? runtimeConfig,
+  }) {
+    return ThreadSummary(
+      id: id,
+      title: title ?? this.title,
+      prompt: prompt ?? this.prompt,
+      workspacePath: workspacePath ?? this.workspacePath,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      message: message ?? this.message,
+      runtimeConfig: runtimeConfig ?? this.runtimeConfig,
+    );
+  }
+
   final String id;
   final String title;
   final String prompt;
@@ -326,6 +349,7 @@ class ThreadPendingFollowUp {
     required this.prompt,
     required this.status,
     required this.createdAt,
+    this.priority = 'normal',
   });
 
   factory ThreadPendingFollowUp.fromJson(Map<String, dynamic> json) =>
@@ -335,6 +359,7 @@ class ThreadPendingFollowUp {
         prompt: json['prompt'] as String? ?? '',
         status: json['status'] as String? ?? 'queued',
         createdAt: json['createdAt'] as String? ?? '',
+        priority: json['priority'] as String? ?? 'normal',
       );
 
   final String id;
@@ -342,6 +367,7 @@ class ThreadPendingFollowUp {
   final String prompt;
   final String status;
   final String createdAt;
+  final String priority;
 }
 
 class ThreadLiveEvent {
@@ -359,6 +385,7 @@ class ThreadLiveEvent {
     this.runtimeConfig,
     this.projection,
     this.subagentSessions,
+    this.title,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
@@ -413,6 +440,7 @@ class ThreadLiveEvent {
                 )
                 .toList()
             : null,
+        title: json['title'] as String?,
       );
   }
 
@@ -429,6 +457,7 @@ class ThreadLiveEvent {
   final ThreadRuntimeConfig? runtimeConfig;
   final ThreadRunProjectionSnapshot? projection;
   final List<ThreadSubagentSessionTiming>? subagentSessions;
+  final String? title;
 }
 
 class WorkspaceInfo {

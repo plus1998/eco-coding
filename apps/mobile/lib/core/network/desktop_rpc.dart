@@ -231,6 +231,37 @@ class DesktopRpc {
     );
   }
 
+  Future<void> followUpEscalate({
+    required String threadId,
+    required String followUpId,
+  }) async {
+    await _client.invoke(
+      desktopDeviceId,
+      'thread:follow-up-escalate',
+      [
+        {'threadId': threadId, 'followUpId': followUpId},
+      ],
+    );
+  }
+
+  Future<void> followUpUpdate({
+    required String threadId,
+    required String followUpId,
+    required String prompt,
+  }) async {
+    await _client.invoke(
+      desktopDeviceId,
+      'thread:follow-up-update',
+      [
+        {
+          'threadId': threadId,
+          'followUpId': followUpId,
+          'prompt': prompt,
+        },
+      ],
+    );
+  }
+
   Future<ThreadSummary> updateRuntimeConfig({
     required String threadId,
     required ThreadRuntimeConfigInput runtimeConfig,

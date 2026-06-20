@@ -8,6 +8,7 @@ import '../../core/models/thread_run_projection.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/thread_follow_up_ui.dart';
 
 final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
@@ -319,6 +320,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
     state = state.copyWith(activities: activities);
 
+    if (live.followUp != null) {
+      state = state.copyWith(
+        followUps: mergeThreadFollowUp(state.followUps, live.followUp!),
+      );
+    } else if (event.kind == 'thread.follow_up') {
+      ref.read(desktopRpcProvider)?.followUpList(threadId).then((followUps) {
+        state = state.copyWith(followUps: followUps);
+      });
+    }
+
     if (live.type == 'thread.run_projection_updated') {
       if (live.projection != null) {
         state = state.copyWith(runProjection: live.projection);
@@ -338,6 +349,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           state = state.copyWith(subagentSessions: sessions);
         });
       }
+    }
+
+    final updatedTitle = live.title?.trim();
+    if (updatedTitle != null &&
+        updatedTitle.isNotEmpty &&
+        state.thread != null &&
+        state.thread!.title != updatedTitle) {
+      state = state.copyWith(
+        thread: state.thread!.copyWith(title: updatedTitle),
+      );
     }
 
     if (event.kind == 'thread.plan') {

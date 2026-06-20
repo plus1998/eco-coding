@@ -15,6 +15,8 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.runtimeConfig,
     required this.threadId,
     required this.isRunning,
+    this.followUpMode = false,
+    this.sendBusy = false,
     required this.hasActivity,
     required this.workspaceDiff,
     required this.diffLoading,
@@ -32,6 +34,8 @@ class SessionComposer extends ConsumerStatefulWidget {
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool isRunning;
+  final bool followUpMode;
+  final bool sendBusy;
   final bool hasActivity;
   final WorkspaceDiffResult? workspaceDiff;
   final bool diffLoading;
@@ -56,8 +60,18 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     super.dispose();
   }
 
-  bool get _canSend =>
-      !widget.isRunning && widget.controller.text.trim().isNotEmpty;
+  bool get _hasContent =>
+      widget.controller.text.trim().isNotEmpty || widget.attachments.isNotEmpty;
+
+  bool get _canSend {
+    if (widget.sendBusy) {
+      return false;
+    }
+    if (widget.followUpMode) {
+      return _hasContent;
+    }
+    return !widget.isRunning && _hasContent;
+  }
 
   void _handleSend() {
     if (!_canSend) return;
@@ -122,7 +136,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                     onSubmitted: _canSend ? (_) => _handleSend() : null,
                     decoration: InputDecoration(
                       hintText: widget.inputHint ??
-                          (widget.hasActivity ? '跟进' : '发送消息…'),
+                          (widget.followUpMode
+                              ? '要求后续变更'
+                              : (widget.hasActivity ? '跟进' : '发送消息…')),
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -180,7 +196,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         onChanged: widget.onRuntimeConfigChanged,
                       ),
                       const Spacer(),
-                      if (widget.isRunning)
+                      if (widget.followUpMode)
+                        _hasContent
+                            ? _SendButton(onSend: _canSend ? _handleSend : null)
+                            : _StopButton(onStop: _handleStop)
+                      else if (widget.isRunning)
                         _StopButton(onStop: _handleStop)
                       else
                         _SendButton(onSend: _canSend ? _handleSend : null),

@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/models/eco_types.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/relative_time.dart';
 import '../../core/utils/thread_status.dart';
-import '../../core/utils/thread_title.dart';
 import '../projects/project_providers.dart';
 import 'thread_providers.dart';
 
@@ -431,11 +429,7 @@ class _ThreadTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final title = displayThreadTitle(
-      title: thread.title,
-      prompt: thread.prompt,
-      fallback: workspaceDisplayName(thread.workspacePath),
-    );
+    final title = thread.title;
     final showStatus = hasThreadStatusIndicator(thread);
     final timeLabel = formatRelativeTime(threadStatusTime(thread));
 

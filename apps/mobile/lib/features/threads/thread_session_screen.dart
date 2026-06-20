@@ -11,7 +11,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/utils/thread_title.dart';
+import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/widgets/shimmer_text.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/commit_push_sheet.dart';
@@ -38,6 +38,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   String? _shownApprovalKey;
+  bool _followUpBusy = false;
+  String? _editingFollowUpId;
+  String? _followUpCancelBusyId;
+  String? _followUpEscalateBusyId;
   double _lastKeyboardInset = 0;
 
   @override
@@ -148,6 +152,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         : const AsyncValue<GitWorkingTreeStatus?>.data(null);
     final gitStatus = gitStatusAsync.valueOrNull;
     final isRunning = _isRunning(thread);
+    final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
+    final queuedFollowUps = queuedThreadFollowUps(session.followUps)
+        .where((item) => item.id != _editingFollowUpId)
+        .toList();
     final feedEntries = buildActivityFeed(
       lines: session.activities,
       threadPrompt: thread?.prompt,
@@ -200,11 +208,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              displayThreadTitle(
-                title: thread?.title ?? '',
-                prompt: thread?.prompt ?? '',
-                fallback: '会话',
-              ),
+              thread?.title ?? '',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -288,27 +292,29 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                             ],
                           ),
           ),
-          if (session.followUps.isNotEmpty)
+          if (queuedFollowUps.isNotEmpty)
             _FollowUpBar(
-              followUps: session.followUps,
-              onCancel: (id) async {
-                await ref.read(desktopRpcProvider)?.followUpCancel(
-                      threadId: widget.threadId,
-                      followUpId: id,
-                    );
-                await ref
-                    .read(threadSessionProvider(widget.threadId).notifier)
-                    .refreshPending();
-              },
+              followUps: queuedFollowUps,
+              cancelBusyId: _followUpCancelBusyId,
+              escalateBusyId: _followUpEscalateBusyId,
+              onEscalate: (followUp) => _escalateFollowUp(followUp),
+              onEdit: _startEditingFollowUp,
+              onDelete: (followUp) => _deleteFollowUp(followUp),
             ),
+          if (_editingFollowUpId != null)
+            _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
           SessionComposer(
             controller: _promptController,
             attachments: _attachments,
             runtimeConfig: runtimeConfig,
             threadId: widget.threadId,
             isRunning: isRunning,
+            followUpMode: followUpMode,
+            sendBusy: _followUpBusy,
             hasActivity: session.activities.isNotEmpty,
-            inputHint: showLanding ? composerLandingPlaceholder : null,
+            inputHint: _editingFollowUpId != null
+                ? '编辑引导消息…'
+                : (showLanding ? composerLandingPlaceholder : null),
             workspaceDiff: workspaceDiffAsync.valueOrNull,
             diffLoading: workspaceDiffAsync.isLoading,
             onPickImage: _pickImage,
@@ -386,28 +392,141 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     });
   }
 
+  void _startEditingFollowUp(ThreadPendingFollowUp followUp) {
+    setState(() {
+      _editingFollowUpId = followUp.id;
+      _promptController.text = followUp.prompt;
+      _attachments.clear();
+    });
+  }
+
+  void _cancelEditingFollowUp() {
+    setState(() {
+      _editingFollowUpId = null;
+      _promptController.clear();
+      _attachments.clear();
+    });
+  }
+
+  Future<void> _refreshFollowUps() async {
+    await ref
+        .read(threadSessionProvider(widget.threadId).notifier)
+        .refreshPending();
+  }
+
+  Future<void> _deleteFollowUp(ThreadPendingFollowUp followUp) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    setState(() => _followUpCancelBusyId = followUp.id);
+    try {
+      await rpc.followUpCancel(
+        threadId: widget.threadId,
+        followUpId: followUp.id,
+      );
+      if (_editingFollowUpId == followUp.id) {
+        _cancelEditingFollowUp();
+      }
+      await _refreshFollowUps();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _followUpCancelBusyId = null);
+      }
+    }
+  }
+
+  Future<void> _escalateFollowUp(ThreadPendingFollowUp followUp) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null || followUp.priority == 'escalated') return;
+    setState(() => _followUpEscalateBusyId = followUp.id);
+    try {
+      await rpc.followUpEscalate(
+        threadId: widget.threadId,
+        followUpId: followUp.id,
+      );
+      if (_editingFollowUpId == followUp.id) {
+        _cancelEditingFollowUp();
+      }
+      await _refreshFollowUps();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _followUpEscalateBusyId = null);
+      }
+    }
+  }
+
   Future<void> _sendMessage(ThreadRuntimeConfigInput runtimeConfig) async {
     final prompt = _promptController.text.trim();
     if (prompt.isEmpty && _attachments.isEmpty) return;
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
+    final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
+    final followUpMode = isLiveFollowUpThreadStatus(thread?.status);
 
     try {
-      await rpc.continueThread(
-        threadId: widget.threadId,
-        prompt: prompt,
-        attachments: _attachments.isEmpty ? null : List.of(_attachments),
-        runtimeConfig: runtimeConfig,
-      );
-      FocusManager.instance.primaryFocus?.unfocus();
-      _promptController.clear();
-      setState(() => _attachments.clear());
-      ref.invalidate(threadListProvider);
+      if (followUpMode) {
+        if (_attachments.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('运行中引导消息暂不支持图片附件。')),
+            );
+          }
+          return;
+        }
+        setState(() => _followUpBusy = true);
+        if (_editingFollowUpId != null) {
+          await rpc.followUpUpdate(
+            threadId: widget.threadId,
+            followUpId: _editingFollowUpId!,
+            prompt: prompt,
+          );
+          _cancelEditingFollowUp();
+        } else {
+          await rpc.followUpEnqueue(
+            threadId: widget.threadId,
+            prompt: prompt,
+          );
+          FocusManager.instance.primaryFocus?.unfocus();
+          _promptController.clear();
+          if (mounted) {
+            setState(() => _attachments.clear());
+          }
+        }
+        await _refreshFollowUps();
+      } else {
+        await rpc.continueThread(
+          threadId: widget.threadId,
+          prompt: prompt,
+          attachments: _attachments.isEmpty ? null : List.of(_attachments),
+          runtimeConfig: runtimeConfig,
+        );
+        ref.invalidate(threadListProvider);
+        FocusManager.instance.primaryFocus?.unfocus();
+        _promptController.clear();
+        if (mounted) {
+          setState(() => _attachments.clear());
+        }
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted && followUpMode) {
+        setState(() => _followUpBusy = false);
       }
     }
   }
@@ -485,11 +604,71 @@ class _ThinkingIndicator extends StatelessWidget {
   }
 }
 
+class _EditingFollowUpBanner extends StatelessWidget {
+  const _EditingFollowUpBanner({required this.onCancel});
+
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: EcoColors.accentSoft,
+        border: Border(top: BorderSide(color: eco.borderSubtle)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.edit_note_outlined,
+              size: 16,
+              color: EcoColors.accentText,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '正在编辑引导消息',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: EcoColors.accentText,
+                    ),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onCancel,
+              icon: const Icon(Icons.close, size: 16),
+              label: const Text('取消'),
+              style: TextButton.styleFrom(
+                foregroundColor: EcoColors.accentText,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FollowUpBar extends StatelessWidget {
-  const _FollowUpBar({required this.followUps, required this.onCancel});
+  const _FollowUpBar({
+    required this.followUps,
+    required this.cancelBusyId,
+    required this.escalateBusyId,
+    required this.onEscalate,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final List<ThreadPendingFollowUp> followUps;
-  final Future<void> Function(String id) onCancel;
+  final String? cancelBusyId;
+  final String? escalateBusyId;
+  final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
+  final void Function(ThreadPendingFollowUp followUp) onEdit;
+  final Future<void> Function(ThreadPendingFollowUp followUp) onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -500,30 +679,156 @@ class _FollowUpBar extends StatelessWidget {
         border: Border(top: BorderSide(color: eco.borderSubtle)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Follow-up 队列', style: Theme.of(context).textTheme.labelLarge),
-            ...followUps.map(
-              (item) => ListTile(
-                dense: true,
-                title: Text(
-                  item.prompt,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(item.status),
-                trailing: item.status == 'queued'
-                    ? IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => onCancel(item.id),
-                      )
-                    : null,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.forum_outlined, size: 16, color: eco.textMuted),
+                  const SizedBox(width: 6),
+                  Text('引导消息', style: Theme.of(context).textTheme.labelLarge),
+                ],
               ),
             ),
+            ...followUps.map((item) {
+              final actionBusy =
+                  cancelBusyId == item.id || escalateBusyId == item.id;
+              final canEscalate = item.priority != 'escalated';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: EcoColors.bgElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: eco.borderSubtle),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(
+                                Icons.subdirectory_arrow_right_rounded,
+                                size: 16,
+                                color: eco.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                formatThreadFollowUpPreview(item),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _FollowUpActionButton(
+                              icon: escalateBusyId == item.id
+                                  ? null
+                                  : Icons.subdirectory_arrow_right_rounded,
+                              label: escalateBusyId == item.id ? '处理中…' : '引导',
+                              loading: escalateBusyId == item.id,
+                              enabled: canEscalate && !actionBusy,
+                              onPressed: canEscalate && !actionBusy
+                                  ? () => onEscalate(item)
+                                  : null,
+                            ),
+                            const SizedBox(width: 8),
+                            _FollowUpActionButton(
+                              icon: Icons.edit_outlined,
+                              label: '修改',
+                              enabled: !actionBusy,
+                              onPressed:
+                                  !actionBusy ? () => onEdit(item) : null,
+                            ),
+                            const SizedBox(width: 8),
+                            _FollowUpActionButton(
+                              icon: cancelBusyId == item.id
+                                  ? null
+                                  : Icons.delete_outline_rounded,
+                              label: cancelBusyId == item.id ? '删除中…' : '删除',
+                              loading: cancelBusyId == item.id,
+                              enabled: !actionBusy,
+                              danger: true,
+                              onPressed:
+                                  !actionBusy ? () => onDelete(item) : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FollowUpActionButton extends StatelessWidget {
+  const _FollowUpActionButton({
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+    this.icon,
+    this.loading = false,
+    this.danger = false,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool loading;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = !enabled
+        ? ecoThemeExtras(context).textMuted
+        : (danger ? EcoColors.danger : EcoColors.accentText);
+    return TextButton(
+      onPressed: enabled ? onPressed : null,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        disabledForegroundColor: ecoThemeExtras(context).textMuted,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: color,
+              ),
+            )
+          else if (icon != null)
+            Icon(icon, size: 14, color: color),
+          if (loading || icon != null) const SizedBox(width: 4),
+          Text(label, style: Theme.of(context).textTheme.labelMedium),
+        ],
       ),
     );
   }

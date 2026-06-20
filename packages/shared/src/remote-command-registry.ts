@@ -50,6 +50,12 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:follow-up-cancel", "Cancel follow-up", "write_safe", RPC_INVOKE, [
     objectArg(["threadId", "followUpId"]),
   ]),
+  command("thread:follow-up-escalate", "Escalate follow-up", "execute", RPC_INVOKE, [
+    objectArg(["threadId"]),
+  ]),
+  command("thread:follow-up-update", "Update follow-up", "write_safe", RPC_INVOKE, [
+    objectArg(["threadId", "followUpId", "prompt"]),
+  ]),
   command("thread:update-runtime-config", "Update thread runtime config", "write_safe", RPC_INVOKE, [
     objectArg(["threadId", "runtimeConfig"]),
   ]),
