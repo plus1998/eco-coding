@@ -24,6 +24,7 @@ import {
   resolveSubagentRunDisplayTitle,
   type ActivityDetailBlock,
 } from "./activity-log";
+import { parseSubagentMissionMessage } from "@eco/runtime";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isRecordedUserPromptLiveEvent,
@@ -698,6 +699,25 @@ export function projectionItemToDetailBlock(
 ): ActivityDetailBlock | undefined {
   const text = item.text.trim();
 
+  const mission = projectionMissionFromText(text);
+  if (mission) {
+    return mission;
+  }
+
+  if (item.eventType === "agent.started") {
+    const delegation = readProjectionDelegationMetadata(item);
+    if (delegation) {
+      const subagent = resolveProjectionSubagent(item) ?? delegation.subagent;
+      return {
+        kind: "subagent-mission",
+        subagent,
+        summary: delegation.summary,
+        ...(delegation.prompt && { prompt: delegation.prompt }),
+        ...(item.agentId && { agentId: item.agentId }),
+      };
+    }
+  }
+
   if (isProjectionTodoToolActionItem(item)) {
     return buildProjectionToolActionBlock(item, {
       toolName: resolveProjectionToolName(item),
@@ -787,6 +807,12 @@ export function projectionItemToDetailBlock(
 
   if (item.eventType === "tool.started" || item.eventType === "tool.completed") {
     const metadataTool = readProjectionToolMetadata(item);
+    if (metadataTool?.name === "Agent" || metadataTool?.name === "Task") {
+      const toolMission = projectionMissionFromText(text);
+      if (toolMission) {
+        return toolMission;
+      }
+    }
     const lifecycle = toolStatusToLifecycle(metadataTool?.status, item.eventType);
     return buildProjectionToolActionBlock(item, {
       toolName: resolveProjectionToolName(item),
@@ -1051,4 +1077,52 @@ function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineIte
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
   return formatToolDisplayLabel(tool.name, tool.detail);
+}
+
+function projectionMissionFromText(text: string): ActivityDetailBlock | undefined {
+  const mission = parseSubagentMissionMessage(text);
+  if (!mission) {
+    return undefined;
+  }
+  const subagent = normalizeAgentDisplayRole(mission.role) ?? mission.role;
+  return {
+    kind: "subagent-mission",
+    subagent,
+    summary: mission.summary,
+    ...(mission.prompt && { prompt: mission.prompt }),
+  };
+}
+
+function readProjectionDelegationMetadata(
+  item: ThreadRunProjectionTimelineItem,
+): { subagent: string; summary: string; prompt?: string } | undefined {
+  const metadata = item.metadata;
+  const summary =
+    typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
+  const prompt = typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
+  const role = normalizeAgentDisplayRole(item.role) ?? item.role?.trim();
+  if (!summary && !prompt) {
+    return undefined;
+  }
+  return {
+    subagent: role || "子代理",
+    summary: summary || prompt.slice(0, 200),
+    ...(prompt && { prompt }),
+  };
+}
+
+export function readProjectionAgentDelegation(
+  agent: Pick<ThreadRunProjectionAgent, "role" | "delegationSummary" | "delegationPrompt">,
+): { subagent: string; summary: string; prompt?: string } | undefined {
+  const summary = agent.delegationSummary?.trim() ?? "";
+  const prompt = agent.delegationPrompt?.trim() ?? "";
+  if (!summary && !prompt) {
+    return undefined;
+  }
+  const subagent = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+  return {
+    subagent,
+    summary: summary || prompt.slice(0, 200),
+    ...(prompt && { prompt }),
+  };
 }

@@ -92,6 +92,7 @@ export function buildThreadRunProjection(
     const usage = usageByAgentId.get(agent.agentId);
     const context = contextByAgentId.get(agent.agentId);
     const activity = latestActivity(timelineItems);
+    const delegation = resolveAgentDelegationFromEvents(events, agent.agentId);
     const durationMs =
       timing?.durationMs ??
       computeDurationMs(startedAt, endedAt, nowMs, diagnostics, agent.agentId);
@@ -107,6 +108,8 @@ export function buildThreadRunProjection(
       ...(agent.parentAgentId && { parentAgentId: agent.parentAgentId }),
       ...(agent.parentToolUseId && { parentToolUseId: agent.parentToolUseId }),
       ...(agent.missionKey && { mission: agent.missionKey }),
+      ...(delegation.delegationSummary && { delegationSummary: delegation.delegationSummary }),
+      ...(delegation.delegationPrompt && { delegationPrompt: delegation.delegationPrompt }),
       ...(agent.todoId && { todoId: agent.todoId }),
       ...(endedAt && { endedAt }),
       ...(activity && { latestActivity: activity }),
@@ -473,4 +476,26 @@ function resolveErrorMessage(event: ThreadRunEvent): string {
     }
   }
   return event.message;
+}
+
+function resolveAgentDelegationFromEvents(
+  events: readonly ThreadRunEvent[],
+  agentId: string,
+): { delegationSummary?: string; delegationPrompt?: string } {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.eventType !== "agent.started" || event.agentId !== agentId) {
+      continue;
+    }
+    const metadata = event.metadata;
+    const delegationSummary =
+      typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
+    const delegationPrompt =
+      typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
+    return {
+      ...(delegationSummary && { delegationSummary }),
+      ...(delegationPrompt && { delegationPrompt }),
+    };
+  }
+  return {};
 }

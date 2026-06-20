@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { formatSubagentMissionMessage } from "@eco/runtime";
 import type {
   ThreadRunProjectionAgent,
   ThreadRunProjectionSnapshot,
@@ -1325,6 +1326,90 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   });
   expect(agentRequest).toMatchObject({ kind: "agent-request", subagent: "coder", agentId: "coder_a" });
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
+});
+
+test("projectionItemToDetailBlock maps planner Agent delegation to subagent mission", () => {
+  const mission = formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts");
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "delegate-coder",
+      eventType: "tool.started",
+      scope: "main",
+      role: "coder",
+      text: mission,
+      metadata: {
+        liveType: "tool.started",
+        tool: {
+          name: "Agent",
+          detail: "coder",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "subagent-mission",
+    subagent: "coder",
+    prompt: "Implement export filters in src/api.ts",
+  });
+  if (detail?.kind === "subagent-mission") {
+    expect(detail.summary).toContain("src/api.ts");
+  }
+});
+
+test("projectionItemToDetailBlock maps agent.started delegation metadata to subagent mission", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "agent-started",
+      eventType: "agent.started",
+      scope: "agent",
+      role: "coder",
+      agentId: "coder_a",
+      text: "Subagent coder started",
+      metadata: {
+        lifecycle: "started",
+        delegationPrompt: "Review export filters in src/api.ts",
+        delegationSummary: "审查：export filters",
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "subagent-mission",
+    subagent: "coder",
+    summary: "审查：export filters",
+    prompt: "Review export filters in src/api.ts",
+    agentId: "coder_a",
+  });
+});
+
+test("buildThreadRunProjectionViewModel shows planner delegation on main feed", () => {
+  const mission = formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts");
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "delegate-coder",
+          eventType: "tool.started",
+          scope: "main",
+          role: "coder",
+          text: mission,
+          sequence: 1,
+          metadata: {
+            liveType: "tool.started",
+            tool: { name: "Agent", detail: "coder" },
+          },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
+  const timelineEntry = view.mainFeedEntries[0];
+  if (timelineEntry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(timelineEntry.item)?.kind).toBe("subagent-mission");
+  }
 });
 
 test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {

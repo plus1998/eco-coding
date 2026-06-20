@@ -78,6 +78,8 @@ export interface ThreadRunProjectionAgent {
   parentAgentId?: string;
   parentToolUseId?: string;
   mission?: string;
+  delegationSummary?: string;
+  delegationPrompt?: string;
   todoId?: string;
   endedAt?: string;
   latestActivity?: string;

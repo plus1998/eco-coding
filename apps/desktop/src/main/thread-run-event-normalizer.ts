@@ -1,3 +1,4 @@
+import { parseSubagentMissionMessage } from "@eco/runtime";
 import type {
   ThreadApiErrorInfo,
   ThreadRunBashApprovalMetadata,
@@ -61,6 +62,8 @@ export interface BuildSubagentLifecycleRunEventInput {
   parentToolUseId?: string;
   missionKey?: string;
   todoId?: string;
+  delegationPrompt?: string;
+  delegationSummary?: string;
 }
 
 export function buildThreadRunEventFromLiveEvent(
@@ -86,7 +89,9 @@ export function buildThreadRunEventFromLiveEvent(
   const scope = resolveThreadRunEventScope({
     eventType,
     role: input.role,
+    message: input.message,
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.tool && { tool: input.tool }),
   });
   const streamState = resolveThreadRunEventStreamState(input);
   const requestId = resolveRequestId({
@@ -133,6 +138,8 @@ export function buildSubagentLifecycleRunEvent(
       lifecycle: input.lifecycle,
       ...(input.missionKey && { missionKey: input.missionKey }),
       ...(input.todoId && { todoId: input.todoId }),
+      ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
+      ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
     },
   };
 }
@@ -202,14 +209,35 @@ function resolveThreadRunEventScope(input: {
   eventType: ThreadRunEventType;
   role: string;
   agentId?: string;
+  message?: string;
+  tool?: ThreadRunToolMetadata;
 }): ThreadRunEventScope {
   if (input.eventType === "api.error" && input.agentId) {
     return "both";
+  }
+  if (isPlannerSubagentDelegationEvent(input)) {
+    return "main";
   }
   if (input.agentId || subagentRoleSet.has(input.role)) {
     return "agent";
   }
   return "main";
+}
+
+function isPlannerSubagentDelegationEvent(input: {
+  eventType: ThreadRunEventType;
+  agentId?: string;
+  message?: string;
+  tool?: ThreadRunToolMetadata;
+}): boolean {
+  if (input.agentId || input.eventType !== "tool.started") {
+    return false;
+  }
+  if (parseSubagentMissionMessage(input.message ?? "")) {
+    return true;
+  }
+  const toolName = input.tool?.name.trim();
+  return toolName === "Agent" || toolName === "Task";
 }
 
 function resolveThreadRunEventStreamState(

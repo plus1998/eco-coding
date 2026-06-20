@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { formatSubagentMissionMessage } from "@eco/runtime";
 import {
   buildSubagentLifecycleRunEvent,
   buildThreadRunEventFromLiveEvent,
@@ -366,6 +367,47 @@ test("buildSubagentLifecycleRunEvent includes parent and mission metadata", () =
     parentAgentId: "planner:attempt_1",
     parentToolUseId: "toolu_1",
     metadata: { lifecycle: "started", missionKey: "implement api", todoId: "todo-1" },
+  });
+});
+
+test("buildSubagentLifecycleRunEvent stores delegation prompt metadata", () => {
+  const event = buildSubagentLifecycleRunEvent({
+    threadId: "thr_1",
+    agentId: "agent_coder_a",
+    role: "coder",
+    lifecycle: "started",
+    delegationPrompt: "Implement export filters in src/api.ts",
+    delegationSummary: "实现：export filters",
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event.metadata).toMatchObject({
+    lifecycle: "started",
+    delegationPrompt: "Implement export filters in src/api.ts",
+    delegationSummary: "实现：export filters",
+  });
+});
+
+test("buildThreadRunEventFromLiveEvent keeps planner Agent delegation on main timeline", () => {
+  const mission = formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts");
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_delegate",
+    liveType: "tool.started",
+    role: "coder",
+    stream: false,
+    message: mission,
+    tool: {
+      name: "Agent",
+      detail: "coder",
+    },
+    observedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  expect(event).toMatchObject({
+    eventType: "tool.started",
+    scope: "main",
+    message: mission,
   });
 });
 

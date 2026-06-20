@@ -45,7 +45,6 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import { formatDurationMs } from "./AppMessage";
-import { isGenericMissionSummary } from "@eco/runtime";
 import {
   buildActivityLogBlocks,
   buildSubagentMetricsByAgentId,
@@ -63,10 +62,11 @@ import {
   isProjectionRequestActive,
   isProjectionUserPromptItem,
   projectionItemToDetailBlock,
+  readProjectionAgentDelegation,
   resolveProjectionAgentStatusText,
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
-import { isAgentDisplayRole } from "../shared/subagent-roles";
+import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
@@ -548,68 +548,60 @@ function ProjectionSubagentRunRow({
   const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
   const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
   const titleWithModel = formatRoleModelLabel(agent.role, modelId);
+  const delegation = readProjectionAgentDelegation(agent);
   const rawStatus = resolveProjectionAgentStatusText(agent);
   const statusText =
-    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
+    delegation?.summary ??
+    (rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
         ? "工作中"
-        : "点击查看执行详情";
+        : "点击查看执行详情");
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
-  const hasDetails = agent.timeline.length > 0 || Boolean(agent.usage || agent.context);
+  const missionText = delegation?.prompt?.trim() || delegation?.summary || "";
+  const hasDetails =
+    agent.timeline.length > 0 ||
+    Boolean(agent.usage || agent.context) ||
+    Boolean(missionText);
+  const statusBadge = resolveSubagentStatusBadge(running, agent.status);
 
   return (
-    <div className="subagent-run-row-wrap has-agent-id" data-agent-id={agent.agentId}>
-      <button type="button" className="subagent-run-row" onClick={onToggle} aria-expanded={expanded}>
-        <Sparkles size={14} className="subagent-run-icon" aria-hidden />
-        <div className="subagent-run-main">
-          <div className="subagent-run-title-row">
-            <span className="subagent-run-title-group">
-              <span className="subagent-run-title">
-                <span className="subagent-run-title-role">{roleLabel}</span>
-                {showModelShort ? (
-                  <>
-                    <span className="subagent-run-title-sep" aria-hidden>
-                      ·
-                    </span>
-                    <span className="subagent-run-title-model">{modelShort}</span>
-                  </>
-                ) : null}
-              </span>
-              <span className="subagent-run-agent-chip" title={agent.agentId}>
-                #{shortSubagentAgentId(agent.agentId)}
-              </span>
-            </span>
-            <span className="subagent-run-title-trailing">
-              {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
-              {running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            </span>
-          </div>
-          <p className="subagent-run-status" title={statusText}>
-            {statusText}
-          </p>
-        </div>
-      </button>
-      {expanded && hasDetails ? (
+    <div
+      className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
+      data-agent-id={agent.agentId}
+      data-role={normalizeAgentDisplayRole(agent.role) ?? agent.role}
+    >
+      <SubagentRunCardButton
+        role={agent.role}
+        roleLabel={roleLabel}
+        agentId={agent.agentId}
+        showModelShort={Boolean(showModelShort)}
+        {...(modelShort && { modelShort })}
+        running={running}
+        statusBadge={statusBadge}
+        statusText={statusText}
+        {...(missionText && { missionText })}
+        {...(durationLabel && { durationLabel })}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {hasDetails ? (
         <div className="work-session-details-compact">
-          <ProjectionSubagentRunInstanceStrip agent={agent} />
-          {agent.timeline.length > 0 ? (
-            <>
-              <p className="work-session-details-compact-title">子代理执行详情</p>
-              <div className="work-session-details-compact-scroll">
-                {agent.timeline.map((item) => (
-                  <ProjectionTimelineEntry
-                    key={`${agent.agentId}-${item.id}`}
-                    item={item}
-                    requestSpansById={requestSpansById}
-                    compact
-                  />
-                ))}
-              </div>
-            </>
-          ) : null}
+          <div className="work-session-details-compact-inner">
+            <ProjectionSubagentRunInstanceStrip agent={agent} />
+            {agent.timeline
+              .filter((item) => !(delegation && item.eventType === "agent.started"))
+              .map((item) => (
+                <ProjectionTimelineEntry
+                  key={`${agent.agentId}-${item.id}`}
+                  item={item}
+                  requestSpansById={requestSpansById}
+                  compact
+                />
+              ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -814,6 +806,158 @@ function RunLogBlock({
   return null;
 }
 
+type SubagentStatusBadge = {
+  label: string;
+  tone: "running" | "done" | "abandoned";
+};
+
+function resolveSubagentStatusBadge(
+  running: boolean,
+  status?: ThreadRunProjectionAgent["status"],
+): SubagentStatusBadge {
+  if (running || status === "active" || status === "launching") {
+    return { label: "运行中", tone: "running" };
+  }
+  if (status === "abandoned") {
+    return { label: "已中止", tone: "abandoned" };
+  }
+  return { label: "已完成", tone: "done" };
+}
+
+function resolveSubagentKindBadge(role: string): string {
+  const normalized = normalizeAgentDisplayRole(role) ?? role;
+  return SUBAGENT_ROLE_SHORT[normalized] ?? "代理";
+}
+
+function SubagentRunCardButton({
+  role,
+  roleLabel,
+  agentId,
+  showModelShort,
+  modelShort,
+  running,
+  statusBadge,
+  statusText,
+  missionText,
+  durationLabel,
+  expanded,
+  onToggle,
+}: {
+  role: string;
+  roleLabel: string;
+  agentId?: string;
+  showModelShort?: boolean;
+  modelShort?: string;
+  running: boolean;
+  statusBadge: SubagentStatusBadge;
+  statusText: string;
+  missionText?: string;
+  durationLabel?: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const kindBadge = resolveSubagentKindBadge(role);
+
+  return (
+    <button
+      type="button"
+      className={`subagent-run-row${running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
+      onClick={onToggle}
+      aria-expanded={expanded}
+    >
+      <span className="subagent-run-leading" aria-hidden>
+        <span className="subagent-run-kind-badge">{kindBadge}</span>
+        <Sparkles size={15} className="subagent-run-icon" />
+      </span>
+      <div className="subagent-run-main">
+        <div className="subagent-run-title-row">
+          <span className="subagent-run-title-group">
+            <span className="subagent-run-title">
+              <span className="subagent-run-title-role">{roleLabel}</span>
+              {showModelShort && modelShort ? (
+                <>
+                  <span className="subagent-run-title-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="subagent-run-title-model">{modelShort}</span>
+                </>
+              ) : null}
+            </span>
+            {agentId ? (
+              <span className="subagent-run-agent-chip" title={agentId}>
+                #{shortSubagentAgentId(agentId)}
+              </span>
+            ) : null}
+          </span>
+          <span className="subagent-run-title-trailing">
+            <span className={`subagent-run-status-badge tone-${statusBadge.tone}`}>
+              {statusBadge.label}
+            </span>
+            {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
+            {running ? <span className="subagent-run-loading" aria-hidden /> : null}
+            <ChevronDown
+              size={16}
+              className={`subagent-run-chevron${expanded ? " open" : ""}`}
+              aria-hidden
+            />
+          </span>
+        </div>
+        {missionText ? (
+          <ExpandableMissionText text={missionText} expanded={expanded} className="subagent-run-mission-preview" />
+        ) : (
+          <p className="subagent-run-status" title={statusText}>
+            {statusText}
+          </p>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function ExpandableMissionText({
+  text,
+  expanded,
+  className,
+}: {
+  text: string;
+  expanded: boolean;
+  className?: string;
+}) {
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [heights, setHeights] = useState<{ collapsed: number; expanded: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const element = textRef.current;
+    if (!element) {
+      return;
+    }
+    const previousMaxHeight = element.style.maxHeight;
+    element.style.maxHeight = "none";
+    const fullHeight = element.scrollHeight;
+    element.style.maxHeight = previousMaxHeight;
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 20;
+    setHeights({
+      collapsed: Math.ceil(lineHeight * 2),
+      expanded: fullHeight,
+    });
+  }, [text]);
+
+  const maxHeight = heights ? (expanded ? heights.expanded : heights.collapsed) : undefined;
+
+  return (
+    <div className={`run-log-expandable-text-wrap${expanded ? " is-expanded" : ""}`}>
+      <p
+        ref={textRef}
+        className={["run-log-expandable-text", className].filter(Boolean).join(" ")}
+        title={text}
+        style={maxHeight !== undefined ? { maxHeight } : undefined}
+      >
+        {text}
+      </p>
+    </div>
+  );
+}
+
 function shortSubagentAgentId(agentId: string): string {
   if (agentId.length <= 8) {
     return agentId;
@@ -939,54 +1083,43 @@ function SubagentRunRow({
       : undefined;
   const usageForAgent = instanceMetrics ? metricsToUsageSnapshot(instanceMetrics) : undefined;
   const scopedUsageByRole = usageForAgent !== undefined ? { [item.role]: usageForAgent } : usageByRole;
+  const missionBlock = item.children.find((child) => child.kind === "subagent-mission");
+  const missionText =
+    missionBlock?.kind === "subagent-mission"
+      ? missionBlock.prompt?.trim() || missionBlock.summary
+      : "";
+  const detailChildren = item.children.filter((child) => child.kind !== "subagent-mission");
+  const statusBadge = resolveSubagentStatusBadge(item.running);
 
   return (
     <div
-      className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}`}
+      className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}${item.running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
       data-agent-id={item.agentId}
+      data-role={normalizeAgentDisplayRole(item.role) ?? item.role}
     >
-      <button type="button" className="subagent-run-row" onClick={onToggle} aria-expanded={expanded}>
-        <Sparkles size={14} className="subagent-run-icon" aria-hidden />
-        <div className="subagent-run-main">
-          <div className="subagent-run-title-row">
-            <span className="subagent-run-title-group">
-              <span className="subagent-run-title">
-                <span className="subagent-run-title-role">{roleLabel}</span>
-                {showModelShort ? (
-                  <>
-                    <span className="subagent-run-title-sep" aria-hidden>
-                      ·
-                    </span>
-                    <span className="subagent-run-title-model">{modelShort}</span>
-                  </>
-                ) : null}
-              </span>
-              {item.agentId ? (
-                <span className="subagent-run-agent-chip" title={item.agentId}>
-                  #{shortSubagentAgentId(item.agentId)}
-                </span>
-              ) : null}
-            </span>
-            <span className="subagent-run-title-trailing">
-              {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
-              {item.running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            </span>
-          </div>
-          <p className="subagent-run-status" title={statusText}>
-            {statusText}
-          </p>
-        </div>
-      </button>
-      {expanded && item.children.length > 0 ? (
+      <SubagentRunCardButton
+        role={item.role}
+        roleLabel={roleLabel}
+        {...(item.agentId && { agentId: item.agentId })}
+        showModelShort={Boolean(showModelShort)}
+        {...(modelShort && { modelShort })}
+        running={item.running}
+        statusBadge={statusBadge}
+        statusText={statusText}
+        {...(missionText && { missionText })}
+        {...(durationLabel && { durationLabel })}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {detailChildren.length > 0 || item.agentId ? (
         <div className="work-session-details-compact">
-          <SubagentRunInstanceStrip
-            {...(item.agentId && { agentId: item.agentId })}
-            {...(instanceMetrics && { metrics: instanceMetrics })}
-            {...(context && { context })}
-          />
-          <p className="work-session-details-compact-title">子代理执行详情</p>
-          <div className="work-session-details-compact-scroll">
-            {item.children.map((child, index) => (
+          <div className="work-session-details-compact-inner">
+            <SubagentRunInstanceStrip
+              {...(item.agentId && { agentId: item.agentId })}
+              {...(instanceMetrics && { metrics: instanceMetrics })}
+              {...(context && { context })}
+            />
+            {detailChildren.map((child, index) => (
               <DetailBlock
                 key={`${item.sessionKey}-${child.kind}-${index}`}
                 block={child}
@@ -1781,45 +1914,42 @@ function SubagentMissionBlock({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const trimmedPrompt = prompt?.trim() ?? "";
-  const genericSummary = isGenericMissionSummary(summary);
-  const showPrompt = Boolean(trimmedPrompt && (trimmedPrompt !== summary.trim() || genericSummary));
-  const displaySummary =
-    genericSummary && trimmedPrompt
-      ? (trimmedPrompt
-          .split("\n")
-          .find((line) => line.trim())
-          ?.trim()
-          .slice(0, 200) ?? summary)
-      : summary;
+  const trimmedSummary = summary.trim();
+  const fullText = trimmedPrompt || trimmedSummary;
   const showRoleLabel =
     !omitRoleLabel &&
-    !activityLabelIncludesAgentRole(subagent, displaySummary, { modelId: modelByRole?.[subagent] });
+    !activityLabelIncludesAgentRole(subagent, fullText, { modelId: modelByRole?.[subagent] });
 
   return (
-    <div className="run-log-mission">
+    <button
+      type="button"
+      className={`run-log-mission${expanded ? " is-expanded" : ""}`}
+      onClick={() => setExpanded((value) => !value)}
+      aria-expanded={expanded}
+    >
       <div className="run-log-mission-head">
-        {showRoleLabel ? (
-          <span className="run-log-mission-role">
-            {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-          </span>
-        ) : null}
-        <span className="run-log-mission-tag">任务目标</span>
+        <span className="run-log-mission-head-main">
+          {showRoleLabel ? (
+            <span className="run-log-mission-role">
+              {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+            </span>
+          ) : null}
+          <span className="run-log-mission-tag">任务目标</span>
+        </span>
+        <ChevronDown
+          size={16}
+          className={`run-log-mission-chevron${expanded ? " open" : ""}`}
+          aria-hidden
+        />
       </div>
-      {displaySummary.trim() ? (
-        <p className="run-log-mission-summary">
-          <MarkdownContent text={displaySummary} />
-        </p>
+      {fullText ? (
+        <ExpandableMissionText text={fullText} expanded={expanded} className="run-log-mission-preview" />
       ) : (
         <p className="run-log-mission-summary run-log-mission-summary-muted">等待任务说明…</p>
       )}
-      {showPrompt ? (
-        <details className="run-log-mission-details" open={genericSummary}>
-          <summary>查看完整任务说明</summary>
-          <pre className="run-log-mission-prompt">{trimmedPrompt}</pre>
-        </details>
-      ) : null}
-    </div>
+    </button>
   );
 }
 

@@ -1,4 +1,5 @@
 import type { EcoSubagentSessionHooks, SubagentRunPhase } from "@eco/runtime";
+import { summarizeAgentObjective } from "@eco/runtime";
 import { resolveSubagentSessionRole } from "../shared/subagent-roles.js";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { ConversationStore } from "./conversation-store.js";
@@ -86,6 +87,8 @@ export function createSubagentSessionHooks(
         ...(lifecycleRecord?.parentToolUseId && { parentToolUseId: lifecycleRecord.parentToolUseId }),
         ...(missionKey && { missionKey }),
         ...(todoId && { todoId }),
+        ...(prompt && { delegationPrompt: prompt }),
+        ...(prompt && { delegationSummary: summarizeAgentObjective(role, prompt) }),
       });
       options?.onSubagentBillingStamp?.({
         agentId: input.agentId,
@@ -172,6 +175,8 @@ function appendSubagentLifecycleEvent(
     parentToolUseId?: string;
     missionKey?: string;
     todoId?: string;
+    delegationPrompt?: string;
+    delegationSummary?: string;
   },
 ): void {
   if (typeof store.appendThreadRunEvent !== "function") {
