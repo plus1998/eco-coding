@@ -1,3 +1,5 @@
+name: eco-server
+
 services:
   mongo:
     image: mongo:7
