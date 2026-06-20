@@ -71,6 +71,18 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("workflow-settings:save", "Save workflow settings", "write_safe", RPC_INVOKE, [
     objectArg(["planModeEnabled"]),
   ]),
+
+  command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
+  command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),
+  command("git:generate-commit-message", "Generate commit message", "read", RPC_INVOKE, [
+    objectArg(["workspacePath", "profileId", "includeUnstaged"]),
+  ]),
+  command("git:commit", "Commit workspace changes", "execute", RPC_INVOKE, [
+    objectArg(["workspacePath", "profileId", "includeUnstaged"]),
+  ]),
+  command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [
+    objectArg(["workspacePath"]),
+  ]),
 ] as const satisfies readonly RemoteCommandDefinition[];
 
 const REMOTE_COMMANDS_BY_CHANNEL = new Map(

@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/eco_types.dart';
+import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../approvals/approval_sheets.dart';
-import '../composer/composer_mode_bar.dart';
+import '../composer/commit_push_sheet.dart';
+import '../composer/session_composer.dart';
 import 'thread_providers.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
@@ -32,6 +34,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   @override
   void initState() {
     super.initState();
+    _promptController.addListener(() => setState(() {}));
   }
 
   void _scrollToBottom() {
@@ -59,6 +62,29 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
     return null;
   }
 
+  bool _isRunning(ThreadSummary? thread) {
+    if (thread == null) return false;
+    return thread.status == 'running' || thread.status == 'queued';
+  }
+
+  String _modelLabel(
+    ThreadRuntimeConfigInput runtimeConfig,
+    AsyncValue<ModelSettingsSnapshot?> modelSettings,
+  ) {
+    final profileId =
+        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+    if (profileId.isEmpty) return '';
+    return modelSettings.maybeWhen(
+      data: (settings) {
+        for (final profile in settings?.orchestrationProfiles ?? []) {
+          if (profile.id == profileId) return profile.name;
+        }
+        return profileId;
+      },
+      orElse: () => profileId,
+    );
+  }
+
   @override
   void dispose() {
     _promptController.dispose();
@@ -73,6 +99,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
         _emptyRuntimeConfig();
+    final modelSettings = ref.watch(modelSettingsProvider);
+    final thread = session.thread;
+    final workspacePath = thread?.workspacePath ?? '';
+    final workspaceDiffAsync = workspacePath.isNotEmpty
+        ? ref.watch(workspaceDiffProvider(workspacePath))
+        : const AsyncValue<WorkspaceDiffResult?>.data(null);
+    final isRunning = _isRunning(thread);
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
@@ -88,41 +121,48 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          session.thread?.title.isNotEmpty == true
-              ? session.thread!.title
-              : '会话',
-        ),
-        bottom: session.thread?.workspacePath.isNotEmpty == true
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(36),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onLongPress: () {
-                        Clipboard.setData(
-                          ClipboardData(text: session.thread!.workspacePath),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('工作目录已复制')),
-                        );
-                      },
-                      child: Text(
-                        '${workspaceDisplayName(session.thread!.workspacePath)} · ${session.thread!.workspacePath}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: ecoThemeExtras(context).textMuted,
-                            ),
-                      ),
-                    ),
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              thread?.title.isNotEmpty == true ? thread!.title : '会话',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
                   ),
+            ),
+            if (workspacePath.isNotEmpty)
+              GestureDetector(
+                onLongPress: () {
+                  Clipboard.setData(ClipboardData(text: workspacePath));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('工作目录已复制')),
+                  );
+                },
+                child: Text(
+                  '${workspaceDisplayName(workspacePath)} · $workspacePath',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ecoThemeExtras(context).textMuted,
+                      ),
                 ),
-              )
-            : null,
+              ),
+          ],
+        ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: '编辑标题',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('标题编辑即将支持')),
+              );
+            },
+          ),
           PopupMenuButton<String>(
             onSelected: (value) => _handleMenu(value),
             itemBuilder: (context) => const [
@@ -139,48 +179,103 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             child: session.loading
                 ? const Center(child: CircularProgressIndicator())
                 : session.error != null
-                ? Center(child: Text(session.error!))
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: session.activities.length,
-                    itemBuilder: (context, index) {
-                      final item = session.activities[index];
-                      return _ActivityBubble(item: item);
-                    },
-                  ),
+                    ? Center(child: Text(session.error!))
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                        itemCount: session.activities.length +
+                            (isRunning ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (isRunning && index == session.activities.length) {
+                            return const _ThinkingIndicator();
+                          }
+                          final item = session.activities[index];
+                          return _ActivityBubble(item: item);
+                        },
+                      ),
           ),
           if (session.followUps.isNotEmpty)
             _FollowUpBar(
               followUps: session.followUps,
               onCancel: (id) async {
                 await ref.read(desktopRpcProvider)?.followUpCancel(
-                  threadId: widget.threadId,
-                  followUpId: id,
-                );
+                      threadId: widget.threadId,
+                      followUpId: id,
+                    );
                 await ref
                     .read(threadSessionProvider(widget.threadId).notifier)
                     .refreshPending();
               },
             ),
-          ComposerModeBar(
-            runtimeConfig: runtimeConfig,
-            threadId: widget.threadId,
-            onChanged: (config) {
-              ref.read(runtimeConfigProvider.notifier).state = config;
-            },
-          ),
-          _ComposerInput(
+          SessionComposer(
             controller: _promptController,
             attachments: _attachments,
+            runtimeConfig: runtimeConfig,
+            threadId: widget.threadId,
+            isRunning: isRunning,
+            hasActivity: session.activities.isNotEmpty,
+            modelLabel: _modelLabel(runtimeConfig, modelSettings),
+            workspaceDiff: workspaceDiffAsync.valueOrNull,
+            diffLoading: workspaceDiffAsync.isLoading,
             onPickImage: _pickImage,
             onRemoveAttachment: (index) =>
                 setState(() => _attachments.removeAt(index)),
             onSend: () => _sendMessage(runtimeConfig),
+            onStop: () => _handleMenu('cancel'),
+            onRuntimeConfigChanged: (config) {
+              ref.read(runtimeConfigProvider.notifier).state = config;
+            },
+            onChangesTap: workspaceDiffAsync.valueOrNull != null &&
+                    workspacePath.isNotEmpty
+                ? () => _openCommitPush(
+                      workspacePath: workspacePath,
+                      runtimeConfig: runtimeConfig,
+                      diff: workspaceDiffAsync.valueOrNull!,
+                    )
+                : null,
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openCommitPush({
+    required String workspacePath,
+    required ThreadRuntimeConfigInput runtimeConfig,
+    required WorkspaceDiffResult diff,
+  }) async {
+    final profileId =
+        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+    if (profileId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在 Composer 设置中选择 Agent Profile')),
+        );
+      }
+      return;
+    }
+
+    GitWorkingTreeStatus? gitStatus;
+    try {
+      gitStatus = await ref.read(desktopRpcProvider)?.getGitStatus(workspacePath);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    final committed = await showCommitPushSheet(
+      context: context,
+      ref: ref,
+      workspacePath: workspacePath,
+      profileId: profileId,
+      diff: diff,
+      branch: gitStatus?.branch,
+    );
+
+    if (committed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已提交并推送到远程')),
+      );
+    }
   }
 
   ThreadRuntimeConfigInput _emptyRuntimeConfig() {
@@ -289,6 +384,23 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   }
 }
 
+class _ThinkingIndicator extends StatelessWidget {
+  const _ThinkingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Text(
+        '正在思考',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: ecoThemeExtras(context).textMuted,
+            ),
+      ),
+    );
+  }
+}
+
 class _ActivityBubble extends StatelessWidget {
   const _ActivityBubble({required this.item});
 
@@ -302,27 +414,21 @@ class _ActivityBubble extends StatelessWidget {
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.85,
+          maxWidth: MediaQuery.of(context).size.width * 0.88,
         ),
         decoration: BoxDecoration(
-          color: isUser ? eco.userBubble : eco.assistantBubble,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: eco.borderSubtle),
+          color: isUser ? eco.userBubble : Colors.transparent,
+          borderRadius: BorderRadius.circular(isUser ? 16 : 4),
+          border: isUser ? Border.all(color: eco.borderSubtle) : null,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              item.role,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
-            ),
-            const SizedBox(height: 4),
-            Text(item.message),
-          ],
+        child: Text(
+          item.message,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                height: 1.45,
+                color: isUser ? EcoColors.textPrimary : EcoColors.textHeading,
+              ),
         ),
       ),
     );
@@ -367,84 +473,6 @@ class _FollowUpBar extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ComposerInput extends StatelessWidget {
-  const _ComposerInput({
-    required this.controller,
-    required this.attachments,
-    required this.onPickImage,
-    required this.onRemoveAttachment,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final List<PromptImageAttachment> attachments;
-  final VoidCallback onPickImage;
-  final void Function(int index) onRemoveAttachment;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: EcoColors.bgElevated,
-          border: Border(
-            top: BorderSide(color: ecoThemeExtras(context).borderSubtle),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (attachments.isNotEmpty)
-                SizedBox(
-                  height: 48,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: attachments.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) => InputChip(
-                      label: Text('图片 ${index + 1}'),
-                      onDeleted: () => onRemoveAttachment(index),
-                    ),
-                  ),
-                ),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: onPickImage,
-                    icon: const Icon(Icons.image_outlined),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      minLines: 1,
-                      maxLines: 5,
-                      decoration: const InputDecoration(
-                        hintText: '发送消息…',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onSend,
-                    style: IconButton.styleFrom(
-                      backgroundColor: EcoColors.composerSendBg,
-                      foregroundColor: EcoColors.composerSendText,
-                    ),
-                    icon: const Icon(Icons.arrow_upward, size: 20),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );

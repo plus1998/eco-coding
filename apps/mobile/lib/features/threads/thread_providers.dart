@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart' show EcoEventEnvelope;
+import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
@@ -58,6 +59,28 @@ final workflowSettingsProvider =
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
   return rpc.getWorkflowSettings();
+});
+
+final workspaceDiffProvider =
+    FutureProvider.family<WorkspaceDiffResult?, String>((ref, workspacePath) async {
+  if (workspacePath.isEmpty) return null;
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return null;
+
+  ref.listen(ecoEventsProvider, (previous, next) {
+    next.whenData((event) {
+      if (event.kind.startsWith('thread.') || event.kind.startsWith('agent.')) {
+        ref.invalidateSelf();
+      }
+    });
+  });
+
+  try {
+    final diff = await rpc.getWorkspaceDiff(workspacePath);
+    return diff.hasChanges ? diff : null;
+  } catch (_) {
+    return null;
+  }
 });
 
 class ActivityItem {

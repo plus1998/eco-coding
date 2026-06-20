@@ -77,6 +77,20 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
 });
 
+test("registers git remote command definitions", () => {
+  expect(isRemoteCommandChannel("git:get-status")).toBe(true);
+  expect(isRemoteCommandChannel("git:commit")).toBe(true);
+  expect(isRemoteCommandChannel("git:push")).toBe(true);
+  expect(
+    validateRemoteCommandArgs("git:commit", [
+      { workspacePath: "/repo", profileId: "prof_1", includeUnstaged: true },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("git:push", [{ workspacePath: "/repo" }]),
+  ).toEqual({ ok: true });
+});
+
 test("validates eco.invoke params with desktop target", () => {
   const request = buildEcoJsonRpcRequest("req_1", ECO_RPC_METHODS.invoke, {
     desktopDeviceId: "dev_desktop",

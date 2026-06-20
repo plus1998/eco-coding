@@ -1,3 +1,4 @@
+import '../models/git_models.dart';
 import '../models/thread_models.dart';
 import '../network/eco_center_client.dart';
 
@@ -281,5 +282,83 @@ class DesktopRpc {
       [settings.toJson()],
     );
     return WorkflowSettingsSnapshot.fromJson(result);
+  }
+
+  Future<GitWorkingTreeStatus> getGitStatus(String workspacePath) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:get-status',
+      [workspacePath],
+    );
+    return GitWorkingTreeStatus.fromJson(result);
+  }
+
+  Future<WorkspaceDiffResult> getWorkspaceDiff(String workspacePath) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:get-workspace-diff',
+      [workspacePath],
+    );
+    return WorkspaceDiffResult.fromJson(result);
+  }
+
+  Future<GitGenerateCommitMessageResult> generateCommitMessage({
+    required String workspacePath,
+    required String profileId,
+    bool includeUnstaged = true,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:generate-commit-message',
+      [
+        {
+          'workspacePath': workspacePath,
+          'profileId': profileId,
+          'includeUnstaged': includeUnstaged,
+        },
+      ],
+      deadlineMs: 120000,
+    );
+    return GitGenerateCommitMessageResult.fromJson(result);
+  }
+
+  Future<GitCommitResult> commitChanges({
+    required String workspacePath,
+    required String profileId,
+    bool includeUnstaged = true,
+    String? message,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:commit',
+      [
+        {
+          'workspacePath': workspacePath,
+          'profileId': profileId,
+          'includeUnstaged': includeUnstaged,
+          if (message != null && message.isNotEmpty) 'message': message,
+        },
+      ],
+      deadlineMs: 120000,
+    );
+    return GitCommitResult.fromJson(result);
+  }
+
+  Future<GitPushResult> pushChanges({
+    required String workspacePath,
+    String? branch,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:push',
+      [
+        {
+          'workspacePath': workspacePath,
+          if (branch != null && branch.isNotEmpty) 'branch': branch,
+        },
+      ],
+      deadlineMs: 120000,
+    );
+    return GitPushResult.fromJson(result);
   }
 }
