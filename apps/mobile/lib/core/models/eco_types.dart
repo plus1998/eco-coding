@@ -57,6 +57,7 @@ class PublicDeviceMetadata {
     this.model,
     this.ipAddress,
     this.platform,
+    this.hostname,
   });
 
   factory PublicDeviceMetadata.fromJson(Map<String, dynamic>? json) {
@@ -67,12 +68,14 @@ class PublicDeviceMetadata {
       model: json['model'] as String?,
       ipAddress: json['ipAddress'] as String?,
       platform: json['platform'] as String?,
+      hostname: json['hostname'] as String?,
     );
   }
 
   final String? model;
   final String? ipAddress;
   final String? platform;
+  final String? hostname;
 }
 
 class PublicDevice {

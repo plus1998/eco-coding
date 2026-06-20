@@ -55,6 +55,7 @@ export interface CenterServerDeviceMetadataView {
   model?: string;
   ipAddress?: string;
   platform?: string;
+  hostname?: string;
 }
 
 export interface CenterServerDeviceView {

@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/models/eco_types.dart' show EcoConnectionState;
 import '../../core/network/eco_center_client.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/providers/app_session.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/device_display.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
@@ -35,58 +36,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _bootstrap() async {
+    await ref.read(appSessionProvider.future);
     final client = ref.read(ecoCenterClientProvider);
-    await client.initialize();
     final creds = client.credentials;
     _serverUrlController.text = creds.serverUrl;
     _emailController.text = creds.userEmail ?? '';
-    if (creds.selectedDesktopId != null) {
-      ref.read(selectedDesktopIdProvider.notifier).state =
-          creds.selectedDesktopId;
-    }
-    if (creds.serverUrl.trim().isNotEmpty) {
-      final ok = await client.testConnection(creds.serverUrl);
-      ref.read(serverReachableProvider.notifier).state = ok;
-    }
-    if (creds.hasDeviceCredentials && creds.serverUrl.isNotEmpty) {
-      await _ensureConnected(silent: true);
-    }
-    ref.invalidate(credentialsProvider);
-    ref.invalidate(bindingsProvider);
-    ref.invalidate(desktopPresenceProvider);
     if (mounted) {
       final overview = ref.read(setupOverviewProvider);
       setState(() => _wizardStep ??= resolveSetupWizardStep(overview));
     }
   }
 
-  Future<void> _ensureConnected({bool silent = false}) async {
-    final client = ref.read(ecoCenterClientProvider);
-    if (client.status.state == EcoConnectionState.connected) return;
-    try {
-      await client.connect();
-    } catch (error) {
-      if (!silent && mounted) {
-        _showSnack(error.toString());
-      }
-    }
-  }
-
   Future<void> _refreshStatus() async {
     setState(() => _refreshing = true);
     try {
-      final client = ref.read(ecoCenterClientProvider);
-      await client.initialize();
-      if (_serverUrlController.text.trim().isNotEmpty) {
-        final ok = await client.testConnection(_serverUrlController.text);
-        ref.read(serverReachableProvider.notifier).state = ok;
-      }
-      if (client.credentials.hasDeviceCredentials) {
-        await _ensureConnected(silent: true);
-        ref.invalidate(bindingsProvider);
-        ref.invalidate(desktopPresenceProvider);
-      }
+      await refreshAppSession(ref);
       ref.invalidate(credentialsProvider);
+      ref.invalidate(bindingsProvider);
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
@@ -209,7 +175,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 icon: const Icon(Icons.arrow_back),
                 onPressed: actionBusy ? null : () => context.pop(),
               )
-            : _showManualSetup && !overview.readyForThreads
+            : _showManualSetup && !overview.setupComplete
                 ? IconButton(
                     icon: const Icon(Icons.qr_code_scanner),
                     tooltip: '返回扫码',
@@ -232,7 +198,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: overview.readyForThreads
+      body: overview.setupComplete
           ? _ReadyConnectionView(
               overview: overview,
               busy: actionBusy,
@@ -281,7 +247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               overview,
                             ) &&
                             currentStep != SetupWizardStep.selectPc,
-                        showEnterApp: overview.readyForThreads,
+                        showEnterApp: overview.setupComplete,
                         busy: actionBusy,
                         onBack: _goBack,
                         onNext: () => _goNext(overview),
@@ -768,17 +734,21 @@ class _SelectPcStep extends ConsumerWidget {
         }
 
         final presence = presenceAsync.valueOrNull ?? [];
-        final onlineIds =
-            presence.where((d) => d.online).map((d) => d.id).toSet();
+        final presenceLoading =
+            presenceAsync.isLoading && presenceAsync.valueOrNull == null;
+        final onlineIds = presence.where((d) => d.online).map((d) => d.id).toSet();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: active.map((binding) {
             final desktopId = binding.desktopDeviceId;
-            final online = onlineIds.contains(desktopId);
+            final stableOnline = ref.watch(stableDesktopOnlineProvider(desktopId));
+            final online = presenceLoading
+                ? stableOnline
+                : stableOnline ?? onlineIds.contains(desktopId);
             final device =
                 presence.where((d) => d.id == desktopId).firstOrNull;
-            final name = device?.name ?? desktopId;
+            final name = formatDesktopLabel(device, desktopId);
             final selected = selectedDesktop == desktopId;
             return Padding(
               padding: EdgeInsets.only(bottom: compact ? 6 : 8),
@@ -786,7 +756,9 @@ class _SelectPcStep extends ConsumerWidget {
                 name: name,
                 online: online,
                 selected: selected,
-                onTap: busy ? null : () => onSelect(desktopId, name, online),
+                onTap: busy || online == null
+                    ? null
+                    : () => onSelect(desktopId, name, online),
               ),
             );
           }).toList(),
@@ -810,7 +782,7 @@ class _PcDeviceTile extends StatelessWidget {
   });
 
   final String name;
-  final bool online;
+  final bool? online;
   final bool selected;
   final VoidCallback? onTap;
 
@@ -857,7 +829,11 @@ class _PcDeviceTile extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: online ? eco.online : eco.offline,
+                  color: switch (online) {
+                    null => eco.textMuted.withValues(alpha: 0.55),
+                    true => eco.online,
+                    false => eco.offline,
+                  },
                 ),
               ),
               if (selected) ...[
@@ -1009,17 +985,24 @@ class _ReadyConnectionView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoThemeExtras(context);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
-    final presence = ref.watch(desktopPresenceProvider).valueOrNull ?? [];
+    final stableOnline = selectedDesktop == null
+        ? null
+        : ref.watch(stableDesktopOnlineProvider(selectedDesktop));
+    final presenceAsync = ref.watch(desktopPresenceProvider);
+    final presence = presenceAsync.valueOrNull ?? [];
+    final presenceLoading =
+        presenceAsync.isLoading && presenceAsync.valueOrNull == null;
     String? selectedName;
-    var selectedOnline = false;
+    bool? selectedOnline = stableOnline;
     if (selectedDesktop != null) {
       for (final device in presence) {
         if (device.id == selectedDesktop) {
-          selectedName = device.name;
-          selectedOnline = device.online;
+          selectedName = formatDesktopLabel(device, selectedDesktop);
+          selectedOnline ??= presenceLoading ? null : device.online;
           break;
         }
       }
+      selectedOnline ??= presenceLoading ? null : false;
     }
 
     return SafeArea(
@@ -1036,7 +1019,11 @@ class _ReadyConnectionView extends ConsumerWidget {
                     height: 7,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: selectedOnline ? eco.online : eco.offline,
+                      color: switch (selectedOnline) {
+                        null => eco.textMuted.withValues(alpha: 0.55),
+                        true => eco.online,
+                        false => eco.offline,
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),

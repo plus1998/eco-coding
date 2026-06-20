@@ -48,7 +48,7 @@ class SetupStatusCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (overview.readyForThreads) ...[
+            if (overview.setupComplete) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

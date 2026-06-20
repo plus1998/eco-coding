@@ -21,6 +21,10 @@ import {
 import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
 import { buildEventCenterJsonRpcFailure, EVENT_CENTER_JSON_RPC_ERROR } from "../shared/event-center";
 import type { CenterServerSettingsSecret, CenterServerStore } from "./center-server-store";
+import {
+  collectDesktopDeviceProfile,
+  desktopDeviceMetadata,
+} from "./desktop-device-profile";
 import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
 
 type FetchLike = typeof fetch;
@@ -182,6 +186,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       body: {
         kind: "desktop",
         name: request.deviceName.trim(),
+        metadata: desktopDeviceMetadata(collectDesktopDeviceProfile()),
       },
     });
     return this.persistRegisteredDevice(serverUrl, response);
@@ -240,6 +245,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       body: {
         kind: "desktop",
         name: input.deviceName.trim(),
+        metadata: desktopDeviceMetadata(collectDesktopDeviceProfile()),
       },
     });
     const registered = await this.persistRegisteredDevice(input.serverUrl, response);
@@ -329,6 +335,23 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     return response.binding;
   }
 
+  async syncDeviceProfile(): Promise<void> {
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.deviceId) {
+      return;
+    }
+    const accessToken = await this.ensureAccessToken(settings);
+    await this.requestJson({
+      serverUrl: settings.serverUrl,
+      path: `/v1/devices/${encodeURIComponent(settings.deviceId)}`,
+      method: "PATCH",
+      bearerToken: accessToken,
+      body: {
+        metadata: desktopDeviceMetadata(collectDesktopDeviceProfile()),
+      },
+    });
+  }
+
   async testConnection(
     request: CenterServerTestConnectionRequest,
   ): Promise<CenterServerTestConnectionResult> {
@@ -404,6 +427,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
           this.setStatus({ state: "connected", connectedAt });
           this.flushQueuedEvents();
           this.startKeepalive();
+          void this.syncDeviceProfile().catch((error) => {
+            this.log(`[eco] center server profile sync failed: ${errorMessage(error)}\n`);
+          });
           settle();
         };
 
@@ -497,7 +523,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private async requestJson<TResult = unknown>(input: {
     serverUrl: string;
     path: string;
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "PATCH" | "DELETE";
     bearerToken?: string;
     body?: Record<string, unknown>;
   }): Promise<TResult> {

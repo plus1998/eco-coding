@@ -15,6 +15,7 @@ export interface PublicDeviceMetadata {
   model?: string;
   ipAddress?: string;
   platform?: string;
+  hostname?: string;
 }
 
 export interface DeviceRecord {

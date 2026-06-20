@@ -542,7 +542,7 @@ function readOptionalDeviceMetadata(value: unknown): Record<string, string> | un
     if (!trimmed) {
       continue;
     }
-    if (key !== "model" && key !== "ipAddress" && key !== "platform") {
+    if (key !== "model" && key !== "ipAddress" && key !== "platform" && key !== "hostname") {
       throw new Error(`metadata.${key} is not supported.`);
     }
     metadata[key] = trimmed;

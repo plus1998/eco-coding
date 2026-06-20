@@ -711,7 +711,7 @@ function normalizeDeviceMetadata(value: unknown): DeviceRecord["metadata"] {
   const metadata: DeviceRecord["metadata"] = {};
   for (const [key, raw] of Object.entries(value)) {
     if (typeof raw === "string" && raw.trim()) {
-      if (key === "model" || key === "ipAddress" || key === "platform") {
+      if (key === "model" || key === "ipAddress" || key === "platform" || key === "hostname") {
         metadata[key] = raw.trim();
       }
     }

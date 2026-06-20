@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/providers/app_providers.dart';
+import 'core/providers/app_session.dart';
 import 'core/theme/eco_theme.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
@@ -15,8 +16,16 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(this._ref) {
-    _ref.listen(setupOverviewProvider, (_, _) => notifyListeners());
-    _ref.listen(selectedDesktopIdProvider, (_, _) => notifyListeners());
+    _ref.listen(setupOverviewProvider, (previous, next) {
+      if (previous?.setupComplete != next.setupComplete) {
+        notifyListeners();
+      }
+    });
+    _ref.listen(selectedDesktopIdProvider, (previous, next) {
+      if (previous != next) {
+        notifyListeners();
+      }
+    });
   }
 
   final Ref _ref;
@@ -38,14 +47,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final overview = ref.read(setupOverviewProvider);
       final location = state.matchedLocation;
-      final isMain =
-          location.startsWith('/threads') || location.startsWith('/settings');
 
       if (location == '/') {
-        return overview.readyForThreads ? '/threads' : '/connect';
-      }
-      if (!overview.readyForThreads && isMain) {
-        return '/connect';
+        return overview.setupComplete ? '/threads' : '/connect';
       }
       return null;
     },
@@ -134,6 +138,7 @@ class EcoApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appSessionProvider);
     final router = ref.watch(appRouterProvider);
     return MaterialApp.router(
       title: 'Eco',
