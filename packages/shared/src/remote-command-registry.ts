@@ -62,6 +62,8 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("clarification:dismiss", "Dismiss clarification", "write_safe", RPC_INVOKE, [stringArg()]),
 
   command("workspace:get-current", "Get current workspace", "read", RPC_INVOKE, []),
+  command("workspace:get-home-path", "Get home project path", "read", RPC_INVOKE, []),
+  command("workspace:open-path", "Open workspace by path", "write_safe", RPC_INVOKE, [stringArg()]),
   command("workspace:inspect", "Inspect workspace", "read", RPC_INVOKE, [stringArg()]),
 
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),

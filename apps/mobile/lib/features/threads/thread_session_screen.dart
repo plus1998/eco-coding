@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/models/eco_types.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../approvals/approval_sheets.dart';
@@ -91,6 +93,35 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
               ? session.thread!.title
               : '会话',
         ),
+        bottom: session.thread?.workspacePath.isNotEmpty == true
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(36),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      onLongPress: () {
+                        Clipboard.setData(
+                          ClipboardData(text: session.thread!.workspacePath),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('工作目录已复制')),
+                        );
+                      },
+                      child: Text(
+                        '${workspaceDisplayName(session.thread!.workspacePath)} · ${session.thread!.workspacePath}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: ecoThemeExtras(context).textMuted,
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : null,
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) => _handleMenu(value),

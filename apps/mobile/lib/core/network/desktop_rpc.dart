@@ -218,10 +218,29 @@ class DesktopRpc {
     return ThreadSummary.fromJson(result['thread'] as Map<String, dynamic>);
   }
 
-  Future<String> getCurrentWorkspace() async {
-    return await _client.invoke<String>(
+  Future<WorkspaceInfo?> getCurrentWorkspace() async {
+    final result = await _client.invoke<dynamic>(
       desktopDeviceId,
       'workspace:get-current',
+      [],
+    );
+    if (result == null) return null;
+    return WorkspaceInfo.fromJson(result as Map<String, dynamic>);
+  }
+
+  Future<WorkspaceInfo> openWorkspacePath(String workspacePath) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'workspace:open-path',
+      [workspacePath],
+    );
+    return WorkspaceInfo.fromJson(result);
+  }
+
+  Future<String> getHomeProjectPath() async {
+    return await _client.invoke<String>(
+      desktopDeviceId,
+      'workspace:get-home-path',
       [],
     );
   }
