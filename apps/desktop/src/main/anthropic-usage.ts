@@ -23,15 +23,12 @@ function usageTotal(usage: ParsedUsage): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
 }
 
-export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null {
+function parseRawUsageFromResponseBody(body: unknown): ParsedUsage | null {
   if (!isRecord(body)) {
     return null;
   }
   const usage = isRecord(body.usage) ? body.usage : body;
-  const cachedFromDetails = readTokenCount(usage, [
-    "cached_tokens",
-    "cachedTokens",
-  ]);
+  const cachedFromDetails = readTokenCount(usage, ["cached_tokens", "cachedTokens"]);
   const details =
     isRecord(usage.input_tokens_details) ? usage.input_tokens_details
     : isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details
@@ -40,7 +37,7 @@ export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null 
     details !== null
       ? readTokenCount(details, ["cached_tokens", "cachedTokens"])
       : cachedFromDetails;
-  const parsed = normalizeOverlappingCacheContextUsage({
+  const parsed: ParsedUsage = {
     inputTokens: readTokenCount(usage, ["input_tokens", "inputTokens", "prompt_tokens"]),
     outputTokens: readTokenCount(usage, ["output_tokens", "outputTokens", "completion_tokens"]),
     cacheReadTokens:
@@ -54,8 +51,16 @@ export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null 
       "cacheCreationInputTokens",
       "cache_creation_tokens",
     ]),
-  });
+  };
   return usageTotal(parsed) > 0 ? parsed : null;
+}
+
+export function extractUsageFromResponseBody(body: unknown): ParsedUsage | null {
+  const raw = parseRawUsageFromResponseBody(body);
+  if (!raw) {
+    return null;
+  }
+  return normalizeOverlappingCacheContextUsage(raw);
 }
 
 export function parsedUsageFromOpenAICompatUsage(
@@ -99,17 +104,17 @@ export function resolveChatCompletionsStreamUsage(
   return bridgeParsed ? normalizeOverlappingCacheContextUsage(bridgeParsed) : null;
 }
 
-function extractUsageFromStreamEvent(event: unknown): ParsedUsage | null {
+function extractRawUsageFromStreamEvent(event: unknown): ParsedUsage | null {
   if (!isRecord(event)) {
     return null;
   }
   if (isRecord(event.message)) {
-    const fromMessage = extractUsageFromResponseBody(event.message);
+    const fromMessage = parseRawUsageFromResponseBody(event.message);
     if (fromMessage) {
       return fromMessage;
     }
   }
-  return extractUsageFromResponseBody(event);
+  return parseRawUsageFromResponseBody(event);
 }
 
 function mergeStreamingUsage(current: ParsedUsage | null, incoming: ParsedUsage | null): ParsedUsage | null {
@@ -145,7 +150,7 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
     }
     try {
       const parsed = JSON.parse(data) as unknown;
-      latest = mergeStreamingUsage(latest, extractUsageFromStreamEvent(parsed));
+      latest = mergeStreamingUsage(latest, extractRawUsageFromStreamEvent(parsed));
     } catch {
       // Ignore malformed SSE chunks.
     }
@@ -164,7 +169,7 @@ export function createStreamingUsageTracker(): StreamingUsageTracker {
       if (buffer.trim()) {
         processBlock(buffer);
       }
-      return latest;
+      return latest ? normalizeOverlappingCacheContextUsage(latest) : null;
     },
   };
 }

@@ -115,23 +115,66 @@ function contextWindowOccupancy(usage: ParsedUsage): number {
 /**
  * OpenAI-compatible providers often put the full prompt in `input_tokens` while also
  * reporting the cached subset as `cache_read_input_tokens` (Anthropic field names).
- * Anthropic-native usage keeps uncached input separate, so only the near-equal case
- * needs correction.
+ * Anthropic-native usage keeps uncached input separate; only dedupe when input clearly
+ * represents total prompt size (near-equal to cache, or a small uncached tail).
  */
 export function normalizeOverlappingCacheContextUsage(usage: ParsedUsage): ParsedUsage {
   const { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens } = usage;
   if (cacheReadTokens <= 0) {
     return usage;
   }
-  if (inputTokens >= cacheReadTokens && inputTokens <= cacheReadTokens * 1.02) {
-    return {
-      inputTokens: Math.max(0, inputTokens - cacheReadTokens),
-      outputTokens,
-      cacheReadTokens,
-      cacheCreationTokens,
-    };
+  if (inputTokens >= cacheReadTokens) {
+    const uncachedTail = inputTokens - cacheReadTokens;
+    const uncachedTailRatio = uncachedTail / inputTokens;
+    const nearEqualTotal = inputTokens <= cacheReadTokens * 1.02;
+    const smallUncachedTail = uncachedTailRatio <= 0.1;
+    if (nearEqualTotal || smallUncachedTail) {
+      return {
+        inputTokens: Math.max(0, uncachedTail),
+        outputTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
+      };
+    }
   }
   return usage;
+}
+
+const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
+
+function stripExtendedContextModelSuffix(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (trimmed.endsWith(EXTENDED_CONTEXT_MODEL_SUFFIX)) {
+    return trimmed.slice(0, -EXTENDED_CONTEXT_MODEL_SUFFIX.length);
+  }
+  return trimmed;
+}
+
+function normalizeSdkModelIdForMatch(modelId: string): string {
+  return stripExtendedContextModelSuffix(modelId).toLowerCase();
+}
+
+function findModelBillingEntry(
+  modelBillings: NonNullable<ReturnType<typeof parseSdkModelUsageBilling>>,
+  subagentModelId: string,
+) {
+  const normalized = normalizeSdkModelIdForMatch(subagentModelId);
+  let match = modelBillings.find(
+    (entry) => normalizeSdkModelIdForMatch(entry.modelId) === normalized,
+  );
+  if (match) {
+    return match;
+  }
+  match = modelBillings.find((entry) => entry.modelId === subagentModelId);
+  if (match) {
+    return match;
+  }
+  if (normalized.startsWith("eco-")) {
+    return modelBillings.find((entry) =>
+      normalizeSdkModelIdForMatch(entry.modelId).startsWith("eco-"),
+    );
+  }
+  return undefined;
 }
 
 function maxModelContextUsage(
@@ -142,6 +185,21 @@ function maxModelContextUsage(
   for (const entry of modelBillings) {
     const occupancy = contextWindowOccupancy(entry.usage);
     if (occupancy >= bestOccupancy) {
+      bestOccupancy = occupancy;
+      best = entry.usage;
+    }
+  }
+  return best;
+}
+
+function minModelContextUsage(
+  modelBillings: NonNullable<ReturnType<typeof parseSdkModelUsageBilling>>,
+): ParsedUsage | null {
+  let best: ParsedUsage | null = null;
+  let bestOccupancy = Number.POSITIVE_INFINITY;
+  for (const entry of modelBillings) {
+    const occupancy = contextWindowOccupancy(entry.usage);
+    if (occupancy > 0 && occupancy <= bestOccupancy) {
       bestOccupancy = occupancy;
       best = entry.usage;
     }
@@ -167,13 +225,14 @@ export function parseSdkContextUsage(
   const modelBillings = parseSdkModelUsageBilling(payload);
 
   if (options?.subagentModelId && modelBillings?.length) {
-    const match = modelBillings.find((entry) => entry.modelId === options.subagentModelId);
+    const match = findModelBillingEntry(modelBillings, options.subagentModelId);
     if (match) {
       return match.usage;
     }
     if (modelBillings.length === 1) {
       return modelBillings[0]!.usage;
     }
+    return minModelContextUsage(modelBillings);
   }
 
   const maxModelUsage = modelBillings?.length ? maxModelContextUsage(modelBillings) : null;

@@ -64,6 +64,28 @@ test("computeWindowOccupancy dedupes OpenAI-compat total plus cache subset", () 
   ).toBe(24_748);
 });
 
+test("computeWindowOccupancy dedupes newapi-style total with small uncached tail", () => {
+  expect(
+    computeWindowOccupancy({
+      inputTokens: 3790,
+      outputTokens: 20,
+      cacheReadTokens: 3677,
+      cacheCreationTokens: 0,
+    }),
+  ).toBe(3790);
+});
+
+test("computeWindowOccupancy keeps Anthropic separate input and cache counts", () => {
+  expect(
+    computeWindowOccupancy({
+      inputTokens: 5000,
+      outputTokens: 20,
+      cacheReadTokens: 3000,
+      cacheCreationTokens: 0,
+    }),
+  ).toBe(8000);
+});
+
 test("computeOccupancyRatio at threshold", () => {
   const { atThreshold } = computeOccupancyRatio(170_000, 200_000, 0.85);
   expect(atThreshold).toBe(true);

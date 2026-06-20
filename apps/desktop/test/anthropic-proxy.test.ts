@@ -389,6 +389,43 @@ test("createStreamingUsageTracker reads streaming response usage", () => {
   });
 });
 
+test("createStreamingUsageTracker merges raw chunks then dedupes OpenAI-compat totals", () => {
+  const tracker = createStreamingUsageTracker();
+  tracker.push(
+    Buffer.from(
+      `data: ${JSON.stringify({
+        type: "message_delta",
+        usage: {
+          input_tokens: 1301,
+          output_tokens: 5,
+          cache_read_input_tokens: 2803,
+        },
+      })}\n\n`,
+    ),
+  );
+  tracker.push(
+    Buffer.from(
+      `data: ${JSON.stringify({
+        type: "message_delta",
+        usage: {
+          input_tokens: 3105,
+          output_tokens: 20,
+          cache_read_input_tokens: 2803,
+        },
+      })}\n\n`,
+    ),
+  );
+
+  const usage = tracker.finish();
+  expect(usage).toMatchObject({
+    inputTokens: 302,
+    outputTokens: 20,
+    cacheReadTokens: 2803,
+    cacheCreationTokens: 0,
+  });
+  expect((usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0)).toBe(3105);
+});
+
 function createProvider(
   id: string,
   name: string,

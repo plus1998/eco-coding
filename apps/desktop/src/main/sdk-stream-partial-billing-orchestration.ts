@@ -42,6 +42,7 @@ export async function resolveSdkStreamPartialBillingOrchestration(
       usage: request.usage,
       artifacts,
       ...(request.subagentAgentId && { subagentAgentId: request.subagentAgentId }),
+      ...(request.updateContext === false && { updateContext: false }),
     },
   };
 }

@@ -124,6 +124,31 @@ test("parseSdkContextUsage picks subagent model entry instead of max occupancy",
   expect(usage?.cacheReadTokens).toBe(1_000);
 });
 
+test("parseSdkContextUsage matches eco alias with [1m] suffix and prefers min occupancy when ambiguous", () => {
+  const usage = parseSdkContextUsage(
+    {
+      usage: { input_tokens: 1, output_tokens: 1 },
+      modelUsage: {
+        "eco-explore-abc123": {
+          inputTokens: 12_000,
+          outputTokens: 10,
+          cacheReadInputTokens: 2_000,
+          cacheCreationInputTokens: 0,
+        },
+        "claude-sonnet-4-6": {
+          inputTokens: 80_000,
+          outputTokens: 50,
+          cacheReadInputTokens: 400_000,
+          cacheCreationInputTokens: 0,
+        },
+      },
+    },
+    { subagentModelId: "eco-explore-abc123[1m]" },
+  );
+  expect(usage?.inputTokens).toBe(12_000);
+  expect(usage?.cacheReadTokens).toBe(2_000);
+});
+
 test("parseSdkUsageBilling prefers modelUsage cache fields for billing", () => {
   const bundle = parseSdkUsageBilling({
     total_cost_usd: 0.18,

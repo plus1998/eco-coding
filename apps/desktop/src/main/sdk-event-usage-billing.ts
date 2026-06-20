@@ -1,4 +1,4 @@
-import { parseSdkContextUsage, parseSdkUsageBilling, type ParsedUsage } from "@eco/runtime";
+import { parseSdkUsageBilling, type ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import {
   buildAssistantUsageRequestKey,
@@ -48,6 +48,8 @@ export interface SdkStreamPartialUsageInput {
   plannerAgentId?: string;
   subagentAgentId?: string;
   parentToolUseId?: string;
+  /** When false, skip context meter updates (e.g. ambiguous subagent usage). */
+  updateContext?: boolean;
 }
 
 export interface SdkRunUsageBillingInput {
@@ -293,20 +295,19 @@ function buildStreamPartialInput(input: {
   plannerAgentId?: string;
 }): SdkStreamPartialUsageInput {
   const modelId = readStringProperty(input.event.payload, "model") ?? input.bundle.models[0]?.modelId;
-  const streamContextUsage =
-    input.subagentAgentId && modelId
-      ? (parseSdkContextUsage(input.event.payload, { subagentModelId: modelId }) ?? input.bundle.contextUsage)
-      : input.bundle.contextUsage;
+  const usage = input.bundle.contextUsage;
+  const updateContext = input.subagentAgentId ? false : undefined;
   return {
     threadId: input.threadId,
     eventId: input.event.id,
     role: input.billingRole,
-    usage: streamContextUsage,
+    usage,
     ...(modelId && { modelId }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),
     ...(input.subagentAgentId && { subagentAgentId: input.subagentAgentId }),
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(updateContext === false && { updateContext: false }),
   };
 }
 

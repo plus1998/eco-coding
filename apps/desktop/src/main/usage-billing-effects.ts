@@ -74,6 +74,7 @@ export interface ApplySdkStreamPartialBillingEffectsInput {
   usage: ParsedUsage;
   artifacts: SdkStreamPartialBillingArtifacts;
   subagentAgentId?: string;
+  updateContext?: boolean;
 }
 
 export async function applySdkStreamPartialBillingEffects(
@@ -85,6 +86,7 @@ export async function applySdkStreamPartialBillingEffects(
   const contextUpdated = await services.context.applyUpdate({
     threadId: input.threadId,
     usage: input.usage,
+    updateContext: input.updateContext,
     ...(input.artifacts.contextUpdate && { contextUpdate: input.artifacts.contextUpdate }),
     ...(input.subagentAgentId && { agentId: input.subagentAgentId }),
   });
