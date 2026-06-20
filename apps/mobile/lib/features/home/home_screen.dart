@@ -53,7 +53,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     ref.invalidate(credentialsProvider);
     ref.invalidate(bindingsProvider);
-    ref.invalidate(presenceProvider);
+    ref.invalidate(desktopPresenceProvider);
     if (mounted) {
       final overview = ref.read(setupOverviewProvider);
       setState(() => _wizardStep ??= resolveSetupWizardStep(overview));
@@ -84,7 +84,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (client.credentials.hasDeviceCredentials) {
         await _ensureConnected(silent: true);
         ref.invalidate(bindingsProvider);
-        ref.invalidate(presenceProvider);
+        ref.invalidate(desktopPresenceProvider);
       }
       ref.invalidate(credentialsProvider);
     } finally {
@@ -170,7 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(serverReachableProvider.notifier).state = true;
         ref.invalidate(credentialsProvider);
         ref.invalidate(bindingsProvider);
-        ref.invalidate(presenceProvider);
+        ref.invalidate(desktopPresenceProvider);
         setState(() => _showManualSetup = false);
         _showSnack('已连接 PC');
       });
@@ -361,7 +361,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               await client.connect();
               ref.invalidate(credentialsProvider);
               ref.invalidate(bindingsProvider);
-              ref.invalidate(presenceProvider);
+              ref.invalidate(desktopPresenceProvider);
               _showSnack('登录成功，WebSocket 已连接');
             }),
             onReconnect: () => _run(() async {
@@ -388,7 +388,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               final client = ref.read(ecoCenterClientProvider);
               await client.claimPairing(_pairCodeController.text);
               ref.invalidate(bindingsProvider);
-              ref.invalidate(presenceProvider);
+              ref.invalidate(desktopPresenceProvider);
               _pairCodeController.clear();
               _showSnack('绑定成功');
             }),
@@ -753,7 +753,7 @@ class _SelectPcStep extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bindingsAsync = ref.watch(bindingsProvider);
-    final presenceAsync = ref.watch(presenceProvider);
+    final presenceAsync = ref.watch(desktopPresenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
 
     if (overview.steps[3].state != SetupStepState.done) {
@@ -1009,7 +1009,7 @@ class _ReadyConnectionView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoThemeExtras(context);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
-    final presence = ref.watch(presenceProvider).valueOrNull ?? [];
+    final presence = ref.watch(desktopPresenceProvider).valueOrNull ?? [];
     String? selectedName;
     var selectedOnline = false;
     if (selectedDesktop != null) {

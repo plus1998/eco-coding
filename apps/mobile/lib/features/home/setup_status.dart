@@ -34,7 +34,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final credentials = ref.watch(credentialsProvider).valueOrNull;
   final connection = ref.watch(connectionStatusProvider).valueOrNull;
   final bindings = ref.watch(bindingsProvider).valueOrNull;
-  final presence = ref.watch(presenceProvider).valueOrNull;
+  final presence = ref.watch(desktopPresenceProvider).valueOrNull;
   final serverReachable = ref.watch(serverReachableProvider);
   final selectedDesktopId = ref.watch(selectedDesktopIdProvider);
 

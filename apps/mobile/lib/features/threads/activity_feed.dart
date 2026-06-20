@@ -19,6 +19,7 @@ class ActivityFeedEntry {
     this.streaming = false,
     this.usageBadge,
     this.lifecycle,
+    this.missionPrompt,
   });
 
   final String id;
@@ -30,6 +31,7 @@ class ActivityFeedEntry {
   final bool streaming;
   final String? usageBadge;
   final ToolActionLifecycle? lifecycle;
+  final String? missionPrompt;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
@@ -189,6 +191,8 @@ List<ActivityFeedEntry> buildActivityFeed({
           kind: ActivityFeedKind.subagentMission,
           text: mission.summary,
           subagentRole: mission.role,
+          missionPrompt:
+              mission.prompt.isNotEmpty ? mission.prompt : null,
         ),
       );
       continue;
@@ -371,6 +375,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _SubagentMissionTile(
           role: entry.subagentRole ?? '',
           summary: entry.text,
+          prompt: entry.missionPrompt,
         );
       case ActivityFeedKind.error:
         return _ErrorTile(text: entry.text);
@@ -563,36 +568,126 @@ class _PhaseTile extends StatelessWidget {
   }
 }
 
-class _SubagentMissionTile extends StatelessWidget {
-  const _SubagentMissionTile({required this.role, required this.summary});
+class _SubagentMissionTile extends StatefulWidget {
+  const _SubagentMissionTile({
+    required this.role,
+    required this.summary,
+    this.prompt,
+  });
 
   final String role;
   final String summary;
+  final String? prompt;
+
+  @override
+  State<_SubagentMissionTile> createState() => _SubagentMissionTileState();
+}
+
+class _SubagentMissionTileState extends State<_SubagentMissionTile> {
+  var _expanded = false;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: eco.cardSurface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: eco.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            resolveSubagentRunDisplayTitle(role),
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: EcoColors.accentText,
-                  fontWeight: FontWeight.w600,
+    final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
+    final trimmedPrompt = widget.prompt?.trim() ?? '';
+    final trimmedSummary = widget.summary.trim();
+    final fullText =
+        trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary;
+    final borderColor = subagentMissionBorderColor(role);
+
+    return Semantics(
+      button: true,
+      expanded: _expanded,
+      label: '${resolveSubagentRunDisplayTitle(role)} 任务目标',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Color.alphaBlend(
+                  borderColor.withValues(alpha: 0.45),
+                  eco.borderSubtle,
                 ),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(
+                            resolveSubagentRunDisplayTitle(role),
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: EcoColors.accentText,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '任务目标',
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: eco.textMuted,
+                                      fontSize: 11,
+                                      letterSpacing: 0.3,
+                                    ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 18,
+                        color: eco.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (fullText.isEmpty)
+                  Text(
+                    '等待任务说明…',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                          fontStyle: FontStyle.italic,
+                          height: 1.4,
+                        ),
+                  )
+                else
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.topLeft,
+                    child: Text(
+                      fullText,
+                      maxLines: _expanded ? null : 2,
+                      overflow:
+                          _expanded ? null : TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.textSecondary,
+                            height: 1.45,
+                          ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          EcoMarkdown(text: summary, compact: true),
-        ],
+        ),
       ),
     );
   }

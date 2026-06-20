@@ -102,7 +102,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               await client.clearSession();
                               ref.invalidate(credentialsProvider);
                               ref.invalidate(bindingsProvider);
-                              ref.invalidate(presenceProvider);
+                              ref.invalidate(desktopPresenceProvider);
                               ref.read(selectedDesktopIdProvider.notifier).state =
                                   null;
                               if (context.mounted) {

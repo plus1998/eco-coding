@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 const subagentDisplayRoles = {
   'explore',
   'architect',
@@ -446,4 +448,21 @@ String resolveSubagentRunDisplayTitle(String role) {
   };
   final normalized = normalizeAgentDisplayRole(role) ?? role;
   return labels[normalized] ?? normalized;
+}
+
+Color subagentMissionBorderColor(String role) {
+  switch (normalizeAgentDisplayRole(role) ?? role) {
+    case 'explore':
+      return const Color(0x4738BDF8);
+    case 'architect':
+      return const Color(0x47A78BFA);
+    case 'coder':
+      return const Color(0x474ADE80);
+    case 'reviewer':
+      return const Color(0x47FBBF24);
+    case 'tester':
+      return const Color(0x47FB7185);
+    default:
+      return const Color(0x4760A5FA);
+  }
 }

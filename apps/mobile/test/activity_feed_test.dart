@@ -151,6 +151,7 @@ void main() {
     expect(feed.length, 1);
     expect(feed.first.kind, ActivityFeedKind.subagentMission);
     expect(feed.first.text, '梳理 auth 模块');
+    expect(feed.first.missionPrompt, 'check auth flow');
   });
 
   test('bash approval merges into the same action row', () {
