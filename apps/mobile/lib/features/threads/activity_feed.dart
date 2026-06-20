@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/widgets/eco_markdown.dart';
 import 'thread_providers.dart';
 
 enum ActivityFeedKind { user, assistant, action, phase, subagentMission, error }
@@ -15,6 +16,7 @@ class ActivityFeedEntry {
     this.subagentRole,
     this.detail,
     this.streaming = false,
+    this.usageBadge,
   });
 
   final String id;
@@ -24,6 +26,7 @@ class ActivityFeedEntry {
   final String? subagentRole;
   final String? detail;
   final bool streaming;
+  final String? usageBadge;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
@@ -49,6 +52,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   var narrative = '';
   String? narrativeId;
   var narrativeStreaming = false;
+  String? pendingUsageBadge;
 
   void flushNarrative() {
     final text = stripActivityStatusNoise(narrative).trim();
@@ -64,11 +68,13 @@ List<ActivityFeedEntry> buildActivityFeed({
         kind: ActivityFeedKind.assistant,
         text: text,
         streaming: narrativeStreaming,
+        usageBadge: pendingUsageBadge,
       ),
     );
     narrative = '';
     narrativeId = null;
     narrativeStreaming = false;
+    pendingUsageBadge = null;
   }
 
   void upsertPhase(String summary, {String? detail}) {
@@ -101,6 +107,20 @@ List<ActivityFeedEntry> buildActivityFeed({
     final message = stripSubagentBracketPrefix(cleaned);
     if (message.isEmpty || isUsageNoiseMessage(message)) continue;
 
+    if (line.role == 'system' || isInternalAgentActivityRole(line.role)) {
+      continue;
+    }
+
+    if (isInternalActivityMessage(message)) {
+      continue;
+    }
+
+    if (isUsageBadgeText(message)) {
+      flushNarrative();
+      pendingUsageBadge = message.trim();
+      continue;
+    }
+
     if (line.role == 'user') {
       flushNarrative();
       if (!isUserPromptActivityLine(role: line.role, message: line.message)) {
@@ -117,7 +137,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     final agentRole = normalizeAgentDisplayRole(line.role);
-    if (agentRole != null) {
+    if (agentRole != null && isSubagentDisplayRole(agentRole)) {
       flushNarrative();
       final mission = _parseSubagentMissionSummary(message);
       if (mission != null) {
@@ -200,6 +220,16 @@ List<ActivityFeedEntry> buildActivityFeed({
   }
 
   flushNarrative();
+  if (pendingUsageBadge != null) {
+    output.add(
+      ActivityFeedEntry(
+        id: 'usage-${output.length}',
+        kind: ActivityFeedKind.assistant,
+        text: '',
+        usageBadge: pendingUsageBadge,
+      ),
+    );
+  }
   return output;
 }
 
@@ -259,6 +289,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _AssistantNarrativeTile(
           text: entry.text,
           streaming: entry.streaming,
+          usageBadge: entry.usageBadge,
         );
       case ActivityFeedKind.action:
         return _ActionTile(
@@ -315,22 +346,61 @@ class _AssistantNarrativeTile extends StatelessWidget {
   const _AssistantNarrativeTile({
     required this.text,
     this.streaming = false,
+    this.usageBadge,
   });
 
   final String text;
   final bool streaming;
+  final String? usageBadge;
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    if (text.isEmpty && usageBadge != null) {
+      return _UsageBadgeLine(badge: usageBadge!);
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-      child: SelectableText(
-        text,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              height: 1.55,
-              color: EcoColors.textHeading,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (text.isNotEmpty) EcoMarkdown(text: text),
+          if (usageBadge != null) ...[
+            const SizedBox(height: 6),
+            _UsageBadgeLine(badge: usageBadge!),
+          ],
+          if (streaming && text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '…',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: eco.textMuted,
+                    ),
+              ),
             ),
+        ],
       ),
+    );
+  }
+}
+
+class _UsageBadgeLine extends StatelessWidget {
+  const _UsageBadgeLine({required this.badge});
+
+  final String badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Text(
+      badge,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: eco.textMuted,
+            fontSize: 11,
+            letterSpacing: 0.2,
+          ),
     );
   }
 }
@@ -452,13 +522,7 @@ class _SubagentMissionTile extends StatelessWidget {
                 ),
           ),
           const SizedBox(height: 6),
-          Text(
-            summary,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: EcoColors.textSecondary,
-                  height: 1.4,
-                ),
-          ),
+          EcoMarkdown(text: summary, compact: true),
         ],
       ),
     );

@@ -47,9 +47,15 @@ const _toolVerbLabels = {
 final _subagentBracketPrefix = RegExp(r'^【[^】]+】\s*');
 
 final _activityNoisePattern = RegExp(
-  r'^(?:Tool:|Running tool:|Requesting model|Compacting context|API retry |Usage recorded|Run finished|Agent session started|Claude Agent SDK ready|状态已更新|已从异常退出恢复|【\d+/\d+】)',
+  r'^(?:Tool:|Running tool:|Requesting model|Compacting context|API retry |Usage recorded|Run finished|Agent session started|Agent run completed|Claude Agent SDK ready|状态已更新|已从异常退出恢复|【\d+/\d+】|Creating isolated worktree|Isolated worktree ready:|Local model router ready:|Working in project directory:|已清理隔离工作树|工具调用被拒绝|Permission denied for )',
   caseSensitive: false,
 );
+
+final _internalActivityMessagePattern = RegExp(
+  r'^(?:标题已更新|标题更新|运行投影已更新|运行投影更新|执行完成。|执行完成，变更已写入项目目录。|执行完成，工作树内无相对基线的文件变更。|正在启动 Claude Agent SDK|等待工具读取确认|等待 Bash 执行确认|读取已确认，继续执行|读取已拒绝，等待 Agent 调整|Bash 已确认，继续执行|Bash 已拒绝，等待 Agent 调整)',
+);
+
+final _usageBadgePattern = RegExp(r'^[↑↓⊙][↑↓⊙\d\s.,kKmM\$%·+()-]*$');
 
 final _usageNoisePattern = RegExp(
   r'^(?:Usage recorded|Run finished)',
@@ -109,7 +115,31 @@ bool isUsageNoiseMessage(String message) {
 
 bool isActivityNoiseMessage(String message) {
   final text = stripSubagentBracketPrefix(message.trim());
-  return text.isEmpty || _activityNoisePattern.hasMatch(text);
+  return text.isEmpty ||
+      _activityNoisePattern.hasMatch(text) ||
+      isInternalActivityMessage(text);
+}
+
+bool isInternalActivityMessage(String message) {
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) return true;
+  if (_internalActivityMessagePattern.hasMatch(trimmed)) return true;
+  if (trimmed.startsWith('__eco_worktree_merge__')) return true;
+  return false;
+}
+
+bool isUsageBadgeText(String message) {
+  return _usageBadgePattern.hasMatch(message.trim());
+}
+
+bool isSubagentDisplayRole(String? role) {
+  final normalized = normalizeAgentDisplayRole(role);
+  return normalized != null && subagentDisplayRoles.contains(normalized);
+}
+
+bool isInternalAgentActivityRole(String? role) {
+  final normalized = normalizeAgentDisplayRole(role);
+  return normalized != null && !subagentDisplayRoles.contains(normalized);
 }
 
 bool isThreadFollowUpActivityMessage(String message) {
