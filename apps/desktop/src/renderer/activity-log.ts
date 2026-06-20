@@ -230,6 +230,8 @@ const systemNoisePatterns = [
   /^Usage recorded/,
   /^Run finished/,
   /^状态已更新/,
+  /^工具调用被拒绝$/,
+  /^Permission denied for /i,
 ];
 
 const terminalStatuses = new Set<ThreadStatus>(["completed", "failed", "blocked", "idle", "awaiting_plan"]);
@@ -2399,17 +2401,24 @@ function resolveActivityLineApiError(line: ThreadActivityLine): ThreadApiErrorIn
 }
 
 function parseToolFailedLine(message: string): { tool: string; error?: string } | null {
-  const match = stripSubagentBracketPrefix(message.trim()).match(
-    /^Tool failed:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+))?$/i,
-  );
-  if (!match?.[1]) {
-    return null;
+  const trimmed = stripSubagentBracketPrefix(message.trim());
+  const toolFailedMatch = trimmed.match(/^Tool failed:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+))?$/i);
+  if (toolFailedMatch?.[1]) {
+    const error = toolFailedMatch[2]?.trim();
+    return {
+      tool: toolFailedMatch[1],
+      ...(error && { error }),
+    };
   }
-  const error = match[2]?.trim();
-  return {
-    tool: match[1],
-    ...(error && { error }),
-  };
+  const permissionDeniedMatch = trimmed.match(/^Permission denied for ([A-Za-z0-9_]+)(?::\s*(.+))?$/i);
+  if (permissionDeniedMatch?.[1]) {
+    const error = permissionDeniedMatch[2]?.trim();
+    return {
+      tool: permissionDeniedMatch[1],
+      ...(error && { error }),
+    };
+  }
+  return null;
 }
 
 function parseToolLine(message: string): ParsedToolAction | null {

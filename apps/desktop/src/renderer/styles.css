@@ -4767,28 +4767,28 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 4px 0;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(127, 29, 29, 0.22);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-soft);
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .run-log-tool-failed-role {
-  color: #fca5a5;
+  color: var(--danger);
   font-size: 11px;
   font-weight: 600;
 }
 
 .run-log-tool-failed-label {
-  color: #fecaca;
+  color: var(--danger);
   font-size: 13px;
   font-weight: 600;
 }
 
 .run-log-tool-failed-error {
   margin: 0;
-  color: #fda4af;
+  color: var(--codex-log-text, var(--text-primary, #e5e5e5));
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -4799,28 +4799,28 @@ html[data-window-focused="true"] .codex-sidebar {
   margin: 4px 0;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(127, 29, 29, 0.22);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-soft);
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .run-log-api-error-role {
-  color: #fca5a5;
+  color: var(--danger);
   font-size: 11px;
   font-weight: 600;
 }
 
 .run-log-api-error-label {
-  color: #fecaca;
+  color: var(--danger);
   font-size: 13px;
   font-weight: 600;
 }
 
 .run-log-api-error-message {
   margin: 0;
-  color: #fda4af;
+  color: var(--codex-log-text, var(--text-primary, #e5e5e5));
   font-size: 12px;
   line-height: 1.45;
 }
@@ -13010,22 +13010,22 @@ html[data-window-focused="true"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed,
 .codex-main:not(.codex-main-landing) .run-log-api-error {
-  padding: 12px 14px;
-  border-color: rgba(248, 113, 113, 0.28);
-  background: rgba(127, 29, 29, 0.18);
-  color: #fca5a5;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--codex-log-line));
+  background: var(--danger-soft);
+  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed-role,
 .codex-main:not(.codex-main-landing) .run-log-tool-failed-label,
 .codex-main:not(.codex-main-landing) .run-log-api-error-role,
 .codex-main:not(.codex-main-landing) .run-log-api-error-label {
-  color: #fecaca;
+  color: var(--danger);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-tool-failed-error,
 .codex-main:not(.codex-main-landing) .run-log-api-error-message {
-  color: #fda4af;
+  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-body,

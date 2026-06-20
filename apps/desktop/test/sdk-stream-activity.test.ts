@@ -200,6 +200,38 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
+test("suppresses redundant OTLP permission denied lines after SDK tool.failed", () => {
+  const bridge = new SdkStreamActivityBridge();
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.failed",
+      role: "tool",
+      agentId: "agent_researcher",
+      payload: {
+        type: "tool_permission_denied",
+        tool_name: "Write",
+        tool_use_id: "tool_denied",
+        message: 'Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
+        actor: "eco_researcher",
+      },
+    },
+    () => {},
+    undefined,
+    { activityAgentId: "agent_researcher" },
+  );
+
+  expect(bridge.shouldSuppressOtelToolLine("thr_1", "Permission denied for Write")).toBe(true);
+  expect(
+    bridge.shouldSuppressOtelToolLine(
+      "thr_1",
+      'Permission denied for Write: Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
+    ),
+  ).toBe(true);
+  expect(bridge.shouldSuppressOtelToolLine("thr_1", "工具调用被拒绝")).toBe(true);
+  expect(bridge.shouldSuppressOtelToolLine("thr_1", "Permission denied for Bash")).toBe(false);
+});
+
 test("defers streaming tool placeholder until input is complete", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ message: string; tool?: { name: string; detail?: string } }> = [];

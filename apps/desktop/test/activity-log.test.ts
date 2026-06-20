@@ -1076,6 +1076,33 @@ test("renders tool failed lines as tool-failed blocks", () => {
   });
 });
 
+test("renders permission denied lines as tool-failed blocks", () => {
+  const blocks = buildActivityLogBlocks(
+    [
+      { id: "u1", role: "user", message: "go" },
+      {
+        id: "1",
+        role: "coder",
+        message:
+          'Permission denied for Write: Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
+      },
+    ],
+    { status: "running", createdAt: new Date().toISOString() },
+  );
+
+  const item = subagentItems(blocks)[0];
+  if (!item) {
+    throw new Error("expected subagent item");
+  }
+  const failed = item.children.find((child) => child.kind === "tool-failed");
+  expect(failed).toMatchObject({
+    kind: "tool-failed",
+    tool: "Write",
+    error: 'Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
+    subagent: "coder",
+  });
+});
+
 test("upgrades weak agent mission with @mission payload", () => {
   const missionLine = formatSubagentMissionMessage(
     "coder",

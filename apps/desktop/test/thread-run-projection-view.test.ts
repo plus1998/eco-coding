@@ -1628,3 +1628,49 @@ test("isProjectionRequestActive follows request span status", () => {
     }),
   ).toBe(false);
 });
+
+test("buildThreadRunProjectionViewModel drops redundant permission denied lines after tool.failed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "tool-failed",
+          eventType: "tool.failed",
+          sequence: 1,
+          text: 'Permission denied for Write: Filesystem write path "/home/user/summer_night.md" is outside Eco workspace.',
+          metadata: {
+            liveType: "tool.failed",
+            tool: {
+              name: "Write",
+              status: "failed",
+              detail:
+                'Filesystem write path "/home/user/summer_night.md" is outside Eco workspace "/Users/gareth/.eco/projects/home".',
+            },
+          },
+        }),
+        item({
+          id: "otel-deny-short",
+          sequence: 2,
+          role: "system",
+          text: "Permission denied for Write",
+          metadata: { liveType: "otel.activity" },
+        }),
+        item({
+          id: "otel-reject",
+          sequence: 3,
+          role: "system",
+          text: "工具调用被拒绝",
+          metadata: { liveType: "otel.activity" },
+        }),
+      ],
+    }),
+  );
+
+  const timelineEntries = view.mainFeedEntries.filter((entry) => entry.kind === "timeline");
+  expect(timelineEntries).toHaveLength(1);
+  expect(timelineEntries[0]?.kind === "timeline" && timelineEntries[0].item.id).toBe("tool-failed");
+  expect(projectionItemToDetailBlock(timelineEntries[0]!.item)).toMatchObject({
+    kind: "tool-failed",
+    tool: "Write",
+  });
+});

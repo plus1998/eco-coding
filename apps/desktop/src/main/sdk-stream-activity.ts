@@ -21,6 +21,12 @@ export interface SdkToolActivityRecord {
   matchedAt?: number;
 }
 
+interface SdkToolFailureRecord {
+  toolName: string;
+  toolUseId?: string;
+  at: number;
+}
+
 const STREAM_THROTTLE_MS = 50;
 const OTEL_TOOL_DEDUP_MS = 60_000;
 
@@ -44,11 +50,13 @@ export type SdkActivityEmit = (
 
 export class SdkStreamActivityBridge {
   private readonly recentSdkTools = new Map<string, SdkToolActivityRecord[]>();
+  private readonly recentToolFailures = new Map<string, SdkToolFailureRecord[]>();
   private readonly pendingDeltas = new Map<string, PendingStreamDelta>();
   private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
 
   resetThread(threadId: string): void {
     this.recentSdkTools.delete(threadId);
+    this.recentToolFailures.delete(threadId);
     for (const key of [...this.lastStreamLine.keys()]) {
       if (key.startsWith(`${threadId}:`)) {
         this.lastStreamLine.delete(key);
@@ -100,6 +108,9 @@ export class SdkStreamActivityBridge {
       | string
       | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
   ): boolean {
+    if (shouldSuppressRedundantOtelPermissionDeniedLine(threadId, line, this.recentToolFailures)) {
+      return true;
+    }
     const parsed = parseOtelToolLine(line);
     if (!parsed) {
       return false;
@@ -116,6 +127,22 @@ export class SdkStreamActivityBridge {
     }
     sdkMatch.matchedAt = Date.now();
     return true;
+  }
+
+  private noteSdkToolFailure(threadId: string, payload: unknown): void {
+    const metadata = resolveSdkToolPermissionDeniedMetadata(payload);
+    if (!metadata?.name) {
+      return;
+    }
+    const entry: SdkToolFailureRecord = {
+      toolName: metadata.name,
+      ...(metadata.toolUseId && { toolUseId: metadata.toolUseId }),
+      at: Date.now(),
+    };
+    const list = this.recentToolFailures.get(threadId) ?? [];
+    list.push(entry);
+    const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
+    this.recentToolFailures.set(threadId, list.filter((item) => item.at >= cutoff).slice(-20));
   }
 
   handleEvent(
@@ -137,6 +164,10 @@ export class SdkStreamActivityBridge {
       if (isSdkToolInputPlaceholder(event.payload)) {
         return;
       }
+    }
+
+    if (event.type === "tool.failed") {
+      this.noteSdkToolFailure(threadId, event.payload);
     }
 
     if (event.type === "agent.started") {
@@ -542,6 +573,39 @@ interface ParsedOtelToolLine {
   detailKey?: string;
   toolUseId?: string;
   durationMs?: number;
+}
+
+function shouldSuppressRedundantOtelPermissionDeniedLine(
+  threadId: string,
+  line:
+    | string
+    | Pick<OtelActivityLine, "message" | "toolName" | "toolDetail" | "toolUseId" | "durationMs" | "role">,
+  recentToolFailures: Map<string, SdkToolFailureRecord[]>,
+): boolean {
+  const message = (typeof line === "string" ? line : line.message).trim();
+  if (!message) {
+    return false;
+  }
+  const recent = recentToolFailures.get(threadId) ?? [];
+  const cutoff = Date.now() - OTEL_TOOL_DEDUP_MS;
+  const failures = recent.filter((item) => item.at >= cutoff);
+  if (failures.length === 0) {
+    return false;
+  }
+  if (message === "工具调用被拒绝") {
+    return true;
+  }
+  const shortMatch = message.match(/^Permission denied for ([A-Za-z0-9_]+)$/i);
+  if (shortMatch?.[1]) {
+    const toolName = shortMatch[1].toLowerCase();
+    return failures.some((item) => item.toolName.toLowerCase() === toolName);
+  }
+  const fullMatch = message.match(/^Permission denied for ([A-Za-z0-9_]+):/i);
+  if (fullMatch?.[1]) {
+    const toolName = fullMatch[1].toLowerCase();
+    return failures.some((item) => item.toolName.toLowerCase() === toolName);
+  }
+  return false;
 }
 
 function parseOtelToolLine(

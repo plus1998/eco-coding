@@ -165,6 +165,45 @@ function filterMainTimelineForFeed(
   return filterCompactionTimelineForFeed(requestFiltered);
 }
 
+function filterToolFailureDuplicateTimelineItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const failedTools = new Set(
+    timeline
+      .filter((item) => item.eventType === "tool.failed")
+      .map((item) => resolveProjectionToolName(item).toLowerCase()),
+  );
+  if (failedTools.size === 0) {
+    return [...timeline];
+  }
+  return timeline.filter((item) => !isProjectionToolFailureDuplicateMessage(item, failedTools));
+}
+
+function isProjectionToolFailureDuplicateMessage(
+  item: ThreadRunProjectionTimelineItem,
+  failedTools: ReadonlySet<string>,
+): boolean {
+  if (item.eventType === "tool.failed") {
+    return false;
+  }
+  const text = item.text.trim();
+  if (!text) {
+    return false;
+  }
+  if (text === "工具调用被拒绝") {
+    return true;
+  }
+  const shortMatch = text.match(/^Permission denied for ([A-Za-z0-9_]+)$/i);
+  if (shortMatch?.[1] && failedTools.has(shortMatch[1].toLowerCase())) {
+    return true;
+  }
+  const fullMatch = text.match(/^Permission denied for ([A-Za-z0-9_]+):/i);
+  if (fullMatch?.[1] && failedTools.has(fullMatch[1].toLowerCase())) {
+    return true;
+  }
+  return false;
+}
+
 function filterProjectionTimelineForDetailFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
@@ -187,7 +226,8 @@ function filterProjectionTimelineForDetailFeed(
     requestSpansById,
   );
 
-  return displayTimeline.filter((item) => {
+  return filterToolFailureDuplicateTimelineItems(
+    displayTimeline.filter((item) => {
     if (isProjectionRequestCompletionItem(item)) {
       return false;
     }
@@ -210,7 +250,8 @@ function filterProjectionTimelineForDetailFeed(
       }
     }
     return !ownerKey || !ownersWithStreamRows.has(ownerKey);
-  });
+    }),
+  );
 }
 
 function buildLatestActiveRequestStartedByOwner(
@@ -1026,6 +1067,10 @@ function resolveProjectionToolName(item: ThreadRunProjectionTimelineItem): strin
     return metadataTool.name;
   }
   const text = item.text.trim();
+  const permissionMatch = /^Permission denied for ([A-Za-z0-9_]+)(?::\s*(.*))?$/iu.exec(text);
+  if (permissionMatch?.[1]?.trim()) {
+    return permissionMatch[1].trim();
+  }
   const failedMatch = /^Tool failed:\s*([^:]+)(?::\s*(.*))?$/iu.exec(text);
   if (failedMatch?.[1]?.trim()) {
     return failedMatch[1].trim();
