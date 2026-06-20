@@ -1,0 +1,34 @@
+# MongoDB + Redis only — for native binary deployment (see eco-server.service).
+# Start: docker compose -f docker-compose.deps.yml up -d
+name: eco-server-deps
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: eco-coding
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      start_period: 10s
+
+volumes:
+  mongo_data:
+  redis_data:

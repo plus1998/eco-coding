@@ -55,7 +55,75 @@ docker compose down
 
 Data volumes (`mongo_data`, `redis_data`) persist across restarts. Use `docker compose down -v` to wipe them.
 
-## 1Panel 部署
+## Linux amd64 二进制部署（推荐生产）
+
+将 Server 交叉编译为 **Linux x86_64 单文件二进制**（内嵌 Bun 运行时与全部依赖），通过 systemd 原生运行。MongoDB / Redis 仍用 Docker 编排。
+
+### 1. 本地构建
+
+```sh
+# 仅构建二进制（约 90MB）
+bun run build:server:linux-amd64
+# 产物: apps/server/dist/eco-server-linux-amd64
+```
+
+在 macOS / Windows 上也可交叉编译，无需 Linux 构建机。
+
+### 2. 一键上传并部署
+
+```sh
+# 准备 apps/server/.env（含 ECO_SERVER_TOKEN_SECRET，Mongo/Redis 用 127.0.0.1）
+cp apps/server/.env.example apps/server/.env
+
+# 上传二进制 + .env + 依赖编排，首次安装 systemd
+bun run deploy:server -- root@192.168.31.204 -B --install-service --restart
+
+# 后续更新（重新编译 + 上传 + 重启）
+bun run deploy:server -- root@192.168.31.204 -B --build --restart
+```
+
+二进制模式会上传：
+
+| 文件 | 说明 |
+|------|------|
+| `eco-server` | Linux amd64 可执行文件 |
+| `.env` | 环境变量（**须用 `127.0.0.1` 连接 Mongo/Redis**） |
+| `docker-compose.deps.yml` | 仅 MongoDB + Redis |
+| `eco-server.service` | systemd 单元模板 |
+
+`.env` 二进制模式示例：
+
+```sh
+ECO_SERVER_TOKEN_SECRET=your-secret-at-least-32-chars
+ECO_SERVER_HOST=0.0.0.0
+ECO_SERVER_PORT=3128
+ECO_SERVER_MONGODB_URI=mongodb://127.0.0.1:27017/eco-coding
+ECO_SERVER_REDIS_URL=redis://127.0.0.1:6379
+```
+
+### 3. 服务器手动操作
+
+```sh
+cd /opt/eco/server
+chmod +x eco-server
+docker compose -f docker-compose.deps.yml up -d
+cp eco-server.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now eco-server
+journalctl -u eco-server -f
+```
+
+### 4. 与 Docker 全容器部署的区别
+
+| | Docker 全容器 | 二进制 + systemd |
+|--|--|--|
+| 构建 | `bun run build:server` → `dist/index.js` | `bun run build:server:linux-amd64` |
+| Server 进程 | Bun 容器内运行 JS | 原生二进制 + systemd |
+| 依赖 | compose 内含 mongo/redis/server | compose 仅 mongo/redis |
+| 更新 | 需 rebuild 镜像 | 替换二进制 + `systemctl restart` |
+| 远程命令白名单 | 需 rebuild 镜像才生效 | 替换二进制即生效 |
+
+## 1Panel 部署（Docker JS bundle）
 
 ### 1. 本地构建
 
@@ -92,10 +160,11 @@ bun run build:server
 
 ### 4. 更新已有编排
 
-1. 本地：`bun run build:server`（或 `bun run deploy:server -- root@host -b` 构建并上传）
-2. 将新的 `dist/index.js`、`Dockerfile`、`docker-compose.yml` 同步到服务器编排目录
-3. 1Panel → **容器** → **编排** → 选中 `eco-server` → **重建**
-4. 或在服务器 SSH 执行：`cd /opt/eco/server && docker compose up -d --build`
+1. 本地：`bun run build:server`（Docker）或 `bun run build:server:linux-amd64`（二进制）
+2. 部署：`bun run deploy:server -- root@host -b --restart` 或加 `-B` 使用二进制模式
+3. 将新的产物同步到服务器编排目录
+4. 1Panel → **容器** → **编排** → 选中 `eco-server` → **重建**
+5. 或在服务器 SSH 执行：`cd /opt/eco/server && docker compose up -d --build`
 
 ### 5. 放行端口
 

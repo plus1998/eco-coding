@@ -7,6 +7,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --target=bun --outdir dist",
+    "build:linux-amd64": "bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/eco-server-linux-amd64",
     "typecheck": "tsc -b",
     "test": "bun test test"
   },
