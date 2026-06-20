@@ -1,3 +1,5 @@
+import 'thread_run_projection.dart';
+
 const subagentRoles = ['explore', 'architect', 'coder', 'reviewer', 'tester'];
 
 Map<String, bool> defaultSubagentAvailability() {
@@ -325,10 +327,14 @@ class ThreadLiveEvent {
     this.bashApproval,
     this.followUp,
     this.runtimeConfig,
+    this.projection,
+    this.subagentSessions,
   });
 
-  factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) =>
-      ThreadLiveEvent(
+  factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
+    final projectionRaw = json['projection'];
+    final sessionsRaw = json['subagentSessions'];
+    return ThreadLiveEvent(
         threadId: json['threadId'] as String? ?? '',
         type: json['type'] as String? ?? '',
         message: json['message'] as String? ?? '',
@@ -365,7 +371,20 @@ class ThreadLiveEvent {
                 json['runtimeConfig'] as Map<String, dynamic>,
               )
             : null,
+        projection: projectionRaw is Map<String, dynamic>
+            ? ThreadRunProjectionSnapshot.fromJson(projectionRaw)
+            : null,
+        subagentSessions: sessionsRaw is List
+            ? sessionsRaw
+                .map(
+                  (entry) => ThreadSubagentSessionTiming.fromJson(
+                    entry as Map<String, dynamic>,
+                  ),
+                )
+                .toList()
+            : null,
       );
+  }
 
   final String threadId;
   final String type;
@@ -378,6 +397,8 @@ class ThreadLiveEvent {
   final BashApprovalRequest? bashApproval;
   final ThreadPendingFollowUp? followUp;
   final ThreadRuntimeConfig? runtimeConfig;
+  final ThreadRunProjectionSnapshot? projection;
+  final List<ThreadSubagentSessionTiming>? subagentSessions;
 }
 
 class WorkspaceInfo {

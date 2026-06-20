@@ -129,6 +129,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
       lines: session.activities,
       threadPrompt: thread?.prompt,
       threadId: widget.threadId,
+      runProjection: session.runProjection,
+      subagentSessions: session.subagentSessions,
     );
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
@@ -148,11 +150,15 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
               lines: previous.activities,
               threadPrompt: previous.thread?.prompt,
               threadId: widget.threadId,
+              runProjection: previous.runProjection,
+              subagentSessions: previous.subagentSessions,
             ).length;
       final nextFeed = buildActivityFeed(
         lines: next.activities,
         threadPrompt: next.thread?.prompt,
         threadId: widget.threadId,
+        runProjection: next.runProjection,
+        subagentSessions: next.subagentSessions,
       ).length;
       if (previousFeed != nextFeed) {
         _scrollToBottom();

@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
+import '../../core/utils/subagent_projection_feed.dart';
+import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/eco_markdown.dart';
 import 'thread_providers.dart';
 
@@ -20,6 +25,11 @@ class ActivityFeedEntry {
     this.usageBadge,
     this.lifecycle,
     this.missionPrompt,
+    this.agentId,
+    this.running = false,
+    this.durationMs = 0,
+    this.statusText,
+    this.timeline = const [],
   });
 
   final String id;
@@ -32,12 +42,19 @@ class ActivityFeedEntry {
   final String? usageBadge;
   final ToolActionLifecycle? lifecycle;
   final String? missionPrompt;
+  final String? agentId;
+  final bool running;
+  final int durationMs;
+  final String? statusText;
+  final List<SubagentTimelineEntry> timeline;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
   required List<ActivityItem> lines,
   String? threadPrompt,
   String? threadId,
+  ThreadRunProjectionSnapshot? runProjection,
+  List<ThreadSubagentSessionTiming> subagentSessions = const [],
 }) {
   var effectiveLines = lines;
   if (!lines.any((line) => line.role == 'user') &&
@@ -315,7 +332,131 @@ List<ActivityFeedEntry> buildActivityFeed({
   }
 
   flushNarrative();
+  _enrichSubagentEntries(
+    output,
+    runProjection: runProjection,
+    subagentSessions: subagentSessions,
+  );
   return output;
+}
+
+void _enrichSubagentEntries(
+  List<ActivityFeedEntry> output, {
+  ThreadRunProjectionSnapshot? runProjection,
+  List<ThreadSubagentSessionTiming> subagentSessions = const [],
+}) {
+  if (runProjection == null &&
+      subagentSessions.isEmpty &&
+      !output.any((entry) => entry.kind == ActivityFeedKind.subagentMission)) {
+    return;
+  }
+
+  final agentsByRole =
+      runProjection != null ? groupSubagentAgentsByRole(runProjection) : {};
+  final sessionsByAgentId = indexSubagentSessionsByAgentId(subagentSessions);
+  final roleUseIndex = <String, int>{};
+  final absorbedActionKeys = <String>{};
+
+  for (var index = 0; index < output.length; index++) {
+    final entry = output[index];
+    if (entry.kind != ActivityFeedKind.subagentMission) continue;
+
+    final role =
+        normalizeAgentDisplayRole(entry.subagentRole) ?? entry.subagentRole ?? '';
+    ThreadRunProjectionAgent? agent;
+    final agents = agentsByRole[role];
+    if (agents != null && agents.isNotEmpty) {
+      final useIndex = roleUseIndex[role] ?? 0;
+      if (useIndex < agents.length) {
+        agent = agents[useIndex];
+        roleUseIndex[role] = useIndex + 1;
+      }
+    }
+
+    final timing =
+        agent != null ? sessionsByAgentId[agent.agentId] : null;
+    final running = resolveSubagentRunning(agent: agent, timing: timing);
+    final durationMs = resolveSubagentDurationMs(agent: agent, timing: timing);
+    final timeline = agent != null
+        ? buildSubagentTimelineFromProjection(agent.timeline)
+        : _collectFallbackTimeline(output, index, role);
+    final statusText = agent != null
+        ? resolveProjectionAgentStatusText(agent)
+        : (running ? '工作中' : null);
+    final missionPrompt = entry.missionPrompt ??
+        agent?.delegationPrompt ??
+        (agent?.delegationSummary?.trim().isNotEmpty == true
+            ? agent!.delegationSummary
+            : null);
+
+    for (final item in timeline) {
+      if (item.icon != null) {
+        absorbedActionKeys.add(
+          activityActionKey(
+            subagent: role,
+            label: item.label,
+            icon: item.icon,
+          ),
+        );
+      }
+    }
+
+    output[index] = ActivityFeedEntry(
+      id: entry.id,
+      kind: entry.kind,
+      text: entry.text,
+      subagentRole: entry.subagentRole,
+      missionPrompt: missionPrompt,
+      agentId: agent?.agentId,
+      running: running,
+      durationMs: durationMs,
+      statusText: statusText,
+      timeline: timeline,
+    );
+  }
+
+  if (absorbedActionKeys.isEmpty) return;
+  output.removeWhere(
+    (entry) =>
+        entry.kind == ActivityFeedKind.action &&
+        entry.subagentRole != null &&
+        entry.actionIcon != null &&
+        absorbedActionKeys.contains(
+          activityActionKey(
+            subagent: entry.subagentRole,
+            label: entry.text,
+            icon: entry.actionIcon,
+          ),
+        ),
+  );
+}
+
+List<SubagentTimelineEntry> _collectFallbackTimeline(
+  List<ActivityFeedEntry> output,
+  int missionIndex,
+  String role,
+) {
+  final timeline = <SubagentTimelineEntry>[];
+  for (var index = missionIndex + 1; index < output.length; index++) {
+    final entry = output[index];
+    if (entry.kind == ActivityFeedKind.subagentMission ||
+        entry.kind == ActivityFeedKind.user ||
+        entry.kind == ActivityFeedKind.assistant) {
+      break;
+    }
+    if (entry.kind == ActivityFeedKind.action &&
+        normalizeAgentDisplayRole(entry.subagentRole) == role) {
+      timeline.add(
+        SubagentTimelineEntry(
+          id: entry.id,
+          label: entry.text,
+          icon: entry.actionIcon,
+          lifecycle: entry.lifecycle,
+        ),
+      );
+    }
+  }
+  return timeline;
 }
 
 bool _looksLikeApiError(String message) {
@@ -376,6 +517,11 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           role: entry.subagentRole ?? '',
           summary: entry.text,
           prompt: entry.missionPrompt,
+          agentId: entry.agentId,
+          running: entry.running,
+          durationMs: entry.durationMs,
+          statusText: entry.statusText,
+          timeline: entry.timeline,
         );
       case ActivityFeedKind.error:
         return _ErrorTile(text: entry.text);
@@ -573,11 +719,21 @@ class _SubagentMissionTile extends StatefulWidget {
     required this.role,
     required this.summary,
     this.prompt,
+    this.agentId,
+    this.running = false,
+    this.durationMs = 0,
+    this.statusText,
+    this.timeline = const [],
   });
 
   final String role;
   final String summary;
   final String? prompt;
+  final String? agentId;
+  final bool running;
+  final int durationMs;
+  final String? statusText;
+  final List<SubagentTimelineEntry> timeline;
 
   @override
   State<_SubagentMissionTile> createState() => _SubagentMissionTileState();
@@ -585,6 +741,41 @@ class _SubagentMissionTile extends StatefulWidget {
 
 class _SubagentMissionTileState extends State<_SubagentMissionTile> {
   var _expanded = false;
+  late int _liveDurationMs;
+  Timer? _durationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _liveDurationMs = widget.durationMs;
+    _syncDurationTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SubagentMissionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.running) {
+      _liveDurationMs = widget.durationMs;
+    } else if (oldWidget.durationMs != widget.durationMs) {
+      _liveDurationMs = widget.durationMs;
+    }
+    _syncDurationTimer();
+  }
+
+  void _syncDurationTimer() {
+    _durationTimer?.cancel();
+    _durationTimer = null;
+    if (!widget.running) return;
+    final baselineMs = widget.durationMs;
+    final anchorAt = DateTime.now();
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _liveDurationMs =
+            baselineMs + DateTime.now().difference(anchorAt).inMilliseconds;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -595,11 +786,17 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final fullText =
         trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary;
     final borderColor = subagentMissionBorderColor(role);
+    final statusText = widget.statusText?.trim();
+    final showStatus = statusText != null && statusText.isNotEmpty;
+    final durationLabel = formatSubagentDuration(
+      widget.running ? _liveDurationMs : widget.durationMs,
+      running: widget.running,
+    );
 
     return Semantics(
       button: true,
       expanded: _expanded,
-      label: '${resolveSubagentRunDisplayTitle(role)} 任务目标',
+      label: '${resolveSubagentRunDisplayTitle(role)} 子代理任务',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -609,11 +806,16 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
             margin: const EdgeInsets.symmetric(vertical: 6),
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
             decoration: BoxDecoration(
-              color: Colors.transparent,
+              color: widget.running
+                  ? Color.alphaBlend(
+                      borderColor.withValues(alpha: 0.08),
+                      eco.cardSurface,
+                    )
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: Color.alphaBlend(
-                  borderColor.withValues(alpha: 0.45),
+                  borderColor.withValues(alpha: widget.running ? 0.55 : 0.45),
                   eco.borderSubtle,
                 ),
               ),
@@ -634,19 +836,59 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                                       fontWeight: FontWeight.w600,
                                     ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '任务目标',
-                            style:
-                                Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: eco.textMuted,
-                                      fontSize: 11,
-                                      letterSpacing: 0.3,
-                                    ),
-                          ),
+                          if (widget.agentId != null) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '#${shortSubagentAgentId(widget.agentId!)}',
+                              style:
+                                  Theme.of(context).textTheme.labelSmall?.copyWith(
+                                        color: eco.textMuted,
+                                        fontSize: 10,
+                                      ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
+                    if (durationLabel.isNotEmpty) ...[
+                      Text(
+                        durationLabel,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: widget.running
+                                  ? EcoColors.accentText
+                                  : eco.textMuted,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: widget.running
+                            ? EcoColors.accentSoft
+                            : eco.cardSurface,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: widget.running
+                              ? EcoColors.accent.withValues(alpha: 0.45)
+                              : eco.borderSubtle,
+                        ),
+                      ),
+                      child: Text(
+                        widget.running ? '运行中' : '已完成',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: widget.running
+                                  ? EcoColors.accentText
+                                  : eco.textMuted,
+                              fontSize: 10,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
                     AnimatedRotation(
                       turns: _expanded ? 0.5 : 0,
                       duration: const Duration(milliseconds: 150),
@@ -658,7 +900,28 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     ),
                   ],
                 ),
+                if (showStatus) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    statusText,
+                    maxLines: _expanded ? null : 1,
+                    overflow: _expanded ? null : TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textSecondary,
+                          height: 1.35,
+                        ),
+                  ),
+                ],
                 const SizedBox(height: 6),
+                Text(
+                  '任务目标',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: eco.textMuted,
+                        fontSize: 11,
+                        letterSpacing: 0.3,
+                      ),
+                ),
+                const SizedBox(height: 4),
                 if (fullText.isEmpty)
                   Text(
                     '等待任务说明…',
@@ -684,12 +947,106 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                           ),
                     ),
                   ),
+                if (_expanded && widget.timeline.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Divider(height: 1, color: eco.borderSubtle),
+                  const SizedBox(height: 8),
+                  ...widget.timeline.map(
+                    (item) => _SubagentTimelineRow(entry: item),
+                  ),
+                ] else if (_expanded && widget.running) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '等待执行事件…',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: eco.textMuted,
+                          fontStyle: FontStyle.italic,
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _durationTimer?.cancel();
+    super.dispose();
+  }
+}
+
+class _SubagentTimelineRow extends StatelessWidget {
+  const _SubagentTimelineRow({required this.entry});
+
+  final SubagentTimelineEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (entry.icon != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(
+                _materialIcon(entry.icon!),
+                size: 14,
+                color: entry.isError
+                    ? EcoColors.statusDenyText
+                    : eco.textMuted,
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: entry.isError
+                      ? EcoColors.statusDenyText
+                      : eco.textMuted,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              entry.label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: entry.isError
+                        ? EcoColors.statusDenyText
+                        : eco.textMuted,
+                    height: 1.35,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _materialIcon(ActivityActionIcon icon) {
+    switch (icon) {
+      case ActivityActionIcon.search:
+        return Icons.search;
+      case ActivityActionIcon.edit:
+        return Icons.edit_outlined;
+      case ActivityActionIcon.terminal:
+        return Icons.terminal;
+      case ActivityActionIcon.agent:
+        return Icons.smart_toy_outlined;
+      case ActivityActionIcon.file:
+        return Icons.description_outlined;
+    }
   }
 }
 

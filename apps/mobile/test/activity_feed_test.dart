@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:eco_mobile/core/models/thread_models.dart';
+import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
@@ -176,5 +177,80 @@ void main() {
         feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
     expect(actions.length, 1);
     expect(actions.first.text, 'npm test');
+  });
+
+  test('subagent mission card gets duration and timeline from projection', () {
+    final feed = buildActivityFeed(
+      lines: [
+        ActivityItem(
+          id: '1',
+          role: 'coder',
+          message:
+              '@mission {"role":"coder","summary":"实现登录","prompt":"add login"}',
+        ),
+        ActivityItem(
+          id: '2',
+          role: 'coder',
+          message: 'Reading src/auth.ts',
+        ),
+      ],
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot.fromJson({
+        'thread': {
+          'threadId': 't1',
+          'status': 'running',
+          'generatedAt': '2026-01-01T00:00:00.000Z',
+        },
+        'sourceEventCount': 2,
+        'agents': [
+          {
+            'agentId': 'agent_coder_1',
+            'role': 'coder',
+            'kind': 'subagent',
+            'status': 'active',
+            'startedAt': '2026-01-01T00:00:00.000Z',
+            'durationMs': 4200,
+            'delegationPrompt': 'add login',
+            'timeline': [
+              {
+                'id': 'tl1',
+                'sequence': 1,
+                'eventType': 'tool.started',
+                'scope': 'agent',
+                'text': 'Reading src/auth.ts',
+                'at': '2026-01-01T00:00:01.000Z',
+                'role': 'coder',
+                'agentId': 'agent_coder_1',
+                'metadata': {'toolName': 'Read'},
+              },
+            ],
+          },
+        ],
+      }),
+      subagentSessions: const [
+        ThreadSubagentSessionTiming(
+          agentId: 'agent_coder_1',
+          role: 'coder',
+          status: 'active',
+          startedAt: '2026-01-01T00:00:00.000Z',
+          lastActiveAt: '2026-01-01T00:00:04.000Z',
+          accumulatedMs: 4200,
+          durationMs: 4200,
+        ),
+      ],
+    );
+
+    expect(feed.length, 1);
+    final card = feed.first;
+    expect(card.kind, ActivityFeedKind.subagentMission);
+    expect(card.agentId, 'agent_coder_1');
+    expect(card.running, isTrue);
+    expect(card.durationMs, greaterThan(0));
+    expect(card.timeline.length, 1);
+    expect(
+      feed.any((entry) => entry.kind == ActivityFeedKind.action),
+      isFalse,
+    );
   });
 }

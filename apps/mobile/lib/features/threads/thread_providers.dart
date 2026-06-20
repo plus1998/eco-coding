@@ -4,6 +4,7 @@ import '../../core/models/eco_types.dart' show EcoEventEnvelope;
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_run_projection.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/utils/activity_display.dart';
@@ -119,6 +120,8 @@ class ThreadSessionState {
     this.loading = true,
     this.error,
     this.thread,
+    this.runProjection,
+    this.subagentSessions = const [],
   });
 
   final List<ActivityItem> activities;
@@ -129,6 +132,8 @@ class ThreadSessionState {
   final bool loading;
   final String? error;
   final ThreadSummary? thread;
+  final ThreadRunProjectionSnapshot? runProjection;
+  final List<ThreadSubagentSessionTiming> subagentSessions;
 
   ThreadSessionState copyWith({
     List<ActivityItem>? activities,
@@ -142,6 +147,9 @@ class ThreadSessionState {
     bool? loading,
     String? error,
     ThreadSummary? thread,
+    ThreadRunProjectionSnapshot? runProjection,
+    bool clearProjection = false,
+    List<ThreadSubagentSessionTiming>? subagentSessions,
   }) {
     return ThreadSessionState(
       activities: activities ?? this.activities,
@@ -154,6 +162,9 @@ class ThreadSessionState {
       loading: loading ?? this.loading,
       error: error,
       thread: thread ?? this.thread,
+      runProjection:
+          clearProjection ? null : (runProjection ?? this.runProjection),
+      subagentSessions: subagentSessions ?? this.subagentSessions,
     );
   }
 }
@@ -196,6 +207,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
       final bash = await rpc.getPendingBashApproval(threadId);
       final clarification = await rpc.getPendingClarification(threadId);
+      ThreadRunProjectionSnapshot? projection;
+      List<ThreadSubagentSessionTiming> subagentSessions = const [];
+      try {
+        projection = await rpc.getRunProjection(threadId);
+      } catch (_) {}
+      try {
+        subagentSessions = await rpc.listSubagentSessions(threadId);
+      } catch (_) {}
 
       state = ThreadSessionState(
         activities: lines
@@ -213,6 +232,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         pendingClarification: clarification,
         followUps: followUps,
         thread: thread,
+        runProjection: projection,
+        subagentSessions: subagentSessions,
         loading: false,
       );
     } catch (error) {
@@ -285,6 +306,27 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
 
     state = state.copyWith(activities: activities);
+
+    if (live.type == 'thread.run_projection_updated') {
+      if (live.projection != null) {
+        state = state.copyWith(runProjection: live.projection);
+      } else {
+        ref.read(desktopRpcProvider)?.getRunProjection(threadId).then((projection) {
+          if (projection != null) {
+            state = state.copyWith(runProjection: projection);
+          }
+        });
+      }
+    }
+    if (live.type == 'thread.subagent_timing_updated') {
+      if (live.subagentSessions != null) {
+        state = state.copyWith(subagentSessions: live.subagentSessions);
+      } else {
+        ref.read(desktopRpcProvider)?.listSubagentSessions(threadId).then((sessions) {
+          state = state.copyWith(subagentSessions: sessions);
+        });
+      }
+    }
 
     if (event.kind == 'thread.plan') {
       if (live.type == 'thread.awaiting_plan') {

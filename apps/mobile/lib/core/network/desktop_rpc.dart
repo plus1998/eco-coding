@@ -1,5 +1,6 @@
 import '../models/git_models.dart';
 import '../models/thread_models.dart';
+import '../models/thread_run_projection.dart';
 import '../network/eco_center_client.dart';
 
 class DesktopRpc {
@@ -84,6 +85,33 @@ class DesktopRpc {
     );
     return result
         .map((e) => ThreadActivityLine.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ThreadRunProjectionSnapshot?> getRunProjection(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:run-projection-get',
+      [threadId],
+    );
+    if (result is! Map<String, dynamic>) return null;
+    return ThreadRunProjectionSnapshot.fromJson(result);
+  }
+
+  Future<List<ThreadSubagentSessionTiming>> listSubagentSessions(
+    String threadId,
+  ) async {
+    final result = await _client.invoke<List<dynamic>>(
+      desktopDeviceId,
+      'thread:subagent-sessions-list',
+      [threadId],
+    );
+    return result
+        .map(
+          (entry) => ThreadSubagentSessionTiming.fromJson(
+            entry as Map<String, dynamic>,
+          ),
+        )
         .toList();
   }
 
