@@ -6,7 +6,7 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_theme.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
-import 'setup_status_card.dart';
+import 'setup_wizard.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,6 +23,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isRegister = false;
   bool _busy = false;
   bool _refreshing = false;
+  SetupWizardStep? _wizardStep;
 
   @override
   void initState() {
@@ -44,13 +45,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final ok = await client.testConnection(creds.serverUrl);
       ref.read(serverReachableProvider.notifier).state = ok;
     }
-    if (mounted) setState(() {});
     if (creds.hasDeviceCredentials && creds.serverUrl.isNotEmpty) {
       await _ensureConnected(silent: true);
     }
     ref.invalidate(credentialsProvider);
     ref.invalidate(bindingsProvider);
     ref.invalidate(presenceProvider);
+    if (mounted) {
+      final overview = ref.read(setupOverviewProvider);
+      setState(() => _wizardStep ??= resolveSetupWizardStep(overview));
+    }
   }
 
   Future<void> _ensureConnected({bool silent = false}) async {
@@ -111,329 +115,670 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  void _goToStep(SetupWizardStep step) {
+    setState(() => _wizardStep = step);
+  }
+
+  void _goNext(SetupOverview overview) {
+    final current = _wizardStep ?? resolveSetupWizardStep(overview);
+    final nextIndex = current.index + 1;
+    if (nextIndex < SetupWizardStep.values.length) {
+      _goToStep(SetupWizardStep.values[nextIndex]);
+    }
+  }
+
+  void _goBack() {
+    final current = _wizardStep;
+    if (current == null || current.index == 0) return;
+    _goToStep(SetupWizardStep.values[current.index - 1]);
+  }
+
+  void _maybeAutoAdvance(SetupOverview overview, SetupWizardStep completed) {
+    final current = _wizardStep ?? resolveSetupWizardStep(overview);
+    if (current == completed && isSetupWizardStepDone(completed, overview)) {
+      final nextIndex = completed.index + 1;
+      if (nextIndex < SetupWizardStep.values.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _goToStep(SetupWizardStep.values[nextIndex]);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final overview = ref.watch(setupOverviewProvider);
-    final eco = ecoThemeExtras(context);
-    final bindingsAsync = ref.watch(bindingsProvider);
-    final presenceAsync = ref.watch(presenceProvider);
-    final selectedDesktop = ref.watch(selectedDesktopIdProvider);
-    final credentials = ref.watch(credentialsProvider).valueOrNull;
-    final loggedIn = credentials?.hasUserSession ?? false;
+    final currentStep = _wizardStep ?? resolveSetupWizardStep(overview);
     final actionBusy = _busy || _refreshing;
 
+    ref.listen<SetupOverview>(setupOverviewProvider, (previous, next) {
+      if (previous == null) return;
+      for (final step in SetupWizardStep.values) {
+        if (!isSetupWizardStepDone(step, previous) &&
+            isSetupWizardStepDone(step, next)) {
+          _maybeAutoAdvance(next, step);
+        }
+      }
+    });
+
     return Scaffold(
-      appBar: AppBar(title: const Text('PC 连接')),
-      body: RefreshIndicator(
-        onRefresh: _refreshStatus,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            SetupStatusCard(
-              overview: overview,
-              onRefresh: () => _refreshStatus(),
-              refreshing: _refreshing,
-            ),
-            const SizedBox(height: 20),
-            _SectionHeader(
-              number: 1,
-              title: '服务器',
-              done: overview.steps.first.state == SetupStepState.done,
-            ),
-            TextField(
-              controller: _serverUrlController,
-              decoration: const InputDecoration(
-                labelText: 'Center Server URL',
-                hintText: 'http://192.168.31.124:3128',
-              ),
-              keyboardType: TextInputType.url,
-              enabled: !actionBusy,
-            ),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              style: ecoTonalButtonStyle(context),
-              onPressed: actionBusy
-                  ? null
-                  : () => _run(() async {
-                      final client = ref.read(ecoCenterClientProvider);
-                      final ok = await client.testConnection(
-                        _serverUrlController.text,
-                      );
-                      ref.read(serverReachableProvider.notifier).state = ok;
-                      if (ok) {
-                        await client.setServerUrl(_serverUrlController.text);
-                        ref.invalidate(credentialsProvider);
-                        _showSnack('服务器可达');
-                      } else {
-                        _showSnack('无法访问服务器，请检查地址与网络');
-                      }
-                    }),
-              child: const Text('测试服务器可达性'),
-            ),
-            const SizedBox(height: 24),
-            _SectionHeader(
-              number: 2,
-              title: '登录',
-              done: overview.steps[1].state == SetupStepState.done,
-            ),
-            if (loggedIn)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.verified_user_outlined),
-                title: Text(credentials!.userEmail!),
-                subtitle: Text(
-                  credentials.hasDeviceCredentials
-                      ? '手机设备已注册 · ${credentials.deviceId}'
-                      : '手机设备未注册',
-                ),
-              )
-            else ...[
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('登录')),
-                  ButtonSegment(value: true, label: Text('注册')),
-                ],
-                selected: {_isRegister},
-                onSelectionChanged: actionBusy
-                    ? null
-                    : (value) => setState(() => _isRegister = value.first),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: '邮箱'),
-                keyboardType: TextInputType.emailAddress,
-                enabled: !actionBusy,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: '密码'),
-                obscureText: true,
-                enabled: !actionBusy,
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: actionBusy
-                    ? null
-                    : () => _run(() async {
-                        final client = ref.read(ecoCenterClientProvider);
-                        if (_serverUrlController.text.trim().isEmpty) {
-                          throw Exception('请先填写并测试服务器地址');
-                        }
-                        await client.setServerUrl(_serverUrlController.text);
-                        if (_isRegister) {
-                          await client.register(
-                            email: _emailController.text,
-                            password: _passwordController.text,
-                          );
-                        } else {
-                          await client.login(
-                            email: _emailController.text,
-                            password: _passwordController.text,
-                          );
-                        }
-                        await client.ensureMobileDevice();
-                        await client.connect();
-                        ref.invalidate(credentialsProvider);
-                        ref.invalidate(bindingsProvider);
-                        ref.invalidate(presenceProvider);
-                        _showSnack('登录成功，WebSocket 已连接');
-                      }),
-                child: Text(_isRegister ? '注册并登录' : '登录'),
-              ),
-            ],
-            if (loggedIn && credentials!.hasDeviceCredentials) ...[
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: actionBusy
-                    ? null
-                    : () => _run(() async {
-                        await ref.read(ecoCenterClientProvider).connect();
-                        _showSnack('已尝试重新连接 WebSocket');
-                      }),
-                icon: const Icon(Icons.sync),
-                label: const Text('重新连接 WebSocket'),
-              ),
-            ],
-            const SizedBox(height: 24),
-            _SectionHeader(
-              number: 3,
-              title: '绑定 PC',
-              done: overview.steps[3].state == SetupStepState.done,
-            ),
-            if (!loggedIn)
-              const Text('请先完成登录')
-            else ...[
-              Row(
+      appBar: AppBar(
+        title: const Text('PC 连接'),
+        actions: [
+          IconButton(
+            onPressed: actionBusy ? null : _refreshStatus,
+            icon: _refreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            tooltip: '刷新状态',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _pairCodeController,
-                      decoration: const InputDecoration(
-                        labelText: '配对码',
-                        hintText: '8 位字母数字',
-                      ),
-                      textCapitalization: TextCapitalization.characters,
-                      enabled: !actionBusy,
+                  SetupWizardProgress(
+                    current: currentStep,
+                    overview: overview,
+                    onStepTap: _goToStep,
+                  ),
+                  const SizedBox(height: 24),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _buildStepContent(
+                      key: ValueKey(currentStep),
+                      step: currentStep,
+                      overview: overview,
+                      actionBusy: actionBusy,
                     ),
                   ),
-                  IconButton(
-                    onPressed: actionBusy
-                        ? null
-                        : () async {
-                            final code = await Navigator.of(context)
-                                .push<String>(
-                                  MaterialPageRoute(
-                                    builder: (_) => const PairingScanScreen(),
-                                  ),
-                                );
-                            if (code != null) {
-                              _pairCodeController.text = code;
-                            }
-                          },
-                    icon: const Icon(Icons.qr_code_scanner),
-                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              FilledButton.tonal(
-                style: ecoTonalButtonStyle(context),
-                onPressed: actionBusy
-                    ? null
-                    : () => _run(() async {
-                        final client = ref.read(ecoCenterClientProvider);
-                        await client.claimPairing(_pairCodeController.text);
-                        ref.invalidate(bindingsProvider);
-                        ref.invalidate(presenceProvider);
-                        _pairCodeController.clear();
-                        _showSnack('绑定成功');
-                      }),
-                child: const Text('绑定 PC'),
-              ),
-            ],
-            const SizedBox(height: 24),
-            _SectionHeader(
-              number: 4,
-              title: '选择 PC',
-              done: overview.steps[4].state == SetupStepState.done,
             ),
-            bindingsAsync.when(
-              data: (bindings) {
-                final active = bindings.where((b) => b.isActive).toList();
-                if (!loggedIn) {
-                  return const Text('请先完成登录');
-                }
-                if (active.isEmpty) {
-                  return const Text('暂无绑定。请在 Desktop「连接」页生成配对码。');
-                }
-                final presence = presenceAsync.valueOrNull ?? [];
-                final onlineIds = presence
-                    .where((d) => d.online)
-                    .map((d) => d.id)
-                    .toSet();
-                return Column(
-                  children: active.map((binding) {
-                    final desktopId = binding.desktopDeviceId;
-                    final online = onlineIds.contains(desktopId);
-                    final device = presence
-                        .where((d) => d.id == desktopId)
-                        .firstOrNull;
-                    final name = device?.name ?? desktopId;
-                    final selected = selectedDesktop == desktopId;
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      color: selected ? eco.accentSoft : eco.cardSurface,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                          color: selected ? EcoColors.accent : eco.cardBorder,
-                        ),
-                      ),
-                      child: ListTile(
-                        leading: Icon(
-                          online ? Icons.computer : Icons.computer_outlined,
-                          color: online ? eco.online : eco.offline,
-                        ),
-                        title: Text(name),
-                        subtitle: Text(
-                          online ? '在线 · 可远程操控' : '离线 · 需 Desktop 连接 Server',
-                          style: TextStyle(
-                            color: online ? eco.statusAllowText : eco.textMuted,
-                          ),
-                        ),
-                        trailing: selected
-                            ? Icon(
-                                Icons.check_circle,
-                                color: EcoColors.accentText,
-                              )
-                            : null,
-                        onTap: actionBusy
-                            ? null
-                            : () async {
-                                ref
-                                        .read(
-                                          selectedDesktopIdProvider.notifier,
-                                        )
-                                        .state =
-                                    desktopId;
-                                await ref
-                                    .read(ecoCenterClientProvider)
-                                    .setSelectedDesktop(desktopId);
-                                if (online) {
-                                  _showSnack('已选择 $name');
-                                } else {
-                                  _showSnack('$name 当前离线');
-                                }
-                              },
-                      ),
-                    );
-                  }).toList(),
+          ),
+          _WizardNavBar(
+            showBack: currentStep.index > 0,
+            showNext: isSetupWizardStepDone(currentStep, overview) &&
+                currentStep != SetupWizardStep.selectPc,
+            busy: actionBusy,
+            onBack: _goBack,
+            onNext: () => _goNext(overview),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepContent({
+    required Key key,
+    required SetupWizardStep step,
+    required SetupOverview overview,
+    required bool actionBusy,
+  }) {
+    return switch (step) {
+      SetupWizardStep.server => KeyedSubtree(
+          key: key,
+          child: _ServerStep(
+            controller: _serverUrlController,
+            overview: overview,
+            busy: actionBusy,
+            onTest: () => _run(() async {
+              final client = ref.read(ecoCenterClientProvider);
+              final ok = await client.testConnection(_serverUrlController.text);
+              ref.read(serverReachableProvider.notifier).state = ok;
+              if (ok) {
+                await client.setServerUrl(_serverUrlController.text);
+                ref.invalidate(credentialsProvider);
+                _showSnack('服务器可达');
+              } else {
+                _showSnack('无法访问服务器，请检查地址与网络');
+              }
+            }),
+          ),
+        ),
+      SetupWizardStep.login => KeyedSubtree(
+          key: key,
+          child: _LoginStep(
+            overview: overview,
+            emailController: _emailController,
+            passwordController: _passwordController,
+            isRegister: _isRegister,
+            busy: actionBusy,
+            onToggleRegister: actionBusy
+                ? null
+                : (value) => setState(() => _isRegister = value),
+            onSubmit: () => _run(() async {
+              final client = ref.read(ecoCenterClientProvider);
+              if (_serverUrlController.text.trim().isEmpty) {
+                throw Exception('请先完成服务器配置');
+              }
+              await client.setServerUrl(_serverUrlController.text);
+              if (_isRegister) {
+                await client.register(
+                  email: _emailController.text,
+                  password: _passwordController.text,
                 );
-              },
-              loading: () => const LinearProgressIndicator(),
-              error: (error, _) => Text(error.toString()),
-            ),
-            const SizedBox(height: 24),
-          ],
+              } else {
+                await client.login(
+                  email: _emailController.text,
+                  password: _passwordController.text,
+                );
+              }
+              await client.ensureMobileDevice();
+              await client.connect();
+              ref.invalidate(credentialsProvider);
+              ref.invalidate(bindingsProvider);
+              ref.invalidate(presenceProvider);
+              _showSnack('登录成功，WebSocket 已连接');
+            }),
+            onReconnect: () => _run(() async {
+              await ref.read(ecoCenterClientProvider).connect();
+              _showSnack('已尝试重新连接 WebSocket');
+            }),
+          ),
+        ),
+      SetupWizardStep.bindPc => KeyedSubtree(
+          key: key,
+          child: _BindPcStep(
+            pairCodeController: _pairCodeController,
+            overview: overview,
+            busy: actionBusy,
+            onScan: () async {
+              final code = await Navigator.of(context).push<String>(
+                MaterialPageRoute(builder: (_) => const PairingScanScreen()),
+              );
+              if (code != null) {
+                _pairCodeController.text = code;
+              }
+            },
+            onBind: () => _run(() async {
+              final client = ref.read(ecoCenterClientProvider);
+              await client.claimPairing(_pairCodeController.text);
+              ref.invalidate(bindingsProvider);
+              ref.invalidate(presenceProvider);
+              _pairCodeController.clear();
+              _showSnack('绑定成功');
+            }),
+          ),
+        ),
+      SetupWizardStep.selectPc => KeyedSubtree(
+          key: key,
+          child: _SelectPcStep(
+            overview: overview,
+            busy: actionBusy,
+            onSelect: (desktopId, name, online) async {
+              ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+              await ref
+                  .read(ecoCenterClientProvider)
+                  .setSelectedDesktop(desktopId);
+              if (online) {
+                _showSnack('已选择 $name');
+              } else {
+                _showSnack('$name 当前离线');
+              }
+            },
+          ),
+        ),
+    };
+  }
+}
+
+class _WizardNavBar extends StatelessWidget {
+  const _WizardNavBar({
+    required this.showBack,
+    required this.showNext,
+    required this.busy,
+    required this.onBack,
+    required this.onNext,
+  });
+
+  final bool showBack;
+  final bool showNext;
+  final bool busy;
+  final VoidCallback onBack;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!showBack && !showNext) return const SizedBox.shrink();
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: EcoColors.borderSidebar)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              if (showBack)
+                OutlinedButton(
+                  onPressed: busy ? null : onBack,
+                  child: const Text('上一步'),
+                ),
+              const Spacer(),
+              if (showNext)
+                FilledButton(
+                  onPressed: busy ? null : onNext,
+                  child: const Text('下一步'),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.number,
-    required this.title,
-    required this.done,
+class _ServerStep extends StatelessWidget {
+  const _ServerStep({
+    required this.controller,
+    required this.overview,
+    required this.busy,
+    required this.onTest,
   });
 
-  final int number;
-  final String title;
-  final bool done;
+  final TextEditingController controller;
+  final SetupOverview overview;
+  final bool busy;
+  final VoidCallback onTest;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
+    final serverStep = overview.steps[0];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Center Server URL',
+            hintText: 'http://192.168.31.124:3128',
+          ),
+          keyboardType: TextInputType.url,
+          enabled: !busy,
+        ),
+        if (serverStep.hint != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            serverStep.hint!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: eco.statusDenyText,
+                ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: busy ? null : onTest,
+          child: const Text('测试服务器可达性'),
+        ),
+        if (serverStep.state == SetupStepState.done) ...[
+          const SizedBox(height: 16),
+          _StepDoneBanner(
+            icon: Icons.dns_outlined,
+            text: '已连接 ${serverStep.subtitle ?? ''}',
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _LoginStep extends ConsumerWidget {
+  const _LoginStep({
+    required this.overview,
+    required this.emailController,
+    required this.passwordController,
+    required this.isRegister,
+    required this.busy,
+    required this.onToggleRegister,
+    required this.onSubmit,
+    required this.onReconnect,
+  });
+
+  final SetupOverview overview;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final bool isRegister;
+  final bool busy;
+  final ValueChanged<bool>? onToggleRegister;
+  final VoidCallback onSubmit;
+  final VoidCallback onReconnect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final credentials = ref.watch(credentialsProvider).valueOrNull;
+    final loggedIn = credentials?.hasUserSession ?? false;
+    final loginStep = overview.steps[1];
+    final wsStep = overview.steps[2];
+
+    if (loggedIn) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: done ? eco.statusAllowBg : EcoColors.bgElevated,
-            child: Text(
-              '$number',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: done ? eco.statusAllowText : eco.textMuted,
+          _StepDoneBanner(
+            icon: Icons.verified_user_outlined,
+            text: credentials!.userEmail!,
+            subtitle: credentials.hasDeviceCredentials
+                ? '手机设备已注册 · ${credentials.deviceId}'
+                : '手机设备未注册',
+          ),
+          if (wsStep.hint != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              wsStep.hint!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: wsStep.state == SetupStepState.error
+                        ? ecoThemeExtras(context).statusDenyText
+                        : ecoThemeExtras(context).textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: busy ? null : onReconnect,
+              icon: const Icon(Icons.sync),
+              label: const Text('重新连接 WebSocket'),
+            ),
+          ],
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (loginStep.state == SetupStepState.pending &&
+            overview.steps[0].state != SetupStepState.done)
+          const _StepBlockedHint(text: '请先完成服务器配置')
+        else ...[
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('登录')),
+              ButtonSegment(value: true, label: Text('注册')),
+            ],
+            selected: {isRegister},
+            onSelectionChanged: onToggleRegister == null
+                ? null
+                : (value) => onToggleRegister!(value.first),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: emailController,
+            decoration: const InputDecoration(labelText: '邮箱'),
+            keyboardType: TextInputType.emailAddress,
+            enabled: !busy,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: passwordController,
+            decoration: const InputDecoration(labelText: '密码'),
+            obscureText: true,
+            enabled: !busy,
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: busy ? null : onSubmit,
+            child: Text(isRegister ? '注册并登录' : '登录'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _BindPcStep extends StatelessWidget {
+  const _BindPcStep({
+    required this.pairCodeController,
+    required this.overview,
+    required this.busy,
+    required this.onScan,
+    required this.onBind,
+  });
+
+  final TextEditingController pairCodeController;
+  final SetupOverview overview;
+  final bool busy;
+  final VoidCallback onScan;
+  final VoidCallback onBind;
+
+  @override
+  Widget build(BuildContext context) {
+    final bindStep = overview.steps[3];
+    final eco = ecoThemeExtras(context);
+
+    if (bindStep.state == SetupStepState.done) {
+      return _StepDoneBanner(
+        icon: Icons.link,
+        text: bindStep.subtitle ?? '已绑定 PC',
+        subtitle: '可在下一步选择要操控的设备',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (overview.steps[1].state != SetupStepState.done)
+          const _StepBlockedHint(text: '请先完成登录')
+        else ...[
+          Text(
+            '在 Desktop「连接」页生成配对码，然后扫码或手动输入。',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: eco.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: pairCodeController,
+                  decoration: const InputDecoration(
+                    labelText: '配对码',
+                    hintText: '8 位字母数字',
+                  ),
+                  textCapitalization: TextCapitalization.characters,
+                  enabled: !busy,
+                ),
               ),
+              IconButton(
+                onPressed: busy ? null : onScan,
+                icon: const Icon(Icons.qr_code_scanner),
+                tooltip: '扫码',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: busy ? null : onBind,
+            child: const Text('绑定 PC'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SelectPcStep extends ConsumerWidget {
+  const _SelectPcStep({
+    required this.overview,
+    required this.busy,
+    required this.onSelect,
+  });
+
+  final SetupOverview overview;
+  final bool busy;
+  final Future<void> Function(String desktopId, String name, bool online)
+      onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eco = ecoThemeExtras(context);
+    final bindingsAsync = ref.watch(bindingsProvider);
+    final presenceAsync = ref.watch(presenceProvider);
+    final selectedDesktop = ref.watch(selectedDesktopIdProvider);
+    final selectStep = overview.steps[4];
+
+    if (overview.steps[3].state != SetupStepState.done) {
+      return const _StepBlockedHint(text: '请先绑定 PC');
+    }
+
+    return bindingsAsync.when(
+      data: (bindings) {
+        final active = bindings.where((b) => b.isActive).toList();
+        if (active.isEmpty) {
+          return const _StepBlockedHint(text: '暂无绑定。请在 Desktop「连接」页生成配对码。');
+        }
+
+        final presence = presenceAsync.valueOrNull ?? [];
+        final onlineIds =
+            presence.where((d) => d.online).map((d) => d.id).toSet();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (selectStep.state == SetupStepState.done &&
+                selectStep.subtitle != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _StepDoneBanner(
+                  icon: Icons.computer,
+                  text: selectStep.subtitle!,
+                ),
+              ),
+            ...active.map((binding) {
+              final desktopId = binding.desktopDeviceId;
+              final online = onlineIds.contains(desktopId);
+              final device =
+                  presence.where((d) => d.id == desktopId).firstOrNull;
+              final name = device?.name ?? desktopId;
+              final selected = selectedDesktop == desktopId;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                color: selected ? eco.accentSoft : eco.cardSurface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: selected ? EcoColors.accent : eco.cardBorder,
+                  ),
+                ),
+                child: ListTile(
+                  leading: Icon(
+                    online ? Icons.computer : Icons.computer_outlined,
+                    color: online ? eco.online : eco.offline,
+                  ),
+                  title: Text(name),
+                  subtitle: Text(
+                    online ? '在线 · 可远程操控' : '离线 · 需 Desktop 连接 Server',
+                    style: TextStyle(
+                      color: online ? eco.statusAllowText : eco.textMuted,
+                    ),
+                  ),
+                  trailing: selected
+                      ? Icon(Icons.check_circle, color: EcoColors.accentText)
+                      : null,
+                  onTap: busy ? null : () => onSelect(desktopId, name, online),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => Text(error.toString()),
+    );
+  }
+}
+
+class _StepDoneBanner extends StatelessWidget {
+  const _StepDoneBanner({
+    required this.icon,
+    required this.text,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final String text;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: eco.statusAllowBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: EcoColors.statusAllowBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: eco.statusAllowText, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: eco.statusAllowText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
+                  ),
+                ],
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepBlockedHint extends StatelessWidget {
+  const _StepBlockedHint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: EcoColors.bgElevated,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: eco.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: eco.textMuted, size: 20),
           const SizedBox(width: 10),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: eco.textSecondary),
+            ),
+          ),
         ],
       ),
     );
