@@ -53,6 +53,40 @@ docker compose -f apps/server/docker-compose.yml down
 
 Data volumes (`mongo_data`, `redis_data`) persist across restarts. Use `docker compose down -v` to wipe them.
 
+## 1Panel 部署
+
+### 1. 本地构建
+
+先在本地将服务打包成单个可执行文件：
+
+```sh
+bun run build:server
+```
+
+这会生成 `apps/server/dist/index.js`（约 3MB，522 个模块全部打包，无外部依赖）。
+
+### 2. 上传到 1Panel
+
+将 `apps/server/` 整个目录上传到 1Panel 服务器，例如放到 `/opt/eco/server/`。
+
+需要上传的关键文件：
+- `dist/index.js` — 打包后的服务
+- `Dockerfile` — 镜像构建文件
+- `docker-compose.yml` — 编排配置
+- `.dockerignore` — 忽略无关文件
+
+### 3. 在 1Panel 中部署
+
+1. 打开 1Panel → **容器** → **编排** → **创建编排**
+2. 填写名称（如 `eco-server`），粘贴 `docker-compose.yml` 内容
+3. 在 **环境变量** 中设置 `ECO_SERVER_TOKEN_SECRET`（至少 32 字符）
+4. 确保编辑路径指向上传的目录
+5. 点击 **确认**，1Panel 会自动构建并启动
+
+### 4. 放行端口
+
+在 1Panel 的 **防火墙** 中放行 `3128` 端口，桌面客户端通过 `http://<1Panel-IP>:3128` 连接。
+
 ## HTTP API
 
 - `GET /health`

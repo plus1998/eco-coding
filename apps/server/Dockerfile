@@ -1,19 +1,9 @@
-FROM oven/bun:1
+FROM oven/bun:1-slim
 
 WORKDIR /app
-
-# Install workspace dependencies
-COPY package.json ./
-COPY packages/shared/package.json packages/shared/
-COPY apps/server/package.json apps/server/
-
-RUN bun install
-
-# Copy source
-COPY packages/shared/ packages/shared/
-COPY apps/server/ apps/server/
+COPY dist/index.js ./
 
 ENV ECO_SERVER_HOST=0.0.0.0
 EXPOSE 3128
 
-CMD ["bun", "run", "apps/server/src/index.ts"]
+CMD ["bun", "index.js"]

@@ -23,15 +23,15 @@ services:
 
   server:
     build:
-      context: ../..
-      dockerfile: apps/server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "${ECO_SERVER_PORT:-3128}:3128"
+      - "3128:3128"
     environment:
       ECO_SERVER_HOST: "0.0.0.0"
       ECO_SERVER_PORT: "3128"
-      ECO_SERVER_TOKEN_SECRET: "${ECO_SERVER_TOKEN_SECRET:-change-me-to-at-least-32-random-characters}"
+      ECO_SERVER_TOKEN_SECRET: "${ECO_SERVER_TOKEN_SECRET}"
       ECO_SERVER_MONGODB_URI: "mongodb://mongo:27017/eco-coding"
       ECO_SERVER_REDIS_URL: "redis://redis:6379"
     depends_on:
