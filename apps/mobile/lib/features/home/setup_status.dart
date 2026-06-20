@@ -28,6 +28,8 @@ class SetupOverview {
     required this.steps,
     required this.readyForThreads,
     this.selectedDesktopId,
+    // Optional for hot-reload compatibility; actual value comes from [setupComplete].
+    bool? setupComplete,
   });
 
   final List<SetupStep> steps;
@@ -35,7 +37,6 @@ class SetupOverview {
   final String? selectedDesktopId;
 
   /// Stable gate: logged in, device registered, and a PC selected.
-  /// Getter keeps the constructor hot-reload friendly.
   bool get setupComplete {
     if (selectedDesktopId == null || selectedDesktopId!.isEmpty) return false;
     if (steps.length < 2) return false;
