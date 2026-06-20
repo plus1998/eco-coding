@@ -365,7 +365,8 @@ function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
     block.kind === "model-request" ||
     block.kind === "agent-request" ||
     block.kind === "thinking" ||
-    block.kind === "tool-failed"
+    block.kind === "tool-failed" ||
+    block.kind === "subagent-mission"
   );
 }
 
@@ -1926,6 +1927,7 @@ function SubagentMissionBlock({
     <button
       type="button"
       className={`run-log-mission${expanded ? " is-expanded" : ""}`}
+      data-role={normalizeAgentDisplayRole(subagent) ?? subagent}
       onClick={() => setExpanded((value) => !value)}
       aria-expanded={expanded}
     >

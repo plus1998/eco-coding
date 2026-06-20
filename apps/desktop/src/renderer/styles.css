@@ -4278,8 +4278,8 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .subagent-run-row-wrap {
   --subagent-accent: #60a5fa;
-  --subagent-accent-soft: rgba(96, 165, 250, 0.14);
-  --subagent-accent-border: rgba(96, 165, 250, 0.42);
+  --subagent-accent-soft: rgba(96, 165, 250, 0.07);
+  --subagent-accent-border: rgba(96, 165, 250, 0.28);
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -4288,41 +4288,36 @@ html[data-window-focused="true"] .codex-sidebar {
 
 .subagent-run-row-wrap[data-role="explore"] {
   --subagent-accent: #38bdf8;
-  --subagent-accent-soft: rgba(56, 189, 248, 0.14);
-  --subagent-accent-border: rgba(56, 189, 248, 0.42);
+  --subagent-accent-soft: rgba(56, 189, 248, 0.07);
+  --subagent-accent-border: rgba(56, 189, 248, 0.28);
 }
 
 .subagent-run-row-wrap[data-role="architect"] {
   --subagent-accent: #a78bfa;
-  --subagent-accent-soft: rgba(167, 139, 250, 0.14);
-  --subagent-accent-border: rgba(167, 139, 250, 0.42);
+  --subagent-accent-soft: rgba(167, 139, 250, 0.07);
+  --subagent-accent-border: rgba(167, 139, 250, 0.28);
 }
 
 .subagent-run-row-wrap[data-role="coder"] {
   --subagent-accent: #4ade80;
-  --subagent-accent-soft: rgba(74, 222, 128, 0.14);
-  --subagent-accent-border: rgba(74, 222, 128, 0.42);
+  --subagent-accent-soft: rgba(74, 222, 128, 0.07);
+  --subagent-accent-border: rgba(74, 222, 128, 0.28);
 }
 
 .subagent-run-row-wrap[data-role="reviewer"] {
   --subagent-accent: #fbbf24;
-  --subagent-accent-soft: rgba(251, 191, 36, 0.14);
-  --subagent-accent-border: rgba(251, 191, 36, 0.42);
+  --subagent-accent-soft: rgba(251, 191, 36, 0.07);
+  --subagent-accent-border: rgba(251, 191, 36, 0.28);
 }
 
 .subagent-run-row-wrap[data-role="tester"] {
   --subagent-accent: #fb7185;
-  --subagent-accent-soft: rgba(251, 113, 133, 0.14);
-  --subagent-accent-border: rgba(251, 113, 133, 0.42);
-}
-
-.subagent-run-row-wrap.has-agent-id .subagent-run-row {
-  border-left: 3px solid var(--subagent-accent-border);
+  --subagent-accent-soft: rgba(251, 113, 133, 0.07);
+  --subagent-accent-border: rgba(251, 113, 133, 0.28);
 }
 
 .subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: var(--subagent-accent-border);
-  box-shadow: 0 0 0 1px var(--subagent-accent-soft);
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 55%, #333);
 }
 
 .subagent-run-row {
@@ -4331,30 +4326,28 @@ html[data-window-focused="true"] .codex-sidebar {
   gap: 12px;
   width: 100%;
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid #333;
-  border-radius: 12px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 42%, #333);
+  border-radius: 10px;
   background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 52%),
-    rgba(255, 255, 255, 0.03);
-  --run-log-expandable-fade: color-mix(in srgb, var(--subagent-accent-soft) 55%, rgba(255, 255, 255, 0.03));
+    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%),
+    rgba(255, 255, 255, 0.025);
+  --run-log-expandable-fade: color-mix(in srgb, var(--subagent-accent-soft) 45%, rgba(255, 255, 255, 0.025));
   color: #e5e5e5;
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  box-shadow: none;
   transition:
     border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+    background 0.15s ease;
 }
 
 .subagent-run-row:hover {
-  border-color: #4a4a4a;
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 58%, #444);
   background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%),
-    rgba(255, 255, 255, 0.05);
-  transform: translateY(-1px);
+    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%),
+    rgba(255, 255, 255, 0.04);
 }
 
 .subagent-run-row:focus-visible {
@@ -4379,18 +4372,18 @@ html[data-window-focused="true"] .codex-sidebar {
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--subagent-accent-soft);
-  border: 1px solid var(--subagent-accent-border);
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 65%, transparent);
   color: var(--subagent-accent);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   line-height: 1.2;
 }
 
 .subagent-run-icon {
   flex: 0 0 auto;
   color: var(--subagent-accent);
-  opacity: 0.9;
+  opacity: 0.72;
 }
 
 .subagent-run-main {
@@ -4600,12 +4593,13 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .subagent-run-row-wrap .work-session-details-compact {
-  padding: 0 2px 0 14px;
-  border-left: 2px solid var(--subagent-accent-border);
+  padding: 0 13px 0 16px;
 }
 
 .subagent-run-row-wrap .run-log-mission {
-  border-left-color: var(--subagent-accent-border);
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 42%, var(--codex-log-line, #333));
+  background: transparent;
+  --run-log-expandable-fade: var(--codex-log-bg, #171717);
 }
 
 .work-session-details-compact {
@@ -4637,26 +4631,45 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .run-log-mission {
+  --subagent-accent-border: rgba(96, 165, 250, 0.28);
   display: block;
   width: 100%;
-  margin: 4px 0 10px;
+  margin: 4px 0 4px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  background: rgba(59, 130, 246, 0.08);
-  --run-log-expandable-fade: rgba(59, 130, 246, 0.08);
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 45%, #333);
+  background: transparent;
+  --run-log-expandable-fade: #171717;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  transition: border-color 0.15s ease;
+}
+
+.run-log-mission[data-role="explore"] {
+  --subagent-accent-border: rgba(56, 189, 248, 0.28);
+}
+
+.run-log-mission[data-role="architect"] {
+  --subagent-accent-border: rgba(167, 139, 250, 0.28);
+}
+
+.run-log-mission[data-role="coder"] {
+  --subagent-accent-border: rgba(74, 222, 128, 0.28);
+}
+
+.run-log-mission[data-role="reviewer"] {
+  --subagent-accent-border: rgba(251, 191, 36, 0.28);
+}
+
+.run-log-mission[data-role="tester"] {
+  --subagent-accent-border: rgba(251, 113, 133, 0.28);
 }
 
 .run-log-mission:hover {
-  border-color: rgba(59, 130, 246, 0.38);
-  background: rgba(59, 130, 246, 0.11);
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 62%, #444);
+  background: transparent;
 }
 
 .run-log-mission:focus-visible {
@@ -12510,6 +12523,18 @@ html[data-window-focused="true"] .settings-nav {
   margin-top: var(--codex-feed-gap-block);
 }
 
+.codex-main:not(.codex-main-landing) .run-log > .run-log-feed-entry:has(.run-log-mission) + .run-log-feed-entry:has(.subagent-run-row-wrap) {
+  margin-top: 4px;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry:has(.run-log-mission) .run-log-mission {
+  margin-bottom: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry:has(.run-log-mission) + .run-log-feed-entry:has(.subagent-run-row-wrap) .subagent-run-row-wrap {
+  margin-top: 0;
+}
+
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry--tight
@@ -12869,40 +12894,33 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap {
-  margin: 6px 0 16px;
+  margin: 4px 0 12px;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row {
   gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--codex-log-line);
-  border-radius: 12px;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 40%, var(--codex-log-line));
+  border-radius: 10px;
   background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 55%),
-    rgba(255, 255, 255, 0.02);
-  --run-log-expandable-fade: var(--codex-log-chip);
+    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%),
+    transparent;
+  --run-log-expandable-fade: color-mix(in srgb, var(--subagent-accent-soft) 50%, var(--codex-log-bg, #ffffff));
   color: var(--codex-log-text);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.codex-main:not(.codex-main-landing) .subagent-run-row-wrap.has-agent-id .subagent-run-row {
-  border-left: 3px solid var(--subagent-accent-border);
+  box-shadow: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: var(--subagent-accent-border);
-  box-shadow:
-    0 0 0 1px var(--subagent-accent-soft),
-    0 8px 24px rgba(0, 0, 0, 0.18);
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 52%, var(--codex-log-line));
+  box-shadow: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row:hover {
-  border-color: color-mix(in srgb, var(--subagent-accent-border) 70%, var(--codex-log-line));
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 62%, var(--codex-log-line));
   background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 60%),
-    rgba(255, 255, 255, 0.035);
+    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%),
+    var(--card-surface-bg-hover, rgba(0, 0, 0, 0.02));
   color: var(--codex-log-text);
-  transform: translateY(-1px);
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-icon,
@@ -12959,24 +12977,22 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap .work-session-details-compact {
-  border-left-color: var(--subagent-accent-border);
   gap: var(--codex-feed-gap-step);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-mission {
-  margin: 0 0 10px;
+  margin: 0 0 4px;
   padding: 10px 12px;
-  border: 1px solid var(--codex-log-line);
-  border-left: 3px solid var(--subagent-accent-border, var(--codex-log-line));
+  border: 1px solid color-mix(in srgb, var(--subagent-accent-border) 42%, var(--codex-log-line));
   border-radius: 10px;
-  background: var(--codex-log-chip);
-  --run-log-expandable-fade: var(--codex-log-chip);
+  background: transparent;
+  --run-log-expandable-fade: var(--codex-log-bg);
   color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-mission:hover {
-  background: var(--card-surface-bg-hover, var(--codex-log-chip));
-  border-color: var(--card-surface-border-active, var(--codex-log-line));
+  border-color: color-mix(in srgb, var(--subagent-accent-border) 58%, var(--codex-log-line));
+  background: transparent;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-mission-role,
