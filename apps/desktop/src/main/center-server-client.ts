@@ -1,3 +1,4 @@
+import { ECO_RPC_METHODS } from "@eco/shared";
 import {
   buildCenterServerWebSocketUrl,
   type CenterServerAccountAuthResult,
@@ -78,6 +79,7 @@ interface AccountAuthResponse {
 
 const WS_OPEN = 1;
 const MAX_QUEUED_EVENTS = 100;
+const KEEPALIVE_INTERVAL_MS = 25_000;
 
 export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly store: CenterServerStore;
@@ -92,6 +94,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly unsubscribe: () => void;
   private socket: WebSocketLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private keepaliveTimer: ReturnType<typeof setInterval> | undefined;
   private connectInFlight: Promise<void> | undefined;
   private intentionallyStopped = true;
   private status: CenterServerConnectionStatus = { state: "disabled" };
@@ -137,6 +140,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   stop(): void {
     this.intentionallyStopped = true;
     this.clearReconnectTimer();
+    this.clearKeepalive();
     this.socket?.close(1000, "Desktop center server client stopped.");
     this.socket = undefined;
     this.setStatus({ state: "disconnected" });
@@ -399,6 +403,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
           this.store.markConnected(connectedAt);
           this.setStatus({ state: "connected", connectedAt });
           this.flushQueuedEvents();
+          this.startKeepalive();
           settle();
         };
 
@@ -417,6 +422,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         };
 
         socket.onclose = (event) => {
+          this.clearKeepalive();
           if (this.socket === socket) {
             this.socket = undefined;
           }
@@ -582,6 +588,30 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     this.reconnectTimer = setTimeout(() => {
       void this.connect();
     }, this.reconnectDelayMs);
+  }
+
+  private startKeepalive(): void {
+    this.clearKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      if (this.socket?.readyState !== WS_OPEN) {
+        return;
+      }
+      this.socket.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: `ping_${this.now().getTime()}`,
+          method: ECO_RPC_METHODS.ping,
+          params: {},
+        }),
+      );
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  private clearKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = undefined;
+    }
   }
 
   private clearReconnectTimer(): void {

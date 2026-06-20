@@ -31,6 +31,7 @@ class EcoCenterClient {
   WebSocketChannel? _socket;
   StreamSubscription<dynamic>? _socketSub;
   Timer? _reconnectTimer;
+  Timer? _keepaliveTimer;
   bool _intentionallyStopped = true;
   int _rpcCounter = 0;
 
@@ -314,6 +315,7 @@ class EcoCenterClient {
   void disconnect() {
     _intentionallyStopped = true;
     _clearReconnectTimer();
+    _clearKeepalive();
     _socketSub?.cancel();
     _socketSub = null;
     _socket?.sink.close();
@@ -412,28 +414,17 @@ class EcoCenterClient {
 
       final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _socket = channel;
-
-      final opened = Completer<void>();
       _socketSub = channel.stream.listen(
         _handleSocketMessage,
-        onError: (Object error) {
-          if (!opened.isCompleted) {
-            opened.completeError(error);
-          }
-          _handleSocketClosed(error.toString());
-        },
-        onDone: () {
-          if (!opened.isCompleted) {
-            opened.completeError(
-              EcoCenterException('WebSocket closed before open.'),
-            );
-          }
-          _handleSocketClosed('WebSocket closed.');
-        },
+        onError: (Object error) => _handleSocketClosed(error.toString()),
+        onDone: () => _handleSocketClosed('WebSocket closed.'),
         cancelOnError: true,
       );
 
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await channel.ready.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw EcoCenterException('WebSocket connection timed out.'),
+      );
       if (_intentionallyStopped) {
         throw EcoCenterException('Connection aborted.');
       }
@@ -444,7 +435,7 @@ class EcoCenterClient {
           connectedAt: _now().toIso8601String(),
         ),
       );
-      if (!opened.isCompleted) opened.complete();
+      _startKeepalive();
       syncDeviceProfile().ignore();
     } catch (error) {
       final message = error is EcoCenterException
@@ -464,6 +455,7 @@ class EcoCenterClient {
   }
 
   void _handleSocketClosed(String reason) {
+    _clearKeepalive();
     _socket = null;
     if (_intentionallyStopped) {
       _emitStatus(
@@ -529,6 +521,28 @@ class EcoCenterClient {
   void _clearReconnectTimer() {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+  }
+
+  void _startKeepalive() {
+    _clearKeepalive();
+    _keepaliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (_socket == null || _status.state != EcoConnectionState.connected) {
+        return;
+      }
+      _socket!.sink.add(
+        jsonEncode({
+          'jsonrpc': EcoRpcConstants.jsonRpcVersion,
+          'id': 'ping_${++_rpcCounter}',
+          'method': EcoRpcConstants.methodPing,
+          'params': <String, dynamic>{},
+        }),
+      );
+    });
+  }
+
+  void _clearKeepalive() {
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = null;
   }
 
   void _emitStatus(CenterServerConnectionStatus status) {

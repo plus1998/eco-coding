@@ -45,9 +45,25 @@ final bindingsProvider = FutureProvider<List<DeviceBinding>>((ref) async {
   return client.listBindings();
 });
 
-final presenceProvider = FutureProvider<List<PublicDevice>>((ref) async {
+final presenceProvider = StreamProvider<List<PublicDevice>>((ref) async* {
+  ref.watch(connectionStatusProvider);
   final client = ref.watch(ecoCenterClientProvider);
   await client.initialize();
-  if (!client.credentials.hasDeviceCredentials) return [];
-  return client.listPresence();
+  if (!client.credentials.hasDeviceCredentials) {
+    yield [];
+    return;
+  }
+
+  Future<List<PublicDevice>> fetchPresence() async {
+    try {
+      return await client.listPresence();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  yield await fetchPresence();
+  await for (final _ in Stream.periodic(const Duration(seconds: 5))) {
+    yield await fetchPresence();
+  }
 });
