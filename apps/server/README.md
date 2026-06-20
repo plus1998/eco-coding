@@ -80,13 +80,24 @@ bun run build:server
 
 ### 3. 在 1Panel 中部署
 
-1. 打开 1Panel → **容器** → **编排** → **创建编排**
+1. 打开 1Panel → **容器** → **编排** → **创建编排**（或编辑已有编排）
 2. 填写名称（如 `eco-server`），粘贴 `docker-compose.yml` 内容
-3. 确保编排目录内已有 `.env`（含 `ECO_SERVER_TOKEN_SECRET`，至少 32 字符）；或在 1Panel **环境变量** 中单独设置该值（二选一，推荐 `.env`）
-4. 确保编辑路径指向上传的目录（例如 `/opt/eco/server`）
-5. 点击 **确认**，1Panel 会自动构建并启动
+3. **编排路径**必须指向已上传目录（例如 `/opt/eco/server`），且该目录内已有：
+   - `dist/index.js`（本地 `bun run build:server` 生成）
+   - `Dockerfile`、`docker-compose.yml`、`.env`
+4. 确保 `.env` 含 `ECO_SERVER_TOKEN_SECRET`（至少 32 字符）
+5. 点击 **确认** / **重建**，1Panel 会基于当前目录构建镜像
 
-### 4. 放行端口
+> **注意**：`docker-compose.yml` 的 `build.context` 为 `.`（编排目录本身）。不要在 1Panel 上使用 `context: ../..`，否则会出现 `lstat /opt/apps: no such file or directory`。
+
+### 4. 更新已有编排
+
+1. 本地：`bun run build:server`（或 `bun run deploy:server -- root@host -b` 构建并上传）
+2. 将新的 `dist/index.js`、`Dockerfile`、`docker-compose.yml` 同步到服务器编排目录
+3. 1Panel → **容器** → **编排** → 选中 `eco-server` → **重建**
+4. 或在服务器 SSH 执行：`cd /opt/eco/server && docker compose up -d --build`
+
+### 5. 放行端口
 
 在 1Panel 的 **防火墙** 中放行 `3128` 端口，桌面客户端通过 `http://<1Panel-IP>:3128` 连接。
 
@@ -104,6 +115,7 @@ bun run build:server
 - `DELETE /v1/devices/:deviceId`
 - `POST /v1/pairing`
 - `GET /v1/pairing/:pairingId`
+- `POST /v1/pairing/join`
 - `POST /v1/pairing/claim`
 - `GET /v1/bindings`
 - `DELETE /v1/bindings/:bindingId`

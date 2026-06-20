@@ -25,8 +25,8 @@ services:
 
   server:
     build:
-      context: ../..
-      dockerfile: apps/server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "3128:3128"
