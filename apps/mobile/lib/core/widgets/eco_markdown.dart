@@ -8,17 +8,25 @@ class EcoMarkdown extends StatelessWidget {
     super.key,
     required this.text,
     this.compact = false,
+    this.muted = false,
   });
 
   final String text;
   final bool compact;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final base = Theme.of(context).textTheme.bodyMedium?.copyWith(
+    final baseColor = muted
+        ? eco.textMuted.withValues(alpha: 0.85)
+        : EcoColors.textHeading;
+    final baseStyle = muted
+        ? Theme.of(context).textTheme.bodySmall
+        : Theme.of(context).textTheme.bodyMedium;
+    final base = baseStyle?.copyWith(
           height: compact ? 1.45 : 1.55,
-          color: EcoColors.textHeading,
+          color: baseColor,
         );
 
     return MarkdownBody(
@@ -28,26 +36,31 @@ class EcoMarkdown extends StatelessWidget {
       styleSheet: MarkdownStyleSheet(
         p: base,
         h1: base?.copyWith(
-          fontSize: (base.fontSize ?? 14) + 6,
+          fontSize: (base.fontSize ?? 14) + (muted ? 4 : 6),
           fontWeight: FontWeight.w600,
+          color: baseColor,
         ),
         h2: base?.copyWith(
-          fontSize: (base.fontSize ?? 14) + 4,
+          fontSize: (base.fontSize ?? 14) + (muted ? 2 : 4),
           fontWeight: FontWeight.w600,
+          color: baseColor,
         ),
         h3: base?.copyWith(
-          fontSize: (base.fontSize ?? 14) + 2,
+          fontSize: (base.fontSize ?? 14) + (muted ? 1 : 2),
           fontWeight: FontWeight.w600,
+          color: baseColor,
         ),
-        h4: base?.copyWith(fontWeight: FontWeight.w600),
-        strong: base?.copyWith(fontWeight: FontWeight.w600),
-        em: base?.copyWith(fontStyle: FontStyle.italic),
-        blockquote: base?.copyWith(color: eco.textSecondary),
+        h4: base?.copyWith(fontWeight: FontWeight.w600, color: baseColor),
+        strong: base?.copyWith(fontWeight: FontWeight.w600, color: baseColor),
+        em: base?.copyWith(fontStyle: FontStyle.italic, color: baseColor),
+        blockquote: base?.copyWith(
+          color: muted ? eco.textMuted : eco.textSecondary,
+        ),
         listBullet: base,
         code: base?.copyWith(
           fontFamily: 'monospace',
           fontSize: (base.fontSize ?? 14) - 1,
-          color: EcoColors.accentText,
+          color: muted ? eco.textSecondary : EcoColors.accentText,
           backgroundColor: EcoColors.codeBg,
         ),
         codeblockDecoration: BoxDecoration(
@@ -61,7 +74,9 @@ class EcoMarkdown extends StatelessWidget {
         horizontalRuleDecoration: BoxDecoration(
           border: Border(top: BorderSide(color: eco.borderSubtle)),
         ),
-        a: base?.copyWith(color: EcoColors.accentText),
+        a: base?.copyWith(
+          color: muted ? eco.textSecondary : EcoColors.accentText,
+        ),
       ),
     );
   }

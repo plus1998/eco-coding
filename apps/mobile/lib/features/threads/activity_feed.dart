@@ -900,6 +900,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                 child: EcoMarkdown(
                   text: widget.text,
                   compact: true,
+                  muted: true,
                 ),
               ),
           ],
