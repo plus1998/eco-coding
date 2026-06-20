@@ -17,6 +17,7 @@ REBUILD=false
 BINARY=false
 INSTALL_SERVICE=false
 RESTART=false
+NO_DEPS=false
 
 usage() {
   echo "用法: $0 [-s] root@host [选项]"
@@ -31,6 +32,7 @@ usage() {
   echo "  -n, --dry-run        只显示会传输哪些文件，不实际传输"
   echo "  -b, --build          强制重新构建"
   echo "  -B, --binary         打包 Linux amd64 二进制并上传（原生部署）"
+  echo "      --no-deps        跳过 MongoDB/Redis 容器（服务器已有实例时使用）"
   echo "      --install-service  安装/更新 systemd 服务 (需配合 --binary)"
   echo "      --restart        部署后重启远程服务"
   echo "  -h, --help           显示帮助"
@@ -39,6 +41,7 @@ usage() {
   echo "  $0 root@192.168.1.100                    # Docker 模式"
   echo "  $0 root@192.168.1.100 -B --restart       # 二进制模式，部署后重启"
   echo "  $0 -s root@myserver.local -B --install-service --restart"
+  echo "  $0 root@192.168.1.100 -B --no-deps --install-service --restart  # 已有 Mongo/Redis"
   echo "  bun run deploy:server -- root@192.168.1.100 -B --restart"
   exit 0
 }
@@ -51,6 +54,7 @@ while [[ $# -gt 0 ]]; do
     -n|--dry-run) DRY_RUN=true; shift ;;
     -b|--build) REBUILD=true; shift ;;
     -B|--binary) BINARY=true; shift ;;
+    --no-deps) NO_DEPS=true; shift ;;
     --install-service) INSTALL_SERVICE=true; shift ;;
     --restart) RESTART=true; shift ;;
     -s|--server) SERVER="$2"; shift 2 ;;
@@ -120,16 +124,20 @@ if [[ ! -f "$SERVER_DIR/.env" ]]; then
 fi
 
 if $BINARY; then
-  # 二进制模式：Mongo/Redis 走 docker-compose.deps，进程走 systemd
-  if grep -q 'mongodb://mongo:' "$SERVER_DIR/.env" 2>/dev/null; then
-    echo "警告: .env 中 MongoDB 地址为 Docker 内部主机名 (mongo)。"
-    echo "      二进制模式请改用 mongodb://127.0.0.1:27017/eco-coding"
-    echo ""
-  fi
-  if grep -q 'redis://redis:' "$SERVER_DIR/.env" 2>/dev/null; then
-    echo "警告: .env 中 Redis 地址为 Docker 内部主机名 (redis)。"
-    echo "      二进制模式请改用 redis://127.0.0.1:6379"
-    echo ""
+  if $NO_DEPS; then
+    echo "    依赖: 使用 .env 中已有的 MongoDB / Redis（不启动容器）"
+  else
+    # 二进制模式默认用 docker-compose.deps 启动 Mongo/Redis
+    if grep -q 'mongodb://mongo:' "$SERVER_DIR/.env" 2>/dev/null; then
+      echo "警告: .env 中 MongoDB 地址为 Docker 内部主机名 (mongo)。"
+      echo "      请改用实际地址，或加 --no-deps 若已有外部 MongoDB。"
+      echo ""
+    fi
+    if grep -q 'redis://redis:' "$SERVER_DIR/.env" 2>/dev/null; then
+      echo "警告: .env 中 Redis 地址为 Docker 内部主机名 (redis)。"
+      echo "      请改用实际地址，或加 --no-deps 若已有外部 Redis。"
+      echo ""
+    fi
   fi
 fi
 
@@ -146,7 +154,7 @@ fi
 
 echo "==> 传输到 $SERVER:$REMOTE_DIR (port $SSH_PORT)"
 if $BINARY; then
-  echo "    模式: Linux amd64 二进制"
+  echo "    模式: Linux amd64 二进制${NO_DEPS:+（无依赖容器）}"
 else
   echo "    模式: Docker (dist/index.js)"
 fi
@@ -159,9 +167,11 @@ cd "$SERVER_DIR"
 
 if $BINARY; then
   rsync "${RSYNC_OPTS[@]}" "./dist/$BINARY_NAME" "$SERVER:$REMOTE_DIR/$REMOTE_BINARY"
-  rsync "${RSYNC_OPTS[@]}" "./docker-compose.deps.yml" "$SERVER:$REMOTE_DIR/"
   rsync "${RSYNC_OPTS[@]}" "./eco-server.service" "$SERVER:$REMOTE_DIR/"
   rsync "${RSYNC_OPTS[@]}" "./.env" "$SERVER:$REMOTE_DIR/"
+  if ! $NO_DEPS; then
+    rsync "${RSYNC_OPTS[@]}" "./docker-compose.deps.yml" "$SERVER:$REMOTE_DIR/"
+  fi
 else
   FILES=(
     "dist/index.js"
@@ -185,8 +195,12 @@ fi
 ssh_cmd "chmod +x $REMOTE_DIR/$REMOTE_BINARY"
 
 if $BINARY; then
-  echo "==> 启动 MongoDB + Redis (docker-compose.deps.yml)..."
-  ssh_cmd "cd $REMOTE_DIR && docker compose -f docker-compose.deps.yml up -d"
+  if ! $NO_DEPS; then
+    echo "==> 启动 MongoDB + Redis (docker-compose.deps.yml)..."
+    ssh_cmd "cd $REMOTE_DIR && docker compose -f docker-compose.deps.yml up -d"
+  else
+    echo "==> 跳过依赖容器（使用 .env 中的 MongoDB / Redis）"
+  fi
 
   if $INSTALL_SERVICE; then
     echo "==> 安装 systemd 服务..."
@@ -214,8 +228,10 @@ if $BINARY; then
   echo "  ssh -p $SSH_PORT $SERVER 'systemctl status eco-server'"
   echo "查看日志:"
   echo "  ssh -p $SSH_PORT $SERVER 'journalctl -u eco-server -f'"
-  echo "依赖服务:"
-  echo "  ssh -p $SSH_PORT $SERVER 'cd $REMOTE_DIR && docker compose -f docker-compose.deps.yml ps'"
+  if ! $NO_DEPS; then
+    echo "依赖服务:"
+    echo "  ssh -p $SSH_PORT $SERVER 'cd $REMOTE_DIR && docker compose -f docker-compose.deps.yml ps'"
+  fi
 else
   echo ""
   echo "在服务器上重建并启动:"

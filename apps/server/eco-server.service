@@ -1,7 +1,7 @@
 [Unit]
 Description=Eco Center Server
 Documentation=https://github.com/eco-coding/eco-coding
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]

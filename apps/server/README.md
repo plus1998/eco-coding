@@ -57,7 +57,11 @@ Data volumes (`mongo_data`, `redis_data`) persist across restarts. Use `docker c
 
 ## Linux amd64 二进制部署（推荐生产）
 
-将 Server 交叉编译为 **Linux x86_64 单文件二进制**（内嵌 Bun 运行时与全部依赖），通过 systemd 原生运行。MongoDB / Redis 仍用 Docker 编排。
+将 Server 交叉编译为 **Linux x86_64 单文件二进制**（内嵌 Bun 运行时与全部依赖），通过 systemd 原生运行。
+
+MongoDB / Redis 有两种方式：
+- **已有实例**（1Panel、云数据库、自建等）→ 在 `.env` 里填连接串，部署时加 `--no-deps`
+- **没有实例** → 部署脚本会自动用 `docker-compose.deps.yml` 启动容器
 
 ### 1. 本地构建
 
@@ -71,15 +75,31 @@ bun run build:server:linux-amd64
 
 ### 2. 一键上传并部署
 
+**服务器已有 MongoDB / Redis**（你的情况）：
+
 ```sh
-# 准备 apps/server/.env（含 ECO_SERVER_TOKEN_SECRET，Mongo/Redis 用 127.0.0.1）
+# .env 里填好实际连接串，例如：
+# ECO_SERVER_MONGODB_URI=mongodb://user:pass@192.168.31.204:27017/eco-coding?authSource=admin
+# ECO_SERVER_REDIS_URL=redis://192.168.31.204:6379
+# ECO_SERVER_REDIS_PASSWORD=...   # 若 Redis 需要密码
+# ECO_SERVER_HOST=0.0.0.0         # 监听所有网卡，供手机/桌面连接
+
+bun run deploy:server -- root@192.168.31.204 -B --no-deps --install-service --restart
+```
+
+**没有 MongoDB / Redis，由脚本启动容器**：
+
+```sh
 cp apps/server/.env.example apps/server/.env
+# .env 使用 mongodb://127.0.0.1:27017/... 和 redis://127.0.0.1:6379
 
-# 上传二进制 + .env + 依赖编排，首次安装 systemd
 bun run deploy:server -- root@192.168.31.204 -B --install-service --restart
+```
 
-# 后续更新（重新编译 + 上传 + 重启）
-bun run deploy:server -- root@192.168.31.204 -B --build --restart
+后续更新（重新编译 + 上传 + 重启）：
+
+```sh
+bun run deploy:server -- root@192.168.31.204 -B --no-deps --build --restart
 ```
 
 二进制模式会上传：
@@ -87,11 +107,22 @@ bun run deploy:server -- root@192.168.31.204 -B --build --restart
 | 文件 | 说明 |
 |------|------|
 | `eco-server` | Linux amd64 可执行文件 |
-| `.env` | 环境变量（**须用 `127.0.0.1` 连接 Mongo/Redis**） |
-| `docker-compose.deps.yml` | 仅 MongoDB + Redis |
+| `.env` | 环境变量（Mongo/Redis 连接串） |
 | `eco-server.service` | systemd 单元模板 |
+| `docker-compose.deps.yml` | 仅在不加 `--no-deps` 时上传 |
 
-`.env` 二进制模式示例：
+`.env` 示例（已有外部 Mongo/Redis）：
+
+```sh
+ECO_SERVER_TOKEN_SECRET=your-secret-at-least-32-chars
+ECO_SERVER_HOST=0.0.0.0
+ECO_SERVER_PORT=3128
+ECO_SERVER_MONGODB_URI=mongodb://user:pass@192.168.31.204:27017/eco-coding?authSource=admin
+ECO_SERVER_REDIS_URL=redis://192.168.31.204:6379
+ECO_SERVER_REDIS_PASSWORD=your-redis-password
+```
+
+`.env` 示例（由 docker-compose.deps 提供 Mongo/Redis）：
 
 ```sh
 ECO_SERVER_TOKEN_SECRET=your-secret-at-least-32-chars
@@ -102,6 +133,19 @@ ECO_SERVER_REDIS_URL=redis://127.0.0.1:6379
 ```
 
 ### 3. 服务器手动操作
+
+**已有 Mongo/Redis：**
+
+```sh
+cd /opt/eco/server
+chmod +x eco-server
+cp eco-server.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now eco-server
+journalctl -u eco-server -f
+```
+
+**需要脚本启动 Mongo/Redis 容器：**
 
 ```sh
 cd /opt/eco/server
@@ -119,7 +163,7 @@ journalctl -u eco-server -f
 |--|--|--|
 | 构建 | `bun run build:server` → `dist/index.js` | `bun run build:server:linux-amd64` |
 | Server 进程 | Bun 容器内运行 JS | 原生二进制 + systemd |
-| 依赖 | compose 内含 mongo/redis/server | compose 仅 mongo/redis |
+| 依赖 | compose 内含 mongo/redis/server | 外部已有，或 compose 仅 mongo/redis |
 | 更新 | 需 rebuild 镜像 | 替换二进制 + `systemctl restart` |
 | 远程命令白名单 | 需 rebuild 镜像才生效 | 替换二进制即生效 |
 
