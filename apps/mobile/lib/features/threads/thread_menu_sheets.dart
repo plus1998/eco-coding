@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
+import '../../core/models/package_script_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import 'package_script_providers.dart';
 import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
 
@@ -71,9 +73,9 @@ Future<void> showNpmScriptsSheet({
     ),
     builder: (context) => DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.6,
+      initialChildSize: 0.85,
       minChildSize: 0.35,
-      maxChildSize: 0.85,
+      maxChildSize: 0.92,
       builder: (context, scrollController) => _NpmScriptsSheet(
         workspacePath: workspacePath,
         scrollController: scrollController,
@@ -399,12 +401,19 @@ class _NpmScriptsSheet extends ConsumerStatefulWidget {
 
 class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
   late Future<PackageScriptsListResult> _future;
-  String? _runningScript;
+  final ScrollController _outputScrollController = ScrollController();
+  int _prevOutputLength = 0;
 
   @override
   void initState() {
     super.initState();
     _future = _loadScripts();
+  }
+
+  @override
+  void dispose() {
+    _outputScrollController.dispose();
+    super.dispose();
   }
 
   Future<PackageScriptsListResult> _loadScripts() async {
@@ -422,31 +431,63 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
 
   Future<void> _runScript(PackageScriptInfo script) async {
     final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null || _runningScript != null) return;
-    setState(() => _runningScript = script.name);
+    final runState = ref.read(packageScriptRunProvider);
+    if (rpc == null || (runState?.running ?? false)) {
+      return;
+    }
     try {
       final result = await rpc.startPackageScript(
         workspacePath: widget.workspacePath,
         script: script.name,
       );
       if (!mounted) return;
-      final message = result.runId != null
-          ? '已在 Desktop 运行 ${script.name}'
-          : '已启动 ${script.name}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      if (result.runId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已启动 ${script.name}')),
+        );
+        return;
+      }
+      ref.read(packageScriptRunProvider.notifier).beginRun(
+            runId: result.runId!,
+            script: result.script,
+            command: result.command,
+          );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.toString())),
       );
-    } finally {
-      if (mounted) setState(() => _runningScript = null);
     }
+  }
+
+  void _scrollOutputToEnd() {
+    if (!_outputScrollController.hasClients) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_outputScrollController.hasClients) {
+        return;
+      }
+      _outputScrollController.animateTo(
+        _outputScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
+    final runState = ref.watch(packageScriptRunProvider);
+    final outputLength = runState?.output.length ?? 0;
+    if (outputLength > _prevOutputLength) {
+      _prevOutputLength = outputLength;
+      _scrollOutputToEnd();
+    } else if (outputLength < _prevOutputLength) {
+      _prevOutputLength = outputLength;
+    }
+
     return SafeArea(
       child: Column(
         children: [
@@ -475,53 +516,215 @@ class _NpmScriptsSheetState extends ConsumerState<_NpmScriptsSheet> {
                 final subtitle = listing.packageName != null
                     ? '${listing.packageName} · ${listing.packageManager}'
                     : listing.packageManager;
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    controller: widget.scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    children: [
-                      _SheetHeader(title: 'npm scripts', subtitle: subtitle),
-                      if (!listing.hasPackageJson || listing.scripts.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 24),
-                          child: Center(
-                            child: Text(
-                              '未找到 package.json scripts',
-                              style: TextStyle(color: eco.textMuted),
-                            ),
-                          ),
-                        )
-                      else
-                        ...listing.scripts.map(
-                          (script) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(script.name),
-                            subtitle: Text(
-                              script.command,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: eco.textMuted, fontSize: 12),
-                            ),
-                            trailing: _runningScript == script.name
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.play_arrow_rounded),
-                            onTap: _runningScript == null
-                                ? () => _runScript(script)
-                                : null,
-                          ),
+                final isRunning = runState?.running ?? false;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: _refresh,
+                        child: ListView(
+                          controller: widget.scrollController,
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                          children: [
+                            _SheetHeader(title: 'npm scripts', subtitle: subtitle),
+                            if (!listing.hasPackageJson || listing.scripts.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 24),
+                                child: Center(
+                                  child: Text(
+                                    '未找到 package.json scripts',
+                                    style: TextStyle(color: eco.textMuted),
+                                  ),
+                                ),
+                              )
+                            else
+                              ...listing.scripts.map(
+                                (script) {
+                                  final scriptRunning = isRunning &&
+                                      runState?.script == script.name;
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(script.name),
+                                    subtitle: Text(
+                                      script.command,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: eco.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    trailing: scriptRunning
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.play_arrow_rounded),
+                                    onTap: isRunning
+                                        ? null
+                                        : () => _runScript(script),
+                                  );
+                                },
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                    if (runState != null)
+                      _PackageScriptOutputPanel(
+                        runState: runState,
+                        outputScrollController: _outputScrollController,
+                        onStop: runState.running
+                            ? () => ref
+                                .read(packageScriptRunProvider.notifier)
+                                .stopRun()
+                            : null,
+                        onClose: () => ref
+                            .read(packageScriptRunProvider.notifier)
+                            .clearRun(),
+                      ),
+                  ],
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PackageScriptOutputPanel extends StatelessWidget {
+  const _PackageScriptOutputPanel({
+    required this.runState,
+    required this.outputScrollController,
+    this.onStop,
+    required this.onClose,
+  });
+
+  final PackageScriptRunViewState runState;
+  final ScrollController outputScrollController;
+  final VoidCallback? onStop;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final commandText = runState.command.join(' ');
+    final outputText = runState.output.isEmpty
+        ? (runState.running ? '…' : '（无输出）')
+        : runState.output;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: EcoColors.bgElevated,
+        border: Border(top: BorderSide(color: eco.borderSubtle)),
+      ),
+      child: SizedBox(
+        height: 220,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.terminal,
+                    size: 16,
+                    color: runState.running ? EcoColors.accentText : eco.textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      runState.script,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: EcoColors.textHeading,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                  if (runState.running)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: EcoColors.accentSoft,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '运行中',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: EcoColors.accentText,
+                            ),
+                      ),
+                    )
+                  else if (runState.exitCode != null)
+                    Text(
+                      'exit ${runState.exitCode}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: runState.exitCode == 0
+                                ? EcoColors.success
+                                : EcoColors.danger,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                    ),
+                  if (onStop != null) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: onStop,
+                      style: TextButton.styleFrom(
+                        foregroundColor: EcoColors.danger,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('停止'),
+                    ),
+                  ],
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: '关闭输出',
+                    onPressed: onClose,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: eco.borderSubtle),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: outputScrollController,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: SelectableText(
+                  outputText,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: eco.textSecondary,
+                        fontFamily: 'Menlo',
+                        height: 1.45,
+                      ),
+                ),
+              ),
+            ),
+            if (commandText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Text(
+                  commandText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: eco.textMuted,
+                        fontFamily: 'Menlo',
+                      ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
