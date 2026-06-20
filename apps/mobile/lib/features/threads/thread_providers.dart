@@ -4,6 +4,7 @@ import '../../core/models/eco_types.dart' show EcoEventEnvelope;
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_usage_models.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
@@ -135,6 +136,8 @@ class ThreadSessionState {
     this.thread,
     this.runProjection,
     this.subagentSessions = const [],
+    this.billing,
+    this.contextSnapshot,
   });
 
   final List<ActivityItem> activities;
@@ -147,6 +150,8 @@ class ThreadSessionState {
   final ThreadSummary? thread;
   final ThreadRunProjectionSnapshot? runProjection;
   final List<ThreadSubagentSessionTiming> subagentSessions;
+  final ThreadBillingSnapshot? billing;
+  final ThreadContextSnapshot? contextSnapshot;
 
   ThreadSessionState copyWith({
     List<ActivityItem>? activities,
@@ -163,6 +168,10 @@ class ThreadSessionState {
     ThreadRunProjectionSnapshot? runProjection,
     bool clearProjection = false,
     List<ThreadSubagentSessionTiming>? subagentSessions,
+    ThreadBillingSnapshot? billing,
+    bool clearBilling = false,
+    ThreadContextSnapshot? contextSnapshot,
+    bool clearContext = false,
   }) {
     return ThreadSessionState(
       activities: activities ?? this.activities,
@@ -178,6 +187,9 @@ class ThreadSessionState {
       runProjection:
           clearProjection ? null : (runProjection ?? this.runProjection),
       subagentSessions: subagentSessions ?? this.subagentSessions,
+      billing: clearBilling ? null : (billing ?? this.billing),
+      contextSnapshot:
+          clearContext ? null : (contextSnapshot ?? this.contextSnapshot),
     );
   }
 }
@@ -222,11 +234,18 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       final clarification = await rpc.getPendingClarification(threadId);
       ThreadRunProjectionSnapshot? projection;
       List<ThreadSubagentSessionTiming> subagentSessions = const [];
+      ThreadBillingSnapshot? billing;
+      ThreadContextSnapshot? contextSnapshot;
       try {
         projection = await rpc.getRunProjection(threadId);
       } catch (_) {}
       try {
         subagentSessions = await rpc.listSubagentSessions(threadId);
+      } catch (_) {}
+      try {
+        final usage = await rpc.getThreadUsageSnapshot(threadId);
+        billing = usage.billing;
+        contextSnapshot = usage.context;
       } catch (_) {}
 
       state = ThreadSessionState(
@@ -247,6 +266,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         thread: thread,
         runProjection: projection,
         subagentSessions: subagentSessions,
+        billing: billing,
+        contextSnapshot: contextSnapshot,
         loading: false,
       );
     } catch (error) {
@@ -327,6 +348,28 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     } else if (event.kind == 'thread.follow_up') {
       ref.read(desktopRpcProvider)?.followUpList(threadId).then((followUps) {
         state = state.copyWith(followUps: followUps);
+      });
+    }
+
+    if (live.billing != null) {
+      state = state.copyWith(billing: live.billing);
+    } else if (live.type == 'thread.usage_updated') {
+      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((usage) {
+        state = state.copyWith(
+          billing: usage.billing ?? state.billing,
+          contextSnapshot: usage.context ?? state.contextSnapshot,
+        );
+      });
+    }
+
+    if (live.contextSnapshot != null) {
+      state = state.copyWith(contextSnapshot: live.contextSnapshot);
+    } else if (event.kind == 'thread.context' ||
+        live.type == 'thread.context_updated') {
+      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((usage) {
+        if (usage.context != null) {
+          state = state.copyWith(contextSnapshot: usage.context);
+        }
       });
     }
 

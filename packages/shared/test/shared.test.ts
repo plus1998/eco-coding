@@ -76,6 +76,9 @@ test("validates remote command args", () => {
     ok: false,
   });
   expect(
+    validateRemoteCommandArgs("thread:get-usage-snapshot", ["thr_1"]),
+  ).toEqual({ ok: true });
+  expect(
     validateRemoteCommandArgs("thread:follow-up-escalate", [
       { threadId: "thr_1", followUpId: "fup_1" },
     ]),

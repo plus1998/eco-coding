@@ -18,6 +18,7 @@ import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
 import 'activity_feed.dart';
+import 'thread_info_sheets.dart';
 import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
@@ -291,6 +292,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                                 const _ThinkingIndicator(),
                             ],
                           ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: ThreadUsageFloatButtons(
+                billing: session.billing,
+                contextSnapshot: session.contextSnapshot,
+                threadStatus: thread?.status,
+              ),
+            ),
           ),
           if (queuedFollowUps.isNotEmpty)
             _FollowUpBar(

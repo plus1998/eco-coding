@@ -1,6 +1,7 @@
 import '../models/git_models.dart';
 import '../models/thread_models.dart';
 import '../models/thread_run_projection.dart';
+import '../models/thread_usage_models.dart';
 import '../network/eco_center_client.dart';
 
 class DesktopRpc {
@@ -96,6 +97,18 @@ class DesktopRpc {
     );
     if (result is! Map<String, dynamic>) return null;
     return ThreadRunProjectionSnapshot.fromJson(result);
+  }
+
+  Future<ThreadUsageSnapshotResult> getThreadUsageSnapshot(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:get-usage-snapshot',
+      [threadId],
+    );
+    if (result is! Map<String, dynamic>) {
+      return const ThreadUsageSnapshotResult();
+    }
+    return ThreadUsageSnapshotResult.fromJson(result);
   }
 
   Future<List<ThreadSubagentSessionTiming>> listSubagentSessions(

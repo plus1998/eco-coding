@@ -1,4 +1,5 @@
 import 'thread_run_projection.dart';
+import 'thread_usage_models.dart';
 
 const subagentRoles = ['explore', 'architect', 'coder', 'reviewer', 'tester'];
 
@@ -385,6 +386,8 @@ class ThreadLiveEvent {
     this.runtimeConfig,
     this.projection,
     this.subagentSessions,
+    this.billing,
+    this.contextSnapshot,
     this.title,
   });
 
@@ -440,6 +443,16 @@ class ThreadLiveEvent {
                 )
                 .toList()
             : null,
+        billing: json['billing'] is Map<String, dynamic>
+            ? ThreadBillingSnapshot.fromJson(
+                json['billing'] as Map<String, dynamic>,
+              )
+            : null,
+        contextSnapshot: json['context'] is Map<String, dynamic>
+            ? ThreadContextSnapshot.fromJson(
+                json['context'] as Map<String, dynamic>,
+              )
+            : null,
         title: json['title'] as String?,
       );
   }
@@ -457,6 +470,8 @@ class ThreadLiveEvent {
   final ThreadRuntimeConfig? runtimeConfig;
   final ThreadRunProjectionSnapshot? projection;
   final List<ThreadSubagentSessionTiming>? subagentSessions;
+  final ThreadBillingSnapshot? billing;
+  final ThreadContextSnapshot? contextSnapshot;
   final String? title;
 }
 

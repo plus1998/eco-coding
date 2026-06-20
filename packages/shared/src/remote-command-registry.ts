@@ -34,6 +34,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:retry", "Retry thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:activity-list", "List thread activity", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:get-usage-snapshot", "Get thread usage snapshot", "read", RPC_INVOKE, [
+    stringArg(),
+  ]),
   command("thread:run-projection-get", "Get thread run projection", "read", RPC_INVOKE, [stringArg()]),
   command("thread:subagent-sessions-list", "List thread subagent sessions", "read", RPC_INVOKE, [
     stringArg(),
