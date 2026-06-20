@@ -85,11 +85,18 @@ if $REBUILD || [[ ! -f "$SERVER_DIR/dist/index.js" ]]; then
 fi
 
 # ---- 传输文件列表 ----
+if [[ ! -f "$SERVER_DIR/.env" ]]; then
+  echo "错误: 未找到 $SERVER_DIR/.env"
+  echo "请从 .env.example 复制并设置 ECO_SERVER_TOKEN_SECRET（至少 32 字符）"
+  exit 1
+fi
+
 FILES=(
   "dist/index.js"
   "Dockerfile"
   "docker-compose.yml"
   ".dockerignore"
+  ".env"
 )
 
 RSYNC_OPTS=(

@@ -34,21 +34,23 @@ bun run dev:server
 
 ## Docker Compose (one-click deploy)
 
+在 `apps/server/` 下创建 `.env`（可从 `.env.example` 复制），至少设置 `ECO_SERVER_TOKEN_SECRET`（32 字符以上）。Compose 会通过 `env_file` 将其注入容器；`docker-compose.yml` 里的 `environment` 仅覆盖 Mongo/Redis 为编排内服务地址。
+
 ```sh
-# Set a strong token secret (or keep the default for dev)
-export ECO_SERVER_TOKEN_SECRET="your-strong-secret-at-least-32-chars"
+cp apps/server/.env.example apps/server/.env
+# 编辑 apps/server/.env，设置 ECO_SERVER_TOKEN_SECRET
 
 # Start everything (MongoDB + Redis + Server)
-docker compose -f apps/server/docker-compose.yml up -d
+cd apps/server && docker compose up -d --build
 
 # Check status
-docker compose -f apps/server/docker-compose.yml ps
+docker compose ps
 
 # View logs
-docker compose -f apps/server/docker-compose.yml logs -f server
+docker compose logs -f server
 
 # Stop
-docker compose -f apps/server/docker-compose.yml down
+docker compose down
 ```
 
 Data volumes (`mongo_data`, `redis_data`) persist across restarts. Use `docker compose down -v` to wipe them.
@@ -74,13 +76,14 @@ bun run build:server
 - `Dockerfile` — 镜像构建文件
 - `docker-compose.yml` — 编排配置
 - `.dockerignore` — 忽略无关文件
+- `.env` — 含 `ECO_SERVER_TOKEN_SECRET` 等密钥（**必须与 compose 同目录**）
 
 ### 3. 在 1Panel 中部署
 
 1. 打开 1Panel → **容器** → **编排** → **创建编排**
 2. 填写名称（如 `eco-server`），粘贴 `docker-compose.yml` 内容
-3. 在 **环境变量** 中设置 `ECO_SERVER_TOKEN_SECRET`（至少 32 字符）
-4. 确保编辑路径指向上传的目录
+3. 确保编排目录内已有 `.env`（含 `ECO_SERVER_TOKEN_SECRET`，至少 32 字符）；或在 1Panel **环境变量** 中单独设置该值（二选一，推荐 `.env`）
+4. 确保编辑路径指向上传的目录（例如 `/opt/eco/server`）
 5. 点击 **确认**，1Panel 会自动构建并启动
 
 ### 4. 放行端口
