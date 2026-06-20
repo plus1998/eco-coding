@@ -51,11 +51,18 @@ export interface CenterServerRegisterDesktopRequest {
   deviceName: string;
 }
 
+export interface CenterServerDeviceMetadataView {
+  model?: string;
+  ipAddress?: string;
+  platform?: string;
+}
+
 export interface CenterServerDeviceView {
   id: string;
   userId: string;
   kind: "desktop" | "mobile";
   name: string;
+  metadata?: CenterServerDeviceMetadataView;
   createdAt: string;
   lastSeenAt: string | null;
   disabledAt: string | null;

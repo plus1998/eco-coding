@@ -100,63 +100,87 @@ class ThreadsScreen extends ConsumerWidget {
   }
 
   Future<void> _showOpenProjectSheet(BuildContext context, WidgetRef ref) async {
-    final pathController = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('打开项目', style: Theme.of(sheetContext).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              const Text('输入 Desktop 上的项目绝对路径'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: pathController,
-                decoration: const InputDecoration(
-                  labelText: '项目路径',
-                  hintText: '/Users/you/projects/my-app',
-                ),
-                autofocus: true,
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () async {
-                  final path = pathController.text.trim();
-                  if (path.isEmpty) return;
-                  Navigator.pop(sheetContext);
-                  try {
-                    await ref
-                        .read(projectListProvider.notifier)
-                        .openProjectPath(path);
-                    messenger.showSnackBar(
-                      const SnackBar(content: Text('项目已打开')),
-                    );
-                  } catch (error) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text(error.toString())),
-                    );
-                  }
-                },
-                child: const Text('打开'),
-              ),
-            ],
-          ),
+        return _OpenProjectSheet(
+          onOpen: (path) async {
+            Navigator.pop(sheetContext);
+            try {
+              await ref.read(projectListProvider.notifier).openProjectPath(path);
+              messenger.showSnackBar(
+                const SnackBar(content: Text('项目已打开')),
+              );
+            } catch (error) {
+              messenger.showSnackBar(
+                SnackBar(content: Text(error.toString())),
+              );
+            }
+          },
         );
       },
     );
-    pathController.dispose();
+  }
+}
+
+class _OpenProjectSheet extends StatefulWidget {
+  const _OpenProjectSheet({required this.onOpen});
+
+  final Future<void> Function(String path) onOpen;
+
+  @override
+  State<_OpenProjectSheet> createState() => _OpenProjectSheetState();
+}
+
+class _OpenProjectSheetState extends State<_OpenProjectSheet> {
+  final _pathController = TextEditingController();
+
+  @override
+  void dispose() {
+    _pathController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('打开项目', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          const Text('输入 Desktop 上的项目绝对路径'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _pathController,
+            decoration: const InputDecoration(
+              labelText: '项目路径',
+              hintText: '/Users/you/projects/my-app',
+            ),
+            autofocus: true,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () async {
+              final path = _pathController.text.trim();
+              if (path.isEmpty) return;
+              await widget.onOpen(path);
+            },
+            child: const Text('打开'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

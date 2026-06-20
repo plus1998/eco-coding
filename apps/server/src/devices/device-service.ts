@@ -26,6 +26,7 @@ export class DeviceService {
     userId: string;
     kind: EcoDeviceKind;
     name: string;
+    metadata?: Record<string, string>;
   }): Promise<RegisteredDevice> {
     const name = input.name.trim();
     if (!name) {
@@ -38,6 +39,7 @@ export class DeviceService {
       kind: input.kind,
       name,
       secretHash: await sha256Hex(deviceSecret),
+      metadata: input.metadata,
       now: this.clock().toISOString(),
     });
     return { device, deviceSecret };
@@ -70,6 +72,19 @@ export class DeviceService {
 
   listBindings(userId: string, options: { includeRevoked?: boolean } = {}): Promise<DeviceBindingRecord[]> {
     return this.store.listBindingsForUser(userId, options);
+  }
+
+  async updateDeviceProfile(input: {
+    userId: string;
+    deviceId: string;
+    name?: string;
+    metadata?: Record<string, string>;
+  }): Promise<DeviceRecord> {
+    const device = await this.store.updateDeviceProfile(input);
+    if (!device) {
+      throw new Error("Device was not found.");
+    }
+    return device;
   }
 
   async revokeBinding(input: { userId: string; bindingId: string }): Promise<DeviceBindingRecord> {

@@ -114,6 +114,7 @@ export class PairingService {
     code: string;
     token: string;
     deviceName?: string;
+    metadata?: Record<string, string>;
   }): Promise<JoinPairingSessionResult> {
     const normalizedCode = input.code.trim().toUpperCase();
     const token = input.token.trim();
@@ -139,7 +140,8 @@ export class PairingService {
     const registered = await this.devices.registerDevice({
       userId: session.userId,
       kind: "mobile",
-      name: input.deviceName?.trim() || "Eco Mobile",
+      name: input.deviceName?.trim() || input.metadata?.model?.trim() || "Eco Mobile",
+      metadata: input.metadata,
     });
     const tokens = await this.auth.issueDeviceTokenBundle(registered.device);
     const binding = await this.store.createDeviceBinding({

@@ -11,12 +11,19 @@ export interface UserRecord {
   disabledAt: string | null;
 }
 
+export interface PublicDeviceMetadata {
+  model?: string;
+  ipAddress?: string;
+  platform?: string;
+}
+
 export interface DeviceRecord {
   id: string;
   userId: string;
   kind: EcoDeviceKind;
   name: string;
   secretHash: string;
+  metadata: PublicDeviceMetadata;
   createdAt: string;
   lastSeenAt: string | null;
   disabledAt: string | null;
@@ -120,6 +127,7 @@ export interface PublicDevice {
   userId: string;
   kind: EcoDeviceKind;
   name: string;
+  metadata: PublicDeviceMetadata;
   createdAt: string;
   lastSeenAt: string | null;
   disabledAt: string | null;
@@ -150,6 +158,7 @@ export function toPublicDevice(device: DeviceRecord): PublicDevice {
     userId: device.userId,
     kind: device.kind,
     name: device.name,
+    metadata: device.metadata,
     createdAt: device.createdAt,
     lastSeenAt: device.lastSeenAt,
     disabledAt: device.disabledAt,

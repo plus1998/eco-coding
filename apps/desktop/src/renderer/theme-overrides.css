@@ -335,6 +335,11 @@
   margin-top: 0;
 }
 
+.settings-page .center-server-bound-mobile-section {
+  margin-top: 28px;
+  padding-top: 4px;
+}
+
 .settings-page .center-server-pairing-section {
   margin-top: 28px;
   padding-top: 4px;

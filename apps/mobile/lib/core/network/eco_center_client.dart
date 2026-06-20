@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/eco_types.dart';
 import '../storage/credential_store.dart';
+import '../utils/device_profile.dart';
 
 typedef JsonMap = Map<String, dynamic>;
 
@@ -145,6 +146,7 @@ class EcoCenterClient {
   Future<PublicDevice> registerMobileDevice({String? deviceName}) async {
     final serverUrl = _requireServerUrl();
     final accessToken = await _ensureUserAccessToken();
+    final profile = await DeviceProfile.collect();
     final response = await _requestJson(
       serverUrl: serverUrl,
       path: '/v1/devices/register',
@@ -152,7 +154,8 @@ class EcoCenterClient {
       bearerToken: accessToken,
       body: {
         'kind': 'mobile',
-        'name': (deviceName ?? _credentials.deviceName ?? 'Eco Mobile').trim(),
+        'name': (deviceName ?? profile.displayName).trim(),
+        'metadata': profile.toMetadata(),
       },
     );
     final device = PublicDevice.fromJson(response['device'] as JsonMap);
@@ -171,8 +174,34 @@ class EcoCenterClient {
   }
 
   Future<void> ensureMobileDevice() async {
-    if (_credentials.hasDeviceCredentials) return;
+    if (_credentials.hasDeviceCredentials) {
+      await syncDeviceProfile();
+      return;
+    }
     await registerMobileDevice();
+  }
+
+  Future<PublicDevice> syncDeviceProfile() async {
+    if (!_credentials.hasDeviceCredentials || _credentials.deviceId == null) {
+      throw EcoCenterException('Device credentials are required.');
+    }
+    final profile = await DeviceProfile.collect();
+    final serverUrl = _requireServerUrl();
+    final accessToken = await _ensureDeviceAccessToken();
+    final response = await _requestJson(
+      serverUrl: serverUrl,
+      path: '/v1/devices/${_credentials.deviceId}',
+      method: 'PATCH',
+      bearerToken: accessToken,
+      body: {
+        'name': profile.displayName,
+        'metadata': profile.toMetadata(),
+      },
+    );
+    final device = PublicDevice.fromJson(response['device'] as JsonMap);
+    _credentials = _credentials.copyWith(deviceName: device.name);
+    await _store.save(_credentials);
+    return device;
   }
 
   Future<DeviceBinding> claimPairing(String code) async {
@@ -199,6 +228,7 @@ class EcoCenterClient {
     if (!reachable) {
       throw EcoCenterException('无法访问服务器，请检查地址与网络');
     }
+    final profile = await DeviceProfile.collect();
     final response = await _requestJson(
       serverUrl: serverUrl,
       path: '/v1/pairing/join',
@@ -206,7 +236,8 @@ class EcoCenterClient {
       body: {
         'code': payload.code,
         'token': payload.bootstrapToken,
-        'deviceName': (_credentials.deviceName ?? 'Eco Mobile').trim(),
+        'deviceName': profile.displayName,
+        'metadata': profile.toMetadata(),
       },
     );
     final user = PublicUser.fromJson(response['user'] as JsonMap);
@@ -414,6 +445,7 @@ class EcoCenterClient {
         ),
       );
       if (!opened.isCompleted) opened.complete();
+      syncDeviceProfile().ignore();
     } catch (error) {
       final message = error is EcoCenterException
           ? error.message

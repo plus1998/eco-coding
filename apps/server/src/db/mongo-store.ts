@@ -29,6 +29,7 @@ interface DeviceDocument {
   kind: EcoDeviceKind;
   name: string;
   secretHash: string;
+  metadata?: Record<string, string>;
   createdAt: Date;
   lastSeenAt: Date | null;
   disabledAt: Date | null;
@@ -176,6 +177,7 @@ export class MongoStore {
     kind: EcoDeviceKind;
     name: string;
     secretHash: string;
+    metadata?: Record<string, string>;
     now: string;
   }): Promise<DeviceRecord> {
     const device = await this.models.Device.create({
@@ -185,6 +187,7 @@ export class MongoStore {
       kind: input.kind,
       name: input.name,
       secretHash: input.secretHash,
+      metadata: input.metadata ?? {},
       createdAt: toDate(input.now),
       lastSeenAt: null,
       disabledAt: null,
@@ -212,6 +215,33 @@ export class MongoStore {
 
   async touchDevice(id: string, now: string): Promise<void> {
     await this.models.Device.updateOne({ _id: id }, { $set: { lastSeenAt: toDate(now) } });
+  }
+
+  async updateDeviceProfile(input: {
+    userId: string;
+    deviceId: string;
+    name?: string;
+    metadata?: Record<string, string>;
+  }): Promise<DeviceRecord | undefined> {
+    const existing = await this.findDeviceById(input.deviceId);
+    if (!existing || existing.userId !== input.userId || existing.disabledAt) {
+      return undefined;
+    }
+    const update: Partial<DeviceDocument> = {};
+    if (input.name !== undefined) {
+      update.name = input.name.trim();
+    }
+    if (input.metadata !== undefined) {
+      update.metadata = {
+        ...(existing.metadata ?? {}),
+        ...input.metadata,
+      };
+    }
+    if (Object.keys(update).length === 0) {
+      return existing;
+    }
+    await this.models.Device.updateOne({ _id: input.deviceId, userId: input.userId }, { $set: update });
+    return this.findDeviceById(input.deviceId);
   }
 
   async disableDevice(userId: string, deviceId: string, now: string): Promise<DeviceRecord | undefined> {
@@ -533,6 +563,7 @@ function deviceSchema(): Schema<DeviceDocument> {
       kind: { type: String, required: true, enum: ["desktop", "mobile"] },
       name: { type: String, required: true },
       secretHash: { type: String, required: true },
+      metadata: { type: Schema.Types.Mixed, default: {} },
       createdAt: { type: Date, required: true },
       lastSeenAt: { type: Date, default: null },
       disabledAt: { type: Date, default: null },
@@ -666,10 +697,26 @@ function mapDevice(row: DeviceDocument): DeviceRecord {
     kind: row.kind,
     name: row.name,
     secretHash: row.secretHash,
+    metadata: normalizeDeviceMetadata(row.metadata),
     createdAt: toIso(row.createdAt),
     lastSeenAt: toIsoOrNull(row.lastSeenAt),
     disabledAt: toIsoOrNull(row.disabledAt),
   };
+}
+
+function normalizeDeviceMetadata(value: unknown): DeviceRecord["metadata"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const metadata: DeviceRecord["metadata"] = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === "string" && raw.trim()) {
+      if (key === "model" || key === "ipAddress" || key === "platform") {
+        metadata[key] = raw.trim();
+      }
+    }
+  }
+  return metadata;
 }
 
 function mapRefreshToken(row: RefreshTokenDocument): RefreshTokenRecord {

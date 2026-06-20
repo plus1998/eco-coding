@@ -380,28 +380,39 @@ export function CenterServerSettingsPanel({
             <ul className="mcp-server-list">
               {activeBindings.map((binding) => {
                 const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
-                const online = mobile?.online ?? false;
-                const mobileLabel = mobile?.name ?? shortenDeviceId(binding.mobileDeviceId);
+                const online = mobile?.online === true;
+                const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
+                const mobileDetail = formatMobileDetail(mobile);
                 const lastSeenAt = mobile?.lastSeenAt;
                 const revoking = revokingBindingId === binding.id;
                 return (
-                  <li key={binding.id} className="mcp-server-row center-server-row center-server-bound-mobile-row">
+                  <li
+                    key={binding.id}
+                    className={`mcp-server-row center-server-row center-server-bound-mobile-row ${online ? "is-online" : "is-offline"}`}
+                  >
                     <div className="center-server-row-main">
                       <span className="mcp-server-name center-server-bound-mobile-name">
+                        <span
+                          className={`center-server-bound-mobile-status-dot ${online ? "is-online" : "is-offline"}`}
+                          aria-hidden
+                        />
                         <Smartphone size={16} aria-hidden />
                         {mobileLabel}
                       </span>
-                      <span className={`center-server-status is-${online ? "connected" : "disconnected"}`}>
+                      {mobileDetail ? (
+                        <span className="center-server-bound-mobile-detail">{mobileDetail}</span>
+                      ) : null}
+                      <span className={`center-server-bound-mobile-presence ${online ? "is-online" : "is-offline"}`}>
                         {online ? "在线 · 可远程操控本机" : "离线 · 需手机连接 Server"}
                       </span>
                       <span className="center-server-bound-mobile-meta">
                         绑定于 {formatLocalTime(binding.createdAt)}
                       </span>
-                      {lastSeenAt && (
+                      {lastSeenAt ? (
                         <span className="center-server-bound-mobile-meta">
                           最近使用：{formatLocalTime(lastSeenAt)}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <div className="mcp-server-actions">
                       <button
@@ -741,4 +752,40 @@ function shortenDeviceId(deviceId: string): string {
     return trimmed;
   }
   return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
+}
+
+function isGenericMobileName(name: string | undefined): boolean {
+  if (!name) {
+    return true;
+  }
+  const normalized = name.trim().toLowerCase();
+  return normalized === "eco mobile" || normalized === "ecomobile";
+}
+
+function formatMobileLabel(
+  mobile: CenterServerDevicePresenceView | undefined,
+  deviceId: string,
+): string {
+  const model = mobile?.metadata?.model?.trim();
+  if (model) {
+    return model;
+  }
+  const name = mobile?.name?.trim();
+  if (name && !isGenericMobileName(name)) {
+    return name;
+  }
+  return shortenDeviceId(deviceId);
+}
+
+function formatMobileDetail(mobile: CenterServerDevicePresenceView | undefined): string | undefined {
+  const parts: string[] = [];
+  const ipAddress = mobile?.metadata?.ipAddress?.trim();
+  const platform = mobile?.metadata?.platform?.trim();
+  if (ipAddress) {
+    parts.push(ipAddress);
+  }
+  if (platform) {
+    parts.push(platform);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }

@@ -14838,13 +14838,56 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .center-server-bound-mobile-section {
-  margin-top: 40px;
+  margin-top: 28px;
+}
+
+.center-server-bound-mobile-row.is-online {
+  background: color-mix(in srgb, var(--status-allow-bg, #ecfdf5) 55%, transparent);
+}
+
+.center-server-bound-mobile-row.is-offline {
+  opacity: 0.88;
 }
 
 .center-server-bound-mobile-name {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.center-server-bound-mobile-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.center-server-bound-mobile-status-dot.is-online {
+  background: var(--status-allow-text, #16a34a);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-allow-text, #16a34a) 24%, transparent);
+}
+
+.center-server-bound-mobile-status-dot.is-offline {
+  background: var(--text-muted);
+  opacity: 0.75;
+}
+
+.center-server-bound-mobile-detail {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.center-server-bound-mobile-presence {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.center-server-bound-mobile-presence.is-online {
+  color: var(--status-allow-text, #16a34a);
+}
+
+.center-server-bound-mobile-presence.is-offline {
+  color: var(--text-muted);
 }
 
 .center-server-bound-mobile-meta {

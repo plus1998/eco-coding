@@ -211,6 +211,7 @@ export async function handleEcoHttpRoute(input: {
       userId: claims.userId,
       kind: requireDeviceKind(body, "kind"),
       name: requireString(body, "name"),
+      metadata: readOptionalDeviceMetadata(body.metadata),
     });
     const tokens = await auth.issueDeviceTokenBundle(registered.device);
     return json(
@@ -248,6 +249,18 @@ export async function handleEcoHttpRoute(input: {
     });
   }
   const deviceIdFromPath = matchPath(pathname, "/v1/devices/:deviceId")?.deviceId;
+  if (request.method === "PATCH" && deviceIdFromPath) {
+    const claims = await requireBearer(request, auth);
+    assertCanUpdateDevice(claims, deviceIdFromPath);
+    const body = await readJsonObject(request);
+    const device = await devices.updateDeviceProfile({
+      userId: claims.userId,
+      deviceId: deviceIdFromPath,
+      ...(typeof body.name === "string" ? { name: requireString(body, "name") } : {}),
+      ...(body.metadata !== undefined ? { metadata: readOptionalDeviceMetadata(body.metadata) } : {}),
+    });
+    return json({ device: toPublicDevice(device) });
+  }
   if (request.method === "DELETE" && deviceIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
@@ -299,6 +312,7 @@ export async function handleEcoHttpRoute(input: {
       code: requireString(body, "code"),
       token: requireString(body, "token"),
       ...(typeof body.deviceName === "string" ? { deviceName: body.deviceName } : {}),
+      metadata: readOptionalDeviceMetadata(body.metadata),
     });
     return json({
       user: toPublicUser(joined.user),
@@ -497,6 +511,43 @@ function assertCanRevokeBinding(claims: AccessTokenClaims, binding: DeviceBindin
     return;
   }
   throw new Error("Missing capability device:admin.");
+}
+
+function assertCanUpdateDevice(claims: AccessTokenClaims, deviceId: string): void {
+  if (claims.capabilities.includes("device:admin")) {
+    return;
+  }
+  if (claims.subjectKind === "device" && claims.deviceId === deviceId) {
+    return;
+  }
+  throw new Error("Missing capability device:admin.");
+}
+
+function readOptionalDeviceMetadata(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("metadata must be an object.");
+  }
+  const metadata: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+    if (typeof raw !== "string") {
+      throw new Error(`metadata.${key} must be a string.`);
+    }
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (key !== "model" && key !== "ipAddress" && key !== "platform") {
+      throw new Error(`metadata.${key} is not supported.`);
+    }
+    metadata[key] = trimmed;
+  }
+  return metadata;
 }
 
 async function listBindingsVisibleToClaims(

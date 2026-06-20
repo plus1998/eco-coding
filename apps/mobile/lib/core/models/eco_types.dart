@@ -52,6 +52,29 @@ class PublicUser {
   final String createdAt;
 }
 
+class PublicDeviceMetadata {
+  const PublicDeviceMetadata({
+    this.model,
+    this.ipAddress,
+    this.platform,
+  });
+
+  factory PublicDeviceMetadata.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const PublicDeviceMetadata();
+    }
+    return PublicDeviceMetadata(
+      model: json['model'] as String?,
+      ipAddress: json['ipAddress'] as String?,
+      platform: json['platform'] as String?,
+    );
+  }
+
+  final String? model;
+  final String? ipAddress;
+  final String? platform;
+}
+
 class PublicDevice {
   const PublicDevice({
     required this.id,
@@ -59,6 +82,7 @@ class PublicDevice {
     required this.kind,
     required this.name,
     required this.createdAt,
+    this.metadata = const PublicDeviceMetadata(),
     this.lastSeenAt,
     this.disabledAt,
     this.online = false,
@@ -70,6 +94,9 @@ class PublicDevice {
         kind: json['kind'] as String,
         name: json['name'] as String,
         createdAt: json['createdAt'] as String,
+        metadata: PublicDeviceMetadata.fromJson(
+          json['metadata'] as Map<String, dynamic>?,
+        ),
         lastSeenAt: json['lastSeenAt'] as String?,
         disabledAt: json['disabledAt'] as String?,
         online: json['online'] as bool? ?? false,
@@ -79,6 +106,7 @@ class PublicDevice {
   final String userId;
   final String kind;
   final String name;
+  final PublicDeviceMetadata metadata;
   final String createdAt;
   final String? lastSeenAt;
   final String? disabledAt;
