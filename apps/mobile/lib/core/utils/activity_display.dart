@@ -95,6 +95,100 @@ final _connectionFailedPattern = RegExp(r'^【连接失败】\s*([\s\S]*)$');
 
 enum ActivityActionIcon { search, file, edit, terminal, agent }
 
+enum ToolActionLifecycle {
+  approvalPending,
+  approvalApproved,
+  approvalRejected,
+  running,
+  completed,
+  failed,
+}
+
+class ParsedBashApprovalActivityText {
+  const ParsedBashApprovalActivityText({
+    required this.toolName,
+    required this.phase,
+    this.detail,
+  });
+
+  final String toolName;
+  final String? detail;
+  final ToolActionLifecycle phase;
+}
+
+final _bashApprovalActivityPattern = RegExp(
+  r'^(?:等待确认|已允许本次|已拒绝|Bash 已拒绝：)\s*([A-Za-z][A-Za-z0-9_]*)(?:[：:]\s*(.+))?$',
+);
+
+String activityActionKey({
+  String? subagent,
+  required String label,
+  ActivityActionIcon? icon,
+}) {
+  return '${subagent ?? ''}\x00${icon?.name ?? ''}\x00${normalizeActivityActionLabel(label)}';
+}
+
+String normalizeActivityActionLabel(String raw) {
+  return parseToolActionDisplayLabel(raw);
+}
+
+ParsedBashApprovalActivityText? parseBashApprovalActivityText(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  if (trimmed.startsWith('Bash 已拒绝：')) {
+    return ParsedBashApprovalActivityText(
+      toolName: 'Bash',
+      detail: trimmed.substring('Bash 已拒绝：'.length).trim(),
+      phase: ToolActionLifecycle.approvalRejected,
+    );
+  }
+  final match = _bashApprovalActivityPattern.firstMatch(trimmed);
+  if (match == null || match.group(1) == null) {
+    return null;
+  }
+  final toolName = match.group(1)!;
+  final detail = match.group(2)?.trim();
+  if (trimmed.startsWith('等待确认')) {
+    return ParsedBashApprovalActivityText(
+      toolName: toolName,
+      detail: detail,
+      phase: ToolActionLifecycle.approvalPending,
+    );
+  }
+  if (trimmed.startsWith('已允许本次')) {
+    return ParsedBashApprovalActivityText(
+      toolName: toolName,
+      detail: detail,
+      phase: ToolActionLifecycle.approvalApproved,
+    );
+  }
+  if (trimmed.startsWith('已拒绝')) {
+    return ParsedBashApprovalActivityText(
+      toolName: toolName,
+      detail: detail,
+      phase: ToolActionLifecycle.approvalRejected,
+    );
+  }
+  return null;
+}
+
+int compareToolActionLifecyclePriority(
+  ToolActionLifecycle left,
+  ToolActionLifecycle right,
+) {
+  const rank = {
+    ToolActionLifecycle.approvalRejected: 1,
+    ToolActionLifecycle.approvalPending: 2,
+    ToolActionLifecycle.approvalApproved: 3,
+    ToolActionLifecycle.running: 4,
+    ToolActionLifecycle.completed: 5,
+    ToolActionLifecycle.failed: 5,
+  };
+  return (rank[left] ?? 0) - (rank[right] ?? 0);
+}
+
 String stripSubagentBracketPrefix(String text) {
   return text.replaceFirst(_subagentBracketPrefix, '').trim();
 }

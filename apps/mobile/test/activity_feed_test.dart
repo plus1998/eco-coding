@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
+import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
@@ -131,5 +132,48 @@ void main() {
 
     expect(feed.where((e) => e.kind == ActivityFeedKind.subagentMission).length, 1);
     expect(feed.first.subagentRole, 'coder');
+  });
+
+  test('parseSubagentMissionMessage extracts summary from @mission JSON', () {
+    const payload =
+        '@mission {"role":"explore","summary":"梳理 auth 模块","prompt":"check auth flow"}';
+    final mission = parseSubagentMissionMessage(payload);
+    expect(mission?.role, 'explore');
+    expect(mission?.summary, '梳理 auth 模块');
+
+    final feed = buildActivityFeed(
+      lines: [
+        ActivityItem(id: '1', role: 'explore', message: payload),
+      ],
+      threadPrompt: '',
+      threadId: 't1',
+    );
+    expect(feed.length, 1);
+    expect(feed.first.kind, ActivityFeedKind.subagentMission);
+    expect(feed.first.text, '梳理 auth 模块');
+  });
+
+  test('bash approval merges into the same action row', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: '等待确认 Bash：npm test',
+        ),
+        ActivityItem(
+          id: '2',
+          role: 'planner',
+          message: 'Running npm test · Bash',
+        ),
+      ],
+      threadPrompt: '',
+      threadId: 't1',
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.text, 'npm test');
   });
 }

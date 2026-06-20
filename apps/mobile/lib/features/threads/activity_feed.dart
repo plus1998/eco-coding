@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/agent_mission.dart';
 import '../../core/widgets/eco_markdown.dart';
 import 'thread_providers.dart';
 
@@ -17,6 +18,7 @@ class ActivityFeedEntry {
     this.detail,
     this.streaming = false,
     this.usageBadge,
+    this.lifecycle,
   });
 
   final String id;
@@ -27,6 +29,7 @@ class ActivityFeedEntry {
   final String? detail;
   final bool streaming;
   final String? usageBadge;
+  final ToolActionLifecycle? lifecycle;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
@@ -77,6 +80,62 @@ List<ActivityFeedEntry> buildActivityFeed({
     pendingUsageBadge = null;
   }
 
+  void upsertAction({
+    required String id,
+    required String label,
+    required ActivityActionIcon icon,
+    ToolActionLifecycle? lifecycle,
+    String? subagentRole,
+  }) {
+    final actionKey = activityActionKey(
+      subagent: subagentRole,
+      label: label,
+      icon: icon,
+    );
+    final existingIndex = output.indexWhere(
+      (entry) =>
+          entry.kind == ActivityFeedKind.action &&
+          activityActionKey(
+                subagent: entry.subagentRole,
+                label: entry.text,
+                icon: entry.actionIcon,
+              ) ==
+              actionKey,
+    );
+    if (existingIndex >= 0) {
+      final existing = output[existingIndex];
+      ToolActionLifecycle? nextLifecycle = lifecycle;
+      if (existing.lifecycle != null && lifecycle != null) {
+        nextLifecycle =
+            compareToolActionLifecyclePriority(lifecycle, existing.lifecycle!) >=
+                    0
+                ? lifecycle
+                : existing.lifecycle;
+      } else {
+        nextLifecycle ??= existing.lifecycle;
+      }
+      output[existingIndex] = ActivityFeedEntry(
+        id: existing.id,
+        kind: ActivityFeedKind.action,
+        text: label,
+        actionIcon: icon,
+        subagentRole: subagentRole ?? existing.subagentRole,
+        lifecycle: nextLifecycle,
+      );
+      return;
+    }
+    output.add(
+      ActivityFeedEntry(
+        id: id,
+        kind: ActivityFeedKind.action,
+        text: label,
+        actionIcon: icon,
+        subagentRole: subagentRole,
+        lifecycle: lifecycle,
+      ),
+    );
+  }
+
   void upsertPhase(String summary, {String? detail}) {
     final last = output.isNotEmpty ? output.last : null;
     if (last != null &&
@@ -121,6 +180,20 @@ List<ActivityFeedEntry> buildActivityFeed({
       continue;
     }
 
+    final mission = parseSubagentMissionMessage(message);
+    if (mission != null && isSubagentDisplayRole(mission.role)) {
+      flushNarrative();
+      output.add(
+        ActivityFeedEntry(
+          id: line.id,
+          kind: ActivityFeedKind.subagentMission,
+          text: mission.summary,
+          subagentRole: mission.role,
+        ),
+      );
+      continue;
+    }
+
     if (line.role == 'user') {
       flushNarrative();
       if (!isUserPromptActivityLine(role: line.role, message: line.message)) {
@@ -139,13 +212,16 @@ List<ActivityFeedEntry> buildActivityFeed({
     final agentRole = normalizeAgentDisplayRole(line.role);
     if (agentRole != null && isSubagentDisplayRole(agentRole)) {
       flushNarrative();
-      final mission = _parseSubagentMissionSummary(message);
-      if (mission != null) {
+      final summary = message.trim();
+      if (summary.length >= 8 &&
+          !summary.startsWith('Tool:') &&
+          !summary.startsWith('Reading ') &&
+          !summary.startsWith('Running ')) {
         output.add(
           ActivityFeedEntry(
             id: line.id,
             kind: ActivityFeedKind.subagentMission,
-            text: mission,
+            text: summary,
             subagentRole: agentRole,
           ),
         );
@@ -168,15 +244,30 @@ List<ActivityFeedEntry> buildActivityFeed({
       continue;
     }
 
+    final parsedApproval = parseBashApprovalActivityText(message);
+    if (parsedApproval != null) {
+      flushNarrative();
+      upsertAction(
+        id: line.id,
+        label: formatToolDisplayLabel(
+          parsedApproval.toolName,
+          parsedApproval.detail,
+        ),
+        icon: iconForToolName(parsedApproval.toolName),
+        lifecycle: parsedApproval.phase,
+        subagentRole: agentRole,
+      );
+      continue;
+    }
+
     if (looksLikeToolActionMessage(message)) {
       flushNarrative();
-      output.add(
-        ActivityFeedEntry(
-          id: line.id,
-          kind: ActivityFeedKind.action,
-          text: parseToolActionDisplayLabel(message),
-          actionIcon: iconForActivityMessage(message),
-        ),
+      upsertAction(
+        id: line.id,
+        label: parseToolActionDisplayLabel(message),
+        icon: iconForActivityMessage(message),
+        lifecycle: ToolActionLifecycle.running,
+        subagentRole: agentRole,
       );
       continue;
     }
@@ -220,29 +311,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   }
 
   flushNarrative();
-  if (pendingUsageBadge != null) {
-    output.add(
-      ActivityFeedEntry(
-        id: 'usage-${output.length}',
-        kind: ActivityFeedKind.assistant,
-        text: '',
-        usageBadge: pendingUsageBadge,
-      ),
-    );
-  }
   return output;
-}
-
-String? _parseSubagentMissionSummary(String message) {
-  final trimmed = message.trim();
-  if (trimmed.isEmpty) return null;
-  if (trimmed.startsWith('Tool:') ||
-      trimmed.startsWith('Reading ') ||
-      trimmed.startsWith('Running ')) {
-    return null;
-  }
-  if (trimmed.length < 8) return null;
-  return trimmed;
 }
 
 bool _looksLikeApiError(String message) {

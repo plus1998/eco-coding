@@ -6,6 +6,7 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/utils/activity_display.dart';
 
 final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
@@ -233,50 +234,53 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     final live = ThreadLiveEvent.fromJson(payload);
 
     var activities = [...state.activities];
+    final isMetricsOnlyEvent = _isMetricsOnlyThreadLiveEvent(live.type);
 
-    if (live.activityLine != null) {
-      final line = live.activityLine!;
-      final index = activities.indexWhere((a) => a.id == line.id);
-      final item = ActivityItem(
-        id: line.id,
-        role: line.role,
-        message: line.message,
-        stream: line.stream ?? false,
-      );
-      if (index >= 0) {
-        activities[index] = item;
-      } else {
-        activities.add(item);
-      }
-    } else if (live.message.isNotEmpty) {
-      if (live.stream == true && activities.isNotEmpty) {
-        final last = activities.last;
-        if (last.stream && last.role == (live.role ?? last.role)) {
-          activities[activities.length - 1] = ActivityItem(
-            id: last.id,
-            role: last.role,
-            message: last.message + live.message,
-            stream: true,
-          );
+    if (!isMetricsOnlyEvent) {
+      if (live.activityLine != null) {
+        final line = live.activityLine!;
+        final index = activities.indexWhere((a) => a.id == line.id);
+        final item = ActivityItem(
+          id: line.id,
+          role: line.role,
+          message: line.message,
+          stream: line.stream ?? false,
+        );
+        if (index >= 0) {
+          activities[index] = item;
+        } else {
+          activities.add(item);
+        }
+      } else if (live.message.isNotEmpty && !isUsageBadgeText(live.message)) {
+        if (live.stream == true && activities.isNotEmpty) {
+          final last = activities.last;
+          if (last.stream && last.role == (live.role ?? last.role)) {
+            activities[activities.length - 1] = ActivityItem(
+              id: last.id,
+              role: last.role,
+              message: last.message + live.message,
+              stream: true,
+            );
+          } else {
+            activities.add(
+              ActivityItem(
+                id: 'stream_${activities.length}',
+                role: live.role ?? 'assistant',
+                message: live.message,
+                stream: true,
+              ),
+            );
+          }
         } else {
           activities.add(
             ActivityItem(
-              id: 'stream_${activities.length}',
+              id: 'evt_${activities.length}',
               role: live.role ?? 'assistant',
               message: live.message,
-              stream: true,
+              stream: live.stream ?? false,
             ),
           );
         }
-      } else {
-        activities.add(
-          ActivityItem(
-            id: 'evt_${activities.length}',
-            role: live.role ?? 'assistant',
-            message: live.message,
-            stream: live.stream ?? false,
-          ),
-        );
       }
     }
 
@@ -383,4 +387,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         );
     state = state.copyWith(clearClarification: true);
   }
+}
+
+bool _isMetricsOnlyThreadLiveEvent(String liveType) {
+  return liveType == 'thread.usage_updated' ||
+      liveType == 'thread.context_updated' ||
+      liveType == 'thread.subagent_timing_updated' ||
+      liveType == 'thread.todos_updated' ||
+      liveType == 'thread.title_updated' ||
+      liveType == 'thread.run_projection_updated';
 }

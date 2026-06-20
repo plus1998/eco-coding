@@ -11,6 +11,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/thread_title.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
@@ -165,7 +166,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              thread?.title.isNotEmpty == true ? thread!.title : '会话',
+              displayThreadTitle(
+                title: thread?.title ?? '',
+                prompt: thread?.prompt ?? '',
+                fallback: '会话',
+              ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(

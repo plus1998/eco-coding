@@ -511,10 +511,29 @@ function App() {
       setProxyBridgeSettings(proxyBridge);
     });
 
-    return window.eco.onThreadEvent((event) => {
+    let threadListRefreshTimer: number | undefined;
+    const ensureThreadListed = (threadId: string) => {
+      setThreads((current) => {
+        if (current.some((thread) => thread.id === threadId)) {
+          return current;
+        }
+        if (threadListRefreshTimer !== undefined) {
+          window.clearTimeout(threadListRefreshTimer);
+        }
+        threadListRefreshTimer = window.setTimeout(() => {
+          threadListRefreshTimer = undefined;
+          void window.eco!.listThreads().then(setThreads);
+        }, 120);
+        return current;
+      });
+    };
+
+    const unsubscribe = window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {
         return;
       }
+
+      ensureThreadListed(event.threadId);
 
       if (event.type === "thread.deleted") {
         clearThreadClientState(event.threadId);
@@ -721,6 +740,12 @@ function App() {
         ...(event.apiError && { apiError: event.apiError }),
       });
     });
+    return () => {
+      if (threadListRefreshTimer !== undefined) {
+        window.clearTimeout(threadListRefreshTimer);
+      }
+      unsubscribe();
+    };
   }, []);
 
   const selectedThreadStatus = threads.find((thread) => thread.id === selectedThreadId)?.status;
