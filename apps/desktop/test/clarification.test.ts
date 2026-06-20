@@ -8,8 +8,15 @@ import {
 
 test("optionRequiresCustomExplanation detects explanation-style labels", () => {
   expect(optionRequiresCustomExplanation("否，请说明希望如何调整")).toBe(true);
-  expect(optionRequiresCustomExplanation("其他")).toBe(true);
+  expect(optionRequiresCustomExplanation("其他")).toBe(false);
+  expect(optionRequiresCustomExplanation("其他方案")).toBe(false);
+  expect(optionRequiresCustomExplanation(CLARIFICATION_CUSTOM_OPTION_LABEL)).toBe(true);
   expect(optionRequiresCustomExplanation("自动启用")).toBe(false);
+});
+
+test("isClarificationQuestionReady allows plain 其他 options", () => {
+  expect(isClarificationQuestionReady(["其他"], "")).toBe(true);
+  expect(isClarificationQuestionReady(["其他方案"], "")).toBe(true);
 });
 
 test("resolveClarificationQuestionAnswer prefers custom text over options", () => {

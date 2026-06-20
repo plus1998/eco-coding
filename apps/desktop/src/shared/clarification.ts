@@ -2,7 +2,13 @@
 export const CLARIFICATION_CUSTOM_OPTION_LABEL = "其他（自定义说明）";
 
 export function optionRequiresCustomExplanation(label: string): boolean {
-  return /说明|自定义|其他|other|请描述|请输入|请填写|specify|explain/i.test(label);
+  if (label === CLARIFICATION_CUSTOM_OPTION_LABEL) {
+    return true;
+  }
+  // Match AI options that explicitly ask for free-form input — not bare「其他」choices.
+  return /请说明|请描述|请输入|请填写|自定义说明|(?:^|\b)other\b.*(?:specify|explain)|\bspecify\b|\bexplain\b/i.test(
+    label,
+  );
 }
 
 export function resolveClarificationQuestionAnswer(
