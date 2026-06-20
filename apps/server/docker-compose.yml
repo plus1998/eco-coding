@@ -1,0 +1,45 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: eco-coding
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      start_period: 10s
+
+  server:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${ECO_SERVER_PORT:-3128}:3128"
+    environment:
+      ECO_SERVER_HOST: "0.0.0.0"
+      ECO_SERVER_PORT: "3128"
+      ECO_SERVER_TOKEN_SECRET: "${ECO_SERVER_TOKEN_SECRET:-change-me-to-at-least-32-random-characters}"
+      ECO_SERVER_MONGODB_URI: "mongodb://mongo:27017/eco-coding"
+      ECO_SERVER_REDIS_URL: "redis://redis:6379"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+  redis_data:

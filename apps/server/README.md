@@ -32,6 +32,27 @@ Start locally:
 bun run dev:server
 ```
 
+## Docker Compose (one-click deploy)
+
+```sh
+# Set a strong token secret (or keep the default for dev)
+export ECO_SERVER_TOKEN_SECRET="your-strong-secret-at-least-32-chars"
+
+# Start everything (MongoDB + Redis + Server)
+docker compose -f apps/server/docker-compose.yml up -d
+
+# Check status
+docker compose -f apps/server/docker-compose.yml ps
+
+# View logs
+docker compose -f apps/server/docker-compose.yml logs -f server
+
+# Stop
+docker compose -f apps/server/docker-compose.yml down
+```
+
+Data volumes (`mongo_data`, `redis_data`) persist across restarts. Use `docker compose down -v` to wipe them.
+
 ## HTTP API
 
 - `GET /health`
