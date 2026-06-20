@@ -7719,6 +7719,15 @@ html[data-window-focused="true"] .codex-sidebar {
   word-break: break-word;
 }
 
+/* Align typed text with the first footer/context trigger icon. */
+.codex-composer:not(.is-compact) .composer-skill-input-control {
+  padding-left: calc(var(--composer-shell-padding-x) + 14px - 18px);
+}
+
+.codex-composer.is-compact .composer-skill-input-control {
+  padding-left: 8px;
+}
+
 .composer-skill-input-control:empty::before {
   content: attr(data-placeholder);
   color: var(--text-muted);
