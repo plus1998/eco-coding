@@ -6,12 +6,22 @@ import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
+import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart';
 import '../../core/widgets/eco_markdown.dart';
+import '../../core/widgets/shimmer_text.dart';
 import 'thread_providers.dart';
 
-enum ActivityFeedKind { user, assistant, action, phase, subagentMission, error }
+enum ActivityFeedKind {
+  user,
+  assistant,
+  thinking,
+  action,
+  phase,
+  subagentMission,
+  error,
+}
 
 class ActivityFeedEntry {
   const ActivityFeedEntry({
@@ -74,7 +84,45 @@ List<ActivityFeedEntry> buildActivityFeed({
   var narrative = '';
   String? narrativeId;
   var narrativeStreaming = false;
+  var thinking = '';
+  String? thinkingId;
+  var thinkingStreaming = false;
   String? pendingUsageBadge;
+
+  void flushThinking({bool atEnd = false}) {
+    final text = stripActivityStatusNoise(thinking).trim();
+    final stillStreaming = thinkingStreaming && atEnd;
+    if (text.isEmpty && !stillStreaming) {
+      thinking = '';
+      thinkingId = null;
+      thinkingStreaming = false;
+      return;
+    }
+    final last = output.isNotEmpty ? output.last : null;
+    if (text.isNotEmpty &&
+        last != null &&
+        last.kind == ActivityFeedKind.thinking &&
+        shouldMergeThinkingBlocks(last.text, text)) {
+      output[output.length - 1] = ActivityFeedEntry(
+        id: last.id,
+        kind: ActivityFeedKind.thinking,
+        text: mergeThinkingBlocks(last.text, text),
+        streaming: stillStreaming,
+      );
+    } else {
+      output.add(
+        ActivityFeedEntry(
+          id: thinkingId ?? 'thinking-${output.length}',
+          kind: ActivityFeedKind.thinking,
+          text: text,
+          streaming: stillStreaming,
+        ),
+      );
+    }
+    thinking = '';
+    thinkingId = null;
+    thinkingStreaming = false;
+  }
 
   void flushNarrative() {
     final text = stripActivityStatusNoise(narrative).trim();
@@ -97,6 +145,11 @@ List<ActivityFeedEntry> buildActivityFeed({
     narrativeId = null;
     narrativeStreaming = false;
     pendingUsageBadge = null;
+  }
+
+  void flushTextBuffers({bool atEnd = false}) {
+    flushThinking(atEnd: atEnd);
+    flushNarrative();
   }
 
   void upsertAction({
@@ -183,25 +236,28 @@ List<ActivityFeedEntry> buildActivityFeed({
   for (final line in effectiveLines) {
     final cleaned = stripActivityStatusNoise(line.message);
     final message = stripSubagentBracketPrefix(cleaned);
-    if (message.isEmpty || isUsageNoiseMessage(message)) continue;
+    if ((message.isEmpty && line.role != 'thinking') ||
+        isUsageNoiseMessage(message)) {
+      continue;
+    }
 
     if (line.role == 'system' || isInternalAgentActivityRole(line.role)) {
       continue;
     }
 
-    if (isInternalActivityMessage(message)) {
+    if (line.role != 'thinking' && isInternalActivityMessage(message)) {
       continue;
     }
 
     if (isUsageBadgeText(message)) {
-      flushNarrative();
+      flushTextBuffers();
       pendingUsageBadge = message.trim();
       continue;
     }
 
     final mission = parseSubagentMissionMessage(message);
     if (mission != null && isSubagentDisplayRole(mission.role)) {
-      flushNarrative();
+      flushTextBuffers();
       output.add(
         ActivityFeedEntry(
           id: line.id,
@@ -216,7 +272,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     if (line.role == 'user') {
-      flushNarrative();
+      flushTextBuffers();
       if (!isUserPromptActivityLine(role: line.role, message: line.message)) {
         continue;
       }
@@ -232,7 +288,7 @@ List<ActivityFeedEntry> buildActivityFeed({
 
     final agentRole = normalizeAgentDisplayRole(line.role);
     if (agentRole != null && isSubagentDisplayRole(agentRole)) {
-      flushNarrative();
+      flushTextBuffers();
       final summary = message.trim();
       if (summary.length >= 8 &&
           !summary.startsWith('Tool:') &&
@@ -251,12 +307,24 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     if (line.role == 'thinking') {
+      flushNarrative();
+      final text = line.stream ? message : message.trim();
+      if (line.stream) {
+        thinking =
+            thinking.isEmpty ? text : mergeStreamText(thinking, text);
+        thinkingStreaming = true;
+        thinkingId ??= line.id;
+      } else {
+        thinking = thinking.isEmpty ? text : mergeStreamText(thinking, text);
+        thinkingStreaming = false;
+        thinkingId ??= line.id;
+      }
       continue;
     }
 
     final reconnect = parseReconnectActivityMessage(message);
     if (reconnect != null) {
-      flushNarrative();
+      flushTextBuffers();
       upsertPhase(reconnect.summary, detail: reconnect.detail);
       continue;
     }
@@ -267,7 +335,7 @@ List<ActivityFeedEntry> buildActivityFeed({
 
     final parsedApproval = parseBashApprovalActivityText(message);
     if (parsedApproval != null) {
-      flushNarrative();
+      flushTextBuffers();
       upsertAction(
         id: line.id,
         label: formatToolDisplayLabel(
@@ -282,7 +350,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     if (looksLikeToolActionMessage(message)) {
-      flushNarrative();
+      flushTextBuffers();
       upsertAction(
         id: line.id,
         label: parseToolActionDisplayLabel(message),
@@ -294,7 +362,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     if (_looksLikeApiError(message)) {
-      flushNarrative();
+      flushTextBuffers();
       output.add(
         ActivityFeedEntry(
           id: line.id,
@@ -305,13 +373,15 @@ List<ActivityFeedEntry> buildActivityFeed({
       continue;
     }
 
-    if (isActivityNoiseMessage(message) || isActivityStatusNoise(message)) {
+    if (line.role != 'thinking' &&
+        (isActivityNoiseMessage(message) || isActivityStatusNoise(message))) {
       continue;
     }
 
     if (line.role == 'planner' ||
         line.role == 'assistant' ||
         line.role == 'main') {
+      flushThinking();
       if (line.stream) {
         narrative += message;
         narrativeId ??= line.id;
@@ -325,12 +395,14 @@ List<ActivityFeedEntry> buildActivityFeed({
     }
 
     if (shouldShowLineInMainFeed(role: line.role) && message.trim().isNotEmpty) {
+      flushThinking();
       narrative += message;
       narrativeId ??= line.id;
       narrativeStreaming = line.stream;
     }
   }
 
+  flushThinking(atEnd: true);
   flushNarrative();
   _enrichSubagentEntries(
     output,
@@ -441,7 +513,8 @@ List<SubagentTimelineEntry> _collectFallbackTimeline(
     final entry = output[index];
     if (entry.kind == ActivityFeedKind.subagentMission ||
         entry.kind == ActivityFeedKind.user ||
-        entry.kind == ActivityFeedKind.assistant) {
+        entry.kind == ActivityFeedKind.assistant ||
+        entry.kind == ActivityFeedKind.thinking) {
       break;
     }
     if (entry.kind == ActivityFeedKind.action &&
@@ -504,6 +577,11 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           text: entry.text,
           streaming: entry.streaming,
           usageBadge: entry.usageBadge,
+        );
+      case ActivityFeedKind.thinking:
+        return _ThinkingTile(
+          text: entry.text,
+          streaming: entry.streaming,
         );
       case ActivityFeedKind.action:
         return _ActionTile(
@@ -601,6 +679,141 @@ class _AssistantNarrativeTile extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThinkingTile extends StatefulWidget {
+  const _ThinkingTile({
+    required this.text,
+    this.streaming = false,
+  });
+
+  final String text;
+  final bool streaming;
+
+  @override
+  State<_ThinkingTile> createState() => _ThinkingTileState();
+}
+
+class _ThinkingTileState extends State<_ThinkingTile> {
+  var _collapsed = false;
+
+  bool get _hasBody => widget.text.trim().isNotEmpty;
+
+  bool get _expanded =>
+      (widget.streaming && _hasBody) || (!_collapsed && _hasBody);
+
+  @override
+  void initState() {
+    super.initState();
+    _collapsed = !widget.streaming && widget.text.trim().isNotEmpty;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThinkingTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.streaming && _hasBody) {
+      _collapsed = false;
+    } else if (oldWidget.streaming &&
+        !widget.streaming &&
+        _hasBody &&
+        !_collapsed) {
+      _collapsed = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
+    final showPreview = _hasBody && _collapsed && !widget.streaming;
+    final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: eco.textMuted,
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.2,
+        );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: eco.cardSurface.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.8)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: widget.streaming && !_hasBody
+                    ? null
+                    : () {
+                        if (widget.streaming || !_hasBody) return;
+                        setState(() => _collapsed = !_collapsed);
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      if (widget.streaming && !_hasBody)
+                        ShimmerText(
+                          text: '思考',
+                          style: labelStyle,
+                          baseColor: eco.textMuted,
+                          highlightColor: eco.textSecondary,
+                        )
+                      else
+                        Text('思考', style: labelStyle),
+                      if (showPreview) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: eco.textMuted.withValues(alpha: 0.85),
+                                  height: 1.3,
+                                ),
+                          ),
+                        ),
+                      ],
+                      if (_hasBody && !widget.streaming) ...[
+                        const Spacer(),
+                        Icon(
+                          _expanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          size: 18,
+                          color: eco.textMuted,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_hasBody && _expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: EcoMarkdown(
+                  text: widget.text,
+                  compact: true,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

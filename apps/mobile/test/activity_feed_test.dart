@@ -253,4 +253,57 @@ void main() {
       isFalse,
     );
   });
+
+  test('buildActivityFeed keeps thinking blocks before assistant reply', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: '分析登录流程'),
+        ActivityItem(
+          id: '2',
+          role: 'thinking',
+          message: '先梳理 auth ',
+          stream: true,
+        ),
+        ActivityItem(
+          id: '3',
+          role: 'thinking',
+          message: '先梳理 auth 模块入口',
+          stream: false,
+        ),
+        ActivityItem(
+          id: '4',
+          role: 'planner',
+          message: '登录流程如下…',
+        ),
+      ],
+    );
+
+    final thinkingIndex = feed.indexWhere(
+      (entry) => entry.kind == ActivityFeedKind.thinking,
+    );
+    expect(thinkingIndex, greaterThanOrEqualTo(0));
+    expect(feed[thinkingIndex].text, contains('auth'));
+    expect(
+      feed.indexWhere((entry) => entry.kind == ActivityFeedKind.assistant),
+      greaterThan(thinkingIndex),
+    );
+  });
+
+  test('buildActivityFeed emits streaming thinking placeholder at end', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: 'hello'),
+        ActivityItem(
+          id: '2',
+          role: 'thinking',
+          message: '',
+          stream: true,
+        ),
+      ],
+    );
+
+    expect(feed.last.kind, ActivityFeedKind.thinking);
+    expect(feed.last.streaming, isTrue);
+    expect(feed.last.text, isEmpty);
+  });
 }

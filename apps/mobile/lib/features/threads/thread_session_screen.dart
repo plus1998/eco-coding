@@ -12,6 +12,7 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_title.dart';
+import '../../core/widgets/shimmer_text.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
@@ -131,6 +132,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
       threadId: widget.threadId,
       runProjection: session.runProjection,
       subagentSessions: session.subagentSessions,
+    );
+    final hasStreamingThinking = feedEntries.any(
+      (entry) =>
+          entry.kind == ActivityFeedKind.thinking && entry.streaming,
     );
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
@@ -256,7 +261,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
                                   scrollController: _scrollController,
                                 ),
                               ),
-                              if (isRunning) const _ThinkingIndicator(),
+                              if (isRunning && !hasStreamingThinking)
+                                const _ThinkingIndicator(),
                             ],
                           ),
           ),
@@ -451,13 +457,14 @@ class _ThinkingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      child: Text(
-        '正在思考',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: ecoThemeExtras(context).textMuted,
-            ),
+      child: ShimmerText(
+        text: '正在思考',
+        baseColor: eco.textMuted,
+        highlightColor: eco.textSecondary,
+        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }
