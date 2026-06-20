@@ -160,3 +160,96 @@ class GitPushResult {
   final String method;
   final String output;
 }
+
+class GitPullResult {
+  const GitPullResult({
+    required this.output,
+    required this.pulled,
+    required this.conflicted,
+    this.conflictFiles = const [],
+  });
+
+  factory GitPullResult.fromJson(Map<String, dynamic> json) => GitPullResult(
+        output: json['output'] as String? ?? '',
+        pulled: json['pulled'] as bool? ?? false,
+        conflicted: json['conflicted'] as bool? ?? false,
+        conflictFiles: (json['conflictFiles'] as List<dynamic>? ?? [])
+            .map((entry) => entry as String)
+            .toList(),
+      );
+
+  final String output;
+  final bool pulled;
+  final bool conflicted;
+  final List<String> conflictFiles;
+}
+
+class PackageScriptInfo {
+  const PackageScriptInfo({
+    required this.name,
+    required this.command,
+  });
+
+  factory PackageScriptInfo.fromJson(Map<String, dynamic> json) =>
+      PackageScriptInfo(
+        name: json['name'] as String? ?? '',
+        command: json['command'] as String? ?? '',
+      );
+
+  final String name;
+  final String command;
+}
+
+class PackageScriptsListResult {
+  const PackageScriptsListResult({
+    required this.workspacePath,
+    required this.hasPackageJson,
+    required this.packageManager,
+    required this.scripts,
+    this.packageName,
+  });
+
+  factory PackageScriptsListResult.fromJson(Map<String, dynamic> json) =>
+      PackageScriptsListResult(
+        workspacePath: json['workspacePath'] as String? ?? '',
+        hasPackageJson: json['hasPackageJson'] as bool? ?? false,
+        packageName: json['packageName'] as String?,
+        packageManager: json['packageManager'] as String? ?? 'npm',
+        scripts: (json['scripts'] as List<dynamic>? ?? [])
+            .map((entry) => PackageScriptInfo.fromJson(entry as Map<String, dynamic>))
+            .toList(),
+      );
+
+  final String workspacePath;
+  final bool hasPackageJson;
+  final String? packageName;
+  final String packageManager;
+  final List<PackageScriptInfo> scripts;
+}
+
+class StartPackageScriptResult {
+  const StartPackageScriptResult({
+    required this.script,
+    required this.command,
+    required this.target,
+    this.runId,
+    this.externalLauncherName,
+  });
+
+  factory StartPackageScriptResult.fromJson(Map<String, dynamic> json) =>
+      StartPackageScriptResult(
+        runId: json['runId'] as String?,
+        script: json['script'] as String? ?? '',
+        command: (json['command'] as List<dynamic>? ?? [])
+            .map((entry) => entry as String)
+            .toList(),
+        target: json['target'] as String? ?? 'embedded',
+        externalLauncherName: json['externalLauncherName'] as String?,
+      );
+
+  final String? runId;
+  final String script;
+  final List<String> command;
+  final String target;
+  final String? externalLauncherName;
+}

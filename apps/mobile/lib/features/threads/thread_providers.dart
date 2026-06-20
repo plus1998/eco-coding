@@ -96,6 +96,18 @@ final workspaceDiffProvider =
   }
 });
 
+final gitStatusProvider =
+    FutureProvider.family<GitWorkingTreeStatus?, String>((ref, workspacePath) async {
+  if (workspacePath.isEmpty) return null;
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return null;
+  try {
+    return await rpc.getGitStatus(workspacePath);
+  } catch (_) {
+    return null;
+  }
+});
+
 class ActivityItem {
   const ActivityItem({
     required this.id,

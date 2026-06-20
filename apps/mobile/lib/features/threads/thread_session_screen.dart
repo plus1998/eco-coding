@@ -18,6 +18,7 @@ import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
 import 'activity_feed.dart';
+import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
@@ -142,6 +143,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final workspaceDiffAsync = workspacePath.isNotEmpty
         ? ref.watch(workspaceDiffProvider(workspacePath))
         : const AsyncValue<WorkspaceDiffResult?>.data(null);
+    final gitStatusAsync = workspacePath.isNotEmpty
+        ? ref.watch(gitStatusProvider(workspacePath))
+        : const AsyncValue<GitWorkingTreeStatus?>.data(null);
+    final gitStatus = gitStatusAsync.valueOrNull;
+    final canPull = gitStatus?.isGitRepository == true &&
+        (gitStatus?.behindCount ?? 0) > 0;
     final isRunning = _isRunning(thread);
     final feedEntries = buildActivityFeed(
       lines: session.activities,
@@ -237,11 +244,43 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             },
           ),
           PopupMenuButton<String>(
-            onSelected: (value) => _handleMenu(value),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'cancel', child: Text('取消运行')),
-              PopupMenuItem(value: 'retry', child: Text('重试')),
-              PopupMenuItem(value: 'refresh', child: Text('刷新待办')),
+            onSelected: (value) => _handleMenu(
+              value,
+              workspacePath: workspacePath,
+              runtimeConfig: runtimeConfig,
+              gitStatus: gitStatus,
+            ),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'todos',
+                child: Text('查看任务列表（进度）'),
+              ),
+              PopupMenuItem(
+                value: 'review',
+                enabled: workspacePath.isNotEmpty,
+                child: const Text('代码审查'),
+              ),
+              PopupMenuItem(
+                value: 'commit',
+                enabled: !isRunning &&
+                    workspacePath.isNotEmpty &&
+                    (gitStatus?.isGitRepository ?? false),
+                child: const Text('提交与推送'),
+              ),
+              PopupMenuItem(
+                value: 'pull',
+                enabled: !isRunning && canPull,
+                child: Text(
+                  canPull
+                      ? '拉取（落后 ${gitStatus!.behindCount}）'
+                      : '拉取',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'scripts',
+                enabled: !isRunning && workspacePath.isNotEmpty,
+                child: const Text('npm scripts'),
+              ),
             ],
           ),
         ],
@@ -311,7 +350,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             onRemoveAttachment: (index) =>
                 setState(() => _attachments.removeAt(index)),
             onSend: () => _sendMessage(runtimeConfig),
-            onStop: () => _handleMenu('cancel'),
+            onStop: () => _stopThread(),
             onRuntimeConfigChanged: (config) {
               ref.read(runtimeConfigProvider.notifier).state = config;
             },
@@ -408,27 +447,148 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     }
   }
 
-  Future<void> _handleMenu(String value) async {
+  Future<void> _stopThread() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
-    final notifier = ref.read(threadSessionProvider(widget.threadId).notifier);
     try {
-      switch (value) {
-        case 'cancel':
-          await rpc.cancelThread(widget.threadId);
-        case 'retry':
-          await rpc.retryThread(widget.threadId);
-        case 'refresh':
-          await notifier.refreshPending();
-      }
+      await rpc.cancelThread(widget.threadId);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
       }
     }
   }
+
+  Future<void> _handleMenu(
+    String value, {
+    required String workspacePath,
+    required ThreadRuntimeConfigInput runtimeConfig,
+    GitWorkingTreeStatus? gitStatus,
+  }) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+
+    try {
+      switch (value) {
+        case 'todos':
+          await showThreadTodoSheet(
+            context: context,
+            ref: ref,
+            threadId: widget.threadId,
+          );
+        case 'review':
+          if (workspacePath.isEmpty) return;
+          await showWorkspaceDiffReviewSheet(
+            context: context,
+            ref: ref,
+            workspacePath: workspacePath,
+          );
+        case 'commit':
+          await _openCommitPushFromMenu(
+            workspacePath: workspacePath,
+            runtimeConfig: runtimeConfig,
+            branch: gitStatus?.branch,
+          );
+        case 'pull':
+          if (workspacePath.isEmpty) return;
+          await _pullChanges(
+            workspacePath: workspacePath,
+            branch: gitStatus?.branch,
+          );
+        case 'scripts':
+          if (workspacePath.isEmpty) return;
+          await showNpmScriptsSheet(
+            context: context,
+            ref: ref,
+            workspacePath: workspacePath,
+          );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    }
+  }
+
+  Future<void> _openCommitPushFromMenu({
+    required String workspacePath,
+    required ThreadRuntimeConfigInput runtimeConfig,
+    String? branch,
+  }) async {
+    if (workspacePath.isEmpty) return;
+    final profileId =
+        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+    if (profileId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在 Composer 设置中选择 Agent Profile')),
+        );
+      }
+      return;
+    }
+
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+
+    final diff = await rpc.getWorkspaceDiff(workspacePath);
+    if (!mounted) return;
+
+    final committed = await showCommitPushSheet(
+      context: context,
+      ref: ref,
+      workspacePath: workspacePath,
+      profileId: profileId,
+      diff: diff,
+      branch: branch,
+    );
+
+    if (committed == true && mounted) {
+      ref.invalidate(gitStatusProvider(workspacePath));
+      ref.invalidate(workspaceDiffProvider(workspacePath));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已提交并推送到远程')),
+      );
+    }
+  }
+
+  Future<void> _pullChanges({
+    required String workspacePath,
+    String? branch,
+  }) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+
+    final result = await rpc.pullChanges(
+      workspacePath: workspacePath,
+      branch: branch,
+    );
+    ref.invalidate(gitStatusProvider(workspacePath));
+    ref.invalidate(workspaceDiffProvider(workspacePath));
+    if (!mounted) return;
+
+    if (result.conflicted) {
+      final files = result.conflictFiles.join(', ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            files.isEmpty ? '拉取产生冲突，请在 Desktop 处理' : '拉取冲突：$files',
+          ),
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.pulled ? '拉取成功' : '当前分支已与远程同步'),
+      ),
+    );
+  }
+
 
   void _showApprovalSheets(ThreadSessionState session) {
     if (!_needsApprovalSheet(session)) return;

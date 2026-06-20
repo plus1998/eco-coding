@@ -134,6 +134,36 @@ class ThreadSummary {
   final ThreadRuntimeConfig? runtimeConfig;
 }
 
+class CoderTodoItem {
+  const CoderTodoItem({
+    required this.id,
+    required this.threadId,
+    required this.title,
+    required this.detail,
+    required this.status,
+    required this.position,
+    required this.updatedAt,
+  });
+
+  factory CoderTodoItem.fromJson(Map<String, dynamic> json) => CoderTodoItem(
+        id: json['id'] as String? ?? '',
+        threadId: json['threadId'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        detail: json['detail'] as String? ?? '',
+        status: json['status'] as String? ?? 'pending',
+        position: (json['position'] as num?)?.toInt() ?? 0,
+        updatedAt: json['updatedAt'] as String? ?? '',
+      );
+
+  final String id;
+  final String threadId;
+  final String title;
+  final String detail;
+  final String status;
+  final int position;
+  final String updatedAt;
+}
+
 class ThreadActivityLine {
   const ThreadActivityLine({
     required this.id,

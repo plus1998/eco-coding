@@ -53,6 +53,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:update-runtime-config", "Update thread runtime config", "write_safe", RPC_INVOKE, [
     objectArg(["threadId", "runtimeConfig"]),
   ]),
+  command("thread:todo-list", "List thread todo progress", "read", RPC_INVOKE, [stringArg()]),
 
   command("bash-approval:get-pending", "Get pending bash approval", "read", RPC_INVOKE, [stringArg()]),
   command("bash-approval:resolve", "Resolve bash approval", "privileged", APPROVAL_DECIDE, [
@@ -69,6 +70,11 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("workspace:get-home-path", "Get home project path", "read", RPC_INVOKE, []),
   command("workspace:open-path", "Open workspace by path", "write_safe", RPC_INVOKE, [stringArg()]),
   command("workspace:inspect", "Inspect workspace", "read", RPC_INVOKE, [stringArg()]),
+  command("workspace:list-package-scripts", "List npm scripts", "read", RPC_INVOKE, [stringArg()]),
+  command("workspace:start-package-script", "Start npm script", "execute", RPC_INVOKE, [
+    objectArg(["workspacePath", "script"]),
+  ]),
+  command("workspace:stop-package-script", "Stop npm script", "execute", RPC_INVOKE, [stringArg()]),
 
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
   command("workflow-settings:get", "Get workflow settings", "read", RPC_INVOKE, []),
@@ -85,6 +91,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     objectArg(["workspacePath", "profileId", "includeUnstaged"]),
   ]),
   command("git:push", "Push commits to remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
+  command("git:pull", "Pull from remote", "execute", RPC_INVOKE, [objectArg(["workspacePath"])]),
 ] as const satisfies readonly RemoteCommandDefinition[];
 
 const REMOTE_COMMANDS_BY_CHANNEL = new Map(

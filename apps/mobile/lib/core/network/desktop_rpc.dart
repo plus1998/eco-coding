@@ -390,4 +390,72 @@ class DesktopRpc {
     );
     return GitPushResult.fromJson(result);
   }
+
+  Future<GitPullResult> pullChanges({
+    required String workspacePath,
+    String? branch,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:pull',
+      [
+        {
+          'workspacePath': workspacePath,
+          if (branch != null && branch.isNotEmpty) 'branch': branch,
+        },
+      ],
+      deadlineMs: 120000,
+    );
+    return GitPullResult.fromJson(result);
+  }
+
+  Future<List<CoderTodoItem>> listThreadTodos(String threadId) async {
+    final result = await _client.invoke<List<dynamic>>(
+      desktopDeviceId,
+      'thread:todo-list',
+      [threadId],
+    );
+    return result
+        .map((entry) => CoderTodoItem.fromJson(entry as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<PackageScriptsListResult> listPackageScripts(String workspacePath) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'workspace:list-package-scripts',
+      [workspacePath],
+    );
+    return PackageScriptsListResult.fromJson(result);
+  }
+
+  Future<StartPackageScriptResult> startPackageScript({
+    required String workspacePath,
+    required String script,
+    String? args,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'workspace:start-package-script',
+      [
+        {
+          'workspacePath': workspacePath,
+          'script': script,
+          if (args != null && args.isNotEmpty) 'args': args,
+          'target': 'embedded',
+        },
+      ],
+      deadlineMs: 120000,
+    );
+    return StartPackageScriptResult.fromJson(result);
+  }
+
+  Future<bool> stopPackageScript(String runId) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'workspace:stop-package-script',
+      [runId],
+    );
+    return result['stopped'] as bool? ?? false;
+  }
 }
