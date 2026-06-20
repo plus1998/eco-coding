@@ -618,10 +618,15 @@ class EcoCenterClient {
           response.statusCode! < 200 ||
           response.statusCode! >= 300) {
         final error = map?['error'];
+        if (error is String && error.isNotEmpty) {
+          throw EcoCenterException(
+            error.toLowerCase().contains('route not found')
+                ? 'Server 版本过旧，缺少扫码连接接口。请重新构建并部署 Center Server（docker compose up -d --build）。'
+                : error,
+          );
+        }
         throw EcoCenterException(
-          error is String && error.isNotEmpty
-              ? error
-              : 'Request failed with HTTP ${response.statusCode}.',
+          'Request failed with HTTP ${response.statusCode}.',
         );
       }
 

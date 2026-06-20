@@ -44,57 +44,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 credentials.when(
-                  data: (creds) => Card(
-                    child: ListTile(
-                      title: Text(creds.userEmail ?? '未登录'),
-                      subtitle: Text(
-                        creds.userDisplayName ?? creds.deviceName ?? '',
-                      ),
-                    ),
-                  ),
+                  data: (creds) {
+                    final signedIn =
+                        creds.hasUserSession || creds.isProvisioned;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Card(
+                          child: ListTile(
+                            title: Text(creds.userEmail ?? '未登录'),
+                            subtitle: Text(
+                              creds.userDisplayName ??
+                                  creds.deviceName ??
+                                  (signedIn ? '' : '请先在 PC 页完成连接'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SwitchListTile(
+                          title: const Text('全局 Plan Mode'),
+                          subtitle: const Text('workflow-settings:save'),
+                          value: _planModeEnabled,
+                          onChanged: (value) async {
+                            setState(() => _planModeEnabled = value);
+                            final rpc = ref.read(desktopRpcProvider);
+                            if (rpc == null) return;
+                            try {
+                              await rpc.saveWorkflowSettings(
+                                WorkflowSettingsSnapshot(
+                                  planModeEnabled: value,
+                                ),
+                              );
+                              ref.invalidate(workflowSettingsProvider);
+                            } catch (error) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(error.toString())),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                        if (signedIn) ...[
+                          const Divider(height: 32),
+                          ListTile(
+                            title: const Text('退出登录'),
+                            leading: const Icon(Icons.logout),
+                            onTap: () async {
+                              final client = ref.read(ecoCenterClientProvider);
+                              await client.clearSession();
+                              ref.invalidate(credentialsProvider);
+                              ref.invalidate(bindingsProvider);
+                              ref.invalidate(presenceProvider);
+                              ref.read(selectedDesktopIdProvider.notifier).state =
+                                  null;
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('已退出登录')),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                   loading: () => const LinearProgressIndicator(),
                   error: (error, _) => Text(error.toString()),
-                ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text('全局 Plan Mode'),
-                  subtitle: const Text('workflow-settings:save'),
-                  value: _planModeEnabled,
-                  onChanged: (value) async {
-                    setState(() => _planModeEnabled = value);
-                    final rpc = ref.read(desktopRpcProvider);
-                    if (rpc == null) return;
-                    try {
-                      await rpc.saveWorkflowSettings(
-                        WorkflowSettingsSnapshot(planModeEnabled: value),
-                      );
-                      ref.invalidate(workflowSettingsProvider);
-                    } catch (error) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(error.toString())),
-                        );
-                      }
-                    }
-                  },
-                ),
-                const Divider(height: 32),
-                ListTile(
-                  title: const Text('退出登录'),
-                  leading: const Icon(Icons.logout),
-                  onTap: () async {
-                    final client = ref.read(ecoCenterClientProvider);
-                    await client.clearSession();
-                    ref.invalidate(credentialsProvider);
-                    ref.invalidate(bindingsProvider);
-                    ref.invalidate(presenceProvider);
-                    ref.read(selectedDesktopIdProvider.notifier).state = null;
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('已退出登录')));
-                    }
-                  },
                 ),
               ],
             ),

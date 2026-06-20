@@ -203,6 +203,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('PC 连接'),
+        leading: _showManualSetup && !overview.readyForThreads
+            ? IconButton(
+                icon: const Icon(Icons.qr_code_scanner),
+                tooltip: '返回扫码',
+                onPressed: actionBusy
+                    ? null
+                    : () => setState(() => _showManualSetup = false),
+              )
+            : null,
         actions: [
           IconButton(
             onPressed: actionBusy ? null : _refreshStatus,
@@ -224,42 +233,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onScan: _openScanner,
             )
           : _showManualSetup
-              ? Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SetupWizardProgress(
-                              current: currentStep,
-                              overview: overview,
-                              onStepTap: _goToStep,
-                            ),
-                            const SizedBox(height: 24),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 200),
-                              child: _buildStepContent(
-                                key: ValueKey(currentStep),
-                                step: currentStep,
-                                overview: overview,
-                                actionBusy: actionBusy,
-                              ),
-                            ),
-                          ],
+              ? SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SetupWizardProgress(
+                        current: currentStep,
+                        overview: overview,
+                        onStepTap: _goToStep,
+                      ),
+                      const SizedBox(height: 20),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: _buildStepContent(
+                          key: ValueKey(currentStep),
+                          step: currentStep,
+                          overview: overview,
+                          actionBusy: actionBusy,
                         ),
                       ),
-                    ),
-                    _WizardNavBar(
-                      showBack: currentStep.index > 0,
-                      showNext: isSetupWizardStepDone(currentStep, overview) &&
-                          currentStep != SetupWizardStep.selectPc,
-                      busy: actionBusy,
-                      onBack: _goBack,
-                      onNext: () => _goNext(overview),
-                    ),
-                  ],
+                      const SizedBox(height: 20),
+                      _WizardNavBar(
+                        showBack: currentStep.index > 0,
+                        showNext: isSetupWizardStepDone(
+                              currentStep,
+                              overview,
+                            ) &&
+                            currentStep != SetupWizardStep.selectPc,
+                        busy: actionBusy,
+                        onBack: _goBack,
+                        onNext: () => _goNext(overview),
+                        inline: true,
+                      ),
+                    ],
+                  ),
                 )
               : _ScanFirstView(
                   busy: actionBusy,
@@ -393,6 +401,7 @@ class _WizardNavBar extends StatelessWidget {
     required this.busy,
     required this.onBack,
     required this.onNext,
+    this.inline = false,
   });
 
   final bool showBack;
@@ -400,10 +409,31 @@ class _WizardNavBar extends StatelessWidget {
   final bool busy;
   final VoidCallback onBack;
   final VoidCallback onNext;
+  final bool inline;
 
   @override
   Widget build(BuildContext context) {
     if (!showBack && !showNext) return const SizedBox.shrink();
+
+    final buttons = Row(
+      children: [
+        if (showBack)
+          OutlinedButton(
+            onPressed: busy ? null : onBack,
+            child: const Text('上一步'),
+          ),
+        const Spacer(),
+        if (showNext)
+          FilledButton(
+            onPressed: busy ? null : onNext,
+            child: const Text('下一步'),
+          ),
+      ],
+    );
+
+    if (inline) {
+      return buttons;
+    }
 
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -413,21 +443,7 @@ class _WizardNavBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Row(
-            children: [
-              if (showBack)
-                OutlinedButton(
-                  onPressed: busy ? null : onBack,
-                  child: const Text('上一步'),
-                ),
-              const Spacer(),
-              if (showNext)
-                FilledButton(
-                  onPressed: busy ? null : onNext,
-                  child: const Text('下一步'),
-                ),
-            ],
-          ),
+          child: buttons,
         ),
       ),
     );

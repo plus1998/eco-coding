@@ -160,7 +160,8 @@ export async function handleEcoHttpRoute(input: {
   store: MongoStore;
 }): Promise<Response> {
   const { request, url, auth, devices, pairing, rpc, store } = input;
-  if (request.method === "POST" && url.pathname === "/v1/auth/register") {
+  const pathname = normalizeHttpPathname(url.pathname);
+  if (request.method === "POST" && pathname === "/v1/auth/register") {
     const body = await readJsonObject(request);
     const user = await auth.registerUser({
       email: requireString(body, "email"),
@@ -170,7 +171,7 @@ export async function handleEcoHttpRoute(input: {
     const tokens = await auth.issueUserTokenBundle(user);
     return json({ user: toPublicUser(user), tokens }, { status: 201 });
   }
-  if (request.method === "GET" && url.pathname === "/v1/me") {
+  if (request.method === "GET" && pathname === "/v1/me") {
     const claims = await requireBearer(request, auth);
     const user = await store.findUserById(claims.userId);
     if (!user) {
@@ -183,7 +184,7 @@ export async function handleEcoHttpRoute(input: {
       capabilities: claims.capabilities,
     });
   }
-  if (request.method === "POST" && url.pathname === "/v1/auth/login") {
+  if (request.method === "POST" && pathname === "/v1/auth/login") {
     const body = await readJsonObject(request);
     const user = await auth.loginUser({
       email: requireString(body, "email"),
@@ -192,17 +193,17 @@ export async function handleEcoHttpRoute(input: {
     const tokens = await auth.issueUserTokenBundle(user);
     return json({ user: toPublicUser(user), tokens });
   }
-  if (request.method === "POST" && url.pathname === "/v1/auth/refresh") {
+  if (request.method === "POST" && pathname === "/v1/auth/refresh") {
     const body = await readJsonObject(request);
     const access = await auth.refreshAccessToken(requireString(body, "refreshToken"));
     return json(access);
   }
-  if (request.method === "POST" && url.pathname === "/v1/auth/logout") {
+  if (request.method === "POST" && pathname === "/v1/auth/logout") {
     const body = await readJsonObject(request);
     await auth.revokeRefreshToken(requireString(body, "refreshToken"));
     return json({ ok: true });
   }
-  if (request.method === "POST" && url.pathname === "/v1/devices/register") {
+  if (request.method === "POST" && pathname === "/v1/devices/register") {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     const body = await readJsonObject(request);
@@ -221,7 +222,7 @@ export async function handleEcoHttpRoute(input: {
       { status: 201 },
     );
   }
-  if (request.method === "GET" && url.pathname === "/v1/devices") {
+  if (request.method === "GET" && pathname === "/v1/devices") {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     const online = new Map(
@@ -246,7 +247,7 @@ export async function handleEcoHttpRoute(input: {
       }),
     });
   }
-  const deviceIdFromPath = matchPath(url.pathname, "/v1/devices/:deviceId")?.deviceId;
+  const deviceIdFromPath = matchPath(pathname, "/v1/devices/:deviceId")?.deviceId;
   if (request.method === "DELETE" && deviceIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
@@ -265,7 +266,7 @@ export async function handleEcoHttpRoute(input: {
     });
     return json({ device: toPublicDevice(disabled) });
   }
-  if (request.method === "POST" && url.pathname === "/v1/devices/token") {
+  if (request.method === "POST" && pathname === "/v1/devices/token") {
     const body = await readJsonObject(request);
     const device = await devices.authenticateDevice({
       deviceId: requireString(body, "deviceId"),
@@ -274,7 +275,7 @@ export async function handleEcoHttpRoute(input: {
     const tokens = await auth.issueDeviceTokenBundle(device);
     return json({ device: toPublicDevice(device), tokens });
   }
-  if (request.method === "POST" && url.pathname === "/v1/pairing") {
+  if (request.method === "POST" && pathname === "/v1/pairing") {
     const claims = await requireDeviceBearer(request, auth);
     if (claims.deviceKind !== "desktop") {
       throw new Error("Only desktop devices can create pairing sessions.");
@@ -292,7 +293,7 @@ export async function handleEcoHttpRoute(input: {
       expiresAt: created.session.expiresAt,
     });
   }
-  if (request.method === "POST" && url.pathname === "/v1/pairing/join") {
+  if (request.method === "POST" && pathname === "/v1/pairing/join") {
     const body = await readJsonObject(request);
     const joined = await pairing.joinPairingSession({
       code: requireString(body, "code"),
@@ -308,8 +309,8 @@ export async function handleEcoHttpRoute(input: {
       desktopDeviceId: joined.desktopDeviceId,
     });
   }
-  const pairingIdFromPath = matchPath(url.pathname, "/v1/pairing/:pairingId")?.pairingId;
-  if (request.method === "GET" && pairingIdFromPath) {
+  const pairingIdFromPath = matchPath(pathname, "/v1/pairing/:pairingId")?.pairingId;
+  if (request.method === "GET" && pairingIdFromPath && pairingIdFromPath !== "join") {
     const claims = await requireBearer(request, auth);
     const session = await pairing.getPairingSession({
       userId: claims.userId,
@@ -323,7 +324,7 @@ export async function handleEcoHttpRoute(input: {
       status: getPairingStatus(session.expiresAt, session.claimedAt),
     });
   }
-  if (request.method === "POST" && url.pathname === "/v1/pairing/claim") {
+  if (request.method === "POST" && pathname === "/v1/pairing/claim") {
     const claims = await requireDeviceBearer(request, auth);
     if (claims.deviceKind !== "mobile") {
       throw new Error("Only mobile devices can claim pairing sessions.");
@@ -336,7 +337,7 @@ export async function handleEcoHttpRoute(input: {
     });
     return json({ binding });
   }
-  if (request.method === "GET" && url.pathname === "/v1/bindings") {
+  if (request.method === "GET" && pathname === "/v1/bindings") {
     const claims = await requireBearer(request, auth);
     return json({
       bindings: (
@@ -346,7 +347,7 @@ export async function handleEcoHttpRoute(input: {
       ).map(toPublicDeviceBinding),
     });
   }
-  const bindingIdFromPath = matchPath(url.pathname, "/v1/bindings/:bindingId")?.bindingId;
+  const bindingIdFromPath = matchPath(pathname, "/v1/bindings/:bindingId")?.bindingId;
   if (request.method === "DELETE" && bindingIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
@@ -369,7 +370,7 @@ export async function handleEcoHttpRoute(input: {
     });
     return json({ binding: toPublicDeviceBinding(binding) });
   }
-  if (request.method === "GET" && url.pathname === "/v1/presence") {
+  if (request.method === "GET" && pathname === "/v1/presence") {
     const claims = await requireBearer(request, auth);
     const online = new Map(
       (await rpc.listOnlineDevices(claims.userId)).map((device) => [device.deviceId, device]),
@@ -380,7 +381,7 @@ export async function handleEcoHttpRoute(input: {
       ),
     });
   }
-  if (request.method === "GET" && url.pathname === "/v1/audit-logs") {
+  if (request.method === "GET" && pathname === "/v1/audit-logs") {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     return json({
@@ -529,6 +530,13 @@ function toPublicDeviceWithPresence(device: DeviceRecord, onlineDevice?: OnlineD
         }
       : {}),
   };
+}
+
+function normalizeHttpPathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
+  }
+  return pathname;
 }
 
 function readBooleanSearchParam(url: URL, key: string): boolean {
