@@ -376,7 +376,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                   ),
                 ),
               ),
-              ...subagentRoles.map((role) {
+              ...configuredOrchestrationSubagentRoles(profile).map((role) {
                 final enabled = runtimeConfig.subagentEnabled[role] ?? false;
                 final isExplore = role == 'explore';
                 final toggleable = isSubagentToggleable(profile, role);

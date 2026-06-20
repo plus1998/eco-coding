@@ -382,6 +382,7 @@ export function CenterServerSettingsPanel({
                 const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
                 const online = mobile?.online ?? false;
                 const mobileLabel = mobile?.name ?? shortenDeviceId(binding.mobileDeviceId);
+                const lastSeenAt = mobile?.lastSeenAt;
                 const revoking = revokingBindingId === binding.id;
                 return (
                   <li key={binding.id} className="mcp-server-row center-server-row center-server-bound-mobile-row">
@@ -396,6 +397,11 @@ export function CenterServerSettingsPanel({
                       <span className="center-server-bound-mobile-meta">
                         绑定于 {formatLocalTime(binding.createdAt)}
                       </span>
+                      {lastSeenAt && (
+                        <span className="center-server-bound-mobile-meta">
+                          最近使用：{formatLocalTime(lastSeenAt)}
+                        </span>
+                      )}
                     </div>
                     <div className="mcp-server-actions">
                       <button

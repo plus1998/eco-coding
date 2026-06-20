@@ -15,6 +15,7 @@ import '../approvals/approval_sheets.dart';
 import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
+import 'activity_feed.dart';
 import 'thread_providers.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
@@ -56,16 +57,26 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   }
 
   String? _approvalKey(ThreadSessionState session) {
-    if (session.pendingPlan != null) {
+    final thread = session.thread;
+    if (thread == null) return null;
+    if (session.pendingPlan != null &&
+        thread.status == 'awaiting_plan' &&
+        session.pendingPlan!.threadId == thread.id) {
       return 'plan:${session.pendingPlan!.threadId}';
     }
-    if (session.pendingBash != null) {
+    if (session.pendingBash != null &&
+        session.pendingBash!.threadId == thread.id) {
       return 'bash:${session.pendingBash!.toolUseId}';
     }
-    if (session.pendingClarification != null) {
+    if (session.pendingClarification != null &&
+        session.pendingClarification!.threadId == thread.id) {
       return 'clarification:${session.pendingClarification!.toolUseId}';
     }
     return null;
+  }
+
+  bool _needsApprovalSheet(ThreadSessionState session) {
+    return _approvalKey(session) != null;
   }
 
   bool _isRunning(ThreadSummary? thread) {
@@ -113,15 +124,36 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         ? ref.watch(workspaceDiffProvider(workspacePath))
         : const AsyncValue<WorkspaceDiffResult?>.data(null);
     final isRunning = _isRunning(thread);
+    final feedEntries = buildActivityFeed(
+      lines: session.activities,
+      threadPrompt: thread?.prompt,
+      threadId: widget.threadId,
+    );
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
-      final key = _approvalKey(next);
-      if (key != null && key != _shownApprovalKey) {
-        _shownApprovalKey = key;
-        _showApprovalSheets(next);
+      if (!_needsApprovalSheet(next)) {
+        _shownApprovalKey = null;
+      } else {
+        final key = _approvalKey(next);
+        if (key != null && key != _shownApprovalKey) {
+          _shownApprovalKey = key;
+          _showApprovalSheets(next);
+        }
       }
-      if (previous?.activities.length != next.activities.length) {
+      final previousFeed = previous == null
+          ? 0
+          : buildActivityFeed(
+              lines: previous.activities,
+              threadPrompt: previous.thread?.prompt,
+              threadId: widget.threadId,
+            ).length;
+      final nextFeed = buildActivityFeed(
+        lines: next.activities,
+        threadPrompt: next.thread?.prompt,
+        threadId: widget.threadId,
+      ).length;
+      if (previousFeed != nextFeed) {
         _scrollToBottom();
       }
     });
@@ -205,20 +237,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
                               ),
                             ),
                           )
-                        : ListView.builder(
-                            controller: _scrollController,
-                            padding:
-                                const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                            itemCount: session.activities.length +
-                                (isRunning ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (isRunning &&
-                                  index == session.activities.length) {
-                                return const _ThinkingIndicator();
-                              }
-                              final item = session.activities[index];
-                              return _ActivityBubble(item: item);
-                            },
+                        : Column(
+                            children: [
+                              Expanded(
+                                child: ActivityFeedList(
+                                  entries: feedEntries,
+                                  scrollController: _scrollController,
+                                ),
+                              ),
+                              if (isRunning) const _ThinkingIndicator(),
+                            ],
                           ),
           ),
           if (session.followUps.isNotEmpty)
@@ -367,7 +395,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   }
 
   void _showApprovalSheets(ThreadSessionState session) {
-    if (session.pendingPlan != null) {
+    if (!_needsApprovalSheet(session)) return;
+    final thread = session.thread;
+    if (session.pendingPlan != null &&
+        thread?.status == 'awaiting_plan' &&
+        session.pendingPlan!.threadId == thread!.id) {
       showPlanApprovalSheet(
         context: context,
         plan: session.pendingPlan!,
@@ -378,7 +410,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             .read(threadSessionProvider(widget.threadId).notifier)
             .dismissPlan(),
       );
-    } else if (session.pendingBash != null) {
+    } else if (session.pendingBash != null &&
+        session.pendingBash!.threadId == thread?.id) {
       showBashApprovalSheet(
         context: context,
         request: session.pendingBash!,
@@ -386,7 +419,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             .read(threadSessionProvider(widget.threadId).notifier)
             .resolveBash(session.pendingBash!.toolUseId, decision),
       );
-    } else if (session.pendingClarification != null) {
+    } else if (session.pendingClarification != null &&
+        session.pendingClarification!.threadId == thread?.id) {
       showClarificationSheet(
         context: context,
         request: session.pendingClarification!,
@@ -413,40 +447,6 @@ class _ThinkingIndicator extends StatelessWidget {
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: ecoThemeExtras(context).textMuted,
             ),
-      ),
-    );
-  }
-}
-
-class _ActivityBubble extends StatelessWidget {
-  const _ActivityBubble({required this.item});
-
-  final ActivityItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final isUser = item.role == 'user';
-    final eco = ecoThemeExtras(context);
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.88,
-        ),
-        decoration: BoxDecoration(
-          color: isUser ? eco.userBubble : Colors.transparent,
-          borderRadius: BorderRadius.circular(isUser ? 16 : 4),
-          border: isUser ? Border.all(color: eco.borderSubtle) : null,
-        ),
-        child: Text(
-          item.message,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                height: 1.45,
-                color: isUser ? EcoColors.textPrimary : EcoColors.textHeading,
-              ),
-        ),
       ),
     );
   }

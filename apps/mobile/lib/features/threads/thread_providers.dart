@@ -180,9 +180,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
     try {
       final lines = await rpc.activityList(threadId);
-      final plan = await rpc.getPendingPlan(threadId);
-      final bash = await rpc.getPendingBashApproval(threadId);
-      final clarification = await rpc.getPendingClarification(threadId);
       final followUps = await rpc.followUpList(threadId);
       final threads = await rpc.listThreads();
       ThreadSummary? thread;
@@ -192,6 +189,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           break;
         }
       }
+
+      final awaitingPlan = thread?.status == 'awaiting_plan';
+      final plan =
+          awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
+      final bash = await rpc.getPendingBashApproval(threadId);
+      final clarification = await rpc.getPendingClarification(threadId);
 
       state = ThreadSessionState(
         activities: lines
@@ -277,17 +280,18 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       }
     }
 
-    state = state.copyWith(
-      activities: activities,
-      pendingPlan: live.plan,
-      pendingBash: live.bashApproval,
-      pendingClarification: live.clarification,
-    );
+    state = state.copyWith(activities: activities);
 
-    if (event.kind == 'thread.plan' && live.type == 'thread.awaiting_plan') {
-      ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
-        if (plan != null) state = state.copyWith(pendingPlan: plan);
-      });
+    if (event.kind == 'thread.plan') {
+      if (live.type == 'thread.awaiting_plan') {
+        ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
+          if (plan != null && state.thread?.status == 'awaiting_plan') {
+            state = state.copyWith(pendingPlan: plan);
+          }
+        });
+      } else {
+        state = state.copyWith(clearPlan: true);
+      }
     }
     if (event.kind == 'thread.bash_approval') {
       ref.read(desktopRpcProvider)?.getPendingBashApproval(threadId).then((bash) {
@@ -306,13 +310,37 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
     if (event.kind.startsWith('thread.')) {
       ref.invalidate(threadListProvider);
+      ref.read(threadListProvider.future).then((threads) {
+        ThreadSummary? thread;
+        for (final candidate in threads) {
+          if (candidate.id == threadId) {
+            thread = candidate;
+            break;
+          }
+        }
+        if (thread == null) return;
+        if (thread.status != 'awaiting_plan' && state.pendingPlan != null) {
+          state = state.copyWith(clearPlan: true, thread: thread);
+          return;
+        }
+        state = state.copyWith(thread: thread);
+      });
     }
   }
 
   Future<void> refreshPending() async {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) return;
-    final plan = await rpc.getPendingPlan(threadId);
+    final threads = await rpc.listThreads();
+    ThreadSummary? thread;
+    for (final candidate in threads) {
+      if (candidate.id == threadId) {
+        thread = candidate;
+        break;
+      }
+    }
+    final awaitingPlan = thread?.status == 'awaiting_plan';
+    final plan = awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
     final bash = await rpc.getPendingBashApproval(threadId);
     final clarification = await rpc.getPendingClarification(threadId);
     final followUps = await rpc.followUpList(threadId);
@@ -324,6 +352,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       pendingClarification: clarification,
       clearClarification: clarification == null,
       followUps: followUps,
+      thread: thread ?? state.thread,
     );
   }
 

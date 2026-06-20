@@ -106,8 +106,18 @@ int countEnabledSubagents(Map<String, bool> subagentEnabled) {
 }
 
 int countConfiguredSubagents(OrchestrationProfile? profile) {
-  return subagentRoles
+  return configuredOrchestrationSubagentRoles(profile)
       .where((role) => role != 'explore')
-      .where((role) => isSubagentConfiguredInProfile(profile, role))
       .length;
+}
+
+/// Sub-agent roles shown in orchestration UI (aligned with desktop profile routes).
+List<String> configuredOrchestrationSubagentRoles(
+  OrchestrationProfile? profile,
+) {
+  return subagentRoles
+      .where(
+        (role) => role == 'explore' || isSubagentConfiguredInProfile(profile, role),
+      )
+      .toList(growable: false);
 }
