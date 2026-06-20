@@ -62,12 +62,13 @@ class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
       } catch (_) {
         inspected = currentWorkspace?.path == path ? currentWorkspace : null;
       }
+      final normalizedPath = normalizeProjectPath(path);
       projects.add(
         buildEcoProject(
-          path: path,
+          path: normalizedPath,
           homeProjectPath: homePath,
           inspected: inspected,
-          threadCount: grouped[path]?.length ?? 0,
+          threadCount: grouped[normalizedPath]?.length ?? 0,
         ),
       );
     }

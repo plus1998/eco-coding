@@ -59,7 +59,9 @@ class ThreadsScreen extends ConsumerWidget {
                     itemCount: projects.length,
                     itemBuilder: (context, index) {
                       final project = projects[index];
-                      final threads = threadsByProject[project.path] ?? const [];
+                      final threads = threadsByProject[
+                              normalizeProjectPath(project.path)] ??
+                          const [];
                       final isSelected = selectedPath == project.path;
                       final isCollapsed = collapsedPaths.contains(project.path);
 
@@ -185,7 +187,7 @@ class _OpenProjectSheetState extends State<_OpenProjectSheet> {
   }
 }
 
-class _ProjectSection extends StatelessWidget {
+class _ProjectSection extends StatefulWidget {
   const _ProjectSection({
     required this.project,
     required this.threads,
@@ -205,8 +207,29 @@ class _ProjectSection extends StatelessWidget {
   final void Function(ThreadSummary thread) onThreadTap;
 
   @override
+  State<_ProjectSection> createState() => _ProjectSectionState();
+}
+
+class _ProjectSectionState extends State<_ProjectSection> {
+  var _threadsExpanded = false;
+
+  @override
+  void didUpdateWidget(covariant _ProjectSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.project.path != widget.project.path ||
+        oldWidget.threads.length <= projectVisibleThreadLimit) {
+      _threadsExpanded = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
+    final project = widget.project;
+    final threads = widget.threads;
+    final isSelected = widget.isSelected;
+    final isCollapsed = widget.isCollapsed;
+    final slice = sliceProjectThreads(threads, expanded: _threadsExpanded);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -214,7 +237,7 @@ class _ProjectSection extends StatelessWidget {
         Material(
           color: isSelected ? EcoColors.navActive : Colors.transparent,
           child: InkWell(
-            onTap: onHeaderTap,
+            onTap: widget.onHeaderTap,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
@@ -316,7 +339,7 @@ class _ProjectSection extends StatelessWidget {
                             ? EcoColors.textPrimary
                             : eco.textMuted,
                       ),
-                      onPressed: onNewThread,
+                      onPressed: widget.onNewThread,
                     ),
                   ],
                 ),
@@ -325,10 +348,29 @@ class _ProjectSection extends StatelessWidget {
           ),
         ),
         if (!isCollapsed)
-          ...threads.map(
+          ...slice.visible.map(
             (thread) => _ThreadTile(
               thread: thread,
-              onTap: () => onThreadTap(thread),
+              onTap: () => widget.onThreadTap(thread),
+            ),
+          ),
+        if (!isCollapsed && slice.hasMore)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(44, 4, 16, 8),
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                alignment: Alignment.centerLeft,
+              ),
+              onPressed: () => setState(() => _threadsExpanded = true),
+              child: Text(
+                '展开显示',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: EcoColors.accentText,
+                    ),
+              ),
             ),
           ),
         if (!isCollapsed && threads.isEmpty)

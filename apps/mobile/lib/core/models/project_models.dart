@@ -94,13 +94,42 @@ Map<String, List<ThreadSummary>> groupThreadsByProject(
 ) {
   final grouped = <String, List<ThreadSummary>>{};
   for (final thread in threads) {
-    final bucket = grouped.putIfAbsent(thread.workspacePath, () => []);
+    if (thread.workspacePath.trim().isEmpty) continue;
+    final key = normalizeProjectPath(thread.workspacePath);
+    final bucket = grouped.putIfAbsent(key, () => []);
     bucket.add(thread);
   }
   for (final entry in grouped.entries) {
-    entry.value.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    entry.value.sort(compareThreadsByActivityTime);
   }
   return grouped;
+}
+
+const projectVisibleThreadLimit = 5;
+
+int threadActivityTimeMs(ThreadSummary thread) {
+  final iso =
+      thread.updatedAt.trim().isNotEmpty ? thread.updatedAt : thread.createdAt;
+  return DateTime.tryParse(iso)?.millisecondsSinceEpoch ?? 0;
+}
+
+int compareThreadsByActivityTime(ThreadSummary a, ThreadSummary b) {
+  final delta = threadActivityTimeMs(b) - threadActivityTimeMs(a);
+  if (delta != 0) return delta;
+  return b.createdAt.compareTo(a.createdAt);
+}
+
+({List<ThreadSummary> visible, bool hasMore}) sliceProjectThreads(
+  List<ThreadSummary> threads, {
+  required bool expanded,
+}) {
+  if (expanded || threads.length <= projectVisibleThreadLimit) {
+    return (visible: threads, hasMore: false);
+  }
+  return (
+    visible: threads.take(projectVisibleThreadLimit).toList(),
+    hasMore: true,
+  );
 }
 
 String _basename(String path) {

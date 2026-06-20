@@ -143,5 +143,75 @@ void main() {
       expect(grouped[repoPath]?.length, 2);
       expect(grouped[repoPath]?.first.id, 'new');
     });
+
+    test('normalizes trailing slashes when grouping', () {
+      final grouped = groupThreadsByProject([
+        ThreadSummary(
+          id: 't1',
+          title: '',
+          prompt: '',
+          workspacePath: '$repoPath/',
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          message: '',
+        ),
+      ]);
+
+      expect(grouped[repoPath]?.single.id, 't1');
+    });
+
+    test('falls back to createdAt when updatedAt is empty', () {
+      final grouped = groupThreadsByProject([
+        ThreadSummary(
+          id: 'older',
+          title: '',
+          prompt: '',
+          workspacePath: repoPath,
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '',
+          message: '',
+        ),
+        ThreadSummary(
+          id: 'newer',
+          title: '',
+          prompt: '',
+          workspacePath: repoPath,
+          status: 'idle',
+          createdAt: '2026-01-05T00:00:00.000Z',
+          updatedAt: '',
+          message: '',
+        ),
+      ]);
+
+      expect(grouped[repoPath]?.first.id, 'newer');
+    });
+  });
+
+  group('sliceProjectThreads', () {
+    test('shows at most five threads until expanded', () {
+      final threads = List.generate(
+        7,
+        (index) => ThreadSummary(
+          id: 't$index',
+          title: '',
+          prompt: '',
+          workspacePath: repoPath,
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-0${index + 1}T00:00:00.000Z',
+          message: '',
+        ),
+      );
+
+      final collapsed = sliceProjectThreads(threads, expanded: false);
+      expect(collapsed.visible.length, projectVisibleThreadLimit);
+      expect(collapsed.hasMore, isTrue);
+
+      final expanded = sliceProjectThreads(threads, expanded: true);
+      expect(expanded.visible.length, 7);
+      expect(expanded.hasMore, isFalse);
+    });
   });
 }
