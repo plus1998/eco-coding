@@ -1,9 +1,11 @@
-import { ChevronLeft, Link2, Plus, QrCode, RefreshCw, Settings2 } from "lucide-react";
-import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
+import { ChevronLeft, Link2, Plus, QrCode, RefreshCw, Settings2, Smartphone, Unlink } from "lucide-react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import type {
   CenterServerConnectionStatus,
   CenterServerCreatePairingResult,
+  CenterServerDeviceBindingView,
+  CenterServerDevicePresenceView,
   CenterServerSettingsInput,
   CenterServerSettingsSnapshot,
   CenterServerSettingsView,
@@ -20,6 +22,9 @@ interface CenterServerSettingsPanelProps {
   onSignUp: (request: CenterServerSignUpRequest) => Promise<CenterServerSettingsSnapshot>;
   onSignIn: (request: CenterServerSignInRequest) => Promise<CenterServerSettingsSnapshot>;
   onCreatePairing: () => Promise<CenterServerCreatePairingResult>;
+  onListBindings: () => Promise<CenterServerDeviceBindingView[]>;
+  onListPresence: () => Promise<CenterServerDevicePresenceView[]>;
+  onRevokeBinding: (bindingId: string) => Promise<CenterServerDeviceBindingView>;
   onConnect: () => Promise<CenterServerSettingsSnapshot>;
   onDisconnect: () => Promise<CenterServerSettingsSnapshot>;
 }
@@ -35,6 +40,9 @@ export function CenterServerSettingsPanel({
   onSignUp,
   onSignIn,
   onCreatePairing,
+  onListBindings,
+  onListPresence,
+  onRevokeBinding,
   onDisconnect,
 }: CenterServerSettingsPanelProps) {
   const [view, setView] = useState<PanelView>("list");
@@ -44,6 +52,11 @@ export function CenterServerSettingsPanel({
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [pairing, setPairing] = useState<CenterServerCreatePairingResult>();
+  const [bindings, setBindings] = useState<CenterServerDeviceBindingView[]>([]);
+  const [presence, setPresence] = useState<CenterServerDevicePresenceView[]>([]);
+  const [bindingsLoading, setBindingsLoading] = useState(false);
+  const [bindingsError, setBindingsError] = useState<string>();
+  const [revokingBindingId, setRevokingBindingId] = useState<string>();
   const [testing, setTesting] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
@@ -52,15 +65,49 @@ export function CenterServerSettingsPanel({
 
   const registered = snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken;
   const hasUrl = form.serverUrl.trim().length > 0;
-  const actionBusy = busy || testing || pairingBusy || connectionBusy;
+  const actionBusy = busy || testing || pairingBusy || connectionBusy || bindingsLoading;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
   const deviceLabel = snapshot.settings.deviceName || "远程服务";
+  const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
+
+  const refreshBindings = useCallback(async () => {
+    if (!registered || !isLive) {
+      setBindings([]);
+      setPresence([]);
+      return;
+    }
+    setBindingsLoading(true);
+    setBindingsError(undefined);
+    try {
+      const [nextBindings, nextPresence] = await Promise.all([onListBindings(), onListPresence()]);
+      setBindings(nextBindings);
+      setPresence(nextPresence);
+    } catch (caught) {
+      setBindingsError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBindingsLoading(false);
+    }
+  }, [isLive, onListBindings, onListPresence, registered]);
 
   useEffect(() => {
     setForm(viewToInput(snapshot.settings));
   }, [snapshot.settings]);
+
+  useEffect(() => {
+    void refreshBindings();
+  }, [refreshBindings]);
+
+  useEffect(() => {
+    if (!pairing || !isLive) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshBindings();
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [isLive, pairing, refreshBindings]);
 
   async function handleTestConnection() {
     setError(undefined);
@@ -177,6 +224,27 @@ export function CenterServerSettingsPanel({
     }
   }
 
+  async function handleRevokeBinding(binding: CenterServerDeviceBindingView) {
+    const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
+    const mobileLabel = mobile?.name ?? shortenDeviceId(binding.mobileDeviceId);
+    const confirmed = window.confirm(
+      `确定解绑「${mobileLabel}」？\n解绑后该手机将无法远程操控本机，需重新扫码配对。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setBindingsError(undefined);
+    setRevokingBindingId(binding.id);
+    try {
+      await onRevokeBinding(binding.id);
+      await refreshBindings();
+    } catch (caught) {
+      setBindingsError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setRevokingBindingId(undefined);
+    }
+  }
+
   function openSetup() {
     setError(undefined);
     setServerReachable(Boolean(snapshot.settings.serverUrl.trim()));
@@ -286,6 +354,67 @@ export function CenterServerSettingsPanel({
           </ul>
         )}
       </section>
+
+      {registered && isLive && (
+        <section className="mcp-list-section center-server-bound-mobile-section">
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">已绑定手机</span>
+            <button
+              type="button"
+              className="mcp-back-button center-server-test-button"
+              disabled={actionBusy}
+              onClick={() => void refreshBindings()}
+            >
+              <RefreshCw size={16} className={bindingsLoading ? "model-refresh-spin" : undefined} />
+              刷新
+            </button>
+          </div>
+
+          {bindingsError ? <p className="settings-form-error mcp-list-error">{bindingsError}</p> : null}
+
+          {bindingsLoading && activeBindings.length === 0 ? (
+            <p className="mcp-list-empty">加载绑定信息…</p>
+          ) : activeBindings.length === 0 ? (
+            <p className="mcp-list-empty">暂无绑定手机。生成配对码后，手机 Eco App 扫码即可绑定。</p>
+          ) : (
+            <ul className="mcp-server-list">
+              {activeBindings.map((binding) => {
+                const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
+                const online = mobile?.online ?? false;
+                const mobileLabel = mobile?.name ?? shortenDeviceId(binding.mobileDeviceId);
+                const revoking = revokingBindingId === binding.id;
+                return (
+                  <li key={binding.id} className="mcp-server-row center-server-row center-server-bound-mobile-row">
+                    <div className="center-server-row-main">
+                      <span className="mcp-server-name center-server-bound-mobile-name">
+                        <Smartphone size={16} aria-hidden />
+                        {mobileLabel}
+                      </span>
+                      <span className={`center-server-status is-${online ? "connected" : "disconnected"}`}>
+                        {online ? "在线 · 可远程操控本机" : "离线 · 需手机连接 Server"}
+                      </span>
+                      <span className="center-server-bound-mobile-meta">
+                        绑定于 {formatLocalTime(binding.createdAt)}
+                      </span>
+                    </div>
+                    <div className="mcp-server-actions">
+                      <button
+                        type="button"
+                        className="mcp-back-button center-server-unbind-button"
+                        disabled={actionBusy || revoking}
+                        onClick={() => void handleRevokeBinding(binding)}
+                      >
+                        <Unlink size={16} />
+                        {revoking ? "解绑中…" : "解绑"}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
 
       {registered && isLive && (
         <section className="mcp-list-section center-server-pairing-section">
@@ -598,4 +727,12 @@ function formatLocalTime(iso: string): string {
     return iso;
   }
   return new Date(parsed).toLocaleString();
+}
+
+function shortenDeviceId(deviceId: string): string {
+  const trimmed = deviceId.trim();
+  if (trimmed.length <= 12) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
 }

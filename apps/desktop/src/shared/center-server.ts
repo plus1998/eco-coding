@@ -110,6 +110,33 @@ export interface CenterServerTestConnectionResult {
   error?: string;
 }
 
+export interface CenterServerDeviceBindingView {
+  id: string;
+  userId: string;
+  desktopDeviceId: string;
+  mobileDeviceId: string;
+  capabilities: string[];
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export interface CenterServerDevicePresenceView extends CenterServerDeviceView {
+  online?: boolean;
+  connectedAt?: string;
+}
+
+export interface CenterServerListBindingsResult {
+  bindings: CenterServerDeviceBindingView[];
+}
+
+export interface CenterServerListPresenceResult {
+  devices: CenterServerDevicePresenceView[];
+}
+
+export interface CenterServerRevokeBindingResult {
+  binding: CenterServerDeviceBindingView;
+}
+
 export function validateCenterServerSettingsInput(input: CenterServerSettingsInput): void {
   if (input.enabled && !input.serverUrl.trim()) {
     throw new Error("Center server URL is required when enabled.");

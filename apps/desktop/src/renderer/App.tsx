@@ -2894,6 +2894,27 @@ function App() {
     return window.eco.createCenterServerPairing();
   }
 
+  async function listCenterServerBindings() {
+    if (!window.eco) {
+      return [];
+    }
+    return window.eco.listCenterServerBindings();
+  }
+
+  async function listCenterServerPresence() {
+    if (!window.eco) {
+      return [];
+    }
+    return window.eco.listCenterServerPresence();
+  }
+
+  async function revokeCenterServerBinding(bindingId: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.revokeCenterServerBinding(bindingId);
+  }
+
   async function connectCenterServer() {
     if (!window.eco) {
       return emptyCenterServerSettings;
@@ -4043,6 +4064,9 @@ function App() {
                 onSignUp={signUpCenterServer}
                 onSignIn={signInCenterServer}
                 onCreatePairing={createCenterServerPairing}
+                onListBindings={listCenterServerBindings}
+                onListPresence={listCenterServerPresence}
+                onRevokeBinding={revokeCenterServerBinding}
                 onConnect={connectCenterServer}
                 onDisconnect={disconnectCenterServer}
               />

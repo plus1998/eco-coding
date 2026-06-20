@@ -350,7 +350,11 @@ export async function handleEcoHttpRoute(input: {
   const bindingIdFromPath = matchPath(pathname, "/v1/bindings/:bindingId")?.bindingId;
   if (request.method === "DELETE" && bindingIdFromPath) {
     const claims = await requireBearer(request, auth);
-    assertCapability(claims, "device:admin");
+    const existingBinding = await store.findBindingById(claims.userId, bindingIdFromPath);
+    if (!existingBinding) {
+      throw new Error("Binding was not found.");
+    }
+    assertCanRevokeBinding(claims, existingBinding);
     const binding = await devices.revokeBinding({
       userId: claims.userId,
       bindingId: bindingIdFromPath,
@@ -479,6 +483,20 @@ function assertCapability(
   if (!claims.capabilities.includes(capability)) {
     throw new Error(`Missing capability ${capability}.`);
   }
+}
+
+function assertCanRevokeBinding(claims: AccessTokenClaims, binding: DeviceBindingRecord): void {
+  if (claims.capabilities.includes("device:admin")) {
+    return;
+  }
+  if (
+    claims.subjectKind === "device" &&
+    claims.deviceKind === "desktop" &&
+    binding.desktopDeviceId === claims.deviceId
+  ) {
+    return;
+  }
+  throw new Error("Missing capability device:admin.");
 }
 
 async function listBindingsVisibleToClaims(

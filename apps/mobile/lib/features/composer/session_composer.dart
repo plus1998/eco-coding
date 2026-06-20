@@ -114,11 +114,13 @@ class SessionComposer extends ConsumerWidget {
                     padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
                     child: Row(
                       children: [
-                        ComposerProfileControl(
-                          runtimeConfig: runtimeConfig,
-                          threadId: threadId,
-                          canEdit: canEditConfig,
-                          onChanged: onRuntimeConfigChanged,
+                        Expanded(
+                          child: ComposerProfileControl(
+                            runtimeConfig: runtimeConfig,
+                            threadId: threadId,
+                            canEdit: canEditConfig,
+                            onChanged: onRuntimeConfigChanged,
+                          ),
                         ),
                         Container(
                           width: 1,
@@ -126,11 +128,13 @@ class SessionComposer extends ConsumerWidget {
                           margin: const EdgeInsets.symmetric(horizontal: 4),
                           color: eco.borderSubtle,
                         ),
-                        ComposerOrchestrationControl(
-                          runtimeConfig: runtimeConfig,
-                          threadId: threadId,
-                          canEdit: canEditConfig,
-                          onChanged: onRuntimeConfigChanged,
+                        Expanded(
+                          child: ComposerOrchestrationControl(
+                            runtimeConfig: runtimeConfig,
+                            threadId: threadId,
+                            canEdit: canEditConfig,
+                            onChanged: onRuntimeConfigChanged,
+                          ),
                         ),
                       ],
                     ),

@@ -367,6 +367,123 @@ test("center server client retries connection after failure", async () => {
   client.dispose();
 });
 
+test("center server client lists bindings, presence, and revokes bindings", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+
+  const fetchCalls: Array<{ url: string; method: string; authorization?: string }> = [];
+  const fetchImpl = async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const authorization = new Headers(init?.headers).get("authorization") ?? undefined;
+    fetchCalls.push({ url, method, authorization });
+
+    if (url.endsWith("/v1/bindings") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          bindings: [
+            {
+              id: "bind_1",
+              userId: "user_1",
+              desktopDeviceId: "dev_1",
+              mobileDeviceId: "dev_mobile_1",
+              capabilities: ["events:read", "rpc:invoke"],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              revokedAt: null,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.endsWith("/v1/presence") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          devices: [
+            {
+              id: "dev_mobile_1",
+              userId: "user_1",
+              kind: "mobile",
+              name: "Eco Mobile",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              lastSeenAt: "2026-01-02T00:00:00.000Z",
+              disabledAt: null,
+              online: true,
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.endsWith("/v1/bindings/bind_1") && method === "DELETE") {
+      return new Response(
+        JSON.stringify({
+          binding: {
+            id: "bind_1",
+            userId: "user_1",
+            desktopDeviceId: "dev_1",
+            mobileDeviceId: "dev_mobile_1",
+            capabilities: ["events:read", "rpc:invoke"],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            revokedAt: "2026-01-03T00:00:00.000Z",
+          },
+        }),
+        { status: 200 },
+      );
+    }
+    throw new Error(`Unexpected fetch: ${method} ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    reconnectDelayMs: 60_000,
+  });
+
+  const bindings = await client.listBindings();
+  expect(bindings).toHaveLength(1);
+  expect(bindings[0]?.mobileDeviceId).toBe("dev_mobile_1");
+
+  const presence = await client.listPresence();
+  expect(presence).toHaveLength(1);
+  expect(presence[0]?.online).toBe(true);
+
+  const revoked = await client.revokeBinding("bind_1");
+  expect(revoked.revokedAt).toBe("2026-01-03T00:00:00.000Z");
+
+  expect(fetchCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        url: expect.stringContaining("/v1/bindings"),
+        method: "GET",
+        authorization: "Bearer fresh_access",
+      }),
+      expect.objectContaining({
+        url: expect.stringContaining("/v1/presence"),
+        method: "GET",
+        authorization: "Bearer fresh_access",
+      }),
+      expect.objectContaining({
+        url: expect.stringContaining("/v1/bindings/bind_1"),
+        method: "DELETE",
+        authorization: "Bearer fresh_access",
+      }),
+    ]),
+  );
+
+  client.dispose();
+});
+
 function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {
   let settings: CenterServerSettingsSecret = {
     enabled: false,

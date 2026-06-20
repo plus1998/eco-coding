@@ -4,6 +4,8 @@ import {
   type CenterServerAccountView,
   type CenterServerConnectionStatus,
   type CenterServerCreatePairingResult,
+  type CenterServerDeviceBindingView,
+  type CenterServerDevicePresenceView,
   type CenterServerDeviceView,
   type CenterServerRegisterDesktopRequest,
   type CenterServerRegisterDesktopResult,
@@ -285,6 +287,42 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         bootstrapToken: response.bootstrapToken,
       }),
     };
+  }
+
+  async listBindings(): Promise<CenterServerDeviceBindingView[]> {
+    const settings = this.store.getSettingsWithSecrets();
+    const accessToken = await this.ensureAccessToken(settings);
+    const response = await this.requestJson<{ bindings: CenterServerDeviceBindingView[] }>({
+      serverUrl: settings.serverUrl,
+      path: "/v1/bindings",
+      method: "GET",
+      bearerToken: accessToken,
+    });
+    return response.bindings;
+  }
+
+  async listPresence(): Promise<CenterServerDevicePresenceView[]> {
+    const settings = this.store.getSettingsWithSecrets();
+    const accessToken = await this.ensureAccessToken(settings);
+    const response = await this.requestJson<{ devices: CenterServerDevicePresenceView[] }>({
+      serverUrl: settings.serverUrl,
+      path: "/v1/presence",
+      method: "GET",
+      bearerToken: accessToken,
+    });
+    return response.devices;
+  }
+
+  async revokeBinding(bindingId: string): Promise<CenterServerDeviceBindingView> {
+    const settings = this.store.getSettingsWithSecrets();
+    const accessToken = await this.ensureAccessToken(settings);
+    const response = await this.requestJson<{ binding: CenterServerDeviceBindingView }>({
+      serverUrl: settings.serverUrl,
+      path: `/v1/bindings/${encodeURIComponent(bindingId)}`,
+      method: "DELETE",
+      bearerToken: accessToken,
+    });
+    return response.binding;
   }
 
   async testConnection(

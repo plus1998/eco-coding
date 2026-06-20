@@ -15,6 +15,8 @@ import {
   type CandidateModelView,
   type CenterServerAccountAuthResult,
   type CenterServerCreatePairingResult,
+  type CenterServerDeviceBindingView,
+  type CenterServerDevicePresenceView,
   type CenterServerRegisterDesktopRequest,
   type CenterServerRegisterDesktopResult,
   type CenterServerSettingsInput,
@@ -372,6 +374,15 @@ const api = {
   },
   createCenterServerPairing(): Promise<CenterServerCreatePairingResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerCreatePairing);
+  },
+  listCenterServerBindings(): Promise<CenterServerDeviceBindingView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerListBindings);
+  },
+  listCenterServerPresence(): Promise<CenterServerDevicePresenceView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerListPresence);
+  },
+  revokeCenterServerBinding(bindingId: string): Promise<CenterServerDeviceBindingView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerRevokeBinding, bindingId);
   },
   connectCenterServer(): Promise<CenterServerSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerConnect);

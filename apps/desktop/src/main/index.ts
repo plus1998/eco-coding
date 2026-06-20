@@ -2042,6 +2042,18 @@ function registerIpcHandlers(): void {
     centerServerClient.createPairing(),
   );
 
+  registerDesktopCommand(IPC_CHANNELS.centerServerListBindings, async () =>
+    centerServerClient.listBindings(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerListPresence, async () =>
+    centerServerClient.listPresence(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerRevokeBinding, async (bindingId: string) =>
+    centerServerClient.revokeBinding(bindingId),
+  );
+
   registerDesktopCommand(IPC_CHANNELS.centerServerConnect, async () => {
     await centerServerClient.start();
     const snapshot = centerServerClient.getSnapshot();

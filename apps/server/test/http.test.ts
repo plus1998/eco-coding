@@ -199,6 +199,84 @@ test("supports the complete single-instance HTTP management flow", async () => {
   }
 });
 
+test("desktop device token can revoke its own bindings but not other desktop bindings", async () => {
+  const store = await createTestMongoStore("desktop_binding_revoke");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+  });
+  const devices = new DeviceService({ store });
+  const pairing = new PairingService({ store, pairingTtlSeconds: 300, devices, auth });
+  const rpc = new RpcGateway({
+    store,
+    presence: new MemoryPresenceStore(),
+    rpcTimeoutMs: 1000,
+  });
+  const client = createRouteClient({ store, auth, devices, pairing, rpc });
+
+  try {
+    const registered = await client.post<{
+      user: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/auth/register", {
+      email: "desktop-revoke@example.com",
+      password: "correct horse battery staple",
+    });
+    const userAccessToken = registered.tokens.accessToken;
+
+    const desktopA = await client.post<{
+      device: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/devices/register", { kind: "desktop", name: "Studio A" }, userAccessToken);
+    const desktopB = await client.post<{
+      device: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/devices/register", { kind: "desktop", name: "Studio B" }, userAccessToken);
+    const mobile = await client.post<{
+      device: { id: string };
+      tokens: { accessToken: string };
+    }>("/v1/devices/register", { kind: "mobile", name: "Phone" }, userAccessToken);
+
+    const pairingA = await client.post<{ code: string }>("/v1/pairing", {}, desktopA.tokens.accessToken);
+    const bindingA = await client.post<{ binding: { id: string } }>(
+      "/v1/pairing/claim",
+      { code: pairingA.code },
+      mobile.tokens.accessToken,
+    );
+
+    const pairingB = await client.post<{ code: string }>("/v1/pairing", {}, desktopB.tokens.accessToken);
+    const bindingB = await client.post<{ binding: { id: string } }>(
+      "/v1/pairing/claim",
+      { code: pairingB.code },
+      mobile.tokens.accessToken,
+    );
+
+    const desktopBindings = await client.get<{ bindings: Array<{ id: string }> }>(
+      "/v1/bindings",
+      desktopA.tokens.accessToken,
+    );
+    expect(desktopBindings.bindings.map((binding) => binding.id)).toContain(bindingA.binding.id);
+
+    const revokedByDesktop = await client.delete<{ binding: { id: string; revokedAt: string } }>(
+      `/v1/bindings/${bindingA.binding.id}`,
+      desktopA.tokens.accessToken,
+    );
+    expect(revokedByDesktop.binding.revokedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const deniedCrossDesktop = await client.raw(
+      "DELETE",
+      `/v1/bindings/${bindingB.binding.id}`,
+      undefined,
+      desktopA.tokens.accessToken,
+    );
+    expect(deniedCrossDesktop.status).toBeGreaterThanOrEqual(400);
+  } finally {
+    await closeTestMongoStore(store);
+  }
+});
+
 function createRouteClient(input: {
   store: MongoStore;
   auth: AuthService;

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart' show EcoEventEnvelope;
 import '../../core/models/git_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
@@ -65,16 +66,9 @@ ThreadRuntimeConfig defaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,
 }) {
-  final profileId = modelSettings?.orchestrationProfiles.firstOrNull?.id ?? '';
-  final subagents = {
-    for (final role in subagentRoles) role: role == 'explore',
-  };
-  return ThreadRuntimeConfig(
-    routeProfileId: profileId,
-    agentProfileId: profileId.isEmpty ? null : profileId,
-    subagentEnabled: subagents,
-    planModeEnabled: workflow?.planModeEnabled ?? false,
-    bashReviewMode: 'always',
+  return buildDefaultRuntimeConfig(
+    modelSettings: modelSettings,
+    workflow: workflow,
   );
 }
 

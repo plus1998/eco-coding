@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../approvals/approval_sheets.dart';
@@ -35,6 +36,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   void initState() {
     super.initState();
     _promptController.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(runtimeConfigProvider.notifier).state = null;
+    });
   }
 
   void _scrollToBottom() {
@@ -77,10 +81,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(threadSessionProvider(widget.threadId));
-    final runtimeConfig =
-        ref.watch(runtimeConfigProvider) ??
+    final modelSettings = ref.watch(modelSettingsProvider);
+    final workflow = ref.watch(workflowSettingsProvider);
+    final runtimeConfig = ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
-        _emptyRuntimeConfig();
+        buildDefaultRuntimeConfig(
+          modelSettings: modelSettings.valueOrNull,
+          workflow: workflow.valueOrNull,
+        );
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
     final workspaceDiffAsync = workspacePath.isNotEmpty
@@ -256,16 +264,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         const SnackBar(content: Text('已提交并推送到远程')),
       );
     }
-  }
-
-  ThreadRuntimeConfigInput _emptyRuntimeConfig() {
-    final subagents = {for (final role in subagentRoles) role: false};
-    return ThreadRuntimeConfig(
-      routeProfileId: '',
-      subagentEnabled: subagents,
-      planModeEnabled: false,
-      bashReviewMode: 'always',
-    );
   }
 
   Future<void> _pickImage() async {

@@ -1,7 +1,28 @@
+const subagentRoles = ['explore', 'architect', 'coder', 'reviewer', 'tester'];
+
+Map<String, bool> defaultSubagentAvailability() {
+  return {for (final role in subagentRoles) role: true};
+}
+
+Map<String, bool> normalizeSubagentAvailability(
+  Map<String, bool>? input,
+) {
+  final availability = defaultSubagentAvailability();
+  if (input == null) return availability;
+  for (final role in subagentRoles) {
+    if (role == 'explore') {
+      availability[role] = true;
+      continue;
+    }
+    if (input.containsKey(role)) {
+      availability[role] = input[role] ?? true;
+    }
+  }
+  return availability;
+}
+
 typedef BashReviewMode = String;
 const bashReviewModes = ['always', 'auto', 'allow_all'];
-
-const subagentRoles = ['explore', 'architect', 'coder', 'reviewer', 'tester'];
 
 class ThreadRuntimeConfig {
   const ThreadRuntimeConfig({
@@ -13,21 +34,18 @@ class ThreadRuntimeConfig {
   });
 
   factory ThreadRuntimeConfig.fromJson(Map<String, dynamic> json) {
-    final subagents = <String, bool>{};
-    final raw = json['subagentEnabled'];
-    if (raw is Map) {
-      for (final role in subagentRoles) {
-        subagents[role] = raw[role] as bool? ?? false;
-      }
-    } else {
-      for (final role in subagentRoles) {
-        subagents[role] = false;
-      }
+    final rawSubagents = json['subagentEnabled'];
+    Map<String, bool>? parsedSubagents;
+    if (rawSubagents is Map) {
+      parsedSubagents = {
+        for (final role in subagentRoles)
+          role: rawSubagents[role] as bool? ?? true,
+      };
     }
     return ThreadRuntimeConfig(
       routeProfileId: json['routeProfileId'] as String? ?? '',
       agentProfileId: json['agentProfileId'] as String?,
-      subagentEnabled: subagents,
+      subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       planModeEnabled: json['planModeEnabled'] as bool? ?? false,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
@@ -386,17 +404,45 @@ class WorkspaceInfo {
   final int dirtyFileCount;
 }
 
-class OrchestrationProfileSummary {
-  const OrchestrationProfileSummary({required this.id, required this.name});
+class OrchestrationAgentInstance {
+  const OrchestrationAgentInstance({
+    required this.agentKey,
+    required this.enabled,
+  });
 
-  factory OrchestrationProfileSummary.fromJson(Map<String, dynamic> json) =>
-      OrchestrationProfileSummary(
+  factory OrchestrationAgentInstance.fromJson(Map<String, dynamic> json) =>
+      OrchestrationAgentInstance(
+        agentKey: json['agentKey'] as String? ?? '',
+        enabled: json['enabled'] as bool? ?? false,
+      );
+
+  final String agentKey;
+  final bool enabled;
+}
+
+class OrchestrationProfile {
+  const OrchestrationProfile({
+    required this.id,
+    required this.name,
+    required this.agents,
+  });
+
+  factory OrchestrationProfile.fromJson(Map<String, dynamic> json) =>
+      OrchestrationProfile(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? json['id'] as String? ?? '',
+        agents: (json['agents'] as List<dynamic>? ?? [])
+            .map(
+              (e) => OrchestrationAgentInstance.fromJson(
+                e as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
       );
 
   final String id;
   final String name;
+  final List<OrchestrationAgentInstance> agents;
 }
 
 class RouteProfileSummary {
@@ -422,7 +468,7 @@ class ModelSettingsSnapshot {
       ModelSettingsSnapshot(
         orchestrationProfiles:
             (json['orchestrationProfiles'] as List<dynamic>? ?? [])
-                .map((e) => OrchestrationProfileSummary.fromJson(
+                .map((e) => OrchestrationProfile.fromJson(
                       e as Map<String, dynamic>,
                     ))
                 .toList(),
@@ -433,6 +479,6 @@ class ModelSettingsSnapshot {
             .toList(),
       );
 
-  final List<OrchestrationProfileSummary> orchestrationProfiles;
+  final List<OrchestrationProfile> orchestrationProfiles;
   final List<RouteProfileSummary> routeProfiles;
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/bash_review_ui.dart';
 import '../../core/constants/plan_mode_ui.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../threads/thread_providers.dart';
 
@@ -77,7 +78,6 @@ class ComposerContextTrigger extends StatelessWidget {
             vertical: 6,
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
@@ -85,7 +85,7 @@ class ComposerContextTrigger extends StatelessWidget {
                 color: enabled ? EcoColors.textSecondary : eco.textMuted,
               ),
               const SizedBox(width: 6),
-              Flexible(
+              Expanded(
                 child: Text(
                   label,
                   maxLines: 1,
@@ -99,10 +99,8 @@ class ComposerContextTrigger extends StatelessWidget {
                       ),
                 ),
               ),
-              if (enabled && onTap != null) ...[
-                const SizedBox(width: 2),
+              if (enabled && onTap != null)
                 Icon(Icons.expand_more, size: 14, color: eco.textMuted),
-              ],
             ],
           ),
         ),
@@ -183,12 +181,14 @@ class ComposerProfileControl extends ConsumerWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.compact = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -210,6 +210,7 @@ class ComposerProfileControl extends ConsumerWidget {
       icon: Icons.dashboard_customize_outlined,
       label: label,
       enabled: canEdit,
+      compact: compact,
       onTap: canEdit
           ? () => _showProfileSheet(
                 context,
@@ -268,7 +269,10 @@ class ComposerProfileControl extends ConsumerWidget {
                         config: ThreadRuntimeConfig(
                           routeProfileId: profile.id,
                           agentProfileId: profile.id,
-                          subagentEnabled: runtimeConfig.subagentEnabled,
+                          subagentEnabled: deriveSubagentEnabledFromProfile(
+                            profile,
+                            existing: runtimeConfig.subagentEnabled,
+                          ),
                           planModeEnabled: runtimeConfig.planModeEnabled,
                           bashReviewMode: runtimeConfig.bashReviewMode,
                         ),
@@ -294,32 +298,35 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.compact = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final subagentRolesOnly =
-        subagentRoles.where((role) => role != 'explore').toList();
-    final enabledCount = subagentRolesOnly
-        .where((role) => runtimeConfig.subagentEnabled[role] ?? false)
-        .length;
-    final summary = '$enabledCount/${subagentRolesOnly.length}';
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
+    final enabledCount = countEnabledSubagents(runtimeConfig.subagentEnabled);
+    final totalCount = countConfiguredSubagents(profile);
+    final summary = totalCount > 0 ? '$enabledCount/$totalCount' : '$enabledCount';
 
     return ComposerContextTrigger(
       icon: Icons.groups_outlined,
-      label: '编排 $summary',
+      label: compact ? summary : '编排 $summary',
       enabled: canEdit,
+      compact: compact,
       onTap: canEdit
           ? () => _showOrchestrationSheet(
                 context,
                 ref,
                 runtimeConfig: runtimeConfig,
                 threadId: threadId,
+                profile: profile,
                 onChanged: onChanged,
               )
           : null,
@@ -331,6 +338,7 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     WidgetRef ref, {
     required ThreadRuntimeConfigInput runtimeConfig,
     required String threadId,
+    required OrchestrationProfile? profile,
     required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   }) async {
     await showModalBottomSheet<void>(
@@ -371,13 +379,21 @@ class ComposerOrchestrationControl extends ConsumerWidget {
               ...subagentRoles.map((role) {
                 final enabled = runtimeConfig.subagentEnabled[role] ?? false;
                 final isExplore = role == 'explore';
+                final toggleable = isSubagentToggleable(profile, role);
+                final configured = isSubagentConfiguredInProfile(profile, role);
                 return SwitchListTile(
                   title: Text(_subagentRoleLabels[role] ?? role),
                   subtitle: Text(
-                    isExplore ? '始终启用' : enabled ? '已启用' : '已停用',
+                    isExplore
+                        ? '始终启用'
+                        : !configured
+                            ? 'Profile 未配置'
+                            : enabled
+                                ? '已启用'
+                                : '已停用',
                   ),
                   value: isExplore ? true : enabled,
-                  onChanged: isExplore
+                  onChanged: !toggleable
                       ? null
                       : (value) {
                           final next = Map<String, bool>.from(
