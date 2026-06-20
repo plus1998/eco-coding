@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import {
   buildEcoJsonRpcNotification,
@@ -7,12 +6,12 @@ import {
   ECO_RPC_METHODS,
   type EcoJsonRpcMessage,
 } from "@eco/shared";
-import { SqliteStore } from "../src/db/sqlite-store";
 import { MemoryPresenceStore } from "../src/presence/presence-store";
 import { RpcGateway, type RpcPeer } from "../src/rpc/rpc-gateway";
+import { closeTestMongoStore, createTestMongoStore } from "./mongo-test-store";
 
 test("routes mobile eco.invoke requests to the bound desktop and returns desktop responses", async () => {
-  const context = createGatewayContext();
+  const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
 
@@ -45,12 +44,15 @@ test("routes mobile eco.invoke requests to the bound desktop and returns desktop
     id: "mobile_req_1",
     result: { threads: [] },
   });
-  expect(context.store.listAuditLogs().map((log) => log.status)).toEqual(["accepted", "succeeded"]);
-  context.store.close();
+  expect((await context.store.listAuditLogs()).map((log) => log.status).sort()).toEqual([
+    "accepted",
+    "succeeded",
+  ]);
+  await closeTestMongoStore(context.store);
 });
 
 test("rejects invokes from unbound mobile devices", async () => {
-  const context = createGatewayContext({ bindDevices: false });
+  const context = await createGatewayContext({ bindDevices: false });
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
 
@@ -72,12 +74,12 @@ test("rejects invokes from unbound mobile devices", async () => {
       code: -32003,
     },
   });
-  expect(context.store.listAuditLogs()).toHaveLength(1);
-  context.store.close();
+  expect(await context.store.listAuditLogs()).toHaveLength(1);
+  await closeTestMongoStore(context.store);
 });
 
 test("rejects non remote-enabled commands before forwarding to desktop", async () => {
-  const context = createGatewayContext();
+  const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
 
@@ -101,15 +103,15 @@ test("rejects non remote-enabled commands before forwarding to desktop", async (
       message: "PC command is not remote-enabled: center-server:sign-in",
     },
   });
-  expect(context.store.listAuditLogs()[0]).toMatchObject({
+  expect((await context.store.listAuditLogs())[0]).toMatchObject({
     status: "rejected",
     channel: "center-server:sign-in",
   });
-  context.store.close();
+  await closeTestMongoStore(context.store);
 });
 
 test("rejects remote commands with invalid args before forwarding to desktop", async () => {
-  const context = createGatewayContext();
+  const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
 
@@ -133,11 +135,11 @@ test("rejects remote commands with invalid args before forwarding to desktop", a
     },
   });
   expect(JSON.stringify(context.mobileMessages[0])).toContain("expects 1 args");
-  context.store.close();
+  await closeTestMongoStore(context.store);
 });
 
 test("requires approval capability for privileged remote commands", async () => {
-  const context = createGatewayContext({
+  const context = await createGatewayContext({
     mobileCapabilities: ["events:read", "rpc:invoke"],
     bindingCapabilities: ["events:read", "rpc:invoke"],
   });
@@ -164,11 +166,11 @@ test("requires approval capability for privileged remote commands", async () => 
       message: "Mobile device is missing required capability approval:decide.",
     },
   });
-  context.store.close();
+  await closeTestMongoStore(context.store);
 });
 
 test("fans out desktop events only to bound online mobiles", async () => {
-  const context = createGatewayContext();
+  const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
 
@@ -183,25 +185,25 @@ test("fans out desktop events only to bound online mobiles", async () => {
   await context.gateway.handleMessage(context.desktopPeer, JSON.stringify(event));
 
   expect(context.mobileMessages).toEqual([event]);
-  expect(context.store.listAuditLogs()).toMatchObject([
+  expect(await context.store.listAuditLogs()).toMatchObject([
     {
       action: "event.publish",
       status: "accepted",
     },
   ]);
-  context.store.close();
+  await closeTestMongoStore(context.store);
 });
 
-function createGatewayContext(
+async function createGatewayContext(
   options: {
     bindDevices?: boolean;
     bindingCapabilities?: Array<"events:read" | "rpc:invoke" | "approval:decide">;
     mobileCapabilities?: Array<"events:read" | "rpc:invoke" | "approval:decide">;
   } = {},
 ) {
-  const store = new SqliteStore({ database: new Database(":memory:") });
+  const store = await createTestMongoStore("rpc_gateway");
   const now = "2026-01-01T00:00:00.000Z";
-  const user = store.createUser({
+  const user = await store.createUser({
     id: "usr_1",
     email: "owner@example.com",
     displayName: null,
@@ -210,7 +212,7 @@ function createGatewayContext(
     passwordIterations: 1,
     now,
   });
-  const desktop = store.createDevice({
+  const desktop = await store.createDevice({
     id: "dev_desktop",
     userId: user.id,
     kind: "desktop",
@@ -218,7 +220,7 @@ function createGatewayContext(
     secretHash: "secret",
     now,
   });
-  const mobile = store.createDevice({
+  const mobile = await store.createDevice({
     id: "dev_mobile",
     userId: user.id,
     kind: "mobile",
@@ -227,7 +229,7 @@ function createGatewayContext(
     now,
   });
   if (options.bindDevices ?? true) {
-    store.createDeviceBinding({
+    await store.createDeviceBinding({
       id: "bind_1",
       userId: user.id,
       desktopDeviceId: desktop.id,

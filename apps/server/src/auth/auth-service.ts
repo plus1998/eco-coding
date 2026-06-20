@@ -1,16 +1,17 @@
 import type { EcoDeviceCapability } from "@eco/shared";
-import { sha256Hex, signAccessToken, verifyAccessToken, verifyPassword, hashPassword, createRandomToken } from "./crypto";
-import type { SqliteStore } from "../db/sqlite-store";
-import type {
-  AccessTokenClaims,
-  AccessTokenResult,
-  DeviceRecord,
-  TokenBundle,
-  UserRecord,
-} from "../types";
+import type { MongoStore } from "../db/mongo-store";
+import type { AccessTokenClaims, AccessTokenResult, DeviceRecord, TokenBundle, UserRecord } from "../types";
+import {
+  createRandomToken,
+  hashPassword,
+  sha256Hex,
+  signAccessToken,
+  verifyAccessToken,
+  verifyPassword,
+} from "./crypto";
 
 export interface AuthServiceOptions {
-  store: SqliteStore;
+  store: MongoStore;
   tokenSecret: string;
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
@@ -18,7 +19,7 @@ export interface AuthServiceOptions {
 }
 
 export class AuthService {
-  private readonly store: SqliteStore;
+  private readonly store: MongoStore;
   private readonly tokenSecret: string;
   private readonly accessTokenTtlSeconds: number;
   private readonly refreshTokenTtlSeconds: number;
@@ -32,14 +33,10 @@ export class AuthService {
     this.clock = options.now ?? (() => new Date());
   }
 
-  async registerUser(input: {
-    email: string;
-    password: string;
-    displayName?: string;
-  }): Promise<UserRecord> {
+  async registerUser(input: { email: string; password: string; displayName?: string }): Promise<UserRecord> {
     const email = normalizeEmail(input.email);
     assertPassword(input.password);
-    if (this.store.findUserByEmail(email)) {
+    if (await this.store.findUserByEmail(email)) {
       throw new Error("Email already registered.");
     }
     const passwordHash = await hashPassword(input.password);
@@ -55,7 +52,7 @@ export class AuthService {
   }
 
   async loginUser(input: { email: string; password: string }): Promise<UserRecord> {
-    const user = this.store.findUserByEmail(normalizeEmail(input.email));
+    const user = await this.store.findUserByEmail(normalizeEmail(input.email));
     if (!user || user.disabledAt) {
       throw new Error("Invalid email or password.");
     }
@@ -79,7 +76,7 @@ export class AuthService {
   }
 
   async issueDeviceTokenBundle(device: DeviceRecord): Promise<TokenBundle> {
-    const user = this.store.findUserById(device.userId);
+    const user = await this.store.findUserById(device.userId);
     if (!user || user.disabledAt || device.disabledAt) {
       throw new Error("Device is not active.");
     }
@@ -92,11 +89,11 @@ export class AuthService {
 
   async refreshAccessToken(refreshToken: string): Promise<AccessTokenResult> {
     const tokenHash = await sha256Hex(refreshToken);
-    const record = this.store.findRefreshTokenByHash(tokenHash);
+    const record = await this.store.findRefreshTokenByHash(tokenHash);
     if (!record || record.revokedAt || Date.parse(record.expiresAt) <= this.clock().getTime()) {
       throw new Error("Refresh token is invalid or expired.");
     }
-    const user = this.store.findUserById(record.userId);
+    const user = await this.store.findUserById(record.userId);
     if (!user || user.disabledAt) {
       throw new Error("Refresh token subject is not active.");
     }
@@ -107,7 +104,7 @@ export class AuthService {
         capabilities: ["device:admin"],
       });
     }
-    const device = this.store.findDeviceById(record.deviceId);
+    const device = await this.store.findDeviceById(record.deviceId);
     if (!device || device.disabledAt) {
       throw new Error("Refresh token device is not active.");
     }
@@ -121,18 +118,23 @@ export class AuthService {
 
   async revokeRefreshToken(refreshToken: string): Promise<void> {
     const tokenHash = await sha256Hex(refreshToken);
-    this.store.revokeRefreshTokenByHash(tokenHash, this.nowIso());
+    await this.store.revokeRefreshTokenByHash(tokenHash, this.nowIso());
   }
 
   async verifyBearerToken(token: string): Promise<AccessTokenClaims> {
     const claims = await verifyAccessToken(token, this.tokenSecret, this.clock().getTime());
-    const user = this.store.findUserById(claims.userId);
+    const user = await this.store.findUserById(claims.userId);
     if (!user || user.disabledAt) {
       throw new Error("Token user is not active.");
     }
     if (claims.subjectKind === "device") {
-      const device = this.store.findDeviceById(claims.deviceId);
-      if (!device || device.disabledAt || device.userId !== claims.userId || device.kind !== claims.deviceKind) {
+      const device = await this.store.findDeviceById(claims.deviceId);
+      if (
+        !device ||
+        device.disabledAt ||
+        device.userId !== claims.userId ||
+        device.kind !== claims.deviceKind
+      ) {
         throw new Error("Token device is not active.");
       }
     }
@@ -148,7 +150,7 @@ export class AuthService {
     const refreshTokenHash = await sha256Hex(refreshToken);
     const now = this.clock();
     const refreshExpiresAt = new Date(now.getTime() + this.refreshTokenTtlSeconds * 1000).toISOString();
-    this.store.createRefreshToken({
+    await this.store.createRefreshToken({
       id: createId("rft"),
       userId: input.user.id,
       deviceId: input.device?.id ?? null,

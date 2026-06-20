@@ -1,10 +1,10 @@
 import type { EcoDeviceKind } from "@eco/shared";
 import { createRandomToken, sha256Hex } from "../auth/crypto";
-import type { SqliteStore } from "../db/sqlite-store";
+import type { MongoStore } from "../db/mongo-store";
 import type { DeviceBindingRecord, DeviceRecord } from "../types";
 
 export interface DeviceServiceOptions {
-  store: SqliteStore;
+  store: MongoStore;
   now?: () => Date;
 }
 
@@ -14,7 +14,7 @@ export interface RegisteredDevice {
 }
 
 export class DeviceService {
-  private readonly store: SqliteStore;
+  private readonly store: MongoStore;
   private readonly clock: () => Date;
 
   constructor(options: DeviceServiceOptions) {
@@ -32,7 +32,7 @@ export class DeviceService {
       throw new Error("Device name is required.");
     }
     const deviceSecret = createRandomToken(48);
-    const device = this.store.createDevice({
+    const device = await this.store.createDevice({
       id: createId("dev"),
       userId: input.userId,
       kind: input.kind,
@@ -44,7 +44,7 @@ export class DeviceService {
   }
 
   async authenticateDevice(input: { deviceId: string; deviceSecret: string }): Promise<DeviceRecord> {
-    const device = this.store.findDeviceById(input.deviceId);
+    const device = await this.store.findDeviceById(input.deviceId);
     if (!device || device.disabledAt) {
       throw new Error("Device credentials are invalid.");
     }
@@ -52,28 +52,28 @@ export class DeviceService {
     if (secretHash !== device.secretHash) {
       throw new Error("Device credentials are invalid.");
     }
-    this.store.touchDevice(device.id, this.clock().toISOString());
+    await this.store.touchDevice(device.id, this.clock().toISOString());
     return device;
   }
 
-  listDevices(userId: string, options: { includeDisabled?: boolean } = {}): DeviceRecord[] {
+  listDevices(userId: string, options: { includeDisabled?: boolean } = {}): Promise<DeviceRecord[]> {
     return this.store.listDevicesForUser(userId, options);
   }
 
-  disableDevice(input: { userId: string; deviceId: string }): DeviceRecord {
-    const device = this.store.disableDevice(input.userId, input.deviceId, this.clock().toISOString());
+  async disableDevice(input: { userId: string; deviceId: string }): Promise<DeviceRecord> {
+    const device = await this.store.disableDevice(input.userId, input.deviceId, this.clock().toISOString());
     if (!device) {
       throw new Error("Device was not found.");
     }
     return device;
   }
 
-  listBindings(userId: string, options: { includeRevoked?: boolean } = {}): DeviceBindingRecord[] {
+  listBindings(userId: string, options: { includeRevoked?: boolean } = {}): Promise<DeviceBindingRecord[]> {
     return this.store.listBindingsForUser(userId, options);
   }
 
-  revokeBinding(input: { userId: string; bindingId: string }): DeviceBindingRecord {
-    const binding = this.store.revokeBinding(input.userId, input.bindingId, this.clock().toISOString());
+  async revokeBinding(input: { userId: string; bindingId: string }): Promise<DeviceBindingRecord> {
+    const binding = await this.store.revokeBinding(input.userId, input.bindingId, this.clock().toISOString());
     if (!binding) {
       throw new Error("Binding was not found.");
     }

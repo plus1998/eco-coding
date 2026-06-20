@@ -1,10 +1,10 @@
 import type { EcoDeviceCapability } from "@eco/shared";
 import { createPairingCode, sha256Hex } from "../auth/crypto";
-import type { SqliteStore } from "../db/sqlite-store";
+import type { MongoStore } from "../db/mongo-store";
 import type { DeviceBindingRecord, PairingSessionRecord } from "../types";
 
 export interface PairingServiceOptions {
-  store: SqliteStore;
+  store: MongoStore;
   pairingTtlSeconds: number;
   now?: () => Date;
 }
@@ -16,7 +16,7 @@ export interface CreatedPairingSession {
 }
 
 export class PairingService {
-  private readonly store: SqliteStore;
+  private readonly store: MongoStore;
   private readonly pairingTtlSeconds: number;
   private readonly clock: () => Date;
 
@@ -30,13 +30,13 @@ export class PairingService {
     userId: string;
     desktopDeviceId: string;
   }): Promise<CreatedPairingSession> {
-    const desktop = this.store.findDeviceById(input.desktopDeviceId);
+    const desktop = await this.store.findDeviceById(input.desktopDeviceId);
     if (!desktop || desktop.userId !== input.userId || desktop.kind !== "desktop" || desktop.disabledAt) {
       throw new Error("Desktop device is not active.");
     }
     const now = this.clock();
     const code = createPairingCode();
-    const session = this.store.createPairingSession({
+    const session = await this.store.createPairingSession({
       id: createId("pair"),
       userId: input.userId,
       desktopDeviceId: input.desktopDeviceId,
@@ -51,8 +51,8 @@ export class PairingService {
     };
   }
 
-  getPairingSession(input: { userId: string; pairingId: string }): PairingSessionRecord {
-    const session = this.store.findPairingSessionById(input.pairingId);
+  async getPairingSession(input: { userId: string; pairingId: string }): Promise<PairingSessionRecord> {
+    const session = await this.store.findPairingSessionById(input.pairingId);
     if (!session || session.userId !== input.userId) {
       throw new Error("Pairing session was not found.");
     }
@@ -64,15 +64,18 @@ export class PairingService {
     mobileDeviceId: string;
     code: string;
   }): Promise<DeviceBindingRecord> {
-    const mobile = this.store.findDeviceById(input.mobileDeviceId);
+    const mobile = await this.store.findDeviceById(input.mobileDeviceId);
     if (!mobile || mobile.userId !== input.userId || mobile.kind !== "mobile" || mobile.disabledAt) {
       throw new Error("Mobile device is not active.");
     }
-    const session = this.store.claimPairingSessionByCodeHash(await sha256Hex(input.code.trim().toUpperCase()), this.nowIso());
+    const session = await this.store.claimPairingSessionByCodeHash(
+      await sha256Hex(input.code.trim().toUpperCase()),
+      this.nowIso(),
+    );
     if (!session || session.userId !== input.userId) {
       throw new Error("Pairing code is invalid or expired.");
     }
-    const desktop = this.store.findDeviceById(session.desktopDeviceId);
+    const desktop = await this.store.findDeviceById(session.desktopDeviceId);
     if (!desktop || desktop.userId !== input.userId || desktop.kind !== "desktop" || desktop.disabledAt) {
       throw new Error("Desktop device is not active.");
     }

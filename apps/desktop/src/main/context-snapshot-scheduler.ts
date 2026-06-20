@@ -1,17 +1,17 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
+  type AgentRuntimeDriver,
   alignBreakdownSegmentsToOccupied,
+  type EcoSdkResumeOptions,
   normalizeContextSegments,
   parseSdkGetContextUsageBreakdown,
   parseUsagePayload,
-  type AgentRuntimeDriver,
-  type EcoSdkResumeOptions,
 } from "@eco/runtime";
 import {
+  type ClaudeAgentSdkDriver,
   extractCompactPostTokens,
   readSdkSlashCommands,
   sdkSupportsSlashCommand,
-  type ClaudeAgentSdkDriver,
 } from "@eco/runtime/sdk";
 
 export interface EcoCompactRunRequest {
@@ -24,6 +24,7 @@ export interface EcoCompactRunRequest {
 export interface EcoCompactRunResult {
   postTokensEstimate: number;
 }
+
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot } from "../shared/ipc";
 import type { ContextMonitorRoleSnapshot, ContextWindowMonitor } from "./context-window-monitor";
 
@@ -61,11 +62,7 @@ export interface ContextSnapshotSchedulerOptions {
   ) => void;
   shouldPreferEcoCompact?: (threadId: string) => boolean;
   runEcoCompact?: (threadId: string, input: EcoCompactRunRequest) => Promise<EcoCompactRunResult>;
-  archiveBeforeCompaction?: (
-    threadId: string,
-    trigger: "auto" | "manual",
-    sessionId?: string,
-  ) => void;
+  archiveBeforeCompaction?: (threadId: string, trigger: "auto" | "manual", sessionId?: string) => void;
   recordEcoCompactionBoundary?: (
     threadId: string,
     input: { trigger: "auto" | "manual"; postTokens: number },
@@ -295,7 +292,10 @@ export class ContextSnapshotScheduler {
         }
       }
 
-      if (shouldFallbackToEco || (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact"))) {
+      if (
+        shouldFallbackToEco ||
+        (slashCommands.length > 0 && !sdkSupportsSlashCommand(slashCommands, "compact"))
+      ) {
         await this.runEcoCompactPath(threadId, worktreePath, runSignal ?? signal, resume, trigger);
         return;
       }
@@ -327,7 +327,7 @@ export class ContextSnapshotScheduler {
     }
     const result = await this.options.runEcoCompact(threadId, {
       trigger,
-      sessionId: resume.resumeSessionId,
+      ...(resume.resumeSessionId ? { sessionId: resume.resumeSessionId } : {}),
       worktreePath,
       signal,
     });
@@ -369,10 +369,7 @@ export class ContextSnapshotScheduler {
     };
   }
 
-  private buildRoleSnapshot(
-    threadId: string,
-    role: ContextMonitorRoleSnapshot,
-  ): ThreadRoleContextSnapshot {
+  private buildRoleSnapshot(threadId: string, role: ContextMonitorRoleSnapshot): ThreadRoleContextSnapshot {
     const segments =
       role.role === "planner"
         ? this.plannerSegmentsForRole(threadId, role.occupied)
@@ -391,10 +388,7 @@ export class ContextSnapshotScheduler {
     };
   }
 
-  private plannerSegmentsForRole(
-    threadId: string,
-    occupied: number,
-  ): ThreadRoleContextSnapshot["segments"] {
+  private plannerSegmentsForRole(threadId: string, occupied: number): ThreadRoleContextSnapshot["segments"] {
     const raw = this.lastPlannerSegments.get(threadId);
     if (!raw || raw.length === 0) {
       return occupied > 0 ? [fallbackSegment(occupied)] : [];

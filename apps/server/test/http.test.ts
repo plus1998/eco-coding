@@ -1,17 +1,17 @@
-import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { AuthService } from "../src/auth/auth-service";
-import { SqliteStore } from "../src/db/sqlite-store";
+import type { MongoStore } from "../src/db/mongo-store";
 import { DeviceService } from "../src/devices/device-service";
 import { handleEcoHttpRequest } from "../src/http";
 import { PairingService } from "../src/pairing/pairing-service";
 import { MemoryPresenceStore } from "../src/presence/presence-store";
 import { RpcGateway } from "../src/rpc/rpc-gateway";
+import { closeTestMongoStore, createTestMongoStore } from "./mongo-test-store";
 
 const TOKEN_SECRET = "test-secret-that-is-long-enough-for-hmac";
 
 test("supports the complete single-instance HTTP management flow", async () => {
-  const store = new SqliteStore({ database: new Database(":memory:") });
+  const store = await createTestMongoStore("http_management_flow");
   const auth = new AuthService({
     store,
     tokenSecret: TOKEN_SECRET,
@@ -178,12 +178,12 @@ test("supports the complete single-instance HTTP management flow", async () => {
     });
     expect(refreshAfterLogout.status).toBe(400);
   } finally {
-    store.close();
+    await closeTestMongoStore(store);
   }
 });
 
 function createRouteClient(input: {
-  store: SqliteStore;
+  store: MongoStore;
   auth: AuthService;
   devices: DeviceService;
   pairing: PairingService;

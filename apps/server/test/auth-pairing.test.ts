@@ -1,14 +1,13 @@
-import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { AuthService } from "../src/auth/auth-service";
 import { DeviceService } from "../src/devices/device-service";
 import { PairingService } from "../src/pairing/pairing-service";
-import { SqliteStore } from "../src/db/sqlite-store";
+import { closeTestMongoStore, createTestMongoStore } from "./mongo-test-store";
 
 const TOKEN_SECRET = "test-secret-that-is-long-enough-for-hmac";
 
 test("registers users, devices, and binds a mobile through one-time pairing", async () => {
-  const store = createStore();
+  const store = await createTestMongoStore("auth_pairing_happy_path");
   const clock = fixedClock("2026-01-01T00:00:00.000Z");
   const auth = new AuthService({
     store,
@@ -59,16 +58,15 @@ test("registers users, devices, and binds a mobile through one-time pairing", as
     mobileDeviceId: mobile.device.id,
   });
   expect(binding.capabilities).toContain("approval:decide");
-  expect(() =>
+  await expect(
     store.claimPairingSessionByCodeHash(createdPairing.session.codeHash, "2026-01-01T00:01:00.000Z"),
-  ).not.toThrow();
-  expect(store.claimPairingSessionByCodeHash(createdPairing.session.codeHash, "2026-01-01T00:01:00.000Z")).toBeUndefined();
+  ).resolves.toBeUndefined();
 
-  store.close();
+  await closeTestMongoStore(store);
 });
 
 test("rejects expired pairing codes", async () => {
-  const store = createStore();
+  const store = await createTestMongoStore("auth_pairing_expired");
   const auth = new AuthService({
     store,
     tokenSecret: TOKEN_SECRET,
@@ -106,12 +104,8 @@ test("rejects expired pairing codes", async () => {
     }),
   ).rejects.toThrow("Pairing code is invalid or expired.");
 
-  store.close();
+  await closeTestMongoStore(store);
 });
-
-function createStore(): SqliteStore {
-  return new SqliteStore({ database: new Database(":memory:") });
-}
 
 function fixedClock(iso: string): () => Date {
   return () => new Date(iso);

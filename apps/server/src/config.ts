@@ -1,7 +1,8 @@
 export interface ServerConfig {
   host: string;
   port: number;
-  databasePath: string;
+  mongoUri: string;
+  mongoDatabase?: string;
   redisPassword?: string;
   tokenSecret: string;
   accessTokenTtlSeconds: number;
@@ -19,10 +20,11 @@ export function loadConfig(env: Record<string, string | undefined> = Bun.env): S
   return {
     host: env.ECO_SERVER_HOST ?? "127.0.0.1",
     port: parsePositiveInt(env.ECO_SERVER_PORT, 3128),
-    databasePath: env.ECO_SERVER_SQLITE_PATH ?? "eco-server.sqlite",
-    ...(env.ECO_SERVER_REDIS_PASSWORD?.trim()
-      ? { redisPassword: env.ECO_SERVER_REDIS_PASSWORD.trim() }
+    mongoUri: env.ECO_SERVER_MONGODB_URI ?? "mongodb://127.0.0.1:27017/eco-coding",
+    ...(env.ECO_SERVER_MONGODB_DATABASE?.trim()
+      ? { mongoDatabase: env.ECO_SERVER_MONGODB_DATABASE.trim() }
       : {}),
+    ...(env.ECO_SERVER_REDIS_PASSWORD?.trim() ? { redisPassword: env.ECO_SERVER_REDIS_PASSWORD.trim() } : {}),
     tokenSecret,
     accessTokenTtlSeconds: parsePositiveInt(env.ECO_ACCESS_TOKEN_TTL_SECONDS, 15 * 60),
     refreshTokenTtlSeconds: parsePositiveInt(env.ECO_REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60),

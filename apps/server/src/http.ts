@@ -1,7 +1,7 @@
 import type { EcoDeviceKind } from "@eco/shared";
 import { AuthService } from "./auth/auth-service";
 import type { ServerConfig } from "./config";
-import { SqliteStore } from "./db/sqlite-store";
+import { MongoStore } from "./db/mongo-store";
 import { DeviceService } from "./devices/device-service";
 import { PairingService } from "./pairing/pairing-service";
 import { createRedisPresenceStore } from "./presence/presence-store";
@@ -16,19 +16,20 @@ interface RpcSocketData {
 
 export interface EcoServerDependencies {
   config: ServerConfig;
-  store?: SqliteStore;
+  store?: MongoStore;
   auth?: AuthService;
   devices?: DeviceService;
   pairing?: PairingService;
   rpc?: RpcGateway;
 }
 
-export function startEcoServer(dependencies: EcoServerDependencies) {
+export async function startEcoServer(dependencies: EcoServerDependencies) {
   const store =
     dependencies.store ??
-    new SqliteStore({
-      path: dependencies.config.databasePath,
-    });
+    (await MongoStore.connect({
+      uri: dependencies.config.mongoUri,
+      ...(dependencies.config.mongoDatabase ? { databaseName: dependencies.config.mongoDatabase } : {}),
+    }));
   const auth =
     dependencies.auth ??
     new AuthService({
@@ -125,7 +126,7 @@ export async function handleEcoHttpRequest(input: {
   devices: DeviceService;
   pairing: PairingService;
   rpc: RpcGateway;
-  store: SqliteStore;
+  store: MongoStore;
 }): Promise<Response> {
   try {
     return await handleEcoHttpRoute(input);
@@ -142,7 +143,7 @@ export async function handleEcoHttpRoute(input: {
   devices: DeviceService;
   pairing: PairingService;
   rpc: RpcGateway;
-  store: SqliteStore;
+  store: MongoStore;
 }): Promise<Response> {
   const { request, url, auth, devices, pairing, rpc, store } = input;
   if (request.method === "POST" && url.pathname === "/v1/auth/register") {
@@ -157,11 +158,11 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "GET" && url.pathname === "/v1/me") {
     const claims = await requireBearer(request, auth);
-    const user = store.findUserById(claims.userId);
+    const user = await store.findUserById(claims.userId);
     if (!user) {
       throw new Error("User was not found.");
     }
-    const device = claims.subjectKind === "device" ? store.findDeviceById(claims.deviceId) : undefined;
+    const device = claims.subjectKind === "device" ? await store.findDeviceById(claims.deviceId) : undefined;
     return json({
       user: toPublicUser(user),
       ...(device ? { device: toPublicDevice(device) } : {}),
@@ -210,7 +211,7 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     const online = new Map(rpc.listOnlineDevices(claims.userId).map((device) => [device.deviceId, device]));
-    const result = devices.listDevices(claims.userId, {
+    const result = await devices.listDevices(claims.userId, {
       includeDisabled: readBooleanSearchParam(url, "includeDisabled"),
     });
     return json({
@@ -233,12 +234,12 @@ export async function handleEcoHttpRoute(input: {
   if (request.method === "DELETE" && deviceIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
-    const disabled = devices.disableDevice({
+    const disabled = await devices.disableDevice({
       userId: claims.userId,
       deviceId: deviceIdFromPath,
     });
     await rpc.disconnectDevice(deviceIdFromPath, "Device was disabled.");
-    store.createAuditLog({
+    await store.createAuditLog({
       id: createId("aud"),
       userId: claims.userId,
       action: "device.disable",
@@ -277,7 +278,7 @@ export async function handleEcoHttpRoute(input: {
   const pairingIdFromPath = matchPath(url.pathname, "/v1/pairing/:pairingId")?.pairingId;
   if (request.method === "GET" && pairingIdFromPath) {
     const claims = await requireBearer(request, auth);
-    const session = pairing.getPairingSession({
+    const session = await pairing.getPairingSession({
       userId: claims.userId,
       pairingId: pairingIdFromPath,
     });
@@ -305,20 +306,22 @@ export async function handleEcoHttpRoute(input: {
   if (request.method === "GET" && url.pathname === "/v1/bindings") {
     const claims = await requireBearer(request, auth);
     return json({
-      bindings: listBindingsVisibleToClaims(devices, claims, {
-        includeRevoked: readBooleanSearchParam(url, "includeRevoked"),
-      }).map(toPublicDeviceBinding),
+      bindings: (
+        await listBindingsVisibleToClaims(devices, claims, {
+          includeRevoked: readBooleanSearchParam(url, "includeRevoked"),
+        })
+      ).map(toPublicDeviceBinding),
     });
   }
   const bindingIdFromPath = matchPath(url.pathname, "/v1/bindings/:bindingId")?.bindingId;
   if (request.method === "DELETE" && bindingIdFromPath) {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
-    const binding = devices.revokeBinding({
+    const binding = await devices.revokeBinding({
       userId: claims.userId,
       bindingId: bindingIdFromPath,
     });
-    store.createAuditLog({
+    await store.createAuditLog({
       id: createId("aud"),
       userId: claims.userId,
       action: "binding.revoke",
@@ -337,7 +340,7 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     const online = new Map(rpc.listOnlineDevices(claims.userId).map((device) => [device.deviceId, device]));
     return json({
-      devices: listDevicesVisibleToClaims(devices, claims).map((device) =>
+      devices: (await listDevicesVisibleToClaims(devices, claims)).map((device) =>
         toPublicDeviceWithPresence(device, online.get(device.id)),
       ),
     });
@@ -346,7 +349,7 @@ export async function handleEcoHttpRoute(input: {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
     return json({
-      auditLogs: store.listAuditLogs({
+      auditLogs: await store.listAuditLogs({
         userId: claims.userId,
         limit: readLimit(url),
         order: "desc",
@@ -442,12 +445,12 @@ function assertCapability(
   }
 }
 
-function listBindingsVisibleToClaims(
+async function listBindingsVisibleToClaims(
   devices: DeviceService,
   claims: AccessTokenClaims,
   options: { includeRevoked?: boolean } = {},
-): DeviceBindingRecord[] {
-  const bindings = devices.listBindings(claims.userId, options);
+): Promise<DeviceBindingRecord[]> {
+  const bindings = await devices.listBindings(claims.userId, options);
   if (claims.capabilities.includes("device:admin")) {
     return bindings;
   }
@@ -461,8 +464,11 @@ function listBindingsVisibleToClaims(
   );
 }
 
-function listDevicesVisibleToClaims(devices: DeviceService, claims: AccessTokenClaims): DeviceRecord[] {
-  const allDevices = devices.listDevices(claims.userId);
+async function listDevicesVisibleToClaims(
+  devices: DeviceService,
+  claims: AccessTokenClaims,
+): Promise<DeviceRecord[]> {
+  const allDevices = await devices.listDevices(claims.userId);
   if (claims.capabilities.includes("device:admin")) {
     return allDevices;
   }
@@ -471,7 +477,7 @@ function listDevicesVisibleToClaims(devices: DeviceService, claims: AccessTokenC
   }
 
   const visibleDeviceIds = new Set<string>([claims.deviceId]);
-  for (const binding of listBindingsVisibleToClaims(devices, claims)) {
+  for (const binding of await listBindingsVisibleToClaims(devices, claims)) {
     visibleDeviceIds.add(claims.deviceKind === "mobile" ? binding.desktopDeviceId : binding.mobileDeviceId);
   }
   return allDevices.filter((device) => visibleDeviceIds.has(device.id));

@@ -20,7 +20,7 @@ import {
   isEcoJsonRpcResponse,
   type RemoteCommandDefinition,
 } from "@eco/shared";
-import type { SqliteStore } from "../db/sqlite-store";
+import type { MongoStore } from "../db/mongo-store";
 import type { PresenceStore } from "../presence/presence-store";
 import { type InvokeAuthorization, PolicyEngine } from "./policy";
 
@@ -35,7 +35,7 @@ export interface RpcPeer {
 }
 
 export interface RpcGatewayOptions {
-  store: SqliteStore;
+  store: MongoStore;
   presence: PresenceStore;
   policy?: PolicyEngine;
   rpcTimeoutMs: number;
@@ -63,7 +63,7 @@ interface PendingRequest {
 }
 
 export class RpcGateway {
-  private readonly store: SqliteStore;
+  private readonly store: MongoStore;
   private readonly presence: PresenceStore;
   private readonly policy: PolicyEngine;
   private readonly rpcTimeoutMs: number;
@@ -98,13 +98,13 @@ export class RpcGateway {
     };
     this.sessions.set(peer.sessionId, session);
     await this.presence.setSession(session);
-    this.store.touchDevice(peer.deviceId, now);
+    await this.store.touchDevice(peer.deviceId, now);
   }
 
   async disconnect(peer: RpcPeer): Promise<void> {
     if (peer.deviceKind === "desktop" && this.desktops.get(peer.deviceId)?.sessionId === peer.sessionId) {
       this.desktops.delete(peer.deviceId);
-      this.failPendingForDesktop(peer.deviceId);
+      await this.failPendingForDesktop(peer.deviceId);
     }
     if (peer.deviceKind === "mobile" && this.mobiles.get(peer.deviceId)?.sessionId === peer.sessionId) {
       this.mobiles.delete(peer.deviceId);
@@ -173,14 +173,14 @@ export class RpcGateway {
       return;
     }
     const event = notification.params as EcoEventEnvelope | undefined;
-    const bindings = this.store.listActiveBindingsForDesktop(peer.userId, peer.deviceId);
+    const bindings = await this.store.listActiveBindingsForDesktop(peer.userId, peer.deviceId);
     for (const binding of bindings) {
       const mobile = this.mobiles.get(binding.mobileDeviceId);
       if (mobile && binding.capabilities.includes("events:read")) {
         mobile.send(notification);
       }
     }
-    this.store.createAuditLog({
+    await this.store.createAuditLog({
       id: createId("aud"),
       userId: peer.userId,
       action: "event.publish",
@@ -217,9 +217,9 @@ export class RpcGateway {
       return;
     }
     const params = request.params;
-    const binding = this.store.findActiveBinding(peer.userId, params.desktopDeviceId, peer.deviceId);
+    const binding = await this.store.findActiveBinding(peer.userId, params.desktopDeviceId, peer.deviceId);
     if (!binding) {
-      this.auditInvokeRejected(peer, params, "Device is not bound to the target desktop.");
+      await this.auditInvokeRejected(peer, params, "Device is not bound to the target desktop.");
       peer.send(
         buildEcoJsonRpcFailure(
           request.id ?? null,
@@ -238,13 +238,13 @@ export class RpcGateway {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Command is forbidden.";
-      this.auditInvokeRejected(peer, params, message);
+      await this.auditInvokeRejected(peer, params, message);
       peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.forbidden, message));
       return;
     }
     const desktop = this.desktops.get(params.desktopDeviceId);
     if (!desktop) {
-      this.auditInvokeRejected(
+      await this.auditInvokeRejected(
         peer,
         params,
         "Target desktop is offline.",
@@ -262,7 +262,7 @@ export class RpcGateway {
     const timeout = setTimeout(() => {
       this.pending.delete(serverId);
       peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.timeout, "PC command timed out."));
-      this.store.createAuditLog({
+      void this.store.createAuditLog({
         id: createId("aud"),
         userId: peer.userId,
         action: "rpc.invoke",
@@ -300,7 +300,7 @@ export class RpcGateway {
       },
     };
     desktop.send(buildEcoJsonRpcRequest(serverId, ECO_RPC_METHODS.invoke, forwarded));
-    this.store.createAuditLog({
+    await this.store.createAuditLog({
       id: createId("aud"),
       userId: peer.userId,
       action: "rpc.invoke",
@@ -336,7 +336,7 @@ export class RpcGateway {
           response.error.data,
         ),
       );
-      this.store.createAuditLog({
+      await this.store.createAuditLog({
         id: createId("aud"),
         userId: pending.userId,
         action: "rpc.invoke",
@@ -353,7 +353,7 @@ export class RpcGateway {
       return;
     }
     pending.mobile.send(buildEcoJsonRpcSuccess(pending.originalId, response.result));
-    this.store.createAuditLog({
+    await this.store.createAuditLog({
       id: createId("aud"),
       userId: pending.userId,
       action: "rpc.invoke",
@@ -367,7 +367,7 @@ export class RpcGateway {
     });
   }
 
-  private failPendingForDesktop(desktopDeviceId: string): void {
+  private async failPendingForDesktop(desktopDeviceId: string): Promise<void> {
     for (const pending of this.pending.values()) {
       if (pending.desktopDeviceId !== desktopDeviceId) {
         continue;
@@ -381,7 +381,7 @@ export class RpcGateway {
           "Target desktop disconnected.",
         ),
       );
-      this.store.createAuditLog({
+      await this.store.createAuditLog({
         id: createId("aud"),
         userId: pending.userId,
         action: "rpc.invoke",
@@ -411,14 +411,14 @@ export class RpcGateway {
     await this.presence.setSession(refreshed);
   }
 
-  private auditInvokeRejected(
+  private async auditInvokeRejected(
     peer: RpcPeer,
     params: EcoInvokeParams,
     message: string,
     reason = "forbidden",
     command?: RemoteCommandDefinition,
-  ): void {
-    this.store.createAuditLog({
+  ): Promise<void> {
+    await this.store.createAuditLog({
       id: createId("aud"),
       userId: peer.userId,
       action: "rpc.invoke",

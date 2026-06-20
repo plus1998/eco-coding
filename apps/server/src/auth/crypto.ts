@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
+import { timingSafeEqual } from "node:crypto";
 import type { AccessTokenClaims } from "../types";
 
 const TEXT_ENCODER = new TextEncoder();
@@ -78,7 +78,11 @@ export async function signAccessToken(claims: AccessTokenClaims, secret: string)
   return `${header}.${payload}.${signature}`;
 }
 
-export async function verifyAccessToken(token: string, secret: string, nowMs = Date.now()): Promise<AccessTokenClaims> {
+export async function verifyAccessToken(
+  token: string,
+  secret: string,
+  nowMs = Date.now(),
+): Promise<AccessTokenClaims> {
   const parts = token.split(".");
   if (parts.length !== 3) {
     throw new Error("Malformed access token.");
@@ -111,10 +115,6 @@ function decodeJson(value: string): unknown {
 
 function encodeBase64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  return new Uint8Array(decodeBase64UrlArrayBuffer(value));
 }
 
 function decodeBase64UrlArrayBuffer(value: string): ArrayBuffer {
