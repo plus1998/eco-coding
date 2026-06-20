@@ -77,6 +77,11 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
 });
 
+test("registers workspace remote command definitions", () => {
+  expect(isRemoteCommandChannel("workspace:get-home-path")).toBe(true);
+  expect(validateRemoteCommandArgs("workspace:get-home-path", [])).toEqual({ ok: true });
+});
+
 test("registers git remote command definitions", () => {
   expect(isRemoteCommandChannel("git:get-status")).toBe(true);
   expect(isRemoteCommandChannel("git:commit")).toBe(true);

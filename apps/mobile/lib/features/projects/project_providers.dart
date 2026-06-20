@@ -34,7 +34,12 @@ class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
     });
 
     final threads = await rpc.listThreads();
-    final homePath = await rpc.getHomeProjectPath();
+    var homePath = '';
+    try {
+      homePath = await rpc.getHomeProjectPath();
+    } catch (_) {
+      // Older Center Server builds may not expose workspace:get-home-path yet.
+    }
     final currentWorkspace = await rpc.getCurrentWorkspace();
 
     final paths = collectProjectPaths(

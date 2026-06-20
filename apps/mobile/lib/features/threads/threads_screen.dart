@@ -190,7 +190,12 @@ class ThreadsScreen extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    final homePath = await rpc.getHomeProjectPath();
+    var homePath = '';
+    try {
+      homePath = await rpc.getHomeProjectPath();
+    } catch (_) {
+      // Older Center Server builds may not expose workspace:get-home-path yet.
+    }
     if (!context.mounted) return;
 
     final projectName = isHomeProjectPath(selectedPath, homePath)
