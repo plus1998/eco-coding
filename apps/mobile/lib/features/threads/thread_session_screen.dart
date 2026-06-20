@@ -30,19 +30,35 @@ class ThreadSessionScreen extends ConsumerStatefulWidget {
       _ThreadSessionScreenState();
 }
 
-class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
+class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
+    with WidgetsBindingObserver {
   final _promptController = TextEditingController();
   final _scrollController = ScrollController();
   final _attachments = <PromptImageAttachment>[];
   final _picker = ImagePicker();
   String? _shownApprovalKey;
+  double _lastKeyboardInset = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _promptController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(runtimeConfigProvider.notifier).state = null;
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final inset = MediaQuery.viewInsetsOf(context).bottom;
+      if (inset > _lastKeyboardInset) {
+        _scrollToBottom();
+      }
+      _lastKeyboardInset = inset;
     });
   }
 
@@ -88,6 +104,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _promptController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -171,6 +188,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
     });
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         titleSpacing: 0,
         title: Column(
@@ -377,6 +395,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         attachments: _attachments.isEmpty ? null : List.of(_attachments),
         runtimeConfig: runtimeConfig,
       );
+      FocusManager.instance.primaryFocus?.unfocus();
       _promptController.clear();
       setState(() => _attachments.clear());
       ref.invalidate(threadListProvider);

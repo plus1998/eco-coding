@@ -136,6 +136,19 @@ String normalizeActivityActionLabel(String raw) {
   return parseToolActionDisplayLabel(raw);
 }
 
+bool isGenericToolActionLabel(String label) {
+  final trimmed = label.trim();
+  if (trimmed.isEmpty) return true;
+  return _toolVerbLabels.values.contains(trimmed);
+}
+
+String resolveMergedToolActionLabel(String existing, String incoming) {
+  if (!isGenericToolActionLabel(existing) && isGenericToolActionLabel(incoming)) {
+    return existing;
+  }
+  return incoming;
+}
+
 ParsedBashApprovalActivityText? parseBashApprovalActivityText(String text) {
   final trimmed = text.trim();
   if (trimmed.isEmpty) {

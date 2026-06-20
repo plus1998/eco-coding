@@ -167,7 +167,7 @@ List<ActivityFeedEntry> buildActivityFeed({
       label: label,
       icon: icon,
     );
-    final existingIndex = output.indexWhere(
+    var existingIndex = output.lastIndexWhere(
       (entry) =>
           entry.kind == ActivityFeedKind.action &&
           activityActionKey(
@@ -177,6 +177,24 @@ List<ActivityFeedEntry> buildActivityFeed({
               ) ==
               actionKey,
     );
+    if (existingIndex >= 0) {
+      final existing = output[existingIndex];
+      if (isGenericToolActionLabel(label) &&
+          isGenericToolActionLabel(existing.text) &&
+          existing.lifecycle == ToolActionLifecycle.completed) {
+        existingIndex = -1;
+      }
+    }
+    if (existingIndex < 0 && isGenericToolActionLabel(label)) {
+      existingIndex = output.lastIndexWhere(
+        (entry) =>
+            entry.kind == ActivityFeedKind.action &&
+            entry.subagentRole == subagentRole &&
+            entry.actionIcon == icon &&
+            entry.lifecycle != ToolActionLifecycle.completed &&
+            entry.lifecycle != ToolActionLifecycle.failed,
+      );
+    }
     if (existingIndex >= 0) {
       final existing = output[existingIndex];
       ToolActionLifecycle? nextLifecycle = lifecycle;
@@ -192,7 +210,7 @@ List<ActivityFeedEntry> buildActivityFeed({
       output[existingIndex] = ActivityFeedEntry(
         id: existing.id,
         kind: ActivityFeedKind.action,
-        text: label,
+        text: resolveMergedToolActionLabel(existing.text, label),
         actionIcon: icon,
         subagentRole: subagentRole ?? existing.subagentRole,
         lifecycle: nextLifecycle,
@@ -639,12 +657,17 @@ class ActivityFeedList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      itemCount: entries.length,
-      itemBuilder: (context, index) => _ActivityFeedEntryTile(
-        entry: entries[index],
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: ListView.builder(
+        controller: scrollController,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        itemCount: entries.length,
+        itemBuilder: (context, index) => _ActivityFeedEntryTile(
+          entry: entries[index],
+        ),
       ),
     );
   }

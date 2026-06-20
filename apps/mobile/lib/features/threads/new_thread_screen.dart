@@ -67,6 +67,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         titleSpacing: 0,
         title: Column(

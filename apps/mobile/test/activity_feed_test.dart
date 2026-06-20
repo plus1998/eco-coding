@@ -307,6 +307,54 @@ void main() {
     expect(feed.last.text, isEmpty);
   });
 
+  test('buildActivityFeed keeps separate generic web searches', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: WebSearch',
+        ),
+        ActivityItem(
+          id: '2',
+          role: 'planner',
+          message: 'Tool: WebSearch (2.1s)',
+        ),
+        ActivityItem(
+          id: '3',
+          role: 'planner',
+          message: 'Tool: WebSearch',
+        ),
+      ],
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 2);
+  });
+
+  test('buildActivityFeed preserves web search query on completion', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: WebSearch · flutter keyboard dismiss',
+        ),
+        ActivityItem(
+          id: '2',
+          role: 'planner',
+          message: 'Tool: WebSearch (1.2s)',
+        ),
+      ],
+    );
+
+    final actions =
+        feed.where((entry) => entry.kind == ActivityFeedKind.action).toList();
+    expect(actions.length, 1);
+    expect(actions.first.text, 'flutter keyboard dismiss');
+  });
+
   test('buildActivityFeed renders bash tool actions as cards', () {
     final feed = buildActivityFeed(
       lines: const [

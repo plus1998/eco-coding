@@ -7,7 +7,7 @@ import '../../core/theme/eco_theme.dart';
 import 'composer_controls.dart';
 import 'workspace_changes_pill.dart';
 
-class SessionComposer extends ConsumerWidget {
+class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
     super.key,
     required this.controller,
@@ -44,130 +44,147 @@ class SessionComposer extends ConsumerWidget {
   final String? inputHint;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SessionComposer> createState() => _SessionComposerState();
+}
+
+class _SessionComposerState extends ConsumerState<SessionComposer> {
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  bool get _canSend =>
+      !widget.isRunning && widget.controller.text.trim().isNotEmpty;
+
+  void _handleSend() {
+    if (!_canSend) return;
+    _focusNode.unfocus();
+    widget.onSend();
+  }
+
+  void _handleStop() {
+    _focusNode.unfocus();
+    widget.onStop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final canSend = !isRunning && controller.text.trim().isNotEmpty;
-    final canEditConfig = !isRunning;
+    final canEditConfig = !widget.isRunning;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         WorkspaceChangesPill(
-          diff: workspaceDiff,
-          busy: diffLoading,
-          onTap: onChangesTap,
+          diff: widget.workspaceDiff,
+          busy: widget.diffLoading,
+          onTap: widget.onChangesTap,
         ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: EcoColors.bgElevated,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: eco.borderSubtle),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x40000000),
-                    blurRadius: 12,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: EcoColors.bgMain,
+            border: Border(top: BorderSide(color: eco.borderSubtle)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (attachments.isNotEmpty)
+                  if (widget.attachments.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: SizedBox(
                         height: 40,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
-                          itemCount: attachments.length,
+                          itemCount: widget.attachments.length,
                           separatorBuilder: (_, _) => const SizedBox(width: 8),
                           itemBuilder: (context, index) => InputChip(
                             label: Text('图片 ${index + 1}'),
                             visualDensity: VisualDensity.compact,
-                            onDeleted: () => onRemoveAttachment(index),
+                            onDeleted: () => widget.onRemoveAttachment(index),
                           ),
                         ),
                       ),
                     ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                    child: TextField(
-                      controller: controller,
-                      minLines: 1,
-                      maxLines: 6,
-                      decoration: InputDecoration(
-                        hintText: inputHint ??
-                            (hasActivity ? '跟进' : '发送消息…'),
-                        border: InputBorder.none,
-                        isDense: true,
-                        hintStyle: TextStyle(color: eco.textMuted),
-                      ),
-                      style: const TextStyle(fontSize: 16),
+                  TextField(
+                    controller: widget.controller,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 6,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: _canSend ? (_) => _handleSend() : null,
+                    decoration: InputDecoration(
+                      hintText: widget.inputHint ??
+                          (widget.hasActivity ? '跟进' : '发送消息…'),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      hintStyle: TextStyle(color: eco.textMuted),
                     ),
+                    style: const TextStyle(fontSize: 16, height: 1.35),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ComposerProfileControl(
-                            runtimeConfig: runtimeConfig,
-                            threadId: threadId,
-                            canEdit: canEditConfig,
-                            onChanged: onRuntimeConfigChanged,
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 18,
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          color: eco.borderSubtle,
-                        ),
-                        Expanded(
-                          child: ComposerOrchestrationControl(
-                            runtimeConfig: runtimeConfig,
-                            threadId: threadId,
-                            canEdit: canEditConfig,
-                            onChanged: onRuntimeConfigChanged,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Divider(height: 1, color: eco.borderSubtle),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 2, 8, 8),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          onPressed: onPickImage,
-                          icon: const Icon(Icons.add, size: 22),
-                          tooltip: '添加图片',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        ComposerPlanModeControl(
-                          runtimeConfig: runtimeConfig,
-                          threadId: threadId,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ComposerProfileControl(
+                          runtimeConfig: widget.runtimeConfig,
+                          threadId: widget.threadId,
                           canEdit: canEditConfig,
-                          onChanged: onRuntimeConfigChanged,
+                          onChanged: widget.onRuntimeConfigChanged,
                         ),
-                        ComposerBashReviewControl(
-                          runtimeConfig: runtimeConfig,
-                          threadId: threadId,
-                          onChanged: onRuntimeConfigChanged,
+                      ),
+                      Container(
+                        width: 1,
+                        height: 18,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        color: eco.borderSubtle.withValues(alpha: 0.6),
+                      ),
+                      Expanded(
+                        child: ComposerOrchestrationControl(
+                          runtimeConfig: widget.runtimeConfig,
+                          threadId: widget.threadId,
+                          canEdit: canEditConfig,
+                          onChanged: widget.onRuntimeConfigChanged,
                         ),
-                        const Spacer(),
-                        if (isRunning)
-                          _StopButton(onStop: onStop)
-                        else
-                          _SendButton(onSend: canSend ? onSend : null),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: widget.onPickImage,
+                        icon: const Icon(Icons.add, size: 22),
+                        tooltip: '添加图片',
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      ComposerPlanModeControl(
+                        runtimeConfig: widget.runtimeConfig,
+                        threadId: widget.threadId,
+                        canEdit: canEditConfig,
+                        onChanged: widget.onRuntimeConfigChanged,
+                      ),
+                      ComposerBashReviewControl(
+                        runtimeConfig: widget.runtimeConfig,
+                        threadId: widget.threadId,
+                        onChanged: widget.onRuntimeConfigChanged,
+                      ),
+                      const Spacer(),
+                      if (widget.isRunning)
+                        _StopButton(onStop: _handleStop)
+                      else
+                        _SendButton(onSend: _canSend ? _handleSend : null),
+                    ],
                   ),
                 ],
               ),

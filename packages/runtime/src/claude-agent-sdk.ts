@@ -2931,6 +2931,20 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
     return input.pattern;
   }
 
+  if (toolName === "WebSearch") {
+    const query = typeof input.query === "string" ? input.query.trim() : "";
+    if (query) {
+      return query.length > 80 ? `${query.slice(0, 77)}…` : query;
+    }
+  }
+
+  if (toolName === "WebFetch") {
+    const url = typeof input.url === "string" ? input.url.trim() : "";
+    if (url) {
+      return url.length > 80 ? `${url.slice(0, 77)}…` : url;
+    }
+  }
+
   return null;
 }
 

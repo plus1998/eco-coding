@@ -895,6 +895,17 @@ test("formats assistant, thinking, and stream payloads for UI output", () => {
   });
   expect(askDisplay?.message).toContain("导出未建联");
 
+  const webSearchDisplay = formatAgentEventDisplay({
+    type: "tool.started",
+    role: "planner",
+    payload: {
+      type: "tool_use",
+      tool_name: "WebSearch",
+      input: { query: "flutter keyboard dismiss" },
+    },
+  });
+  expect(webSearchDisplay?.message).toBe("Tool: WebSearch · flutter keyboard dismiss");
+
   const agentDisplay = formatAgentEventDisplay({
     type: "tool.started",
     role: "planner",

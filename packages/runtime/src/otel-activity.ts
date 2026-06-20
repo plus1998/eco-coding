@@ -341,6 +341,14 @@ function formatToolDetailFromLog(attrs?: OtlpKeyValue[]): string | undefined {
       if (filePath) {
         return pathBasename(filePath);
       }
+      const query = typeof input.query === "string" ? input.query.trim() : "";
+      if (query) {
+        return query.length > 80 ? `${query.slice(0, 77)}…` : query;
+      }
+      const url = typeof input.url === "string" ? input.url.trim() : "";
+      if (url) {
+        return url.length > 80 ? `${url.slice(0, 77)}…` : url;
+      }
     } catch {
       // ignore
     }
