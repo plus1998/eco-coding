@@ -10,10 +10,12 @@ import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
 import 'thread_providers.dart';
+import 'thread_session_menu.dart';
 
 class NewThreadScreen extends ConsumerStatefulWidget {
   const NewThreadScreen({super.key});
@@ -53,10 +55,20 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final workspacePath = ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
-    final runtimeConfig = ref.watch(runtimeConfigProvider);
+    final modelSettings = ref.watch(modelSettingsProvider);
+    final workflow = ref.watch(workflowSettingsProvider);
+    final runtimeConfig = ref.watch(runtimeConfigProvider) ??
+        buildDefaultRuntimeConfig(
+          modelSettings: modelSettings.valueOrNull,
+          workflow: workflow.valueOrNull,
+        );
     final workspaceDiffAsync = workspacePath.isNotEmpty
         ? ref.watch(workspaceDiffProvider(workspacePath))
         : const AsyncValue<WorkspaceDiffResult?>.data(null);
+    final gitStatusAsync = workspacePath.isNotEmpty
+        ? ref.watch(gitStatusProvider(workspacePath))
+        : const AsyncValue<GitWorkingTreeStatus?>.data(null);
+    final gitStatus = gitStatusAsync.valueOrNull;
     final projectsAsync = ref.watch(projectListProvider);
     EcoProject? project;
     for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
@@ -99,8 +111,16 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
               ),
           ],
         ),
+        actions: [
+          ThreadSessionMenuButton(
+            workspacePath: workspacePath,
+            runtimeConfig: runtimeConfig,
+            isRunning: _starting,
+            gitStatus: gitStatus,
+          ),
+        ],
       ),
-      body: runtimeConfig == null
+      body: ref.watch(runtimeConfigProvider) == null
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [

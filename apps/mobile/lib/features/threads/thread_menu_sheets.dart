@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import 'workspace_diff_review_view.dart';
 import 'thread_providers.dart';
 
 Future<void> showThreadTodoSheet({
@@ -369,98 +370,9 @@ class _WorkspaceDiffReviewSheetState
                 final diff = snapshot.data!;
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  child: ListView(
-                    controller: widget.scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    children: [
-                      _SheetHeader(
-                        title: '代码审查',
-                        subtitle:
-                            '${diff.fileCount} 个文件 · +${diff.totalAdditions} -${diff.totalDeletions}',
-                      ),
-                      if (diff.files.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 24),
-                          child: Center(
-                            child: Text(
-                              '工作区暂无未提交变更',
-                              style: TextStyle(color: eco.textMuted),
-                            ),
-                          ),
-                        )
-                      else ...[
-                        ...diff.files.map(
-                          (file) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            title: Text(
-                              file.path,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '+${file.additions}',
-                                  style: const TextStyle(
-                                    color: EcoColors.success,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '-${file.deletions}',
-                                  style: const TextStyle(
-                                    color: EcoColors.danger,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (diff.patch.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            'Diff',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: EcoColors.codeBg,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: eco.borderSubtle),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: SelectableText(
-                                diff.patch,
-                                style: const TextStyle(
-                                  fontFamily: 'Menlo',
-                                  fontFamilyFallback: ['monospace'],
-                                  fontSize: 11,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (diff.patchTruncated)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                'Diff 已截断，完整内容请在 Desktop 查看',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: eco.textMuted),
-                              ),
-                            ),
-                        ],
-                      ],
-                    ],
+                  child: WorkspaceDiffReviewView(
+                    diff: diff,
+                    scrollController: widget.scrollController,
                   ),
                 );
               },
