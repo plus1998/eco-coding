@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@eco/shared": "workspace:*",
+    "ioredis": "^5.11.1",
     "mongoose": "8"
   },
   "devDependencies": {

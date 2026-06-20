@@ -7,6 +7,7 @@ import {
   type EcoJsonRpcMessage,
 } from "@eco/shared";
 import { MemoryPresenceStore } from "../src/presence/presence-store";
+import { MemoryRpcBus, MemoryRpcBusHub } from "../src/rpc/rpc-bus";
 import { RpcGateway, type RpcPeer } from "../src/rpc/rpc-gateway";
 import { closeTestMongoStore, createTestMongoStore } from "./mongo-test-store";
 
@@ -194,6 +195,78 @@ test("fans out desktop events only to bound online mobiles", async () => {
   await closeTestMongoStore(context.store);
 });
 
+test("routes mobile invokes across server instances", async () => {
+  const context = await createTwoInstanceContext();
+  await context.gatewayA.connect(context.mobilePeer);
+  await context.gatewayB.connect(context.desktopPeer);
+
+  await context.gatewayA.handleMessage(
+    context.mobilePeer,
+    JSON.stringify(
+      buildEcoJsonRpcRequest("mobile_req_1", ECO_RPC_METHODS.invoke, {
+        desktopDeviceId: context.desktopPeer.deviceId,
+        channel: "thread:list",
+        args: [],
+      }),
+    ),
+  );
+
+  expect(context.desktopMessages).toHaveLength(1);
+  const forwarded = context.desktopMessages[0] as { id: string };
+  await context.gatewayB.handleMessage(
+    context.desktopPeer,
+    JSON.stringify(buildEcoJsonRpcSuccess(forwarded.id, { threads: [] })),
+  );
+
+  expect(context.mobileMessages).toContainEqual({
+    jsonrpc: "2.0",
+    id: "mobile_req_1",
+    result: { threads: [] },
+  });
+  expect((await context.store.listAuditLogs()).map((log) => log.status).sort()).toEqual([
+    "accepted",
+    "succeeded",
+  ]);
+  await context.busA.close();
+  await context.busB.close();
+  await closeTestMongoStore(context.store);
+});
+
+test("fans out desktop events across server instances", async () => {
+  const context = await createTwoInstanceContext();
+  await context.gatewayA.connect(context.mobilePeer);
+  await context.gatewayB.connect(context.desktopPeer);
+
+  const event = buildEcoJsonRpcNotification(ECO_RPC_METHODS.event, {
+    protocolVersion: 1,
+    id: "evt_remote",
+    kind: "thread.lifecycle",
+    source: "desktop",
+    occurredAt: "2026-01-01T00:00:00.000Z",
+    payload: { type: "thread.started" },
+  });
+  await context.gatewayB.handleMessage(context.desktopPeer, JSON.stringify(event));
+
+  expect(context.mobileMessages).toEqual([event]);
+  await context.busA.close();
+  await context.busB.close();
+  await closeTestMongoStore(context.store);
+});
+
+test("disconnects devices across server instances", async () => {
+  const context = await createTwoInstanceContext();
+  await context.gatewayA.connect(context.mobilePeer);
+  await context.gatewayB.connect(context.desktopPeer);
+
+  await context.gatewayA.disconnectDevice(context.desktopPeer.deviceId, "Device was disabled.");
+
+  expect(context.desktopCloses).toEqual([{ code: 4003, reason: "Device was disabled." }]);
+  expect(await context.presence.getDeviceRoute(context.desktopPeer.deviceId)).toBeUndefined();
+  await context.busA.close();
+  await context.busB.close();
+  await closeTestMongoStore(context.store);
+});
+
 async function createGatewayContext(
   options: {
     bindDevices?: boolean;
@@ -272,7 +345,105 @@ async function createGatewayContext(
   };
 }
 
-function createPeer(input: Omit<RpcPeer, "send"> & { messages: EcoJsonRpcMessage[] }): RpcPeer {
+async function createTwoInstanceContext() {
+  const store = await createTestMongoStore("rpc_gateway_multi_instance");
+  const presence = new MemoryPresenceStore();
+  const hub = new MemoryRpcBusHub();
+  const busA = new MemoryRpcBus("server-a", hub);
+  const busB = new MemoryRpcBus("server-b", hub);
+  const now = "2026-01-01T00:00:00.000Z";
+  const user = await store.createUser({
+    id: "usr_1",
+    email: "owner@example.com",
+    displayName: null,
+    passwordSalt: "salt",
+    passwordHash: "hash",
+    passwordIterations: 1,
+    now,
+  });
+  const desktop = await store.createDevice({
+    id: "dev_desktop",
+    userId: user.id,
+    kind: "desktop",
+    name: "Desktop",
+    secretHash: "secret",
+    now,
+  });
+  const mobile = await store.createDevice({
+    id: "dev_mobile",
+    userId: user.id,
+    kind: "mobile",
+    name: "Mobile",
+    secretHash: "secret",
+    now,
+  });
+  await store.createDeviceBinding({
+    id: "bind_1",
+    userId: user.id,
+    desktopDeviceId: desktop.id,
+    mobileDeviceId: mobile.id,
+    capabilities: ["events:read", "rpc:invoke", "approval:decide"],
+    now,
+  });
+  const gatewayA = new RpcGateway({
+    store,
+    presence,
+    instanceId: "server-a",
+    bus: busA,
+    rpcTimeoutMs: 1000,
+    now: () => new Date(now),
+  });
+  const gatewayB = new RpcGateway({
+    store,
+    presence,
+    instanceId: "server-b",
+    bus: busB,
+    rpcTimeoutMs: 1000,
+    now: () => new Date(now),
+  });
+  await gatewayA.start();
+  await gatewayB.start();
+  const desktopMessages: EcoJsonRpcMessage[] = [];
+  const mobileMessages: EcoJsonRpcMessage[] = [];
+  const desktopCloses: Array<{ code: number; reason: string }> = [];
+  const desktopPeer = createPeer({
+    userId: user.id,
+    deviceId: desktop.id,
+    deviceKind: "desktop",
+    sessionId: "sess_desktop",
+    capabilities: ["events:publish", "rpc:receive", "device:pair"],
+    messages: desktopMessages,
+    closes: desktopCloses,
+  });
+  const mobilePeer = createPeer({
+    userId: user.id,
+    deviceId: mobile.id,
+    deviceKind: "mobile",
+    sessionId: "sess_mobile",
+    capabilities: ["events:read", "rpc:invoke", "approval:decide"],
+    messages: mobileMessages,
+  });
+  return {
+    store,
+    presence,
+    busA,
+    busB,
+    gatewayA,
+    gatewayB,
+    desktopPeer,
+    mobilePeer,
+    desktopMessages,
+    mobileMessages,
+    desktopCloses,
+  };
+}
+
+function createPeer(
+  input: Omit<RpcPeer, "send" | "close"> & {
+    messages: EcoJsonRpcMessage[];
+    closes?: Array<{ code: number; reason: string }>;
+  },
+): RpcPeer {
   return {
     sessionId: input.sessionId,
     userId: input.userId,
@@ -281,6 +452,9 @@ function createPeer(input: Omit<RpcPeer, "send"> & { messages: EcoJsonRpcMessage
     capabilities: input.capabilities,
     send(message) {
       input.messages.push(message);
+    },
+    close(code, reason) {
+      input.closes?.push({ code, reason });
     },
   };
 }

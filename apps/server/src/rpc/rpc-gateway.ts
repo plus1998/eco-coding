@@ -23,6 +23,7 @@ import {
 import type { MongoStore } from "../db/mongo-store";
 import type { PresenceStore } from "../presence/presence-store";
 import { type InvokeAuthorization, PolicyEngine } from "./policy";
+import type { RpcBus, RpcBusMessage } from "./rpc-bus";
 
 export interface RpcPeer {
   sessionId: string;
@@ -37,6 +38,8 @@ export interface RpcPeer {
 export interface RpcGatewayOptions {
   store: MongoStore;
   presence: PresenceStore;
+  instanceId?: string;
+  bus?: RpcBus;
   policy?: PolicyEngine;
   rpcTimeoutMs: number;
   now?: () => Date;
@@ -62,9 +65,18 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+interface RemoteDesktopRequest {
+  originInstanceId: string;
+  desktopDeviceId: string;
+  desktopSessionId: string;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
 export class RpcGateway {
   private readonly store: MongoStore;
   private readonly presence: PresenceStore;
+  private readonly instanceId: string;
+  private readonly bus: RpcBus | undefined;
   private readonly policy: PolicyEngine;
   private readonly rpcTimeoutMs: number;
   private readonly clock: () => Date;
@@ -72,13 +84,24 @@ export class RpcGateway {
   private readonly mobiles = new Map<string, RpcPeer>();
   private readonly sessions = new Map<string, OnlineDeviceSnapshot & { userId: string }>();
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly remoteDesktopRequests = new Map<string, RemoteDesktopRequest>();
 
   constructor(options: RpcGatewayOptions) {
     this.store = options.store;
     this.presence = options.presence;
+    this.instanceId = options.instanceId ?? options.bus?.instanceId ?? "single-instance";
+    this.bus = options.bus;
     this.policy = options.policy ?? new PolicyEngine();
     this.rpcTimeoutMs = options.rpcTimeoutMs;
     this.clock = options.now ?? (() => new Date());
+  }
+
+  async start(): Promise<void> {
+    await this.bus?.start((message) => this.handleBusMessage(message));
+  }
+
+  async close(): Promise<void> {
+    await this.bus?.close();
   }
 
   async connect(peer: RpcPeer): Promise<void> {
@@ -98,6 +121,7 @@ export class RpcGateway {
     };
     this.sessions.set(peer.sessionId, session);
     await this.presence.setSession(session);
+    await this.presence.setDeviceRoute({ ...session, instanceId: this.instanceId });
     await this.store.touchDevice(peer.deviceId, now);
   }
 
@@ -111,21 +135,34 @@ export class RpcGateway {
     }
     this.sessions.delete(peer.sessionId);
     await this.presence.deleteSession(peer.sessionId);
+    await this.presence.deleteDeviceRoute({
+      deviceId: peer.deviceId,
+      userId: peer.userId,
+      sessionId: peer.sessionId,
+    });
   }
 
   async disconnectDevice(deviceId: string, reason = "Device was revoked."): Promise<void> {
     const peer = this.desktops.get(deviceId) ?? this.mobiles.get(deviceId);
-    if (!peer) {
+    if (peer) {
+      peer.close?.(4003, reason);
+      await this.disconnect(peer);
       return;
     }
-    peer.close?.(4003, reason);
-    await this.disconnect(peer);
+    const route = await this.presence.getDeviceRoute(deviceId);
+    if (route && route.instanceId !== this.instanceId) {
+      await this.bus?.publish(route.instanceId, {
+        type: "disconnect-device",
+        deviceId,
+        sessionId: route.sessionId,
+        reason,
+      });
+    }
   }
 
-  listOnlineDevices(userId: string): OnlineDeviceSnapshot[] {
-    return Array.from(this.sessions.values())
-      .filter((session) => session.userId === userId)
-      .map(({ userId: _userId, ...session }) => session);
+  async listOnlineDevices(userId: string): Promise<OnlineDeviceSnapshot[]> {
+    const routes = await this.presence.listDeviceRoutesForUser(userId);
+    return routes.map(({ userId: _userId, instanceId: _instanceId, ...session }) => session);
   }
 
   async handleMessage(peer: RpcPeer, rawMessage: string | Uint8Array): Promise<void> {
@@ -174,10 +211,23 @@ export class RpcGateway {
     }
     const event = notification.params as EcoEventEnvelope | undefined;
     const bindings = await this.store.listActiveBindingsForDesktop(peer.userId, peer.deviceId);
+    let fanoutCount = 0;
     for (const binding of bindings) {
       const mobile = this.mobiles.get(binding.mobileDeviceId);
       if (mobile && binding.capabilities.includes("events:read")) {
         mobile.send(notification);
+        fanoutCount += 1;
+        continue;
+      }
+      const route = await this.presence.getDeviceRoute(binding.mobileDeviceId);
+      if (route && route.instanceId !== this.instanceId && binding.capabilities.includes("events:read")) {
+        await this.bus?.publish(route.instanceId, {
+          type: "event",
+          mobileDeviceId: binding.mobileDeviceId,
+          mobileSessionId: route.sessionId,
+          notification,
+        });
+        fanoutCount += 1;
       }
     }
     await this.store.createAuditLog({
@@ -189,7 +239,7 @@ export class RpcGateway {
       rpcMethod: notification.method,
       metadata: {
         kind: event?.kind,
-        fanoutCount: bindings.length,
+        fanoutCount,
       },
       now: this.clock().toISOString(),
     });
@@ -243,7 +293,8 @@ export class RpcGateway {
       return;
     }
     const desktop = this.desktops.get(params.desktopDeviceId);
-    if (!desktop) {
+    const desktopRoute = desktop ? undefined : await this.presence.getDeviceRoute(params.desktopDeviceId);
+    if (!desktop && (!desktopRoute || desktopRoute.instanceId === this.instanceId || !this.bus)) {
       await this.auditInvokeRejected(
         peer,
         params,
@@ -299,7 +350,20 @@ export class RpcGateway {
         capabilities: peer.capabilities,
       },
     };
-    desktop.send(buildEcoJsonRpcRequest(serverId, ECO_RPC_METHODS.invoke, forwarded));
+    const forwardedRequest = buildEcoJsonRpcRequest(serverId, ECO_RPC_METHODS.invoke, forwarded);
+    if (desktop) {
+      desktop.send(forwardedRequest);
+    } else if (desktopRoute) {
+      await this.bus?.publish(desktopRoute.instanceId, {
+        type: "invoke",
+        serverId,
+        originInstanceId: this.instanceId,
+        desktopDeviceId: params.desktopDeviceId,
+        desktopSessionId: desktopRoute.sessionId,
+        request: forwardedRequest,
+        deadlineMs: timeoutMs,
+      });
+    }
     await this.store.createAuditLog({
       id: createId("aud"),
       userId: peer.userId,
@@ -323,10 +387,28 @@ export class RpcGateway {
     }
     const pending = this.pending.get(response.id);
     if (!pending || pending.desktopDeviceId !== peer.deviceId) {
+      const remote = this.remoteDesktopRequests.get(response.id);
+      if (remote && remote.desktopDeviceId === peer.deviceId && remote.desktopSessionId === peer.sessionId) {
+        clearTimeout(remote.timeout);
+        this.remoteDesktopRequests.delete(response.id);
+        await this.bus?.publish(remote.originInstanceId, {
+          type: "response",
+          serverId: response.id,
+          response,
+        });
+      }
+      return;
+    }
+    await this.completePendingResponse(response.id, response);
+  }
+
+  private async completePendingResponse(serverId: string, response: EcoJsonRpcResponse): Promise<void> {
+    const pending = this.pending.get(serverId);
+    if (!pending) {
       return;
     }
     clearTimeout(pending.timeout);
-    this.pending.delete(response.id);
+    this.pending.delete(serverId);
     if ("error" in response) {
       pending.mobile.send(
         buildEcoJsonRpcFailure(
@@ -367,6 +449,67 @@ export class RpcGateway {
     });
   }
 
+  private async handleBusMessage(message: RpcBusMessage): Promise<void> {
+    switch (message.type) {
+      case "invoke":
+        await this.handleBusInvoke(message);
+        return;
+      case "response":
+        await this.completePendingResponse(message.serverId, message.response);
+        return;
+      case "event":
+        this.handleBusEvent(message);
+        return;
+      case "disconnect-device":
+        await this.handleBusDisconnectDevice(message);
+        return;
+    }
+  }
+
+  private async handleBusInvoke(message: Extract<RpcBusMessage, { type: "invoke" }>): Promise<void> {
+    const desktop = this.desktops.get(message.desktopDeviceId);
+    if (!desktop || desktop.sessionId !== message.desktopSessionId) {
+      await this.bus?.publish(message.originInstanceId, {
+        type: "response",
+        serverId: message.serverId,
+        response: buildEcoJsonRpcFailure(
+          message.serverId,
+          ECO_RPC_ERROR.targetOffline,
+          "Target desktop disconnected.",
+        ),
+      });
+      return;
+    }
+    const timeout = setTimeout(() => {
+      this.remoteDesktopRequests.delete(message.serverId);
+    }, message.deadlineMs);
+    this.remoteDesktopRequests.set(message.serverId, {
+      originInstanceId: message.originInstanceId,
+      desktopDeviceId: message.desktopDeviceId,
+      desktopSessionId: message.desktopSessionId,
+      timeout,
+    });
+    desktop.send(message.request);
+  }
+
+  private handleBusEvent(message: Extract<RpcBusMessage, { type: "event" }>): void {
+    const mobile = this.mobiles.get(message.mobileDeviceId);
+    if (mobile?.sessionId === message.mobileSessionId) {
+      mobile.send(message.notification);
+    }
+  }
+
+  private async handleBusDisconnectDevice(
+    message: Extract<RpcBusMessage, { type: "disconnect-device" }>,
+  ): Promise<void> {
+    const peer = this.desktops.get(message.deviceId) ?? this.mobiles.get(message.deviceId);
+    if (!peer || peer.sessionId !== message.sessionId) {
+      return;
+    }
+    peer.close?.(4003, message.reason);
+    await this.disconnect(peer);
+  }
+
   private async failPendingForDesktop(desktopDeviceId: string): Promise<void> {
     for (const pending of this.pending.values()) {
       if (pending.desktopDeviceId !== desktopDeviceId) {
@@ -396,6 +539,22 @@ export class RpcGateway {
         now: this.clock().toISOString(),
       });
     }
+    for (const [serverId, remote] of this.remoteDesktopRequests.entries()) {
+      if (remote.desktopDeviceId !== desktopDeviceId) {
+        continue;
+      }
+      clearTimeout(remote.timeout);
+      this.remoteDesktopRequests.delete(serverId);
+      await this.bus?.publish(remote.originInstanceId, {
+        type: "response",
+        serverId,
+        response: buildEcoJsonRpcFailure(
+          serverId,
+          ECO_RPC_ERROR.targetOffline,
+          "Target desktop disconnected.",
+        ),
+      });
+    }
   }
 
   private async refreshPresence(peer: RpcPeer): Promise<void> {
@@ -409,6 +568,7 @@ export class RpcGateway {
     };
     this.sessions.set(peer.sessionId, refreshed);
     await this.presence.setSession(refreshed);
+    await this.presence.setDeviceRoute({ ...refreshed, instanceId: this.instanceId });
   }
 
   private async auditInvokeRejected(

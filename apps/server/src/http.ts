@@ -5,6 +5,7 @@ import { MongoStore } from "./db/mongo-store";
 import { DeviceService } from "./devices/device-service";
 import { PairingService } from "./pairing/pairing-service";
 import { createRedisPresenceStore } from "./presence/presence-store";
+import { RedisRpcBus, type RpcBus } from "./rpc/rpc-bus";
 import { type OnlineDeviceSnapshot, RpcGateway, type RpcPeer } from "./rpc/rpc-gateway";
 import type { AccessTokenClaims, DeviceAccessTokenClaims, DeviceBindingRecord, DeviceRecord } from "./types";
 import { toPublicDevice, toPublicDeviceBinding, toPublicUser } from "./types";
@@ -21,6 +22,7 @@ export interface EcoServerDependencies {
   devices?: DeviceService;
   pairing?: PairingService;
   rpc?: RpcGateway;
+  rpcBus?: RpcBus;
 }
 
 export async function startEcoServer(dependencies: EcoServerDependencies) {
@@ -45,14 +47,24 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
       store,
       pairingTtlSeconds: dependencies.config.pairingTtlSeconds,
     });
-  const presence = createRedisPresenceStore(dependencies.config.redisPassword);
+  const presence = createRedisPresenceStore(dependencies.config.redisUrl, dependencies.config.redisPassword);
+  const rpcBus =
+    dependencies.rpcBus ??
+    new RedisRpcBus({
+      instanceId: dependencies.config.instanceId,
+      redisUrl: dependencies.config.redisUrl,
+      ...(dependencies.config.redisPassword ? { redisPassword: dependencies.config.redisPassword } : {}),
+    });
   const rpc =
     dependencies.rpc ??
     new RpcGateway({
       store,
       presence,
+      instanceId: dependencies.config.instanceId,
+      bus: rpcBus,
       rpcTimeoutMs: dependencies.config.rpcTimeoutMs,
     });
+  await rpc.start();
   const peers = new Map<string, RpcPeer>();
 
   return Bun.serve<RpcSocketData>({
@@ -210,7 +222,9 @@ export async function handleEcoHttpRoute(input: {
   if (request.method === "GET" && url.pathname === "/v1/devices") {
     const claims = await requireBearer(request, auth);
     assertCapability(claims, "device:admin");
-    const online = new Map(rpc.listOnlineDevices(claims.userId).map((device) => [device.deviceId, device]));
+    const online = new Map(
+      (await rpc.listOnlineDevices(claims.userId)).map((device) => [device.deviceId, device]),
+    );
     const result = await devices.listDevices(claims.userId, {
       includeDisabled: readBooleanSearchParam(url, "includeDisabled"),
     });
@@ -338,7 +352,9 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "GET" && url.pathname === "/v1/presence") {
     const claims = await requireBearer(request, auth);
-    const online = new Map(rpc.listOnlineDevices(claims.userId).map((device) => [device.deviceId, device]));
+    const online = new Map(
+      (await rpc.listOnlineDevices(claims.userId)).map((device) => [device.deviceId, device]),
+    );
     return json({
       devices: (await listDevicesVisibleToClaims(devices, claims)).map((device) =>
         toPublicDeviceWithPresence(device, online.get(device.id)),

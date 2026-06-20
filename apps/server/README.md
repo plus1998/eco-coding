@@ -15,8 +15,10 @@ Optional environment:
 ```sh
 ECO_SERVER_HOST=127.0.0.1
 ECO_SERVER_PORT=3128
+ECO_SERVER_INSTANCE_ID=server-a
 ECO_SERVER_MONGODB_URI=mongodb://127.0.0.1:27017/eco-coding
 ECO_SERVER_MONGODB_DATABASE=
+ECO_SERVER_REDIS_URL=redis://127.0.0.1:6379
 ECO_SERVER_REDIS_PASSWORD=
 ECO_ACCESS_TOKEN_TTL_SECONDS=900
 ECO_REFRESH_TOKEN_TTL_SECONDS=5184000
@@ -71,6 +73,6 @@ The server only routes commands and events. PC execution still happens on the de
 ## Known v1 Limits
 
 - MongoDB is the durable store for users, devices, bindings, tokens, pairing sessions, and audit logs.
-- Redis (`127.0.0.1:6379`) is required for presence/session TTL state.
-- RPC peer maps are still held by the connected server process; cross-instance RPC bus routing is a separate step.
+- Redis is required for presence/session TTL state and cross-instance RPC/event bus routing.
+- RPC execution still happens on the connected desktop; the server only routes to the instance that owns that WebSocket.
 - Full event payload history is not persisted; only audit metadata is stored.
