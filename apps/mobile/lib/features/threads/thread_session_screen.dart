@@ -7,12 +7,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../approvals/approval_sheets.dart';
 import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
+import '../projects/project_providers.dart';
 import 'thread_providers.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
@@ -91,6 +93,22 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         );
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
+    final projectsAsync = ref.watch(projectListProvider);
+    EcoProject? project;
+    for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
+      if (item.path == workspacePath) {
+        project = item;
+        break;
+      }
+    }
+    final showLanding = !session.loading &&
+        session.error == null &&
+        session.activities.isEmpty;
+    final landingHero = landingHeroText(
+      workspacePath: workspacePath.isEmpty ? null : workspacePath,
+      isHomeProject: project?.isHome ?? false,
+      projectName: project?.name,
+    );
     final workspaceDiffAsync = workspacePath.isNotEmpty
         ? ref.watch(workspaceDiffProvider(workspacePath))
         : const AsyncValue<WorkspaceDiffResult?>.data(null);
@@ -169,19 +187,39 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : session.error != null
                     ? Center(child: Text(session.error!))
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        itemCount: session.activities.length +
-                            (isRunning ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (isRunning && index == session.activities.length) {
-                            return const _ThinkingIndicator();
-                          }
-                          final item = session.activities[index];
-                          return _ActivityBubble(item: item);
-                        },
-                      ),
+                    : showLanding
+                        ? Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 32),
+                              child: Text(
+                                landingHero,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.35,
+                                    ),
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding:
+                                const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                            itemCount: session.activities.length +
+                                (isRunning ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (isRunning &&
+                                  index == session.activities.length) {
+                                return const _ThinkingIndicator();
+                              }
+                              final item = session.activities[index];
+                              return _ActivityBubble(item: item);
+                            },
+                          ),
           ),
           if (session.followUps.isNotEmpty)
             _FollowUpBar(
@@ -203,6 +241,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             threadId: widget.threadId,
             isRunning: isRunning,
             hasActivity: session.activities.isNotEmpty,
+            inputHint: showLanding ? composerLandingPlaceholder : null,
             workspaceDiff: workspaceDiffAsync.valueOrNull,
             diffLoading: workspaceDiffAsync.isLoading,
             onPickImage: _pickImage,

@@ -101,23 +101,24 @@ class ThreadsScreen extends ConsumerWidget {
 
   Future<void> _showOpenProjectSheet(BuildContext context, WidgetRef ref) async {
     final pathController = TextEditingController();
+    final messenger = ScaffoldMessenger.of(context);
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
             right: 16,
             top: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('打开项目', style: Theme.of(context).textTheme.titleLarge),
+              Text('打开项目', style: Theme.of(sheetContext).textTheme.titleLarge),
               const SizedBox(height: 8),
               const Text('输入 Desktop 上的项目绝对路径'),
               const SizedBox(height: 12),
@@ -134,17 +135,18 @@ class ThreadsScreen extends ConsumerWidget {
                 onPressed: () async {
                   final path = pathController.text.trim();
                   if (path.isEmpty) return;
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   try {
                     await ref
                         .read(projectListProvider.notifier)
                         .openProjectPath(path);
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('项目已打开')),
+                    );
                   } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error.toString())),
-                      );
-                    }
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(error.toString())),
+                    );
                   }
                 },
                 child: const Text('打开'),
@@ -180,7 +182,6 @@ class _ProjectSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final branchLabel = project.branch ?? 'no branch';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -252,11 +253,13 @@ class _ProjectSection extends StatelessWidget {
                                       ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              _ProjectMetaChip(
-                                icon: Icons.call_split,
-                                label: branchLabel,
-                              ),
+                              if (shouldShowProjectBranch(project.branch)) ...[
+                                const SizedBox(width: 8),
+                                _ProjectMetaChip(
+                                  icon: Icons.call_split,
+                                  label: project.branch!,
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 4),

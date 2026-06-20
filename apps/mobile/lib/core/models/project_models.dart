@@ -109,3 +109,29 @@ String _basename(String path) {
   if (segments.isEmpty) return path;
   return segments.last;
 }
+
+/// Landing hero copy aligned with [apps/desktop/src/renderer/App.tsx].
+String landingHeroText({
+  required String? workspacePath,
+  bool isHomeProject = false,
+  String? projectName,
+}) {
+  if (workspacePath == null || workspacePath.trim().isEmpty) {
+    return '打开一个项目开始编码';
+  }
+  if (isHomeProject) {
+    return '你在忙什么？';
+  }
+  final name = projectName ?? _basename(workspacePath);
+  return '我们应该在 $name 中构建什么？';
+}
+
+const composerLandingPlaceholder = '尽管问';
+
+bool shouldShowProjectBranch(String? branch) {
+  if (branch == null) return false;
+  final normalized = branch.trim().toLowerCase();
+  return normalized.isNotEmpty &&
+      normalized != 'no branch' &&
+      normalized != 'detached';
+}

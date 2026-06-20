@@ -108,10 +108,15 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
                       child: Text(
-                        '描述你想让 Agent 完成的工作',
+                        landingHeroText(
+                          workspacePath: workspacePath,
+                          isHomeProject: project?.isHome ?? false,
+                          projectName: project?.name,
+                        ),
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: ecoThemeExtras(context).textMuted,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
                             ),
                       ),
                     ),
@@ -124,7 +129,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   threadId: '',
                   isRunning: _starting,
                   hasActivity: false,
-                  inputHint: '描述你想让 Agent 完成的工作…',
+                  inputHint: composerLandingPlaceholder,
                   workspaceDiff: workspaceDiffAsync.valueOrNull,
                   diffLoading: workspaceDiffAsync.isLoading,
                   onPickImage: _pickImage,

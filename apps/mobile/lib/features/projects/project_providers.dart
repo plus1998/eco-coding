@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/network/desktop_rpc.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
@@ -33,6 +34,10 @@ class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
       ref.invalidateSelf();
     });
 
+    return _loadProjects(rpc);
+  }
+
+  Future<List<EcoProject>> _loadProjects(DesktopRpc rpc) async {
     final threads = await rpc.listThreads();
     var homePath = '';
     try {
@@ -82,8 +87,8 @@ class ProjectListNotifier extends AsyncNotifier<List<EcoProject>> {
     }
     final workspace = await rpc.openWorkspacePath(path);
     await ref.read(selectedProjectPathProvider.notifier).select(path);
-    ref.read(collapsedProjectPathsProvider.notifier).expand(path);
-    ref.invalidateSelf();
+    await ref.read(collapsedProjectPathsProvider.notifier).expand(path);
+    state = AsyncData(await _loadProjects(rpc));
     return workspace;
   }
 }
