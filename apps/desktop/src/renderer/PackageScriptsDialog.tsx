@@ -1,10 +1,21 @@
-import { Copy, Loader2, Play, RefreshCw, Square, TextCursorInput, X } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Play,
+  RefreshCw,
+  Square,
+  TextCursorInput,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PackageManagerKind, PackageScriptInfo, PackageScriptRunTarget } from "../shared/ipc";
 import { listPackageScriptRunTargets } from "../shared/package-script-target";
 import { formatRunCommand } from "../shared/package-script-run";
 import { AnsiOutput } from "./AnsiOutput";
+import { AppMessage, useAppMessage } from "./AppMessage";
 import {
   readWorkspaceScriptArgs,
   saveScriptArgs,
@@ -45,6 +56,8 @@ const PACKAGE_MANAGER_LABELS: Record<PackageManagerKind, string> = {
   npm: "npm",
 };
 
+const SUCCESS_COLLAPSE_DELAY_MS = 2000;
+
 export function PackageScriptsDialog({
   open,
   workspacePath,
@@ -67,8 +80,14 @@ export function PackageScriptsDialog({
   const [editingScript, setEditingScript] = useState<string | null>(null);
   const [draftArgs, setDraftArgs] = useState("");
   const [copiedScript, setCopiedScript] = useState<string | null>(null);
+  const [outputPanelOpen, setOutputPanelOpen] = useState(false);
+  const { showSuccess, dismiss, state: appMessageState } = useAppMessage();
   const outputRef = useRef<HTMLPreElement>(null);
   const argsInputRef = useRef<HTMLInputElement>(null);
+  const wasRunningRef = useRef(false);
+  const prevOutputLengthRef = useRef(0);
+  const dialogOpenedRef = useRef(false);
+  const collapseTimerRef = useRef<number | undefined>(undefined);
 
   const platform = window.eco?.platform ?? "darwin";
   const visibleRunTargets = useMemo(
@@ -85,11 +104,74 @@ export function PackageScriptsDialog({
       setEditingScript(null);
       setDraftArgs("");
       setCopiedScript(null);
+      setOutputPanelOpen(false);
+      wasRunningRef.current = false;
+      prevOutputLengthRef.current = 0;
+      dialogOpenedRef.current = false;
+      dismiss();
+      if (collapseTimerRef.current !== undefined) {
+        window.clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = undefined;
+      }
       return;
+    }
+    if (!dialogOpenedRef.current) {
+      dialogOpenedRef.current = true;
+      prevOutputLengthRef.current = runState?.output.length ?? 0;
+      if (runState?.running) {
+        setOutputPanelOpen(true);
+      }
     }
     setScriptArgsByName(readWorkspaceScriptArgs(workspacePath));
     setRunTarget(readPackageScriptRunTarget(platform));
-  }, [open, workspacePath, platform]);
+  }, [open, workspacePath, platform, dismiss]);
+
+  useEffect(() => {
+    const isRunning = runState?.running ?? false;
+
+    if (isRunning) {
+      if (collapseTimerRef.current !== undefined) {
+        window.clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = undefined;
+      }
+      setOutputPanelOpen(true);
+      wasRunningRef.current = true;
+      return;
+    }
+
+    if (wasRunningRef.current && runState?.exitCode === 0) {
+      const scriptName = runState.script?.trim() || "脚本";
+      showSuccess(`${scriptName} 执行成功`);
+      collapseTimerRef.current = window.setTimeout(() => {
+        setOutputPanelOpen(false);
+        collapseTimerRef.current = undefined;
+      }, SUCCESS_COLLAPSE_DELAY_MS);
+    }
+
+    wasRunningRef.current = isRunning;
+  }, [runState?.running, runState?.exitCode, runState?.script, showSuccess]);
+
+  useEffect(
+    () => () => {
+      if (collapseTimerRef.current !== undefined) {
+        window.clearTimeout(collapseTimerRef.current);
+        collapseTimerRef.current = undefined;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const outputLength = runState?.output.length ?? 0;
+    if (outputLength === 0) {
+      prevOutputLengthRef.current = 0;
+      return;
+    }
+    if (prevOutputLengthRef.current === 0) {
+      setOutputPanelOpen(true);
+    }
+    prevOutputLengthRef.current = outputLength;
+  }, [runState?.output]);
 
   const selectRunTarget = useCallback((target: PackageScriptRunTarget) => {
     setRunTarget(target);
@@ -171,48 +253,74 @@ export function PackageScriptsDialog({
   const showToolbar = visibleRunTargets.length > 1 || scripts.length > 0;
 
   return createPortal(
-    <div className="package-scripts-backdrop" onMouseDown={onClose}>
+    <>
+      {appMessageState ? (
+        <div className="package-scripts-message-host">
+          <AppMessage
+            kind={appMessageState.kind}
+            message={appMessageState.message}
+            onDismiss={dismiss}
+          />
+        </div>
+      ) : null}
+      <div className="package-scripts-backdrop" onMouseDown={onClose}>
       <div
-        className="package-scripts-dialog"
-        role="dialog"
-        aria-label="npm scripts"
-        aria-modal="true"
+        className={[
+          "package-scripts-shell",
+          showOutput && outputPanelOpen ? "has-output-panel" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="package-scripts-header">
-          <div className="package-scripts-header-text">
-            <h2 className="package-scripts-title">npm scripts</h2>
-            <p className="package-scripts-subtitle">
-              {packageName ? `${packageName} · ` : ""}
-              {PACKAGE_MANAGER_LABELS[packageManager]}
-            </p>
-          </div>
-          <div className="package-scripts-header-actions">
-            {runState?.running && onStop ? (
+        <div
+          className="package-scripts-dialog"
+          role="dialog"
+          aria-label="npm scripts"
+          aria-modal="true"
+        >
+          <header className="package-scripts-header">
+            <div className="package-scripts-header-text">
+              <h2 className="package-scripts-title">npm scripts</h2>
+              <p className="package-scripts-subtitle">
+                {packageName ? `${packageName} · ` : ""}
+                {PACKAGE_MANAGER_LABELS[packageManager]}
+              </p>
+            </div>
+            <div className="package-scripts-header-actions">
+              {showOutput && !outputPanelOpen ? (
+                <button
+                  type="button"
+                  className={[
+                    "package-scripts-icon-btn",
+                    "package-scripts-output-toggle",
+                    runState?.exitCode === 0 ? "is-success" : "",
+                    runState?.exitCode !== undefined && runState.exitCode !== 0 ? "is-failure" : "",
+                    runState?.running ? "is-running" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  aria-label="展开输出"
+                  title="展开输出"
+                  onClick={() => setOutputPanelOpen(true)}
+                >
+                  <PanelRightOpen size={15} aria-hidden />
+                </button>
+              ) : null}
               <button
                 type="button"
-                className="package-scripts-stop-btn"
-                aria-label="停止脚本"
-                onClick={() => void onStop()}
+                className="package-scripts-icon-btn"
+                aria-label="刷新脚本列表"
+                disabled={busy}
+                onClick={() => void onRefresh()}
               >
-                <Square size={13} aria-hidden />
-                <span>停止</span>
+                <RefreshCw size={15} className={busy ? "spinning" : undefined} />
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="package-scripts-icon-btn"
-              aria-label="刷新脚本列表"
-              disabled={busy}
-              onClick={() => void onRefresh()}
-            >
-              <RefreshCw size={15} className={busy ? "spinning" : undefined} />
-            </button>
-            <button type="button" className="package-scripts-icon-btn" aria-label="关闭" onClick={onClose}>
-              <X size={15} />
-            </button>
-          </div>
-        </header>
+              <button type="button" className="package-scripts-icon-btn" aria-label="关闭" onClick={onClose}>
+                <X size={15} />
+              </button>
+            </div>
+          </header>
 
         {showToolbar ? (
           <div className="package-scripts-toolbar">
@@ -370,47 +478,81 @@ export function PackageScriptsDialog({
           )}
         </div>
 
-        {showOutput && runState ? (
-          <section className="package-scripts-output-section" aria-live="polite">
-            <div className="package-scripts-output-head">
-              <span className="package-scripts-output-label">
-                {runState.script ? `${runState.script} 输出` : "输出"}
-              </span>
-              {runState.running ? (
-                <span className="package-scripts-exit-badge is-running">运行中</span>
-              ) : runState.exitCode !== undefined ? (
-                <span
-                  className={
-                    runState.exitCode === 0
-                      ? "package-scripts-exit-badge is-success"
-                      : "package-scripts-exit-badge is-failure"
-                  }
-                >
-                  exit {runState.exitCode}
-                </span>
-              ) : null}
-            </div>
-            <AnsiOutput
-              ref={outputRef}
-              className="package-scripts-output"
-              text={runState.output}
-              placeholder={runState.running ? "…" : "（无输出）"}
-            />
-            {runState.command?.length ? (
-              <p className="package-scripts-output-command" title={runState.command.join(" ")}>
-                {runState.command.join(" ")}
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
         <footer className="package-scripts-footer">
           <span className="package-scripts-path" title={workspacePath}>
             {workspacePath}
           </span>
         </footer>
       </div>
-    </div>,
+
+        {showOutput && runState ? (
+          <aside
+            className={["package-scripts-output-panel", outputPanelOpen ? "is-open" : ""]
+              .filter(Boolean)
+              .join(" ")}
+            aria-live="polite"
+            aria-label="脚本输出"
+          >
+            <header className="package-scripts-output-header">
+              <div className="package-scripts-output-head">
+                <span className="package-scripts-output-label">
+                  {runState.script ? runState.script : "输出"}
+                </span>
+                {runState.running ? (
+                  <span className="package-scripts-exit-badge is-running">运行中</span>
+                ) : runState.exitCode !== undefined ? (
+                  <span
+                    className={
+                      runState.exitCode === 0
+                        ? "package-scripts-exit-badge is-success"
+                        : "package-scripts-exit-badge is-failure"
+                    }
+                  >
+                    exit {runState.exitCode}
+                  </span>
+                ) : null}
+              </div>
+              <div className="package-scripts-output-header-actions">
+                {runState.running && onStop ? (
+                  <button
+                    type="button"
+                    className="package-scripts-stop-btn"
+                    aria-label="停止脚本"
+                    onClick={() => void onStop()}
+                  >
+                    <Square size={13} aria-hidden />
+                    <span>停止</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="package-scripts-icon-btn"
+                  aria-label="收起输出"
+                  title="收起输出"
+                  onClick={() => setOutputPanelOpen(false)}
+                >
+                  <PanelRightClose size={15} aria-hidden />
+                </button>
+              </div>
+            </header>
+            <div className="package-scripts-output-body">
+              <AnsiOutput
+                ref={outputRef}
+                className="package-scripts-output"
+                text={runState.output}
+                placeholder={runState.running ? "…" : "（无输出）"}
+              />
+              {runState.command?.length ? (
+                <p className="package-scripts-output-command" title={runState.command.join(" ")}>
+                  {runState.command.join(" ")}
+                </p>
+              ) : null}
+            </div>
+          </aside>
+        ) : null}
+      </div>
+    </div>
+    </>,
     document.body,
   );
 }

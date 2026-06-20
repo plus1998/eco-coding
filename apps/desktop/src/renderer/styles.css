@@ -14102,16 +14102,37 @@ html[data-window-focused="true"] .settings-nav {
   backdrop-filter: blur(4px);
 }
 
-.package-scripts-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(480px, 100%);
+.package-scripts-message-host .app-message {
+  z-index: 11001;
+}
+
+.package-scripts-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0fr;
+  align-items: stretch;
+  width: min(480px, calc(100vw - 48px));
   max-height: min(82vh, 680px);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   background: var(--bg-elevated);
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
+  overflow: hidden;
+  transition:
+    width 0.24s cubic-bezier(0.4, 0, 0.2, 1),
+    grid-template-columns 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.package-scripts-shell.has-output-panel {
+  width: min(760px, calc(100vw - 48px));
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+}
+
+.package-scripts-dialog {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: min(82vh, 680px);
   overflow: hidden;
 }
 
@@ -14173,6 +14194,18 @@ html[data-window-focused="true"] .settings-nav {
 
 .package-scripts-icon-btn .spinning {
   animation: eco-spin 0.8s linear infinite;
+}
+
+.package-scripts-output-toggle.is-success {
+  color: var(--status-success, #16a34a);
+}
+
+.package-scripts-output-toggle.is-failure {
+  color: var(--status-danger, #dc2626);
+}
+
+.package-scripts-output-toggle.is-running {
+  color: var(--status-info, #2563eb);
 }
 
 .package-scripts-stop-btn {
@@ -14433,15 +14466,51 @@ html[data-window-focused="true"] .settings-nav {
   animation: eco-spin 0.8s linear infinite;
 }
 
-.package-scripts-output-section {
+.package-scripts-output-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0 14px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  min-width: 0;
+  max-height: min(82vh, 680px);
+  overflow: hidden;
+  border-left: 0 solid var(--border-subtle);
   background: var(--nav-hover);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    border-left-width 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.package-scripts-output-panel.is-open {
+  border-left-width: 1px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.package-scripts-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 16px 14px 10px;
+}
+
+.package-scripts-output-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.package-scripts-output-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 14px 14px;
+  overflow: hidden;
 }
 
 .package-scripts-output-head {
@@ -14483,11 +14552,13 @@ html[data-window-focused="true"] .settings-nav {
 }
 
 .package-scripts-output {
+  flex: 1 1 auto;
+  min-height: 120px;
   margin: 0;
-  max-height: 180px;
+  max-height: none;
   overflow: auto;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
   background: var(--bg-inset, rgba(0, 0, 0, 0.22));
   color: var(--text-primary);
   font-size: 11px;
