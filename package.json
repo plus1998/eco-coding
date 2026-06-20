@@ -14,6 +14,7 @@
     "start:server": "bun run --cwd apps/server start",
     "build": "bun run --cwd apps/desktop build",
     "build:server": "bun run --cwd apps/server build",
+    "build:apk": "cd apps/mobile && flutter build apk",
     "deploy:server": "bash scripts/deploy-server.sh",
     "icons": "bun run --cwd apps/desktop icons",
     "pack:mac-arm64": "bun run --cwd apps/desktop pack:mac-arm64",
