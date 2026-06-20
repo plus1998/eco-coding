@@ -24,9 +24,9 @@ String formatDurationMs(int ms) {
     return '${totalSeconds.toStringAsFixed(1)}s';
   }
   final minutes = totalSeconds ~/ 60;
-  final seconds = totalSeconds % 60;
+  final seconds = (totalSeconds % 60).floor();
   if (seconds > 0) {
-    return '${minutes}m ${seconds.toStringAsFixed(1)}s';
+    return '${minutes}m ${seconds}s';
   }
   return '${minutes}m';
 }

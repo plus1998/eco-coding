@@ -40,6 +40,7 @@ class ActivityFeedEntry {
     this.durationMs = 0,
     this.statusText,
     this.timeline = const [],
+    this.bashRun,
   });
 
   final String id;
@@ -57,6 +58,7 @@ class ActivityFeedEntry {
   final int durationMs;
   final String? statusText;
   final List<SubagentTimelineEntry> timeline;
+  final BashRunCardDisplay? bashRun;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({
@@ -158,6 +160,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     required ActivityActionIcon icon,
     ToolActionLifecycle? lifecycle,
     String? subagentRole,
+    BashRunCardDisplay? bashRun,
   }) {
     final actionKey = activityActionKey(
       subagent: subagentRole,
@@ -193,6 +196,7 @@ List<ActivityFeedEntry> buildActivityFeed({
         actionIcon: icon,
         subagentRole: subagentRole ?? existing.subagentRole,
         lifecycle: nextLifecycle,
+        bashRun: bashRun ?? existing.bashRun,
       );
       return;
     }
@@ -204,8 +208,28 @@ List<ActivityFeedEntry> buildActivityFeed({
         actionIcon: icon,
         subagentRole: subagentRole,
         lifecycle: lifecycle,
+        bashRun: bashRun,
       ),
     );
+  }
+
+  BashRunCardDisplay? resolveActionBashRun(
+    ParsedActivityToolInvocation? invocation,
+    String message,
+  ) {
+    if (invocation == null || invocation.toolName != 'Bash') return null;
+    return resolveBashRunCardDisplay(
+      toolName: invocation.toolName,
+      command: invocation.detail,
+      summaryText: message,
+      durationMs: invocation.durationMs,
+    );
+  }
+
+  ToolActionLifecycle resolveToolLifecycle(String message) {
+    return isToolElapsedDuration(message)
+        ? ToolActionLifecycle.completed
+        : ToolActionLifecycle.running;
   }
 
   void upsertPhase(String summary, {String? detail}) {
@@ -336,6 +360,7 @@ List<ActivityFeedEntry> buildActivityFeed({
     final parsedApproval = parseBashApprovalActivityText(message);
     if (parsedApproval != null) {
       flushTextBuffers();
+      final invocation = parseActivityToolInvocation(message);
       upsertAction(
         id: line.id,
         label: formatToolDisplayLabel(
@@ -345,18 +370,25 @@ List<ActivityFeedEntry> buildActivityFeed({
         icon: iconForToolName(parsedApproval.toolName),
         lifecycle: parsedApproval.phase,
         subagentRole: agentRole,
+        bashRun: resolveActionBashRun(invocation, message),
       );
       continue;
     }
 
     if (looksLikeToolActionMessage(message)) {
       flushTextBuffers();
+      final invocation = parseActivityToolInvocation(message);
       upsertAction(
         id: line.id,
-        label: parseToolActionDisplayLabel(message),
-        icon: iconForActivityMessage(message),
-        lifecycle: ToolActionLifecycle.running,
+        label: invocation != null
+            ? formatToolDisplayLabel(invocation.toolName, invocation.detail)
+            : parseToolActionDisplayLabel(message),
+        icon: invocation != null
+            ? iconForToolName(invocation.toolName)
+            : iconForActivityMessage(message),
+        lifecycle: resolveToolLifecycle(message),
         subagentRole: agentRole,
+        bashRun: resolveActionBashRun(invocation, message),
       );
       continue;
     }
@@ -409,7 +441,48 @@ List<ActivityFeedEntry> buildActivityFeed({
     runProjection: runProjection,
     subagentSessions: subagentSessions,
   );
+  if (runProjection != null) {
+    _syncProjectionSubagentCards(output, runProjection);
+    _enrichSubagentEntries(
+      output,
+      runProjection: runProjection,
+      subagentSessions: subagentSessions,
+    );
+  }
   return output;
+}
+
+void _syncProjectionSubagentCards(
+  List<ActivityFeedEntry> output,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final subagents =
+      projection.agents.where((agent) => agent.kind == 'subagent').toList();
+  if (subagents.isEmpty) return;
+
+  final coveredAgentIds = <String>{
+    for (final entry in output)
+      if (entry.kind == ActivityFeedKind.subagentMission &&
+          entry.agentId != null &&
+          entry.agentId!.isNotEmpty)
+        entry.agentId!,
+  };
+
+  for (final agent in subagents) {
+    if (coveredAgentIds.contains(agent.agentId)) continue;
+    final delegation = readProjectionAgentDelegation(agent);
+    final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+    output.add(
+      ActivityFeedEntry(
+        id: 'projection-agent-${agent.agentId}',
+        kind: ActivityFeedKind.subagentMission,
+        text: delegation?.summary ?? resolveSubagentRunDisplayTitle(role),
+        subagentRole: role,
+        missionPrompt: delegation?.prompt,
+        agentId: agent.agentId,
+      ),
+    );
+  }
 }
 
 void _enrichSubagentEntries(
@@ -436,13 +509,22 @@ void _enrichSubagentEntries(
     final role =
         normalizeAgentDisplayRole(entry.subagentRole) ?? entry.subagentRole ?? '';
     ThreadRunProjectionAgent? agent;
-    final agents = agentsByRole[role];
-    if (agents != null && agents.isNotEmpty) {
-      final useIndex = roleUseIndex[role] ?? 0;
-      if (useIndex < agents.length) {
-        agent = agents[useIndex];
-        roleUseIndex[role] = useIndex + 1;
+    if (entry.agentId != null &&
+        entry.agentId!.isNotEmpty &&
+        runProjection != null) {
+      agent = findProjectionAgentById(runProjection, entry.agentId!);
+    }
+    if (agent == null) {
+      final agents = agentsByRole[role];
+      if (agents != null && agents.isNotEmpty) {
+        final useIndex = roleUseIndex[role] ?? 0;
+        if (useIndex < agents.length) {
+          agent = agents[useIndex];
+          roleUseIndex[role] = useIndex + 1;
+        }
       }
+    } else {
+      roleUseIndex[role] = (roleUseIndex[role] ?? 0) + 1;
     }
 
     final timing =
@@ -460,6 +542,12 @@ void _enrichSubagentEntries(
         (agent?.delegationSummary?.trim().isNotEmpty == true
             ? agent!.delegationSummary
             : null);
+    final summary = entry.text.trim().isNotEmpty
+        ? entry.text
+        : (agent != null
+            ? (readProjectionAgentDelegation(agent)?.summary ??
+                resolveSubagentRunDisplayTitle(role))
+            : resolveSubagentRunDisplayTitle(role));
 
     for (final item in timeline) {
       if (item.icon != null) {
@@ -476,10 +564,10 @@ void _enrichSubagentEntries(
     output[index] = ActivityFeedEntry(
       id: entry.id,
       kind: entry.kind,
-      text: entry.text,
+      text: summary,
       subagentRole: entry.subagentRole,
       missionPrompt: missionPrompt,
-      agentId: agent?.agentId,
+      agentId: agent?.agentId ?? entry.agentId,
       running: running,
       durationMs: durationMs,
       statusText: statusText,
@@ -587,6 +675,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _ActionTile(
           label: entry.text,
           icon: entry.actionIcon ?? ActivityActionIcon.file,
+          lifecycle: entry.lifecycle,
+          bashRun: entry.bashRun,
         );
       case ActivityFeedKind.phase:
         return _PhaseTile(text: entry.text, detail: entry.detail);
@@ -839,13 +929,30 @@ class _UsageBadgeLine extends StatelessWidget {
 }
 
 class _ActionTile extends StatelessWidget {
-  const _ActionTile({required this.label, required this.icon});
+  const _ActionTile({
+    required this.label,
+    required this.icon,
+    this.lifecycle,
+    this.bashRun,
+  });
 
   final String label;
   final ActivityActionIcon icon;
+  final ToolActionLifecycle? lifecycle;
+  final BashRunCardDisplay? bashRun;
 
   @override
   Widget build(BuildContext context) {
+    if (bashRun != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: _BashRunCard(
+          display: bashRun!,
+          lifecycle: lifecycle,
+        ),
+      );
+    }
+
     final eco = ecoThemeExtras(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
@@ -886,6 +993,85 @@ class _ActionTile extends StatelessWidget {
       case ActivityActionIcon.file:
         return Icons.description_outlined;
     }
+  }
+}
+
+class _BashRunCard extends StatelessWidget {
+  const _BashRunCard({
+    required this.display,
+    this.lifecycle,
+  });
+
+  final BashRunCardDisplay display;
+  final ToolActionLifecycle? lifecycle;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final running = lifecycle == ToolActionLifecycle.running;
+    final failed = lifecycle == ToolActionLifecycle.failed;
+    final borderColor = failed
+        ? EcoColors.danger.withValues(alpha: 0.45)
+        : running
+            ? EcoColors.accent.withValues(alpha: 0.45)
+            : eco.borderSubtle;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.cardSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.terminal,
+                  size: 16,
+                  color: running ? EcoColors.accentText : eco.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    display.title,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: EcoColors.textHeading,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                if (display.meta != null && display.meta!.isNotEmpty)
+                  Text(
+                    display.meta!,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: eco.textMuted,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                  ),
+              ],
+            ),
+          ),
+          if (display.body != null && display.body!.isNotEmpty) ...[
+            Divider(height: 1, color: eco.borderSubtle),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: SelectableText(
+                display.body!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: eco.textSecondary,
+                      fontFamily: 'Menlo',
+                      height: 1.45,
+                    ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

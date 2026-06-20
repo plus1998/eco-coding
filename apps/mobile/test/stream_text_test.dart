@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:eco_mobile/core/utils/stream_text.dart';
+import 'package:eco_mobile/core/utils/subagent_session_timing.dart';
 
 void main() {
   test('mergeStreamText handles cumulative snapshots', () {
@@ -24,5 +25,11 @@ void main() {
       thinkingPreviewLine('**Bold** intro\n\nmore text'),
       'Bold intro more text',
     );
+  });
+
+  test('formatDurationMs omits decimal seconds after one minute', () {
+    expect(formatDurationMs(103000), '1m 43s');
+    expect(formatDurationMs(60000), '1m');
+    expect(formatDurationMs(4500), '4.5s');
   });
 }

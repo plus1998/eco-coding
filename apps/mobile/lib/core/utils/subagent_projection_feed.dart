@@ -224,3 +224,41 @@ bool resolveSubagentRunning({
   if (agent != null) return agent.isRunning;
   return timing?.isActive ?? false;
 }
+
+class ProjectionAgentDelegation {
+  const ProjectionAgentDelegation({
+    required this.role,
+    required this.summary,
+    this.prompt,
+  });
+
+  final String role;
+  final String summary;
+  final String? prompt;
+}
+
+ProjectionAgentDelegation? readProjectionAgentDelegation(
+  ThreadRunProjectionAgent agent,
+) {
+  final summary = agent.delegationSummary?.trim() ?? '';
+  final prompt = agent.delegationPrompt?.trim() ?? '';
+  if (summary.isEmpty && prompt.isEmpty) return null;
+  final role = normalizeAgentDisplayRole(agent.role) ?? agent.role;
+  return ProjectionAgentDelegation(
+    role: role,
+    summary: summary.isNotEmpty
+        ? summary
+        : (prompt.length > 200 ? prompt.substring(0, 200) : prompt),
+    prompt: prompt.isEmpty ? null : prompt,
+  );
+}
+
+ThreadRunProjectionAgent? findProjectionAgentById(
+  ThreadRunProjectionSnapshot projection,
+  String agentId,
+) {
+  for (final agent in projection.agents) {
+    if (agent.agentId == agentId) return agent;
+  }
+  return null;
+}

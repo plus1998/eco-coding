@@ -306,4 +306,67 @@ void main() {
     expect(feed.last.streaming, isTrue);
     expect(feed.last.text, isEmpty);
   });
+
+  test('buildActivityFeed renders bash tool actions as cards', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: Bash · npm test',
+        ),
+      ],
+    );
+
+    expect(feed.length, 1);
+    expect(feed.first.kind, ActivityFeedKind.action);
+    expect(feed.first.bashRun, isNotNull);
+    expect(feed.first.bashRun!.title, isNotEmpty);
+    expect(feed.first.bashRun!.body, 'npm test');
+  });
+
+  test('buildActivityFeed injects cards for concurrent projection subagents', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(id: '1', role: 'user', message: '并发子代理'),
+      ],
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: [
+          ThreadRunProjectionAgent(
+            agentId: 'agent_explore_1',
+            role: 'explore',
+            kind: 'subagent',
+            status: 'active',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            durationMs: 1000,
+            timeline: const [],
+            delegationSummary: '梳理模块 A',
+          ),
+          ThreadRunProjectionAgent(
+            agentId: 'agent_coder_1',
+            role: 'coder',
+            kind: 'subagent',
+            status: 'active',
+            startedAt: '2026-01-01T00:00:01.000Z',
+            durationMs: 2000,
+            timeline: const [],
+            delegationSummary: '实现功能 B',
+          ),
+        ],
+      ),
+    );
+
+    final missions = feed
+        .where((entry) => entry.kind == ActivityFeedKind.subagentMission)
+        .toList();
+    expect(missions.length, 2);
+    expect(
+      missions.map((entry) => entry.agentId).toSet(),
+      {'agent_explore_1', 'agent_coder_1'},
+    );
+  });
 }

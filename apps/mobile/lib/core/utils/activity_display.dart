@@ -1,5 +1,7 @@
 import 'dart:ui' show Color;
 
+import 'subagent_session_timing.dart';
+
 const subagentDisplayRoles = {
   'explore',
   'architect',
@@ -291,6 +293,202 @@ String clampActivityPreviewLine(String text, [int max = 56]) {
   final oneLine = text.replaceAll(RegExp(r'\s+'), ' ').trim();
   if (oneLine.isEmpty || oneLine.length <= max) return oneLine;
   return '${oneLine.substring(0, max - 1)}…';
+}
+
+bool isToolElapsedDuration(String value) {
+  return RegExp(r'\(\d+(?:\.\d+)?s\)\s*$').hasMatch(value.trim());
+}
+
+class ParsedActivityToolInvocation {
+  const ParsedActivityToolInvocation({
+    required this.toolName,
+    this.detail,
+    this.durationMs,
+    required this.rawMessage,
+  });
+
+  final String toolName;
+  final String? detail;
+  final int? durationMs;
+  final String rawMessage;
+}
+
+class BashRunCardDisplay {
+  const BashRunCardDisplay({
+    required this.title,
+    this.meta,
+    this.body,
+  });
+
+  final String title;
+  final String? meta;
+  final String? body;
+}
+
+int? parseToolDurationMsFromMessage(String message) {
+  final match = RegExp(r'\((\d+(?:\.\d+)?)s\)\s*$').firstMatch(message.trim());
+  if (match == null) return null;
+  final seconds = double.tryParse(match.group(1) ?? '');
+  if (seconds == null) return null;
+  return (seconds * 1000).round();
+}
+
+ParsedActivityToolInvocation? parseActivityToolInvocation(String raw) {
+  final text = stripSubagentBracketPrefix(raw.trim());
+  if (text.isEmpty) return null;
+
+  for (final item in _progressPatterns) {
+    if (item.verb != '运行命令') continue;
+    final match = item.pattern.firstMatch(text);
+    if (match != null) {
+      final detail = match.group(1)?.trim();
+      return ParsedActivityToolInvocation(
+        toolName: 'Bash',
+        detail: detail?.isEmpty == true ? null : detail,
+        durationMs: parseToolDurationMsFromMessage(text),
+        rawMessage: text,
+      );
+    }
+  }
+
+  final toolMatch = _toolLinePattern.firstMatch(text);
+  if (toolMatch != null) {
+    final toolName = toolMatch.group(1) ?? '';
+    var detail = toolMatch.group(2)?.trim() ?? toolMatch.group(3)?.trim();
+    if (detail != null && RegExp(r'^\(\d+(?:\.\d+)?s\)$').hasMatch(detail)) {
+      detail = null;
+    } else if (detail != null) {
+      detail = detail.replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '').trim();
+      if (detail.isEmpty) detail = null;
+    }
+    return ParsedActivityToolInvocation(
+      toolName: toolName,
+      detail: detail,
+      durationMs: parseToolDurationMsFromMessage(text),
+      rawMessage: text,
+    );
+  }
+
+  final bareMatch = RegExp(r'^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$').firstMatch(text);
+  if (bareMatch != null) {
+    final toolName = bareMatch.group(1)!;
+    final detail = bareMatch.group(2)!
+        .replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
+        .trim();
+    return ParsedActivityToolInvocation(
+      toolName: toolName,
+      detail: detail.isEmpty ? null : detail,
+      durationMs: parseToolDurationMsFromMessage(text),
+      rawMessage: text,
+    );
+  }
+
+  return null;
+}
+
+String formatBashRunMeta(String command, {int? durationMs}) {
+  final trimmed = command.trim();
+  if (trimmed.isEmpty) {
+    if (durationMs == null) return '';
+    final seconds = durationMs / 1000;
+    return seconds < 60
+        ? '${seconds.toStringAsFixed(1)}s'
+        : formatDurationMs(durationMs);
+  }
+  final segments = trimmed.split(RegExp(r'\s*(?:&&|\|\||;)\s*'));
+  final firstToken = segments.first.trim().split(RegExp(r'\s+')).first;
+  final parts = <String>[];
+  if (firstToken.isNotEmpty) parts.add(firstToken);
+  if (segments.length > 1) parts.add('${segments.length - 1}+');
+  if (durationMs != null) {
+    final seconds = durationMs / 1000;
+    parts.add(
+      seconds < 60
+          ? '${seconds.toStringAsFixed(1)}s'
+          : formatDurationMs(durationMs),
+    );
+  }
+  return parts.join(', ');
+}
+
+String _deriveBashTitleFromCommand(String? command) {
+  final trimmed = command?.trim();
+  if (trimmed == null || trimmed.isEmpty) return '运行命令';
+  final segments = trimmed
+      .split(RegExp(r'\s*(?:&&|\|\||;)\s*'))
+      .map((segment) => segment.trim())
+      .where((segment) => segment.isNotEmpty)
+      .toList();
+  final lastSegment = segments.isEmpty ? trimmed : segments.last;
+  final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
+  if (normalized.length <= 48) return normalized;
+  final tokens = normalized.split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
+  final list = tokens.toList();
+  if (list.length >= 2) {
+    return clampActivityPreviewLine('${list[0]} ${list[1]}', 48);
+  }
+  return clampActivityPreviewLine(list.first, 48);
+}
+
+bool _looksLikeShellCommand(String text) {
+  return RegExp(
+    r'^(?:cd|bun|npm|pnpm|yarn|git|curl|make|docker|python|node|\./|/)',
+    caseSensitive: false,
+  ).hasMatch(text) ||
+      text.contains('&&') ||
+      text.contains('|');
+}
+
+String _normalizeBashSummaryCandidate(String? summaryText) {
+  final trimmed = summaryText?.trim();
+  if (trimmed == null || trimmed.isEmpty) return '';
+  final toolLine = RegExp(
+    r'^Tool:\s*Bash(?:\s*·\s*([\s\S]+))?$',
+    caseSensitive: false,
+  ).firstMatch(trimmed);
+  if (toolLine != null) {
+    final detail = toolLine.group(1)
+        ?.replaceFirst(RegExp(r'\s+\(\d+(?:\.\d+)?s\)\s*$'), '')
+        .trim();
+    return detail ?? '';
+  }
+  return trimmed;
+}
+
+String formatMeaningfulBashTitle({String? command, String? summaryText}) {
+  final summary = _normalizeBashSummaryCandidate(summaryText);
+  if (summary.isNotEmpty &&
+      !_looksLikeShellCommand(summary) &&
+      !RegExp(r'^Tool:\s*', caseSensitive: false).hasMatch(summary)) {
+    return clampActivityPreviewLine(summary, 48);
+  }
+  return _deriveBashTitleFromCommand(command);
+}
+
+BashRunCardDisplay? resolveBashRunCardDisplay({
+  String? toolName,
+  String? command,
+  String? summaryText,
+  String? output,
+  int? durationMs,
+}) {
+  if (toolName != 'Bash') return null;
+  final normalizedCommand = command?.trim();
+  final normalizedOutput = output?.trim();
+  final normalizedSummary = summaryText?.trim();
+  final title = formatMeaningfulBashTitle(
+    command: normalizedCommand,
+    summaryText: normalizedSummary,
+  );
+  final meta = normalizedCommand == null || normalizedCommand.isEmpty
+      ? null
+      : formatBashRunMeta(normalizedCommand, durationMs: durationMs);
+  final body = normalizedOutput ?? normalizedCommand;
+  return BashRunCardDisplay(
+    title: title,
+    meta: meta?.isEmpty == true ? null : meta,
+    body: body?.isEmpty == true ? null : body,
+  );
 }
 
 String formatToolDisplayLabel(String toolName, [String? detail]) {

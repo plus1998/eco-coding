@@ -608,11 +608,15 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
 
     const last = current.details[current.details.length - 1];
     if (last?.kind === "subagent-mission" && last.subagent === merged.role) {
+      const distinctAgents = Boolean(
+        toolContextAgentId && last.agentId && toolContextAgentId !== last.agentId,
+      );
       const sameSummary = last.summary === merged.summary;
       const upgradeInPlace =
-        sameSummary ||
-        isGenericMissionSummary(last.summary) ||
-        (!last.prompt?.trim() && Boolean(merged.prompt?.trim()));
+        !distinctAgents &&
+        (sameSummary ||
+          isGenericMissionSummary(last.summary) ||
+          (!last.prompt?.trim() && Boolean(merged.prompt?.trim())));
       if (upgradeInPlace) {
         const upgraded = {
           kind: "subagent-mission" as const,
@@ -2288,8 +2292,8 @@ export function formatDuration(ms: number): string {
     return `${totalSeconds.toFixed(1)}s`;
   }
   const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return seconds > 0 ? `${minutes}m ${seconds.toFixed(1)}s` : `${minutes}m`;
+  const seconds = Math.floor(totalSeconds % 60);
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 function isPhaseLine(message: string): boolean {

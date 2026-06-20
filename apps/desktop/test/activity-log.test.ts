@@ -33,6 +33,7 @@ import {
   shouldScrollMainActivityFeedForLine,
   shouldMergeThinkingBlocks,
   mergeThinkingBlocks,
+  formatDuration,
   type ActivityLogBlock,
   type SubagentRunItem,
 } from "../src/renderer/activity-log";
@@ -1626,4 +1627,10 @@ test("buildActivityLogBlocks merges bash approval lines into one action row", ()
     label: "/outside/file.txt",
     lifecycle: "running",
   });
+});
+
+test("formatDuration omits decimal seconds after one minute", () => {
+  expect(formatDuration(103_000)).toBe("1m 43s");
+  expect(formatDuration(60_000)).toBe("1m");
+  expect(formatDuration(4_500)).toBe("4.5s");
 });
