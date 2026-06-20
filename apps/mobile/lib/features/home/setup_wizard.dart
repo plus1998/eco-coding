@@ -25,9 +25,9 @@ extension SetupWizardStepX on SetupWizardStep {
 
   String get shortLabel => switch (this) {
         SetupWizardStep.server => '服务器',
-        SetupWizardStep.login => '登录',
+        SetupWizardStep.login => '账号',
         SetupWizardStep.bindPc => '绑定',
-        SetupWizardStep.selectPc => '选择',
+        SetupWizardStep.selectPc => 'PC',
       };
 }
 
@@ -79,15 +79,15 @@ class SetupWizardProgress extends StatelessWidget {
               if (i > 0)
                 Expanded(
                   child: Container(
-                    height: 2,
+                    height: 1,
+                    margin: const EdgeInsets.only(bottom: 22),
                     color: isSetupWizardStepDone(steps[i - 1], overview)
-                        ? EcoColors.accent
+                        ? EcoColors.accent.withValues(alpha: 0.5)
                         : eco.borderSubtle,
                   ),
                 ),
               _StepDot(
                 step: steps[i],
-                index: i + 1,
                 active: steps[i] == current,
                 done: isSetupWizardStepDone(steps[i], overview),
                 onTap: isSetupWizardStepDone(steps[i], overview)
@@ -97,41 +97,6 @@ class SetupWizardProgress extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 12),
-        Text(
-          current.title,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          current.subtitle,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: eco.textMuted,
-              ),
-        ),
-        if (overview.readyForThreads) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: eco.statusAllowBg,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: EcoColors.statusAllowBorder),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle, color: eco.statusAllowText, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '已连接，选择 PC 后可进入主界面',
-                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -140,14 +105,12 @@ class SetupWizardProgress extends StatelessWidget {
 class _StepDot extends StatelessWidget {
   const _StepDot({
     required this.step,
-    required this.index,
     required this.active,
     required this.done,
     this.onTap,
   });
 
   final SetupWizardStep step;
-  final int index;
   final bool active;
   final bool done;
   final VoidCallback? onTap;
@@ -155,11 +118,6 @@ class _StepDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final bg = done
-        ? eco.statusAllowBg
-        : active
-            ? EcoColors.accentSoft
-            : EcoColors.bgElevated;
     final fg = done
         ? eco.statusAllowText
         : active
@@ -169,29 +127,50 @@ class _StepDot extends StatelessWidget {
     final dot = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: bg,
-          child: done
-              ? Icon(Icons.check, size: 18, color: fg)
-              : Text(
-                  '$index',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: fg,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: active ? 28 : 24,
+          height: active ? 28 : 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: done
+                ? eco.statusAllowBg
+                : active
+                    ? EcoColors.accentSoft
+                    : Colors.transparent,
+            border: Border.all(
+              color: done
+                  ? EcoColors.statusAllowBorder
+                  : active
+                      ? EcoColors.accent.withValues(alpha: 0.6)
+                      : eco.borderSubtle,
+              width: active ? 1.5 : 1,
+            ),
+          ),
+          child: Center(
+            child: done
+                ? Icon(Icons.check, size: 14, color: fg)
+                : Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: active ? EcoColors.accent : eco.textMuted,
+                    ),
                   ),
-                ),
+          ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           step.shortLabel,
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: active ? EcoColors.accentText : eco.textMuted,
+                color: fg,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 11,
+                letterSpacing: 0.2,
               ),
         ),
       ],
@@ -202,7 +181,7 @@ class _StepDot extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: dot,
       ),
     );

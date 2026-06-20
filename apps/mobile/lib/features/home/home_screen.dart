@@ -252,7 +252,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             )
           : _showManualSetup
               ? SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -261,6 +261,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         overview: overview,
                         onStepTap: _goToStep,
                       ),
+                      const SizedBox(height: 28),
+                      _ConnectStepHeader(step: currentStep, overview: overview),
                       const SizedBox(height: 20),
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
@@ -271,7 +273,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           actionBusy: actionBusy,
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 24),
                       _WizardNavBar(
                         showBack: currentStep.index > 0,
                         showNext: isSetupWizardStepDone(
@@ -414,6 +416,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+class _ConnectStepHeader extends StatelessWidget {
+  const _ConnectStepHeader({
+    required this.step,
+    required this.overview,
+  });
+
+  final SetupWizardStep step;
+  final SetupOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final done = isSetupWizardStepDone(step, overview);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          step.title,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
+              ),
+        ),
+        if (!done) ...[
+          const SizedBox(height: 6),
+          Text(
+            step.subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: eco.textMuted,
+                  height: 1.4,
+                ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _WizardNavBar extends StatelessWidget {
   const _WizardNavBar({
     required this.showBack,
@@ -498,7 +539,6 @@ class _ServerStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
     final serverStep = overview.steps[0];
 
     return Column(
@@ -506,9 +546,12 @@ class _ServerStep extends StatelessWidget {
       children: [
         TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Center Server URL',
-            hintText: 'http://192.168.31.124:3128',
+          decoration: InputDecoration(
+            labelText: 'Center Server',
+            hintText: 'http://192.168.1.10:3128',
+            suffixIcon: serverStep.state == SetupStepState.done
+                ? Icon(Icons.check_circle_outline, color: ecoThemeExtras(context).statusAllowText)
+                : null,
           ),
           keyboardType: TextInputType.url,
           enabled: !busy,
@@ -518,22 +561,17 @@ class _ServerStep extends StatelessWidget {
           Text(
             serverStep.hint!,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: eco.statusDenyText,
+                  color: ecoThemeExtras(context).statusDenyText,
                 ),
           ),
         ],
         const SizedBox(height: 16),
         FilledButton(
           onPressed: busy ? null : onTest,
-          child: const Text('测试服务器可达性'),
-        ),
-        if (serverStep.state == SetupStepState.done) ...[
-          const SizedBox(height: 16),
-          _StepDoneBanner(
-            icon: Icons.dns_outlined,
-            text: '已连接 ${serverStep.subtitle ?? ''}',
+          child: Text(
+            serverStep.state == SetupStepState.done ? '重新测试' : '测试连接',
           ),
-        ],
+        ),
       ],
     );
   }
@@ -564,35 +602,29 @@ class _LoginStep extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final credentials = ref.watch(credentialsProvider).valueOrNull;
     final loggedIn = credentials?.isProvisioned ?? false;
-    final loginStep = overview.steps[1];
     final wsStep = overview.steps[2];
 
     if (loggedIn) {
+      final wsNeedsAttention = wsStep.state == SetupStepState.error;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _StepDoneBanner(
-            icon: Icons.verified_user_outlined,
-            text: credentials!.userEmail!,
-            subtitle: credentials.hasDeviceCredentials
-                ? '手机设备已注册 · ${credentials.deviceId}'
-                : '手机设备未注册',
+          _AccountStatusRow(
+            email: credentials!.userEmail!,
+            connected: wsStep.state == SetupStepState.done,
           ),
-          if (wsStep.hint != null) ...[
+          if (wsNeedsAttention) ...[
             const SizedBox(height: 12),
             Text(
-              wsStep.hint!,
+              wsStep.hint ?? '连接异常',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: wsStep.state == SetupStepState.error
-                        ? ecoThemeExtras(context).statusDenyText
-                        : ecoThemeExtras(context).textSecondary,
+                    color: ecoThemeExtras(context).statusDenyText,
                   ),
             ),
             const SizedBox(height: 8),
-            OutlinedButton.icon(
+            OutlinedButton(
               onPressed: busy ? null : onReconnect,
-              icon: const Icon(Icons.sync),
-              label: const Text('重新连接 WebSocket'),
+              child: const Text('重试连接'),
             ),
           ],
         ],
@@ -602,8 +634,7 @@ class _LoginStep extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (loginStep.state == SetupStepState.pending &&
-            overview.steps[0].state != SetupStepState.done)
+        if (overview.steps[0].state != SetupStepState.done)
           const _StepBlockedHint(text: '请先完成服务器配置')
         else ...[
           SegmentedButton<bool>(
@@ -659,13 +690,11 @@ class _BindPcStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bindStep = overview.steps[3];
-    final eco = ecoThemeExtras(context);
 
     if (bindStep.state == SetupStepState.done) {
-      return _StepDoneBanner(
-        icon: Icons.link,
-        text: bindStep.subtitle ?? '已绑定 PC',
-        subtitle: '可在下一步选择要操控的设备',
+      return _AccountStatusRow(
+        email: bindStep.subtitle ?? '已绑定 PC',
+        connected: true,
       );
     }
 
@@ -675,13 +704,6 @@ class _BindPcStep extends StatelessWidget {
         if (overview.steps[1].state != SetupStepState.done)
           const _StepBlockedHint(text: '请先完成登录')
         else ...[
-          Text(
-            '在 Desktop「连接」页生成配对码，然后扫码或手动输入。',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: eco.textSecondary,
-                ),
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -689,15 +711,16 @@ class _BindPcStep extends StatelessWidget {
                   controller: pairCodeController,
                   decoration: const InputDecoration(
                     labelText: '配对码',
-                    hintText: '8 位字母数字',
+                    hintText: '8 位',
                   ),
                   textCapitalization: TextCapitalization.characters,
                   enabled: !busy,
                 ),
               ),
+              const SizedBox(width: 4),
               IconButton(
                 onPressed: busy ? null : onScan,
-                icon: const Icon(Icons.qr_code_scanner),
+                icon: const Icon(Icons.qr_code_scanner_outlined),
                 tooltip: '扫码',
               ),
             ],
@@ -705,7 +728,7 @@ class _BindPcStep extends StatelessWidget {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: busy ? null : onBind,
-            child: const Text('绑定 PC'),
+            child: const Text('绑定'),
           ),
         ],
       ],
@@ -718,20 +741,20 @@ class _SelectPcStep extends ConsumerWidget {
     required this.overview,
     required this.busy,
     required this.onSelect,
+    this.compact = false,
   });
 
   final SetupOverview overview;
   final bool busy;
   final Future<void> Function(String desktopId, String name, bool online)
       onSelect;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eco = ecoThemeExtras(context);
     final bindingsAsync = ref.watch(bindingsProvider);
     final presenceAsync = ref.watch(presenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
-    final selectStep = overview.steps[4];
 
     if (overview.steps[3].state != SetupStepState.done) {
       return const _StepBlockedHint(text: '请先绑定 PC');
@@ -741,7 +764,7 @@ class _SelectPcStep extends ConsumerWidget {
       data: (bindings) {
         final active = bindings.where((b) => b.isActive).toList();
         if (active.isEmpty) {
-          return const _StepBlockedHint(text: '暂无绑定。请在 Desktop「连接」页生成配对码。');
+          return const _StepBlockedHint(text: '暂无绑定设备');
         }
 
         final presence = presenceAsync.valueOrNull ?? [];
@@ -750,105 +773,138 @@ class _SelectPcStep extends ConsumerWidget {
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (selectStep.state == SetupStepState.done &&
-                selectStep.subtitle != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _StepDoneBanner(
-                  icon: Icons.computer,
-                  text: selectStep.subtitle!,
-                ),
+          children: active.map((binding) {
+            final desktopId = binding.desktopDeviceId;
+            final online = onlineIds.contains(desktopId);
+            final device =
+                presence.where((d) => d.id == desktopId).firstOrNull;
+            final name = device?.name ?? desktopId;
+            final selected = selectedDesktop == desktopId;
+            return Padding(
+              padding: EdgeInsets.only(bottom: compact ? 6 : 8),
+              child: _PcDeviceTile(
+                name: name,
+                online: online,
+                selected: selected,
+                onTap: busy ? null : () => onSelect(desktopId, name, online),
               ),
-            ...active.map((binding) {
-              final desktopId = binding.desktopDeviceId;
-              final online = onlineIds.contains(desktopId);
-              final device =
-                  presence.where((d) => d.id == desktopId).firstOrNull;
-              final name = device?.name ?? desktopId;
-              final selected = selectedDesktop == desktopId;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: selected ? eco.accentSoft : eco.cardSurface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: BorderSide(
-                    color: selected ? EcoColors.accent : eco.cardBorder,
-                  ),
-                ),
-                child: ListTile(
-                  leading: Icon(
-                    online ? Icons.computer : Icons.computer_outlined,
-                    color: online ? eco.online : eco.offline,
-                  ),
-                  title: Text(name),
-                  subtitle: Text(
-                    online ? '在线 · 可远程操控' : '离线 · 需 Desktop 连接 Server',
-                    style: TextStyle(
-                      color: online ? eco.statusAllowText : eco.textMuted,
-                    ),
-                  ),
-                  trailing: selected
-                      ? Icon(Icons.check_circle, color: EcoColors.accentText)
-                      : null,
-                  onTap: busy ? null : () => onSelect(desktopId, name, online),
-                ),
-              );
-            }),
-          ],
+            );
+          }).toList(),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
       error: (error, _) => Text(error.toString()),
     );
   }
 }
 
-class _StepDoneBanner extends StatelessWidget {
-  const _StepDoneBanner({
-    required this.icon,
-    required this.text,
-    this.subtitle,
+class _PcDeviceTile extends StatelessWidget {
+  const _PcDeviceTile({
+    required this.name,
+    required this.online,
+    required this.selected,
+    this.onTap,
   });
 
-  final IconData icon;
-  final String text;
-  final String? subtitle;
+  final String name;
+  final bool online;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Material(
+      color: selected ? eco.accentSoft : eco.cardSurface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? EcoColors.accent.withValues(alpha: 0.45)
+                  : eco.cardBorder,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.desktop_windows_outlined,
+                size: 20,
+                color: selected ? EcoColors.accentText : eco.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                ),
+              ),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: online ? eco.online : eco.offline,
+                ),
+              ),
+              if (selected) ...[
+                const SizedBox(width: 10),
+                Icon(Icons.check, size: 18, color: EcoColors.accentText),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountStatusRow extends StatelessWidget {
+  const _AccountStatusRow({
+    required this.email,
+    required this.connected,
+  });
+
+  final String email;
+  final bool connected;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: eco.statusAllowBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: EcoColors.statusAllowBorder),
+        color: EcoColors.bgElevated,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: eco.borderSubtle),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: eco.statusAllowText, size: 22),
-          const SizedBox(width: 12),
+          Icon(
+            connected ? Icons.check_circle_outline : Icons.person_outline,
+            size: 18,
+            color: connected ? eco.statusAllowText : eco.textSecondary,
+          ),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  text,
-                  style: TextStyle(
-                    color: eco.statusAllowText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
-                  ),
-                ],
-              ],
+            child: Text(
+              email,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
         ],
@@ -873,36 +929,55 @@ class _ScanFirstView extends StatelessWidget {
     final eco = ecoThemeExtras(context);
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Spacer(),
-            Icon(Icons.qr_code_scanner, size: 72, color: EcoColors.accentText),
-            const SizedBox(height: 24),
-            Text(
-              '连接 PC',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall,
+            const Spacer(flex: 2),
+            Center(
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: EcoColors.accentSoft,
+                  border: Border.all(
+                    color: EcoColors.accent.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_outlined,
+                  size: 32,
+                  color: EcoColors.accentText,
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 28),
             Text(
-              '在 PC 端生成配对二维码，点击下方按钮扫码即可自动完成配置与绑定。',
+              '扫描 PC 端配对码',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '在 Desktop「连接」页生成二维码',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: eco.textMuted,
                   ),
             ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
+            const Spacer(flex: 3),
+            FilledButton(
               onPressed: busy ? null : onScan,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('扫一扫连接'),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 15),
               ),
+              child: const Text('扫一扫'),
             ),
-            const Spacer(),
+            const SizedBox(height: 8),
             TextButton(
               onPressed: busy ? null : onManualSetup,
               child: const Text('手动配置'),
@@ -933,79 +1008,76 @@ class _ReadyConnectionView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoThemeExtras(context);
-    final selectStep = overview.steps[4];
-    final credentials = ref.watch(credentialsProvider).valueOrNull;
+    final selectedDesktop = ref.watch(selectedDesktopIdProvider);
+    final presence = ref.watch(presenceProvider).valueOrNull ?? [];
+    String? selectedName;
+    var selectedOnline = false;
+    if (selectedDesktop != null) {
+      for (final device in presence) {
+        if (device.id == selectedDesktop) {
+          selectedName = device.name;
+          selectedOnline = device.online;
+          break;
+        }
+      }
+    }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: eco.statusAllowBg,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: EcoColors.statusAllowBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.check_circle, color: eco.statusAllowText),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '已连接，选择 PC 后即可进入主界面',
-                        style: TextStyle(
-                          color: eco.statusAllowText,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (selectedName != null) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selectedOnline ? eco.online : eco.offline,
                     ),
-                  ],
-                ),
-                if (selectStep.subtitle != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    '当前 PC：${selectStep.subtitle}',
-                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      selectedName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
                   ),
                 ],
-                if (credentials?.serverUrl.isNotEmpty ?? false) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Server：${credentials!.serverUrl}',
-                    style: TextStyle(color: eco.statusAllowText, fontSize: 13),
-                  ),
-                ],
-              ],
+              ),
+              const SizedBox(height: 20),
+            ],
+            Expanded(
+              child: _SelectPcStep(
+                overview: overview,
+                busy: busy,
+                compact: true,
+                onSelect: onSelectPc,
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '选择 PC',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          _SelectPcStep(
-            overview: overview,
-            busy: busy,
-            onSelect: onSelectPc,
-          ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: busy ? null : onEnterApp,
-            child: const Text('进入应用'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: busy ? null : onScan,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('扫码绑定新 PC'),
-          ),
-        ],
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: busy ? null : onEnterApp,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text('进入应用'),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: busy ? null : onScan,
+              icon: const Icon(Icons.qr_code_scanner_outlined, size: 18),
+              label: const Text('绑定新 PC'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1019,24 +1091,13 @@ class _StepBlockedHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: EcoColors.bgElevated,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: eco.borderSubtle),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: eco.textMuted, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: eco.textSecondary),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: eco.textMuted,
             ),
-          ),
-        ],
       ),
     );
   }
