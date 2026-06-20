@@ -446,6 +446,7 @@ function ThreadInfoFloatControl({
   resetKey,
   width = 320,
   minHeight = 200,
+  fixedHeight,
   children,
 }: {
   label: ReactNode;
@@ -453,6 +454,7 @@ function ThreadInfoFloatControl({
   resetKey?: string | undefined;
   width?: number;
   minHeight?: number;
+  fixedHeight?: number;
   children: (closePanel: () => void) => ReactNode;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -481,9 +483,10 @@ function ThreadInfoFloatControl({
         minHeight,
         prefer: "above",
         align: "start",
+        ...(fixedHeight !== undefined ? { fixedHeight } : {}),
       }),
     );
-  }, [minHeight, width]);
+  }, [fixedHeight, minHeight, width]);
 
   const showPanel = useCallback(() => {
     clearCloseTimer();
@@ -693,7 +696,8 @@ function ThreadInfoFloatStack({
             }
             resetKey={threadId}
             width={320}
-            minHeight={200}
+            minHeight={360}
+            fixedHeight={360}
           >
             {(closePanel) => (
               <ContextCard

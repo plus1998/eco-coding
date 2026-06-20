@@ -5541,9 +5541,7 @@ html[data-window-focused="true"] .codex-sidebar {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .thread-info-float-popover .thread-info-float-card,
@@ -5557,8 +5555,18 @@ html[data-window-focused="true"] .codex-sidebar {
 }
 
 .thread-info-float-popover .context-card:not(.context-card-empty) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   max-height: none;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.thread-info-float-popover .context-card-has-subagents .context-card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }
 
 .thread-info-float-pills {
@@ -6346,6 +6354,7 @@ html[data-window-focused="true"] .codex-sidebar {
 .context-card:not(.context-card-empty) {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   max-height: min(320px, 48vh);
   overflow: hidden;
 }
@@ -6379,7 +6388,6 @@ html[data-window-focused="true"] .codex-sidebar {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
-  max-height: min(160px, 24vh);
   padding-top: 8px;
   overflow-x: hidden;
   overflow-y: auto;

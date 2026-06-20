@@ -11,6 +11,8 @@ export interface ComposerFloatingOptions {
   gap?: number;
   prefer?: "above" | "below" | "auto";
   align?: "center" | "start";
+  /** Fixed popover height, clamped to available viewport space. */
+  fixedHeight?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -43,12 +45,17 @@ export function composerFloatingStyleForAnchor(
     MIN_FLOATING_HEIGHT,
     Math.floor(placeAbove ? spaceAbove : spaceBelow),
   );
+  const fixedHeight =
+    options.fixedHeight !== undefined
+      ? Math.min(Math.max(options.fixedHeight, MIN_FLOATING_HEIGHT), availableSpace)
+      : undefined;
 
   return {
     position: "fixed",
     left,
     width,
-    maxHeight: availableSpace,
+    maxHeight: fixedHeight ?? availableSpace,
+    ...(fixedHeight !== undefined ? { height: fixedHeight } : {}),
     zIndex: 10000,
     ...(placeAbove
       ? { bottom: window.innerHeight - rect.top + gap }
