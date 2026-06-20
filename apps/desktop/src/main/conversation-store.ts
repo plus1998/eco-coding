@@ -1966,6 +1966,19 @@ export class ConversationStore {
       .run(now, accumulatedMs, now, threadId, agentId);
   }
 
+  markSubagentSessionHandedOff(threadId: string, agentId: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE thread_subagent_sessions
+         SET status = 'handed_off',
+             ended_at = COALESCE(ended_at, ?),
+             updated_at = ?
+         WHERE thread_id = ? AND agent_id = ?`,
+      )
+      .run(now, now, threadId, agentId);
+  }
+
   upsertSubagentMetrics(
     threadId: string,
     input: {

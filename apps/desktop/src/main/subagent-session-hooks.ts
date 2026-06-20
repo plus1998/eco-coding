@@ -145,13 +145,16 @@ export function createSubagentSessionHooks(
       }
       return should;
     };
-    hooks.resolveHandoffPrompt = (input) =>
-      handoffService.buildHandoffPrompt({
+    hooks.resolveHandoffPrompt = async (input) => {
+      const prompt = await handoffService.buildHandoffPrompt({
         threadId: input.threadId,
         agentId: input.agentId,
         role: input.role,
         originalPrompt: input.prompt,
       });
+      store.markSubagentSessionHandedOff(threadId, input.agentId);
+      return prompt;
+    };
   }
 
   return hooks;

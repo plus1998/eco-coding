@@ -332,6 +332,9 @@ export class ContextWindowMonitor {
   ): boolean {
     const instance = this.getInstanceOccupancy(threadId, agentId);
     if (instance && instance.limitsResolved) {
+      if (instance.occupied >= instance.limit) {
+        return true;
+      }
       const { atThreshold } = computeOccupancyRatio(
         instance.occupied,
         instance.compactLimit,
@@ -344,6 +347,9 @@ export class ContextWindowMonitor {
     const roleState = state?.byRole[role];
     if (!roleState || !roleState.limitsResolved || roleState.occupied <= 0) {
       return false;
+    }
+    if (roleState.occupied >= roleState.limit) {
+      return true;
     }
     const { atThreshold } = computeOccupancyRatio(
       roleState.occupied,

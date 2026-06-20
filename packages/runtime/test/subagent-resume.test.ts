@@ -158,7 +158,7 @@ test("createSubagentResumePreToolHook uses handoff prompt when threshold is met"
   expect(result.hookSpecificOutput?.updatedInput?.prompt).not.toContain("Resume agent");
 });
 
-test("createSubagentResumePreToolHook falls back to resume when handoff prompt is empty", async () => {
+test("createSubagentResumePreToolHook uses fallback handoff when handoff prompt is empty", async () => {
   const hook = createSubagentResumePreToolHook(
     "thr_1",
     "execution",
@@ -178,7 +178,7 @@ test("createSubagentResumePreToolHook falls back to resume when handoff prompt i
     "tool_1",
   );
 
-  expect(result.hookSpecificOutput?.updatedInput?.prompt).toBe(
-    "Resume agent explore-agent-id and Continue mapping auth",
-  );
+  const prompt = result.hookSpecificOutput?.updatedInput?.prompt as string;
+  expect(prompt).toContain("子代理上下文交接");
+  expect(prompt).not.toContain("Resume agent");
 });
