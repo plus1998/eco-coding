@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/eco_types.dart' show EcoConnectionState;
 import '../../core/network/eco_center_client.dart';
@@ -202,16 +203,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PC 连接'),
-        leading: _showManualSetup && !overview.readyForThreads
+        title: const Text('连接 PC'),
+        leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(Icons.qr_code_scanner),
-                tooltip: '返回扫码',
-                onPressed: actionBusy
-                    ? null
-                    : () => setState(() => _showManualSetup = false),
+                icon: const Icon(Icons.arrow_back),
+                onPressed: actionBusy ? null : () => context.pop(),
               )
-            : null,
+            : _showManualSetup && !overview.readyForThreads
+                ? IconButton(
+                    icon: const Icon(Icons.qr_code_scanner),
+                    tooltip: '返回扫码',
+                    onPressed: actionBusy
+                        ? null
+                        : () => setState(() => _showManualSetup = false),
+                  )
+                : null,
         actions: [
           IconButton(
             onPressed: actionBusy ? null : _refreshStatus,
@@ -231,6 +237,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               overview: overview,
               busy: actionBusy,
               onScan: _openScanner,
+              onEnterApp: () => context.go('/threads'),
+              onSelectPc: (desktopId, name, online) async {
+                ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+                await ref
+                    .read(ecoCenterClientProvider)
+                    .setSelectedDesktop(desktopId);
+                if (online) {
+                  _showSnack('已选择 $name');
+                } else {
+                  _showSnack('$name 当前离线，请确认 Desktop 已连接 Server');
+                }
+              },
             )
           : _showManualSetup
               ? SingleChildScrollView(
@@ -261,9 +279,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               overview,
                             ) &&
                             currentStep != SetupWizardStep.selectPc,
+                        showEnterApp: overview.readyForThreads,
                         busy: actionBusy,
                         onBack: _goBack,
                         onNext: () => _goNext(overview),
+                        onEnterApp: () => context.go('/threads'),
                         inline: true,
                       ),
                     ],
@@ -401,6 +421,8 @@ class _WizardNavBar extends StatelessWidget {
     required this.busy,
     required this.onBack,
     required this.onNext,
+    this.showEnterApp = false,
+    this.onEnterApp,
     this.inline = false,
   });
 
@@ -409,11 +431,15 @@ class _WizardNavBar extends StatelessWidget {
   final bool busy;
   final VoidCallback onBack;
   final VoidCallback onNext;
+  final bool showEnterApp;
+  final VoidCallback? onEnterApp;
   final bool inline;
 
   @override
   Widget build(BuildContext context) {
-    if (!showBack && !showNext) return const SizedBox.shrink();
+    if (!showBack && !showNext && !showEnterApp) {
+      return const SizedBox.shrink();
+    }
 
     final buttons = Row(
       children: [
@@ -424,10 +450,17 @@ class _WizardNavBar extends StatelessWidget {
           ),
         const Spacer(),
         if (showNext)
-          FilledButton(
+          OutlinedButton(
             onPressed: busy ? null : onNext,
             child: const Text('下一步'),
           ),
+        if (showEnterApp && onEnterApp != null) ...[
+          if (showNext) const SizedBox(width: 8),
+          FilledButton(
+            onPressed: busy ? null : onEnterApp,
+            child: const Text('进入应用'),
+          ),
+        ],
       ],
     );
 
@@ -886,11 +919,16 @@ class _ReadyConnectionView extends ConsumerWidget {
     required this.overview,
     required this.busy,
     required this.onScan,
+    required this.onEnterApp,
+    required this.onSelectPc,
   });
 
   final SetupOverview overview;
   final bool busy;
   final VoidCallback onScan;
+  final VoidCallback onEnterApp;
+  final Future<void> Function(String desktopId, String name, bool online)
+      onSelectPc;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -919,7 +957,7 @@ class _ReadyConnectionView extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '一切就绪，可前往「会话」远程操控 PC',
+                        '已连接，选择 PC 后即可进入主界面',
                         style: TextStyle(
                           color: eco.statusAllowText,
                           fontWeight: FontWeight.w600,
@@ -945,11 +983,27 @@ class _ReadyConnectionView extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+          Text(
+            '选择 PC',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          _SelectPcStep(
+            overview: overview,
+            busy: busy,
+            onSelect: onSelectPc,
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: busy ? null : onEnterApp,
+            child: const Text('进入应用'),
+          ),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: busy ? null : onScan,
             icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('重新扫码 / 换绑 PC'),
+            label: const Text('扫码绑定新 PC'),
           ),
         ],
       ),

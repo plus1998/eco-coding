@@ -1,0 +1,607 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/constants/bash_review_ui.dart';
+import '../../core/constants/plan_mode_ui.dart';
+import '../../core/models/thread_models.dart';
+import '../../core/theme/eco_theme.dart';
+import '../threads/thread_providers.dart';
+
+const _subagentRoleLabels = {
+  'explore': 'Explore',
+  'architect': 'Architect',
+  'coder': 'Coder',
+  'reviewer': 'Reviewer',
+  'tester': 'Tester',
+};
+
+extension ThreadRuntimeConfigCopy on ThreadRuntimeConfig {
+  ThreadRuntimeConfig copyWith({
+    String? routeProfileId,
+    String? agentProfileId,
+    Map<String, bool>? subagentEnabled,
+    bool? planModeEnabled,
+    String? bashReviewMode,
+  }) {
+    return ThreadRuntimeConfig(
+      routeProfileId: routeProfileId ?? this.routeProfileId,
+      agentProfileId: agentProfileId ?? this.agentProfileId,
+      subagentEnabled: subagentEnabled ?? this.subagentEnabled,
+      planModeEnabled: planModeEnabled ?? this.planModeEnabled,
+      bashReviewMode: bashReviewMode ?? this.bashReviewMode,
+    );
+  }
+}
+
+void persistRuntimeConfig(
+  WidgetRef ref, {
+  required String threadId,
+  required ThreadRuntimeConfigInput config,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+}) {
+  onChanged(config);
+  if (threadId.isEmpty) return;
+  ref.read(desktopRpcProvider)?.updateRuntimeConfig(
+        threadId: threadId,
+        runtimeConfig: config,
+      );
+}
+
+class ComposerContextTrigger extends StatelessWidget {
+  const ComposerContextTrigger({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool enabled;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    final child = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 10,
+            vertical: 6,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: enabled ? EcoColors.textSecondary : eco.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: enabled
+                            ? EcoColors.textPrimary
+                            : eco.textMuted,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                ),
+              ),
+              if (enabled && onTap != null) ...[
+                const SizedBox(width: 2),
+                Icon(Icons.expand_more, size: 14, color: eco.textMuted),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (compact) return child;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: EcoColors.composerPillBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: EcoColors.composerPillBorder),
+      ),
+      child: child,
+    );
+  }
+}
+
+class ComposerToolbarTrigger extends StatelessWidget {
+  const ComposerToolbarTrigger({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: enabled ? EcoColors.textSecondary : eco.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          enabled ? EcoColors.textPrimary : eco.textMuted,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+              ),
+              if (enabled && onTap != null) ...[
+                const SizedBox(width: 2),
+                Icon(Icons.expand_more, size: 14, color: eco.textMuted),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ComposerProfileControl extends ConsumerWidget {
+  const ComposerProfileControl({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final modelSettings = ref.watch(modelSettingsProvider);
+    final profileId =
+        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+
+    final label = modelSettings.maybeWhen(
+      data: (settings) {
+        for (final profile in settings?.orchestrationProfiles ?? []) {
+          if (profile.id == profileId) return profile.name;
+        }
+        return profileId.isEmpty ? '选择方案' : profileId;
+      },
+      orElse: () => profileId.isEmpty ? '选择方案' : profileId,
+    );
+
+    return ComposerContextTrigger(
+      icon: Icons.dashboard_customize_outlined,
+      label: label,
+      enabled: canEdit,
+      onTap: canEdit
+          ? () => _showProfileSheet(
+                context,
+                ref,
+                runtimeConfig: runtimeConfig,
+                threadId: threadId,
+                onChanged: onChanged,
+              )
+          : null,
+    );
+  }
+
+  Future<void> _showProfileSheet(
+    BuildContext context,
+    WidgetRef ref, {
+    required ThreadRuntimeConfigInput runtimeConfig,
+    required String threadId,
+    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  }) async {
+    final settings = await ref.read(modelSettingsProvider.future);
+    final profiles = settings?.orchestrationProfiles ?? [];
+    if (profiles.isEmpty || !context.mounted) return;
+
+    final selectedId =
+        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: EcoColors.bgMenu,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SheetHeader(title: '选择 Agent Profile'),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: profiles.length,
+                itemBuilder: (context, index) {
+                  final profile = profiles[index];
+                  final isActive = profile.id == selectedId;
+                  return ListTile(
+                    title: Text(profile.name),
+                    trailing: isActive
+                        ? const Icon(Icons.check, color: EcoColors.accentText)
+                        : null,
+                    selected: isActive,
+                    onTap: () {
+                      persistRuntimeConfig(
+                        ref,
+                        threadId: threadId,
+                        config: ThreadRuntimeConfig(
+                          routeProfileId: profile.id,
+                          agentProfileId: profile.id,
+                          subagentEnabled: runtimeConfig.subagentEnabled,
+                          planModeEnabled: runtimeConfig.planModeEnabled,
+                          bashReviewMode: runtimeConfig.bashReviewMode,
+                        ),
+                        onChanged: onChanged,
+                      );
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ComposerOrchestrationControl extends ConsumerWidget {
+  const ComposerOrchestrationControl({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subagentRolesOnly =
+        subagentRoles.where((role) => role != 'explore').toList();
+    final enabledCount = subagentRolesOnly
+        .where((role) => runtimeConfig.subagentEnabled[role] ?? false)
+        .length;
+    final summary = '$enabledCount/${subagentRolesOnly.length}';
+
+    return ComposerContextTrigger(
+      icon: Icons.groups_outlined,
+      label: '编排 $summary',
+      enabled: canEdit,
+      onTap: canEdit
+          ? () => _showOrchestrationSheet(
+                context,
+                ref,
+                runtimeConfig: runtimeConfig,
+                threadId: threadId,
+                onChanged: onChanged,
+              )
+          : null,
+    );
+  }
+
+  Future<void> _showOrchestrationSheet(
+    BuildContext context,
+    WidgetRef ref, {
+    required ThreadRuntimeConfigInput runtimeConfig,
+    required String threadId,
+    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: EcoColors.bgMenu,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _SheetHeader(title: '子代理编排'),
+              ListTile(
+                title: const Text('主 Agent'),
+                subtitle: const Text('始终启用'),
+                trailing: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: EcoColors.statusAllowBg,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: EcoColors.statusAllowBorder),
+                  ),
+                  child: const Text(
+                    '启用',
+                    style: TextStyle(
+                      color: EcoColors.statusAllowText,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+              ...subagentRoles.map((role) {
+                final enabled = runtimeConfig.subagentEnabled[role] ?? false;
+                final isExplore = role == 'explore';
+                return SwitchListTile(
+                  title: Text(_subagentRoleLabels[role] ?? role),
+                  subtitle: Text(
+                    isExplore ? '始终启用' : enabled ? '已启用' : '已停用',
+                  ),
+                  value: isExplore ? true : enabled,
+                  onChanged: isExplore
+                      ? null
+                      : (value) {
+                          final next = Map<String, bool>.from(
+                            runtimeConfig.subagentEnabled,
+                          );
+                          next[role] = value;
+                          persistRuntimeConfig(
+                            ref,
+                            threadId: threadId,
+                            config: runtimeConfig.copyWith(
+                              subagentEnabled: next,
+                            ),
+                            onChanged: onChanged,
+                          );
+                        },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ComposerPlanModeControl extends ConsumerWidget {
+  const ComposerPlanModeControl({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = planModeUi(runtimeConfig.planModeEnabled);
+    return ComposerToolbarTrigger(
+      icon: runtimeConfig.planModeEnabled
+          ? Icons.format_list_bulleted
+          : Icons.all_inclusive,
+      label: current.title,
+      enabled: canEdit,
+      onTap: canEdit
+          ? () => _showPlanModeSheet(
+                context,
+                ref,
+                runtimeConfig: runtimeConfig,
+                threadId: threadId,
+                onChanged: onChanged,
+              )
+          : null,
+    );
+  }
+
+  Future<void> _showPlanModeSheet(
+    BuildContext context,
+    WidgetRef ref, {
+    required ThreadRuntimeConfigInput runtimeConfig,
+    required String threadId,
+    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: EcoColors.bgMenu,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHeader(title: '想以何种方式工作？'),
+            ...planModeUiOptions.map((option) {
+              final isActive = option.value == runtimeConfig.planModeEnabled;
+              return ListTile(
+                leading: Icon(
+                  option.value
+                      ? Icons.format_list_bulleted
+                      : Icons.all_inclusive,
+                  size: 20,
+                  color: EcoColors.textSecondary,
+                ),
+                title: Text(option.title),
+                subtitle: Text(option.description),
+                trailing: isActive
+                    ? const Icon(Icons.check, color: EcoColors.accentText)
+                    : null,
+                selected: isActive,
+                onTap: () {
+                  persistRuntimeConfig(
+                    ref,
+                    threadId: threadId,
+                    config: runtimeConfig.copyWith(
+                      planModeEnabled: option.value,
+                    ),
+                    onChanged: onChanged,
+                  );
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ComposerBashReviewControl extends ConsumerWidget {
+  const ComposerBashReviewControl({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.onChanged,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = bashReviewUi(runtimeConfig.bashReviewMode);
+    final icon = switch (runtimeConfig.bashReviewMode) {
+      'auto' => Icons.shield_outlined,
+      'allow_all' => Icons.shield_moon_outlined,
+      _ => Icons.pan_tool_outlined,
+    };
+
+    return ComposerToolbarTrigger(
+      icon: icon,
+      label: current.title,
+      onTap: () => _showBashReviewSheet(
+        context,
+        ref,
+        runtimeConfig: runtimeConfig,
+        threadId: threadId,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Future<void> _showBashReviewSheet(
+    BuildContext context,
+    WidgetRef ref, {
+    required ThreadRuntimeConfigInput runtimeConfig,
+    required String threadId,
+    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: EcoColors.bgMenu,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHeader(title: 'Bash 审批模式'),
+            ...bashReviewUiOptions.map((option) {
+              final isActive = option.value == runtimeConfig.bashReviewMode;
+              return ListTile(
+                title: Text(option.title),
+                subtitle: Text(option.description),
+                trailing: isActive
+                    ? const Icon(Icons.check, color: EcoColors.accentText)
+                    : null,
+                selected: isActive,
+                onTap: () {
+                  persistRuntimeConfig(
+                    ref,
+                    threadId: threadId,
+                    config: runtimeConfig.copyWith(
+                      bashReviewMode: option.value,
+                    ),
+                    onChanged: onChanged,
+                  );
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetHeader extends StatelessWidget {
+  const _SheetHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: eco.borderSubtle,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
+        ],
+      ),
+    );
+  }
+}

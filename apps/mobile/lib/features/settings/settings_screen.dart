@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
@@ -56,7 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             subtitle: Text(
                               creds.userDisplayName ??
                                   creds.deviceName ??
-                                  (signedIn ? '' : '请先在 PC 页完成连接'),
+                                  (signedIn ? '' : '请先完成 PC 连接'),
                             ),
                           ),
                         ),
@@ -88,6 +89,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         if (signedIn) ...[
                           const Divider(height: 32),
                           ListTile(
+                            title: const Text('切换 PC'),
+                            subtitle: const Text('选择或绑定其他 Desktop 设备'),
+                            leading: const Icon(Icons.computer_outlined),
+                            onTap: () => context.push('/connect'),
+                          ),
+                          ListTile(
                             title: const Text('退出登录'),
                             leading: const Icon(Icons.logout),
                             onTap: () async {
@@ -99,6 +106,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ref.read(selectedDesktopIdProvider.notifier).state =
                                   null;
                               if (context.mounted) {
+                                context.go('/connect');
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('已退出登录')),
                                 );

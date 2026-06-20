@@ -2,19 +2,58 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/providers/app_providers.dart';
 import 'core/theme/eco_theme.dart';
 import 'features/home/home_screen.dart';
+import 'features/home/setup_status.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/threads/new_thread_screen.dart';
 import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(this._ref) {
+    _ref.listen(setupOverviewProvider, (_, _) => notifyListeners());
+    _ref.listen(selectedDesktopIdProvider, (_, _) => notifyListeners());
+  }
+
+  final Ref _ref;
+}
+
+final _routerRefreshProvider = Provider<_RouterRefreshNotifier>((ref) {
+  final notifier = _RouterRefreshNotifier(ref);
+  ref.onDispose(notifier.dispose);
+  return notifier;
+});
+
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final refresh = ref.watch(_routerRefreshProvider);
+
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/home',
+    initialLocation: '/',
+    refreshListenable: refresh,
+    redirect: (context, state) {
+      final overview = ref.read(setupOverviewProvider);
+      final location = state.matchedLocation;
+      final isMain =
+          location.startsWith('/threads') || location.startsWith('/settings');
+
+      if (location == '/') {
+        return overview.readyForThreads ? '/threads' : '/connect';
+      }
+      if (!overview.readyForThreads && isMain) {
+        return '/connect';
+      }
+      return null;
+    },
     routes: [
+      GoRoute(
+        path: '/connect',
+        builder: (context, state) => const HomeScreen(),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return MainShell(navigationShell: navigationShell);
@@ -23,17 +62,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/home',
-                builder: (context, state) => const HomeScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
                 path: '/threads',
                 builder: (context, state) => const ThreadsScreen(),
                 routes: [
+                  GoRoute(
+                    path: 'new',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const NewThreadScreen(),
+                  ),
                   GoRoute(
                     path: ':threadId',
                     parentNavigatorKey: _rootNavigatorKey,
@@ -76,11 +112,6 @@ class MainShell extends StatelessWidget {
           selectedIndex: navigationShell.currentIndex,
           onDestinationSelected: navigationShell.goBranch,
           destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.computer_outlined),
-              selectedIcon: Icon(Icons.computer),
-              label: 'PC',
-            ),
             NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),

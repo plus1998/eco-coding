@@ -41,7 +41,9 @@ export interface CenterServerDesktopClientOptions {
   webSocketConstructor?: WebSocketConstructorLike;
   now?: () => Date;
   reconnectDelayMs?: number;
+  connectTimeoutMs?: number;
   log?: (message: string) => void;
+  onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
 }
 
 interface TokenResponse {
@@ -82,7 +84,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly WebSocketCtor: WebSocketConstructorLike;
   private readonly now: () => Date;
   private readonly reconnectDelayMs: number;
+  private readonly connectTimeoutMs: number;
   private readonly log: (message: string) => void;
+  private readonly onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
   private readonly unsubscribe: () => void;
   private socket: WebSocketLike | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -98,7 +102,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     this.WebSocketCtor = options.webSocketConstructor ?? resolveWebSocketConstructor();
     this.now = options.now ?? (() => new Date());
     this.reconnectDelayMs = options.reconnectDelayMs ?? 3_000;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? 15_000;
     this.log = options.log ?? (() => {});
+    this.onStatusChange = options.onStatusChange;
     this.unsubscribe = this.eventCenter.subscribe(this);
   }
 
@@ -150,9 +156,11 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     await this.connect();
   }
 
-  saveSettings(input: Parameters<CenterServerStore["saveSettings"]>[0]): CenterServerSettingsSnapshot {
+  async saveSettings(
+    input: Parameters<CenterServerStore["saveSettings"]>[0],
+  ): Promise<CenterServerSettingsSnapshot> {
     this.store.saveSettings(input);
-    void this.reload();
+    await this.reload();
     return this.getSnapshot();
   }
 
@@ -330,6 +338,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
             return;
           }
           settled = true;
+          clearTimeout(connectTimeout);
           if (error) {
             reject(error);
           } else {
@@ -339,6 +348,12 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
         const socket = new this.WebSocketCtor(buildCenterServerWebSocketUrl(settings.serverUrl, accessToken));
         this.socket = socket;
+        const connectTimeout = setTimeout(() => {
+          if (!settled) {
+            socket.close();
+            settle(new Error("Connection timed out."));
+          }
+        }, this.connectTimeoutMs);
 
         socket.onopen = () => {
           opened = true;
@@ -372,9 +387,6 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
             const reason = event.reason || `WebSocket closed${event.code ? ` (${event.code})` : ""}.`;
             this.failConnection(reason);
             settle(new Error(reason));
-            if (!this.intentionallyStopped) {
-              this.scheduleReconnect();
-            }
             return;
           }
 
@@ -395,7 +407,6 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       if (!this.intentionallyStopped) {
         this.scheduleReconnect();
       }
-      throw error instanceof Error ? error : new Error(errorMessage(error));
     }
   }
 
@@ -544,6 +555,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
   private setStatus(status: CenterServerConnectionStatus): void {
     this.status = status;
+    this.onStatusChange?.(this.getSnapshot());
   }
 }
 

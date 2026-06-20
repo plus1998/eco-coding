@@ -398,6 +398,15 @@ function App() {
     useState<SessionSyncSettingsSnapshot>(emptySessionSyncSettings);
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
+
+  useEffect(() => {
+    if (!window.eco?.onCenterServerStatusChange) {
+      return undefined;
+    }
+    return window.eco.onCenterServerStatusChange((snapshot) => {
+      setCenterServerSettings(snapshot);
+    });
+  }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);

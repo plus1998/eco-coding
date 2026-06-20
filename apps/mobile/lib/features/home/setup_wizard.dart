@@ -124,7 +124,7 @@ class SetupWizardProgress extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '一切就绪，可前往「会话」远程操控 PC',
+                    '已连接，选择 PC 后可进入主界面',
                     style: TextStyle(color: eco.statusAllowText, fontSize: 13),
                   ),
                 ),

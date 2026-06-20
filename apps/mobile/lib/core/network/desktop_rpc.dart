@@ -166,12 +166,13 @@ class DesktopRpc {
   }
 
   Future<List<ThreadPendingFollowUp>> followUpList(String threadId) async {
-    final result = await _client.invoke<List<dynamic>>(
+    final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:follow-up-list',
       [threadId],
     );
-    return result
+    final followUps = result['followUps'] as List<dynamic>? ?? [];
+    return followUps
         .map((e) => ThreadPendingFollowUp.fromJson(e as Map<String, dynamic>))
         .toList();
   }

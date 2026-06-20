@@ -67,24 +67,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
     return thread.status == 'running' || thread.status == 'queued';
   }
 
-  String _modelLabel(
-    ThreadRuntimeConfigInput runtimeConfig,
-    AsyncValue<ModelSettingsSnapshot?> modelSettings,
-  ) {
-    final profileId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-    if (profileId.isEmpty) return '';
-    return modelSettings.maybeWhen(
-      data: (settings) {
-        for (final profile in settings?.orchestrationProfiles ?? []) {
-          if (profile.id == profileId) return profile.name;
-        }
-        return profileId;
-      },
-      orElse: () => profileId,
-    );
-  }
-
   @override
   void dispose() {
     _promptController.dispose();
@@ -99,7 +81,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
         _emptyRuntimeConfig();
-    final modelSettings = ref.watch(modelSettingsProvider);
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
     final workspaceDiffAsync = workspacePath.isNotEmpty
@@ -214,7 +195,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen> {
             threadId: widget.threadId,
             isRunning: isRunning,
             hasActivity: session.activities.isNotEmpty,
-            modelLabel: _modelLabel(runtimeConfig, modelSettings),
             workspaceDiff: workspaceDiffAsync.valueOrNull,
             diffLoading: workspaceDiffAsync.isLoading,
             onPickImage: _pickImage,

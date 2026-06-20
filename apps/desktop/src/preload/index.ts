@@ -384,6 +384,12 @@ const api = {
   ): Promise<CenterServerTestConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerTestConnection, request);
   },
+  onCenterServerStatusChange(callback: (snapshot: CenterServerSettingsSnapshot) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: CenterServerSettingsSnapshot) =>
+      callback(payload);
+    ipcRenderer.on(IPC_CHANNELS.centerServerStatusChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.centerServerStatusChanged, listener);
+  },
   startThread(request: ThreadStartRequest): Promise<ThreadStartResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadStart, request);
   },

@@ -100,6 +100,7 @@ export const IPC_CHANNELS = {
   centerServerConnect: "center-server:connect",
   centerServerDisconnect: "center-server:disconnect",
   centerServerTestConnection: "center-server:test-connection",
+  centerServerStatusChanged: "center-server:status-changed",
   billingRefreshPricing: "billing:refresh-pricing",
   billingRoutePricing: "billing:route-pricing",
   billingRouteCapabilities: "billing:route-capabilities",

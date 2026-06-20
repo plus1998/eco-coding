@@ -61,6 +61,23 @@ final workflowSettingsProvider =
   return rpc.getWorkflowSettings();
 });
 
+ThreadRuntimeConfig defaultRuntimeConfig({
+  ModelSettingsSnapshot? modelSettings,
+  WorkflowSettingsSnapshot? workflow,
+}) {
+  final profileId = modelSettings?.orchestrationProfiles.firstOrNull?.id ?? '';
+  final subagents = {
+    for (final role in subagentRoles) role: role == 'explore',
+  };
+  return ThreadRuntimeConfig(
+    routeProfileId: profileId,
+    agentProfileId: profileId.isEmpty ? null : profileId,
+    subagentEnabled: subagents,
+    planModeEnabled: workflow?.planModeEnabled ?? false,
+    bashReviewMode: 'always',
+  );
+}
+
 final workspaceDiffProvider =
     FutureProvider.family<WorkspaceDiffResult?, String>((ref, workspacePath) async {
   if (workspacePath.isEmpty) return null;

@@ -254,6 +254,119 @@ test("center server client returns parse errors for malformed json-rpc messages"
   client.dispose();
 });
 
+test("center server client reports error instead of staying in connecting after websocket failure", async () => {
+  class FailingWebSocket {
+    static OPEN = 1;
+    readyState = 0;
+    onopen: ((event: unknown) => void) | null = null;
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
+
+    constructor(_url: string) {
+      queueMicrotask(() => {
+        this.onerror?.({});
+        this.onclose?.({ code: 1006, reason: "Connection refused" });
+      });
+    }
+
+    send(): void {}
+
+    close(): void {}
+  }
+
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+
+  const statusSnapshots: CenterServerConnectionStatus[] = [];
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FailingWebSocket as unknown as new (url: string) => FailingWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 60_000,
+    onStatusChange: (snapshot) => {
+      statusSnapshots.push(snapshot.status);
+    },
+  });
+
+  await client.start();
+  expect(client.getSnapshot().status.state).toBe("error");
+  expect(client.getSnapshot().status.lastError).toContain("Connection refused");
+  expect(statusSnapshots.some((status) => status.state === "connecting")).toBe(true);
+  expect(statusSnapshots.at(-1)?.state).toBe("error");
+
+  client.dispose();
+});
+
+test("center server client retries connection after failure", async () => {
+  let attempt = 0;
+
+  class FlakyWebSocket {
+    static OPEN = 1;
+    static instances: FlakyWebSocket[] = [];
+    readyState = 0;
+    onopen: ((event: unknown) => void) | null = null;
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    onclose: ((event: { code?: number; reason?: string }) => void) | null = null;
+
+    constructor(_url: string) {
+      FlakyWebSocket.instances.push(this);
+      const currentAttempt = ++attempt;
+      queueMicrotask(() => {
+        if (currentAttempt === 1) {
+          this.onerror?.({});
+          this.onclose?.({ code: 1006, reason: "Connection refused" });
+          return;
+        }
+        this.readyState = FlakyWebSocket.OPEN;
+        this.onopen?.({});
+      });
+    }
+
+    send(): void {}
+
+    close(): void {}
+  }
+
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FlakyWebSocket as unknown as new (url: string) => FlakyWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 20,
+  });
+
+  await client.start();
+  expect(client.getSnapshot().status.state).toBe("error");
+
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(FlakyWebSocket.instances.length).toBe(2);
+
+  client.dispose();
+});
+
 function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {
   let settings: CenterServerSettingsSecret = {
     enabled: false,

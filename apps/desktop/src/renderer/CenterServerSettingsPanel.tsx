@@ -1,5 +1,5 @@
-import { ChevronLeft, Link2, QrCode, RefreshCw, Unplug } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronLeft, Link2, Plus, QrCode, RefreshCw, Settings2 } from "lucide-react";
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import type {
   CenterServerConnectionStatus,
@@ -11,7 +11,6 @@ import type {
   CenterServerSignUpRequest,
 } from "../shared/center-server";
 import { isLocalhostCenterServerUrl } from "../shared/center-server";
-import { AppMessage, useAppMessage } from "./AppMessage";
 
 interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
@@ -25,14 +24,8 @@ interface CenterServerSettingsPanelProps {
   onDisconnect: () => Promise<CenterServerSettingsSnapshot>;
 }
 
-type PanelView = "server" | "account" | "manage";
+type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
-
-const FLOW_STEPS: { id: PanelView; label: string }[] = [
-  { id: "server", label: "服务" },
-  { id: "account", label: "账号" },
-  { id: "manage", label: "连接" },
-];
 
 export function CenterServerSettingsPanel({
   snapshot,
@@ -42,11 +35,10 @@ export function CenterServerSettingsPanel({
   onSignUp,
   onSignIn,
   onCreatePairing,
-  onConnect,
   onDisconnect,
 }: CenterServerSettingsPanelProps) {
+  const [view, setView] = useState<PanelView>("list");
   const [form, setForm] = useState<CenterServerSettingsInput>(() => viewToInput(snapshot.settings));
-  const [view, setView] = useState<PanelView>(() => resolveInitialView(snapshot));
   const [authMode, setAuthMode] = useState<AccountAuthMode>("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +48,7 @@ export function CenterServerSettingsPanel({
   const [pairingBusy, setPairingBusy] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [serverReachable, setServerReachable] = useState(false);
-  const appMessage = useAppMessage();
+  const [error, setError] = useState<string>();
 
   const registered = snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken;
   const hasUrl = form.serverUrl.trim().length > 0;
@@ -64,70 +56,71 @@ export function CenterServerSettingsPanel({
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
+  const deviceLabel = snapshot.settings.deviceName || "远程服务";
 
   useEffect(() => {
     setForm(viewToInput(snapshot.settings));
   }, [snapshot.settings]);
 
-  useEffect(() => {
-    if (registered) {
-      setView("manage");
-    }
-  }, [registered]);
-
   async function handleTestConnection() {
+    setError(undefined);
     setTesting(true);
     try {
       const result = await onTestConnection(form.serverUrl);
       if (result.ok) {
         setServerReachable(true);
-        appMessage.showSuccess("服务可达。");
       } else {
         setServerReachable(false);
-        appMessage.showError(result.error ?? "无法访问服务，请检查地址后重试。");
+        setError(result.error ?? "无法访问服务，请检查地址后重试。");
       }
     } catch (caught) {
       setServerReachable(false);
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setTesting(false);
     }
   }
 
-  async function handleContinueToAccount() {
+  async function handleSaveServer() {
     const deviceName = form.deviceName?.trim();
     if (!hasUrl) {
-      appMessage.showError("请填写服务地址。");
+      setError("请填写服务地址。");
       return;
     }
     if (!deviceName) {
-      appMessage.showError("请填写本机名称。");
+      setError("请填写本机名称。");
       return;
     }
-    if (!serverReachable) {
-      appMessage.showError("请先测试服务可达性。");
+    if (!registered && !serverReachable) {
+      setError("请先测试服务可达性。");
       return;
     }
+
+    setError(undefined);
     try {
       await onSave({
         ...form,
-        enabled: false,
+        enabled: registered ? form.enabled : false,
         serverUrl: form.serverUrl.trim(),
         deviceName,
       });
-      setView("account");
-      appMessage.showInfo("请注册或登录账号。");
+      if (registered) {
+        setView("list");
+      } else {
+        setView("edit-account");
+      }
     } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     }
   }
 
   async function handleAccountAuth() {
     const deviceName = form.deviceName?.trim() || snapshot.settings.deviceName;
     if (!email.trim() || !password.trim() || !deviceName) {
-      appMessage.showError("请填写邮箱和密码。");
+      setError("请填写邮箱和密码。");
       return;
     }
+    setError(undefined);
     try {
       if (authMode === "signup") {
         await onSignUp({
@@ -138,7 +131,6 @@ export function CenterServerSettingsPanel({
           ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
         });
         setPassword("");
-        appMessage.showSuccess("账号已创建，本机已绑定。");
       } else {
         await onSignIn({
           serverUrl: form.serverUrl,
@@ -147,415 +139,428 @@ export function CenterServerSettingsPanel({
           deviceName,
         });
         setPassword("");
-        appMessage.showSuccess("登录成功，本机已绑定。");
       }
-      setView("manage");
+      setView("list");
     } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     }
   }
 
-  async function handleConnect() {
+  async function handleToggle(enabled: boolean) {
+    setError(undefined);
     setConnectionBusy(true);
     try {
-      const nextForm = { ...form, enabled: true };
-      await onSave(nextForm);
+      const nextForm = { ...form, enabled };
       setForm(nextForm);
-      const snapshot = await onConnect();
-      if (snapshot.status.state === "connected") {
-        appMessage.showSuccess("已连接到服务。");
-      } else {
-        appMessage.showError(snapshot.status.lastError ?? "连接未完成，请稍后重试。");
+      const nextSnapshot = await onSave(nextForm);
+      if (!enabled) {
+        await onDisconnect();
+      } else if (nextSnapshot.status.state === "error") {
+        setError(nextSnapshot.status.lastError ?? "连接失败，将自动重试。");
       }
     } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setConnectionBusy(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    setConnectionBusy(true);
-    try {
-      const nextForm = { ...form, enabled: false };
-      await onSave(nextForm);
-      setForm(nextForm);
-      await onDisconnect();
-      appMessage.showInfo("已断开连接。");
-    } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setConnectionBusy(false);
-    }
-  }
-
-  async function handleAutoStartToggle(enabled: boolean) {
-    const nextForm = { ...form, enabled };
-    setForm(nextForm);
-    try {
-      await onSave(nextForm);
-      appMessage.showInfo(enabled ? "已开启启动时自动连接。" : "已关闭启动时自动连接。");
-    } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
     }
   }
 
   async function handleCreatePairing() {
+    setError(undefined);
     setPairingBusy(true);
     try {
       setPairing(await onCreatePairing());
-      appMessage.showSuccess("配对码已生成。");
     } catch (caught) {
-      appMessage.showError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setPairingBusy(false);
     }
   }
 
-  const header = view === "server"
-    ? { title: "配置服务", desc: "填写远程服务地址，确认可达后继续。" }
-    : view === "account"
-      ? { title: "注册账号", desc: "创建或登录账号，将本机绑定为桌面设备。" }
-      : { title: "连接", desc: "管理与服务器的连接，并生成手机端配对码。" };
+  function openSetup() {
+    setError(undefined);
+    setServerReachable(Boolean(snapshot.settings.serverUrl.trim()));
+    setView("edit-server");
+  }
+
+  function openServerEditor() {
+    setError(undefined);
+    setServerReachable(true);
+    setView("edit-server");
+  }
+
+  if (view === "edit-server") {
+    return (
+      <ServerEditor
+        form={form}
+        setForm={setForm}
+        registered={registered}
+        serverReachable={serverReachable}
+        error={error}
+        busy={actionBusy}
+        testing={testing}
+        onBack={() => setView("list")}
+        onTestConnection={() => void handleTestConnection()}
+        onSave={() => void handleSaveServer()}
+        onServerUrlChange={() => setServerReachable(false)}
+      />
+    );
+  }
+
+  if (view === "edit-account") {
+    return (
+      <AccountEditor
+        serverUrl={serverUrl}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        displayName={displayName}
+        setDisplayName={setDisplayName}
+        error={error}
+        busy={actionBusy}
+        onBack={() => setView("edit-server")}
+        onSubmit={() => void handleAccountAuth()}
+      />
+    );
+  }
 
   return (
     <>
-      {appMessage.state && (
-        <AppMessage
-          kind={appMessage.state.kind}
-          message={appMessage.state.message}
-          onDismiss={appMessage.dismiss}
-        />
+      <header className="mcp-page-header">
+        <h1>连接</h1>
+        <p className="mcp-page-desc">
+          连接远程 Eco 服务，与手机端同步会话并远程控制本机 Agent。
+        </p>
+      </header>
+
+      {error && <p className="settings-form-error mcp-list-error">{error}</p>}
+
+      <section className="mcp-list-section">
+        <div className="mcp-list-toolbar">
+          <span className="mcp-list-toolbar-label">远程服务</span>
+          {!registered && (
+            <button type="button" className="mcp-add-button" onClick={openSetup} disabled={actionBusy}>
+              <Plus size={16} />
+              添加连接
+            </button>
+          )}
+        </div>
+
+        {!registered ? (
+          <p className="mcp-list-empty">尚未配置远程服务</p>
+        ) : (
+          <ul className="mcp-server-list">
+            <li className="mcp-server-row center-server-row">
+              <div className="center-server-row-main">
+                <span className="mcp-server-name">{deviceLabel}</span>
+                {serverUrl && <span className="center-server-row-url">{serverUrl}</span>}
+                <ConnectionStatusLine status={snapshot.status} />
+              </div>
+              <div className="mcp-server-actions">
+                <button
+                  type="button"
+                  className="mcp-icon-button"
+                  onClick={openServerEditor}
+                  aria-label="配置远程服务"
+                  disabled={actionBusy}
+                >
+                  <Settings2 size={18} />
+                </button>
+                <label
+                  className="mcp-toggle"
+                  title={form.enabled ? "已启用" : "已禁用"}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.enabled}
+                    disabled={actionBusy || isConnecting}
+                    onChange={(event) => void handleToggle(event.target.checked)}
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </div>
+            </li>
+          </ul>
+        )}
+      </section>
+
+      {registered && isLive && (
+        <section className="mcp-list-section center-server-pairing-section">
+          <div className="mcp-list-toolbar">
+            <span className="mcp-list-toolbar-label">手机配对</span>
+            <button
+              type="button"
+              className="mcp-add-button"
+              disabled={actionBusy || pairingBusy}
+              onClick={() => void handleCreatePairing()}
+            >
+              <QrCode size={16} />
+              生成配对码
+            </button>
+          </div>
+
+          {!pairing ? (
+            <p className="mcp-list-empty">生成配对码后，手机 Eco App 扫码即可绑定</p>
+          ) : (
+            <div className="center-server-pairing-card">
+              {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
+                <p className="center-server-pairing-hint">
+                  当前地址为 localhost，手机无法访问。请改为局域网 IP（如{" "}
+                  <code>http://192.168.x.x:3128</code>）后重新生成。
+                </p>
+              ) : null}
+              <div className="center-server-pairing-qr">
+                <QRCodeSVG
+                  value={pairing.qrPayload}
+                  size={180}
+                  level="M"
+                  includeMargin
+                  role="img"
+                  aria-label={`配对二维码 ${pairing.code}`}
+                />
+              </div>
+              <p className="center-server-pairing-hint">
+                手机 Eco App 点「扫一扫连接」即可自动完成配置与绑定
+              </p>
+              <code className="center-server-pairing-code">{pairing.code}</code>
+              <p className="center-server-pairing-meta">
+                过期时间：{formatLocalTime(pairing.expiresAt)}
+              </p>
+            </div>
+          )}
+        </section>
       )}
+    </>
+  );
+}
 
-      <div className="connect-flow">
-        <ConnectStepTrail view={view} />
+function ServerEditor({
+  form,
+  setForm,
+  registered,
+  serverReachable,
+  error,
+  busy,
+  testing,
+  onBack,
+  onTestConnection,
+  onSave,
+  onServerUrlChange,
+}: {
+  form: CenterServerSettingsInput;
+  setForm: Dispatch<SetStateAction<CenterServerSettingsInput>>;
+  registered: boolean;
+  serverReachable: boolean;
+  error?: string;
+  busy?: boolean;
+  testing: boolean;
+  onBack: () => void;
+  onTestConnection: () => void;
+  onSave: () => void;
+  onServerUrlChange: () => void;
+}) {
+  return (
+    <>
+      <header className="mcp-editor-header">
+        <button type="button" className="mcp-back-button" onClick={onBack} disabled={busy}>
+          <ChevronLeft size={18} />
+          返回
+        </button>
+      </header>
 
-        {view === "account" && (
+      <div className="mcp-editor-title-block">
+        <h1>{registered ? "更新远程服务" : "添加远程服务"}</h1>
+        <p className="mcp-editor-hint">填写服务地址并确认可达后继续。</p>
+      </div>
+
+      <div className="mcp-editor-form">
+        <label className="mcp-field">
+          <span className="mcp-field-label">服务地址</span>
+          <input
+            className="mcp-field-input"
+            type="text"
+            value={form.serverUrl}
+            disabled={busy}
+            placeholder="http://127.0.0.1:3128"
+            onChange={(event) => {
+              onServerUrlChange();
+              setForm((current) => ({ ...current, serverUrl: event.target.value }));
+            }}
+          />
+          <span className="mcp-field-hint">本地开发可填 <code>http://127.0.0.1:3128</code></span>
+        </label>
+
+        <label className="mcp-field">
+          <span className="mcp-field-label">本机名称</span>
+          <input
+            className="mcp-field-input"
+            type="text"
+            value={form.deviceName ?? ""}
+            disabled={busy}
+            placeholder="Eco Desktop"
+            onChange={(event) => setForm((current) => ({ ...current, deviceName: event.target.value }))}
+          />
+        </label>
+
+        {serverReachable && !registered && (
+          <p className="settings-form-success">服务可达，可继续下一步。</p>
+        )}
+
+        {error && <p className="settings-form-error">{error}</p>}
+
+        <div className="center-server-editor-actions">
           <button
             type="button"
-            className="settings-nav-back connect-flow-back"
-            disabled={actionBusy}
-            onClick={() => setView("server")}
+            className="mcp-back-button center-server-test-button"
+            disabled={busy || !form.serverUrl.trim()}
+            onClick={onTestConnection}
           >
-            <ChevronLeft size={18} />
-            返回修改服务
+            <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
+            测试可达性
           </button>
-        )}
-
-        <header className="settings-page-header connect-flow-header">
-          <h1 className="connect-flow-title">{header.title}</h1>
-          <p className="settings-page-desc">{header.desc}</p>
-        </header>
-
-        {view === "server" && (
-          <section className="settings-section">
-            <div className="settings-editor-card">
-              <div className="settings-form">
-                <label className="settings-form-field">
-                  <span className="settings-form-label">服务地址</span>
-                  <input
-                    className="settings-form-input"
-                    type="text"
-                    value={form.serverUrl}
-                    disabled={actionBusy}
-                    placeholder="http://127.0.0.1:3128"
-                    onChange={(event) => {
-                      setServerReachable(false);
-                      setForm((current) => ({ ...current, serverUrl: event.target.value }));
-                    }}
-                  />
-                  <span className="settings-field-hint">本地开发可填 http://127.0.0.1:3128</span>
-                </label>
-
-                <label className="settings-form-field">
-                  <span className="settings-form-label">本机名称</span>
-                  <input
-                    className="settings-form-input"
-                    type="text"
-                    value={form.deviceName ?? ""}
-                    disabled={actionBusy}
-                    placeholder="Eco Desktop"
-                    onChange={(event) => setForm((current) => ({ ...current, deviceName: event.target.value }))}
-                  />
-                </label>
-
-                {serverReachable && (
-                  <p className="settings-form-success">服务可达，可进入下一步。</p>
-                )}
-
-                <div className="settings-editor-actions settings-form-actions">
-                  <button
-                    type="button"
-                    className="settings-secondary-button"
-                    disabled={actionBusy || !hasUrl}
-                    onClick={() => void handleTestConnection()}
-                  >
-                    <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
-                    测试可达性
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-primary-button"
-                    disabled={actionBusy || !hasUrl || !serverReachable}
-                    onClick={() => void handleContinueToAccount()}
-                  >
-                    下一步
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {view === "account" && (
-          <section className="settings-section">
-            <div className="settings-section-head">
-              <div>
-                <span className="settings-section-label">目标服务</span>
-                <p className="settings-section-subtitle">{serverUrl}</p>
-              </div>
-            </div>
-
-            <div className="settings-editor-card">
-              <div className="settings-form">
-                <div className="settings-editor-actions settings-form-actions connect-flow-tabs">
-                  <button
-                    type="button"
-                    className={authMode === "signup" ? "settings-primary-button" : "settings-secondary-button"}
-                    disabled={actionBusy}
-                    onClick={() => setAuthMode("signup")}
-                  >
-                    注册账号
-                  </button>
-                  <button
-                    type="button"
-                    className={authMode === "signin" ? "settings-primary-button" : "settings-secondary-button"}
-                    disabled={actionBusy}
-                    onClick={() => setAuthMode("signin")}
-                  >
-                    登录
-                  </button>
-                </div>
-
-                {authMode === "signup" && (
-                  <label className="settings-form-field">
-                    <span className="settings-form-label">昵称（可选）</span>
-                    <input
-                      className="settings-form-input"
-                      type="text"
-                      value={displayName}
-                      disabled={actionBusy}
-                      placeholder="显示名称"
-                      onChange={(event) => setDisplayName(event.target.value)}
-                    />
-                  </label>
-                )}
-
-                <label className="settings-form-field">
-                  <span className="settings-form-label">邮箱</span>
-                  <input
-                    className="settings-form-input"
-                    type="email"
-                    autoComplete="username"
-                    value={email}
-                    disabled={actionBusy}
-                    placeholder="you@example.com"
-                    onChange={(event) => setEmail(event.target.value)}
-                  />
-                </label>
-
-                <label className="settings-form-field">
-                  <span className="settings-form-label">密码</span>
-                  <input
-                    className="settings-form-input"
-                    type="password"
-                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                    value={password}
-                    disabled={actionBusy}
-                    placeholder={authMode === "signup" ? "设置登录密码" : "输入登录密码"}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </label>
-
-                <div className="settings-editor-actions settings-form-actions">
-                  <button
-                    type="button"
-                    className="settings-primary-button"
-                    disabled={actionBusy || !email.trim() || !password.trim()}
-                    onClick={() => void handleAccountAuth()}
-                  >
-                    {authMode === "signup" ? "注册并绑定本机" : "登录并绑定本机"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {view === "manage" && (
-          <section className="settings-section">
-            <div className="settings-section-head">
-              <span className="settings-section-label">连接状态</span>
-              <ConnectionStatusBadge status={snapshot.status} />
-            </div>
-
-            <div className="settings-editor-card">
-              <div className="settings-form">
-                <ConnectionSummary snapshot={snapshot} />
-
-                {isLive && (
-                  <label className="settings-toggle-row">
-                    <span>应用启动时自动连接</span>
-                    <input
-                      type="checkbox"
-                      checked={form.enabled}
-                      disabled={actionBusy}
-                      onChange={(event) => void handleAutoStartToggle(event.target.checked)}
-                    />
-                  </label>
-                )}
-
-                {pairing && (
-                  <div className="settings-form-field connect-flow-pairing-block">
-                    <span className="settings-form-label">手机扫码配对</span>
-                    {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
-                      <span className="settings-field-hint connect-flow-pairing-qr-hint">
-                        当前 Server 地址为 localhost，手机无法访问。请改为局域网 IP（如 http://192.168.x.x:3128）后重新生成配对码。
-                      </span>
-                    ) : null}
-                    <div className="connect-flow-pairing-qr">
-                      <QRCodeSVG
-                        value={pairing.qrPayload}
-                        size={200}
-                        level="M"
-                        includeMargin
-                        role="img"
-                        aria-label={`配对二维码 ${pairing.code}`}
-                      />
-                    </div>
-                    <span className="settings-field-hint connect-flow-pairing-qr-hint">
-                      手机 Eco App 点「扫一扫连接」即可自动完成配置与绑定
-                    </span>
-                    <span className="settings-form-label">配对码</span>
-                    <code className="connect-flow-pairing-code">{pairing.code}</code>
-                    <span className="settings-field-hint">过期时间：{formatLocalTime(pairing.expiresAt)}</span>
-                  </div>
-                )}
-
-                <div className="settings-editor-actions settings-form-actions">
-                  {!isLive ? (
-                    <>
-                      <button
-                        type="button"
-                        className="settings-secondary-button"
-                        disabled={actionBusy || isConnecting}
-                        onClick={() => {
-                          setServerReachable(Boolean(snapshot.settings.serverUrl.trim()));
-                          setView("server");
-                        }}
-                      >
-                        更改服务配置
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-primary-button"
-                        disabled={actionBusy || isConnecting}
-                        onClick={() => void handleConnect()}
-                      >
-                        <Link2 size={16} />
-                        {isConnecting ? "连接中…" : "连接"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="settings-secondary-button"
-                        disabled={actionBusy}
-                        onClick={() => void handleDisconnect()}
-                      >
-                        <Unplug size={16} />
-                        断开连接
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-secondary-button"
-                        disabled={actionBusy || pairingBusy}
-                        onClick={() => void handleCreatePairing()}
-                      >
-                        <QrCode size={16} />
-                        生成配对码
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
+          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
+            {registered ? "保存" : "下一步"}
+          </button>
+        </div>
       </div>
     </>
   );
 }
 
-function ConnectStepTrail({ view }: { view: PanelView }) {
-  const activeIndex = view === "server" ? 0 : view === "account" ? 1 : 2;
-
+function AccountEditor({
+  serverUrl,
+  authMode,
+  setAuthMode,
+  email,
+  setEmail,
+  password,
+  setPassword,
+  displayName,
+  setDisplayName,
+  error,
+  busy,
+  onBack,
+  onSubmit,
+}: {
+  serverUrl: string;
+  authMode: AccountAuthMode;
+  setAuthMode: (mode: AccountAuthMode) => void;
+  email: string;
+  setEmail: (value: string) => void;
+  password: string;
+  setPassword: (value: string) => void;
+  displayName: string;
+  setDisplayName: (value: string) => void;
+  error?: string;
+  busy?: boolean;
+  onBack: () => void;
+  onSubmit: () => void;
+}) {
   return (
-    <ol className="connect-flow-steps" aria-label="设置进度">
-      {FLOW_STEPS.map((step, index) => (
-        <li
-          key={step.id}
-          className={[
-            index === activeIndex ? "is-current" : "",
-            index < activeIndex ? "is-done" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
+    <>
+      <header className="mcp-editor-header">
+        <button type="button" className="mcp-back-button" onClick={onBack} disabled={busy}>
+          <ChevronLeft size={18} />
+          返回
+        </button>
+      </header>
+
+      <div className="mcp-editor-title-block">
+        <h1>绑定账号</h1>
+        <p className="mcp-editor-hint">
+          目标服务：<code>{serverUrl}</code>
+        </p>
+      </div>
+
+      <div className="mcp-editor-form">
+        <div className="center-server-auth-tabs">
+          <button
+            type="button"
+            className={authMode === "signup" ? "mcp-save-button center-server-auth-tab" : "mcp-back-button center-server-auth-tab"}
+            disabled={busy}
+            onClick={() => setAuthMode("signup")}
+          >
+            注册账号
+          </button>
+          <button
+            type="button"
+            className={authMode === "signin" ? "mcp-save-button center-server-auth-tab" : "mcp-back-button center-server-auth-tab"}
+            disabled={busy}
+            onClick={() => setAuthMode("signin")}
+          >
+            登录
+          </button>
+        </div>
+
+        {authMode === "signup" && (
+          <label className="mcp-field">
+            <span className="mcp-field-label">昵称（可选）</span>
+            <input
+              className="mcp-field-input"
+              type="text"
+              value={displayName}
+              disabled={busy}
+              placeholder="显示名称"
+              onChange={(event) => setDisplayName(event.target.value)}
+            />
+          </label>
+        )}
+
+        <label className="mcp-field">
+          <span className="mcp-field-label">邮箱</span>
+          <input
+            className="mcp-field-input"
+            type="email"
+            autoComplete="username"
+            value={email}
+            disabled={busy}
+            placeholder="you@example.com"
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+
+        <label className="mcp-field">
+          <span className="mcp-field-label">密码</span>
+          <input
+            className="mcp-field-input"
+            type="password"
+            autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+            value={password}
+            disabled={busy}
+            placeholder={authMode === "signup" ? "设置登录密码" : "输入登录密码"}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+
+        {error && <p className="settings-form-error">{error}</p>}
+
+        <button
+          type="button"
+          className="mcp-save-button"
+          disabled={busy || !email.trim() || !password.trim()}
+          onClick={onSubmit}
         >
-          {step.label}
-        </li>
-      ))}
-    </ol>
+          <Link2 size={16} />
+          {authMode === "signup" ? "注册并绑定本机" : "登录并绑定本机"}
+        </button>
+      </div>
+    </>
   );
 }
 
-function ConnectionSummary({ snapshot }: { snapshot: CenterServerSettingsSnapshot }) {
-  const lines: string[] = [];
-  if (snapshot.settings.serverUrl) {
-    lines.push(`服务：${snapshot.settings.serverUrl}`);
-  }
-  if (snapshot.settings.deviceId) {
-    lines.push(`设备：${snapshot.settings.deviceName}（${snapshot.settings.deviceId}）`);
-  }
-  if (snapshot.status.connectedAt) {
-    lines.push(`连接时间：${formatLocalTime(snapshot.status.connectedAt)}`);
-  }
-
-  if (lines.length === 0) {
-    return null;
-  }
-
+function ConnectionStatusLine({ status }: { status: CenterServerConnectionStatus }) {
   return (
-    <div className="settings-form-field">
-      {lines.map((line) => (
-        <span key={line} className="settings-field-hint">
-          {line}
-        </span>
-      ))}
-    </div>
+    <span className={`center-server-status is-${status.state}`}>
+      {connectionStatusLabel(status.state)}
+      {status.state === "error" && status.lastError ? ` · ${status.lastError}` : ""}
+      {status.state === "connected" && status.connectedAt
+        ? ` · ${formatLocalTime(status.connectedAt)}`
+        : ""}
+    </span>
   );
-}
-
-function resolveInitialView(snapshot: CenterServerSettingsSnapshot): PanelView {
-  if (snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken) {
-    return "manage";
-  }
-  if (snapshot.settings.serverUrl.trim()) {
-    return "account";
-  }
-  return "server";
 }
 
 function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsInput {
@@ -572,25 +577,6 @@ function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsIn
   return input;
 }
 
-function ConnectionStatusBadge({ status }: { status: CenterServerConnectionStatus }) {
-  const connected = status.state === "connected";
-  const errored = status.state === "error";
-
-  return (
-    <span
-      className={[
-        "settings-badge",
-        connected ? "on" : "",
-        errored ? "connect-flow-badge-error" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      {connectionStatusLabel(status.state)}
-    </span>
-  );
-}
-
 function connectionStatusLabel(state: CenterServerConnectionStatus["state"]): string {
   switch (state) {
     case "disabled":
@@ -598,7 +584,7 @@ function connectionStatusLabel(state: CenterServerConnectionStatus["state"]): st
     case "disconnected":
       return "未连接";
     case "connecting":
-      return "连接中";
+      return "连接中…";
     case "connected":
       return "已连接";
     case "error":

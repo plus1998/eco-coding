@@ -5,8 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
-import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/relative_time.dart';
+import '../../core/utils/thread_status.dart';
 import '../projects/project_providers.dart';
 import 'thread_providers.dart';
 
@@ -19,17 +20,19 @@ class ThreadsScreen extends ConsumerWidget {
     final threadsByProject = ref.watch(threadsByProjectProvider);
     final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
     final collapsedPaths = ref.watch(collapsedProjectPathsProvider);
-    final desktopId = ref.watch(selectedDesktopIdProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('会话'),
         actions: [
           IconButton(
+            tooltip: '切换 PC',
+            onPressed: () => context.push('/connect'),
+            icon: const Icon(Icons.computer_outlined),
+          ),
+          IconButton(
             tooltip: '打开项目',
-            onPressed: desktopId == null
-                ? null
-                : () => _showOpenProjectSheet(context, ref),
+            onPressed: () => _showOpenProjectSheet(context, ref),
             icon: const Icon(Icons.folder_open_outlined),
           ),
           IconButton(
@@ -41,9 +44,7 @@ class ThreadsScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: desktopId == null
-          ? const Center(child: Text('请先在「PC」页选择已绑定的桌面'))
-          : projectsAsync.when(
+      body: projectsAsync.when(
               data: (projects) {
                 if (projects.isEmpty) {
                   return const Center(child: Text('暂无项目，点击右上角打开项目'));
@@ -67,6 +68,7 @@ class ThreadsScreen extends ConsumerWidget {
                         isSelected: isSelected,
                         isCollapsed: isCollapsed,
                         onHeaderTap: () => _onProjectHeaderTap(ref, project: project),
+                        onNewThread: () => _openNewThread(context, ref, project.path),
                         onThreadTap: (thread) =>
                             context.push('/threads/${thread.id}'),
                       );
@@ -77,14 +79,16 @@ class ThreadsScreen extends ConsumerWidget {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => Center(child: Text(error.toString())),
             ),
-      floatingActionButton: desktopId == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _showNewThreadDialog(context, ref),
-              icon: const Icon(Icons.add),
-              label: const Text('新建会话'),
-            ),
     );
+  }
+
+  Future<void> _openNewThread(
+    BuildContext context,
+    WidgetRef ref,
+    String projectPath,
+  ) async {
+    await ref.read(selectedProjectPathProvider.notifier).select(projectPath);
+    if (context.mounted) context.push('/threads/new');
   }
 
   Future<void> _onProjectHeaderTap(
@@ -152,141 +156,6 @@ class ThreadsScreen extends ConsumerWidget {
     );
     pathController.dispose();
   }
-
-  Future<void> _showNewThreadDialog(BuildContext context, WidgetRef ref) async {
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) return;
-
-    final selectedPath = ref.read(selectedProjectPathProvider).valueOrNull;
-    if (selectedPath == null || selectedPath.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先选择一个项目')),
-        );
-      }
-      return;
-    }
-
-    final promptController = TextEditingController();
-    ThreadRuntimeConfigInput? runtimeConfig = ref.read(runtimeConfigProvider);
-
-    WorkspaceInfo workspaceInfo;
-    try {
-      workspaceInfo = await rpc.inspectWorkspace(selectedPath);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('获取工作区失败: $error')));
-      }
-      return;
-    }
-
-    if (!context.mounted) return;
-
-    final modelSettings = await ref.read(modelSettingsProvider.future);
-    final workflow = await ref.read(workflowSettingsProvider.future);
-    runtimeConfig ??= _defaultRuntimeConfig(modelSettings, workflow);
-
-    if (!context.mounted) return;
-
-    var homePath = '';
-    try {
-      homePath = await rpc.getHomeProjectPath();
-    } catch (_) {
-      // Older Center Server builds may not expose workspace:get-home-path yet.
-    }
-    if (!context.mounted) return;
-
-    final projectName = isHomeProjectPath(selectedPath, homePath)
-        ? homeProjectDisplayName
-        : workspaceInfo.name;
-    final workspaceLabel =
-        '$projectName (${workspaceInfo.branch ?? 'no branch'})';
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('新建会话', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(workspaceLabel),
-              const SizedBox(height: 4),
-              Text(
-                selectedPath,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoThemeExtras(context).textMuted,
-                    ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: promptController,
-                decoration: const InputDecoration(
-                  labelText: '任务描述',
-                  hintText: '描述你想让 Agent 完成的工作…',
-                ),
-                maxLines: 4,
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () async {
-                  final prompt = promptController.text.trim();
-                  if (prompt.isEmpty) return;
-                  Navigator.pop(context);
-                  try {
-                    await rpc.startThread(
-                      workspacePath: selectedPath,
-                      prompt: prompt,
-                      runtimeConfig: runtimeConfig!,
-                    );
-                    ref.invalidate(threadListProvider);
-                    ref.invalidate(projectListProvider);
-                  } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text(error.toString())));
-                    }
-                  }
-                },
-                child: const Text('开始'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    promptController.dispose();
-  }
-
-  ThreadRuntimeConfigInput _defaultRuntimeConfig(
-    ModelSettingsSnapshot? modelSettings,
-    WorkflowSettingsSnapshot? workflow,
-  ) {
-    final profileId =
-        modelSettings?.orchestrationProfiles.firstOrNull?.id ?? '';
-    final subagents = {
-      for (final role in subagentRoles) role: role == 'explore',
-    };
-    return ThreadRuntimeConfig(
-      routeProfileId: profileId,
-      agentProfileId: profileId.isEmpty ? null : profileId,
-      subagentEnabled: subagents,
-      planModeEnabled: workflow?.planModeEnabled ?? false,
-      bashReviewMode: 'always',
-    );
-  }
 }
 
 class _ProjectSection extends StatelessWidget {
@@ -296,6 +165,7 @@ class _ProjectSection extends StatelessWidget {
     required this.isSelected,
     required this.isCollapsed,
     required this.onHeaderTap,
+    required this.onNewThread,
     required this.onThreadTap,
   });
 
@@ -304,6 +174,7 @@ class _ProjectSection extends StatelessWidget {
   final bool isSelected;
   final bool isCollapsed;
   final VoidCallback onHeaderTap;
+  final VoidCallback onNewThread;
   final void Function(ThreadSummary thread) onThreadTap;
 
   @override
@@ -315,7 +186,7 @@ class _ProjectSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Material(
-          color: isSelected ? EcoColors.accentSoft : Colors.transparent,
+          color: isSelected ? EcoColors.navActive : Colors.transparent,
           child: InkWell(
             onTap: onHeaderTap,
             child: DecoratedBox(
@@ -329,35 +200,95 @@ class _ProjectSection extends StatelessWidget {
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      isCollapsed
-                          ? Icons.chevron_right
-                          : Icons.expand_more,
-                      size: 20,
-                      color: eco.textMuted,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(
+                        isCollapsed
+                            ? Icons.chevron_right
+                            : Icons.expand_more,
+                        size: 20,
+                        color: eco.textMuted,
+                      ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 2),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(
+                        project.isHome
+                            ? Icons.home_outlined
+                            : isCollapsed
+                                ? Icons.folder_outlined
+                                : Icons.folder_open_outlined,
+                        size: 18,
+                        color: isSelected
+                            ? EcoColors.textPrimary
+                            : eco.textMuted,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${project.name} · $branchLabel · ${project.threadCount} 会话',
-                            style: Theme.of(context).textTheme.titleSmall,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  project.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        color: isSelected
+                                            ? EcoColors.textHeading
+                                            : EcoColors.textPrimary,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _ProjectMetaChip(
+                                icon: Icons.call_split,
+                                label: branchLabel,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Text(
                             project.path,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: eco.textMuted),
+                                ?.copyWith(
+                                  color: eco.textMuted,
+                                  fontSize: 11,
+                                ),
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: '新建会话',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      icon: Icon(
+                        Icons.add_comment_outlined,
+                        size: 18,
+                        color: isSelected
+                            ? EcoColors.textPrimary
+                            : eco.textMuted,
+                      ),
+                      onPressed: onNewThread,
                     ),
                   ],
                 ),
@@ -374,7 +305,7 @@ class _ProjectSection extends StatelessWidget {
           ),
         if (!isCollapsed && threads.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(40, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(44, 8, 16, 12),
             child: Text(
               '暂无会话',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -387,6 +318,40 @@ class _ProjectSection extends StatelessWidget {
   }
 }
 
+class _ProjectMetaChip extends StatelessWidget {
+  const _ProjectMetaChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: EcoColors.composerPillBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: EcoColors.composerPillBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: EcoColors.textMuted),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: EcoColors.textSecondary,
+                  fontSize: 10,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ThreadTile extends StatelessWidget {
   const _ThreadTile({required this.thread, required this.onTap});
 
@@ -395,38 +360,130 @@ class _ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.only(left: 40, right: 16),
-      title: Text(
-        thread.title.isNotEmpty
-            ? thread.title
-            : workspaceDisplayName(thread.workspacePath),
+    final eco = ecoThemeExtras(context);
+    final title = thread.title.isNotEmpty
+        ? thread.title
+        : workspaceDisplayName(thread.workspacePath);
+    final showStatus = hasThreadStatusIndicator(thread);
+    final timeLabel = formatRelativeTime(threadStatusTime(thread));
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: eco.borderSubtle.withValues(alpha: 0.6)),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(44, 9, 12, 9),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                      if (thread.message.isNotEmpty && showStatus) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          thread.message,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: eco.textMuted,
+                              ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _ThreadTrailingIndicator(
+                  thread: thread,
+                  timeLabel: timeLabel,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      subtitle: Text(
-        _statusLabel(thread.status) + (thread.message.isNotEmpty ? ' · ${thread.message}' : ''),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      onTap: onTap,
     );
   }
+}
 
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'running':
-        return '运行中';
-      case 'awaiting_plan':
-        return '待审批计划';
-      case 'blocked':
-        return '等待操作';
-      case 'queued':
-        return '排队中';
-      case 'failed':
-        return '失败';
-      case 'completed':
-        return '已完成';
-      default:
-        return '空闲';
+class _ThreadTrailingIndicator extends StatelessWidget {
+  const _ThreadTrailingIndicator({
+    required this.thread,
+    required this.timeLabel,
+  });
+
+  final ThreadSummary thread;
+  final String timeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
+
+    if (isThreadWaitingForApproval(thread)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: EcoColors.statusAllowBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: EcoColors.statusAllowBorder),
+        ),
+        child: const Text(
+          '等待批准',
+          style: TextStyle(
+            color: EcoColors.statusAllowText,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
     }
+
+    if (isThreadBusy(thread)) {
+      return SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: threadStatusDotColor('running'),
+        ),
+      );
+    }
+
+    if (thread.status == 'failed' || thread.status == 'blocked') {
+      return Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: threadStatusDotColor(thread.status),
+          shape: BoxShape.circle,
+        ),
+      );
+    }
+
+    if (timeLabel.isEmpty) return const SizedBox.shrink();
+
+    return Text(
+      timeLabel,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: eco.textMuted,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+    );
   }
 }

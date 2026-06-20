@@ -443,6 +443,12 @@ let gitSettingsStore: GitSettingsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let sessionSyncStore: SessionSyncStore;
 let centerServerClient: CenterServerDesktopClient;
+
+function emitCenterServerStatus(): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send(IPC_CHANNELS.centerServerStatusChanged, centerServerClient.getSnapshot());
+  });
+}
 let sdkSessionStore: SessionStore | undefined;
 let closeSdkSessionStore: (() => Promise<void>) | undefined;
 
@@ -550,6 +556,7 @@ app.whenReady().then(async () => {
     store: await createCenterServerStore(dbPath),
     eventCenter: desktopEventCenter,
     log: (message) => process.stderr.write(message),
+    onStatusChange: emitCenterServerStatus,
   });
   agentLifecycle = new AgentLifecycleService(conversationStore);
   pricingCache = new ModelsDevPricingCache({
@@ -676,9 +683,7 @@ app.whenReady().then(async () => {
   currentWorkspace = await ensureHomeProject();
   registerIpcHandlers();
   if (centerServerClient.getSnapshot().settings.enabled) {
-    void centerServerClient.start().catch((error) => {
-      process.stderr.write(`[eco] center server auto-connect failed: ${errorMessage(error)}\n`);
-    });
+    void centerServerClient.start();
   }
   await createMainWindow();
 
@@ -2006,7 +2011,7 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(
     IPC_CHANNELS.centerServerSettingsSave,
     async (payload: CenterServerSettingsInput) => {
-      const snapshot = centerServerClient.saveSettings(payload);
+      const snapshot = await centerServerClient.saveSettings(payload);
       emitSettingsUpdated();
       return snapshot;
     },

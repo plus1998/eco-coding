@@ -14794,7 +14794,140 @@ html[data-window-focused="true"] .settings-nav {
   text-overflow: ellipsis;
 }
 
-/* —— Remote connect flow (settings) —— */
+/* —— Center server settings (MCP-style) —— */
+.center-server-row {
+  align-items: flex-start;
+}
+
+.center-server-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.center-server-row-url {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.center-server-status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.center-server-status.is-connected {
+  color: var(--text-secondary);
+}
+
+.center-server-status.is-error {
+  color: var(--status-deny-text);
+}
+
+.center-server-status.is-connecting {
+  color: var(--text-muted);
+}
+
+.center-server-pairing-section {
+  margin-top: 28px;
+}
+
+.center-server-pairing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.center-server-pairing-qr {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.center-server-pairing-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.center-server-pairing-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.center-server-pairing-code {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+
+.center-server-pairing-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.center-server-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.center-server-test-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.center-server-auth-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.center-server-auth-tab {
+  flex: 1;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.mcp-save-button.center-server-auth-tab {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mcp-back-button.center-server-auth-tab {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* —— Remote connect flow (legacy) —— */
 .connect-flow {
   max-width: 560px;
 }

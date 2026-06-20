@@ -88,7 +88,7 @@ class ThreadSummary {
   });
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
-        id: json['id'] as String,
+        id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '',
         prompt: json['prompt'] as String? ?? '',
         workspacePath: json['workspacePath'] as String? ?? '',
@@ -124,7 +124,7 @@ class ThreadActivityLine {
 
   factory ThreadActivityLine.fromJson(Map<String, dynamic> json) =>
       ThreadActivityLine(
-        id: json['id'] as String,
+        id: json['id'] as String? ?? '',
         role: json['role'] as String? ?? 'assistant',
         message: json['message'] as String? ?? '',
         stream: json['stream'] as bool?,
@@ -149,7 +149,7 @@ class ThreadPendingPlan {
 
   factory ThreadPendingPlan.fromJson(Map<String, dynamic> json) =>
       ThreadPendingPlan(
-        threadId: json['threadId'] as String,
+        threadId: json['threadId'] as String? ?? '',
         userPrompt: json['userPrompt'] as String? ?? '',
         analysis: json['analysis'] as String? ?? '',
         plan: json['plan'] as String? ?? '',
@@ -172,7 +172,7 @@ class ClarificationQuestionOption {
 
   factory ClarificationQuestionOption.fromJson(Map<String, dynamic> json) =>
       ClarificationQuestionOption(
-        label: json['label'] as String,
+        label: json['label'] as String? ?? '',
         recommended: json['recommended'] as bool?,
       );
 
@@ -190,7 +190,7 @@ class ClarificationQuestion {
 
   factory ClarificationQuestion.fromJson(Map<String, dynamic> json) =>
       ClarificationQuestion(
-        question: json['question'] as String,
+        question: json['question'] as String? ?? '',
         header: json['header'] as String?,
         options: (json['options'] as List<dynamic>? ?? [])
             .map((e) => ClarificationQuestionOption.fromJson(
@@ -215,8 +215,8 @@ class ClarificationRequest {
 
   factory ClarificationRequest.fromJson(Map<String, dynamic> json) =>
       ClarificationRequest(
-        toolUseId: json['toolUseId'] as String,
-        threadId: json['threadId'] as String,
+        toolUseId: json['toolUseId'] as String? ?? '',
+        threadId: json['threadId'] as String? ?? '',
         questions: (json['questions'] as List<dynamic>? ?? [])
             .map((e) => ClarificationQuestion.fromJson(
                   e as Map<String, dynamic>,
@@ -245,8 +245,8 @@ class BashApprovalRequest {
 
   factory BashApprovalRequest.fromJson(Map<String, dynamic> json) =>
       BashApprovalRequest(
-        toolUseId: json['toolUseId'] as String,
-        threadId: json['threadId'] as String,
+        toolUseId: json['toolUseId'] as String? ?? '',
+        threadId: json['threadId'] as String? ?? '',
         command: json['command'] as String? ?? '',
         cwd: json['cwd'] as String? ?? '',
         reason: json['reason'] as String? ?? '',
@@ -280,8 +280,8 @@ class ThreadPendingFollowUp {
 
   factory ThreadPendingFollowUp.fromJson(Map<String, dynamic> json) =>
       ThreadPendingFollowUp(
-        id: json['id'] as String,
-        threadId: json['threadId'] as String,
+        id: json['id'] as String? ?? '',
+        threadId: json['threadId'] as String? ?? '',
         prompt: json['prompt'] as String? ?? '',
         status: json['status'] as String? ?? 'queued',
         createdAt: json['createdAt'] as String? ?? '',
@@ -372,7 +372,7 @@ class WorkspaceInfo {
   });
 
   factory WorkspaceInfo.fromJson(Map<String, dynamic> json) => WorkspaceInfo(
-        path: json['path'] as String,
+        path: json['path'] as String? ?? '',
         name: json['name'] as String? ?? '',
         isGitRepository: json['isGitRepository'] as bool? ?? false,
         branch: json['branch'] as String?,
@@ -391,8 +391,8 @@ class OrchestrationProfileSummary {
 
   factory OrchestrationProfileSummary.fromJson(Map<String, dynamic> json) =>
       OrchestrationProfileSummary(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? json['id'] as String,
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? json['id'] as String? ?? '',
       );
 
   final String id;
@@ -404,8 +404,8 @@ class RouteProfileSummary {
 
   factory RouteProfileSummary.fromJson(Map<String, dynamic> json) =>
       RouteProfileSummary(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? json['id'] as String,
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? json['id'] as String? ?? '',
       );
 
   final String id;

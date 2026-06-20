@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
-import 'composer_settings_sheet.dart';
+import 'composer_controls.dart';
 import 'workspace_changes_pill.dart';
 
-class SessionComposer extends StatefulWidget {
+class SessionComposer extends ConsumerWidget {
   const SessionComposer({
     super.key,
     required this.controller,
@@ -16,7 +16,6 @@ class SessionComposer extends StatefulWidget {
     required this.threadId,
     required this.isRunning,
     required this.hasActivity,
-    required this.modelLabel,
     required this.workspaceDiff,
     required this.diffLoading,
     required this.onPickImage,
@@ -25,6 +24,7 @@ class SessionComposer extends StatefulWidget {
     required this.onStop,
     required this.onRuntimeConfigChanged,
     required this.onChangesTap,
+    this.inputHint,
   });
 
   final TextEditingController controller;
@@ -33,7 +33,6 @@ class SessionComposer extends StatefulWidget {
   final String threadId;
   final bool isRunning;
   final bool hasActivity;
-  final String modelLabel;
   final WorkspaceDiffResult? workspaceDiff;
   final bool diffLoading;
   final VoidCallback onPickImage;
@@ -42,39 +41,21 @@ class SessionComposer extends StatefulWidget {
   final VoidCallback onStop;
   final ValueChanged<ThreadRuntimeConfigInput> onRuntimeConfigChanged;
   final VoidCallback? onChangesTap;
+  final String? inputHint;
 
   @override
-  State<SessionComposer> createState() => _SessionComposerState();
-}
-
-class _SessionComposerState extends State<SessionComposer> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onTextChanged);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onTextChanged);
-    super.dispose();
-  }
-
-  void _onTextChanged() => setState(() {});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoThemeExtras(context);
-    final canSend =
-        !widget.isRunning && widget.controller.text.trim().isNotEmpty;
+    final canSend = !isRunning && controller.text.trim().isNotEmpty;
+    final canEditConfig = !isRunning;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         WorkspaceChangesPill(
-          diff: widget.workspaceDiff,
-          busy: widget.diffLoading,
-          onTap: widget.onChangesTap,
+          diff: workspaceDiff,
+          busy: diffLoading,
+          onTap: onChangesTap,
         ),
         SafeArea(
           top: false,
@@ -85,23 +66,30 @@ class _SessionComposerState extends State<SessionComposer> {
                 color: EcoColors.bgElevated,
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: eco.borderSubtle),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.attachments.isNotEmpty)
+                  if (attachments.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                       child: SizedBox(
                         height: 40,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
-                          itemCount: widget.attachments.length,
+                          itemCount: attachments.length,
                           separatorBuilder: (_, _) => const SizedBox(width: 8),
                           itemBuilder: (context, index) => InputChip(
                             label: Text('图片 ${index + 1}'),
                             visualDensity: VisualDensity.compact,
-                            onDeleted: () => widget.onRemoveAttachment(index),
+                            onDeleted: () => onRemoveAttachment(index),
                           ),
                         ),
                       ),
@@ -109,12 +97,12 @@ class _SessionComposerState extends State<SessionComposer> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
                     child: TextField(
-                      controller: widget.controller,
+                      controller: controller,
                       minLines: 1,
                       maxLines: 6,
                       decoration: InputDecoration(
-                        hintText:
-                            widget.hasActivity ? '跟进' : '发送消息…',
+                        hintText: inputHint ??
+                            (hasActivity ? '跟进' : '发送消息…'),
                         border: InputBorder.none,
                         isDense: true,
                         hintStyle: TextStyle(color: eco.textMuted),
@@ -123,35 +111,57 @@ class _SessionComposerState extends State<SessionComposer> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(6, 4, 8, 8),
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                    child: Row(
+                      children: [
+                        ComposerProfileControl(
+                          runtimeConfig: runtimeConfig,
+                          threadId: threadId,
+                          canEdit: canEditConfig,
+                          onChanged: onRuntimeConfigChanged,
+                        ),
+                        Container(
+                          width: 1,
+                          height: 18,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          color: eco.borderSubtle,
+                        ),
+                        ComposerOrchestrationControl(
+                          runtimeConfig: runtimeConfig,
+                          threadId: threadId,
+                          canEdit: canEditConfig,
+                          onChanged: onRuntimeConfigChanged,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: eco.borderSubtle),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 2, 8, 8),
                     child: Row(
                       children: [
                         IconButton(
-                          onPressed: widget.onPickImage,
+                          onPressed: onPickImage,
                           icon: const Icon(Icons.add, size: 22),
                           tooltip: '添加图片',
                           visualDensity: VisualDensity.compact,
                         ),
-                        Consumer(
-                          builder: (context, ref, _) => IconButton(
-                            onPressed: () => showComposerSettingsSheet(
-                              context: context,
-                              ref: ref,
-                              runtimeConfig: widget.runtimeConfig,
-                              threadId: widget.threadId,
-                              onChanged: widget.onRuntimeConfigChanged,
-                            ),
-                            icon: const Icon(Icons.tune, size: 20),
-                            tooltip: 'Composer 设置',
-                            visualDensity: VisualDensity.compact,
-                          ),
+                        ComposerPlanModeControl(
+                          runtimeConfig: runtimeConfig,
+                          threadId: threadId,
+                          canEdit: canEditConfig,
+                          onChanged: onRuntimeConfigChanged,
                         ),
-                        _ModelBadge(label: widget.modelLabel),
+                        ComposerBashReviewControl(
+                          runtimeConfig: runtimeConfig,
+                          threadId: threadId,
+                          onChanged: onRuntimeConfigChanged,
+                        ),
                         const Spacer(),
-                        if (widget.isRunning)
-                          _StopButton(onStop: widget.onStop)
+                        if (isRunning)
+                          _StopButton(onStop: onStop)
                         else
-                          _SendButton(onSend: canSend ? widget.onSend : null),
+                          _SendButton(onSend: canSend ? onSend : null),
                       ],
                     ),
                   ),
@@ -161,32 +171,6 @@ class _SessionComposerState extends State<SessionComposer> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ModelBadge extends StatelessWidget {
-  const _ModelBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    if (label.isEmpty) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: EcoColors.composerPillBg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: EcoColors.composerPillBorder),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: EcoColors.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-      ),
     );
   }
 }
