@@ -29,6 +29,7 @@ void main() {
     expect(files.first.hunks.first.rangeLabel, '第 1-4 行');
     expect(files.first.additions, 1);
     expect(files.first.deletions, 1);
+    expect(files.last.hunks.first.lines.length, 2);
     expect(
       files.first.hunks.first.lines.any(
         (line) => line.kind == DiffLineKind.addition && line.content == 'added',
@@ -37,15 +38,18 @@ void main() {
     );
   });
 
-  test('mergeDiffFilesWithStats keeps files without hunks when patch missing', () {
-    final merged = mergeDiffFilesWithStats(
-      patch: '',
-      files: const [
-        WorkspaceDiffFile(path: 'src/a.ts', additions: 1, deletions: 0),
-      ],
-    );
-    expect(merged.length, 1);
-    expect(merged.first.path, 'src/a.ts');
-    expect(merged.first.hunks, isEmpty);
-  });
+  test(
+    'mergeDiffFilesWithStats keeps files without hunks when patch missing',
+    () {
+      final merged = mergeDiffFilesWithStats(
+        patch: '',
+        files: const [
+          WorkspaceDiffFile(path: 'src/a.ts', additions: 1, deletions: 0),
+        ],
+      );
+      expect(merged.length, 1);
+      expect(merged.first.path, 'src/a.ts');
+      expect(merged.first.hunks, isEmpty);
+    },
+  );
 }

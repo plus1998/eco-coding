@@ -5,6 +5,7 @@ import { DeviceService } from "../src/devices/device-service";
 import { handleEcoHttpRequest } from "../src/http";
 import { PairingService } from "../src/pairing/pairing-service";
 import { MemoryPresenceStore } from "../src/presence/presence-store";
+import type { RateLimiter } from "../src/rate-limit";
 import { RpcGateway } from "../src/rpc/rpc-gateway";
 import { closeTestMongoStore, createTestMongoStore } from "./mongo-test-store";
 
@@ -68,7 +69,7 @@ test("supports the complete single-instance HTTP management flow", async () => {
       device: { id: string; kind: "mobile" };
       deviceSecret: string;
       tokens: { accessToken: string };
-      binding: { desktopDeviceId: string; mobileDeviceId: string };
+      binding: { id: string; desktopDeviceId: string; mobileDeviceId: string };
       desktopDeviceId: string;
     }>("/v1/pairing/join", {
       code: pairingSession.code,
@@ -141,12 +142,24 @@ test("supports the complete single-instance HTTP management flow", async () => {
       }),
     );
 
-    const listedBindings = await client.get<{ bindings: Array<{ id: string; revokedAt: string | null }> }>(
-      "/v1/bindings",
-      userAccessToken,
+    const listedBindings = await client.get<{
+      bindings: Array<{ id: string; mobileDeviceId: string; revokedAt: string | null }>;
+    }>("/v1/bindings", userAccessToken);
+    expect(listedBindings.bindings).toHaveLength(2);
+    expect(listedBindings.bindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: joined.binding.id,
+          mobileDeviceId: joined.device.id,
+          revokedAt: null,
+        }),
+        expect.objectContaining({
+          id: claimed.binding.id,
+          mobileDeviceId: mobile.device.id,
+          revokedAt: null,
+        }),
+      ]),
     );
-    expect(listedBindings.bindings).toHaveLength(1);
-    expect(listedBindings.bindings[0]?.revokedAt).toBeNull();
 
     const mobileBindings = await client.get<{ bindings: Array<{ id: string; revokedAt: string | null }> }>(
       "/v1/bindings",
@@ -285,12 +298,59 @@ test("desktop device token can revoke its own bindings but not other desktop bin
   }
 });
 
+test("rate limits protected HTTP entrypoints", async () => {
+  const store = await createTestMongoStore("http_rate_limit");
+  const auth = new AuthService({
+    store,
+    tokenSecret: TOKEN_SECRET,
+    accessTokenTtlSeconds: 60,
+    refreshTokenTtlSeconds: 3600,
+  });
+  const devices = new DeviceService({ store });
+  const pairing = new PairingService({ store, pairingTtlSeconds: 300, devices, auth });
+  const rpc = new RpcGateway({
+    store,
+    presence: new MemoryPresenceStore(),
+    rpcTimeoutMs: 1000,
+  });
+  const client = createRouteClient({
+    store,
+    auth,
+    devices,
+    pairing,
+    rpc,
+    rateLimiter: denyAfterFirstRateLimiter(),
+  });
+
+  try {
+    const first = await client.raw("POST", "/v1/auth/login", {
+      email: "missing@example.com",
+      password: "incorrect password",
+    });
+    expect(first.status).toBe(400);
+
+    const second = await client.raw("POST", "/v1/auth/login", {
+      email: "missing@example.com",
+      password: "incorrect password",
+    });
+    expect(second.status).toBe(429);
+    expect(second.headers.get("retry-after")).toBe("30");
+    await expect(second.json()).resolves.toMatchObject({
+      error: "Too many requests. Please retry later.",
+      retryAfterSeconds: 30,
+    });
+  } finally {
+    await closeTestMongoStore(store);
+  }
+});
+
 function createRouteClient(input: {
   store: MongoStore;
   auth: AuthService;
   devices: DeviceService;
   pairing: PairingService;
   rpc: RpcGateway;
+  rateLimiter?: RateLimiter;
 }) {
   async function raw(
     method: string,
@@ -318,6 +378,7 @@ function createRouteClient(input: {
       pairing: input.pairing,
       rpc: input.rpc,
       store: input.store,
+      ...(input.rateLimiter ? { rateLimiter: input.rateLimiter } : {}),
     });
   }
   return {
@@ -334,6 +395,20 @@ function createRouteClient(input: {
     },
     async delete<TResult>(path: string, accessToken: string): Promise<TResult> {
       return readJsonResponse<TResult>(await raw("DELETE", path, undefined, accessToken));
+    },
+  };
+}
+
+function denyAfterFirstRateLimiter(): RateLimiter {
+  let count = 0;
+  return {
+    async consume() {
+      count += 1;
+      return {
+        allowed: count <= 1,
+        remaining: count <= 1 ? 0 : 0,
+        retryAfterSeconds: 30,
+      };
     },
   };
 }

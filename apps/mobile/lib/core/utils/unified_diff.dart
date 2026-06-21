@@ -47,10 +47,7 @@ class DiffHunk {
 }
 
 class ParsedDiffFile {
-  const ParsedDiffFile({
-    required this.path,
-    required this.hunks,
-  });
+  const ParsedDiffFile({required this.path, required this.hunks});
 
   final String path;
   final List<DiffHunk> hunks;
@@ -116,7 +113,9 @@ List<ParsedDiffFile> parseUnifiedDiff(String patch) {
   void flushFile() {
     flushHunk();
     if (currentFile == null) return;
-    output.add(ParsedDiffFile(path: currentFile!.path, hunks: List.unmodifiable(hunks)));
+    output.add(
+      ParsedDiffFile(path: currentFile!.path, hunks: List.unmodifiable(hunks)),
+    );
     hunks.clear();
     currentFile = null;
   }
@@ -169,19 +168,7 @@ List<ParsedDiffFile> parseUnifiedDiff(String patch) {
     if (currentHunk == null) continue;
     if (line.startsWith(r'\')) continue;
 
-    if (line.isEmpty) {
-      lines.add(
-        DiffLine(
-          kind: DiffLineKind.context,
-          content: '',
-          oldLineNumber: oldLine,
-          newLineNumber: newLine,
-        ),
-      );
-      oldLine += 1;
-      newLine += 1;
-      continue;
-    }
+    if (line.isEmpty) continue;
 
     final prefix = line[0];
     final content = line.length > 1 ? line.substring(1) : '';
@@ -228,16 +215,16 @@ List<ParsedDiffFile> mergeDiffFilesWithStats({
   final parsed = parseUnifiedDiff(patch);
   if (parsed.isEmpty) {
     return files
-        .map(
-          (file) => ParsedDiffFile(path: file.path, hunks: const []),
-        )
+        .map((file) => ParsedDiffFile(path: file.path, hunks: const []))
         .toList();
   }
 
   final byPath = {for (final file in parsed) file.path: file};
   return files
       .map(
-        (file) => byPath[file.path] ?? ParsedDiffFile(path: file.path, hunks: const []),
+        (file) =>
+            byPath[file.path] ??
+            ParsedDiffFile(path: file.path, hunks: const []),
       )
       .toList();
 }

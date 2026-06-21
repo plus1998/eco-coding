@@ -5,6 +5,14 @@ import { MongoStore } from "./db/mongo-store";
 import { DeviceService } from "./devices/device-service";
 import { PairingService } from "./pairing/pairing-service";
 import { createRedisPresenceStore } from "./presence/presence-store";
+import {
+  buildRateLimitKey,
+  HTTP_RATE_LIMITS,
+  RateLimitExceededError,
+  type RateLimiter,
+  type RateLimitRule,
+  RedisRateLimiter,
+} from "./rate-limit";
 import { RedisRpcBus, type RpcBus } from "./rpc/rpc-bus";
 import { type OnlineDeviceSnapshot, RpcGateway, type RpcPeer } from "./rpc/rpc-gateway";
 import type { AccessTokenClaims, DeviceAccessTokenClaims, DeviceBindingRecord, DeviceRecord } from "./types";
@@ -25,6 +33,7 @@ export interface EcoServerDependencies {
   pairing?: PairingService;
   rpc?: RpcGateway;
   rpcBus?: RpcBus;
+  rateLimiter?: RateLimiter;
 }
 
 export async function startEcoServer(dependencies: EcoServerDependencies) {
@@ -59,6 +68,12 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
       redisUrl: dependencies.config.redisUrl,
       ...(dependencies.config.redisPassword ? { redisPassword: dependencies.config.redisPassword } : {}),
     });
+  const rateLimiter =
+    dependencies.rateLimiter ??
+    new RedisRateLimiter({
+      redisUrl: dependencies.config.redisUrl,
+      ...(dependencies.config.redisPassword ? { redisPassword: dependencies.config.redisPassword } : {}),
+    });
   const rpc =
     dependencies.rpc ??
     new RpcGateway({
@@ -85,6 +100,7 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
           server,
           auth,
           url,
+          rateLimiter,
         });
       }
       return handleEcoHttpRequest({
@@ -95,6 +111,7 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
         pairing,
         rpc,
         store,
+        rateLimiter,
       });
     },
     websocket: {
@@ -143,10 +160,13 @@ export async function handleEcoHttpRequest(input: {
   pairing: PairingService;
   rpc: RpcGateway;
   store: MongoStore;
+  rateLimiter?: RateLimiter;
 }): Promise<Response> {
   try {
     return await handleEcoHttpRoute(input);
   } catch (error) {
+    const rateLimitResponse = toRateLimitResponse(error);
+    if (rateLimitResponse) return rateLimitResponse;
     const message = error instanceof Error ? error.message : "Request failed.";
     return json({ error: message }, { status: classifyHttpError(message) });
   }
@@ -160,11 +180,19 @@ export async function handleEcoHttpRoute(input: {
   pairing: PairingService;
   rpc: RpcGateway;
   store: MongoStore;
+  rateLimiter?: RateLimiter;
 }): Promise<Response> {
-  const { request, url, auth, devices, pairing, rpc, store } = input;
+  const { request, url, auth, devices, pairing, rpc, store, rateLimiter } = input;
   const pathname = normalizeHttpPathname(url.pathname);
   if (request.method === "POST" && pathname === "/v1/auth/register") {
     const body = await readJsonObject(request);
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "auth.register",
+      rule: HTTP_RATE_LIMITS.authRegister,
+      subjectParts: [readOptionalString(body, "email")],
+    });
     const user = await auth.registerUser({
       email: requireString(body, "email"),
       password: requireString(body, "password"),
@@ -188,6 +216,13 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "POST" && pathname === "/v1/auth/login") {
     const body = await readJsonObject(request);
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "auth.login",
+      rule: HTTP_RATE_LIMITS.authLogin,
+      subjectParts: [readOptionalString(body, "email")],
+    });
     const user = await auth.loginUser({
       email: requireString(body, "email"),
       password: requireString(body, "password"),
@@ -197,7 +232,15 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "POST" && pathname === "/v1/auth/refresh") {
     const body = await readJsonObject(request);
-    const access = await auth.refreshAccessToken(requireString(body, "refreshToken"));
+    const refreshToken = requireString(body, "refreshToken");
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "auth.refresh",
+      rule: HTTP_RATE_LIMITS.authRefresh,
+      subjectParts: [refreshToken],
+    });
+    const access = await auth.refreshAccessToken(refreshToken);
     return json(access);
   }
   if (request.method === "POST" && pathname === "/v1/auth/logout") {
@@ -285,8 +328,16 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "POST" && pathname === "/v1/devices/token") {
     const body = await readJsonObject(request);
+    const deviceId = requireString(body, "deviceId");
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "devices.token",
+      rule: HTTP_RATE_LIMITS.deviceToken,
+      subjectParts: [deviceId],
+    });
     const device = await devices.authenticateDevice({
-      deviceId: requireString(body, "deviceId"),
+      deviceId,
       deviceSecret: requireString(body, "deviceSecret"),
     });
     const tokens = await auth.issueDeviceTokenBundle(device);
@@ -298,6 +349,13 @@ export async function handleEcoHttpRoute(input: {
       throw new Error("Only desktop devices can create pairing sessions.");
     }
     assertCapability(claims, "device:pair");
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "pairing.create",
+      rule: HTTP_RATE_LIMITS.pairingCreate,
+      subjectParts: [claims.userId, claims.deviceId],
+    });
     const created = await pairing.createPairingSession({
       userId: claims.userId,
       desktopDeviceId: claims.deviceId,
@@ -312,9 +370,17 @@ export async function handleEcoHttpRoute(input: {
   }
   if (request.method === "POST" && pathname === "/v1/pairing/join") {
     const body = await readJsonObject(request);
+    const code = requireString(body, "code");
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "pairing.join",
+      rule: HTTP_RATE_LIMITS.pairingJoin,
+      subjectParts: [code],
+    });
     const metadata = readOptionalDeviceMetadata(body.metadata);
     const joined = await pairing.joinPairingSession({
-      code: requireString(body, "code"),
+      code,
       token: requireString(body, "token"),
       ...(typeof body.deviceName === "string" ? { deviceName: body.deviceName } : {}),
       ...(metadata !== undefined ? { metadata } : {}),
@@ -349,10 +415,18 @@ export async function handleEcoHttpRoute(input: {
       throw new Error("Only mobile devices can claim pairing sessions.");
     }
     const body = await readJsonObject(request);
+    const code = requireString(body, "code");
+    await consumeHttpRateLimit({
+      rateLimiter,
+      request,
+      scope: "pairing.claim",
+      rule: HTTP_RATE_LIMITS.pairingClaim,
+      subjectParts: [claims.userId, claims.deviceId, code],
+    });
     const binding = await pairing.claimPairingSession({
       userId: claims.userId,
       mobileDeviceId: claims.deviceId,
-      code: requireString(body, "code"),
+      code,
     });
     return json({ binding });
   }
@@ -423,7 +497,21 @@ async function handleWebSocketUpgrade(input: {
   server: Bun.Server<RpcSocketData>;
   auth: AuthService;
   url: URL;
+  rateLimiter?: RateLimiter;
 }): Promise<Response> {
+  try {
+    await consumeHttpRateLimit({
+      rateLimiter: input.rateLimiter,
+      request: input.request,
+      scope: "rpc.websocket",
+      rule: HTTP_RATE_LIMITS.rpcWebSocket,
+      subjectParts: [],
+    });
+  } catch (error) {
+    const rateLimitResponse = toRateLimitResponse(error);
+    if (rateLimitResponse) return rateLimitResponse;
+    throw error;
+  }
   const token = extractBearerToken(input.request) ?? input.url.searchParams.get("access_token");
   if (!token) {
     return json({ error: "Missing access token." }, { status: 401 });
@@ -485,6 +573,11 @@ function requireString(body: Record<string, unknown>, key: string): string {
     throw new Error(`${key} is required.`);
   }
   return value;
+}
+
+function readOptionalString(body: Record<string, unknown>, key: string): string {
+  const value = body[key];
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function requireDeviceKind(body: Record<string, unknown>, key: string): EcoDeviceKind {
@@ -667,6 +760,35 @@ function getPairingStatus(expiresAt: string, claimedAt: string | null): "pending
   return Date.parse(expiresAt) <= Date.now() ? "expired" : "pending";
 }
 
+async function consumeHttpRateLimit(input: {
+  rateLimiter: RateLimiter | undefined;
+  request: Request;
+  scope: string;
+  rule: RateLimitRule;
+  subjectParts: readonly string[];
+}): Promise<void> {
+  if (!input.rateLimiter) {
+    return;
+  }
+  const key = await buildRateLimitKey(input.scope, [
+    clientIdentity(input.request),
+    ...input.subjectParts.map((part) => part.trim().toLowerCase()).filter(Boolean),
+  ]);
+  const decision = await input.rateLimiter.consume({ key, rule: input.rule });
+  if (!decision.allowed) {
+    throw new RateLimitExceededError("Too many requests. Please retry later.", decision.retryAfterSeconds);
+  }
+}
+
+function clientIdentity(request: Request): string {
+  const directHeader =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for");
+  const forwardedIp = directHeader?.split(",")[0]?.trim();
+  return forwardedIp || "unknown";
+}
+
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -678,6 +800,19 @@ function json(data: unknown, init: ResponseInit = {}): Response {
     ...init,
     headers,
   });
+}
+
+function toRateLimitResponse(error: unknown): Response | undefined {
+  if (!(error instanceof RateLimitExceededError)) {
+    return undefined;
+  }
+  return json(
+    { error: error.message, retryAfterSeconds: error.retryAfterSeconds },
+    {
+      status: 429,
+      headers: { "retry-after": String(error.retryAfterSeconds) },
+    },
+  );
 }
 
 function classifyHttpError(message: string): number {

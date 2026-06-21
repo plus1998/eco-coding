@@ -20,8 +20,8 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
 
 final threadListProvider =
     AsyncNotifierProvider<ThreadListNotifier, List<ThreadSummary>>(
-  ThreadListNotifier.new,
-);
+      ThreadListNotifier.new,
+    );
 
 class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
   @override
@@ -50,17 +50,21 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
   }
 }
 
-final runtimeConfigProvider =
-    StateProvider<ThreadRuntimeConfigInput?>((ref) => null);
+final runtimeConfigProvider = StateProvider<ThreadRuntimeConfigInput?>(
+  (ref) => null,
+);
 
-final modelSettingsProvider = FutureProvider<ModelSettingsSnapshot?>((ref) async {
+final modelSettingsProvider = FutureProvider<ModelSettingsSnapshot?>((
+  ref,
+) async {
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
   return rpc.getModelSettings();
 });
 
-final workflowSettingsProvider =
-    FutureProvider<WorkflowSettingsSnapshot?>((ref) async {
+final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
+  ref,
+) async {
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
   return rpc.getWorkflowSettings();
@@ -77,29 +81,35 @@ ThreadRuntimeConfig defaultRuntimeConfig({
 }
 
 final workspaceDiffProvider =
-    FutureProvider.family<WorkspaceDiffResult?, String>((ref, workspacePath) async {
-  if (workspacePath.isEmpty) return null;
-  final rpc = ref.watch(desktopRpcProvider);
-  if (rpc == null) return null;
+    FutureProvider.family<WorkspaceDiffResult?, String>((
+      ref,
+      workspacePath,
+    ) async {
+      if (workspacePath.isEmpty) return null;
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null) return null;
 
-  ref.listen(ecoEventsProvider, (previous, next) {
-    next.whenData((event) {
-      if (event.kind.startsWith('thread.') || event.kind.startsWith('agent.')) {
-        ref.invalidateSelf();
+      ref.listen(ecoEventsProvider, (previous, next) {
+        next.whenData((event) {
+          if (event.kind.startsWith('thread.') ||
+              event.kind.startsWith('agent.')) {
+            ref.invalidateSelf();
+          }
+        });
+      });
+
+      try {
+        final diff = await rpc.getWorkspaceDiff(workspacePath);
+        return diff.hasChanges ? diff : null;
+      } catch (_) {
+        return null;
       }
     });
-  });
 
-  try {
-    final diff = await rpc.getWorkspaceDiff(workspacePath);
-    return diff.hasChanges ? diff : null;
-  } catch (_) {
-    return null;
-  }
-});
-
-final gitStatusProvider =
-    FutureProvider.family<GitWorkingTreeStatus?, String>((ref, workspacePath) async {
+final gitStatusProvider = FutureProvider.family<GitWorkingTreeStatus?, String>((
+  ref,
+  workspacePath,
+) async {
   if (workspacePath.isEmpty) return null;
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
@@ -184,24 +194,28 @@ class ThreadSessionState {
       loading: loading ?? this.loading,
       error: error,
       thread: thread ?? this.thread,
-      runProjection:
-          clearProjection ? null : (runProjection ?? this.runProjection),
+      runProjection: clearProjection
+          ? null
+          : (runProjection ?? this.runProjection),
       subagentSessions: subagentSessions ?? this.subagentSessions,
       billing: clearBilling ? null : (billing ?? this.billing),
-      contextSnapshot:
-          clearContext ? null : (contextSnapshot ?? this.contextSnapshot),
+      contextSnapshot: clearContext
+          ? null
+          : (contextSnapshot ?? this.contextSnapshot),
     );
   }
 }
 
-final threadSessionProvider = StateNotifierProvider.family<
-    ThreadSessionNotifier, ThreadSessionState, String>(
-  (ref, threadId) => ThreadSessionNotifier(threadId, ref),
-);
+final threadSessionProvider =
+    StateNotifierProvider.family<
+      ThreadSessionNotifier,
+      ThreadSessionState,
+      String
+    >((ref, threadId) => ThreadSessionNotifier(threadId, ref));
 
 class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   ThreadSessionNotifier(this.threadId, this.ref)
-      : super(const ThreadSessionState()) {
+    : super(const ThreadSessionState()) {
     _init();
   }
 
@@ -209,6 +223,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   final Ref ref;
 
   Future<void> _init() async {
+    ref.listen(ecoEventsProvider, (previous, next) {
+      next.whenData(_handleEvent);
+    });
+
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
       state = state.copyWith(loading: false, error: '未选择 PC');
@@ -228,8 +246,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       }
 
       final awaitingPlan = thread?.status == 'awaiting_plan';
-      final plan =
-          awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
+      final plan = awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
       final bash = await rpc.getPendingBashApproval(threadId);
       final clarification = await rpc.getPendingClarification(threadId);
       ThreadRunProjectionSnapshot? projection;
@@ -248,38 +265,28 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         contextSnapshot = usage.context;
       } catch (_) {}
 
+      final loadedActivities = lines.map(_activityItemFromLine).toList();
+      final liveActivities = state.activities;
+      final loadedFollowUps = _mergeThreadFollowUps(followUps, state.followUps);
+
       state = ThreadSessionState(
-        activities: lines
-            .map(
-              (line) => ActivityItem(
-                id: line.id,
-                role: line.role,
-                message: line.message,
-                stream: line.stream ?? false,
-              ),
-            )
-            .toList(),
+        activities: _mergeActivityItems(loadedActivities, liveActivities),
         pendingPlan: plan,
         pendingBash: bash,
         pendingClarification: clarification,
-        followUps: followUps,
-        thread: thread,
-        runProjection: projection,
-        subagentSessions: subagentSessions,
-        billing: billing,
-        contextSnapshot: contextSnapshot,
+        followUps: loadedFollowUps,
+        thread: thread ?? state.thread,
+        runProjection: state.runProjection ?? projection,
+        subagentSessions: state.subagentSessions.isNotEmpty
+            ? state.subagentSessions
+            : subagentSessions,
+        billing: state.billing ?? billing,
+        contextSnapshot: state.contextSnapshot ?? contextSnapshot,
         loading: false,
       );
     } catch (error) {
-      state = state.copyWith(
-        loading: false,
-        error: error.toString(),
-      );
+      state = state.copyWith(loading: false, error: error.toString());
     }
-
-    ref.listen(ecoEventsProvider, (previous, next) {
-      next.whenData(_handleEvent);
-    });
   }
 
   void _handleEvent(EcoEventEnvelope event) {
@@ -347,6 +354,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       );
     } else if (event.kind == 'thread.follow_up') {
       ref.read(desktopRpcProvider)?.followUpList(threadId).then((followUps) {
+        if (!mounted) return;
         state = state.copyWith(followUps: followUps);
       });
     }
@@ -354,7 +362,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (live.billing != null) {
       state = state.copyWith(billing: live.billing);
     } else if (live.type == 'thread.usage_updated') {
-      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((usage) {
+      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((
+        usage,
+      ) {
+        if (!mounted) return;
         state = state.copyWith(
           billing: usage.billing ?? state.billing,
           contextSnapshot: usage.context ?? state.contextSnapshot,
@@ -366,7 +377,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(contextSnapshot: live.contextSnapshot);
     } else if (event.kind == 'thread.context' ||
         live.type == 'thread.context_updated') {
-      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((usage) {
+      ref.read(desktopRpcProvider)?.getThreadUsageSnapshot(threadId).then((
+        usage,
+      ) {
+        if (!mounted) return;
         if (usage.context != null) {
           state = state.copyWith(contextSnapshot: usage.context);
         }
@@ -377,7 +391,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       if (live.projection != null) {
         state = state.copyWith(runProjection: live.projection);
       } else {
-        ref.read(desktopRpcProvider)?.getRunProjection(threadId).then((projection) {
+        ref.read(desktopRpcProvider)?.getRunProjection(threadId).then((
+          projection,
+        ) {
+          if (!mounted) return;
           if (projection != null) {
             state = state.copyWith(runProjection: projection);
           }
@@ -388,7 +405,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       if (live.subagentSessions != null) {
         state = state.copyWith(subagentSessions: live.subagentSessions);
       } else {
-        ref.read(desktopRpcProvider)?.listSubagentSessions(threadId).then((sessions) {
+        ref.read(desktopRpcProvider)?.listSubagentSessions(threadId).then((
+          sessions,
+        ) {
+          if (!mounted) return;
           state = state.copyWith(subagentSessions: sessions);
         });
       }
@@ -407,6 +427,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (event.kind == 'thread.plan') {
       if (live.type == 'thread.awaiting_plan') {
         ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
+          if (!mounted) return;
           if (plan != null && state.thread?.status == 'awaiting_plan') {
             state = state.copyWith(pendingPlan: plan);
           }
@@ -416,15 +437,18 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       }
     }
     if (event.kind == 'thread.bash_approval') {
-      ref.read(desktopRpcProvider)?.getPendingBashApproval(threadId).then((bash) {
+      ref.read(desktopRpcProvider)?.getPendingBashApproval(threadId).then((
+        bash,
+      ) {
+        if (!mounted) return;
         if (bash != null) state = state.copyWith(pendingBash: bash);
       });
     }
     if (event.kind == 'thread.clarification') {
-      ref
-          .read(desktopRpcProvider)
-          ?.getPendingClarification(threadId)
-          .then((clarification) {
+      ref.read(desktopRpcProvider)?.getPendingClarification(threadId).then((
+        clarification,
+      ) {
+        if (!mounted) return;
         if (clarification != null) {
           state = state.copyWith(pendingClarification: clarification);
         }
@@ -433,6 +457,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (event.kind.startsWith('thread.')) {
       ref.invalidate(threadListProvider);
       ref.read(threadListProvider.future).then((threads) {
+        if (!mounted) return;
         ThreadSummary? thread;
         for (final candidate in threads) {
           if (candidate.id == threadId) {
@@ -499,12 +524,47 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     String toolUseId,
     List<List<String>> selections,
   ) async {
-    await ref.read(desktopRpcProvider)?.submitClarification(
-          toolUseId: toolUseId,
-          selections: selections,
-        );
+    await ref
+        .read(desktopRpcProvider)
+        ?.submitClarification(toolUseId: toolUseId, selections: selections);
     state = state.copyWith(clearClarification: true);
   }
+}
+
+ActivityItem _activityItemFromLine(ThreadActivityLine line) {
+  return ActivityItem(
+    id: line.id,
+    role: line.role,
+    message: line.message,
+    stream: line.stream ?? false,
+  );
+}
+
+List<ActivityItem> _mergeActivityItems(
+  List<ActivityItem> base,
+  List<ActivityItem> overlay,
+) {
+  final merged = [...base];
+  for (final item in overlay) {
+    final index = merged.indexWhere((entry) => entry.id == item.id);
+    if (index >= 0) {
+      merged[index] = item;
+    } else {
+      merged.add(item);
+    }
+  }
+  return merged;
+}
+
+List<ThreadPendingFollowUp> _mergeThreadFollowUps(
+  List<ThreadPendingFollowUp> base,
+  List<ThreadPendingFollowUp> overlay,
+) {
+  var merged = sortThreadFollowUps(base);
+  for (final followUp in overlay) {
+    merged = mergeThreadFollowUp(merged, followUp);
+  }
+  return merged;
 }
 
 bool _isMetricsOnlyThreadLiveEvent(String liveType) {
