@@ -25,7 +25,9 @@ final credentialsProvider = FutureProvider<AppCredentials>((ref) async {
   return client.credentials;
 });
 
-final connectionStatusProvider = StreamProvider<CenterServerConnectionStatus>((ref) {
+final connectionStatusProvider = StreamProvider<CenterServerConnectionStatus>((
+  ref,
+) {
   final client = ref.watch(ecoCenterClientProvider);
   return () async* {
     yield client.status;
@@ -51,8 +53,8 @@ final bindingsProvider = FutureProvider<List<DeviceBinding>>((ref) async {
 
 final desktopPresenceProvider =
     AsyncNotifierProvider<DesktopPresenceNotifier, List<PublicDevice>>(
-  DesktopPresenceNotifier.new,
-);
+      DesktopPresenceNotifier.new,
+    );
 
 class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
   Timer? _pollTimer;
@@ -83,6 +85,10 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
           unawaited(refresh(force: true));
         });
       });
+    });
+
+    ref.listen(ecoEventsProvider, (_, next) {
+      next.whenData(_handleEcoEvent);
     });
 
     await client.initialize();
@@ -140,43 +146,76 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
     }
     throw lastError ?? StateError('Failed to load desktop presence.');
   }
+
+  void _handleEcoEvent(EcoEventEnvelope event) {
+    if (event.kind != presenceDeviceEventKind) {
+      return;
+    }
+    final current = state.valueOrNull;
+    if (current != null) {
+      final next = applyPresenceDeviceEvent(current, event);
+      if (!identical(next, current)) {
+        state = AsyncData(next);
+      }
+    }
+    unawaited(refresh(force: true));
+  }
 }
 
-/// Debounced online status for a desktop — avoids UI flicker during presence polls.
+const presenceDeviceEventKind = 'presence.device';
+
+List<PublicDevice> applyPresenceDeviceEvent(
+  List<PublicDevice> devices,
+  EcoEventEnvelope event,
+) {
+  if (event.kind != presenceDeviceEventKind) {
+    return devices;
+  }
+  final payload = event.payload;
+  if (payload is! Map) {
+    return devices;
+  }
+  final deviceId = payload['deviceId'];
+  final online = payload['online'];
+  if (deviceId is! String || deviceId.isEmpty || online is! bool) {
+    return devices;
+  }
+  final lastSeenAt = payload['lastSeenAt'];
+  var changed = false;
+  final next = devices
+      .map((device) {
+        if (device.id != deviceId) {
+          return device;
+        }
+        changed = true;
+        return device.copyWith(
+          online: online,
+          lastSeenAt: lastSeenAt is String && lastSeenAt.isNotEmpty
+              ? lastSeenAt
+              : null,
+        );
+      })
+      .toList(growable: false);
+  return changed ? next : devices;
+}
+
+/// Current online status for a desktop, updated by polling and presence events.
 final stableDesktopOnlineProvider =
     NotifierProvider.family<StableDesktopOnlineNotifier, bool?, String>(
-  StableDesktopOnlineNotifier.new,
-);
+      StableDesktopOnlineNotifier.new,
+    );
 
 class StableDesktopOnlineNotifier extends FamilyNotifier<bool?, String> {
-  Timer? _offlineTimer;
-
   @override
   bool? build(String desktopId) {
-    ref.onDispose(() {
-      _offlineTimer?.cancel();
-      _offlineTimer = null;
-    });
-
     ref.listen(desktopPresenceProvider, (_, next) {
       next.when(
         data: (devices) {
-          final device =
-              devices.where((entry) => entry.id == desktopId).firstOrNull;
+          final device = devices
+              .where((entry) => entry.id == desktopId)
+              .firstOrNull;
           if (device == null) return;
-          if (device.online) {
-            _offlineTimer?.cancel();
-            _offlineTimer = null;
-            state = true;
-            return;
-          }
-          if (state == true) {
-            _offlineTimer ??= Timer(const Duration(seconds: 2), () {
-              state = false;
-            });
-            return;
-          }
-          state = false;
+          state = device.online;
         },
         loading: () {},
         error: (_, _) {},

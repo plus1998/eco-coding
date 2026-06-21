@@ -435,6 +435,17 @@ export class MongoStore {
     return rows.map((row) => mapDeviceBinding(row as DeviceBindingDocument));
   }
 
+  async listActiveBindingsForMobile(userId: string, mobileDeviceId: string): Promise<DeviceBindingRecord[]> {
+    const rows = await this.models.DeviceBinding.find({
+      userId,
+      mobileDeviceId,
+      revokedAt: null,
+    })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+    return rows.map((row) => mapDeviceBinding(row as DeviceBindingDocument));
+  }
+
   async listBindingsForUser(
     userId: string,
     options: { includeRevoked?: boolean } = {},
@@ -631,6 +642,7 @@ function deviceBindingSchema(): Schema<DeviceBindingDocument> {
   );
   schema.index({ userId: 1, desktopDeviceId: 1, mobileDeviceId: 1 }, { unique: true });
   schema.index({ userId: 1, desktopDeviceId: 1, revokedAt: 1 });
+  schema.index({ userId: 1, mobileDeviceId: 1, revokedAt: 1 });
   return schema;
 }
 

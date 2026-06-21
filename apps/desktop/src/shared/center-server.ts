@@ -1,17 +1,13 @@
 import { previewSecret } from "./session-sync";
 
-export type CenterServerConnectionState =
-  | "disabled"
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
+export type CenterServerConnectionState = "disabled" | "disconnected" | "connecting" | "connected" | "error";
 
 export interface CenterServerConnectionStatus {
   state: CenterServerConnectionState;
   connectedAt?: string;
   lastDisconnectedAt?: string;
   lastError?: string;
+  lastPresenceChangedAt?: string;
 }
 
 export interface CenterServerSettingsView {

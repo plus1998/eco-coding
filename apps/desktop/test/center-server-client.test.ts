@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { ECO_RPC_METHODS } from "@eco/shared";
 import { CenterServerDesktopClient } from "../src/main/center-server-client";
 import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/center-server-store";
 import { DesktopEventCenter } from "../src/main/event-center";
@@ -250,6 +251,59 @@ test("center server client returns parse errors for malformed json-rpc messages"
   const lastSent = FakeWebSocket.instances[0]?.sent.at(-1);
   expect(lastSent).toContain("-32700");
   expect(lastSent).toContain("Invalid JSON-RPC JSON payload.");
+
+  client.dispose();
+});
+
+test("center server client treats presence notifications as refresh signals", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "fresh_access",
+    accessTokenExpiresAt: "2030-06-01T00:00:00.000Z",
+  });
+  const statusSnapshots: CenterServerConnectionStatus[] = [];
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 60_000,
+    onStatusChange: (snapshot) => {
+      statusSnapshots.push(snapshot.status);
+    },
+  });
+
+  await client.start();
+  FakeWebSocket.instances[0]?.receive(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: ECO_RPC_METHODS.event,
+      params: {
+        protocolVersion: 1,
+        id: "evt_presence",
+        kind: "presence.device",
+        source: "center-server",
+        occurredAt: "2030-01-01T00:00:00.000Z",
+        payload: {
+          type: "device.online",
+          deviceId: "dev_mobile_1",
+          deviceKind: "mobile",
+          online: true,
+          lastSeenAt: "2030-01-01T00:00:00.000Z",
+        },
+      },
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(statusSnapshots.at(-1)?.state).toBe("connected");
+  expect(statusSnapshots.at(-1)?.lastPresenceChangedAt).toBe("2030-01-01T00:00:00.000Z");
+  expect(FakeWebSocket.instances[0]?.sent).toHaveLength(0);
 
   client.dispose();
 });

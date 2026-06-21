@@ -1,9 +1,11 @@
 import {
   buildEcoJsonRpcFailure,
+  buildEcoJsonRpcNotification,
   buildEcoJsonRpcRequest,
   buildEcoJsonRpcSuccess,
   ECO_RPC_ERROR,
   ECO_RPC_METHODS,
+  ECO_RPC_PROTOCOL_VERSION,
   type EcoDeviceCapability,
   type EcoDeviceKind,
   type EcoEventEnvelope,
@@ -14,6 +16,7 @@ import {
   type EcoJsonRpcNotification,
   type EcoJsonRpcRequest,
   type EcoJsonRpcResponse,
+  type EcoPresenceDeviceEventPayload,
   isEcoInvokeParams,
   isEcoJsonRpcNotification,
   isEcoJsonRpcRequest,
@@ -123,9 +126,15 @@ export class RpcGateway {
     await this.presence.setSession(session);
     await this.presence.setDeviceRoute({ ...session, instanceId: this.instanceId });
     await this.store.touchDevice(peer.deviceId, now);
+    await this.publishPresenceDeviceEvent(peer, true, now, session);
   }
 
   async disconnect(peer: RpcPeer): Promise<void> {
+    const now = this.clock().toISOString();
+    const session = this.sessions.get(peer.sessionId);
+    const routeBeforeDelete = await this.presence.getDeviceRoute(peer.deviceId);
+    const shouldPublishOffline =
+      routeBeforeDelete?.userId === peer.userId && routeBeforeDelete.sessionId === peer.sessionId;
     if (peer.deviceKind === "desktop" && this.desktops.get(peer.deviceId)?.sessionId === peer.sessionId) {
       this.desktops.delete(peer.deviceId);
       await this.failPendingForDesktop(peer.deviceId);
@@ -140,6 +149,9 @@ export class RpcGateway {
       userId: peer.userId,
       sessionId: peer.sessionId,
     });
+    if (shouldPublishOffline) {
+      await this.publishPresenceDeviceEvent(peer, false, now, session);
+    }
   }
 
   async disconnectDevice(deviceId: string, reason = "Device was revoked."): Promise<void> {
@@ -460,6 +472,9 @@ export class RpcGateway {
       case "event":
         this.handleBusEvent(message);
         return;
+      case "notification":
+        this.handleBusNotification(message);
+        return;
       case "disconnect-device":
         await this.handleBusDisconnectDevice(message);
         return;
@@ -496,6 +511,13 @@ export class RpcGateway {
     const mobile = this.mobiles.get(message.mobileDeviceId);
     if (mobile?.sessionId === message.mobileSessionId) {
       mobile.send(message.notification);
+    }
+  }
+
+  private handleBusNotification(message: Extract<RpcBusMessage, { type: "notification" }>): void {
+    const peer = this.desktops.get(message.deviceId) ?? this.mobiles.get(message.deviceId);
+    if (peer?.sessionId === message.sessionId) {
+      peer.send(message.notification);
     }
   }
 
@@ -569,6 +591,73 @@ export class RpcGateway {
     this.sessions.set(peer.sessionId, refreshed);
     await this.presence.setSession(refreshed);
     await this.presence.setDeviceRoute({ ...refreshed, instanceId: this.instanceId });
+  }
+
+  private async publishPresenceDeviceEvent(
+    peer: RpcPeer,
+    online: boolean,
+    occurredAt: string,
+    session?: OnlineDeviceSnapshot & { userId: string },
+  ): Promise<void> {
+    const notification = buildEcoJsonRpcNotification<EcoEventEnvelope<EcoPresenceDeviceEventPayload>>(
+      ECO_RPC_METHODS.event,
+      {
+        protocolVersion: ECO_RPC_PROTOCOL_VERSION,
+        id: createId("evt"),
+        kind: "presence.device",
+        source: "center-server",
+        occurredAt,
+        aggregateKey: `device:${peer.deviceId}:presence`,
+        payload: {
+          type: online ? "device.online" : "device.offline",
+          deviceId: peer.deviceId,
+          deviceKind: peer.deviceKind,
+          online,
+          ...(online && session?.connectedAt ? { connectedAt: session.connectedAt } : {}),
+          lastSeenAt: occurredAt,
+        },
+      },
+    );
+
+    if (peer.deviceKind === "desktop") {
+      const bindings = await this.store.listActiveBindingsForDesktop(peer.userId, peer.deviceId);
+      for (const binding of bindings) {
+        if (!binding.capabilities.includes("events:read")) {
+          continue;
+        }
+        await this.sendNotificationToDevice(peer.userId, binding.mobileDeviceId, notification);
+      }
+      return;
+    }
+
+    const bindings = await this.store.listActiveBindingsForMobile(peer.userId, peer.deviceId);
+    for (const binding of bindings) {
+      await this.sendNotificationToDevice(peer.userId, binding.desktopDeviceId, notification);
+    }
+  }
+
+  private async sendNotificationToDevice(
+    userId: string,
+    deviceId: string,
+    notification: EcoJsonRpcNotification,
+  ): Promise<void> {
+    const peer = this.desktops.get(deviceId) ?? this.mobiles.get(deviceId);
+    if (peer) {
+      if (peer.userId === userId) {
+        peer.send(notification);
+      }
+      return;
+    }
+    const route = await this.presence.getDeviceRoute(deviceId);
+    if (!route || route.userId !== userId || route.instanceId === this.instanceId) {
+      return;
+    }
+    await this.bus?.publish(route.instanceId, {
+      type: "notification",
+      deviceId,
+      sessionId: route.sessionId,
+      notification,
+    });
   }
 
   private async auditInvokeRejected(

@@ -100,6 +100,13 @@ export function CenterServerSettingsPanel({
   }, [refreshBindings]);
 
   useEffect(() => {
+    if (!snapshot.status.lastPresenceChangedAt) {
+      return;
+    }
+    void refreshBindings();
+  }, [refreshBindings, snapshot.status.lastPresenceChangedAt]);
+
+  useEffect(() => {
     if (!pairing || !isLive) {
       return;
     }

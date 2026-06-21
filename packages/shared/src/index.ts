@@ -19,6 +19,7 @@ export type {
   EcoJsonRpcRequest,
   EcoJsonRpcResponse,
   EcoJsonRpcSuccess,
+  EcoPresenceDeviceEventPayload,
   EcoRpcSource,
 } from "./event-rpc";
 export {

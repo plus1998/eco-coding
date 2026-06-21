@@ -29,6 +29,12 @@ export type RpcBusMessage =
       notification: EcoJsonRpcNotification;
     }
   | {
+      type: "notification";
+      deviceId: string;
+      sessionId: string;
+      notification: EcoJsonRpcNotification;
+    }
+  | {
       type: "disconnect-device";
       deviceId: string;
       sessionId: string;
@@ -156,6 +162,7 @@ function isRpcBusMessage(value: unknown): value is RpcBusMessage {
     message.type === "invoke" ||
     message.type === "response" ||
     message.type === "event" ||
+    message.type === "notification" ||
     message.type === "disconnect-device"
   );
 }

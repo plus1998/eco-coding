@@ -15,6 +15,7 @@ test("routes mobile eco.invoke requests to the bound desktop and returns desktop
   const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
 
   await context.gateway.handleMessage(
     context.mobilePeer,
@@ -83,6 +84,7 @@ test("rejects non remote-enabled commands before forwarding to desktop", async (
   const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
 
   await context.gateway.handleMessage(
     context.mobilePeer,
@@ -115,6 +117,7 @@ test("rejects remote commands with invalid args before forwarding to desktop", a
   const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
 
   await context.gateway.handleMessage(
     context.mobilePeer,
@@ -146,6 +149,7 @@ test("requires approval capability for privileged remote commands", async () => 
   });
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
 
   await context.gateway.handleMessage(
     context.mobilePeer,
@@ -174,6 +178,7 @@ test("fans out desktop events only to bound online mobiles", async () => {
   const context = await createGatewayContext();
   await context.gateway.connect(context.desktopPeer);
   await context.gateway.connect(context.mobilePeer);
+  clearMessages(context);
 
   const event = buildEcoJsonRpcNotification(ECO_RPC_METHODS.event, {
     protocolVersion: 1,
@@ -195,10 +200,39 @@ test("fans out desktop events only to bound online mobiles", async () => {
   await closeTestMongoStore(context.store);
 });
 
+test("publishes desktop presence changes to bound mobiles", async () => {
+  const context = await createGatewayContext();
+  await context.gateway.connect(context.mobilePeer);
+
+  await context.gateway.connect(context.desktopPeer);
+  expectPresenceNotification(context.mobileMessages, context.desktopPeer.deviceId, true);
+
+  context.mobileMessages.length = 0;
+  await context.gateway.disconnect(context.desktopPeer);
+  expectPresenceNotification(context.mobileMessages, context.desktopPeer.deviceId, false);
+
+  await closeTestMongoStore(context.store);
+});
+
+test("publishes mobile presence changes to bound desktops", async () => {
+  const context = await createGatewayContext();
+  await context.gateway.connect(context.desktopPeer);
+
+  await context.gateway.connect(context.mobilePeer);
+  expectPresenceNotification(context.desktopMessages, context.mobilePeer.deviceId, true);
+
+  context.desktopMessages.length = 0;
+  await context.gateway.disconnect(context.mobilePeer);
+  expectPresenceNotification(context.desktopMessages, context.mobilePeer.deviceId, false);
+
+  await closeTestMongoStore(context.store);
+});
+
 test("routes mobile invokes across server instances", async () => {
   const context = await createTwoInstanceContext();
   await context.gatewayA.connect(context.mobilePeer);
   await context.gatewayB.connect(context.desktopPeer);
+  clearMessages(context);
 
   await context.gatewayA.handleMessage(
     context.mobilePeer,
@@ -232,10 +266,27 @@ test("routes mobile invokes across server instances", async () => {
   await closeTestMongoStore(context.store);
 });
 
+test("publishes presence changes across server instances", async () => {
+  const context = await createTwoInstanceContext();
+  await context.gatewayA.connect(context.mobilePeer);
+
+  await context.gatewayB.connect(context.desktopPeer);
+  expectPresenceNotification(context.mobileMessages, context.desktopPeer.deviceId, true);
+
+  context.mobileMessages.length = 0;
+  await context.gatewayB.disconnect(context.desktopPeer);
+  expectPresenceNotification(context.mobileMessages, context.desktopPeer.deviceId, false);
+
+  await context.busA.close();
+  await context.busB.close();
+  await closeTestMongoStore(context.store);
+});
+
 test("fans out desktop events across server instances", async () => {
   const context = await createTwoInstanceContext();
   await context.gatewayA.connect(context.mobilePeer);
   await context.gatewayB.connect(context.desktopPeer);
+  clearMessages(context);
 
   const event = buildEcoJsonRpcNotification(ECO_RPC_METHODS.event, {
     protocolVersion: 1,
@@ -457,4 +508,29 @@ function createPeer(
       input.closes?.push({ code, reason });
     },
   };
+}
+
+function clearMessages(input: {
+  desktopMessages: EcoJsonRpcMessage[];
+  mobileMessages: EcoJsonRpcMessage[];
+}): void {
+  input.desktopMessages.length = 0;
+  input.mobileMessages.length = 0;
+}
+
+function expectPresenceNotification(messages: EcoJsonRpcMessage[], deviceId: string, online: boolean): void {
+  expect(messages).toContainEqual(
+    expect.objectContaining({
+      jsonrpc: "2.0",
+      method: ECO_RPC_METHODS.event,
+      params: expect.objectContaining({
+        kind: "presence.device",
+        source: "center-server",
+        payload: expect.objectContaining({
+          deviceId,
+          online,
+        }),
+      }),
+    }),
+  );
 }

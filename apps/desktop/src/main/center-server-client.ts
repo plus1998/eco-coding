@@ -565,6 +565,9 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       );
       return;
     }
+    if (this.handleServerNotification(message)) {
+      return;
+    }
     let response: EventCenterJsonRpcResponse | undefined;
     try {
       response = await this.eventCenter.handleJsonRpcMessage(message);
@@ -584,6 +587,26 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     if (this.socket?.readyState === WS_OPEN) {
       this.socket.send(JSON.stringify(response));
     }
+  }
+
+  private handleServerNotification(message: unknown): boolean {
+    if (!isRecord(message) || message.method !== ECO_RPC_METHODS.event || "id" in message) {
+      return false;
+    }
+    const params = message.params;
+    if (!isRecord(params) || params.kind !== "presence.device") {
+      return false;
+    }
+    this.notePresenceChanged();
+    return true;
+  }
+
+  private notePresenceChanged(): void {
+    this.status = {
+      ...this.status,
+      lastPresenceChangedAt: this.now().toISOString(),
+    };
+    this.onStatusChange?.(this.getSnapshot());
   }
 
   private flushQueuedEvents(): void {
@@ -679,4 +702,8 @@ function readResponseError(payload: unknown, status: number): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

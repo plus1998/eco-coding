@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/models/eco_types.dart';
 import 'core/providers/app_providers.dart';
 import 'core/providers/app_session.dart';
 import 'core/theme/eco_theme.dart';
@@ -13,6 +14,7 @@ import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(this._ref) {
@@ -143,7 +145,74 @@ class EcoApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Eco',
       theme: buildEcoTheme(),
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       routerConfig: router,
+      builder: (context, child) =>
+          _ConnectionStatusNotice(child: child ?? const SizedBox.shrink()),
     );
+  }
+}
+
+class _ConnectionStatusNotice extends ConsumerStatefulWidget {
+  const _ConnectionStatusNotice({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_ConnectionStatusNotice> createState() =>
+      _ConnectionStatusNoticeState();
+}
+
+class _ConnectionStatusNoticeState
+    extends ConsumerState<_ConnectionStatusNotice> {
+  EcoConnectionState? _lastState;
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(connectionStatusProvider, (_, next) {
+      next.whenData(_handleStatus);
+    });
+    return widget.child;
+  }
+
+  void _handleStatus(CenterServerConnectionStatus status) {
+    final previous = _lastState;
+    if (previous == status.state && status.state != EcoConnectionState.error) {
+      return;
+    }
+    _lastState = status.state;
+    if (previous == null || !mounted) {
+      return;
+    }
+
+    final message = switch (status.state) {
+      EcoConnectionState.connecting =>
+        previous == EcoConnectionState.error ||
+                previous == EcoConnectionState.disconnected
+            ? '正在重连 Center Server…'
+            : null,
+      EcoConnectionState.connected =>
+        previous == EcoConnectionState.connected ? null : '连接成功',
+      EcoConnectionState.error =>
+        previous == EcoConnectionState.connected ||
+                previous == EcoConnectionState.connecting
+            ? '连接断开，正在重连…'
+            : null,
+      EcoConnectionState.disconnected =>
+        previous == EcoConnectionState.connected ? '实时通道已断开' : null,
+    };
+    if (message == null) {
+      return;
+    }
+
+    final messenger = _scaffoldMessengerKey.currentState;
+    messenger
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1500),
+        ),
+      );
   }
 }

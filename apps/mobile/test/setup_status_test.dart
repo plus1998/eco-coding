@@ -1,3 +1,5 @@
+import 'package:eco_mobile/core/models/eco_types.dart';
+import 'package:eco_mobile/core/providers/app_providers.dart';
 import 'package:eco_mobile/features/home/setup_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -35,6 +37,67 @@ void main() {
       );
     });
   });
+
+  group('applyPresenceDeviceEvent', () {
+    test('updates matching device online state', () {
+      final devices = [
+        const PublicDevice(
+          id: 'dev_desktop',
+          userId: 'usr_1',
+          kind: 'desktop',
+          name: 'Desktop',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          online: true,
+        ),
+      ];
+
+      final next = applyPresenceDeviceEvent(
+        devices,
+        const EcoEventEnvelope(
+          id: 'evt_1',
+          kind: presenceDeviceEventKind,
+          source: 'center-server',
+          occurredAt: '2026-01-01T00:00:01.000Z',
+          payload: {
+            'type': 'device.offline',
+            'deviceId': 'dev_desktop',
+            'deviceKind': 'desktop',
+            'online': false,
+            'lastSeenAt': '2026-01-01T00:00:01.000Z',
+          },
+        ),
+      );
+
+      expect(next.single.online, isFalse);
+      expect(next.single.lastSeenAt, '2026-01-01T00:00:01.000Z');
+    });
+
+    test('ignores unrelated events', () {
+      final devices = [
+        const PublicDevice(
+          id: 'dev_desktop',
+          userId: 'usr_1',
+          kind: 'desktop',
+          name: 'Desktop',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          online: true,
+        ),
+      ];
+
+      final next = applyPresenceDeviceEvent(
+        devices,
+        const EcoEventEnvelope(
+          id: 'evt_1',
+          kind: 'thread.lifecycle',
+          source: 'desktop',
+          occurredAt: '2026-01-01T00:00:01.000Z',
+          payload: {'type': 'thread.started'},
+        ),
+      );
+
+      expect(identical(next, devices), isTrue);
+    });
+  });
 }
 
 SetupOverview _overview({
@@ -47,7 +110,11 @@ SetupOverview _overview({
     selectedDesktopId: selectedDesktopId,
     readyForThreads: false,
     steps: [
-      const SetupStep(id: 'server', title: 'server', state: SetupStepState.done),
+      const SetupStep(
+        id: 'server',
+        title: 'server',
+        state: SetupStepState.done,
+      ),
       SetupStep(id: 'login', title: 'login', state: login),
       const SetupStep(
         id: 'websocket',

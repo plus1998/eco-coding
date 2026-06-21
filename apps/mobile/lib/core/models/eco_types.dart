@@ -40,11 +40,11 @@ class PublicUser {
   });
 
   factory PublicUser.fromJson(Map<String, dynamic> json) => PublicUser(
-        id: json['id'] as String,
-        email: json['email'] as String,
-        displayName: json['displayName'] as String?,
-        createdAt: json['createdAt'] as String,
-      );
+    id: json['id'] as String,
+    email: json['email'] as String,
+    displayName: json['displayName'] as String?,
+    createdAt: json['createdAt'] as String,
+  );
 
   final String id;
   final String email;
@@ -92,18 +92,18 @@ class PublicDevice {
   });
 
   factory PublicDevice.fromJson(Map<String, dynamic> json) => PublicDevice(
-        id: json['id'] as String,
-        userId: json['userId'] as String,
-        kind: json['kind'] as String,
-        name: json['name'] as String,
-        createdAt: json['createdAt'] as String,
-        metadata: PublicDeviceMetadata.fromJson(
-          json['metadata'] as Map<String, dynamic>?,
-        ),
-        lastSeenAt: json['lastSeenAt'] as String?,
-        disabledAt: json['disabledAt'] as String?,
-        online: json['online'] as bool? ?? false,
-      );
+    id: json['id'] as String,
+    userId: json['userId'] as String,
+    kind: json['kind'] as String,
+    name: json['name'] as String,
+    createdAt: json['createdAt'] as String,
+    metadata: PublicDeviceMetadata.fromJson(
+      json['metadata'] as Map<String, dynamic>?,
+    ),
+    lastSeenAt: json['lastSeenAt'] as String?,
+    disabledAt: json['disabledAt'] as String?,
+    online: json['online'] as bool? ?? false,
+  );
 
   final String id;
   final String userId;
@@ -114,6 +114,28 @@ class PublicDevice {
   final String? lastSeenAt;
   final String? disabledAt;
   final bool online;
+
+  PublicDevice copyWith({
+    String? id,
+    String? userId,
+    String? kind,
+    String? name,
+    PublicDeviceMetadata? metadata,
+    String? createdAt,
+    String? lastSeenAt,
+    String? disabledAt,
+    bool? online,
+  }) => PublicDevice(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    kind: kind ?? this.kind,
+    name: name ?? this.name,
+    metadata: metadata ?? this.metadata,
+    createdAt: createdAt ?? this.createdAt,
+    lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+    disabledAt: disabledAt ?? this.disabledAt,
+    online: online ?? this.online,
+  );
 }
 
 class DeviceBinding {
@@ -128,16 +150,16 @@ class DeviceBinding {
   });
 
   factory DeviceBinding.fromJson(Map<String, dynamic> json) => DeviceBinding(
-        id: json['id'] as String,
-        userId: json['userId'] as String,
-        desktopDeviceId: json['desktopDeviceId'] as String,
-        mobileDeviceId: json['mobileDeviceId'] as String,
-        capabilities: (json['capabilities'] as List<dynamic>)
-            .map((e) => e as String)
-            .toList(),
-        createdAt: json['createdAt'] as String,
-        revokedAt: json['revokedAt'] as String?,
-      );
+    id: json['id'] as String,
+    userId: json['userId'] as String,
+    desktopDeviceId: json['desktopDeviceId'] as String,
+    mobileDeviceId: json['mobileDeviceId'] as String,
+    capabilities: (json['capabilities'] as List<dynamic>)
+        .map((e) => e as String)
+        .toList(),
+    createdAt: json['createdAt'] as String,
+    revokedAt: json['revokedAt'] as String?,
+  );
 
   final String id;
   final String userId;
@@ -158,10 +180,10 @@ class TokenBundle {
   });
 
   factory TokenBundle.fromJson(Map<String, dynamic> json) => TokenBundle(
-        accessToken: json['accessToken'] as String,
-        refreshToken: json['refreshToken'] as String,
-        expiresAt: json['expiresAt'] as String,
-      );
+    accessToken: json['accessToken'] as String,
+    refreshToken: json['refreshToken'] as String,
+    expiresAt: json['expiresAt'] as String,
+  );
 
   final String accessToken;
   final String refreshToken;
@@ -179,7 +201,8 @@ class EcoEventEnvelope {
     this.workspacePath,
   });
 
-  factory EcoEventEnvelope.fromJson(Map<String, dynamic> json) => EcoEventEnvelope(
+  factory EcoEventEnvelope.fromJson(Map<String, dynamic> json) =>
+      EcoEventEnvelope(
         id: json['id'] as String,
         kind: json['kind'] as String,
         source: json['source'] as String,

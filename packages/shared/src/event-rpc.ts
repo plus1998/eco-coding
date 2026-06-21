@@ -116,6 +116,15 @@ export interface EcoEventEnvelope<TPayload = unknown> {
   metadata?: Record<string, unknown>;
 }
 
+export interface EcoPresenceDeviceEventPayload {
+  type: "device.online" | "device.offline";
+  deviceId: string;
+  deviceKind: EcoDeviceKind;
+  online: boolean;
+  connectedAt?: string;
+  lastSeenAt: string;
+}
+
 export function buildEcoJsonRpcSuccess<TResult>(
   id: EcoJsonRpcId,
   result: TResult,
