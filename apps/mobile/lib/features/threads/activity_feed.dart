@@ -840,6 +840,18 @@ class _ThinkingTileState extends State<_ThinkingTile> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
+    if (widget.streaming && !_hasBody) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+        child: ShimmerText(
+          text: '正在思考',
+          style: Theme.of(context).textTheme.bodySmall,
+          baseColor: eco.textMuted,
+          highlightColor: eco.textSecondary,
+        ),
+      );
+    }
+
     final preview = _hasBody ? thinkingPreviewLine(widget.text) : '';
     final showPreview = _hasBody && _collapsed && !widget.streaming;
     final labelStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -878,7 +890,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                     children: [
                       if (widget.streaming && !_hasBody)
                         ShimmerText(
-                          text: '思考',
+                          text: '正在思考',
                           style: labelStyle,
                           baseColor: eco.textMuted,
                           highlightColor: eco.textSecondary,

@@ -14,6 +14,7 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
+import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
@@ -152,7 +153,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   hasActivity: false,
                   inputHint: composerLandingPlaceholder,
                   workspaceDiff: workspaceDiffAsync.valueOrNull,
-                  diffLoading: workspaceDiffAsync.isLoading,
+                  diffLoading: workspaceDiffAsync.isReloading,
                   onPickImage: _pickImage,
                   onRemoveAttachment: (index) =>
                       setState(() => _attachments.removeAt(index)),
@@ -161,7 +162,13 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   onRuntimeConfigChanged: (config) {
                     ref.read(runtimeConfigProvider.notifier).state = config;
                   },
-                  onChangesTap: null,
+                  onChangesTap: workspacePath.isNotEmpty
+                      ? () => showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          )
+                      : null,
                 ),
               ],
             ),

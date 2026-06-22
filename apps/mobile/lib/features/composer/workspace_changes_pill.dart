@@ -30,7 +30,7 @@ class WorkspaceChangesPill extends StatelessWidget {
           side: BorderSide(color: EcoColors.composerPillBorder),
         ),
         child: InkWell(
-          onTap: busy ? null : onTap,
+          onTap: onTap,
           customBorder: const StadiumBorder(),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

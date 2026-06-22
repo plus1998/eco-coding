@@ -12,13 +12,12 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
-import '../../core/widgets/shimmer_text.dart';
 import '../approvals/approval_sheets.dart';
-import '../composer/commit_push_sheet.dart';
 import '../composer/session_composer.dart';
 import '../projects/project_providers.dart';
 import 'activity_feed.dart';
 import 'thread_info_sheets.dart';
+import 'thread_menu_sheets.dart';
 import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
@@ -168,6 +167,23 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       (entry) =>
           entry.kind == ActivityFeedKind.thinking && entry.streaming,
     );
+    final hasStreamingAssistant = feedEntries.any(
+      (entry) =>
+          entry.kind == ActivityFeedKind.assistant && entry.streaming,
+    );
+    final displayFeedEntries = isRunning &&
+            !hasStreamingThinking &&
+            !hasStreamingAssistant
+        ? [
+            ...feedEntries,
+            const ActivityFeedEntry(
+              id: 'pending-agent',
+              kind: ActivityFeedKind.thinking,
+              text: '',
+              streaming: true,
+            ),
+          ]
+        : feedEntries;
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
@@ -280,29 +296,23 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                               ),
                             ),
                           )
-                        : Column(
+                        : Stack(
                             children: [
-                              Expanded(
-                                child: ActivityFeedList(
-                                  entries: feedEntries,
-                                  scrollController: _scrollController,
+                              ActivityFeedList(
+                                entries: displayFeedEntries,
+                                scrollController: _scrollController,
+                              ),
+                              Positioned(
+                                right: 8,
+                                bottom: 8,
+                                child: ThreadUsageFloatButtons(
+                                  billing: session.billing,
+                                  contextSnapshot: session.contextSnapshot,
+                                  threadStatus: thread?.status,
                                 ),
                               ),
-                              if (isRunning && !hasStreamingThinking)
-                                const _ThinkingIndicator(),
                             ],
                           ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: ThreadUsageFloatButtons(
-                billing: session.billing,
-                contextSnapshot: session.contextSnapshot,
-                threadStatus: thread?.status,
-              ),
-            ),
           ),
           if (queuedFollowUps.isNotEmpty)
             _FollowUpBar(
@@ -329,7 +339,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 : (showLanding ? composerLandingPlaceholder : null),
             contextSnapshot: session.contextSnapshot,
             workspaceDiff: workspaceDiffAsync.valueOrNull,
-            diffLoading: workspaceDiffAsync.isLoading,
+            diffLoading: workspaceDiffAsync.isReloading,
             onPickImage: _pickImage,
             onRemoveAttachment: (index) =>
                 setState(() => _attachments.removeAt(index)),
@@ -338,57 +348,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             onRuntimeConfigChanged: (config) {
               ref.read(runtimeConfigProvider.notifier).state = config;
             },
-            onChangesTap: workspaceDiffAsync.valueOrNull != null &&
-                    workspacePath.isNotEmpty
-                ? () => _openCommitPush(
+            onChangesTap: workspacePath.isNotEmpty
+                ? () => showWorkspaceDiffReviewSheet(
+                      context: context,
+                      ref: ref,
                       workspacePath: workspacePath,
-                      runtimeConfig: runtimeConfig,
-                      diff: workspaceDiffAsync.valueOrNull!,
                     )
                 : null,
           ),
         ],
       ),
     );
-  }
-
-  Future<void> _openCommitPush({
-    required String workspacePath,
-    required ThreadRuntimeConfigInput runtimeConfig,
-    required WorkspaceDiffResult diff,
-  }) async {
-    final profileId =
-        runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
-    if (profileId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在 Composer 设置中选择 Agent Profile')),
-        );
-      }
-      return;
-    }
-
-    GitWorkingTreeStatus? gitStatus;
-    try {
-      gitStatus = await ref.read(desktopRpcProvider)?.getGitStatus(workspacePath);
-    } catch (_) {}
-
-    if (!mounted) return;
-
-    final committed = await showCommitPushSheet(
-      context: context,
-      ref: ref,
-      workspacePath: workspacePath,
-      profileId: profileId,
-      diff: diff,
-      branch: gitStatus?.branch,
-    );
-
-    if (committed == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已提交并推送到远程')),
-      );
-    }
   }
 
   Future<void> _pickImage() async {
@@ -596,24 +566,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             ),
       );
     }
-  }
-}
-
-class _ThinkingIndicator extends StatelessWidget {
-  const _ThinkingIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      child: ShimmerText(
-        text: '正在思考',
-        baseColor: eco.textMuted,
-        highlightColor: eco.textSecondary,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
   }
 }
 

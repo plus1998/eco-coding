@@ -71,40 +71,89 @@ class ThreadUsageFloatButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final eco = ecoThemeExtras(context);
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _ThreadInfoFloatPill(
-          icon: Icons.payments_outlined,
-          label: '计费',
-          trailing: formatBillingPillCost(billing),
-          trailingColor: (billing?.ecoCostUsd ?? 0) > 0
-              ? EcoColors.success
-              : ecoThemeExtras(context).textSecondary,
-          onTap: () => showThreadBillingSheet(
-            context: context,
-            billing: billing,
-            threadStatus: threadStatus,
+    final costLabel = formatBillingPillCost(billing);
+    final costColor = (billing?.ecoCostUsd ?? 0) > 0
+        ? EcoColors.success
+        : eco.textSecondary;
+    final pctColor = _contextPctColor(occupancyPct);
+
+    return Material(
+      color: EcoColors.bgElevated.withValues(alpha: 0.5),
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: eco.borderSubtle),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _FloatMetricSegment(
+                tooltip: '计费',
+                onTap: () => showThreadBillingSheet(
+                  context: context,
+                  billing: billing,
+                  threadStatus: threadStatus,
+                ),
+                child: Text(
+                  costLabel,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: costColor,
+                        fontSize: 10,
+                        height: 1.1,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: eco.borderSubtle,
+              ),
+              _FloatMetricSegment(
+                tooltip: '上下文',
+                onTap: () => showThreadContextSheet(
+                  context: context,
+                  contextSnapshot: contextSnapshot,
+                  threadStatus: threadStatus,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (occupancyPct != null)
+                      ComposerContextRing(
+                        pct: occupancyPct,
+                        size: 12,
+                        strokeWidth: 1.5,
+                      )
+                    else
+                      Icon(Icons.memory_outlined, size: 11, color: eco.textSecondary),
+                    if (occupancyPct != null) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        '$occupancyPct%',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: pctColor,
+                              fontSize: 10,
+                              height: 1.1,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        _ThreadInfoFloatPill(
-          icon: Icons.memory_outlined,
-          label: '上下文',
-          trailing: occupancyPct != null ? '$occupancyPct%' : null,
-          trailingColor: _contextPctColor(occupancyPct),
-          leadingWidget: occupancyPct != null
-              ? ComposerContextRing(pct: occupancyPct)
-              : null,
-          onTap: () => showThreadContextSheet(
-            context: context,
-            contextSnapshot: contextSnapshot,
-            threadStatus: threadStatus,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -122,65 +171,27 @@ class ThreadUsageFloatButtons extends StatelessWidget {
   }
 }
 
-class _ThreadInfoFloatPill extends StatelessWidget {
-  const _ThreadInfoFloatPill({
-    required this.icon,
-    required this.label,
+class _FloatMetricSegment extends StatelessWidget {
+  const _FloatMetricSegment({
+    required this.tooltip,
     required this.onTap,
-    this.trailing,
-    this.trailingColor,
-    this.leadingWidget,
+    required this.child,
   });
 
-  final IconData icon;
-  final String label;
+  final String tooltip;
   final VoidCallback onTap;
-  final String? trailing;
-  final Color? trailingColor;
-  final Widget? leadingWidget;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoThemeExtras(context);
-    return Material(
-      color: EcoColors.bgElevated,
-      elevation: 3,
-      shadowColor: Colors.black.withValues(alpha: 0.35),
-      borderRadius: BorderRadius.circular(999),
+    return Tooltip(
+      message: tooltip,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: eco.borderSubtle),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              leadingWidget ??
-                  Icon(icon, size: 15, color: eco.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: EcoColors.textHeading,
-                    ),
-              ),
-              if (trailing != null) ...[
-                const SizedBox(width: 6),
-                Text(
-                  trailing!,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: trailingColor ?? eco.textSecondary,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ],
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          child: child,
         ),
       ),
     );
