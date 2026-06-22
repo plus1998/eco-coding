@@ -1,3 +1,4 @@
+import '../utils/activity_display.dart';
 import 'thread_run_projection.dart';
 import 'thread_usage_models.dart';
 
@@ -389,6 +390,7 @@ class ThreadLiveEvent {
     this.billing,
     this.contextSnapshot,
     this.title,
+    this.tool,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
@@ -454,6 +456,9 @@ class ThreadLiveEvent {
               )
             : null,
         title: json['title'] as String?,
+        tool: json['tool'] is Map<String, dynamic>
+            ? threadRunToolMetadataFromJson(json['tool'] as Map<String, dynamic>)
+            : null,
       );
   }
 
@@ -473,6 +478,7 @@ class ThreadLiveEvent {
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
   final String? title;
+  final ThreadRunToolMetadata? tool;
 }
 
 class WorkspaceInfo {

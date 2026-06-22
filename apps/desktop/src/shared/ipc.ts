@@ -1319,6 +1319,7 @@ export interface ThreadLiveEvent {
   subagentSessions?: ThreadSubagentSessionTiming[];
   apiError?: ThreadApiErrorInfo;
   runtimeConfig?: ThreadRuntimeConfig;
+  tool?: ThreadRunToolMetadata;
 }
 
 export interface ThreadApiErrorInfo {

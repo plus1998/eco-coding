@@ -187,10 +187,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
+      final previousApprovalKey =
+          previous == null ? null : _approvalKey(previous);
+      final nextApprovalKey = _approvalKey(next);
+      if (previousApprovalKey != null && nextApprovalKey == null) {
+        Navigator.of(context).maybePop();
+      }
       if (!_needsApprovalSheet(next)) {
         _shownApprovalKey = null;
       } else {
-        final key = _approvalKey(next);
+        final key = nextApprovalKey;
         if (key != null && key != _shownApprovalKey) {
           _shownApprovalKey = key;
           _showApprovalSheets(next);
@@ -307,7 +313,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                                 bottom: 8,
                                 child: ThreadUsageFloatButtons(
                                   billing: session.billing,
-                                  contextSnapshot: session.contextSnapshot,
                                   threadStatus: thread?.status,
                                 ),
                               ),
@@ -338,6 +343,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 ? '编辑引导消息…'
                 : (showLanding ? composerLandingPlaceholder : null),
             contextSnapshot: session.contextSnapshot,
+            threadStatus: thread?.status,
             workspaceDiff: workspaceDiffAsync.valueOrNull,
             diffLoading: workspaceDiffAsync.isReloading,
             onPickImage: _pickImage,

@@ -9,6 +9,7 @@ import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
+import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
 import 'composer_context_ring.dart';
 
@@ -686,6 +687,7 @@ class ComposerRouteSummary extends ConsumerWidget {
     required this.canEdit,
     required this.onChanged,
     this.contextSnapshot,
+    this.threadStatus,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -693,6 +695,7 @@ class ComposerRouteSummary extends ConsumerWidget {
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ThreadContextSnapshot? contextSnapshot;
+  final String? threadStatus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -723,10 +726,24 @@ class ComposerRouteSummary extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (occupancyPct != null) ...[
-          ComposerContextRing(pct: occupancyPct),
-          const SizedBox(width: 4),
-        ],
+        IconButton(
+          onPressed: () => showThreadContextSheet(
+            context: context,
+            contextSnapshot: contextSnapshot,
+            threadStatus: threadStatus,
+          ),
+          tooltip: '上下文',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          icon: occupancyPct != null
+              ? ComposerContextRing(pct: occupancyPct, size: 22)
+              : const Icon(
+                  Icons.memory_outlined,
+                  size: 22,
+                  color: EcoColors.textSecondary,
+                ),
+        ),
         IconButton(
           onPressed: () => _showRouteSheet(
             context,

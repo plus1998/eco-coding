@@ -5844,6 +5844,9 @@ function emitThreadEvent(
   if (extras?.runtimeConfig) {
     payload.runtimeConfig = extras.runtimeConfig;
   }
+  if (extras?.tool) {
+    payload.tool = extras.tool;
+  }
 
   desktopEventCenter.publishThreadLiveEvent(payload);
   return persistedActivityLine;
@@ -6183,6 +6186,7 @@ function buildBashApprovalRunMetadataFromRequest(
     phase,
     toolName,
     ...(detail.trim() && { detail: detail.trim() }),
+    ...(request.description?.trim() && { description: request.description.trim() }),
   };
 }
 

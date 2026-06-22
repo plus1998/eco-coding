@@ -290,6 +290,7 @@ function normalizeThreadRunBashApprovalMetadata(
     phase: bashApproval.phase,
     toolName,
     ...(bashApproval.detail?.trim() && { detail: bashApproval.detail.trim() }),
+    ...(bashApproval.description?.trim() && { description: bashApproval.description.trim() }),
   };
 }
 

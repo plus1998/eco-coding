@@ -31,6 +31,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.onChangesTap,
     this.inputHint,
     this.contextSnapshot,
+    this.threadStatus,
   });
 
   final TextEditingController controller;
@@ -51,6 +52,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final VoidCallback? onChangesTap;
   final String? inputHint;
   final ThreadContextSnapshot? contextSnapshot;
+  final String? threadStatus;
 
   @override
   ConsumerState<SessionComposer> createState() => _SessionComposerState();
@@ -260,6 +262,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           canEdit: canEditConfig,
                           onChanged: widget.onRuntimeConfigChanged,
                           contextSnapshot: widget.contextSnapshot,
+                          threadStatus: widget.threadStatus,
                         ),
                         const SizedBox(width: 2),
                         IconButton(

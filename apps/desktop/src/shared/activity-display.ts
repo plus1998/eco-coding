@@ -257,6 +257,7 @@ export function resolveBashRunCardDisplay(input: {
   summaryText?: string;
   output?: string;
   durationMs?: number;
+  description?: string;
 }): BashRunCardDisplay | undefined {
   if (input.toolName !== "Bash") {
     return undefined;
@@ -264,7 +265,7 @@ export function resolveBashRunCardDisplay(input: {
   const command = input.command?.trim();
   const output = input.output?.trim();
   const summaryText = input.summaryText?.trim();
-  const title = formatMeaningfulBashTitle(command, summaryText);
+  const title = formatMeaningfulBashTitle(command, summaryText, input.description);
   const meta = command ? formatBashRunMeta(command, input.durationMs) : undefined;
   const body = output ?? command;
   return {
@@ -274,7 +275,15 @@ export function resolveBashRunCardDisplay(input: {
   };
 }
 
-export function formatMeaningfulBashTitle(command: string | undefined, summaryText?: string): string {
+export function formatMeaningfulBashTitle(
+  command: string | undefined,
+  summaryText?: string,
+  description?: string,
+): string {
+  const normalizedDescription = description?.trim();
+  if (normalizedDescription) {
+    return clampActivityPreviewLine(normalizedDescription, 48);
+  }
   const summary = normalizeBashSummaryCandidate(summaryText);
   if (summary && isReadableBashSummaryTitle(summary)) {
     return clampActivityPreviewLine(summary, 48);
@@ -577,6 +586,7 @@ export interface ThreadRunBashApprovalMetadataLike {
   phase: "requested" | "approved" | "rejected" | "denied";
   toolName: string;
   detail?: string;
+  description?: string;
 }
 
 export function readBashApprovalMetadata(
@@ -598,11 +608,14 @@ export function readBashApprovalMetadata(
     return undefined;
   }
   const detail = typeof record.detail === "string" ? record.detail.trim() : "";
+  const description =
+    typeof record.description === "string" ? record.description.trim() : "";
   return {
     toolUseId,
     phase,
     toolName,
     ...(detail && { detail }),
+    ...(description && { description }),
   };
 }
 

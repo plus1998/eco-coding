@@ -1,5 +1,6 @@
 import 'dart:ui' show Color;
 
+import '../models/thread_run_projection.dart';
 import 'subagent_session_timing.dart';
 
 const subagentDisplayRoles = {
@@ -118,6 +119,133 @@ class ParsedBashApprovalActivityText {
   final String toolName;
   final String? detail;
   final ToolActionLifecycle phase;
+}
+
+class ThreadRunBashApprovalMetadata {
+  const ThreadRunBashApprovalMetadata({
+    required this.toolUseId,
+    required this.toolName,
+    this.detail,
+    this.description,
+  });
+
+  final String toolUseId;
+  final String toolName;
+  final String? detail;
+  final String? description;
+}
+
+ThreadRunBashApprovalMetadata? readBashApprovalMetadata(
+  Map<String, dynamic>? metadata,
+) {
+  final raw = metadata?['bashApproval'];
+  if (raw is! Map<String, dynamic>) return null;
+  final toolUseId = (raw['toolUseId'] as String?)?.trim() ?? '';
+  final toolName = (raw['toolName'] as String?)?.trim() ?? '';
+  if (toolUseId.isEmpty || toolName.isEmpty) return null;
+  final detail = (raw['detail'] as String?)?.trim();
+  final description = (raw['description'] as String?)?.trim();
+  return ThreadRunBashApprovalMetadata(
+    toolUseId: toolUseId,
+    toolName: toolName,
+    detail: detail?.isNotEmpty == true ? detail : null,
+    description: description?.isNotEmpty == true ? description : null,
+  );
+}
+
+String normalizeBashCommandKey(String command) {
+  return command.trim().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+ThreadRunToolMetadata? threadRunToolMetadataFromJson(Map<String, dynamic>? json) {
+  if (json == null) return null;
+  final name = (json['name'] as String?)?.trim() ?? '';
+  if (name.isEmpty) return null;
+  final detail = (json['detail'] as String?)?.trim();
+  final toolUseId = (json['toolUseId'] as String?)?.trim();
+  final description = (json['description'] as String?)?.trim();
+  return ThreadRunToolMetadata(
+    name: name,
+    detail: detail?.isNotEmpty == true ? detail : null,
+    toolUseId: toolUseId?.isNotEmpty == true ? toolUseId : null,
+    description: description?.isNotEmpty == true ? description : null,
+  );
+}
+
+Map<String, String> buildBashToolDescriptionIndex(
+  ThreadRunProjectionSnapshot? projection,
+) {
+  final index = <String, String>{};
+  if (projection == null) return index;
+  for (final agent in projection.agents) {
+    for (final item in agent.timeline) {
+      final tool = readProjectionToolMetadata(item.metadata);
+      if (tool?.name != 'Bash') continue;
+      final description = tool?.description?.trim();
+      final detail = tool?.detail?.trim();
+      if (description == null ||
+          description.isEmpty ||
+          detail == null ||
+          detail.isEmpty) {
+        continue;
+      }
+      index[normalizeBashCommandKey(detail)] = description;
+    }
+  }
+  return index;
+}
+
+String? resolveStructuredBashDescription({
+  ThreadRunToolMetadata? tool,
+  String? command,
+  Map<String, String> projectionIndex = const {},
+}) {
+  final fromTool = tool?.name == 'Bash' ? tool?.description?.trim() : null;
+  if (fromTool != null && fromTool.isNotEmpty) {
+    return fromTool;
+  }
+  final normalizedCommand = command?.trim();
+  if (normalizedCommand == null || normalizedCommand.isEmpty) {
+    return null;
+  }
+  return projectionIndex[normalizeBashCommandKey(normalizedCommand)];
+}
+
+class ThreadRunToolMetadata {
+  const ThreadRunToolMetadata({
+    required this.name,
+    this.detail,
+    this.toolUseId,
+    this.description,
+  });
+
+  final String name;
+  final String? detail;
+  final String? toolUseId;
+  final String? description;
+}
+
+ThreadRunToolMetadata? readProjectionToolMetadata(Map<String, dynamic>? metadata) {
+  final raw = metadata?['tool'];
+  if (raw is! Map<String, dynamic>) return null;
+  return threadRunToolMetadataFromJson(raw);
+}
+
+String resolveBashApprovalTitle({
+  String? description,
+  required String reason,
+  String? filesystemTool,
+}) {
+  final normalizedDescription = description?.trim();
+  if (normalizedDescription != null && normalizedDescription.isNotEmpty) {
+    return normalizedDescription;
+  }
+  final normalizedReason = reason.trim();
+  if (normalizedReason.isNotEmpty) return normalizedReason;
+  if (filesystemTool != null && filesystemTool.trim().isNotEmpty) {
+    return '允许在工作区外执行 $filesystemTool？';
+  }
+  return '需要确认工具权限';
 }
 
 final _bashApprovalActivityPattern = RegExp(
@@ -424,9 +552,12 @@ String formatBashRunMeta(String command, {int? durationMs}) {
   return parts.join(', ');
 }
 
-String _deriveBashTitleFromCommand(String? command) {
+String? _deriveBashTitleFromCommand(String? command) {
   final trimmed = command?.trim();
-  if (trimmed == null || trimmed.isEmpty) return '运行命令';
+  if (trimmed == null || trimmed.isEmpty) {
+    return null;
+  }
+
   final segments = trimmed
       .split(RegExp(r'\s*(?:&&|\|\||;)\s*'))
       .map((segment) => segment.trim())
@@ -434,13 +565,108 @@ String _deriveBashTitleFromCommand(String? command) {
       .toList();
   final lastSegment = segments.isEmpty ? trimmed : segments.last;
   final normalized = lastSegment.replaceAll(RegExp(r'\s+'), ' ');
-  if (normalized.length <= 48) return normalized;
+
+  final testMatch = RegExp(
+    r'^(?:bun|npm|pnpm|yarn)\s+test(?:\s+(.+))?$',
+    caseSensitive: false,
+  ).firstMatch(normalized);
+  if (testMatch != null) {
+    final targets = testMatch.group(1)?.trim();
+    if (targets == null || targets.isEmpty) {
+      return 'Run tests';
+    }
+    final files = targets
+        .split(RegExp(r'\s+'))
+        .map((target) => pathBasename(target.replaceAll(RegExp(r'''^['"]|['"]$'''), '')))
+        .where((target) => target.isNotEmpty)
+        .toList();
+    final primary = files.isEmpty ? null : files.first;
+    if (primary != null &&
+        RegExp(r'\.(?:test|spec)\.[cm]?[jt]sx?$', caseSensitive: false)
+            .hasMatch(primary)) {
+      final base = primary.replaceAll(
+        RegExp(r'\.(?:test|spec)\.[cm]?[jt]sx?$', caseSensitive: false),
+        '',
+      );
+      return clampActivityPreviewLine('Run $base tests', 48);
+    }
+    if (files.length == 1 && primary != null) {
+      return clampActivityPreviewLine('Run $primary tests', 48);
+    }
+    return files.length > 1 ? 'Run ${files.length} test files' : 'Run tests';
+  }
+
+  final runMatch = RegExp(
+    r'^(?:npm|bun|pnpm|yarn)\s+run\s+(\S+)',
+    caseSensitive: false,
+  ).firstMatch(normalized);
+  if (runMatch?.group(1) != null) {
+    return clampActivityPreviewLine('Run ${runMatch!.group(1)!}', 48);
+  }
+
+  final gitMatch = RegExp(
+    r'^git\s+(\S+)(?:\s+(.+))?',
+    caseSensitive: false,
+  ).firstMatch(normalized);
+  if (gitMatch?.group(1) != null) {
+    final subcommand = gitMatch!.group(1)!;
+    final rest = gitMatch.group(2)?.trim();
+    if (rest != null && rest.isNotEmpty) {
+      final firstArg = rest
+          .split(RegExp(r'\s+'))
+          .first
+          .replaceAll(RegExp(r'''^['"]|['"]$'''), '');
+      if (firstArg.isNotEmpty && firstArg.length <= 24) {
+        return clampActivityPreviewLine(
+          'git $subcommand ${pathBasename(firstArg)}',
+          48,
+        );
+      }
+    }
+    return clampActivityPreviewLine('git $subcommand', 48);
+  }
+
+  if (RegExp(r'^kill\b', caseSensitive: false).hasMatch(normalized)) {
+    return 'Stop process';
+  }
+  if (RegExp(r'^curl\b', caseSensitive: false).hasMatch(normalized)) {
+    return 'Fetch URL';
+  }
+  if (RegExp(r'^wget\b', caseSensitive: false).hasMatch(normalized)) {
+    return 'Download file';
+  }
+  if (RegExp(r'^docker\b', caseSensitive: false).hasMatch(normalized)) {
+    final dockerMatch = RegExp(
+      r'^docker(?:\s+compose)?\s+(\S+)',
+      caseSensitive: false,
+    ).firstMatch(normalized);
+    return clampActivityPreviewLine(
+      dockerMatch != null ? 'docker ${dockerMatch.group(1)!}' : 'docker',
+      48,
+    );
+  }
+  if (RegExp(r'^cd\s+\S+$', caseSensitive: false).hasMatch(normalized)) {
+    return clampActivityPreviewLine(
+      'cd ${pathBasename(normalized.substring(3).trim())}',
+      48,
+    );
+  }
+
   final tokens = normalized.split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
   final list = tokens.toList();
+  final first = list.isEmpty ? '' : list.first;
+  if (first.startsWith('./') ||
+      first.startsWith('/') ||
+      RegExp(r'\.(?:sh|py|js|ts|mjs|cjs)$', caseSensitive: false).hasMatch(first)) {
+    return clampActivityPreviewLine(pathBasename(first), 48);
+  }
+  if (normalized.length <= 48) {
+    return normalized;
+  }
   if (list.length >= 2) {
     return clampActivityPreviewLine('${list[0]} ${list[1]}', 48);
   }
-  return clampActivityPreviewLine(list.first, 48);
+  return clampActivityPreviewLine(first, 48);
 }
 
 bool _looksLikeShellCommand(String text) {
@@ -449,7 +675,8 @@ bool _looksLikeShellCommand(String text) {
     caseSensitive: false,
   ).hasMatch(text) ||
       text.contains('&&') ||
-      text.contains('|');
+      text.contains('|') ||
+      text.contains('\n');
 }
 
 String _normalizeBashSummaryCandidate(String? summaryText) {
@@ -468,14 +695,22 @@ String _normalizeBashSummaryCandidate(String? summaryText) {
   return trimmed;
 }
 
-String formatMeaningfulBashTitle({String? command, String? summaryText}) {
+String formatMeaningfulBashTitle({
+  String? command,
+  String? summaryText,
+  String? description,
+}) {
+  final normalizedDescription = description?.trim();
+  if (normalizedDescription != null && normalizedDescription.isNotEmpty) {
+    return clampActivityPreviewLine(normalizedDescription, 48);
+  }
   final summary = _normalizeBashSummaryCandidate(summaryText);
   if (summary.isNotEmpty &&
       !_looksLikeShellCommand(summary) &&
       !RegExp(r'^Tool:\s*', caseSensitive: false).hasMatch(summary)) {
     return clampActivityPreviewLine(summary, 48);
   }
-  return _deriveBashTitleFromCommand(command);
+  return _deriveBashTitleFromCommand(command) ?? '运行命令';
 }
 
 BashRunCardDisplay? resolveBashRunCardDisplay({
@@ -484,6 +719,7 @@ BashRunCardDisplay? resolveBashRunCardDisplay({
   String? summaryText,
   String? output,
   int? durationMs,
+  String? description,
 }) {
   if (toolName != 'Bash') return null;
   final normalizedCommand = command?.trim();
@@ -492,6 +728,7 @@ BashRunCardDisplay? resolveBashRunCardDisplay({
   final title = formatMeaningfulBashTitle(
     command: normalizedCommand,
     summaryText: normalizedSummary,
+    description: description,
   );
   final meta = normalizedCommand == null || normalizedCommand.isEmpty
       ? null

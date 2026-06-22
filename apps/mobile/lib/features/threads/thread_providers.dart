@@ -126,12 +126,14 @@ class ActivityItem {
     required this.role,
     required this.message,
     this.stream = false,
+    this.tool,
   });
 
   final String id;
   final String role;
   final String message;
   final bool stream;
+  final ThreadRunToolMetadata? tool;
 }
 
 class ThreadSessionState {
@@ -302,11 +304,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       if (live.activityLine != null) {
         final line = live.activityLine!;
         final index = activities.indexWhere((a) => a.id == line.id);
+        final existing = index >= 0 ? activities[index] : null;
         final item = ActivityItem(
           id: line.id,
           role: line.role,
           message: line.message,
           stream: line.stream ?? false,
+          tool: mergeActivityToolMetadata(existing?.tool, live.tool),
         );
         if (index >= 0) {
           activities[index] = item;
@@ -346,7 +350,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       }
     }
 
-    state = state.copyWith(activities: activities);
+    state = state.copyWith(
+      activities: activities,
+    );
 
     if (live.followUp != null) {
       state = state.copyWith(
@@ -441,7 +447,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         bash,
       ) {
         if (!mounted) return;
-        if (bash != null) state = state.copyWith(pendingBash: bash);
+        state = state.copyWith(
+          pendingBash: bash,
+          clearBash: bash == null,
+        );
       });
     }
     if (event.kind == 'thread.clarification') {
@@ -449,9 +458,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         clarification,
       ) {
         if (!mounted) return;
-        if (clarification != null) {
-          state = state.copyWith(pendingClarification: clarification);
-        }
+        state = state.copyWith(
+          pendingClarification: clarification,
+          clearClarification: clarification == null,
+        );
       });
     }
     if (event.kind.startsWith('thread.')) {
@@ -529,6 +539,20 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         ?.submitClarification(toolUseId: toolUseId, selections: selections);
     state = state.copyWith(clearClarification: true);
   }
+}
+
+ThreadRunToolMetadata? mergeActivityToolMetadata(
+  ThreadRunToolMetadata? existing,
+  ThreadRunToolMetadata? incoming,
+) {
+  if (incoming == null) return existing;
+  if (existing == null) return incoming;
+  return ThreadRunToolMetadata(
+    name: incoming.name.isNotEmpty ? incoming.name : existing.name,
+    detail: incoming.detail ?? existing.detail,
+    toolUseId: incoming.toolUseId ?? existing.toolUseId,
+    description: incoming.description ?? existing.description,
+  );
 }
 
 ActivityItem _activityItemFromLine(ThreadActivityLine line) {

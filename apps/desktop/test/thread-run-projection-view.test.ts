@@ -1496,6 +1496,39 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
   });
 });
 
+test("projectionItemToDetailBlock prefers structured tool description on completed bash cards", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-done",
+      eventType: "tool.completed",
+      scope: "main",
+      role: "planner",
+      text: "Tool: Bash · npm test",
+      metadata: {
+        liveType: "tool.completed",
+        tool: {
+          name: "Bash",
+          detail: "npm test",
+          toolUseId: "toolu_bash_1",
+          description: "Run unit tests",
+          durationMs: 716,
+          status: "completed",
+          output: "36 pass\n0 fail",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    icon: "terminal",
+    bashRun: {
+      title: "Run unit tests",
+      body: "36 pass\n0 fail",
+    },
+  });
+});
+
 test("projectionItemToDetailBlock builds bash card display for completed bash tools", () => {
   const detail = projectionItemToDetailBlock(
     item({

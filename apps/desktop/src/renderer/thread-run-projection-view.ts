@@ -713,16 +713,19 @@ function buildProjectionToolActionBlock(
     toolName: string;
     label: string;
     lifecycle?: ToolActionLifecycle;
+    description?: string;
   },
 ): ActivityDetailBlock {
   const subagent = resolveProjectionSubagent(item);
   const metadataTool = readProjectionToolMetadata(item);
+  const description = input.description ?? metadataTool?.description;
   const bashRun = resolveBashRunCardDisplay({
     toolName: input.toolName,
     ...(metadataTool?.detail && { command: metadataTool.detail }),
     summaryText: item.text,
     ...(metadataTool?.output && { output: metadataTool.output }),
     ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
+    ...(description && { description }),
   });
   return {
     kind: "action",
@@ -772,6 +775,7 @@ export function projectionItemToDetailBlock(
       toolName: bashApproval.toolName,
       label: formatToolDisplayLabel(bashApproval.toolName, bashApproval.detail),
       lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
+      ...(bashApproval.description && { description: bashApproval.description }),
     });
   }
 
@@ -1006,6 +1010,8 @@ function readProjectionToolMetadata(
     ...(typeof record.durationMs === "number" &&
       Number.isFinite(record.durationMs) && { durationMs: record.durationMs }),
     ...(isProjectionToolStatus(record.status) && { status: record.status }),
+    ...(typeof record.description === "string" &&
+      record.description.trim() && { description: record.description.trim() }),
   };
 }
 

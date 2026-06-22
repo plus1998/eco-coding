@@ -41,6 +41,8 @@ export interface ThreadRunToolMetadata {
   toolUseId?: string;
   durationMs?: number;
   status?: "started" | "completed" | "failed";
+  /** Human-readable Bash title from Agent tool input.description */
+  description?: string;
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";
@@ -50,6 +52,7 @@ export interface ThreadRunBashApprovalMetadata {
   phase: ThreadRunBashApprovalPhase;
   toolName: string;
   detail?: string;
+  description?: string;
 }
 
 export interface ThreadRunEvent {

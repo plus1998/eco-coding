@@ -82,6 +82,8 @@ List<ActivityFeedEntry> buildActivityFeed({
     ];
   }
 
+  final bashToolDescriptionIndex = buildBashToolDescriptionIndex(runProjection);
+
   final output = <ActivityFeedEntry>[];
   var narrative = '';
   String? narrativeId;
@@ -234,6 +236,7 @@ List<ActivityFeedEntry> buildActivityFeed({
   BashRunCardDisplay? resolveActionBashRun(
     ParsedActivityToolInvocation? invocation,
     String message,
+    ActivityItem line,
   ) {
     if (invocation == null || invocation.toolName != 'Bash') return null;
     return resolveBashRunCardDisplay(
@@ -241,6 +244,11 @@ List<ActivityFeedEntry> buildActivityFeed({
       command: invocation.detail,
       summaryText: message,
       durationMs: invocation.durationMs,
+      description: resolveStructuredBashDescription(
+        tool: line.tool,
+        command: invocation.detail,
+        projectionIndex: bashToolDescriptionIndex,
+      ),
     );
   }
 
@@ -388,7 +396,7 @@ List<ActivityFeedEntry> buildActivityFeed({
         icon: iconForToolName(parsedApproval.toolName),
         lifecycle: parsedApproval.phase,
         subagentRole: agentRole,
-        bashRun: resolveActionBashRun(invocation, message),
+        bashRun: resolveActionBashRun(invocation, message, line),
       );
       continue;
     }
@@ -406,7 +414,7 @@ List<ActivityFeedEntry> buildActivityFeed({
             : iconForActivityMessage(message),
         lifecycle: resolveToolLifecycle(message),
         subagentRole: agentRole,
-        bashRun: resolveActionBashRun(invocation, message),
+        bashRun: resolveActionBashRun(invocation, message, line),
       );
       continue;
     }
@@ -466,8 +474,48 @@ List<ActivityFeedEntry> buildActivityFeed({
       runProjection: runProjection,
       subagentSessions: subagentSessions,
     );
+    _applyProjectionBashTitles(output, runProjection);
   }
   return output;
+}
+
+void _applyProjectionBashTitles(
+  List<ActivityFeedEntry> output,
+  ThreadRunProjectionSnapshot projection,
+) {
+  final titlesByCommand = buildBashToolDescriptionIndex(projection);
+
+  for (var index = 0; index < output.length; index++) {
+    final entry = output[index];
+    final bashRun = entry.bashRun;
+    if (entry.kind != ActivityFeedKind.action || bashRun == null) continue;
+    final command = bashRun.body?.trim();
+    if (command == null || command.isEmpty) continue;
+    final description = titlesByCommand[normalizeBashCommandKey(command)];
+    if (description == null || description == bashRun.title) continue;
+    output[index] = ActivityFeedEntry(
+      id: entry.id,
+      kind: entry.kind,
+      text: entry.text,
+      actionIcon: entry.actionIcon,
+      subagentRole: entry.subagentRole,
+      detail: entry.detail,
+      streaming: entry.streaming,
+      usageBadge: entry.usageBadge,
+      lifecycle: entry.lifecycle,
+      missionPrompt: entry.missionPrompt,
+      agentId: entry.agentId,
+      running: entry.running,
+      durationMs: entry.durationMs,
+      statusText: entry.statusText,
+      timeline: entry.timeline,
+      bashRun: BashRunCardDisplay(
+        title: description,
+        meta: bashRun.meta,
+        body: bashRun.body,
+      ),
+    );
+  }
 }
 
 void _syncProjectionSubagentCards(

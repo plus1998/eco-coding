@@ -80,6 +80,12 @@ test("resolveBashRunCardDisplay builds card fields for bash summaries and output
   });
 });
 
+test("formatMeaningfulBashTitle prefers bash approval description", () => {
+  expect(
+    formatMeaningfulBashTitle("npm test", "Tool: Bash · npm test", "Run unit tests"),
+  ).toBe("Run unit tests");
+});
+
 test("formatMeaningfulBashTitle prefers readable SDK summaries and short command labels", () => {
   expect(
     formatMeaningfulBashTitle(
@@ -104,6 +110,7 @@ test("readBashApprovalMetadata reads structured projection metadata", () => {
         phase: "approved",
         toolName: "Grep",
         detail: "/tmp/file.txt",
+        description: "Search outside workspace",
       },
     }),
   ).toEqual({
@@ -111,5 +118,6 @@ test("readBashApprovalMetadata reads structured projection metadata", () => {
     phase: "approved",
     toolName: "Grep",
     detail: "/tmp/file.txt",
+    description: "Search outside workspace",
   });
 });

@@ -117,6 +117,35 @@ test("emits structured SDK tool metadata with tool started activity", () => {
   ]);
 });
 
+test("preserves Bash description in structured tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ tool?: { name: string; detail?: string; description?: string } }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Bash",
+        tool_use_id: "toolu_bash_1",
+        input: { command: "npm test", description: "Run unit tests" },
+      },
+    },
+    (_threadId, _type, _message, _role, _stream, _agentId, extras) => {
+      emitted.push({ ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted[0]?.tool).toEqual({
+    name: "Bash",
+    detail: "npm test",
+    toolUseId: "toolu_bash_1",
+    description: "Run unit tests",
+  });
+});
+
 test("preserves full Bash command detail in structured metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const longCommand =

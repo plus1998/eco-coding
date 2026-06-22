@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/activity_display.dart';
 
 Future<void> showPlanApprovalSheet({
   required BuildContext context,
@@ -12,62 +13,55 @@ Future<void> showPlanApprovalSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) {
-      return DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.75,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (context, scrollController) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      return _ScrollableSheetFrame(
+        maxHeightFactor: 0.92,
+        footer: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Row(
               children: [
-                Text('计划审批', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
                 Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    children: [
-                      Text('用户请求', style: Theme.of(context).textTheme.labelLarge),
-                      Text(plan.userPrompt),
-                      const SizedBox(height: 12),
-                      Text('分析', style: Theme.of(context).textTheme.labelLarge),
-                      Text(plan.analysis),
-                      const SizedBox(height: 12),
-                      Text('计划', style: Theme.of(context).textTheme.labelLarge),
-                      Text(plan.plan),
-                    ],
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await onDismiss();
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: const Text('驳回'),
                   ),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          await onDismiss();
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                        child: const Text('驳回'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () async {
-                          await onApprove();
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                        child: const Text('批准执行'),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () async {
+                      await onApprove();
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: const Text('批准执行'),
+                  ),
                 ),
               ],
             ),
-          );
-        },
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('计划审批', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text('用户请求', style: Theme.of(context).textTheme.labelLarge),
+            Text(plan.userPrompt),
+            const SizedBox(height: 12),
+            Text('分析', style: Theme.of(context).textTheme.labelLarge),
+            Text(plan.analysis),
+            const SizedBox(height: 12),
+            Text('计划', style: Theme.of(context).textTheme.labelLarge),
+            Text(plan.plan),
+          ],
+        ),
       );
     },
   );
@@ -78,36 +72,27 @@ Future<void> showBashApprovalSheet({
   required BashApprovalRequest request,
   required Future<void> Function(String decision) onResolve,
 }) {
+  final title = resolveBashApprovalTitle(
+    description: request.description,
+    reason: request.reason,
+    filesystemTool: request.filesystemTool,
+  );
+  final detail = request.filesystemTool != null
+      ? '${request.filesystemTool}: ${request.filesystemPath}'
+      : request.command;
+  final panelLabel =
+      request.filesystemTool != null ? '工具读取确认' : 'Bash 执行确认';
+
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      return _ScrollableSheetFrame(
+        maxHeightFactor: 0.85,
+        footer: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Bash 审批', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text('风险: ${request.riskLevel} (${request.riskScore})'),
-            const SizedBox(height: 8),
-            Text(request.reason),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: EcoColors.codeBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: EcoColors.borderSubtle),
-              ),
-              child: Text(
-                request.filesystemTool != null
-                    ? '${request.filesystemTool}: ${request.filesystemPath}'
-                    : request.command,
-                style: const TextStyle(fontFamily: 'monospace'),
-              ),
-            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -132,12 +117,109 @@ Future<void> showBashApprovalSheet({
                 ),
               ],
             ),
-            SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(panelLabel, style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
+                  ),
+                ),
+                if (request.filesystemTool == null) ...[
+                  const SizedBox(width: 12),
+                  _BashRiskBadge(
+                    level: request.riskLevel,
+                    score: request.riskScore,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: EcoColors.codeBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: EcoColors.borderSubtle),
+              ),
+              child: SelectableText(
+                detail,
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
           ],
         ),
       );
     },
   );
+}
+
+class _BashRiskBadge extends StatelessWidget {
+  const _BashRiskBadge({
+    required this.level,
+    required this.score,
+  });
+
+  final String level;
+  final int score;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (level) {
+      'critical' => EcoColors.danger,
+      'high' => const Color(0xFFF97316),
+      'low' => EcoColors.success,
+      _ => const Color(0xFFFBBF24),
+    };
+    final label = switch (level) {
+      'critical' => '严重',
+      'high' => '高',
+      'low' => '低',
+      _ => '中',
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$score',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Future<void> showClarificationSheet({
@@ -153,42 +235,16 @@ Future<void> showClarificationSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          return _ScrollableSheetFrame(
+            maxHeightFactor: 0.92,
+            footer: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('需要澄清', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (var i = 0; i < request.questions.length; i++)
-                        _ClarificationQuestionCard(
-                          question: request.questions[i],
-                          selected: selections[i],
-                          onChanged: (value) {
-                            setState(() {
-                              if (request.questions[i].multiSelect == true) {
-                                if (selections[i].contains(value)) {
-                                  selections[i].remove(value);
-                                } else {
-                                  selections[i].add(value);
-                                }
-                              } else {
-                                selections[i] = [value];
-                              }
-                            });
-                          },
-                        ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 12),
                 FilledButton(
                   onPressed: selections.every((s) => s.isNotEmpty)
                       ? () async {
@@ -198,7 +254,35 @@ Future<void> showClarificationSheet({
                       : null,
                   child: const Text('提交'),
                 ),
-                SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '需要澄清',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                for (var i = 0; i < request.questions.length; i++)
+                  _ClarificationQuestionCard(
+                    question: request.questions[i],
+                    selected: selections[i],
+                    onChanged: (value) {
+                      setState(() {
+                        if (request.questions[i].multiSelect == true) {
+                          if (selections[i].contains(value)) {
+                            selections[i].remove(value);
+                          } else {
+                            selections[i].add(value);
+                          }
+                        } else {
+                          selections[i] = [value];
+                        }
+                      });
+                    },
+                  ),
               ],
             ),
           );
@@ -206,6 +290,44 @@ Future<void> showClarificationSheet({
       );
     },
   );
+}
+
+class _ScrollableSheetFrame extends StatelessWidget {
+  const _ScrollableSheetFrame({
+    required this.child,
+    required this.footer,
+    this.maxHeightFactor = 0.92,
+  });
+
+  final Widget child;
+  final Widget footer;
+  final double maxHeightFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final maxHeight = mediaQuery.size.height * maxHeightFactor;
+    return Padding(
+      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  child: child,
+                ),
+              ),
+              footer,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ClarificationQuestionCard extends StatelessWidget {

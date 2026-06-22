@@ -2896,6 +2896,7 @@ function mergeThreadRunToolMetadata(
   return {
     ...existing,
     ...incoming,
+    description: incoming.description ?? existing.description,
   };
 }
 
@@ -2907,7 +2908,13 @@ function isRicherThreadRunToolMetadata(
     return false;
   }
   if (!existing) {
-    return Boolean(incoming.detail || incoming.toolUseId || incoming.durationMs !== undefined || incoming.status);
+    return Boolean(
+      incoming.detail ||
+        incoming.toolUseId ||
+        incoming.durationMs !== undefined ||
+        incoming.status ||
+        incoming.description,
+    );
   }
   if (existing.name !== incoming.name) {
     return false;
@@ -2917,7 +2924,8 @@ function isRicherThreadRunToolMetadata(
       (incoming.output && incoming.output !== existing.output) ||
       (incoming.toolUseId && incoming.toolUseId !== existing.toolUseId) ||
       (incoming.durationMs !== undefined && incoming.durationMs !== existing.durationMs) ||
-      (incoming.status && incoming.status !== existing.status),
+      (incoming.status && incoming.status !== existing.status) ||
+      (incoming.description && incoming.description !== existing.description),
   );
 }
 
@@ -2939,6 +2947,8 @@ function readThreadRunToolMetadata(
     ...(typeof raw.toolUseId === "string" && raw.toolUseId.trim() && { toolUseId: raw.toolUseId.trim() }),
     ...(typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
+    ...(typeof raw.description === "string" &&
+      raw.description.trim() && { description: raw.description.trim() }),
   };
 }
 

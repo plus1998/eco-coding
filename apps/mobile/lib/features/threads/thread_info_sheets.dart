@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_usage_display.dart';
-import '../composer/composer_context_ring.dart';
 
 Future<void> showThreadBillingSheet({
   required BuildContext context,
@@ -43,17 +42,21 @@ Future<void> showThreadContextSheet({
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (context) => DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      minChildSize: 0.35,
-      maxChildSize: 0.9,
-      builder: (context, scrollController) => _ContextSheet(
-        contextSnapshot: contextSnapshot,
-        threadStatus: threadStatus,
-        scrollController: scrollController,
-      ),
-    ),
+    builder: (context) {
+      final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: _ContextSheet(
+            contextSnapshot: contextSnapshot,
+            threadStatus: threadStatus,
+          ),
+        ),
+      );
+    },
   );
 }
 
@@ -61,23 +64,19 @@ class ThreadUsageFloatButtons extends StatelessWidget {
   const ThreadUsageFloatButtons({
     super.key,
     required this.billing,
-    required this.contextSnapshot,
     required this.threadStatus,
   });
 
   final ThreadBillingSnapshot? billing;
-  final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
-    final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
     final costLabel = formatBillingPillCost(billing);
     final costColor = (billing?.ecoCostUsd ?? 0) > 0
         ? EcoColors.success
         : eco.textSecondary;
-    final pctColor = _contextPctColor(occupancyPct);
 
     return Material(
       color: EcoColors.bgElevated.withValues(alpha: 0.5),
@@ -89,85 +88,26 @@ class ThreadUsageFloatButtons extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: eco.borderSubtle),
         ),
-        child: IntrinsicHeight(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _FloatMetricSegment(
-                tooltip: '计费',
-                onTap: () => showThreadBillingSheet(
-                  context: context,
-                  billing: billing,
-                  threadStatus: threadStatus,
+        child: _FloatMetricSegment(
+          tooltip: '计费',
+          onTap: () => showThreadBillingSheet(
+            context: context,
+            billing: billing,
+            threadStatus: threadStatus,
+          ),
+          child: Text(
+            costLabel,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: costColor,
+                  fontSize: 10,
+                  height: 1.1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w600,
                 ),
-                child: Text(
-                  costLabel,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: costColor,
-                        fontSize: 10,
-                        height: 1.1,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: eco.borderSubtle,
-              ),
-              _FloatMetricSegment(
-                tooltip: '上下文',
-                onTap: () => showThreadContextSheet(
-                  context: context,
-                  contextSnapshot: contextSnapshot,
-                  threadStatus: threadStatus,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (occupancyPct != null)
-                      ComposerContextRing(
-                        pct: occupancyPct,
-                        size: 12,
-                        strokeWidth: 1.5,
-                      )
-                    else
-                      Icon(Icons.memory_outlined, size: 11, color: eco.textSecondary),
-                    if (occupancyPct != null) ...[
-                      const SizedBox(width: 3),
-                      Text(
-                        '$occupancyPct%',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: pctColor,
-                              fontSize: 10,
-                              height: 1.1,
-                              fontFeatures: const [FontFeature.tabularFigures()],
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
           ),
         ),
       ),
     );
-  }
-
-  Color _contextPctColor(int? pct) {
-    if (pct == null) {
-      return EcoColors.textSecondary;
-    }
-    if (pct >= 95) {
-      return EcoColors.danger;
-    }
-    if (pct >= 85) {
-      return const Color(0xFFFBBF24);
-    }
-    return EcoColors.accentText;
   }
 }
 
@@ -288,64 +228,75 @@ class _ContextSheet extends StatelessWidget {
   const _ContextSheet({
     required this.contextSnapshot,
     required this.threadStatus,
-    required this.scrollController,
   });
 
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
-  final ScrollController scrollController;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
     return SafeArea(
-      child: ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: eco.borderSubtle,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Icon(Icons.memory_outlined, size: 18),
-              const SizedBox(width: 8),
-              Text('上下文', style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (contextSnapshot == null)
-            Text(
-              contextCardPlaceholder(threadStatus),
-              style: TextStyle(color: eco.textMuted),
-            )
-          else ...[
-            _ContextRoleSection(
-              title: roleDisplayLabel(
-                resolvePlannerContext(contextSnapshot!).role,
-              ),
-              role: resolvePlannerContext(contextSnapshot!),
-            ),
-            ...contextSnapshot!.roles
-                .where((role) => role.role != 'planner')
-                .map(
-                  (role) => Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: _ContextRoleSection(
-                      title: roleDisplayLabel(role.role),
-                      role: role,
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: eco.borderSubtle,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-          ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.memory_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '上下文',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (contextSnapshot == null)
+                    Text(
+                      contextCardPlaceholder(threadStatus),
+                      style: TextStyle(color: eco.textMuted),
+                    )
+                  else ...[
+                    _ContextRoleSection(
+                      title: roleDisplayLabel(
+                        resolvePlannerContext(contextSnapshot!).role,
+                      ),
+                      role: resolvePlannerContext(contextSnapshot!),
+                    ),
+                    ...contextSnapshot!.roles
+                        .where((role) => role.role != 'planner')
+                        .map(
+                          (role) => Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: _ContextRoleSection(
+                              title: roleDisplayLabel(role.role),
+                              role: role,
+                            ),
+                          ),
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

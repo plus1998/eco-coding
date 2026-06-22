@@ -356,11 +356,16 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.result) ??
     readString(record.content);
   const toolUseId = readString(record.tool_use_id);
+  const description =
+    name === "Bash"
+      ? readString(record.description) ?? readBashDescriptionFromToolInput(record.input)
+      : undefined;
   return {
     name,
     ...(command && { detail: command }),
     ...(output && { output }),
     ...(toolUseId && { toolUseId }),
+    ...(description && { description }),
     status: "completed",
   };
 }
@@ -420,6 +425,14 @@ function resolveSdkAgentStatusActivity(payload: unknown): { type: string; messag
   return undefined;
 }
 
+function readBashDescriptionFromToolInput(input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+  const value = (input as Record<string, unknown>).description;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -431,10 +444,12 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const name = record.tool_name.trim();
   const detail = resolveSdkToolDisplayDetail(name, record.input);
   const toolUseId = readString(record.tool_use_id);
+  const description = name === "Bash" ? readBashDescriptionFromToolInput(record.input) : undefined;
   return {
     name,
     ...(detail && { detail }),
     ...(toolUseId && { toolUseId }),
+    ...(description && { description }),
   };
 }
 

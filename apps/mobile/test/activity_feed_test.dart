@@ -369,8 +369,124 @@ void main() {
     expect(feed.length, 1);
     expect(feed.first.kind, ActivityFeedKind.action);
     expect(feed.first.bashRun, isNotNull);
-    expect(feed.first.bashRun!.title, isNotEmpty);
+    expect(feed.first.bashRun!.title, 'Run tests');
     expect(feed.first.bashRun!.body, 'npm test');
+  });
+
+  test('buildActivityFeed prefers structured tool description on live activity', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: Bash · npm test',
+          tool: ThreadRunToolMetadata(
+            name: 'Bash',
+            detail: 'npm test',
+            toolUseId: 'toolu_bash_1',
+            description: 'Run unit tests',
+          ),
+        ),
+      ],
+    );
+
+    expect(feed.first.bashRun?.title, 'Run unit tests');
+  });
+
+  test('buildActivityFeed applies structured tool description from projection', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: Bash · npm test',
+        ),
+      ],
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: [
+          ThreadRunProjectionAgent(
+            agentId: 'agent_planner',
+            role: 'planner',
+            kind: 'main',
+            status: 'active',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            durationMs: 1000,
+            timeline: [
+              ThreadRunProjectionTimelineItem(
+                id: 'bash-done',
+                sequence: 1,
+                eventType: 'tool.completed',
+                scope: 'main',
+                text: 'Tool: Bash · npm test',
+                at: '2026-01-01T00:00:01.000Z',
+                metadata: const {
+                  'tool': {
+                    'name': 'Bash',
+                    'detail': 'npm test',
+                    'toolUseId': 'toolu_bash_1',
+                    'description': 'Run unit tests',
+                  },
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.first.bashRun?.title, 'Run unit tests');
+  });
+
+  test('buildActivityFeed applies projection tool description when activity lacks tool metadata', () {
+    final feed = buildActivityFeed(
+      lines: const [
+        ActivityItem(
+          id: '1',
+          role: 'planner',
+          message: 'Tool: Bash · npm test',
+        ),
+      ],
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        agents: [
+          ThreadRunProjectionAgent(
+            agentId: 'agent_planner',
+            role: 'planner',
+            kind: 'main',
+            status: 'active',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            durationMs: 1000,
+            timeline: [
+              ThreadRunProjectionTimelineItem(
+                id: 'bash-done',
+                sequence: 1,
+                eventType: 'tool.completed',
+                scope: 'main',
+                text: 'Tool: Bash · npm test',
+                at: '2026-01-01T00:00:01.000Z',
+                metadata: const {
+                  'tool': {
+                    'name': 'Bash',
+                    'detail': 'npm test',
+                    'toolUseId': 'toolu_bash_1',
+                    'description': 'Run unit tests',
+                  },
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.first.bashRun?.title, 'Run unit tests');
   });
 
   test('buildActivityFeed injects cards for concurrent projection subagents', () {
