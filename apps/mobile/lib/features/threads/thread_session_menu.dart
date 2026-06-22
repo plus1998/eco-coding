@@ -156,14 +156,19 @@ class _ThreadSessionMenuButtonState extends ConsumerState<ThreadSessionMenuButto
   }
 }
 
+const _menuRowHorizontalPadding = 16.0;
+const _menuRowVerticalPadding = 12.0;
+const _menuIconSize = 18.0;
+const _menuIconGap = 10.0;
+const _menuCardVerticalPadding = 6.0;
+const _menuBorderRadius = 16.0;
+
 double _menuWidthForEntries(
   BuildContext context,
   List<_ThreadSessionMenuEntry> entries,
 ) {
-  const rowHorizontalPadding = 20.0;
-  const iconWidth = 16.0;
-  const iconGap = 8.0;
-  final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+  final rowHorizontalPadding = _menuRowHorizontalPadding * 2;
+  final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
         fontWeight: FontWeight.w500,
       );
   final painter = TextPainter(
@@ -176,7 +181,7 @@ double _menuWidthForEntries(
     painter.layout();
     maxTextWidth = math.max(maxTextWidth, painter.width);
   }
-  return rowHorizontalPadding + iconWidth + iconGap + maxTextWidth;
+  return rowHorizontalPadding + _menuIconSize + _menuIconGap + maxTextWidth;
 }
 
 class _ThreadSessionMenuEntry {
@@ -210,7 +215,7 @@ class _ThreadSessionMenuCard extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: eco.bgMenu,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(_menuBorderRadius),
           border: Border.all(color: eco.borderSubtle),
           boxShadow: [
             BoxShadow(
@@ -223,18 +228,21 @@ class _ThreadSessionMenuCard extends StatelessWidget {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ...entries.map((entry) {
-                return _ThreadSessionMenuRow(
-                  entry: entry,
-                  onTap: entry.enabled ? () => onSelected(entry.value) : null,
-                );
-              }),
-            ],
+          borderRadius: BorderRadius.circular(_menuBorderRadius),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: _menuCardVerticalPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ...entries.map((entry) {
+                  return _ThreadSessionMenuRow(
+                    entry: entry,
+                    onTap: entry.enabled ? () => onSelected(entry.value) : null,
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       ),
@@ -267,17 +275,20 @@ class _ThreadSessionMenuRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding: const EdgeInsets.symmetric(
+            horizontal: _menuRowHorizontalPadding,
+            vertical: _menuRowVerticalPadding,
+          ),
           child: Row(
             children: [
-              Icon(entry.icon, size: 16, color: iconColor),
-              const SizedBox(width: 8),
+              Icon(entry.icon, size: _menuIconSize, color: iconColor),
+              const SizedBox(width: _menuIconGap),
               Expanded(
                 child: Text(
                   entry.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: color,
                         fontWeight: FontWeight.w500,
                       ),
