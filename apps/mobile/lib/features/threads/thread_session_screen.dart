@@ -8,6 +8,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../approvals/approval_sheets.dart';
@@ -46,7 +47,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _promptController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(runtimeConfigProvider.notifier).state = null;
     });
@@ -59,20 +59,24 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       if (!mounted) return;
       final inset = MediaQuery.viewInsetsOf(context).bottom;
       if (inset > _lastKeyboardInset) {
-        _scrollToBottom();
+        _scrollToBottom(animated: false);
       }
       _lastKeyboardInset = inset;
     });
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animated) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          target,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
+      } else {
+        _scrollController.jumpTo(target);
       }
     });
   }
@@ -154,34 +158,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final queuedFollowUps = queuedThreadFollowUps(session.followUps)
         .where((item) => item.id != _editingFollowUpId)
         .toList();
-    final feedEntries = buildActivityFeed(
-      lines: session.activities,
-      threadPrompt: thread?.prompt,
-      threadId: widget.threadId,
-      runProjection: session.runProjection,
-      subagentSessions: session.subagentSessions,
-    );
-    final hasStreamingThinking = feedEntries.any(
-      (entry) =>
-          entry.kind == ActivityFeedKind.thinking && entry.streaming,
-    );
-    final hasStreamingAssistant = feedEntries.any(
-      (entry) =>
-          entry.kind == ActivityFeedKind.assistant && entry.streaming,
-    );
-    final displayFeedEntries = isRunning &&
-            !hasStreamingThinking &&
-            !hasStreamingAssistant
-        ? [
-            ...feedEntries,
-            const ActivityFeedEntry(
-              id: 'pending-agent',
-              kind: ActivityFeedKind.thinking,
-              text: '',
-              streaming: true,
-            ),
-          ]
-        : feedEntries;
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
@@ -222,7 +198,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     });
 
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
       appBar: buildThreadSessionAppBar(
         context,
@@ -267,24 +243,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                                     ),
                                   ),
                                 )
-                              : Stack(
-                                  children: [
-                                    ActivityFeedList(
-                                      entries: displayFeedEntries,
-                                      scrollController: _scrollController,
-                                      topPadding: sessionContentTopPadding(
-                                        context,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      right: 8,
-                                      bottom: 8,
-                                      child: ThreadUsageFloatButtons(
-                                        billing: session.billing,
-                                        threadStatus: thread?.status,
-                                      ),
-                                    ),
-                                  ],
+                              : _ThreadSessionFeedPane(
+                                  threadId: widget.threadId,
+                                  scrollController: _scrollController,
+                                  isRunning: isRunning,
+                                  billing: session.billing,
+                                  threadStatus: thread?.status,
                                 ),
                 ),
                 const Positioned(
@@ -296,48 +260,60 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               ],
             ),
           ),
-          if (queuedFollowUps.isNotEmpty)
-            _FollowUpBar(
-              followUps: queuedFollowUps,
-              cancelBusyId: _followUpCancelBusyId,
-              escalateBusyId: _followUpEscalateBusyId,
-              onEscalate: (followUp) => _escalateFollowUp(followUp),
-              onEdit: _startEditingFollowUp,
-              onDelete: (followUp) => _deleteFollowUp(followUp),
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
             ),
-          if (_editingFollowUpId != null)
-            _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
-          SessionComposer(
-            controller: _promptController,
-            attachments: _attachments,
-            runtimeConfig: runtimeConfig,
-            threadId: widget.threadId,
-            isRunning: isRunning,
-            followUpMode: followUpMode,
-            sendBusy: _followUpBusy,
-            hasActivity: session.activities.isNotEmpty,
-            inputHint: _editingFollowUpId != null
-                ? '编辑引导消息…'
-                : (showLanding ? composerLandingPlaceholder : null),
-            contextSnapshot: session.contextSnapshot,
-            threadStatus: thread?.status,
-            workspaceDiff: workspaceDiffAsync.valueOrNull,
-            diffLoading: workspaceDiffAsync.isReloading,
-            onPickImage: _pickImage,
-            onRemoveAttachment: (index) =>
-                setState(() => _attachments.removeAt(index)),
-            onSend: () => _sendMessage(runtimeConfig),
-            onStop: () => _stopThread(),
-            onRuntimeConfigChanged: (config) {
-              ref.read(runtimeConfigProvider.notifier).state = config;
-            },
-            onChangesTap: workspacePath.isNotEmpty
-                ? () => showWorkspaceDiffReviewSheet(
-                      context: context,
-                      ref: ref,
-                      workspacePath: workspacePath,
-                    )
-                : null,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (queuedFollowUps.isNotEmpty)
+                  _FollowUpBar(
+                    followUps: queuedFollowUps,
+                    cancelBusyId: _followUpCancelBusyId,
+                    escalateBusyId: _followUpEscalateBusyId,
+                    onEscalate: (followUp) => _escalateFollowUp(followUp),
+                    onEdit: _startEditingFollowUp,
+                    onDelete: (followUp) => _deleteFollowUp(followUp),
+                  ),
+                if (_editingFollowUpId != null)
+                  _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
+                SessionComposer(
+                  controller: _promptController,
+                  attachments: _attachments,
+                  runtimeConfig: runtimeConfig,
+                  threadId: widget.threadId,
+                  isRunning: isRunning,
+                  followUpMode: followUpMode,
+                  sendBusy: _followUpBusy,
+                  hasActivity: session.activities.isNotEmpty,
+                  inputHint: _editingFollowUpId != null
+                      ? '编辑引导消息…'
+                      : (showLanding ? composerLandingPlaceholder : null),
+                  contextSnapshot: session.contextSnapshot,
+                  threadStatus: thread?.status,
+                  workspaceDiff: workspaceDiffAsync.valueOrNull,
+                  diffLoading: workspaceDiffAsync.isReloading,
+                  onPickImage: _pickImage,
+                  onRemoveAttachment: (index) =>
+                      setState(() => _attachments.removeAt(index)),
+                  onSend: () => _sendMessage(runtimeConfig),
+                  onStop: () => _stopThread(),
+                  onRuntimeConfigChanged: (config) {
+                    ref.read(runtimeConfigProvider.notifier).state = config;
+                  },
+                  onChangesTap: workspacePath.isNotEmpty
+                      ? () => showWorkspaceDiffReviewSheet(
+                            context: context,
+                            ref: ref,
+                            workspacePath: workspacePath,
+                          )
+                      : null,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -549,6 +525,72 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             ),
       );
     }
+  }
+}
+
+class _ThreadSessionFeedPane extends ConsumerWidget {
+  const _ThreadSessionFeedPane({
+    required this.threadId,
+    required this.scrollController,
+    required this.isRunning,
+    required this.billing,
+    this.threadStatus,
+  });
+
+  final String threadId;
+  final ScrollController scrollController;
+  final bool isRunning;
+  final ThreadBillingSnapshot? billing;
+  final String? threadStatus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(threadSessionProvider(threadId));
+    final thread = session.thread;
+    final feedEntries = buildActivityFeed(
+      lines: session.activities,
+      threadPrompt: thread?.prompt,
+      threadId: threadId,
+      runProjection: session.runProjection,
+      subagentSessions: session.subagentSessions,
+    );
+    final hasStreamingThinking = feedEntries.any(
+      (entry) => entry.kind == ActivityFeedKind.thinking && entry.streaming,
+    );
+    final hasStreamingAssistant = feedEntries.any(
+      (entry) => entry.kind == ActivityFeedKind.assistant && entry.streaming,
+    );
+    final displayFeedEntries = isRunning &&
+            !hasStreamingThinking &&
+            !hasStreamingAssistant
+        ? [
+            ...feedEntries,
+            const ActivityFeedEntry(
+              id: 'pending-agent',
+              kind: ActivityFeedKind.thinking,
+              text: '',
+              streaming: true,
+            ),
+          ]
+        : feedEntries;
+
+    return Stack(
+      children: [
+        ActivityFeedList(
+          entries: displayFeedEntries,
+          scrollController: scrollController,
+          topPadding: sessionContentTopPadding(context),
+        ),
+        Positioned(
+          right: 8,
+          bottom: 8,
+          child: ThreadUsageFloatButtons(
+            billing: billing,
+            threadStatus: threadStatus,
+          ),
+        ),
+      ],
+    );
   }
 }
 

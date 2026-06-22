@@ -9,11 +9,13 @@ class EcoMarkdown extends StatelessWidget {
     required this.text,
     this.compact = false,
     this.muted = false,
+    this.selectable = true,
   });
 
   final String text;
   final bool compact;
   final bool muted;
+  final bool selectable;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +33,7 @@ class EcoMarkdown extends StatelessWidget {
 
     return MarkdownBody(
       data: text,
-      selectable: true,
+      selectable: selectable,
       shrinkWrap: true,
       styleSheet: MarkdownStyleSheet(
         p: base,

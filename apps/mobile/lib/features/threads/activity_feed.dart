@@ -864,17 +864,24 @@ class ActivityFeedList extends StatelessWidget {
         controller: scrollController,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: EdgeInsets.fromLTRB(12, topPadding, 12, 12),
+        cacheExtent: 1200,
         itemCount: entries.length,
-        itemBuilder: (context, index) => _ActivityFeedEntryTile(
-          entry: entries[index],
-        ),
+        itemBuilder: (context, index) {
+          final entry = entries[index];
+          return RepaintBoundary(
+            child: _ActivityFeedEntryTile(
+              key: ValueKey(entry.id),
+              entry: entry,
+            ),
+          );
+        },
       ),
     );
   }
 }
 
 class _ActivityFeedEntryTile extends StatelessWidget {
-  const _ActivityFeedEntryTile({required this.entry});
+  const _ActivityFeedEntryTile({super.key, required this.entry});
 
   final ActivityFeedEntry entry;
 
@@ -976,7 +983,8 @@ class _AssistantNarrativeTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (text.isNotEmpty) EcoMarkdown(text: text),
+          if (text.isNotEmpty)
+            EcoMarkdown(text: text, selectable: false),
           if (usageBadge != null) ...[
             const SizedBox(height: 6),
             _UsageBadgeLine(badge: usageBadge!),
@@ -1136,6 +1144,7 @@ class _ThinkingTileState extends State<_ThinkingTile> {
                   text: widget.text,
                   compact: true,
                   muted: true,
+                  selectable: false,
                 ),
               ),
           ],

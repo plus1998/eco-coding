@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,37 +25,31 @@ double sessionTopFrostHeight(BuildContext context) {
       sessionTopFrostFadeExtension;
 }
 
-/// Frosted glass layer pinned to the top of the session body. Content scrolls
-/// underneath; opacity is highest at the top and fades out toward the bottom.
+/// Static top fade pinned to the session body. Uses a gradient instead of live
+/// backdrop blur so scrolling and keyboard resize stay smooth.
 class SessionTopFrostOverlay extends StatelessWidget {
   const SessionTopFrostOverlay({super.key});
 
   @override
   Widget build(BuildContext context) {
     final height = sessionTopFrostHeight(context);
+    final peak = EcoColors.bgMain.withValues(alpha: sessionTopFrostPeakOpacity);
     return IgnorePointer(
-      child: SizedBox(
-        height: height,
-        width: double.infinity,
-        child: ClipRect(
-          child: ShaderMask(
-            shaderCallback: (bounds) {
-              return const LinearGradient(
+      child: RepaintBoundary(
+        child: SizedBox(
+          height: height,
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFFFFFFFF),
-                  Color(0xFFFFFFFF),
-                  Color(0x00000000),
+                  peak,
+                  peak.withValues(alpha: sessionTopFrostPeakOpacity * 0.72),
+                  peak.withValues(alpha: 0),
                 ],
-                stops: [0.0, 0.58, 1.0],
-              ).createShader(bounds);
-            },
-            blendMode: BlendMode.dstIn,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-              child: ColoredBox(
-                color: EcoColors.bgMain.withValues(alpha: sessionTopFrostPeakOpacity),
+                stops: const [0.0, 0.58, 1.0],
               ),
             ),
           ),
