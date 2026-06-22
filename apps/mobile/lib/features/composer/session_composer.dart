@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/platform/system_speech_recognizer.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
 import 'workspace_changes_pill.dart';
 
@@ -53,6 +55,7 @@ class SessionComposer extends ConsumerStatefulWidget {
 
 class _SessionComposerState extends ConsumerState<SessionComposer> {
   final _focusNode = FocusNode();
+  bool _speechBusy = false;
 
   @override
   void dispose() {
@@ -82,6 +85,54 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   void _handleStop() {
     _focusNode.unfocus();
     widget.onStop();
+  }
+
+  Future<void> _handleSpeechInput() async {
+    final recognizer = ref.read(systemSpeechRecognizerProvider);
+    if (_speechBusy) {
+      try {
+        await recognizer.stop();
+      } catch (error) {
+        if (mounted) {
+          _showSnack(error.toString());
+        }
+      }
+      return;
+    }
+
+    setState(() => _speechBusy = true);
+    try {
+      final text = await recognizer.recognize();
+      if (!mounted) return;
+      if (text.isEmpty) {
+        _showSnack('未识别到语音内容');
+        return;
+      }
+      final merged = mergeRecognizedSpeechText(
+        currentText: widget.controller.text,
+        selection: widget.controller.selection,
+        recognizedText: text,
+      );
+      widget.controller.value = TextEditingValue(
+        text: merged.text,
+        selection: TextSelection.collapsed(offset: merged.selectionOffset),
+      );
+      _focusNode.requestFocus();
+    } catch (error) {
+      if (mounted) {
+        _showSnack(error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _speechBusy = false);
+      }
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -135,7 +186,8 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: _canSend ? (_) => _handleSend() : null,
                     decoration: InputDecoration(
-                      hintText: widget.inputHint ??
+                      hintText:
+                          widget.inputHint ??
                           (widget.followUpMode
                               ? '要求后续变更'
                               : (widget.hasActivity ? '跟进' : '发送消息…')),
@@ -183,6 +235,15 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                         icon: const Icon(Icons.add, size: 22),
                         tooltip: '添加图片',
                         visualDensity: VisualDensity.compact,
+                      ),
+                      IconButton(
+                        onPressed: _handleSpeechInput,
+                        icon: _speechBusy
+                            ? const Icon(Icons.stop_circle_outlined, size: 22)
+                            : const Icon(Icons.mic_none, size: 22),
+                        tooltip: _speechBusy ? '停止语音输入' : '语音输入',
+                        visualDensity: VisualDensity.compact,
+                        color: _speechBusy ? eco.statusDenyText : null,
                       ),
                       ComposerPlanModeControl(
                         runtimeConfig: widget.runtimeConfig,
@@ -261,11 +322,7 @@ class _StopButton extends StatelessWidget {
         child: const SizedBox(
           width: 34,
           height: 34,
-          child: Icon(
-            Icons.stop_rounded,
-            size: 18,
-            color: EcoColors.bgMain,
-          ),
+          child: Icon(Icons.stop_rounded, size: 18, color: EcoColors.bgMain),
         ),
       ),
     );
