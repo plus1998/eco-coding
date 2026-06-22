@@ -1,4 +1,4 @@
-import { ChevronLeft, Link2, Plus, QrCode, RefreshCw, Settings2, Smartphone, Unlink } from "lucide-react";
+import { ChevronLeft, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import type {
@@ -12,7 +12,7 @@ import type {
   CenterServerSignInRequest,
   CenterServerSignUpRequest,
 } from "../shared/center-server";
-import { isLocalhostCenterServerUrl } from "../shared/center-server";
+import { isCenterServerAuthCredentialError, isLocalhostCenterServerUrl } from "../shared/center-server";
 
 interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
@@ -68,6 +68,10 @@ export function CenterServerSettingsPanel({
   const actionBusy = busy || testing || pairingBusy || connectionBusy || bindingsLoading;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
+  const needsReauth =
+    registered &&
+    snapshot.status.state === "error" &&
+    isCenterServerAuthCredentialError(snapshot.status.lastError);
   const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
   const deviceLabel = snapshot.settings.deviceName || "远程服务";
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
@@ -210,7 +214,7 @@ export function CenterServerSettingsPanel({
       if (!enabled) {
         await onDisconnect();
       } else if (nextSnapshot.status.state === "error") {
-        setError(nextSnapshot.status.lastError ?? "连接失败，将自动重试。");
+        setError(nextSnapshot.status.lastError ?? "连接失败。");
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -264,224 +268,220 @@ export function CenterServerSettingsPanel({
     setView("edit-server");
   }
 
+  function openReauth() {
+    setError(undefined);
+    setAuthMode("signin");
+    setView("edit-account");
+  }
+
   if (view === "edit-server") {
     return (
-      <ServerEditor
-        form={form}
-        setForm={setForm}
-        registered={registered}
-        serverReachable={serverReachable}
-        error={error}
-        busy={actionBusy}
-        testing={testing}
-        onBack={() => setView("list")}
-        onTestConnection={() => void handleTestConnection()}
-        onSave={() => void handleSaveServer()}
-        onServerUrlChange={() => setServerReachable(false)}
-      />
+      <div className="cs">
+        <ServerEditor
+          form={form}
+          setForm={setForm}
+          registered={registered}
+          serverReachable={serverReachable}
+          error={error}
+          busy={actionBusy}
+          testing={testing}
+          onBack={() => setView("list")}
+          onTestConnection={() => void handleTestConnection()}
+          onSave={() => void handleSaveServer()}
+          onServerUrlChange={() => setServerReachable(false)}
+        />
+      </div>
     );
   }
 
   if (view === "edit-account") {
     return (
-      <AccountEditor
-        serverUrl={serverUrl}
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        email={email}
-        setEmail={setEmail}
-        password={password}
-        setPassword={setPassword}
-        displayName={displayName}
-        setDisplayName={setDisplayName}
-        error={error}
-        busy={actionBusy}
-        onBack={() => setView("edit-server")}
-        onSubmit={() => void handleAccountAuth()}
-      />
+      <div className="cs">
+        <AccountEditor
+          serverUrl={serverUrl}
+          registered={registered}
+          authMode={authMode}
+          setAuthMode={setAuthMode}
+          email={email}
+          setEmail={setEmail}
+          password={password}
+          setPassword={setPassword}
+          displayName={displayName}
+          setDisplayName={setDisplayName}
+          error={error}
+          busy={actionBusy}
+          onBack={() => (registered ? setView("list") : setView("edit-server"))}
+          onSubmit={() => void handleAccountAuth()}
+        />
+      </div>
     );
   }
 
   return (
-    <>
-      <header className="mcp-page-header">
-        <h1>连接</h1>
-        <p className="mcp-page-desc">连接远程 Eco 服务，与手机端同步会话并远程控制本机 Agent。</p>
+    <div className="cs">
+      <header className="cs-head">
+        <h1 className="cs-title">连接</h1>
+        <p className="cs-desc">远程 Eco 服务，同步会话并远程控制本机。</p>
       </header>
 
-      {error && <p className="settings-form-error mcp-list-error">{error}</p>}
+      {error ? <p className="cs-error">{error}</p> : null}
 
-      <section className="mcp-list-section">
-        <div className="mcp-list-toolbar">
-          <span className="mcp-list-toolbar-label">远程服务</span>
-          {!registered && (
-            <button type="button" className="mcp-add-button" onClick={openSetup} disabled={actionBusy}>
-              <Plus size={16} />
-              添加连接
-            </button>
-          )}
+      {!registered ? (
+        <div className="cs-empty">
+          <p className="cs-empty-text">尚未配置远程服务</p>
+          <button type="button" className="cs-btn" disabled={actionBusy} onClick={openSetup}>
+            <Plus size={15} strokeWidth={1.75} />
+            添加连接
+          </button>
         </div>
-
-        {!registered ? (
-          <p className="mcp-list-empty">尚未配置远程服务</p>
-        ) : (
-          <ul className="mcp-server-list">
-            <li className="mcp-server-row center-server-row">
-              <div className="center-server-row-main">
-                <span className="mcp-server-name">{deviceLabel}</span>
-                {serverUrl && <span className="center-server-row-url">{serverUrl}</span>}
-                <ConnectionStatusLine status={snapshot.status} />
+      ) : (
+        <div className="cs-card">
+          <div className="cs-card-row">
+            <div className="cs-service">
+              <span className={`cs-dot cs-dot--${statusDotKind(snapshot.status)}`} aria-hidden />
+              <div className="cs-service-copy">
+                <span className="cs-service-name">{deviceLabel}</span>
+                <span className="cs-service-url">{serverUrl}</span>
+                <StatusMeta status={snapshot.status} needsReauth={needsReauth} />
               </div>
-              <div className="mcp-server-actions">
+            </div>
+            <div className="cs-card-tools">
+              {needsReauth ? (
                 <button
                   type="button"
-                  className="mcp-icon-button"
-                  onClick={openServerEditor}
-                  aria-label="配置远程服务"
+                  className="cs-icon-btn is-warn"
+                  onClick={openReauth}
+                  aria-label="重新登录"
+                  title="重新登录"
                   disabled={actionBusy}
                 >
-                  <Settings2 size={18} />
+                  <LogIn size={16} strokeWidth={1.75} />
                 </button>
-                <label className="mcp-toggle" title={form.enabled ? "已启用" : "已禁用"}>
-                  <input
-                    type="checkbox"
-                    checked={form.enabled}
-                    disabled={actionBusy || isConnecting}
-                    onChange={(event) => void handleToggle(event.target.checked)}
-                  />
-                  <span className="mcp-toggle-track" aria-hidden />
-                </label>
-              </div>
-            </li>
-          </ul>
-        )}
-      </section>
+              ) : null}
+              <button
+                type="button"
+                className="cs-icon-btn"
+                onClick={openServerEditor}
+                aria-label="配置"
+                disabled={actionBusy}
+              >
+                <Settings2 size={16} strokeWidth={1.75} />
+              </button>
+              <label className="cs-switch" title={form.enabled ? "已启用" : "已禁用"}>
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  disabled={actionBusy || isConnecting}
+                  onChange={(event) => void handleToggle(event.target.checked)}
+                />
+                <span className="cs-switch-track" aria-hidden />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {registered && isLive && (
-        <section className="mcp-list-section center-server-bound-mobile-section">
-          <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">已绑定手机</span>
+      {registered && isLive ? (
+        <section className="cs-block">
+          <div className="cs-block-head">
+            <h2 className="cs-block-label">已绑定手机</h2>
             <button
               type="button"
-              className="mcp-back-button center-server-test-button"
+              className="cs-text-action is-muted"
               disabled={actionBusy}
               onClick={() => void refreshBindings()}
             >
-              <RefreshCw size={16} className={bindingsLoading ? "model-refresh-spin" : undefined} />
+              <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
               刷新
             </button>
           </div>
 
-          {bindingsError ? <p className="settings-form-error mcp-list-error">{bindingsError}</p> : null}
+          {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
 
           {bindingsLoading && activeBindings.length === 0 ? (
-            <p className="mcp-list-empty">加载绑定信息…</p>
+            <p className="cs-placeholder">加载中…</p>
           ) : activeBindings.length === 0 ? (
-            <p className="mcp-list-empty">暂无绑定手机。生成配对码后，手机 Eco App 扫码即可绑定。</p>
+            <p className="cs-placeholder">暂无绑定手机，生成配对码后扫码绑定。</p>
           ) : (
-            <ul className="mcp-server-list">
+            <ul className="cs-list">
               {activeBindings.map((binding) => {
                 const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
                 const online = mobile?.online === true;
                 const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
                 const mobileDetail = formatMobileDetail(mobile);
-                const lastSeenAt = mobile?.lastSeenAt;
                 const revoking = revokingBindingId === binding.id;
                 return (
-                  <li
-                    key={binding.id}
-                    className={`mcp-server-row center-server-row center-server-bound-mobile-row ${online ? "is-online" : "is-offline"}`}
-                  >
-                    <div className="center-server-row-main">
-                      <span className="mcp-server-name center-server-bound-mobile-name">
-                        <span
-                          className={`center-server-bound-mobile-status-dot ${online ? "is-online" : "is-offline"}`}
-                          aria-hidden
-                        />
-                        <Smartphone size={16} aria-hidden />
-                        {mobileLabel}
-                      </span>
-                      {mobileDetail ? (
-                        <span className="center-server-bound-mobile-detail">{mobileDetail}</span>
-                      ) : null}
-                      <span
-                        className={`center-server-bound-mobile-presence ${online ? "is-online" : "is-offline"}`}
-                      >
-                        {online ? "在线 · 可远程操控本机" : "离线 · 需手机连接 Server"}
-                      </span>
-                      <span className="center-server-bound-mobile-meta">
-                        绑定于 {formatLocalTime(binding.createdAt)}
-                      </span>
-                      {lastSeenAt ? (
-                        <span className="center-server-bound-mobile-meta">
-                          最近使用：{formatLocalTime(lastSeenAt)}
+                  <li key={binding.id} className="cs-list-item">
+                    <div className="cs-device">
+                      <span className={`cs-dot cs-dot--${online ? "online" : "offline"}`} aria-hidden />
+                      <div className="cs-device-copy">
+                        <span className="cs-device-name">
+                          <Smartphone size={14} strokeWidth={1.75} aria-hidden />
+                          {mobileLabel}
                         </span>
-                      ) : null}
+                        {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
+                        <span className="cs-device-meta">
+                          {online ? "在线" : "离线"} · 绑定于 {formatLocalTime(binding.createdAt)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mcp-server-actions">
-                      <button
-                        type="button"
-                        className="mcp-back-button center-server-unbind-button"
-                        disabled={actionBusy || revoking}
-                        onClick={() => void handleRevokeBinding(binding)}
-                      >
-                        <Unlink size={16} />
-                        {revoking ? "解绑中…" : "解绑"}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="cs-text-action is-muted"
+                      disabled={actionBusy || revoking}
+                      onClick={() => void handleRevokeBinding(binding)}
+                    >
+                      {revoking ? "解绑中" : "解绑"}
+                    </button>
                   </li>
                 );
               })}
             </ul>
           )}
         </section>
-      )}
+      ) : null}
 
-      {registered && isLive && (
-        <section className="mcp-list-section center-server-pairing-section">
-          <div className="mcp-list-toolbar">
-            <span className="mcp-list-toolbar-label">手机配对</span>
+      {registered && isLive ? (
+        <section className="cs-block">
+          <div className="cs-block-head">
+            <h2 className="cs-block-label">手机配对</h2>
             <button
               type="button"
-              className="mcp-add-button"
+              className="cs-btn cs-btn--ghost"
               disabled={actionBusy || pairingBusy}
               onClick={() => void handleCreatePairing()}
             >
-              <QrCode size={16} />
+              <QrCode size={15} strokeWidth={1.75} />
               生成配对码
             </button>
           </div>
 
           {!pairing ? (
-            <p className="mcp-list-empty">生成配对码后，手机 Eco App 扫码即可绑定</p>
+            <p className="cs-placeholder">Eco App 扫码即可绑定本机。</p>
           ) : (
-            <div className="center-server-pairing-card">
+            <div className="cs-pairing">
               {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
-                <p className="center-server-pairing-hint">
-                  当前地址为 localhost，手机无法访问。请改为局域网 IP（如 <code>http://192.168.x.x:3128</code>
-                  ）后重新生成。
+                <p className="cs-pairing-note">
+                  localhost 手机无法访问，请改用局域网 IP 后重新生成。
                 </p>
               ) : null}
-              <div className="center-server-pairing-qr">
+              <div className="cs-pairing-qr">
                 <QRCodeSVG
                   value={pairing.qrPayload}
-                  size={180}
+                  size={148}
                   level="M"
-                  includeMargin
+                  includeMargin={false}
                   role="img"
                   aria-label={`配对二维码 ${pairing.code}`}
                 />
               </div>
-              <p className="center-server-pairing-hint">
-                手机 Eco App 点「扫一扫连接」即可自动完成配置与绑定
-              </p>
-              <code className="center-server-pairing-code">{pairing.code}</code>
-              <p className="center-server-pairing-meta">过期时间：{formatLocalTime(pairing.expiresAt)}</p>
+              <code className="cs-pairing-code">{pairing.code}</code>
+              <p className="cs-pairing-expire">过期 {formatLocalTime(pairing.expiresAt)}</p>
             </div>
           )}
         </section>
-      )}
-    </>
+      ) : null}
+    </div>
   );
 }
 
@@ -512,23 +512,21 @@ function ServerEditor({
 }) {
   return (
     <>
-      <header className="mcp-editor-header">
-        <button type="button" className="mcp-back-button" onClick={onBack} disabled={busy}>
-          <ChevronLeft size={18} />
-          返回
-        </button>
+      <button type="button" className="cs-back" onClick={onBack} disabled={busy}>
+        <ChevronLeft size={16} strokeWidth={1.75} />
+        返回
+      </button>
+
+      <header className="cs-head cs-head--editor">
+        <h1 className="cs-title">{registered ? "服务配置" : "添加连接"}</h1>
+        <p className="cs-desc">填写地址并确认可达。</p>
       </header>
 
-      <div className="mcp-editor-title-block">
-        <h1>{registered ? "更新远程服务" : "添加远程服务"}</h1>
-        <p className="mcp-editor-hint">填写服务地址并确认可达后继续。</p>
-      </div>
-
-      <div className="mcp-editor-form">
-        <label className="mcp-field">
-          <span className="mcp-field-label">服务地址</span>
+      <div className="cs-form">
+        <label className="cs-field">
+          <span className="cs-field-label">服务地址</span>
           <input
-            className="mcp-field-input"
+            className="cs-input"
             type="text"
             value={form.serverUrl}
             disabled={busy}
@@ -538,15 +536,12 @@ function ServerEditor({
               setForm((current) => ({ ...current, serverUrl: event.target.value }));
             }}
           />
-          <span className="mcp-field-hint">
-            本地开发可填 <code>http://127.0.0.1:3128</code>
-          </span>
         </label>
 
-        <label className="mcp-field">
-          <span className="mcp-field-label">本机名称</span>
+        <label className="cs-field">
+          <span className="cs-field-label">本机名称</span>
           <input
-            className="mcp-field-input"
+            className="cs-input"
             type="text"
             value={form.deviceName ?? ""}
             disabled={busy}
@@ -555,22 +550,21 @@ function ServerEditor({
           />
         </label>
 
-        {serverReachable && !registered && <p className="settings-form-success">服务可达，可继续下一步。</p>}
+        {serverReachable && !registered ? <p className="cs-success">服务可达</p> : null}
+        {error ? <p className="cs-error">{error}</p> : null}
 
-        {error && <p className="settings-form-error">{error}</p>}
-
-        <div className="center-server-editor-actions">
+        <div className="cs-form-actions">
           <button
             type="button"
-            className="mcp-back-button center-server-test-button"
+            className="cs-btn cs-btn--ghost"
             disabled={busy || !form.serverUrl.trim()}
             onClick={onTestConnection}
           >
-            <RefreshCw size={16} className={testing ? "model-refresh-spin" : undefined} />
-            测试可达性
+            <RefreshCw size={15} strokeWidth={1.75} className={testing ? "cs-spin" : undefined} />
+            测试
           </button>
-          <button type="button" className="mcp-save-button" disabled={busy} onClick={onSave}>
-            {registered ? "保存" : "下一步"}
+          <button type="button" className="cs-btn" disabled={busy} onClick={onSave}>
+            {registered ? "保存" : "继续"}
           </button>
         </div>
       </div>
@@ -580,6 +574,7 @@ function ServerEditor({
 
 function AccountEditor({
   serverUrl,
+  registered,
   authMode,
   setAuthMode,
   email,
@@ -594,6 +589,7 @@ function AccountEditor({
   onSubmit,
 }: {
   serverUrl: string;
+  registered: boolean;
   authMode: AccountAuthMode;
   setAuthMode: (mode: AccountAuthMode) => void;
   email: string;
@@ -609,66 +605,62 @@ function AccountEditor({
 }) {
   return (
     <>
-      <header className="mcp-editor-header">
-        <button type="button" className="mcp-back-button" onClick={onBack} disabled={busy}>
-          <ChevronLeft size={18} />
-          返回
-        </button>
+      <button type="button" className="cs-back" onClick={onBack} disabled={busy}>
+        <ChevronLeft size={16} strokeWidth={1.75} />
+        返回
+      </button>
+
+      <header className="cs-head cs-head--editor">
+        <h1 className="cs-title">{registered ? "重新登录" : "绑定账号"}</h1>
+        <p className="cs-desc">
+          <code className="cs-inline-code">{serverUrl}</code>
+        </p>
       </header>
 
-      <div className="mcp-editor-title-block">
-        <h1>绑定账号</h1>
-        <p className="mcp-editor-hint">
-          目标服务：<code>{serverUrl}</code>
-        </p>
-      </div>
+      <div className="cs-form">
+        {!registered ? (
+          <div className="cs-tabs" role="tablist" aria-label="账号操作">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={authMode === "signup"}
+              className={authMode === "signup" ? "cs-tab is-active" : "cs-tab"}
+              disabled={busy}
+              onClick={() => setAuthMode("signup")}
+            >
+              注册
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={authMode === "signin"}
+              className={authMode === "signin" ? "cs-tab is-active" : "cs-tab"}
+              disabled={busy}
+              onClick={() => setAuthMode("signin")}
+            >
+              登录
+            </button>
+          </div>
+        ) : null}
 
-      <div className="mcp-editor-form">
-        <div className="center-server-auth-tabs">
-          <button
-            type="button"
-            className={
-              authMode === "signup"
-                ? "mcp-save-button center-server-auth-tab"
-                : "mcp-back-button center-server-auth-tab"
-            }
-            disabled={busy}
-            onClick={() => setAuthMode("signup")}
-          >
-            注册账号
-          </button>
-          <button
-            type="button"
-            className={
-              authMode === "signin"
-                ? "mcp-save-button center-server-auth-tab"
-                : "mcp-back-button center-server-auth-tab"
-            }
-            disabled={busy}
-            onClick={() => setAuthMode("signin")}
-          >
-            登录
-          </button>
-        </div>
-
-        {authMode === "signup" && (
-          <label className="mcp-field">
-            <span className="mcp-field-label">昵称（可选）</span>
+        {authMode === "signup" && !registered ? (
+          <label className="cs-field">
+            <span className="cs-field-label">昵称</span>
             <input
-              className="mcp-field-input"
+              className="cs-input"
               type="text"
               value={displayName}
               disabled={busy}
-              placeholder="显示名称"
+              placeholder="可选"
               onChange={(event) => setDisplayName(event.target.value)}
             />
           </label>
-        )}
+        ) : null}
 
-        <label className="mcp-field">
-          <span className="mcp-field-label">邮箱</span>
+        <label className="cs-field">
+          <span className="cs-field-label">邮箱</span>
           <input
-            className="mcp-field-input"
+            className="cs-input"
             type="email"
             autoComplete="username"
             value={email}
@@ -678,43 +670,62 @@ function AccountEditor({
           />
         </label>
 
-        <label className="mcp-field">
-          <span className="mcp-field-label">密码</span>
+        <label className="cs-field">
+          <span className="cs-field-label">密码</span>
           <input
-            className="mcp-field-input"
+            className="cs-input"
             type="password"
             autoComplete={authMode === "signup" ? "new-password" : "current-password"}
             value={password}
             disabled={busy}
-            placeholder={authMode === "signup" ? "设置登录密码" : "输入登录密码"}
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
 
-        {error && <p className="settings-form-error">{error}</p>}
+        {error ? <p className="cs-error">{error}</p> : null}
 
         <button
           type="button"
-          className="mcp-save-button"
+          className="cs-btn cs-btn--block"
           disabled={busy || !email.trim() || !password.trim()}
           onClick={onSubmit}
         >
-          <Link2 size={16} />
-          {authMode === "signup" ? "注册并绑定本机" : "登录并绑定本机"}
+          {authMode === "signup" ? "注册并绑定" : "登录并绑定"}
         </button>
       </div>
     </>
   );
 }
 
-function ConnectionStatusLine({ status }: { status: CenterServerConnectionStatus }) {
+function StatusMeta({
+  status,
+  needsReauth,
+}: {
+  status: CenterServerConnectionStatus;
+  needsReauth: boolean;
+}) {
+  if (needsReauth) {
+    return <span className="cs-service-status is-warn">会话已过期</span>;
+  }
   return (
-    <span className={`center-server-status is-${status.state}`}>
+    <span className={`cs-service-status is-${status.state}`}>
       {connectionStatusLabel(status.state)}
-      {status.state === "error" && status.lastError ? ` · ${status.lastError}` : ""}
       {status.state === "connected" && status.connectedAt ? ` · ${formatLocalTime(status.connectedAt)}` : ""}
     </span>
   );
+}
+
+function statusDotKind(status: CenterServerConnectionStatus): string {
+  if (status.state === "connected") {
+    return "online";
+  }
+  if (status.state === "connecting") {
+    return "pending";
+  }
+  if (status.state === "error") {
+    return "error";
+  }
+  return "offline";
 }
 
 function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsInput {
@@ -734,11 +745,11 @@ function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsIn
 function connectionStatusLabel(state: CenterServerConnectionStatus["state"]): string {
   switch (state) {
     case "disabled":
-      return "未连接";
+      return "未启用";
     case "disconnected":
       return "未连接";
     case "connecting":
-      return "连接中…";
+      return "连接中";
     case "connected":
       return "已连接";
     case "error":

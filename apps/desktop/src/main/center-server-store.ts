@@ -205,6 +205,27 @@ export class CenterServerStore {
       .run(message, new Date().toISOString());
   }
 
+  clearRefreshToken(): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET refresh_token = '', access_token = '', access_token_expires_at = '', updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(new Date().toISOString());
+  }
+
+  clearDeviceCredentials(): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET device_id = '', device_secret = '', refresh_token = '', access_token = '',
+             access_token_expires_at = '', last_error = '', updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(new Date().toISOString());
+  }
+
   private getRow(): CenterServerConfigRow | undefined {
     return this.db
       .prepare(

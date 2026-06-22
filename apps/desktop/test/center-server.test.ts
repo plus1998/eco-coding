@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   buildCenterServerWebSocketUrl,
+  CENTER_SERVER_REAUTH_MESSAGE,
+  isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
   validateCenterServerSettingsInput,
 } from "../src/shared/center-server";
@@ -18,4 +20,11 @@ test("validateCenterServerSettingsInput requires URL when enabled", () => {
   expect(() => validateCenterServerSettingsInput({ enabled: true, serverUrl: "" })).toThrow(
     /Center server URL is required/,
   );
+});
+
+test("isCenterServerAuthCredentialError detects refresh token failures", () => {
+  expect(isCenterServerAuthCredentialError("Refresh token is invalid or expired.")).toBe(true);
+  expect(isCenterServerAuthCredentialError("Device credentials are invalid.")).toBe(true);
+  expect(isCenterServerAuthCredentialError(CENTER_SERVER_REAUTH_MESSAGE)).toBe(true);
+  expect(isCenterServerAuthCredentialError("Connection timed out.")).toBe(false);
 });

@@ -538,6 +538,144 @@ test("center server client lists bindings, presence, and revokes bindings", asyn
   client.dispose();
 });
 
+test("center server client falls back to device secret when refresh token is invalid", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    refreshToken: "stale_refresh",
+    accessToken: "expired_access",
+    accessTokenExpiresAt: "2020-01-01T00:00:00.000Z",
+  });
+
+  const fetchCalls: string[] = [];
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    fetchCalls.push(url);
+    if (url.endsWith("/v1/auth/refresh")) {
+      return new Response(JSON.stringify({ error: "Refresh token is invalid or expired." }), { status: 401 });
+    }
+    if (url.endsWith("/v1/devices/token")) {
+      return new Response(
+        JSON.stringify({
+          device: {
+            id: "dev_1",
+            userId: "user_1",
+            kind: "desktop",
+            name: "Eco Desktop",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            lastSeenAt: null,
+            disabledAt: null,
+          },
+          tokens: {
+            accessToken: "device_access",
+            refreshToken: "device_refresh",
+            expiresAt: "2030-06-01T00:00:00.000Z",
+          },
+        }),
+        { status: 200 },
+      );
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 60_000,
+  });
+
+  await client.start();
+  expect(fetchCalls.some((url) => url.endsWith("/v1/auth/refresh"))).toBe(true);
+  expect(fetchCalls.some((url) => url.endsWith("/v1/devices/token"))).toBe(true);
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("device_refresh");
+  client.dispose();
+});
+
+test("center server client stops reconnecting when credentials are fully invalid", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    refreshToken: "stale_refresh",
+    accessToken: "expired_access",
+    accessTokenExpiresAt: "2020-01-01T00:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/auth/refresh") || url.endsWith("/v1/devices/token")) {
+      return new Response(JSON.stringify({ error: "Refresh token is invalid or expired." }), { status: 401 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 10,
+  });
+
+  await client.start();
+  expect(client.getSnapshot().status.state).toBe("error");
+  expect(client.getSnapshot().status.lastError).toContain("重新登录");
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(FakeWebSocket.instances.length).toBe(0);
+  client.dispose();
+});
+
+test("center server client maps invalid device credentials to reauth message", async () => {
+  const store = createFakeCenterServerStore({
+    enabled: true,
+    serverUrl: "http://127.0.0.1:8787",
+    deviceId: "dev_1",
+    deviceName: "Eco Desktop",
+    deviceSecret: "device_secret",
+    accessToken: "expired_access",
+    accessTokenExpiresAt: "2020-01-01T00:00:00.000Z",
+  });
+
+  const fetchImpl = async (input: string | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/devices/token")) {
+      return new Response(JSON.stringify({ error: "Device credentials are invalid." }), { status: 401 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  const eventCenter = new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" });
+  const client = new CenterServerDesktopClient({
+    store,
+    eventCenter,
+    fetch: fetchImpl as typeof fetch,
+    webSocketConstructor: FakeWebSocket as unknown as new (url: string) => FakeWebSocket,
+    now: fixedNow,
+    reconnectDelayMs: 10,
+  });
+
+  await client.start();
+  expect(client.getSnapshot().status.state).toBe("error");
+  expect(client.getSnapshot().status.lastError).toBe("登录已失效，请重新登录。");
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(FakeWebSocket.instances.length).toBe(0);
+  client.dispose();
+});
+
 function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {
   let settings: CenterServerSettingsSecret = {
     enabled: false,
@@ -589,6 +727,24 @@ function createFakeCenterServerStore(initial: Partial<CenterServerSettingsSecret
         ...settings,
         lastError: message,
       };
+    },
+    clearRefreshToken() {
+      settings = normalizeFakeSettings({
+        ...settings,
+        refreshToken: "",
+        accessToken: "",
+        accessTokenExpiresAt: "",
+      });
+    },
+    clearDeviceCredentials() {
+      settings = normalizeFakeSettings({
+        ...settings,
+        deviceId: "",
+        deviceSecret: "",
+        refreshToken: "",
+        accessToken: "",
+        accessTokenExpiresAt: "",
+      });
     },
   };
 

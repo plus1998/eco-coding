@@ -16,6 +16,8 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
+  CENTER_SERVER_REAUTH_MESSAGE,
+  isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
 } from "../shared/center-server";
 import type { EventCenterJsonRpcNotification, EventCenterJsonRpcResponse } from "../shared/event-center";
@@ -190,6 +192,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   }
 
   async signUpAndRegisterDesktop(request: CenterServerSignUpRequest): Promise<CenterServerAccountAuthResult> {
+    this.stop();
     const serverUrl = normalizeCenterServerHttpUrl(request.serverUrl);
     const auth = await this.requestJson<AccountAuthResponse>({
       serverUrl,
@@ -210,6 +213,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   }
 
   async signInAndRegisterDesktop(request: CenterServerSignInRequest): Promise<CenterServerAccountAuthResult> {
+    this.stop();
     const serverUrl = normalizeCenterServerHttpUrl(request.serverUrl);
     const auth = await this.requestJson<AccountAuthResponse>({
       serverUrl,
@@ -470,10 +474,11 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         };
       });
     } catch (error) {
+      const message = errorMessage(error);
       if (this.status.state === "connecting") {
-        this.failConnection(errorMessage(error));
+        this.failConnection(message);
       }
-      if (!this.intentionallyStopped) {
+      if (!this.intentionallyStopped && !isCenterServerAuthCredentialError(message)) {
         this.scheduleReconnect();
       }
     }
@@ -484,39 +489,54 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
       return settings.accessToken;
     }
     if (settings.refreshToken) {
-      const refreshed = await this.requestJson<TokenResponse>({
-        serverUrl: settings.serverUrl,
-        path: "/v1/auth/refresh",
-        method: "POST",
-        body: {
-          refreshToken: settings.refreshToken,
-        },
-      });
-      this.store.saveTokens({
-        accessToken: refreshed.accessToken,
-        ...(refreshed.refreshToken ? { refreshToken: refreshed.refreshToken } : {}),
-        accessTokenExpiresAt: refreshed.expiresAt,
-      });
-      return refreshed.accessToken;
+      try {
+        const refreshed = await this.requestJson<TokenResponse>({
+          serverUrl: settings.serverUrl,
+          path: "/v1/auth/refresh",
+          method: "POST",
+          body: {
+            refreshToken: settings.refreshToken,
+          },
+        });
+        this.store.saveTokens({
+          accessToken: refreshed.accessToken,
+          ...(refreshed.refreshToken ? { refreshToken: refreshed.refreshToken } : {}),
+          accessTokenExpiresAt: refreshed.expiresAt,
+        });
+        return refreshed.accessToken;
+      } catch (error) {
+        if (!settings.deviceId || !settings.deviceSecret || !isCenterServerAuthCredentialError(errorMessage(error))) {
+          throw error;
+        }
+        this.store.clearRefreshToken();
+        settings = this.store.getSettingsWithSecrets();
+      }
     }
     if (settings.deviceId && settings.deviceSecret) {
-      const tokenResponse = await this.requestJson<DeviceTokenResponse>({
-        serverUrl: settings.serverUrl,
-        path: "/v1/devices/token",
-        method: "POST",
-        body: {
-          deviceId: settings.deviceId,
-          deviceSecret: settings.deviceSecret,
-        },
-      });
-      this.store.saveTokens({
-        accessToken: tokenResponse.tokens.accessToken,
-        refreshToken: tokenResponse.tokens.refreshToken,
-        accessTokenExpiresAt: tokenResponse.tokens.expiresAt,
-      });
-      return tokenResponse.tokens.accessToken;
+      try {
+        const tokenResponse = await this.requestJson<DeviceTokenResponse>({
+          serverUrl: settings.serverUrl,
+          path: "/v1/devices/token",
+          method: "POST",
+          body: {
+            deviceId: settings.deviceId,
+            deviceSecret: settings.deviceSecret,
+          },
+        });
+        this.store.saveTokens({
+          accessToken: tokenResponse.tokens.accessToken,
+          refreshToken: tokenResponse.tokens.refreshToken,
+          accessTokenExpiresAt: tokenResponse.tokens.expiresAt,
+        });
+        return tokenResponse.tokens.accessToken;
+      } catch (error) {
+        if (isCenterServerAuthCredentialError(errorMessage(error))) {
+          throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+        }
+        throw error;
+      }
     }
-    throw new Error("Center server device credentials are missing.");
+    throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
   }
 
   private async requestJson<TResult = unknown>(input: {

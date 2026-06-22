@@ -195,3 +195,25 @@ export function isLocalhostCenterServerUrl(serverUrl: string): boolean {
 export function previewCenterServerSecret(value: string): string | undefined {
   return previewSecret(value);
 }
+
+export const CENTER_SERVER_REAUTH_MESSAGE = "登录已失效，请重新登录。";
+
+export function isCenterServerAuthCredentialError(message: string | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+  if (message === CENTER_SERVER_REAUTH_MESSAGE) {
+    return true;
+  }
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("refresh token") ||
+    lower.includes("invalid or expired") ||
+    lower.includes("credentials are missing") ||
+    lower.includes("credentials are invalid") ||
+    lower.includes("device credentials") ||
+    lower.includes("device is not active") ||
+    lower.includes("not authorized") ||
+    lower.includes("unauthorized")
+  );
+}

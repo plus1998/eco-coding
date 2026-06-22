@@ -46,6 +46,29 @@ test.skipIf(!sqliteAvailable)("center server store saves settings and preserves 
   expect(secrets.refreshToken).toBe("refresh_1");
 });
 
+test.skipIf(!sqliteAvailable)("center server store clearRefreshToken clears auth tokens only", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-clear-"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
+  store.saveSettings({
+    enabled: true,
+    serverUrl: "https://center.example.com/",
+    deviceId: "dev_1",
+    deviceName: "My Desktop",
+    deviceSecret: "secret_abc",
+    accessToken: "access_1",
+    refreshToken: "refresh_1",
+    accessTokenExpiresAt: "2030-01-01T00:00:00.000Z",
+  });
+
+  store.clearRefreshToken();
+  const secrets = store.getSettingsWithSecrets();
+  expect(secrets.deviceSecret).toBe("secret_abc");
+  expect(secrets.refreshToken).toBe("");
+  expect(secrets.accessToken).toBe("");
+  expect(secrets.accessTokenExpiresAt).toBe("");
+  expect(store.getSettings().settings.hasRefreshToken).toBe(false);
+});
+
 test.skipIf(!sqliteAvailable)(
   "center server store encrypts local secrets when a codec is configured",
   async () => {
