@@ -109,6 +109,7 @@ export { type EcoOrchestrationMode, isSubagentRole, SUBAGENT_ROLES, type Subagen
 type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
   close?: () => void;
   interrupt?: () => Promise<void>;
+  setPermissionMode?: (mode: "dontAsk" | "default" | "acceptEdits" | "plan") => Promise<void> | void;
   getContextUsage?: () => Promise<Record<string, unknown>>;
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
@@ -592,33 +593,6 @@ function buildExitPlanModeAnalysis(submission: { planFilePath?: string }): strin
     .join("\n");
 }
 
-const postPlanCaptureActivityMessageTypes = new Set(["stream_event", "assistant", "user", "tool_progress"]);
-
-/**
- * In the working defer protocol, nothing but the final `result` message follows the plan
- * capture. Any of these message types after capture means the CLI kept the agent loop running.
- */
-function isPostPlanCaptureActivityMessage(message: unknown): boolean {
-  return (
-    isRecord(message) &&
-    typeof message.type === "string" &&
-    postPlanCaptureActivityMessageTypes.has(message.type)
-  );
-}
-
-function isExitPlanModeRetryMessage(message: unknown): boolean {
-  if (!isRecord(message) || message.type !== "assistant") {
-    return false;
-  }
-  const inner = message.message;
-  if (!isRecord(inner) || !Array.isArray(inner.content)) {
-    return false;
-  }
-  return inner.content.some(
-    (block) => isRecord(block) && block.type === "tool_use" && block.name === "ExitPlanMode",
-  );
-}
-
 export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
   constructor(private readonly options: ClaudeAgentSdkDriverOptions) {}
 
@@ -670,7 +644,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, {
       prompt,
       permissionMode: "acceptEdits",
-      ...(isResume ? { approveDeferredExitPlanMode: true } : {}),
       allowedTools: [...executionAllowedTools],
       phaseAppend: `${
         universalProfile
@@ -905,7 +878,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     yield* this.runSingleSession(input, {
       prompt: executionPrompt,
       permissionMode: "acceptEdits",
-      ...(input.resume?.resumeSessionId ? { approveDeferredExitPlanMode: true } : {}),
       allowedTools: [...executionAllowedTools],
       phaseAppend: universalProfile
         ? `${buildUniversalPhaseAppend("execute")}\n${buildMainAgentHandsOnBoundaryAppend(handsOn, availability, universalDelegateOptions)}`
@@ -1032,7 +1004,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       pendingToolPermissionDecisions.push(decision);
     };
     let finalizedPlan: FinalizePlanPayload | undefined;
-    let exitPlanInterruptRequested = false;
     const exitPlanCaptureState = phase.planningPhase ? { capturedToolUseIds: new Set<string>() } : undefined;
     const onExitPlanMode =
       phase.planningPhase
@@ -1051,8 +1022,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         : undefined;
     const allowedSdkBuiltinAgentKeys = phase.planningPhase ? [SDK_PLAN_AGENT_KEY] : undefined;
     const approveDeferredExitPlanMode = !phase.planningPhase && phase.approveDeferredExitPlanMode === true;
+    const hookContext = this.options.hookContext;
     const shouldBuildHooks = Boolean(
-      this.options.hookContext ||
+      hookContext ||
         onExitPlanMode ||
         approveDeferredExitPlanMode ||
         dynamicAgentKeys ||
@@ -1110,6 +1082,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
                 ? { implicitReadAllowRoots: input.sdkSession.implicitReadAllowRoots }
                 : {}),
               ...(onExitPlanMode ? { onExitPlanMode } : {}),
+              ...(phase.planningPhase && this.options.hookContext?.awaitPlanApproval
+                ? { awaitPlanApproval: this.options.hookContext.awaitPlanApproval }
+                : {}),
               ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
               ...(approveDeferredExitPlanMode ? { approveDeferredExitPlanMode: true } : {}),
               ...(phase.planningPhase
@@ -1175,6 +1150,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const slashPrompt = phase.prompt.trim().startsWith("/");
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
+    let permissionModeApplied = false;
     for await (const message of query) {
       for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
         yield event;
@@ -1186,6 +1162,16 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           activeSessionId = sessionId;
           yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd);
         }
+      }
+
+      if (
+        !permissionModeApplied &&
+        sessionCaptured &&
+        phase.permissionMode !== "plan" &&
+        typeof query.setPermissionMode === "function"
+      ) {
+        permissionModeApplied = true;
+        await query.setPermissionMode(phase.permissionMode);
       }
 
       const checkpointId = readSdkUserMessageCheckpointId(message);
@@ -1224,28 +1210,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           searchRoots: [input.workspacePath, sessionCwd],
           getPhaseTranscript: () => phaseTranscriptBox.text,
         });
-      }
-
-      // Defer termination gap (claude-code 2.1.168, observed with OpenAI-protocol models):
-      // after the PreToolUse hook returns `defer`, the CLI keeps the agent loop running and
-      // feeds "Tool permission request failed: Error: Stream closed" back to the model, which
-      // retries ExitPlanMode until the user cancels. The plan is already captured at this
-      // point, so the planning session must end here instead of relying on the CLI.
-      if (onExitPlanMode && finalizedPlan && isPostPlanCaptureActivityMessage(message)) {
-        if (!exitPlanInterruptRequested) {
-          exitPlanInterruptRequested = true;
-          if (typeof query.interrupt === "function") {
-            query.interrupt().catch(() => query.close?.());
-          } else {
-            query.close?.();
-            break;
-          }
-        } else if (isExitPlanModeRetryMessage(message)) {
-          // A new ExitPlanMode attempt after the interrupt request means the CLI is not
-          // honoring control requests either; hard-close the transport to end the phase.
-          query.close?.();
-          break;
-        }
       }
 
       if (input.signal.aborted) {

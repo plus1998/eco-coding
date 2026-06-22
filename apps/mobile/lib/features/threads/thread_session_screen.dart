@@ -86,7 +86,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final thread = session.thread;
     if (thread == null) return null;
     if (session.pendingPlan != null &&
-        thread.status == 'awaiting_plan' &&
         session.pendingPlan!.threadId == thread.id) {
       return 'plan:${session.pendingPlan!.threadId}';
     }
@@ -112,8 +111,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   bool _isAwaitingPlan(ThreadSummary? thread, ThreadSessionState session) {
     if (thread == null) return false;
-    return thread.status == 'awaiting_plan' &&
-        session.pendingPlan?.threadId == thread.id;
+    return session.pendingPlan?.threadId == thread.id;
   }
 
   @override
@@ -532,8 +530,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (!_needsApprovalSheet(session)) return;
     final thread = session.thread;
     if (session.pendingPlan != null &&
-        thread?.status == 'awaiting_plan' &&
-        session.pendingPlan!.threadId == thread!.id) {
+        session.pendingPlan!.threadId == thread?.id) {
       showPlanApprovalSheet(
         context: context,
         plan: session.pendingPlan!,

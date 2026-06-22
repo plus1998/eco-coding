@@ -122,6 +122,10 @@ export interface EcoHookContext {
     request: SdkAskUserQuestionRequest & { toolUseId: string },
   ) => Promise<Record<string, unknown>>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
+  /** Blocks until the user approves or denies ExitPlanMode (Eco PermissionRequest bridge). */
+  awaitPlanApproval?: (
+    request: SdkExitPlanModeRequest & { toolUseId: string },
+  ) => Promise<PlanApprovalDecision>;
   /** Tracks ExitPlanMode captures to avoid duplicate Pre/Post hook submissions. */
   exitPlanCaptureState?: { capturedToolUseIds: Set<string> };
   /** Execution resume: auto-approve the deferred ExitPlanMode call (official defer protocol step 5). */
@@ -169,6 +173,8 @@ export interface SdkExitPlanModeRequest {
   allowedPrompts?: unknown;
   rawInput: Record<string, unknown>;
 }
+
+export type PlanApprovalDecision = "approved" | "denied";
 
 export function parseExitPlanModeOutput(
   response: unknown,
@@ -302,14 +308,81 @@ async function delegateExitPlanModeCapture(
 }
 
 /**
- * PreToolUse (Eco two-phase plan): capture injected plan, then `defer` to end the planning session.
- * SDK layers this hook does NOT replace:
- * - `allowedTools` = allow-rules (auto-approve listed tools at evaluation step 5), NOT tool visibility.
- * - `disallowedTools` bare names = remove tools from model context.
- * - `canUseTool` = runtime approval gate for unresolved tools.
- * See docs/agent-sdk-tools-and-permissions.md
- * Do not list ExitPlanMode in `allowedTools` (would add an allow-rule). Eco ends phase 1 via `defer`, not PermissionRequest `allow`.
+ * PermissionRequest (Eco plan approval): capture plan, block on integrator UI, then allow or deny.
+ * Aligns with SDK user-input / Plannotator: approval resolves in the hook, not via defer + deny.
  */
+export function createExitPlanModeAwaitApprovalHook(
+  awaitApproval: NonNullable<EcoHookContext["awaitPlanApproval"]>,
+  capture?: EcoHookContext["onExitPlanMode"],
+  state?: { capturedToolUseIds: Set<string> },
+  options: { workspacePath?: string; getPhaseTranscript?: () => string } = {},
+): HookCallback | undefined {
+  return async (input) => {
+    if (input.hook_event_name !== "PermissionRequest") {
+      return {};
+    }
+    const requestInput = input as PermissionRequestHookInput;
+    if (requestInput.tool_name !== "ExitPlanMode") {
+      return {};
+    }
+    const toolInput = isRecord(requestInput.tool_input) ? requestInput.tool_input : {};
+    const injectedInput = mergeExitPlanModeInjectedFields(
+      toolInput,
+      requestInput as unknown as PreToolUseHookInput,
+    );
+    const hookRecord = requestInput as unknown as Record<string, unknown>;
+    const transcriptPath = readHookTranscriptPath(hookRecord);
+    const parsed = parseExitPlanModeInput(injectedInput);
+    const resolved = await resolveExitPlanModeSubmission(parsed, {
+      searchRoots: [options.workspacePath, requestInput.cwd],
+      ...(transcriptPath ? { transcriptPath } : {}),
+      ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
+    });
+    const rawToolUseId = hookRecord.tool_use_id;
+    const toolUseId =
+      (typeof rawToolUseId === "string" && rawToolUseId.trim()) ||
+      `permission:${requestInput.session_id}`;
+    if (!resolved.plan.trim()) {
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PermissionRequest",
+          decision: {
+            behavior: "deny",
+            message: "ExitPlanMode requires plan content before Eco can present it for approval.",
+            interrupt: true,
+          },
+        },
+      };
+    }
+    if (capture) {
+      await delegateExitPlanModeCapture(capture, state, { ...resolved, toolUseId });
+    }
+    const decision = await awaitApproval({ ...resolved, toolUseId, rawInput: resolved.rawInput });
+    if (decision === "approved") {
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PermissionRequest",
+          decision: {
+            behavior: "allow",
+            updatedInput: mergeExitPlanModeInjectedFields(toolInput, requestInput as unknown as PreToolUseHookInput),
+          },
+        },
+      };
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PermissionRequest",
+        decision: {
+          behavior: "deny",
+          message: "User declined the plan in Eco.",
+          interrupt: false,
+        },
+      },
+    };
+  };
+}
+
+/** @deprecated Defer-based plan capture removed; use createExitPlanModeAwaitApprovalHook. */
 export function createExitPlanModePreToolHook(
   delegate: EcoHookContext["onExitPlanMode"],
   state?: { capturedToolUseIds: Set<string> },
@@ -354,9 +427,7 @@ export function createExitPlanModePreToolHook(
 }
 
 /**
- * PermissionRequest fallback for ExitPlanMode.
- * Plannotator (single-session) returns `allow` here after the user approves in its hook UI.
- * Eco (two-phase) captures the plan and returns `deny` — approval happens in Eco UI, then a separate execution session runs.
+ * @deprecated Defer + deny path removed; use createExitPlanModeAwaitApprovalHook.
  */
 export function createExitPlanModePermissionRequestHook(
   delegate: EcoHookContext["onExitPlanMode"],
@@ -1267,19 +1338,19 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
     ...(ctx.workspacePath ? { workspacePath: ctx.workspacePath } : {}),
     ...(ctx.getPhaseTranscript ? { getPhaseTranscript: ctx.getPhaseTranscript } : {}),
   };
-  pushHook(
-    hooks,
-    "PreToolUse",
-    createExitPlanModePreToolHook(ctx.onExitPlanMode, ctx.exitPlanCaptureState, exitPlanHookOptions),
-    "ExitPlanMode",
-  );
-  pushHook(
-    hooks,
-    "PermissionRequest",
-    createExitPlanModePermissionRequestHook(ctx.onExitPlanMode, ctx.exitPlanCaptureState, exitPlanHookOptions),
-    "ExitPlanMode",
-  );
-  if (!ctx.onExitPlanMode && ctx.approveDeferredExitPlanMode) {
+  if (ctx.awaitPlanApproval) {
+    pushHook(
+      hooks,
+      "PermissionRequest",
+      createExitPlanModeAwaitApprovalHook(
+        ctx.awaitPlanApproval,
+        ctx.onExitPlanMode,
+        ctx.exitPlanCaptureState,
+        exitPlanHookOptions,
+      ),
+      "ExitPlanMode",
+    );
+  } else if (ctx.approveDeferredExitPlanMode) {
     pushHook(hooks, "PreToolUse", createExitPlanModeResumeApproveHook(), "ExitPlanMode");
   }
   pushHook(hooks, "PreToolUse", createNormalizeSubagentPreToolHook(), "Agent|Task");

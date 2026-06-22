@@ -131,6 +131,7 @@ import {
   type ThreadModelUsageEntry,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
+  type PlanApprovalRequest,
   type ThreadRetryRequest,
   type ThreadRetryResult,
   type ThreadRevertAppliedDiffResult,
@@ -339,9 +340,17 @@ import {
 } from "./thread-metrics-runtime";
 import { resolveThreadPendingPlanDismissal } from "./thread-pending-plan-dismissal";
 import { buildThreadPendingPlanView } from "./thread-pending-plan-view";
+import {
+  cancelPlanApprovalsForThread,
+  getPendingPlanApprovalForThread,
+  registerPendingPlanApproval,
+  resolvePendingPlanApproval,
+} from "./plan-approval-bridge";
+import { hasPlanExecutionIntent, setPlanExecutionIntent, takePlanExecutionIntent } from "./plan-execution-intent";
 import { resolveThreadPlanApprovalRuntime } from "./thread-plan-approval-runtime";
 import { applyThreadPlanReadyEffects } from "./thread-plan-ready-effects";
 import { runThreadRequestWithLifecycleAutoRetry } from "./thread-run-attempt";
+import { resolveOrphanedThreadRecoveryAction } from "./thread-orphan-recovery";
 import { type FinalizeThreadRunCleanupInput, finalizeThreadRunCleanup } from "./thread-run-cleanup";
 import {
   type ApplyThreadRunDecisionEffectsInput,
@@ -2292,14 +2301,38 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadApprovePlan, async (payload: unknown) => {
-    const { threadId } = parseThreadApprovePlanPayload(payload);
+    const request = parseThreadApprovePlanPayload(payload);
+    const { threadId } = request;
+    const pendingBridge = getPendingPlanApprovalForThread(threadId);
+    const pendingRuntimeConfig = request.runtimeConfig
+      ? parseThreadRuntimeConfigInput(request.runtimeConfig)
+      : undefined;
+    if (pendingRuntimeConfig) {
+      roleRoutesForThreadConfig(getModelSettingsSnapshot(), pendingRuntimeConfig);
+    }
+
     const approval = resolveThreadPlanApprovalRuntime(threadId, {
       getThread: (id) => conversationStore.getThread(id),
       hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
       getPendingPlan: (id) => conversationStore.getPendingPlan(id),
-      resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
+      getPendingPlanApproval: (id) => getPendingPlanApprovalForThread(id),
+      resolveRoleRoutes: (id) =>
+        pendingRuntimeConfig
+          ? roleRoutesForThreadConfig(getModelSettingsSnapshot(), pendingRuntimeConfig)
+          : resolveRoleRoutesForThread(id),
       resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
     });
+
+    if (pendingRuntimeConfig) {
+      conversationStore.saveThreadRuntimeConfig(threadId, pendingRuntimeConfig);
+    }
+
+    if (pendingBridge) {
+      if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
+        throw new Error("No pending plan approval is active for this thread.");
+      }
+      return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approval.thread) };
+    }
 
     updateThread(threadId, {
       status: "running",
@@ -2314,6 +2347,11 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.threadDismissPlan, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
+    }
+    const pendingBridge = getPendingPlanApprovalForThread(threadId);
+    if (pendingBridge) {
+      resolvePendingPlanApproval(pendingBridge.toolUseId, "denied");
+      return { thread: conversationStore.getThread(threadId) };
     }
     await dismissPendingPlan(
       threadId,
@@ -2450,6 +2488,7 @@ function registerIpcHandlers(): void {
       updateThread(threadId, { status: "running", message: "正在停止…" });
       cancelClarificationsForThread(threadId, "cancelled by user");
       cancelBashApprovalsForThread(threadId, "cancelled by user");
+      cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
       return;
     }
     const thread = conversationStore.getThread(threadId);
@@ -2677,10 +2716,17 @@ function runThreadRequestWithAutoRetry(
   });
 }
 
+function cancelPlanApprovalsForThreadWithStoreCleanup(threadId: string, reason: string): void {
+  if (cancelPlanApprovalsForThread(threadId, reason)) {
+    conversationStore.clearPendingPlan(threadId);
+  }
+}
+
 async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput): Promise<void> {
   await finalizeThreadRunCleanup(input, {
     cancelClarifications: cancelClarificationsForThread,
     cancelBashApprovals: cancelBashApprovalsForThread,
+    cancelPlanApprovals: cancelPlanApprovalsForThreadWithStoreCleanup,
     resetSdkStream: (threadId) => sdkStreamBridge.resetThread(threadId),
     flushUsageUpdates: (threadId) => usageLedgerCoordinator.flushUsageUpdates(threadId),
     finishActiveRun,
@@ -3200,14 +3246,19 @@ async function runCodingThreadPlanning(
                 emitActivity: emitSdkStreamActivity,
                 onEvent: (event) => {
                   if (event.type === "plan.ready" && isPlanReadyPayload(event.payload)) {
-                    captureThreadPlanReady({
-                      threadId: thread.id,
-                      workspacePath: workspace.path,
-                      worktreePath: cwd,
-                      routesJson: JSON.stringify(routes),
-                      payload: event.payload,
-                      awaitingPlanMessage: "计划已生成，请确认是否执行。",
-                    });
+                    if (
+                      !getPendingPlanApprovalForThread(thread.id) &&
+                      !hasPlanExecutionIntent(thread.id)
+                    ) {
+                      captureThreadPlanReady({
+                        threadId: thread.id,
+                        workspacePath: workspace.path,
+                        worktreePath: cwd,
+                        routesJson: JSON.stringify(routes),
+                        payload: event.payload,
+                        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+                      });
+                    }
                   }
                 },
               });
@@ -3223,7 +3274,8 @@ async function runCodingThreadPlanning(
     );
 
     const planningDecision = resolvePlanningRunOutcome(planningOutcome, {
-      hasPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+      hasPendingPlan:
+        Boolean(conversationStore.getPendingPlan(thread.id)) && !hasPlanExecutionIntent(thread.id),
     });
 
     if (
@@ -3247,6 +3299,7 @@ async function runCodingThreadPlanning(
     cancelClarificationsForThread(thread.id, errorMessage(error));
     markThreadInterrupted(thread.id, errorMessage(error));
   } finally {
+    const executionIntent = takePlanExecutionIntent(thread.id);
     const worktreePath = resolveThreadWorktreePath(thread.id);
     await finalizeMainThreadRunCleanup({
       threadId: thread.id,
@@ -3254,6 +3307,13 @@ async function runCodingThreadPlanning(
       cancelClarificationsReason: "run finished",
       idleFallbackMessage: "计划阶段已结束。",
     });
+    if (executionIntent) {
+      void runCodingThreadExecution(
+        thread.id,
+        executionIntent.runtimeConfig,
+        executionIntent.roleRoutes ? { routesOverride: executionIntent.roleRoutes } : undefined,
+      );
+    }
   }
 }
 
@@ -3701,7 +3761,7 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
   if (status === "running" || status === "queued" || status === "awaiting_plan") {
     return true;
   }
-  return Boolean(getPendingClarificationForThread(threadId) || getPendingBashApprovalForThread(threadId));
+  return Boolean(getPendingClarificationForThread(threadId) || getPendingBashApprovalForThread(threadId) || getPendingPlanApprovalForThread(threadId));
 }
 
 function buildThreadFollowUpMutationResult(followUp: ThreadPendingFollowUp): ThreadFollowUpMutationResult {
@@ -3863,10 +3923,22 @@ function recoverOrphanedRunningThreads(): void {
     if (!activeRunRuntimeState.hasRun(thread.id)) {
       settleRecoveredLifecycleRecords(thread.id, "failed");
     }
-    if (thread.status !== "running" && thread.status !== "queued") {
+  }
+  for (const thread of conversationStore.listThreads()) {
+    if (activeRunRuntimeState.hasRun(thread.id)) {
       continue;
     }
-    if (activeRunRuntimeState.hasRun(thread.id)) {
+    const pendingPlan = conversationStore.getPendingPlan(thread.id);
+    const recoveryAction = resolveOrphanedThreadRecoveryAction({
+      status: thread.status,
+      hasActiveRun: false,
+      hasPendingPlan: Boolean(pendingPlan),
+    });
+    if (recoveryAction === "awaiting_plan") {
+      restoreThreadAwaitingPlanAfterRecovery(thread.id);
+      continue;
+    }
+    if (recoveryAction !== "idle") {
       continue;
     }
     updateThread(thread.id, {
@@ -3875,6 +3947,26 @@ function recoverOrphanedRunningThreads(): void {
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
   }
+}
+
+function restoreThreadAwaitingPlanAfterRecovery(threadId: string): void {
+  const pendingPlan = conversationStore.getPendingPlan(threadId);
+  if (!pendingPlan) {
+    return;
+  }
+  const runtimeConfig = disableThreadPlanMode(threadId);
+  updateThread(threadId, {
+    status: "awaiting_plan",
+    message: "计划已生成，请确认是否执行。",
+  });
+  emitThreadEvent(threadId, "thread.awaiting_plan", "已从异常退出恢复，待批准计划。", "system", false, {
+    plan: {
+      userPrompt: pendingPlan.userPrompt,
+      analysis: pendingPlan.analysis,
+      plan: pendingPlan.plan,
+    },
+    ...(runtimeConfig ? { runtimeConfig } : {}),
+  });
 }
 
 function settleRecoveredLifecycleRecords(
@@ -5709,6 +5801,7 @@ function emitSubagentTimingUpdated(threadId: string): void {
 
 interface EmitThreadEventExtras {
   plan?: ThreadLiveEvent["plan"];
+  planApproval?: ThreadLiveEvent["planApproval"];
   clarification?: ThreadLiveEvent["clarification"];
   bashApproval?: ThreadLiveEvent["bashApproval"];
   followUp?: ThreadLiveEvent["followUp"];
@@ -5746,6 +5839,7 @@ function emitThreadEvent(
     !trimmed &&
     !allowEmptyStream &&
     !extras?.plan &&
+    !extras?.planApproval &&
     !extras?.clarification &&
     !extras?.bashApproval &&
     !extras?.followUp &&
@@ -5812,6 +5906,16 @@ function emitThreadEvent(
     }
   }
 
+  if (type.startsWith("plan_approval.")) {
+    const thread = conversationStore.getThread(threadId);
+    if (thread) {
+      patchThreadSummary(threadId, {
+        message: displayMessage,
+        status: type === "plan_approval.requested" ? "running" : thread.status,
+      });
+    }
+  }
+
   const payload: ThreadLiveEvent = {
     threadId,
     type,
@@ -5829,6 +5933,9 @@ function emitThreadEvent(
   }
   if (extras?.bashApproval) {
     payload.bashApproval = extras.bashApproval;
+  }
+  if (extras?.planApproval) {
+    payload.planApproval = extras.planApproval;
   }
   if (extras?.followUp) {
     payload.followUp = extras.followUp;
@@ -6119,6 +6226,77 @@ function recordCompactionLedgerBoundary(
 
 function createThreadHookContext(threadId: string): EcoHookContext {
   return {
+    awaitPlanApproval: async (request) => {
+      const thread = conversationStore.getThread(threadId);
+      if (!thread) {
+        throw new Error("Thread was not found.");
+      }
+      const worktreePlan = activeRunRuntimeState.worktreePlan(threadId);
+      const worktreePath = worktreePlan?.worktreePath ?? thread.workspacePath;
+      const roleRoutes = resolveRoleRoutesForThread(threadId);
+      const analysis = [
+        "Claude official Plan Mode submitted this plan via ExitPlanMode.",
+        request.planFilePath ? `Plan file: ${request.planFilePath}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const planPayload = {
+        userPrompt: thread.prompt,
+        analysis,
+        plan: request.plan,
+        ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
+      };
+      applyThreadPlanReadyEffects({
+        threadId,
+        payload: planPayload,
+        workspacePath: thread.workspacePath,
+        worktreePath,
+        routesJson: JSON.stringify(roleRoutes),
+        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+        effects: {
+          savePendingPlan: (plan) => {
+            conversationStore.savePendingPlan(plan);
+          },
+          emitAwaitingPlan: () => {
+            // Bridge path keeps the thread running until the user approves.
+          },
+        },
+      });
+      const approvalRequest: PlanApprovalRequest = {
+        toolUseId: request.toolUseId,
+        threadId,
+        ...planPayload,
+      };
+      updateThread(threadId, { status: "running", message: "计划待你确认…" });
+      emitThreadEvent(threadId, "plan_approval.requested", "计划待你确认。", "planner", false, {
+        plan: planPayload,
+        planApproval: approvalRequest,
+      });
+      const decision = await registerPendingPlanApproval(threadId, approvalRequest);
+      if (decision === "approved") {
+        const approval = resolveThreadPlanApprovalRuntime(threadId, {
+          getThread: (id) => conversationStore.getThread(id),
+          hasActiveRun: (id) => activeRunRuntimeState.hasRun(id),
+          getPendingPlan: (id) => conversationStore.getPendingPlan(id),
+          getPendingPlanApproval: (id) => getPendingPlanApprovalForThread(id),
+          resolveRoleRoutes: (id) => resolveRoleRoutesForThread(id),
+          resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
+        });
+        setPlanExecutionIntent(threadId, {
+          runtimeConfig: approval.runtimeConfig,
+          roleRoutes: approval.roleRoutes,
+        });
+        emitThreadEvent(threadId, "plan_approval.approved", "已批准计划。", "user", false, {
+          planApproval: approvalRequest,
+        });
+        return "approved";
+      }
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "plan_approval.denied", "已忽略计划。", "user", false, {
+        planApproval: approvalRequest,
+      });
+      return "denied";
+    },
     askUserQuestion: async (parsed) => {
       updateThread(threadId, { status: "running", message: "等待你的回答…" });
       const clarificationRequest: ThreadLiveEvent["clarification"] = {

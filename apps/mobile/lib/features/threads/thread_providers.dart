@@ -252,8 +252,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         }
       }
 
-      final awaitingPlan = thread?.status == 'awaiting_plan';
-      final plan = awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
+      final plan = await rpc.getPendingPlan(threadId);
       final bash = await rpc.getPendingBashApproval(threadId);
       final clarification = await rpc.getPendingClarification(threadId);
       ThreadRunProjectionSnapshot? projection;
@@ -476,10 +475,13 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     }
 
     if (event.kind == 'thread.plan') {
-      if (live.type == 'thread.plan_cleared' || live.type == 'thread.completed') {
+      if (live.type == 'thread.plan_cleared' ||
+          live.type == 'thread.completed' ||
+          live.type == 'plan_approval.denied') {
         state = state.copyWith(clearPlan: true);
       } else if (live.type == 'thread.awaiting_plan' ||
-          live.type == 'thread.execution_failed') {
+          live.type == 'thread.execution_failed' ||
+          live.type == 'plan_approval.requested') {
         if (live.plan != null) {
           state = state.copyWith(pendingPlan: live.plan);
         }
@@ -520,11 +522,15 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           }
         }
         if (thread == null) return;
-        if (thread.status != 'awaiting_plan' && state.pendingPlan != null) {
+        final pendingPlanActive = state.pendingPlan != null;
+        if (pendingPlanActive &&
+            thread.status != 'awaiting_plan' &&
+            thread.status != 'running') {
           state = state.copyWith(clearPlan: true, thread: thread);
           return;
         }
-        if (thread.status == 'awaiting_plan' && state.pendingPlan == null) {
+        if ((thread.status == 'awaiting_plan' || thread.status == 'running') &&
+            state.pendingPlan == null) {
           ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
             if (!mounted) return;
             state = state.copyWith(
@@ -550,8 +556,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         break;
       }
     }
-    final awaitingPlan = thread?.status == 'awaiting_plan';
-    final plan = awaitingPlan ? await rpc.getPendingPlan(threadId) : null;
+    final plan = await rpc.getPendingPlan(threadId);
     final bash = await rpc.getPendingBashApproval(threadId);
     final clarification = await rpc.getPendingClarification(threadId);
     final followUps = await rpc.followUpList(threadId);

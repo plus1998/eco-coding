@@ -196,10 +196,18 @@ export function isEventCenterInvokeParams(value: unknown): value is EventCenterI
 const THREAD_PLAN_LIVE_EVENT_TYPES = new Set([
   "thread.awaiting_plan",
   "thread.plan_cleared",
+  "plan_approval.requested",
+  "plan_approval.approved",
+  "plan_approval.denied",
 ]);
 
 export function isThreadPlanLiveEvent(event: ThreadLiveEvent): boolean {
-  return Boolean(event.plan) || THREAD_PLAN_LIVE_EVENT_TYPES.has(event.type);
+  return (
+    Boolean(event.plan) ||
+    Boolean(event.planApproval) ||
+    THREAD_PLAN_LIVE_EVENT_TYPES.has(event.type) ||
+    event.type.startsWith("plan_approval.")
+  );
 }
 
 export function classifyThreadLiveEventForCenter(event: ThreadLiveEvent): ThreadEventCenterEventKind {

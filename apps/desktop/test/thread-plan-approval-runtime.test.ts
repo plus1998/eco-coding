@@ -60,9 +60,30 @@ test("resolveThreadPlanApprovalRuntime rejects invalid approval state before lau
       services({ getThread: () => ({ ...thread, status: "idle" }) }),
     ),
   ).toThrow("This thread is not waiting for plan approval.");
-  expect(() => resolveThreadPlanApprovalRuntime(thread.id, services({ hasActiveRun: () => true }))).toThrow(
-    "Thread is already running.",
-  );
+  expect(() =>
+    resolveThreadPlanApprovalRuntime(
+      thread.id,
+      services({
+        hasActiveRun: () => true,
+        getPendingPlanApproval: () => undefined,
+      }),
+    ),
+  ).toThrow("Thread is already running.");
+  expect(() =>
+    resolveThreadPlanApprovalRuntime(
+      thread.id,
+      services({
+        hasActiveRun: () => true,
+        getPendingPlanApproval: () => ({
+          toolUseId: "tool_plan",
+          threadId: thread.id,
+          userPrompt: thread.prompt,
+          analysis: pendingPlan.analysis,
+          plan: pendingPlan.plan,
+        }),
+      }),
+    ),
+  ).not.toThrow();
   expect(() =>
     resolveThreadPlanApprovalRuntime(thread.id, services({ getPendingPlan: () => undefined })),
   ).toThrow("找不到待批准的计划。");

@@ -2010,11 +2010,37 @@ test("ClaudeAgentSdkDriver forwards excludeDynamicSections to systemPrompt", asy
   });
 });
 
+async function invokeExitPlanPermissionHook(
+  options: Record<string, unknown>,
+  plan: string,
+): Promise<void> {
+  const hooks = options.hooks as
+    | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
+    | undefined;
+  const exitPlanHook = hooks?.PermissionRequest?.find((matcher) => matcher.matcher === "ExitPlanMode")
+    ?.hooks[0];
+  await exitPlanHook?.(
+    {
+      hook_event_name: "PermissionRequest",
+      tool_name: "ExitPlanMode",
+      tool_input: { plan },
+      tool_use_id: "tool_exit_plan_1",
+      session_id: "sess-plan",
+      cwd: "/tmp/workspace",
+    },
+    undefined,
+    { signal: new AbortController().signal },
+  );
+}
+
 test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPlanMode", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
+    hookContext: {
+      awaitPlanApproval: async () => "approved",
+    },
     loadSdk: async () => ({
       query: ({ options }) => {
         capturedOptions.push(options);
@@ -2026,29 +2052,7 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
               session_id: "sess-plan",
               uuid: "init-plan",
             };
-            const hooks = options.hooks as
-              | Partial<
-                  Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>
-                >
-              | undefined;
-            const exitPlanHook = hooks?.PreToolUse?.find((matcher) => matcher.matcher === "ExitPlanMode")
-              ?.hooks[0];
-            await exitPlanHook?.(
-              {
-                hook_event_name: "PreToolUse",
-                tool_name: "ExitPlanMode",
-                tool_input: {
-                  allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
-                },
-                tool_use_id: "tool_exit_plan",
-                session_id: "sess-plan",
-                cwd: "/tmp/workspace",
-                plan: "## Summary\n\nShip the official plan.",
-                planFilePath: "/tmp/workspace/.claude/plans/plan.md",
-              },
-              "tool_exit_plan",
-              { signal: new AbortController().signal },
-            );
+            await invokeExitPlanPermissionHook(options, "## Summary\n\nShip the official plan.");
             yield {
               type: "result",
               subtype: "success",
@@ -2091,7 +2095,6 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({
     plan: "## Summary\n\nShip the official plan.",
-    planFilePath: ".claude/plans/plan.md",
   });
 });
 
@@ -2150,72 +2153,38 @@ test("ClaudeAgentSdkDriver planning captures plan from deferred_tool_use result 
   });
 });
 
-async function invokeExitPlanHook(options: Record<string, unknown>, plan: string): Promise<void> {
-  const hooks = options.hooks as
-    | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
-    | undefined;
-  const exitPlanHook = hooks?.PreToolUse?.find((matcher) => matcher.matcher === "ExitPlanMode")?.hooks[0];
-  await exitPlanHook?.(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "ExitPlanMode",
-      tool_input: { plan },
-      tool_use_id: "tool_exit_plan_1",
-      session_id: "sess-plan-runaway",
-      cwd: "/tmp/workspace",
-    },
-    "tool_exit_plan_1",
-    { signal: new AbortController().signal },
-  );
-}
-
-test("ClaudeAgentSdkDriver planning interrupts the session when the CLI continues after ExitPlanMode capture", async () => {
-  let interruptCalls = 0;
-  let closeCalls = 0;
+test("ClaudeAgentSdkDriver planning completes after PermissionRequest approval", async () => {
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
+    hookContext: {
+      awaitPlanApproval: async () => "approved",
+    },
     loadSdk: async () => ({
       query: ({ options }) => ({
         async *[Symbol.asyncIterator]() {
           yield {
             type: "system",
             subtype: "init",
-            session_id: "sess-plan-runaway",
-            uuid: "init-plan-runaway",
+            session_id: "sess-plan",
+            uuid: "init-plan",
           };
-          await invokeExitPlanHook(options, "## Summary\n\nShip the captured plan.");
-          // Broken defer termination: the CLI starts a new model turn instead of
-          // ending the session with a deferred_tool_use result.
-          yield {
-            type: "assistant",
-            session_id: "sess-plan-runaway",
-            uuid: "assistant-after-capture",
-            message: {
-              content: [{ type: "text", text: "提交审批时遇到工具侧内部错误，我再试一次。" }],
-            },
-          };
-          // The CLI honors the interrupt request and ends the session.
+          await invokeExitPlanPermissionHook(options, "## Summary\n\nShip the captured plan.");
           yield {
             type: "result",
             subtype: "success",
-            session_id: "sess-plan-runaway",
-            uuid: "result-plan-runaway",
+            session_id: "sess-plan",
+            uuid: "result-plan",
           };
         },
-        interrupt: async () => {
-          interruptCalls += 1;
-        },
-        close: () => {
-          closeCalls += 1;
-        },
+        close: () => {},
       }),
     }),
   });
 
   const events: Array<{ type: string; payload?: unknown }> = [];
   for await (const event of driver.run({
-    threadId: "thr_plan_runaway",
+    threadId: "thr_plan_bridge",
     prompt: "Add markdown rendering",
     workspacePath: "/tmp/workspace",
     worktreePath: "/tmp/worktree",
@@ -2225,87 +2194,13 @@ test("ClaudeAgentSdkDriver planning interrupts the session when the CLI continue
     events.push({ type: event.type, payload: event.payload });
   }
 
-  expect(interruptCalls).toBe(1);
-  expect(closeCalls).toBe(0);
   const ready = events.find((event) => event.type === "plan.ready");
   expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
 });
 
-test("ClaudeAgentSdkDriver planning hard-closes the session when ExitPlanMode retries survive the interrupt", async () => {
-  let interruptCalls = 0;
-  let closeCalls = 0;
-  let consumedAfterClose = false;
-  const driver = new ClaudeAgentSdkDriver({
-    apiKey: "test-key",
-    baseUrl: "http://127.0.0.1:36037",
-    loadSdk: async () => ({
-      query: ({ options }) => ({
-        async *[Symbol.asyncIterator]() {
-          yield {
-            type: "system",
-            subtype: "init",
-            session_id: "sess-plan-runaway",
-            uuid: "init-plan-runaway",
-          };
-          await invokeExitPlanHook(options, "## Summary\n\nShip the captured plan.");
-          yield {
-            type: "assistant",
-            session_id: "sess-plan-runaway",
-            uuid: "assistant-after-capture",
-            message: {
-              content: [{ type: "text", text: "ExitPlanMode 内部错误，重试。" }],
-            },
-          };
-          // The CLI ignores the interrupt and the model retries ExitPlanMode.
-          yield {
-            type: "assistant",
-            session_id: "sess-plan-runaway",
-            uuid: "assistant-retry",
-            message: {
-              content: [
-                { type: "tool_use", id: "tool_exit_plan_2", name: "ExitPlanMode", input: { plan: "retry" } },
-              ],
-            },
-          };
-          consumedAfterClose = true;
-          yield {
-            type: "assistant",
-            session_id: "sess-plan-runaway",
-            uuid: "assistant-should-not-run",
-            message: { content: [{ type: "text", text: "still running" }] },
-          };
-        },
-        interrupt: async () => {
-          interruptCalls += 1;
-        },
-        close: () => {
-          closeCalls += 1;
-        },
-      }),
-    }),
-  });
-
-  const events: Array<{ type: string; payload?: unknown }> = [];
-  for await (const event of driver.run({
-    threadId: "thr_plan_runaway_close",
-    prompt: "Add markdown rendering",
-    workspacePath: "/tmp/workspace",
-    worktreePath: "/tmp/worktree",
-    routes,
-    signal: new AbortController().signal,
-  })) {
-    events.push({ type: event.type, payload: event.payload });
-  }
-
-  expect(interruptCalls).toBe(1);
-  expect(closeCalls).toBe(1);
-  expect(consumedAfterClose).toBe(false);
-  const ready = events.find((event) => event.type === "plan.ready");
-  expect(ready?.payload).toMatchObject({ plan: "## Summary\n\nShip the captured plan." });
-});
-
-test("ClaudeAgentSdkDriver execution resume approves the deferred ExitPlanMode call", async () => {
+test("ClaudeAgentSdkDriver execution resume applies acceptEdits via setPermissionMode", async () => {
   const capturedOptions: Record<string, unknown>[] = [];
+  let setPermissionModeMode: string | undefined;
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
@@ -2315,11 +2210,20 @@ test("ClaudeAgentSdkDriver execution resume approves the deferred ExitPlanMode c
         return {
           async *[Symbol.asyncIterator]() {
             yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-exec-resume",
+              uuid: "init-exec-resume",
+            };
+            yield {
               type: "result",
               subtype: "success",
               session_id: "sess-exec-resume",
               uuid: "result-exec-resume",
             };
+          },
+          setPermissionMode: (mode: string) => {
+            setPermissionModeMode = mode;
           },
           close: () => {},
         };
@@ -2346,35 +2250,13 @@ test("ClaudeAgentSdkDriver execution resume approves the deferred ExitPlanMode c
     // drain
   }
 
+  expect(setPermissionModeMode).toBe("acceptEdits");
+  expect(capturedOptions[0]?.permissionMode).toBe("acceptEdits");
+  expect(capturedOptions[0]?.disallowedTools ?? []).not.toContain("Bash");
+  expect(capturedOptions[0]?.agents).toBeDefined();
   const hooks = capturedOptions[0]?.hooks as
-    | Partial<Record<string, Array<{ matcher?: string; hooks: Array<(...args: unknown[]) => unknown> }>>>
+    | Partial<Record<string, Array<{ matcher?: string }>>>
     | undefined;
-  const exitPlanMatchers = hooks?.PreToolUse?.filter((matcher) => matcher.matcher === "ExitPlanMode");
-  expect(exitPlanMatchers).toHaveLength(1);
-  const result = (await exitPlanMatchers![0]!.hooks[0]!(
-    {
-      hook_event_name: "PreToolUse",
-      tool_name: "ExitPlanMode",
-      tool_input: { allowedPrompts: [] },
-      tool_use_id: "tool_exit_deferred",
-      session_id: "sess-plan",
-      cwd: "/tmp/workspace",
-      plan: "## Summary\n\nShip it.",
-      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
-    },
-    "tool_exit_deferred",
-    { signal: new AbortController().signal },
-  )) as { hookSpecificOutput?: Record<string, unknown> };
-  expect(result.hookSpecificOutput).toMatchObject({
-    hookEventName: "PreToolUse",
-    permissionDecision: "allow",
-    updatedInput: {
-      allowedPrompts: [],
-      plan: "## Summary\n\nShip it.",
-      planFilePath: "/tmp/workspace/.claude/plans/plan.md",
-    },
-  });
-  // PermissionRequest deny fallback is planning-only; execution must not deny ExitPlanMode.
   expect(hooks?.PermissionRequest?.filter((matcher) => matcher.matcher === "ExitPlanMode") ?? []).toHaveLength(
     0,
   );

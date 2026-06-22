@@ -616,6 +616,18 @@ function App() {
         setPendingBashApproval(event.bashApproval);
       }
 
+      if (event.type === "plan_approval.requested" && event.plan) {
+        setPendingPlan({
+          threadId: event.threadId,
+          userPrompt: event.plan.userPrompt,
+          analysis: event.plan.analysis,
+          plan: event.plan.plan,
+          workspacePath: "",
+          worktreePath: "",
+          ...(event.plan.planFilePath ? { planFilePath: event.plan.planFilePath } : {}),
+        });
+      }
+
       if (event.followUp) {
         setFollowUpsByThread((current) => ({
           ...current,
@@ -648,16 +660,34 @@ function App() {
           ),
         );
       }
+      if (event.type.startsWith("plan_approval.")) {
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId
+              ? {
+                  ...thread,
+                  message: event.message,
+                  status: event.type === "plan_approval.requested" ? "running" : thread.status,
+                  updatedAt: new Date().toISOString(),
+                }
+              : thread,
+          ),
+        );
+      }
       if (
         event.type === "bash_approval.approved" ||
         event.type === "bash_approval.rejected" ||
         event.type === "bash_approval.denied" ||
+        event.type === "plan_approval.denied" ||
         event.type === "thread.completed" ||
         event.type === "thread.failed" ||
         event.type === "thread.idle" ||
         event.type === "thread.stopped"
       ) {
         setPendingBashApproval((current) => (current?.threadId === event.threadId ? undefined : current));
+      }
+      if (event.type === "plan_approval.denied") {
+        setPendingPlan((current) => (current?.threadId === event.threadId ? undefined : current));
       }
 
       if (event.type === "thread.usage_updated" && event.usage) {
@@ -1509,8 +1539,9 @@ function App() {
       threadAcceptsInput,
   );
   const canSend = composerFollowUpMode ? canSendFollowUp : canSendThreadMessage;
-  const showPlanApproval =
-    activeThread?.status === "awaiting_plan" && pendingPlan?.threadId === activeThread.id;
+  const showPlanApproval = Boolean(
+    activeThread && pendingPlan?.threadId === activeThread.id,
+  );
   const showClarification =
     pendingClarification && activeThread && pendingClarification.threadId === activeThread.id;
   const showBashApproval = Boolean(activeBashApproval);
@@ -1572,9 +1603,10 @@ function App() {
       !retryBusy &&
       (activeThread.status === "failed" ||
         activeThread.status === "blocked" ||
-        (activeThread.status === "awaiting_plan" &&
-          pendingPlan?.threadId === activeThread.id &&
-          Boolean(planFailureMessage))),
+        (activeThread.status === "awaiting_plan" ||
+          (activeThread.status === "running" &&
+            pendingPlan?.threadId === activeThread.id)) &&
+          Boolean(planFailureMessage))
   );
   const canStopThread =
     activeThread?.status === "running" ||
@@ -2326,7 +2358,6 @@ function App() {
           current.map((thread) => (thread.id === result.thread!.id ? result.thread! : thread)),
         );
       }
-      setPendingPlan(undefined);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {

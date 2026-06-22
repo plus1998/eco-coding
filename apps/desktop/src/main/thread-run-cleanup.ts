@@ -13,6 +13,7 @@ export interface FinalizeThreadRunCleanupInput {
 export interface ThreadRunCleanupDeps {
   cancelClarifications: (threadId: string, reason: string) => void;
   cancelBashApprovals?: (threadId: string, reason: string) => void;
+  cancelPlanApprovals?: (threadId: string, reason: string) => void;
   resetSdkStream: (threadId: string) => void;
   flushUsageUpdates: (threadId: string) => Promise<void>;
   finishActiveRun: (threadId: string) => void;
@@ -28,6 +29,7 @@ export async function finalizeThreadRunCleanup(
   if (input.cancelClarificationsReason) {
     deps.cancelClarifications(input.threadId, input.cancelClarificationsReason);
     deps.cancelBashApprovals?.(input.threadId, input.cancelClarificationsReason);
+    deps.cancelPlanApprovals?.(input.threadId, input.cancelClarificationsReason);
   }
   deps.resetSdkStream(input.threadId);
   await deps.flushUsageUpdates(input.threadId);

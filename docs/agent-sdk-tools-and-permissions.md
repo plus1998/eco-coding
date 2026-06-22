@@ -174,7 +174,7 @@ EnterPlanMode → Read → AskUserQuestion → ExitPlanMode → Bash   ❌ Bash 
 Plan turn 结束 → 新开 execution turn → Bash                    ✅
 ```
 
-Eco 通过 `createExitPlanModePreToolHook` 捕获计划并以 `defer` 结束 Plan session，再在 phase 2 执行。
+Eco 通过 `createExitPlanModeAwaitApprovalHook` 在 PermissionRequest 中阻塞，待用户在 Eco / Mobile UI 批准后 `allow`；plan turn 结束后发起 **execution query**（可 resume 同一 SDK session），并在流建立后调用 `setPermissionMode("acceptEdits")`。这是正确做法，不是 workaround。
 
 ### Plan 阶段 Bash vs 读工具
 

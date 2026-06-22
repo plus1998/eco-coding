@@ -1,4 +1,5 @@
-import type { ThreadApprovePlanRequest } from "./ipc";
+import type { ThreadApprovePlanRequest, ThreadRuntimeConfigInput } from "./ipc";
+import { isThreadRuntimeConfig } from "./thread-runtime-config";
 
 export function parseThreadApprovePlanPayload(payload: unknown): ThreadApprovePlanRequest {
   if (typeof payload === "string") {
@@ -18,10 +19,14 @@ export function parseThreadApprovePlanPayload(payload: unknown): ThreadApprovePl
   if (!threadId) {
     throw new Error("Thread id is required.");
   }
+  const runtimeConfig = isThreadRuntimeConfig(record.runtimeConfig)
+    ? (record.runtimeConfig as ThreadRuntimeConfigInput)
+    : undefined;
 
   return {
     threadId,
     ...(typeof record.plan === "string" ? { plan: record.plan } : {}),
     ...(typeof record.analysis === "string" ? { analysis: record.analysis } : {}),
+    ...(runtimeConfig ? { runtimeConfig } : {}),
   };
 }

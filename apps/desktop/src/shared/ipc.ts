@@ -703,6 +703,7 @@ export interface ThreadApprovePlanRequest {
   plan?: string;
   /** @deprecated UI no longer edits plan text; ignored if sent. */
   analysis?: string;
+  runtimeConfig?: ThreadRuntimeConfigInput;
 }
 
 export interface ThreadSummary {
@@ -965,6 +966,17 @@ export interface BashApprovalResolvePayload {
   toolUseId: string;
   decision: BashApprovalDecision;
 }
+
+export interface PlanApprovalRequest {
+  toolUseId: string;
+  threadId: string;
+  userPrompt: string;
+  analysis: string;
+  plan: string;
+  planFilePath?: string;
+}
+
+export type PlanApprovalDecision = "approved" | "denied";
 
 export type ContextSegmentKey =
   | "systemPrompt"
@@ -1306,7 +1318,8 @@ export interface ThreadLiveEvent {
   stream?: boolean;
   /** Set when the main process persisted this event as a thread_activity row. */
   activityLine?: ThreadActivityLine;
-  plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt">;
+  plan?: Pick<ThreadPendingPlan, "analysis" | "plan" | "userPrompt" | "planFilePath">;
+  planApproval?: PlanApprovalRequest;
   clarification?: ClarificationRequest;
   bashApproval?: BashApprovalRequest;
   followUp?: ThreadPendingFollowUp;
