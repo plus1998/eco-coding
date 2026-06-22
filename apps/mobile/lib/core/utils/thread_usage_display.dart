@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../models/thread_models.dart';
 import '../models/thread_usage_models.dart';
+import '../theme/subagent_theme.dart';
+import 'activity_display.dart';
 import 'model_id.dart';
 
 String formatCostUsd(double value) {
@@ -157,23 +160,6 @@ const _subagentRoleShort = <String, String>{
   'tester': '测试',
 };
 
-Color subagentAccentColor(String role) {
-  switch (role) {
-    case 'explore':
-      return const Color(0xFF38BDF8);
-    case 'architect':
-      return const Color(0xFFC084FC);
-    case 'coder':
-      return const Color(0xFF4ADE80);
-    case 'reviewer':
-      return const Color(0xFFFB923C);
-    case 'tester':
-      return const Color(0xFFF472B6);
-    default:
-      return const Color(0xFF64748B);
-  }
-}
-
 class FlatSubagentContextRow {
   const FlatSubagentContextRow({
     required this.key,
@@ -191,8 +177,9 @@ class FlatSubagentContextRow {
 }
 
 List<FlatSubagentContextRow> buildFlatSubagentContextRows(
-  ThreadContextSnapshot context,
-) {
+  ThreadContextSnapshot context, {
+  OrchestrationProfile? profile,
+}) {
   final subagentRoles = context.roles
       .where((role) => role.role != 'planner')
       .toList();
@@ -210,7 +197,7 @@ List<FlatSubagentContextRow> buildFlatSubagentContextRows(
         key: instance.agentId,
         role: instance.role,
         title: '$roleLabel #${shortAgentId(instance.agentId)}',
-        accentColor: subagentAccentColor(instance.role),
+        accentColor: resolveSubagentThemeColor(instance.role, profile: profile),
         snapshot: ThreadRoleContextSnapshot(
           role: instance.role,
           occupied: instance.occupied,
@@ -229,6 +216,7 @@ List<FlatSubagentContextRow> buildFlatSubagentContextRows(
       key: role.role,
       role: role.role,
       title: formatRoleModelLabel(role.role, role.modelId),
+      accentColor: resolveSubagentThemeColor(role.role, profile: profile),
       snapshot: role,
     );
   }).toList();

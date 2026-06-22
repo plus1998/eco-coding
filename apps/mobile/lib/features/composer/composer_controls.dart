@@ -708,6 +708,10 @@ class ComposerRouteSummary extends ConsumerWidget {
     final modelSettings = ref.watch(modelSettingsProvider);
     final profileId =
         runtimeConfig.agentProfileId ?? runtimeConfig.routeProfileId;
+    final agentProfile = resolveThreadAgentProfile(
+      modelSettings.valueOrNull,
+      runtimeConfig,
+    );
     final profileLabel = modelSettings.maybeWhen(
       data: (settings) {
         for (final profile in settings?.orchestrationProfiles ?? []) {
@@ -736,6 +740,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               context: context,
               contextSnapshot: contextSnapshot,
               threadStatus: threadStatus,
+              agentProfile: agentProfile,
             ),
             tooltip: '上下文',
             visualDensity: VisualDensity.compact,

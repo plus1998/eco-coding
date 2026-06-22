@@ -159,6 +159,7 @@ import {
   sortThreadsForSidebar,
 } from "./project-sidebar-order";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SessionSyncSettingsPanel } from "./SessionSyncSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -1627,6 +1628,10 @@ function App() {
   const threadModelByRole = activeThread ? modelByThread[activeThread.id] : undefined;
   const activeRuntimeAgentDisplayNames = useMemo(
     () => buildRuntimeAgentDisplayNames(settings, activeThread?.runtimeConfig),
+    [settings, activeThread?.runtimeConfig],
+  );
+  const activeRuntimeAgentThemes = useMemo(
+    () => buildRuntimeAgentThemes(settings, activeThread?.runtimeConfig),
     [settings, activeThread?.runtimeConfig],
   );
   const threadUsageSummary = useMemo(() => {
@@ -3792,6 +3797,7 @@ function App() {
                   onPlannerLayoutChange={handleActivityPlannerLayoutChange}
                   {...(Object.keys(activityModelByRole).length > 0 && { modelByRole: activityModelByRole })}
                   agentDisplayNames={activeRuntimeAgentDisplayNames}
+                  agentThemes={activeRuntimeAgentThemes}
                   {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                   {...(subagentTimings && { subagentTimings })}
                   {...(subagentMetrics && { subagentMetrics })}
@@ -3983,6 +3989,7 @@ function App() {
           {...(activeThread && threadUsageSummary && { usageSummary: threadUsageSummary })}
           contextCompactionInFlight={contextCompactionInFlight}
           agentDisplayNames={activeRuntimeAgentDisplayNames}
+          agentThemes={activeRuntimeAgentThemes}
         />
       ) : null}
 

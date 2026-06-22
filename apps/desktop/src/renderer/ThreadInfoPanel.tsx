@@ -32,6 +32,7 @@ import {
 import { ContextCard } from "./ContextCard";
 import { UsageBreakdownPanel, ExpandableBillingSection } from "./UsageBreakdownPanel";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
+import type { RuntimeAgentThemes } from "./runtime-agent-theme";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import type {
@@ -80,6 +81,7 @@ interface ThreadInfoPanelProps {
   usageSummary?: ThreadUsageSummary;
   contextCompactionInFlight?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }
 
 function formatCacheCostSuffix(billing: ThreadBillingSnapshot): {
@@ -638,6 +640,7 @@ function ThreadInfoFloatStack({
   contextPlaceholder,
   contextCompactionInFlight = false,
   agentDisplayNames,
+  agentThemes,
 }: {
   threadId?: string;
   showBillingSection: boolean;
@@ -651,6 +654,7 @@ function ThreadInfoFloatStack({
   contextPlaceholder: string;
   contextCompactionInFlight?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   const showBillingFloat = showBillingSection;
   const showContextFloat = true;
@@ -708,6 +712,7 @@ function ThreadInfoFloatStack({
                 {...(threadStatus !== undefined && { threadStatus })}
                 contextCompactionInFlight={contextCompactionInFlight}
                 {...(agentDisplayNames && { agentDisplayNames })}
+                {...(agentThemes && { agentThemes })}
                 onDismiss={closePanel}
               />
             )}
@@ -753,6 +758,7 @@ export function ThreadInfoPanel({
   usageSummary,
   contextCompactionInFlight = false,
   agentDisplayNames,
+  agentThemes,
 }: ThreadInfoPanelProps) {
   const projectLabel =
     workspaceLabel?.trim() ||
@@ -854,6 +860,7 @@ export function ThreadInfoPanel({
           contextPlaceholder={contextCardPlaceholder(threadStatus)}
           contextCompactionInFlight={contextCompactionInFlight}
           {...(agentDisplayNames && { agentDisplayNames })}
+          {...(agentThemes && { agentThemes })}
         />
       ) : null}
 

@@ -5,6 +5,7 @@ import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
+import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
 
@@ -143,6 +144,13 @@ void main() {
 
     expect(feed.where((e) => e.kind == ActivityFeedKind.subagentMission).length, 1);
     expect(feed.first.subagentRole, 'coder');
+  });
+
+  test('subagentMissionBorderColor uses unknown blue for non-standard roles', () {
+    expect(
+      resolveSubagentThemeColor('researcher'),
+      subagentUnknownThemeColor,
+    );
   });
 
   test('parseSubagentMissionMessage extracts summary from @mission JSON', () {

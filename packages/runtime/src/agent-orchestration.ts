@@ -99,6 +99,7 @@ export interface EcoAgentInstanceConfig {
   agentKey: string;
   templateId: string;
   displayName?: string;
+  themeColor?: string;
   modelRef: EcoModelRef;
   tools: EcoToolPolicy;
   mcpServers: string[];
@@ -108,6 +109,7 @@ export interface EcoAgentInstanceConfig {
 
 export interface EcoBuiltinAgentConfig {
   modelRef: EcoModelRef;
+  themeColor?: string;
 }
 
 export interface EcoBuiltinAgentsConfig {

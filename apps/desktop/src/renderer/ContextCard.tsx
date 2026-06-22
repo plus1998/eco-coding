@@ -7,6 +7,11 @@ import {
   formatRuntimeRoleModelLabel,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
+import {
+  type RuntimeAgentThemes,
+  resolveRuntimeAgentThemeColor,
+} from "./runtime-agent-theme";
+import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 
 interface ContextCardProps {
   context?: ThreadContextSnapshot;
@@ -14,21 +19,12 @@ interface ContextCardProps {
   /** When false, hide the card if there is no snapshot yet. */
   showWhenEmpty?: boolean;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
   threadId?: string;
   threadStatus?: ThreadStatus;
   contextCompactionInFlight?: boolean;
   onDismiss?: () => void;
 }
-
-import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
-
-const SUBAGENT_ACCENT: Record<string, string> = {
-  explore: "#38bdf8",
-  architect: "#c084fc",
-  coder: "#4ade80",
-  reviewer: "#fb923c",
-  tester: "#f472b6",
-};
 
 function shortAgentId(agentId: string): string {
   if (agentId.length <= 8) {
@@ -161,18 +157,20 @@ function buildFlatSubagentRows(
   }));
 }
 
-function subagentAccent(role: string): string {
-  return SUBAGENT_ACCENT[role] ?? "#64748b";
-}
-
-function SubagentContextRow({ row }: { row: FlatSubagentRow }) {
+function SubagentContextRow({
+  row,
+  agentThemes,
+}: {
+  row: FlatSubagentRow;
+  agentThemes?: RuntimeAgentThemes;
+}) {
   const role = row.snapshot;
   const visibleSegments = role.segments.filter((segment) => segment.tokens > 0);
   const occupied = role.occupied;
   const limit = role.limit;
   const segmentTotal = visibleSegments.reduce((sum, segment) => sum + segment.tokens, 0);
   const freeTokens = Math.max(limit - occupied, 0);
-  const accent = subagentAccent(row.role);
+  const accent = resolveRuntimeAgentThemeColor(row.role, agentThemes);
 
   return (
     <article
@@ -294,6 +292,7 @@ export function ContextCard({
   placeholder,
   showWhenEmpty = true,
   agentDisplayNames,
+  agentThemes,
   threadId,
   threadStatus,
   contextCompactionInFlight = false,
@@ -419,7 +418,7 @@ export function ContextCard({
       {hasSubagents ? (
         <div className="context-card-scroll" aria-label="子代理上下文">
           {flatSubagents.map((row) => (
-            <SubagentContextRow key={row.key} row={row} />
+            <SubagentContextRow key={row.key} row={row} {...(agentThemes && { agentThemes })} />
           ))}
         </div>
       ) : null}

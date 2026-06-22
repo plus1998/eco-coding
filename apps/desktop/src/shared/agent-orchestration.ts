@@ -86,6 +86,7 @@ export interface AgentInstanceConfig {
   agentKey: string;
   templateId: string;
   displayName?: string;
+  themeColor?: string;
   modelRef: ModelRef;
   tools: ToolPolicy;
   mcpServers: string[];
@@ -95,6 +96,7 @@ export interface AgentInstanceConfig {
 
 export interface BuiltinAgentConfig {
   modelRef: ModelRef;
+  themeColor?: string;
 }
 
 export interface BuiltinAgentsConfig {

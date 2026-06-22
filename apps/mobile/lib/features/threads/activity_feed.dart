@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
+import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
@@ -850,11 +851,13 @@ class ActivityFeedList extends StatelessWidget {
     required this.entries,
     required this.scrollController,
     this.topPadding = 8,
+    this.agentProfile,
   });
 
   final List<ActivityFeedEntry> entries;
   final ScrollController scrollController;
   final double topPadding;
+  final OrchestrationProfile? agentProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -873,6 +876,7 @@ class ActivityFeedList extends StatelessWidget {
             child: _ActivityFeedEntryTile(
               key: ValueKey(entry.id),
               entry: entry,
+              agentProfile: agentProfile,
             ),
           );
         },
@@ -882,9 +886,14 @@ class ActivityFeedList extends StatelessWidget {
 }
 
 class _ActivityFeedEntryTile extends StatelessWidget {
-  const _ActivityFeedEntryTile({super.key, required this.entry});
+  const _ActivityFeedEntryTile({
+    super.key,
+    required this.entry,
+    this.agentProfile,
+  });
 
   final ActivityFeedEntry entry;
+  final OrchestrationProfile? agentProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -917,6 +926,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           summary: entry.text,
           prompt: entry.missionPrompt,
           agentId: entry.agentId,
+          agentProfile: agentProfile,
           running: entry.running,
           durationMs: entry.durationMs,
           statusText: entry.statusText,
@@ -1352,6 +1362,7 @@ class _SubagentMissionTile extends StatefulWidget {
     required this.summary,
     this.prompt,
     this.agentId,
+    this.agentProfile,
     this.running = false,
     this.durationMs = 0,
     this.statusText,
@@ -1362,6 +1373,7 @@ class _SubagentMissionTile extends StatefulWidget {
   final String summary;
   final String? prompt;
   final String? agentId;
+  final OrchestrationProfile? agentProfile;
   final bool running;
   final int durationMs;
   final String? statusText;
@@ -1418,7 +1430,10 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final fullText = resolveMissionDisplayText(
       trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary,
     );
-    final borderColor = subagentMissionBorderColor(role);
+    final borderColor = subagentMissionBorderColor(
+      role,
+      profile: widget.agentProfile,
+    );
     final statusText = widget.statusText?.trim();
     final showStatus =
         fullText.isEmpty && statusText != null && statusText.isNotEmpty;

@@ -1,6 +1,9 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
+import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/thread_usage_display.dart';
 
 void main() {
@@ -69,6 +72,40 @@ void main() {
     expect(rows, hasLength(1));
     expect(rows.first.key, 'agent_coder_1');
     expect(rows.first.title, contains('编码'));
+    expect(rows.first.accentColor, resolveSubagentThemeColor('coder'));
+  });
+
+  test('buildFlatSubagentContextRows applies profile theme overrides', () {
+    const profile = OrchestrationProfile(
+      id: 'p1',
+      name: 'Test',
+      agents: [
+        OrchestrationAgentInstance(
+          agentKey: 'coder',
+          enabled: true,
+          themeColor: '#112233',
+        ),
+      ],
+    );
+    final context = ThreadContextSnapshot.fromJson({
+      'occupied': 1000,
+      'limit': 200000,
+      'occupancyPct': 1,
+      'limitsResolved': true,
+      'roles': [
+        {
+          'role': 'coder',
+          'occupied': 5000,
+          'limit': 200000,
+          'occupancyPct': 3,
+          'limitsResolved': true,
+          'segments': [],
+        },
+      ],
+    });
+
+    final rows = buildFlatSubagentContextRows(context, profile: profile);
+    expect(rows.first.accentColor, const Color(0xFF112233));
   });
 
   test('ThreadUsageSnapshotResult parses billing byModel and context instances', () {

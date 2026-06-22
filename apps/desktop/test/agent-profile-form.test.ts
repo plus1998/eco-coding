@@ -327,3 +327,36 @@ test("buildOrchestrationProfileFromForm omits apiCompat when left at default", (
   expect(built.builtinAgents.explore.modelRef.apiCompat).toBeUndefined();
   expect(built.agents[0]?.modelRef.apiCompat).toBeUndefined();
 });
+
+test("buildOrchestrationProfileFromForm stores valid theme colors and rejects invalid values", () => {
+  const form = withRequiredCandidateIds(agentProfileToForm(profile()));
+  form.id = "user.themed";
+  form.builtinExploreThemeColor = "#112233";
+  form.agents[0]!.themeColor = "#445566";
+
+  const built = buildOrchestrationProfileFromForm(form, {
+    existing: profile(),
+    templates: [researcherTemplate],
+  });
+
+  expect(built.builtinAgents.explore.themeColor).toBe("#112233");
+  expect(built.agents[0]?.themeColor).toBe("#445566");
+
+  form.agents[0]!.themeColor = "not-a-color";
+  expect(() =>
+    buildOrchestrationProfileFromForm(form, {
+      existing: profile(),
+      templates: [researcherTemplate],
+    }),
+  ).toThrow("无效主题色");
+});
+
+test("createCopiedAgentProfileForm preserves configured theme colors", () => {
+  const source = profile();
+  source.builtinAgents.explore.themeColor = "#AABBCC";
+  source.agents[0]!.themeColor = "#DDEEFF";
+
+  const form = createCopiedAgentProfileForm(source);
+  expect(form.builtinExploreThemeColor).toBe("#AABBCC");
+  expect(form.agents[0]?.themeColor).toBe("#DDEEFF");
+});

@@ -576,7 +576,11 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(threadSessionProvider(threadId));
+    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final thread = session.thread;
+    final runtimeConfig = thread?.runtimeConfig ??
+        buildDefaultRuntimeConfig(modelSettings: modelSettings);
+    final agentProfile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
     final feedEntries = buildActivityFeed(
       lines: session.activities,
       threadPrompt: thread?.prompt,
@@ -610,6 +614,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           entries: displayFeedEntries,
           scrollController: scrollController,
           topPadding: sessionContentTopPadding(context),
+          agentProfile: agentProfile,
         ),
         Positioned(
           right: 8,

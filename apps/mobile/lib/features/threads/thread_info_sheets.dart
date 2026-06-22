@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/thread_models.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -35,6 +36,7 @@ Future<void> showThreadContextSheet({
   required BuildContext context,
   required ThreadContextSnapshot? contextSnapshot,
   required String? threadStatus,
+  OrchestrationProfile? agentProfile,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -54,6 +56,7 @@ Future<void> showThreadContextSheet({
           child: _ContextSheet(
             contextSnapshot: contextSnapshot,
             threadStatus: threadStatus,
+            agentProfile: agentProfile,
           ),
         ),
       );
@@ -240,10 +243,12 @@ class _ContextSheet extends StatelessWidget {
   const _ContextSheet({
     required this.contextSnapshot,
     required this.threadStatus,
+    this.agentProfile,
   });
 
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
+  final OrchestrationProfile? agentProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -294,7 +299,10 @@ class _ContextSheet extends StatelessWidget {
                       ),
                       role: resolvePlannerContext(contextSnapshot!),
                     ),
-                    ...buildFlatSubagentContextRows(contextSnapshot!).map(
+                    ...buildFlatSubagentContextRows(
+                      contextSnapshot!,
+                      profile: agentProfile,
+                    ).map(
                       (row) => Padding(
                         padding: const EdgeInsets.only(top: 16),
                         child: _ContextRoleSection(

@@ -79,6 +79,7 @@ import {
   type StreamRequestTimingAnchor,
 } from "./useStreamRequestTiming";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
+import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 
@@ -152,6 +153,7 @@ interface ActivityLogViewProps {
   billing?: ThreadBillingSnapshot;
   projection?: ThreadRunProjectionSnapshot;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
   subagentTimings?: ThreadSubagentSessionTiming[];
   subagentMetrics?: ThreadSubagentMetricsSummary[];
   /** Called when planner / main-window log content changes — scroll the activity feed. */
@@ -171,6 +173,7 @@ export function ActivityLogView(props: ActivityLogViewProps) {
       projection={props.projection}
       {...(props.thread && { thread: props.thread })}
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
+      {...(props.agentThemes && { agentThemes: props.agentThemes })}
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
     />
@@ -183,10 +186,12 @@ function ProjectionActivityLogView({
   onRestorePrompt,
   onPlannerLayoutChange,
   agentDisplayNames,
+  agentThemes,
 }: {
   projection: ThreadRunProjectionSnapshot;
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
   onRestorePrompt?: RestorePromptHandler;
   onPlannerLayoutChange?: () => void;
 }) {
@@ -250,6 +255,7 @@ function ProjectionActivityLogView({
             }));
           }}
           {...(agentDisplayNames && { agentDisplayNames })}
+          {...(agentThemes && { agentThemes })}
           {...(onRestorePrompt && { onRestorePrompt })}
         />
       ))}
@@ -291,6 +297,7 @@ function ProjectionMainFeedEntry({
   onToggleAgent,
   onRestorePrompt,
   agentDisplayNames,
+  agentThemes,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
@@ -298,6 +305,7 @@ function ProjectionMainFeedEntry({
   onToggleAgent: (agentId: string) => void;
   onRestorePrompt?: RestorePromptHandler;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   if (entry.kind === "timeline") {
     return (
@@ -316,6 +324,7 @@ function ProjectionMainFeedEntry({
         expanded={Boolean(expandedAgentKeys[entry.card.key])}
         onToggle={() => onToggleAgent(entry.card.key)}
         {...(agentDisplayNames && { agentDisplayNames })}
+        {...(agentThemes && { agentThemes })}
       />,
     );
   }
@@ -421,12 +430,14 @@ function ProjectionSubagentRunRow({
   expanded,
   onToggle,
   agentDisplayNames,
+  agentThemes,
 }: {
   agent: ThreadRunProjectionAgent;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   expanded: boolean;
   onToggle: () => void;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   const running = agent.status === "active" || agent.status === "launching";
   const [liveDurationMs, setLiveDurationMs] = useState(agent.durationMs);
@@ -477,6 +488,7 @@ function ProjectionSubagentRunRow({
       className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
       data-agent-id={agent.agentId}
       data-role={normalizeAgentDisplayRole(agent.role) ?? agent.role}
+      style={resolveSubagentRowThemeStyle(agent.role, agentThemes)}
     >
       <SubagentRunCardButton
         role={agent.role}
@@ -631,6 +643,7 @@ function RunLogBlock({
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
   agentDisplayNames,
+  agentThemes,
   onPlannerLayoutChange,
   threadId,
   threadStatus,
@@ -643,6 +656,7 @@ function RunLogBlock({
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
   onPlannerLayoutChange?: () => void;
   threadId?: string;
   threadStatus?: ThreadStatus;
@@ -680,6 +694,7 @@ function RunLogBlock({
         {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
         {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
         {...(agentDisplayNames && { agentDisplayNames })}
+        {...(agentThemes && { agentThemes })}
         {...(context && { context })}
       />
     );
@@ -955,6 +970,7 @@ function SubagentRunRow({
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
   agentDisplayNames,
+  agentThemes,
 }: {
   item: SubagentRunItem;
   expanded: boolean;
@@ -966,6 +982,7 @@ function SubagentRunRow({
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   const persistedTiming = item.agentId ? subagentTimingsByAgentId?.[item.agentId] : undefined;
   const [liveDurationMs, setLiveDurationMs] = useState(item.runDurationMs ?? 0);
@@ -1026,6 +1043,7 @@ function SubagentRunRow({
       className={`subagent-run-row-wrap${item.agentId ? " has-agent-id" : ""}${item.running ? " is-running" : ""}${expanded ? " is-expanded" : ""}`}
       data-agent-id={item.agentId}
       data-role={normalizeAgentDisplayRole(item.role) ?? item.role}
+      style={resolveSubagentRowThemeStyle(item.role, agentThemes)}
     >
       <SubagentRunCardButton
         role={item.role}
@@ -1075,6 +1093,7 @@ function SubagentRunGroup({
   subagentTimingsByAgentId,
   subagentMetricsByAgentId,
   agentDisplayNames,
+  agentThemes,
 }: {
   block: Extract<ActivityLogBlock, { kind: "subagent-run-group" }>;
   requestActive: boolean;
@@ -1084,6 +1103,7 @@ function SubagentRunGroup({
   subagentTimingsByAgentId?: Record<string, ThreadSubagentSessionTiming>;
   subagentMetricsByAgentId?: Record<string, ThreadSubagentMetricsSummary>;
   agentDisplayNames?: RuntimeAgentDisplayNames;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
@@ -1101,6 +1121,7 @@ function SubagentRunGroup({
           {...(subagentTimingsByAgentId && { subagentTimingsByAgentId })}
           {...(subagentMetricsByAgentId && { subagentMetricsByAgentId })}
           {...(agentDisplayNames && { agentDisplayNames })}
+          {...(agentThemes && { agentThemes })}
           onToggle={() => {
             setExpandedKeys((current) => ({
               ...current,
@@ -1225,6 +1246,7 @@ function DetailBlock({
   hideSubagentIdentity,
   requestActive = false,
   requestSpan,
+  agentThemes,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
@@ -1232,6 +1254,7 @@ function DetailBlock({
   hideSubagentIdentity?: boolean;
   requestActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
+  agentThemes?: RuntimeAgentThemes;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -1252,6 +1275,7 @@ function DetailBlock({
         {...(block.prompt !== undefined && { prompt: block.prompt })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
+        {...(agentThemes && { agentThemes })}
       />
     );
   }
@@ -1836,12 +1860,14 @@ function SubagentMissionBlock({
   summary,
   prompt,
   modelByRole,
+  agentThemes,
   omitRoleLabel: _omitRoleLabel,
 }: {
   subagent: string;
   summary: string;
   prompt?: string;
   modelByRole?: Record<string, string>;
+  agentThemes?: RuntimeAgentThemes;
   omitRoleLabel?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1854,6 +1880,7 @@ function SubagentMissionBlock({
       type="button"
       className={`run-log-mission${expanded ? " is-expanded" : ""}`}
       data-role={normalizeAgentDisplayRole(subagent) ?? subagent}
+      style={resolveSubagentRowThemeStyle(subagent, agentThemes)}
       onClick={() => setExpanded((value) => !value)}
       aria-expanded={expanded}
     >

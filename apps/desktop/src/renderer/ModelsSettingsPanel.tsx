@@ -77,6 +77,7 @@ import {
   formatAgentDomainLabel,
   listSelectableAgentProfileSummaries,
 } from "./agent-profile-summary";
+import { AgentThemeColorField } from "./agent-theme-color-field";
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
@@ -2126,6 +2127,14 @@ function AgentProfileNodeConfigModal({
                 onThinkingEffortChange={(value) => onPatchProfile({ builtinExploreThinkingEffort: value })}
                 onApiCompatChange={(value) => onPatchProfile({ builtinExploreApiCompat: value })}
               />
+
+              <AgentThemeColorField
+                label="主题色"
+                agentKey="explore"
+                value={form.builtinExploreThemeColor}
+                {...(busy !== undefined ? { disabled: busy } : {})}
+                onChange={(value) => onPatchProfile({ builtinExploreThemeColor: value })}
+              />
             </>
           ) : (
             <>
@@ -2173,6 +2182,16 @@ function AgentProfileNodeConfigModal({
                   }
                   onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
                   onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
+                />
+              ) : null}
+
+              {agent ? (
+                <AgentThemeColorField
+                  label="主题色"
+                  agentKey={agent.agentKey}
+                  value={agent.themeColor}
+                  {...(busy !== undefined ? { disabled: busy } : {})}
+                  onChange={(value) => onPatchAgent(agentIndex, { themeColor: value })}
                 />
               ) : null}
 

@@ -544,16 +544,19 @@ class OrchestrationAgentInstance {
   const OrchestrationAgentInstance({
     required this.agentKey,
     required this.enabled,
+    this.themeColor,
   });
 
   factory OrchestrationAgentInstance.fromJson(Map<String, dynamic> json) =>
       OrchestrationAgentInstance(
         agentKey: json['agentKey'] as String? ?? '',
         enabled: json['enabled'] as bool? ?? false,
+        themeColor: json['themeColor'] as String?,
       );
 
   final String agentKey;
   final bool enabled;
+  final String? themeColor;
 }
 
 class OrchestrationProfile {
@@ -561,12 +564,14 @@ class OrchestrationProfile {
     required this.id,
     required this.name,
     required this.agents,
+    this.builtinExploreThemeColor,
   });
 
   factory OrchestrationProfile.fromJson(Map<String, dynamic> json) =>
       OrchestrationProfile(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? json['id'] as String? ?? '',
+        builtinExploreThemeColor: _readBuiltinExploreThemeColor(json),
         agents: (json['agents'] as List<dynamic>? ?? [])
             .map(
               (e) => OrchestrationAgentInstance.fromJson(
@@ -579,6 +584,22 @@ class OrchestrationProfile {
   final String id;
   final String name;
   final List<OrchestrationAgentInstance> agents;
+  final String? builtinExploreThemeColor;
+}
+
+String? _readBuiltinExploreThemeColor(Map<String, dynamic> json) {
+  final builtinAgents = json['builtinAgents'];
+  if (builtinAgents is Map<String, dynamic>) {
+    final explore = builtinAgents['explore'];
+    if (explore is Map<String, dynamic>) {
+      final themeColor = explore['themeColor'];
+      if (themeColor is String && themeColor.trim().isNotEmpty) {
+        return themeColor;
+      }
+    }
+  }
+  final fallback = json['builtinExploreThemeColor'];
+  return fallback is String && fallback.trim().isNotEmpty ? fallback : null;
 }
 
 class RouteProfileSummary {

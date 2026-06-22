@@ -10,6 +10,7 @@ import type {
   UpstreamApiCompat,
 } from "../shared/ipc";
 import { parseList } from "./agent-template-form-utils";
+import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
 import {
   capabilityFieldsToToolPolicy,
   createDefaultToolCapabilityFields,
@@ -23,6 +24,7 @@ export interface AgentProfileAgentFormState extends AgentProfileAgentCapabilityF
   agentKey: string;
   templateId: string;
   displayName: string;
+  themeColor: string;
   providerId: string;
   modelId: string;
   thinkingEffort: string;
@@ -63,6 +65,7 @@ export interface AgentProfileFormState {
   builtinExploreThinkingEffort: string;
   builtinExploreApiCompat: string;
   builtinExploreCandidateModelId: string;
+  builtinExploreThemeColor: string;
   guidancePrompt: string;
   agents: AgentProfileAgentFormState[];
 }
@@ -187,6 +190,7 @@ export function createBlankAgentProfileForm(options: ProfileFormOptions = {}): A
     builtinExploreThinkingEffort: "",
     builtinExploreApiCompat: "",
     builtinExploreCandidateModelId: "",
+    builtinExploreThemeColor: defaultThemeColorForAgentKey("explore"),
     guidancePrompt: "Choose agents autonomously based on the user's task and the available agent roster.",
     agents: [],
   };
@@ -218,11 +222,14 @@ export function agentProfileToForm(profile: OrchestrationProfile): AgentProfileF
     builtinExploreThinkingEffort: profile.builtinAgents.explore.modelRef.thinkingEffort ?? "",
     builtinExploreApiCompat: profile.builtinAgents.explore.modelRef.apiCompat ?? "",
     builtinExploreCandidateModelId: profile.builtinAgents.explore.modelRef.candidateModelId ?? "",
+    builtinExploreThemeColor:
+      profile.builtinAgents.explore.themeColor ?? defaultThemeColorForAgentKey("explore"),
     guidancePrompt: profile.strategy.guidancePrompt ?? "",
     agents: profile.agents.map((agent) => ({
       agentKey: agent.agentKey,
       templateId: agent.templateId,
       displayName: agent.displayName ?? "",
+      themeColor: agent.themeColor ?? defaultThemeColorForAgentKey(agent.agentKey),
       providerId: agent.modelRef.providerId,
       modelId: agent.modelRef.modelId,
       thinkingEffort: agent.modelRef.thinkingEffort ?? "",
@@ -262,6 +269,7 @@ export function createProfileAgentFormFromTemplate(
     agentKey: createUniqueAgentKey(defaultAgentKeyFromTemplate(template), options.existingAgentKeys ?? []),
     templateId: template.id,
     displayName: template.name,
+    themeColor: defaultThemeColorForAgentKey(defaultAgentKeyFromTemplate(template)),
     providerId: options.provider?.id ?? "",
     modelId: options.provider?.defaultModel ?? "",
     thinkingEffort: "",
@@ -296,6 +304,11 @@ export function buildOrchestrationProfileFromForm(
   }
   assertCandidateModelSelected("主 Agent", form.mainCandidateModelId);
   assertCandidateModelSelected("Explore", form.builtinExploreCandidateModelId);
+  const builtinExploreThemeColor = resolveStoredThemeColor(
+    "Explore",
+    form.builtinExploreThemeColor,
+    defaultThemeColorForAgentKey("explore"),
+  );
 
   const mainModelRef = buildModelRef(form.mainProviderId, form.mainModelId, {
     thinkingEffort: form.mainThinkingEffort,
@@ -329,6 +342,11 @@ export function buildOrchestrationProfileFromForm(
     if (agentForm.enabled) {
       assertCandidateModelSelected(displayName, agentForm.candidateModelId);
     }
+    const themeColor = resolveStoredThemeColor(
+      displayName,
+      agentForm.themeColor,
+      defaultThemeColorForAgentKey(agentKey),
+    );
     const tools = capabilityFieldsToToolPolicy({
       ...agentCapabilityFromAgentForm(agentForm),
       allowDelegation: template.allowDelegation,
@@ -337,6 +355,7 @@ export function buildOrchestrationProfileFromForm(
       agentKey,
       templateId: template.id,
       displayName,
+      ...(themeColor && { themeColor }),
       modelRef: buildModelRef(agentForm.providerId, agentForm.modelId, {
         thinkingEffort: agentForm.thinkingEffort,
         apiCompat: agentForm.apiCompat,
@@ -366,6 +385,7 @@ export function buildOrchestrationProfileFromForm(
     builtinAgents: {
       explore: {
         modelRef: builtinExploreModelRef,
+        ...(builtinExploreThemeColor && { themeColor: builtinExploreThemeColor }),
       },
     },
     agents,
@@ -450,6 +470,23 @@ function mainCapabilityToProfileFormFields(
 function assertCandidateModelSelected(label: string, candidateModelId: string): void {
   if (!candidateModelId.trim()) {
     throw new Error(`${label} 必须选择候选模型。`);
+  }
+}
+
+function resolveStoredThemeColor(
+  label: string,
+  value: string,
+  defaultColor: string,
+): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toUpperCase() === defaultColor.toUpperCase()) {
+    return undefined;
+  }
+  try {
+    return normalizeThemeColorHex(trimmed);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} ${message}`);
   }
 }
 

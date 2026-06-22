@@ -22,6 +22,11 @@ function profile(): OrchestrationProfile {
       tools: { allowed: ["Agent", "Read"], disallowed: ["Bash"] },
       skills: [],
     },
+    builtinAgents: {
+      explore: {
+        modelRef: { providerId: "p1", modelId: "m-explore" },
+      },
+    },
     agents: [
       {
         agentKey: "researcher",
@@ -61,14 +66,17 @@ function template(): AgentTemplate {
 }
 
 test("agent profile archive round-trips schema and profiles", () => {
-  const archive = buildAgentProfileArchive([profile()], "2026-06-07T01:00:00.000Z", {
+  const themed = profile();
+  themed.builtinAgents.explore.themeColor = "#AABBCC";
+  themed.agents[0]!.themeColor = "#112233";
+  const archive = buildAgentProfileArchive([themed], "2026-06-07T01:00:00.000Z", {
     templates: [template()],
   });
   expect(archive.schema).toBe(AGENT_PROFILE_ARCHIVE_SCHEMA);
   expect(archive.templates).toEqual([template()]);
-  expect(parseAgentProfileArchive(JSON.stringify(archive))).toEqual([profile()]);
+  expect(parseAgentProfileArchive(JSON.stringify(archive))).toEqual([themed]);
   expect(parseAgentProfileArchiveBundle(JSON.stringify(archive))).toEqual({
-    profiles: [profile()],
+    profiles: [themed],
     templates: [template()],
   });
 });
