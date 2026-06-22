@@ -144,6 +144,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   Widget build(BuildContext context) {
     final eco = ecoThemeExtras(context);
     final canEditConfig = !widget.isRunning;
+    final speechAvailable =
+        ref.watch(systemSpeechRecognizerAvailabilityProvider).valueOrNull ==
+        true;
+    final showSpeechInput = speechAvailable || _speechBusy;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -188,7 +192,8 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: widget.attachments.length,
-                            separatorBuilder: (_, _) => const SizedBox(width: 8),
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 8),
                             itemBuilder: (context, index) => InputChip(
                               label: Text('图片 ${index + 1}'),
                               visualDensity: VisualDensity.compact,
@@ -265,24 +270,31 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           threadStatus: widget.threadStatus,
                         ),
                         const SizedBox(width: 2),
-                        IconButton(
-                          onPressed: _handleSpeechInput,
-                          icon: _speechBusy
-                              ? const Icon(Icons.stop_circle_outlined, size: 22)
-                              : const Icon(Icons.mic_none, size: 22),
-                          tooltip: _speechBusy ? '停止语音输入' : '语音输入',
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
+                        if (showSpeechInput) ...[
+                          IconButton(
+                            onPressed: _handleSpeechInput,
+                            icon: _speechBusy
+                                ? const Icon(
+                                    Icons.stop_circle_outlined,
+                                    size: 22,
+                                  )
+                                : const Icon(Icons.mic_none, size: 22),
+                            tooltip: _speechBusy ? '停止语音输入' : '语音输入',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            color: _speechBusy ? eco.statusDenyText : null,
                           ),
-                          color: _speechBusy ? eco.statusDenyText : null,
-                        ),
-                        const SizedBox(width: 2),
+                          const SizedBox(width: 2),
+                        ],
                         if (widget.followUpMode)
                           _hasContent
-                              ? _SendButton(onSend: _canSend ? _handleSend : null)
+                              ? _SendButton(
+                                  onSend: _canSend ? _handleSend : null,
+                                )
                               : _StopButton(onStop: _handleStop)
                         else if (widget.isRunning)
                           _StopButton(onStop: _handleStop)

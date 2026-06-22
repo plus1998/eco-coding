@@ -47,10 +47,9 @@ void persistRuntimeConfig(
 }) {
   onChanged(config);
   if (threadId.isEmpty) return;
-  ref.read(desktopRpcProvider)?.updateRuntimeConfig(
-        threadId: threadId,
-        runtimeConfig: config,
-      );
+  ref
+      .read(desktopRpcProvider)
+      ?.updateRuntimeConfig(threadId: threadId, runtimeConfig: config);
 }
 
 ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
@@ -83,7 +82,10 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: configuredOrchestrationSubagentRoles(profile).map((role) {
-        final enabled = isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role);
+        final enabled = isRuntimeSubagentEnabled(
+          runtimeConfig.subagentEnabled,
+          role,
+        );
         final isExplore = role == 'explore';
         final toggleable = canEdit && isSubagentToggleable(profile, role);
         final configured = isSubagentConfiguredInProfile(profile, role);
@@ -93,17 +95,19 @@ class _ComposerSubagentSwitchList extends ConsumerWidget {
             isExplore
                 ? '始终启用'
                 : !configured
-                    ? 'Profile 未配置'
-                    : enabled
-                        ? '已启用'
-                        : '已停用',
+                ? 'Profile 未配置'
+                : enabled
+                ? '已启用'
+                : '已停用',
           ),
           value: isExplore ? true : enabled,
           onChanged: !toggleable
               ? null
               : (value) {
                   final next = Map<String, bool>.from(
-                    normalizedRuntimeSubagentEnabled(runtimeConfig.subagentEnabled),
+                    normalizedRuntimeSubagentEnabled(
+                      runtimeConfig.subagentEnabled,
+                    ),
                   );
                   next[role] = value;
                   persistRuntimeConfig(
@@ -174,11 +178,13 @@ class ComposerRouteSheet extends ConsumerWidget {
                                 config: ThreadRuntimeConfig(
                                   routeProfileId: entry.id,
                                   agentProfileId: entry.id,
-                                  subagentEnabled: deriveSubagentEnabledFromProfile(
-                                    entry,
-                                    existing: runtimeConfig.subagentEnabled,
-                                  ),
-                                  planModeEnabled: runtimeConfig.planModeEnabled,
+                                  subagentEnabled:
+                                      deriveSubagentEnabledFromProfile(
+                                        entry,
+                                        existing: runtimeConfig.subagentEnabled,
+                                      ),
+                                  planModeEnabled:
+                                      runtimeConfig.planModeEnabled,
                                   bashReviewMode: runtimeConfig.bashReviewMode,
                                 ),
                                 onChanged: onChanged,
@@ -247,12 +253,10 @@ class ComposerContextTrigger extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: enabled
-                            ? EcoColors.textPrimary
-                            : eco.textMuted,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12,
-                      ),
+                    color: enabled ? EcoColors.textPrimary : eco.textMuted,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               if (enabled && onTap != null)
@@ -312,11 +316,10 @@ class ComposerToolbarTrigger extends StatelessWidget {
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color:
-                          enabled ? EcoColors.textPrimary : eco.textMuted,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                    ),
+                  color: enabled ? EcoColors.textPrimary : eco.textMuted,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
               ),
               if (enabled && onTap != null) ...[
                 const SizedBox(width: 2),
@@ -369,12 +372,12 @@ class ComposerProfileControl extends ConsumerWidget {
       compact: compact,
       onTap: canEdit
           ? () => _showProfileSheet(
-                context,
-                ref,
-                runtimeConfig: runtimeConfig,
-                threadId: threadId,
-                onChanged: onChanged,
-              )
+              context,
+              ref,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              onChanged: onChanged,
+            )
           : null,
     );
   }
@@ -469,7 +472,9 @@ class ComposerOrchestrationControl extends ConsumerWidget {
     final profile = resolveThreadAgentProfile(modelSettings, runtimeConfig);
     final enabledCount = countEnabledSubagents(runtimeConfig.subagentEnabled);
     final totalCount = countConfiguredSubagents(profile);
-    final summary = totalCount > 0 ? '$enabledCount/$totalCount' : '$enabledCount';
+    final summary = totalCount > 0
+        ? '$enabledCount/$totalCount'
+        : '$enabledCount';
 
     return ComposerContextTrigger(
       icon: Icons.groups_outlined,
@@ -478,13 +483,13 @@ class ComposerOrchestrationControl extends ConsumerWidget {
       compact: compact,
       onTap: canEdit
           ? () => _showOrchestrationSheet(
-                context,
-                ref,
-                runtimeConfig: runtimeConfig,
-                threadId: threadId,
-                profile: profile,
-                onChanged: onChanged,
-              )
+              context,
+              ref,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              profile: profile,
+              onChanged: onChanged,
+            )
           : null,
     );
   }
@@ -516,8 +521,10 @@ class ComposerOrchestrationControl extends ConsumerWidget {
                 title: const Text('主 Agent'),
                 subtitle: const Text('始终启用'),
                 trailing: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: EcoColors.statusAllowBg,
                     borderRadius: BorderRadius.circular(999),
@@ -570,12 +577,12 @@ class ComposerPlanModeControl extends ConsumerWidget {
       enabled: canEdit,
       onTap: canEdit
           ? () => showComposerPlanModeSheet(
-                context,
-                ref,
-                runtimeConfig: runtimeConfig,
-                threadId: threadId,
-                onChanged: onChanged,
-              )
+              context,
+              ref,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              onChanged: onChanged,
+            )
           : null,
     );
   }
@@ -604,12 +611,12 @@ class ComposerPlanModeIconButton extends ConsumerWidget {
       onPressed: !canEdit
           ? null
           : () => showComposerPlanModeSheet(
-                context,
-                ref,
-                runtimeConfig: runtimeConfig,
-                threadId: threadId,
-                onChanged: onChanged,
-              ),
+              context,
+              ref,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              onChanged: onChanged,
+            ),
       tooltip: current.title,
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
@@ -664,9 +671,7 @@ Future<void> showComposerPlanModeSheet(
                 persistRuntimeConfig(
                   ref,
                   threadId: threadId,
-                  config: runtimeConfig.copyWith(
-                    planModeEnabled: option.value,
-                  ),
+                  config: runtimeConfig.copyWith(planModeEnabled: option.value),
                   onChanged: onChanged,
                 );
                 Navigator.pop(context);
@@ -715,35 +720,28 @@ class ComposerRouteSummary extends ConsumerWidget {
         ? null
         : resolvePlannerContext(contextSnapshot!);
     final modelId = plannerContext?.modelId ?? contextSnapshot?.modelId;
-    final modelLabel =
-        modelId == null || modelId.trim().isEmpty ? null : shortenModelId(modelId);
+    final modelLabel = modelId == null || modelId.trim().isEmpty
+        ? null
+        : shortenModelId(modelId);
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
-    final tooltip = [
-      ?modelLabel,
-      profileLabel,
-    ].whereType<String>().join(' · ');
+    final tooltip = [?modelLabel, profileLabel].whereType<String>().join(' · ');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          onPressed: () => showThreadContextSheet(
-            context: context,
-            contextSnapshot: contextSnapshot,
-            threadStatus: threadStatus,
+        if (contextSnapshot != null)
+          IconButton(
+            onPressed: () => showThreadContextSheet(
+              context: context,
+              contextSnapshot: contextSnapshot,
+              threadStatus: threadStatus,
+            ),
+            tooltip: '上下文',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: ComposerContextRing(pct: occupancyPct ?? 0, size: 22),
           ),
-          tooltip: '上下文',
-          visualDensity: VisualDensity.compact,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          icon: occupancyPct != null
-              ? ComposerContextRing(pct: occupancyPct, size: 22)
-              : const Icon(
-                  Icons.memory_outlined,
-                  size: 22,
-                  color: EcoColors.textSecondary,
-                ),
-        ),
         IconButton(
           onPressed: () => _showRouteSheet(
             context,
@@ -911,11 +909,7 @@ class _BashReviewShieldIcon extends StatelessWidget {
           Icon(Icons.shield_outlined, size: size, color: color),
           Positioned(
             bottom: size * 0.18,
-            child: Icon(
-              Icons.terminal,
-              size: size * 0.38,
-              color: color,
-            ),
+            child: Icon(Icons.terminal, size: size * 0.38, color: color),
           ),
         ],
       ),
