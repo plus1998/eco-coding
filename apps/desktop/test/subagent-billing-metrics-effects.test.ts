@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
-import type { ParsedUsage, RequestBillingDelta } from "@eco/runtime";
+import type { ParsedUsage } from "@eco/runtime";
 import {
   buildSubagentContextObservationInput,
-  buildSubagentLegacyMetricsRecordInput,
   resolveSubagentBillingMetricsContext,
   type UsageContextSnapshot,
 } from "../src/main/subagent-billing-metrics-effects";
@@ -12,20 +11,6 @@ const usage: ParsedUsage = {
   outputTokens: 300,
   cacheReadTokens: 200,
   cacheCreationTokens: 50,
-};
-
-const billing: RequestBillingDelta = {
-  plannerTokenCostUsd: 0.02,
-  ecoCostUsd: 0.01,
-  plannerBreakdown: null,
-  ecoBreakdown: {
-    inputUsd: 0.005,
-    outputUsd: 0.004,
-    cacheReadUsd: 0.0005,
-    cacheCreationUsd: 0.0005,
-    totalUsd: 0.01,
-  },
-  pricingResolved: true,
 };
 
 function snapshotWithInstance(): UsageContextSnapshot {
@@ -104,7 +89,7 @@ test("resolveSubagentBillingMetricsContext falls back to input and cache occupan
   });
 });
 
-test("subagent billing metrics builders keep observation and legacy record fields aligned", () => {
+test("buildSubagentContextObservationInput maps context and optional fields", () => {
   const context = resolveSubagentBillingMetricsContext({
     role: "coder",
     agentId: "agent_coder",
@@ -124,27 +109,6 @@ test("subagent billing metrics builders keep observation and legacy record field
     parentToolUseId: "toolu_parent",
     contextOccupied: 8_765,
     contextLimit: 64_000,
-    modelId: "claude-haiku",
-    requestKey: "sdk-result:event_1",
-  });
-
-  expect(
-    buildSubagentLegacyMetricsRecordInput(context!, {
-      role: "reviewer",
-      parentToolUseId: "toolu_parent",
-      usage,
-      billing,
-      modelId: "claude-haiku",
-      requestKey: "sdk-result:event_1",
-    }),
-  ).toEqual({
-    role: "reviewer",
-    agentId: "agent_coder",
-    parentToolUseId: "toolu_parent",
-    usage,
-    contextOccupied: 8_765,
-    contextLimit: 64_000,
-    billing,
     modelId: "claude-haiku",
     requestKey: "sdk-result:event_1",
   });

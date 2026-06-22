@@ -1,6 +1,5 @@
-import { computeWindowOccupancy, type ParsedUsage, type RequestBillingDelta } from "@eco/runtime";
+import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import type { SubagentLegacyMetricsRecordInput } from "./subagent-legacy-metrics-fallback-effects";
 import type { SubagentContextObservationInput } from "./subagent-metrics-state";
 import type { UsageContextService } from "./usage-context-effects";
 
@@ -48,29 +47,5 @@ export function buildSubagentContextObservationInput(
     ...(context.contextLimit !== undefined && { contextLimit: context.contextLimit }),
     ...(input.modelId && { modelId: input.modelId }),
     ...(input.requestKey && { requestKey: input.requestKey }),
-  };
-}
-
-export function buildSubagentLegacyMetricsRecordInput(
-  context: SubagentBillingMetricsContext,
-  input: {
-    role?: RuntimeAgentRole;
-    parentToolUseId?: string;
-    usage: ParsedUsage;
-    billing: RequestBillingDelta;
-    modelId?: string;
-    requestKey: string;
-  },
-): SubagentLegacyMetricsRecordInput {
-  return {
-    role: input.role ?? context.role,
-    agentId: context.agentId,
-    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    usage: input.usage,
-    contextOccupied: context.contextOccupied,
-    ...(context.contextLimit !== undefined && { contextLimit: context.contextLimit }),
-    billing: input.billing,
-    ...(input.modelId && { modelId: input.modelId }),
-    requestKey: input.requestKey,
   };
 }

@@ -25,10 +25,6 @@ import {
   recordLegacySingleUsageBilling,
   type UsageLegacyBillingAccumulator,
 } from "./usage-legacy-billing";
-import {
-  applySdkRunSubagentLegacyFallback,
-  applySingleUsageSubagentLegacyFallback,
-} from "./usage-subagent-legacy-fallback";
 
 export interface UsageBillingUpdatedEvent {
   threadId: string;
@@ -148,29 +144,11 @@ export async function applySingleUsageBillingEffects(
     ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
     ...(artifacts.plannerModelLabel && { plannerModelLabel: artifacts.plannerModelLabel }),
   });
-  let billingSelection = services.usageLedger.resolveBillingSnapshot(
+  const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
     legacyBilling.snapshot,
     selectionOptions,
   );
-
-  const legacySubagentFallback = applySingleUsageSubagentLegacyFallback({
-    threadId: input.threadId,
-    context: subagentContext,
-    billingSelection,
-    legacyBilling: legacyBilling.snapshot,
-    selectionOptions,
-    usage: artifacts.delta,
-    billing: artifacts.requestBilling,
-    ...(artifacts.resolvedModelId && { modelId: artifacts.resolvedModelId }),
-    requestKey: artifacts.requestKey,
-    services: {
-      recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
-      resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
-        services.usageLedger.resolveBillingSnapshot(threadId, legacySnapshot, options),
-    },
-  });
-  billingSelection = legacySubagentFallback.billingSelection;
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
@@ -275,29 +253,11 @@ export async function applySdkRunBillingEffects(
     ...(services.billingSnapshotSelection && { policy: services.billingSnapshotSelection }),
     ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
   });
-  let billingSelection = services.usageLedger.resolveBillingSnapshot(
+  const billingSelection = services.usageLedger.resolveBillingSnapshot(
     input.threadId,
     legacyBilling,
     selectionOptions,
   );
-
-  const legacySubagentFallback = applySdkRunSubagentLegacyFallback({
-    threadId: input.threadId,
-    context: subagentContext,
-    billingSelection,
-    legacyBilling,
-    selectionOptions,
-    models: input.models,
-    billingRole: input.billingRole,
-    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
-    requestKey: input.requestKey,
-    services: {
-      recordSdkUsage: (threadId, record) => services.subagentMetrics.recordSdkUsage(threadId, record),
-      resolveBillingSnapshot: (threadId, legacySnapshot, options) =>
-        services.usageLedger.resolveBillingSnapshot(threadId, legacySnapshot, options),
-    },
-  });
-  billingSelection = legacySubagentFallback.billingSelection;
   const billing = billingSelection.snapshot;
   services.usageLedger.reconcileShadow(input.threadId, billingSelection.legacySnapshot);
 
