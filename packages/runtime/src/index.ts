@@ -295,6 +295,7 @@ export {
   isWeakAgentToolDetail,
   missionFromAgentToolDetail,
   parseSubagentMissionMessage,
+  resolveMissionDisplayText,
   summarizeAgentObjective,
   type SubagentMissionPayload,
 } from "./agent-mission";

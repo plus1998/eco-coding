@@ -130,6 +130,19 @@ export function parseSubagentMissionMessage(message: string): SubagentMissionPay
   }
 }
 
+/** Human-readable mission body; unwraps @mission JSON payloads when present. */
+export function resolveMissionDisplayText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const parsed = parseSubagentMissionMessage(trimmed);
+  if (parsed) {
+    return parsed.prompt.trim() || parsed.summary.trim();
+  }
+  return trimmed;
+}
+
 const CHINESE_ROLE_TO_ID: Record<string, string> = {
   探索: "explore",
   架构: "architect",

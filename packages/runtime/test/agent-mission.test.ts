@@ -4,6 +4,7 @@ import {
   isGenericMissionSummary,
   isWeakAgentToolDetail,
   parseSubagentMissionMessage,
+  resolveMissionDisplayText,
   summarizeAgentObjective,
   missionFromAgentToolDetail,
 } from "../src/agent-mission";
@@ -22,6 +23,12 @@ test("round-trips mission messages", () => {
   expect(parsed?.role).toBe("reviewer");
   expect(parsed?.summary.length).toBeGreaterThan(0);
   expect(parsed?.prompt).toContain("src/api.ts");
+});
+
+test("resolveMissionDisplayText unwraps @mission payloads", () => {
+  const message = formatSubagentMissionMessage("coder", "Implement login flow");
+  expect(resolveMissionDisplayText(message)).toBe("Implement login flow");
+  expect(resolveMissionDisplayText("Plain task prompt")).toBe("Plain task prompt");
 });
 
 test("ignores elapsed duration in agent tool detail", () => {

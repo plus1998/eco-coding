@@ -4555,8 +4555,15 @@ html[data-window-focused="true"] .codex-sidebar {
   white-space: nowrap;
 }
 
-.subagent-run-mission-preview {
+.subagent-run-mission-tag {
   margin: 8px 0 0;
+  color: var(--codex-log-muted, #737373);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.subagent-run-mission-preview {
+  margin: 4px 0 0;
 }
 
 .subagent-run-row-wrap .work-session-details-compact {

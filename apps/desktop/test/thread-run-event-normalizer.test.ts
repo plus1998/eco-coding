@@ -464,3 +464,28 @@ test("buildThreadRunEventFromLiveEvent persists bash approval metadata", () => {
     },
   });
 });
+
+test("buildThreadRunEventFromLiveEvent scopes bash approval to agent when agentId is present", () => {
+  const event = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_bash_approval",
+    liveType: "bash_approval.requested",
+    role: "tool",
+    stream: false,
+    message: "等待确认 Bash：npm test",
+    observedAt: "2026-01-01T00:00:00.000Z",
+    agentId: "agent_coder_a",
+    bashApproval: {
+      toolUseId: "toolu_bash_1",
+      phase: "requested",
+      toolName: "Bash",
+      detail: "npm test",
+    },
+  });
+
+  expect(event).toMatchObject({
+    eventType: "message.final",
+    scope: "agent",
+    agentId: "agent_coder_a",
+  });
+});

@@ -15,6 +15,7 @@ import {
   toolStatusToLifecycle,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
+import { parseSubagentMissionMessage } from "@eco/runtime";
 import {
   iconForToolName,
   resolveSubagentRunDisplayTitle,
@@ -115,7 +116,11 @@ function buildProjectionMainFeedEntries(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   agentDisplayNames?: RuntimeAgentDisplayNames | undefined,
 ): ThreadRunProjectionMainFeedEntry[] {
-  const displayMainTimeline = filterMainTimelineForFeed(mainTimeline, requestSpansById);
+  const displayMainTimeline = filterAbsorbedSubagentDelegations(
+    filterMainTimelineForFeed(mainTimeline, requestSpansById),
+    subagentCards,
+    requestSpansById,
+  );
   const entries: ThreadRunProjectionMainFeedEntry[] = displayMainTimeline.map((item) => ({
     kind: "timeline",
     key: `main:${item.id}`,
@@ -158,6 +163,65 @@ function filterMainTimelineForFeed(
   const displayTimeline = filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
   const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item));
   return filterCompactionTimelineForFeed(requestFiltered);
+}
+
+function filterAbsorbedSubagentDelegations(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  subagentCards: readonly ThreadRunProjectionSubagentCard[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): ThreadRunProjectionTimelineItem[] {
+  const absorbedToolUseIds = collectAgentTimelineToolUseIds(subagentCards, requestSpansById);
+  const delegatedRoles = new Set<string>();
+  for (const card of subagentCards) {
+    const parentToolUseId = card.agent.parentToolUseId?.trim();
+    if (parentToolUseId) {
+      absorbedToolUseIds.add(parentToolUseId);
+    }
+    if (readProjectionAgentDelegation(card.agent)) {
+      const role = normalizeAgentDisplayRole(card.agent.role) ?? card.agent.role;
+      delegatedRoles.add(role);
+    }
+  }
+  if (absorbedToolUseIds.size === 0 && delegatedRoles.size === 0) {
+    return [...timeline];
+  }
+  return timeline.filter((item) => {
+    const mission = parseSubagentMissionMessage(item.text);
+    if (mission) {
+      const role = normalizeAgentDisplayRole(mission.role) ?? mission.role;
+      if (delegatedRoles.has(role)) {
+        return false;
+      }
+    }
+    const bashApproval = readProjectionBashApprovalMetadata(item);
+    if (bashApproval?.toolUseId?.trim() && absorbedToolUseIds.has(bashApproval.toolUseId.trim())) {
+      return false;
+    }
+    if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+      return true;
+    }
+    const toolUseId = readProjectionToolMetadata(item)?.toolUseId?.trim();
+    return !toolUseId || !absorbedToolUseIds.has(toolUseId);
+  });
+}
+
+function collectAgentTimelineToolUseIds(
+  subagentCards: readonly ThreadRunProjectionSubagentCard[],
+  requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const card of subagentCards) {
+    const displayTimeline = filterProjectionTimelineForDetailFeed(card.agent.timeline, requestSpansById);
+    for (const item of displayTimeline) {
+      const toolUseId =
+        readProjectionToolMetadata(item)?.toolUseId?.trim() ??
+        readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
+      if (toolUseId) {
+        ids.add(toolUseId);
+      }
+    }
+  }
+  return ids;
 }
 
 function filterToolFailureDuplicateTimelineItems(
@@ -713,10 +777,12 @@ function buildProjectionToolActionBlock(
 ): ActivityDetailBlock {
   const subagent = resolveProjectionSubagent(item);
   const metadataTool = readProjectionToolMetadata(item);
-  const description = input.description ?? metadataTool?.description;
+  const bashApproval = readProjectionBashApprovalMetadata(item);
+  const description = input.description ?? metadataTool?.description ?? bashApproval?.description;
+  const command = metadataTool?.detail?.trim() || bashApproval?.detail?.trim();
   const bashRun = resolveBashRunCardDisplay({
     toolName: input.toolName,
-    ...(metadataTool?.detail && { command: metadataTool.detail }),
+    ...(command && { command }),
     summaryText: item.text,
     ...(metadataTool?.output && { output: metadataTool.output }),
     ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),

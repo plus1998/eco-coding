@@ -1427,11 +1427,13 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final role = normalizeAgentDisplayRole(widget.role) ?? widget.role;
     final trimmedPrompt = widget.prompt?.trim() ?? '';
     final trimmedSummary = widget.summary.trim();
-    final fullText =
-        trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary;
+    final fullText = resolveMissionDisplayText(
+      trimmedPrompt.isNotEmpty ? trimmedPrompt : trimmedSummary,
+    );
     final borderColor = subagentMissionBorderColor(role);
     final statusText = widget.statusText?.trim();
-    final showStatus = statusText != null && statusText.isNotEmpty;
+    final showStatus =
+        fullText.isEmpty && statusText != null && statusText.isNotEmpty;
     final durationLabel = formatSubagentDuration(
       widget.running ? _liveDurationMs : widget.durationMs,
       running: widget.running,

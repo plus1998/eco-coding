@@ -786,6 +786,14 @@ function splitLinesIntoSegments(lines: ThreadActivityLine[]): ActivitySegment[] 
       icon,
       label,
       lifecycle: parsed.phase,
+      ...(parsed.toolName === "Bash" && parsed.detail
+        ? {
+            bashRun: resolveBashRunCardDisplay({
+              toolName: "Bash",
+              command: parsed.detail,
+            }),
+          }
+        : {}),
       ...(subagent && { subagent }),
       ...((line.agentId?.trim() || toolContextAgentId) && {
         agentId: (line.agentId?.trim() || toolContextAgentId)!,

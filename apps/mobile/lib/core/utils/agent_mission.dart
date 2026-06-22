@@ -57,3 +57,15 @@ String _normalizeMissionRole(String role) {
   }
   return normalizeAgentDisplayRole(trimmed) ?? trimmed;
 }
+
+String resolveMissionDisplayText(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) {
+    return '';
+  }
+  final parsed = parseSubagentMissionMessage(trimmed);
+  if (parsed != null) {
+    return parsed.prompt.isNotEmpty ? parsed.prompt : parsed.summary;
+  }
+  return trimmed;
+}

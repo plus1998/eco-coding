@@ -1431,6 +1431,48 @@ test("buildThreadRunProjectionViewModel shows planner delegation on main feed", 
   }
 });
 
+test("buildThreadRunProjectionViewModel hides absorbed planner Agent delegation when subagent card exists", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_coder_a",
+          role: "coder",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          parentToolUseId: "toolu_agent_1",
+          delegationPrompt: "Implement export filters in src/api.ts",
+          delegationSummary: "实现：export filters",
+          timeline: [],
+        },
+      ],
+      timeline: [
+        item({
+          id: "delegate-coder",
+          eventType: "tool.started",
+          scope: "main",
+          role: "coder",
+          text: formatSubagentMissionMessage("coder", "Implement export filters in src/api.ts"),
+          sequence: 1,
+          metadata: {
+            liveType: "tool.started",
+            tool: {
+              name: "Agent",
+              detail: "coder",
+              toolUseId: "toolu_agent_1",
+              status: "running",
+            },
+          },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("agent-card");
+});
+
 test("projectionItemToDetailBlock omits tool role badge and resolves icon from tool name", () => {
   const detail = projectionItemToDetailBlock(
     item({
@@ -1482,6 +1524,133 @@ test("projectionItemToDetailBlock maps bash approval to action with lifecycle", 
     label: "/path/to/file.txt",
     lifecycle: "approval-pending",
   });
+});
+
+test("projectionItemToDetailBlock builds bash card for bash approval requests", () => {
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "bash-approval",
+      eventType: "message.final",
+      role: "tool",
+      text: "等待确认 Bash：npm test",
+      metadata: {
+        liveType: "bash_approval.requested",
+        bashApproval: {
+          toolUseId: "toolu_bash_1",
+          phase: "requested",
+          toolName: "Bash",
+          detail: "npm test",
+          description: "Run unit tests",
+        },
+      },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "action",
+    icon: "terminal",
+    label: "npm test",
+    lifecycle: "approval-pending",
+    bashRun: {
+      title: "Run unit tests",
+      body: "npm test",
+    },
+  });
+});
+
+test("buildThreadRunProjectionViewModel hides subagent bash approvals from main feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: "agent_coder_a",
+          role: "coder",
+          kind: "subagent",
+          status: "active",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          timeline: [
+            item({
+              id: "approval-wait",
+              eventType: "message.final",
+              scope: "agent",
+              role: "tool",
+              agentId: "agent_coder_a",
+              text: "等待确认 Bash：npm test",
+              sequence: 1,
+              metadata: {
+                liveType: "bash_approval.requested",
+                bashApproval: {
+                  toolUseId: "toolu_bash_1",
+                  phase: "requested",
+                  toolName: "Bash",
+                  detail: "npm test",
+                },
+              },
+            }),
+            item({
+              id: "bash-completed",
+              eventType: "tool.completed",
+              scope: "agent",
+              role: "tool",
+              agentId: "agent_coder_a",
+              text: "Tool: Bash · npm test",
+              sequence: 2,
+              metadata: {
+                liveType: "tool.completed",
+                tool: {
+                  name: "Bash",
+                  detail: "npm test",
+                  toolUseId: "toolu_bash_1",
+                  status: "completed",
+                  output: "36 pass",
+                },
+              },
+            }),
+          ],
+        },
+      ],
+      timeline: [
+        item({
+          id: "main-approval-wait",
+          eventType: "message.final",
+          scope: "main",
+          role: "tool",
+          text: "等待确认 Bash：npm test",
+          sequence: 1,
+          metadata: {
+            liveType: "bash_approval.requested",
+            bashApproval: {
+              toolUseId: "toolu_bash_1",
+              phase: "requested",
+              toolName: "Bash",
+              detail: "npm test",
+            },
+          },
+        }),
+        item({
+          id: "main-approval-approved",
+          eventType: "message.final",
+          scope: "main",
+          role: "tool",
+          text: "已允许本次 Bash：npm test",
+          sequence: 2,
+          metadata: {
+            liveType: "bash_approval.approved",
+            bashApproval: {
+              toolUseId: "toolu_bash_1",
+              phase: "approved",
+              toolName: "Bash",
+              detail: "npm test",
+            },
+          },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual(["agent-card:agent_coder_a"]);
+  const card = view.subagentCards[0];
+  expect(card?.agent.timeline.map((entry) => entry.id)).toEqual(["bash-completed"]);
 });
 
 test("projectionItemToDetailBlock prefers structured tool metadata", () => {

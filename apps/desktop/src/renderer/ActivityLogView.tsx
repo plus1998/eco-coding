@@ -38,7 +38,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
-import { formatRoleModelLabel, formatUsageBadge, shortenModelId } from "@eco/runtime";
+import { formatRoleModelLabel, formatUsageBadge, resolveMissionDisplayText, shortenModelId } from "@eco/runtime";
 import {
   activityLabelIncludesAgentRole,
   isRedundantAgentModelShort,
@@ -462,11 +462,14 @@ function ProjectionSubagentRunRow({
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const durationLabel =
     elapsedMs > 0 ? (running ? formatDuration(elapsedMs) : `用时 ${formatDuration(elapsedMs)}`) : undefined;
-  const missionText = delegation?.prompt?.trim() || delegation?.summary || "";
+  const missionText = delegation
+    ? resolveMissionDisplayText(delegation.prompt?.trim() || delegation.summary)
+    : "";
+  const hasTimelineDetails = agent.timeline.some(
+    (item) => !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
+  );
   const hasDetails =
-    agent.timeline.length > 0 ||
-    Boolean(agent.usage || agent.context) ||
-    Boolean(missionText);
+    hasTimelineDetails || Boolean(agent.usage || agent.context);
   const statusBadge = resolveSubagentStatusBadge(running, agent.status);
 
   return (
@@ -494,7 +497,10 @@ function ProjectionSubagentRunRow({
           <div className="work-session-details-compact-inner">
             <ProjectionSubagentRunInstanceStrip agent={agent} />
             {agent.timeline
-              .filter((item) => !(delegation && item.eventType === "agent.started"))
+              .filter(
+                (item) =>
+                  !shouldSuppressSubagentCardTimelineItem(item, Boolean(missionText), Boolean(delegation)),
+              )
               .map((item) => (
                 <ProjectionTimelineEntry
                   key={`${agent.agentId}-${item.id}`}
@@ -731,6 +737,21 @@ function resolveSubagentKindBadge(role: string): string {
   return SUBAGENT_ROLE_SHORT[normalized] ?? "代理";
 }
 
+function shouldSuppressSubagentCardTimelineItem(
+  item: ThreadRunProjectionTimelineItem,
+  hasCardMission: boolean,
+  hasDelegation: boolean,
+): boolean {
+  if (hasDelegation && item.eventType === "agent.started") {
+    return true;
+  }
+  if (!hasCardMission) {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(item);
+  return block?.kind === "subagent-mission";
+}
+
 function SubagentRunCardButton({
   role,
   roleLabel,
@@ -805,7 +826,14 @@ function SubagentRunCardButton({
           </span>
         </div>
         {missionText ? (
-          <ExpandableMissionText text={missionText} expanded={expanded} className="subagent-run-mission-preview" />
+          <>
+            <p className="subagent-run-mission-tag">任务目标</p>
+            <ExpandableMissionText
+              text={resolveMissionDisplayText(missionText)}
+              expanded={expanded}
+              className="subagent-run-mission-preview"
+            />
+          </>
         ) : (
           <p className="subagent-run-status" title={statusText}>
             {statusText}
@@ -988,7 +1016,7 @@ function SubagentRunRow({
   const missionBlock = item.children.find((child) => child.kind === "subagent-mission");
   const missionText =
     missionBlock?.kind === "subagent-mission"
-      ? missionBlock.prompt?.trim() || missionBlock.summary
+      ? resolveMissionDisplayText(missionBlock.prompt?.trim() || missionBlock.summary)
       : "";
   const detailChildren = item.children.filter((child) => child.kind !== "subagent-mission");
   const statusBadge = resolveSubagentStatusBadge(item.running);
@@ -1808,7 +1836,7 @@ function SubagentMissionBlock({
   summary,
   prompt,
   modelByRole,
-  omitRoleLabel,
+  omitRoleLabel: _omitRoleLabel,
 }: {
   subagent: string;
   summary: string;
@@ -1819,10 +1847,7 @@ function SubagentMissionBlock({
   const [expanded, setExpanded] = useState(false);
   const trimmedPrompt = prompt?.trim() ?? "";
   const trimmedSummary = summary.trim();
-  const fullText = trimmedPrompt || trimmedSummary;
-  const showRoleLabel =
-    !omitRoleLabel &&
-    !activityLabelIncludesAgentRole(subagent, fullText, { modelId: modelByRole?.[subagent] });
+  const fullText = resolveMissionDisplayText(trimmedPrompt || trimmedSummary);
 
   return (
     <button
@@ -1834,11 +1859,6 @@ function SubagentMissionBlock({
     >
       <div className="run-log-mission-head">
         <span className="run-log-mission-head-main">
-          {showRoleLabel ? (
-            <span className="run-log-mission-role">
-              {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-            </span>
-          ) : null}
           <span className="run-log-mission-tag">任务目标</span>
         </span>
         <ChevronDown

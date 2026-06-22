@@ -5879,7 +5879,9 @@ function emitThreadEvent(
       role: String(role),
       message: displayMessage,
       stream,
-      ...(extras?.agentId?.trim() && { agentId: extras.agentId.trim() }),
+      ...((extras?.agentId?.trim() || extras?.bashApproval?.agentId?.trim()) && {
+        agentId: (extras?.agentId ?? extras?.bashApproval?.agentId)!.trim(),
+      }),
       ...(extras?.apiError && { apiError: extras.apiError }),
     });
   }
@@ -6063,6 +6065,7 @@ function recordThreadRunEventFromLiveEvent(input: {
   const bashApproval =
     input.extras?.bashApproval &&
     buildBashApprovalRunMetadataFromRequest(input.type, input.extras.bashApproval);
+  const agentId = input.extras?.agentId?.trim() || input.extras?.bashApproval?.agentId?.trim();
   const event = buildThreadRunEventFromLiveEvent({
     threadId: input.threadId,
     eventId,
@@ -6072,7 +6075,7 @@ function recordThreadRunEventFromLiveEvent(input: {
     stream: input.stream,
     observedAt: new Date().toISOString(),
     ...(runAttemptId && { runAttemptId }),
-    ...(input.extras?.agentId?.trim() && { agentId: input.extras.agentId.trim() }),
+    ...(agentId && { agentId }),
     ...(input.persistedActivityLine && { streamKey: input.persistedActivityLine.id }),
     ...(input.extras?.apiError && { apiError: input.extras.apiError }),
     ...(input.extras?.tool && { tool: input.extras.tool }),
@@ -6387,6 +6390,13 @@ function buildBashApprovalRunMetadataFromRequest(
   };
 }
 
+function bashApprovalEventExtras(request: BashApprovalRequest): EmitThreadEventExtras {
+  return {
+    bashApproval: request,
+    ...(request.agentId?.trim() && { agentId: request.agentId.trim() }),
+  };
+}
+
 function createThreadToolPermissionHandler(
   threadId: string,
   runPhase: SubagentRunPhase = "execution",
@@ -6437,7 +6447,7 @@ function createThreadToolPermissionHandler(
         `等待确认 ${request.toolName}：${filesystemPath}`,
         "tool",
         false,
-        { bashApproval: approvalRequest },
+        bashApprovalEventExtras(approvalRequest),
       );
 
       const decision = await registerPendingBashApproval(threadId, approvalRequest);
@@ -6448,7 +6458,7 @@ function createThreadToolPermissionHandler(
           `已允许本次 ${request.toolName}：${filesystemPath}`,
           "tool",
           false,
-          { bashApproval: approvalRequest },
+          bashApprovalEventExtras(approvalRequest),
         );
         return { behavior: "allow", updatedInput: request.input };
       }
@@ -6459,7 +6469,7 @@ function createThreadToolPermissionHandler(
         `已拒绝 ${request.toolName}：${filesystemPath}`,
         "tool",
         false,
-        { bashApproval: approvalRequest },
+        bashApprovalEventExtras(approvalRequest),
       );
       return {
         behavior: "deny",
@@ -6517,7 +6527,7 @@ function createThreadToolPermissionHandler(
         ...(request.agentType ? { agentType: request.agentType } : {}),
       };
       emitThreadEvent(threadId, "bash_approval.denied", `Bash 已拒绝：${policy.reason}`, "tool", false, {
-        bashApproval: deniedApproval,
+        ...bashApprovalEventExtras(deniedApproval),
       });
       return {
         behavior: "deny",
@@ -6555,19 +6565,19 @@ function createThreadToolPermissionHandler(
     };
 
     emitThreadEvent(threadId, "bash_approval.requested", `等待确认 Bash：${command}`, "tool", false, {
-      bashApproval: approvalRequest,
+      ...bashApprovalEventExtras(approvalRequest),
     });
 
     const decision = await registerPendingBashApproval(threadId, approvalRequest);
     if (decision === "approved") {
       emitThreadEvent(threadId, "bash_approval.approved", `已允许本次 Bash：${command}`, "tool", false, {
-        bashApproval: approvalRequest,
+        ...bashApprovalEventExtras(approvalRequest),
       });
       return { behavior: "allow", updatedInput: request.input };
     }
 
     emitThreadEvent(threadId, "bash_approval.rejected", `已拒绝 Bash：${command}`, "tool", false, {
-      bashApproval: approvalRequest,
+      ...bashApprovalEventExtras(approvalRequest),
     });
     return {
       behavior: "deny",

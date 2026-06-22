@@ -147,7 +147,6 @@ PreferredSizeWidget buildThreadSessionAppBar(
               },
         menuButton: ThreadSessionMenuButton(
           threadId: threadId,
-          threadTitle: threadId == null ? null : title,
           workspacePath: workspacePath,
           runtimeConfig: runtimeConfig,
           isRunning: isRunning,
