@@ -249,6 +249,73 @@ void main() {
     });
   });
 
+  group('sortProjectsForDisplay', () {
+    test('places pinned projects after home and before others', () {
+      final grouped = groupThreadsByProject([
+        ThreadSummary(
+          id: 't1',
+          title: '',
+          prompt: '',
+          workspacePath: repoPath,
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-05T00:00:00.000Z',
+          message: '',
+        ),
+        ThreadSummary(
+          id: 't2',
+          title: '',
+          prompt: '',
+          workspacePath: '/Users/test/other',
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-02T00:00:00.000Z',
+          message: '',
+        ),
+      ]);
+
+      final sorted = sortProjectsForDisplay(
+        [
+          const EcoProject(path: '/Users/test/other', name: 'other'),
+          const EcoProject(path: repoPath, name: 'eco-coding'),
+          const EcoProject(
+            path: homePath,
+            name: homeProjectDisplayName,
+            isHome: true,
+          ),
+        ],
+        pinnedPaths: ['/Users/test/other'],
+        grouped: grouped,
+        activityReferenceMs: DateTime.parse('2026-01-01T00:00:00.000Z')
+            .millisecondsSinceEpoch,
+      );
+
+      expect(sorted.map((project) => project.path).toList(), [
+        homePath,
+        '/Users/test/other',
+        repoPath,
+      ]);
+    });
+  });
+
+  group('filterVisibleProjects', () {
+    test('keeps home while hiding other projects', () {
+      final visible = filterVisibleProjects(
+        [
+          const EcoProject(
+            path: homePath,
+            name: homeProjectDisplayName,
+            isHome: true,
+          ),
+          const EcoProject(path: repoPath, name: 'eco-coding'),
+        ],
+        {repoPath},
+      );
+
+      expect(visible.map((project) => project.path).toList(), [homePath]);
+    });
+  });
+
   group('sliceProjectThreads', () {
     test('shows at most five threads until expanded', () {
       final threads = List.generate(

@@ -78,6 +78,55 @@ EcoProject buildEcoProject({
   );
 }
 
+int projectActivityTimeMs(
+  EcoProject project, {
+  required Map<String, List<ThreadSummary>> grouped,
+  String? currentWorkspacePath,
+  required int activityReferenceMs,
+}) {
+  final key = normalizeProjectPath(project.path);
+  final threads = grouped[key] ?? const <ThreadSummary>[];
+  var maxMs = 0;
+  for (final thread in threads) {
+    final ms = threadActivityTimeMs(thread);
+    if (ms > maxMs) {
+      maxMs = ms;
+    }
+  }
+  final isCurrent = currentWorkspacePath != null &&
+      normalizeProjectPath(currentWorkspacePath) == key;
+  if (isCurrent) {
+    return maxMs > activityReferenceMs ? maxMs : activityReferenceMs;
+  }
+  return maxMs;
+}
+
+int compareProjectsByActivity(
+  EcoProject a,
+  EcoProject b, {
+  required Map<String, List<ThreadSummary>> grouped,
+  String? currentWorkspacePath,
+  required int activityReferenceMs,
+}) {
+  if (a.isHome != b.isHome) {
+    return a.isHome ? -1 : 1;
+  }
+  final delta = projectActivityTimeMs(
+        b,
+        grouped: grouped,
+        currentWorkspacePath: currentWorkspacePath,
+        activityReferenceMs: activityReferenceMs,
+      ) -
+      projectActivityTimeMs(
+        a,
+        grouped: grouped,
+        currentWorkspacePath: currentWorkspacePath,
+        activityReferenceMs: activityReferenceMs,
+      );
+  if (delta != 0) return delta;
+  return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+}
+
 List<EcoProject> sortProjectsByActivity(
   List<EcoProject> projects, {
   required Map<String, List<ThreadSummary>> grouped,
@@ -86,23 +135,48 @@ List<EcoProject> sortProjectsByActivity(
 }) {
   final referenceMs =
       activityReferenceMs ?? DateTime.now().millisecondsSinceEpoch;
+  final sorted = List<EcoProject>.of(projects);
+  sorted.sort(
+    (a, b) => compareProjectsByActivity(
+      a,
+      b,
+      grouped: grouped,
+      currentWorkspacePath: currentWorkspacePath,
+      activityReferenceMs: referenceMs,
+    ),
+  );
+  return sorted;
+}
 
-  int activityMsForProject(EcoProject project) {
-    final key = normalizeProjectPath(project.path);
-    final threads = grouped[key] ?? const <ThreadSummary>[];
-    var maxMs = 0;
-    for (final thread in threads) {
-      final ms = threadActivityTimeMs(thread);
-      if (ms > maxMs) {
-        maxMs = ms;
-      }
-    }
-    final isCurrent = currentWorkspacePath != null &&
-        normalizeProjectPath(currentWorkspacePath) == key;
-    if (isCurrent) {
-      return maxMs > referenceMs ? maxMs : referenceMs;
-    }
-    return maxMs;
+List<EcoProject> filterVisibleProjects(
+  List<EcoProject> projects,
+  Set<String> hiddenPaths,
+) {
+  return projects
+      .where(
+        (project) =>
+            project.isHome ||
+            !hiddenPaths.contains(normalizeProjectPath(project.path)),
+      )
+      .toList();
+}
+
+List<EcoProject> sortProjectsForDisplay(
+  List<EcoProject> projects, {
+  required List<String> pinnedPaths,
+  required Map<String, List<ThreadSummary>> grouped,
+  String? currentWorkspacePath,
+  int? activityReferenceMs,
+}) {
+  final referenceMs =
+      activityReferenceMs ?? DateTime.now().millisecondsSinceEpoch;
+  final pinnedOrder = pinnedPaths.map(normalizeProjectPath).toList();
+  final pinnedSet = pinnedOrder.toSet();
+
+  int pinnedRank(String path) {
+    final normalized = normalizeProjectPath(path);
+    final index = pinnedOrder.indexOf(normalized);
+    return index < 0 ? pinnedOrder.length : index;
   }
 
   final sorted = List<EcoProject>.of(projects);
@@ -110,9 +184,21 @@ List<EcoProject> sortProjectsByActivity(
     if (a.isHome != b.isHome) {
       return a.isHome ? -1 : 1;
     }
-    final delta = activityMsForProject(b) - activityMsForProject(a);
-    if (delta != 0) return delta;
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    final aPinned = pinnedSet.contains(normalizeProjectPath(a.path));
+    final bPinned = pinnedSet.contains(normalizeProjectPath(b.path));
+    if (aPinned != bPinned) {
+      return aPinned ? -1 : 1;
+    }
+    if (aPinned && bPinned) {
+      return pinnedRank(a.path) - pinnedRank(b.path);
+    }
+    return compareProjectsByActivity(
+      a,
+      b,
+      grouped: grouped,
+      currentWorkspacePath: currentWorkspacePath,
+      activityReferenceMs: referenceMs,
+    );
   });
   return sorted;
 }

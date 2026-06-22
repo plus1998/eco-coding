@@ -7,6 +7,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/relative_time.dart';
 import '../../core/utils/thread_status.dart';
+import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
 import 'thread_providers.dart';
 
@@ -15,13 +16,14 @@ class ThreadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final projectsAsync = ref.watch(projectListProvider);
+    final projectsAsync = ref.watch(displayProjectsProvider);
+    final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
     final threadsByProject = ref.watch(threadsByProjectProvider);
     final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
     ref.watch(collapsedProjectPathsProvider);
     final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
 
-    ref.listen(projectListProvider, (previous, next) {
+    ref.listen(displayProjectsProvider, (previous, next) {
       next.whenData(collapsedNotifier.applyProjectDefaults);
     });
     projectsAsync.whenData(collapsedNotifier.applyProjectDefaults);
@@ -69,12 +71,27 @@ class ThreadsScreen extends ConsumerWidget {
                       final isSelected = selectedPath == project.path;
                       final isCollapsed = collapsedNotifier.isProjectCollapsed(project);
 
+                      final isPinned = !project.isHome &&
+                          pinnedPaths.any(
+                            (path) =>
+                                normalizeProjectPath(path) ==
+                                normalizeProjectPath(project.path),
+                          );
+
                       return _ProjectSection(
                         project: project,
                         threads: threads,
                         isSelected: isSelected,
                         isCollapsed: isCollapsed,
+                        isPinned: isPinned,
                         onHeaderTap: () => _onProjectHeaderTap(ref, project: project),
+                        onHeaderLongPress: project.isHome
+                            ? null
+                            : () => showProjectActionSheet(
+                                  context: context,
+                                  ref: ref,
+                                  project: project,
+                                ),
                         onNewThread: () => _openNewThread(context, ref, project.path),
                         onThreadTap: (thread) =>
                             context.push('/threads/${thread.id}'),
@@ -197,7 +214,9 @@ class _ProjectSection extends StatefulWidget {
     required this.threads,
     required this.isSelected,
     required this.isCollapsed,
+    required this.isPinned,
     required this.onHeaderTap,
+    this.onHeaderLongPress,
     required this.onNewThread,
     required this.onThreadTap,
   });
@@ -206,7 +225,9 @@ class _ProjectSection extends StatefulWidget {
   final List<ThreadSummary> threads;
   final bool isSelected;
   final bool isCollapsed;
+  final bool isPinned;
   final VoidCallback onHeaderTap;
+  final VoidCallback? onHeaderLongPress;
   final VoidCallback onNewThread;
   final void Function(ThreadSummary thread) onThreadTap;
 
@@ -242,6 +263,7 @@ class _ProjectSectionState extends State<_ProjectSection> {
           color: isSelected ? EcoColors.navActive : Colors.transparent,
           child: InkWell(
             onTap: widget.onHeaderTap,
+            onLongPress: widget.onHeaderLongPress,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
@@ -266,6 +288,19 @@ class _ProjectSectionState extends State<_ProjectSection> {
                         size: 20,
                         color: eco.textMuted,
                       ),
+                    ),
+                    const SizedBox(width: 2),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: widget.isPinned
+                          ? Icon(
+                              Icons.push_pin,
+                              size: 14,
+                              color: isSelected
+                                  ? EcoColors.accentText
+                                  : eco.textMuted,
+                            )
+                          : const SizedBox(width: 14),
                     ),
                     const SizedBox(width: 2),
                     Padding(
